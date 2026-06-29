@@ -820,13 +820,11 @@ export async function loadEurUsd(
     tiingoProxyUrl = null,
     tiingoFetchImpl,
     forexOpen = true,
-    force = false,
     reservation = ledgerReservation(storage ?? null),
   } = options;
-  // A manual tap may re-pull the live legs even while the forex weekend freeze is
-  // on; the result is then settled (no live instant), not a live spot.
-  const liveLegsAllowed = forexOpen || force;
-  const settledPull = force && !forexOpen;
+  // Live FX legs are allowed only while the forex market is open. A forced
+  // refresh may bypass scheduling, but it must not break the weekend freeze.
+  const liveLegsAllowed = forexOpen;
 
   const cached = readCachedEurUsd(storage ?? undefined);
   if (cached && cached.now !== null && now() - cached.at < ttlMs) {
@@ -844,18 +842,6 @@ export async function loadEurUsd(
         const reading: EurUsdQuote = await fetchEurUsd(apiKey, fetchImpl);
         if (reading.now !== null) {
           const at = now();
-          if (settledPull) {
-            // A forced off-hours re-pull: the forex market has no live spot, so the
-            // settled close (the quote's `previous_close`, the genuine Friday close)
-            // is the frozen mark — the thin indicative `now` is discarded so it can
-            // never masquerade as a live value. Stamp settled (no live instant), and
-            // keep the cached "yesterday" baseline since a quote's prior close is the
-            // settle we are now showing, not the baseline behind it.
-            const settledNow = reading.previousClose ?? reading.now;
-            const prevBaseline = cached?.previousClose ?? null;
-            writeCachedEurUsd({ now: settledNow, previousClose: prevBaseline }, at, storage ?? undefined, { observedAt: null });
-            return { now: settledNow, previousClose: prevBaseline, source: "live", at, observedAt: null, cached: false, error: null };
-          }
           writeCachedEurUsd(reading, at, storage ?? undefined);
           return { now: reading.now, previousClose: reading.previousClose, source: "live", at, observedAt: at, cached: false, error: null };
         }
@@ -884,12 +870,8 @@ export async function loadEurUsd(
         const at = now();
         const prevClose = cached && isSameUtcDay(cached.at, at) ? cached.previousClose : null;
         const observedAt = reading.at ?? at;
-        // A forced off-hours re-pull is settled: the weekend Tiingo mid simply
-        // repeats the last settled rate, so carry no live instant (observedAt:null)
-        // rather than dressing it up as a fresh "as of HH:MM" clock.
-        const displayObservedAt = settledPull ? null : observedAt;
-        writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined, { observedAt: displayObservedAt });
-        return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, observedAt: displayObservedAt, cached: false, error: liveError };
+        writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined);
+        return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, observedAt, cached: false, error: liveError };
       }
     } catch (err) {
       // A transient backup failure is non-fatal: record it on `error` and keep

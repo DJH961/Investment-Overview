@@ -4466,17 +4466,15 @@ export class App {
       // be fetched (no budget/key, a transient failure, or the weekend FX close)
       // loadEurUsd falls back to the Tiingo backup FX provider (via the /price
       // Worker), then today's cached spot, then the ECB rate.
+      const forexOpen = isForexMarketOpen();
       const eurUsd = await loadEurUsd(apiKey, {
         eodFallback: fx.rates.USD ?? null,
         ttlMs: 0,
         tiingoProxyUrl: resolvePriceProxyUrl(config),
-        // Over the weekend forex close, freeze on the last cached spot instead of
-        // spending a credit to re-confirm Friday's unchanged close.
-        forexOpen: isForexMarketOpen(),
-        // A manual tap (cache-distrust) re-pulls FX even while the weekend freeze
-        // is on, so the user's explicit refresh genuinely re-confirms the settled
-        // close instead of doing nothing on the FX leg.
-        force: opts.force ?? false,
+        // Over the weekend forex close, freeze on the last cached settled spot;
+        // even a manual refresh must not use an indicative off-hours quote.
+        forexOpen,
+        force: forexOpen && (opts.force ?? false),
       });
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;

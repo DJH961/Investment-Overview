@@ -800,6 +800,12 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         on_or_before=as_of,
         limit=2,
     )
+    book_price_dates = sorted(
+        {price_date for pairs in recent_closes.values() for price_date, _ in pairs},
+        reverse=True,
+    )
+    latest_price_date = book_price_dates[0] if book_price_dates else None
+    previous_price_date = book_price_dates[1] if len(book_price_dates) > 1 else None
     for p in positions:
         iid = p.instrument.id
         native = p.account.native_currency
@@ -886,6 +892,8 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
                 eur_to_usd=eur_to_usd,
                 today_rate=today_rate,
                 recent_closes=recent_closes,
+                latest_price_date=latest_price_date,
+                previous_price_date=previous_price_date,
                 is_money_market=is_mm,
             )
         )
@@ -928,7 +936,7 @@ def _round_cent(value: Decimal) -> Decimal:
     return value.quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
-def _instrument_daily_growth(
+def _instrument_daily_growth(  # noqa: PLR0911
     *,
     instrument_id: int,
     shares: Decimal,
@@ -936,14 +944,15 @@ def _instrument_daily_growth(
     eur_to_usd: dict[date, Decimal],
     today_rate: Decimal | None,
     recent_closes: dict[int, list[tuple[date, Decimal]]],
+    latest_price_date: date | None = None,
+    previous_price_date: date | None = None,
     is_money_market: bool = False,
 ) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None, date | None]:
     """Single-day growth for one instrument, in EUR and USD.
 
-    Values the holding on the two most recent print dates (forward-filled
-    closes) and converts each with the FX rate of *that* day, so the USD and
-    EUR figures differ only by the (small) intraday FX move — exactly the
-    per-currency daily growth the KPI strip shows, but per instrument.
+    Values the holding on the book's two most recent print dates. Holdings that
+    did not reprint on the freshest date are forward-filled, so they contribute
+    zero price move and only the FX revaluation between the book dates.
 
     Returns a 5-tuple ``(growth_eur, growth_usd, move_eur, move_usd,
     last_date)``: the two growth *fractions*, the two signed *money* moves (the
@@ -965,16 +974,42 @@ def _instrument_daily_growth(
     if is_money_market:
         return None, None, None, None, None
     pairs = recent_closes.get(instrument_id, [])
+    if not pairs:
+        return None, None, None, None, None
+    last_date, close_last = pairs[0]
+    if close_last is None:
+        return None, None, None, None, None
+
+    if (
+        latest_price_date is not None
+        and previous_price_date is not None
+        and last_date < latest_price_date
+    ):
+        current_native = shares * close_last
+        e_last, u_last = _convert_native(
+            current_native, native_currency, latest_price_date, eur_to_usd, today_rate
+        )
+        e_prev, u_prev = _convert_native(
+            current_native, native_currency, previous_price_date, eur_to_usd, today_rate
+        )
+        growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
+        growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
+        move_eur = _round_cent(e_last - e_prev)
+        move_usd = _round_cent(u_last - u_prev)
+        return growth_eur, growth_usd, move_eur, move_usd, last_date
+
     if len(pairs) < 2:
         return None, None, None, None, None
-    (last_date, close_last), (prev_date, close_prev) = pairs[0], pairs[1]
-    if close_last is None or close_prev is None:
+    prev_date, close_prev = pairs[1]
+    if close_prev is None:
         return None, None, None, None, None
+    current_book_date = latest_price_date or last_date
+    previous_book_date = previous_price_date or prev_date
     e_last, u_last = _convert_native(
-        shares * close_last, native_currency, last_date, eur_to_usd, today_rate
+        shares * close_last, native_currency, current_book_date, eur_to_usd, today_rate
     )
     e_prev, u_prev = _convert_native(
-        shares * close_prev, native_currency, prev_date, eur_to_usd, today_rate
+        shares * close_prev, native_currency, previous_book_date, eur_to_usd, today_rate
     )
     growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
     growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None

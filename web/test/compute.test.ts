@@ -757,7 +757,7 @@ describe("buildDashboard", () => {
     approx(m.overview.todayMovePct, (50 / 1.1) / (950 / 1.1 + 550 / 1.1 + 200), 1e-4);
   });
 
-  it("flags a lagging holding's daily move as stale when a peer has repriced more recently", () => {
+  it("forward-fills a lagging holding's daily move to FX-only when a peer has repriced", () => {
     const exp = makeExport();
     exp.meta.as_of = "2024-05-31";
     const mixedQuotes = new Map<string, Quote>([
@@ -786,9 +786,13 @@ describe("buildDashboard", () => {
     const vti = m.holdings.find((h) => h.symbol === "VTI")!;
     const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
     // VTI printed on the freshest date; FXAIX still sits on the older NAV, so its
-    // daily figure is last session's move and must be greyed (stale) — VTI's not.
+    // daily price move is forward-filled to zero instead of showing 108→110 green.
     expect(vti.todayMoveIsStale).toBe(false);
     expect(fxaix.todayMoveIsStale).toBe(true);
+    approx(fxaix.todayMoveEur, 0, 1e-6);
+    approx(fxaix.todayMoveUsd, 0, 1e-6);
+    approx(fxaix.todayMovePct, 0, 1e-6);
+    approx(fxaix.todayFxMoveEur, 0, 1e-6);
   });
 
   it("marks no daily move as stale before peers diverge (all on the same close)", () => {
@@ -855,6 +859,10 @@ describe("buildDashboard", () => {
     approx(m.overview.todayMoveUsd, 0, 1e-6);
     approx(m.overview.todayMoveEur, 1550 / 1.1 - 1550 / 1.05, 1e-3);
     approx(m.overview.todayFxMoveEur, 1550 / 1.1 - 1550 / 1.05, 1e-3);
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    approx(fxaix.todayMoveUsd, 0, 1e-6);
+    approx(fxaix.todayMoveEur, 550 / 1.1 - 550 / 1.05, 1e-3);
+    approx(fxaix.todayFxMoveEur, 550 / 1.1 - 550 / 1.05, 1e-3);
   });
 
   it("shows a fallback NAV's real last-update date (last_price_date), not the export date", () => {

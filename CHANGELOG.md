@@ -13,6 +13,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.20.5] — 2026-06-28
+
+### Fixed
+
+- **Daily per-holding moves now use the same whole-book two-date convention as the headline in both desktop and web.** Lagging NAV/mutual-fund holdings are forward-filled when a fresher peer has printed, so their stale price tick is dropped and only the appropriate FX revaluation remains; money-market rows still show dashes.
+- **The web companion now keeps EUR/USD frozen while forex is closed, even for forced refreshes.** This matches the desktop rule: live spot while the forex market is open, then the last settled close once it shuts.
+
 ## [4.20.4] — 2026-06-28
 
 ### Fixed
