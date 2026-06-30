@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [5.1.1] — 2026-06-30
+## [5.1.2] — 2026-06-30
 
 ### Fixed
 
@@ -28,6 +28,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   converted to EUR at the **trade-date** rate, so the payout is visible while
   the true cash flow stays zero. Normal (non money-market) reinvestments, whose
   `net_native` is the genuine cash used, are untouched.
+
+## [5.1.1] — 2026-06-30
+
+### Fixed
+
+- **The Settings → Live web companion "Publish now" button no longer freezes the
+  UI while the blob uploads.** The click handler built, encrypted, and uploaded
+  the snapshot synchronously on the UI processing loop, so the whole app stalled
+  for the duration of the network upload. It now offloads that work to a worker
+  thread via `run.io_bound` and shows an in-place spinner on the button while it
+  runs (`src/investment_dashboard/ui/pages/settings.py`), matching the
+  auto-publish-on-import path which already ran off the loop.
 
 ## [5.1.0] — 2026-06-30
 
