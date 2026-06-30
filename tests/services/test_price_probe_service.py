@@ -10,9 +10,7 @@ from investment_dashboard.services import price_probe_service as probe
 
 
 def test_yfinance_ok() -> None:
-    outcome = probe.probe_yfinance(
-        "VTI", fetcher=lambda _s: (date(2026, 1, 2), Decimal("250.5"))
-    )
+    outcome = probe.probe_yfinance("VTI", fetcher=lambda _s: (date(2026, 1, 2), Decimal("250.5")))
     assert outcome.verdict == "ok"
     assert outcome.price == Decimal("250.5")
     assert outcome.as_of == date(2026, 1, 2)

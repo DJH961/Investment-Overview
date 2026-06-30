@@ -40,6 +40,7 @@ from investment_dashboard.repositories import (
 )
 from investment_dashboard.services import (
     fx_service,
+    investing_power_service,
     metrics_service,
     positions_service,
     prices_service,
@@ -138,8 +139,15 @@ def _price_type(position: Position) -> str:
     return "market"
 
 
-def build_meta(context: ReadModelContext) -> dict[str, Any]:
-    """Top-level metadata block describing generation and currency context."""
+def build_meta(
+    context: ReadModelContext, *, investment_amount_eur: Decimal | None = None
+) -> dict[str, Any]:
+    """Top-level metadata block describing generation and currency context.
+
+    ``investment_amount_eur`` carries the desktop's "regular investment amount"
+    preference so the web companion can seed its own (device-local) override from
+    the single desktop source of truth, rather than silently diverging.
+    """
     return {
         "schema_version": SCHEMA_VERSION,
         "app_version": __version__,
@@ -148,6 +156,7 @@ def build_meta(context: ReadModelContext) -> dict[str, Any]:
         "display_currency": context.display_currency,
         "fx_pivot": "EUR",
         "fx_rate_eur_usd": dec(context.fx_rate_eur_usd),
+        "investment_amount_eur": dec(investment_amount_eur),
         "currency_note": (
             "EUR is an FX conversion reference, not the user's base currency. "
             "Each holding carries native_currency; USD is the booked currency "
@@ -441,7 +450,10 @@ def build_mobile_export(
         fx_rate_eur_to_display=context.fx_rate_eur_usd,
     )
     export: dict[str, Any] = {
-        "meta": build_meta(context),
+        "meta": build_meta(
+            context,
+            investment_amount_eur=investing_power_service.get_amount_eur(session),
+        ),
         "holdings": [
             _holding_dict(
                 position,

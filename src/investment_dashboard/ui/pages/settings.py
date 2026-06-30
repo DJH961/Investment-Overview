@@ -1642,15 +1642,11 @@ def _render_price_probe_controls() -> None:  # pragma: no cover - UI
             "ticker, the provider, or your Tiingo token is the problem. This "
             "spends nothing on the Tiingo budget and never touches the dashboard."
         ).classes("text-caption opacity-70").style("max-width:34rem")
-        symbol_in = (
-            ui.input("Symbol (e.g. VTI)").props("outlined dense").classes("w-full max-w-xs")
-        )
+        symbol_in = ui.input("Symbol (e.g. VTI)").props("outlined dense").classes("w-full max-w-xs")
         result = ui.column().classes("w-full q-mt-sm")
         with ui.row().classes("gap-sm items-center"):
             yf_btn = ui.button("Probe primary (yfinance)", icon="search").props("flat no-caps")
-            yf_btn.on_click(
-                lambda: _run_price_probe("yfinance", symbol_in, yf_btn, result)
-            )
+            yf_btn.on_click(lambda: _run_price_probe("yfinance", symbol_in, yf_btn, result))
             ti_btn = ui.button("Probe backup (Tiingo)", icon="backup").props("flat no-caps")
             ti_btn.on_click(lambda: _run_price_probe("tiingo", symbol_in, ti_btn, result))
 
@@ -2203,9 +2199,7 @@ def register() -> None:
                     "options change presentation only — they never alter your "
                     "transactions or move money.",
                 ).classes("text-caption opacity-70 q-mb-sm")
-                _render_display_prefs(
-                    current_currency, current_timezone, current_clock_format
-                )
+                _render_display_prefs(current_currency, current_timezone, current_clock_format)
             with collapsible_section(
                 "Analytics preferences",
                 icon="tune",
