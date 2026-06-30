@@ -1156,7 +1156,7 @@ class TestWeekSeries:
         # preserved alongside).
         _seed_eur_holding_for_week(session)
         after_close = datetime(2024, 6, 3, 20, 30, tzinfo=UTC)  # 16:30 ET — closed
-        lone_at = datetime(2024, 6, 3, 14, 17)  # off the picked-instant grid
+        lone_at = datetime(2024, 6, 3, 14, 17)  # off the 5-min grid: not overwritten by the fill
         intraday_repo.insert_sample(session, lone_at, Decimal("5555.00"))
         session.flush()
         seen: dict[str, date] = {}
@@ -1180,6 +1180,8 @@ class TestWeekSeries:
         _seed_eur_holding_for_week(session)
         sessions = iss.recent_trading_sessions(_NOW)
         stale_day = sessions[1]  # a completed, non-anchor session
+        # 14:17 is off the 5-min grid, so the dense re-pull fills around it rather
+        # than overwriting it at a colliding instant — proving the stray is kept.
         lone_at = datetime(stale_day.year, stale_day.month, stale_day.day, 14, 17)
         intraday_repo.insert_sample(session, lone_at, Decimal("4242.00"))
         session.flush()
