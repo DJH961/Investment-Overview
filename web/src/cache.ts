@@ -206,6 +206,83 @@ export function primeQuotesFromBars(
   return primed;
 }
 
+/**
+ * One blob-priced holding reshaped into a quote-cache seed. Carries everything a
+ * Twelve Data `/quote` would carry for the same symbol, so a primed blob price is
+ * graded for freshness (and repolled) exactly like a fetched quote.
+ */
+export interface ExportQuoteSeed {
+  /** The price ticker (export `price_symbol`). */
+  symbol: string;
+  /** Native last-known price (export `last_known_price_native`), as a string. */
+  price: string;
+  /** Native prior close (export `previous_close_native`), or null. */
+  previousClose: string | null;
+  /** The holding's native (booked) currency, e.g. `USD`/`EUR`. */
+  currency: string;
+  /**
+   * The instant the price was actually struck (the provider's `regularMarketTime`
+   * shipped as `last_price_time`, else the value-date's 16:00 ET close), epoch ms.
+   * This is the seed's `at` **and** `priceTime`, so the freshness ledger reads the
+   * blob price's true age rather than treating it as just-fetched.
+   */
+  strikeMs: number;
+  /** Trading day the price applies to (export `last_price_date`), or null. */
+  valueDate: string | null;
+  /**
+   * Provider market-state at the strike instant: `true` only for a market symbol
+   * struck mid-session (so {@link holdsSettledClose} still demands the post-close
+   * print), `false` for a settled close or a NAV publish.
+   */
+  marketOpen: boolean | null;
+}
+
+/**
+ * Seed the live quote cache from the decrypted blob's per-holding prices, so a
+ * price that arrived via the blob is graded for freshness — and repolled when the
+ * market state + its own age warrant — **exactly like a Twelve Data quote**.
+ *
+ * This is the blob sibling of {@link primeQuotesFromBars}: it folds each holding's
+ * exported `last_known_price_native` (with its strike instant, value-date and
+ * inferred market-state) into the same `QUOTE_KEY` cache the freshness ledger and
+ * {@link priceForHolding} read. Because every downstream rule then sees one
+ * uniform quote shape, no caller needs a special "is this a blob price?" branch:
+ * a fresh blob symbol rests on its rolling window while a stale one is repolled,
+ * per symbol, instead of the whole book being graded all-or-nothing.
+ *
+ * It only ever **extends** freshness, never rewrites history: a symbol is seeded
+ * only when its blob strike instant is strictly newer than the cached quote's
+ * instant (`priceTime`, falling back to `at`), so a genuinely fresher live quote
+ * already in cache is never clobbered by an older blob price. Seeds without a
+ * price are skipped. Returns the symbols actually seeded.
+ */
+export function primeQuotesFromExport(
+  seeds: Iterable<ExportQuoteSeed>,
+  storage: StorageLike | null = defaultStorage(),
+): string[] {
+  const file = readJson<QuoteCacheFile>(storage, QUOTE_KEY) ?? {};
+  const primed: string[] = [];
+  for (const seed of seeds) {
+    if (!seed.symbol) continue;
+    const existing = file[seed.symbol];
+    const knownInstant = existing ? (existing.priceTime ?? existing.at) : null;
+    // Only ever move freshness forward — never overwrite a newer genuine quote.
+    if (knownInstant !== null && seed.strikeMs <= knownInstant) continue;
+    file[seed.symbol] = {
+      price: seed.price,
+      previousClose: seed.previousClose,
+      currency: seed.currency,
+      at: seed.strikeMs,
+      priceTime: seed.strikeMs,
+      valueDate: seed.valueDate,
+      marketOpen: seed.marketOpen,
+    };
+    primed.push(seed.symbol);
+  }
+  if (primed.length > 0) writeJson(storage, QUOTE_KEY, file);
+  return primed;
+}
+
 /** The newest (largest-`t`) bar in a list, or null when the list is empty. */
 function latestBar(bars: Bar[]): Bar | null {
   let best: Bar | null = null;

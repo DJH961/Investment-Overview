@@ -897,7 +897,7 @@ function priceForHolding(
  * timestamp without a timezone offset is read defensively as UTC so a naive
  * desktop datetime can never drift by the viewer's local offset.
  */
-function strikeTimeMs(raw: string | null | undefined): number | null {
+export function strikeTimeMs(raw: string | null | undefined): number | null {
   if (raw == null) return null;
   const hasZone = /(?:[zZ]|[+-]\d\d:?\d\d)$/.test(raw);
   const ms = Date.parse(hasZone ? raw : `${raw}Z`);
