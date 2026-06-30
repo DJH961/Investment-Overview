@@ -8,6 +8,8 @@
  * "as of" chips, the "last pulled" stamp, the export timestamp).
  */
 
+import { timeZoneOption } from "./timezone";
+
 export type TimeFormat = "auto" | "12h" | "24h";
 
 const STORAGE_KEY = "iv.web.time_format";
@@ -46,11 +48,13 @@ export function setTimeFormat(value: TimeFormat): void {
 }
 
 /**
- * The `hour12` option to merge into `toLocaleTimeString` / `toLocaleString`
- * calls. Returns an empty object for `"auto"` so the locale default applies.
+ * The clock options to merge into `toLocaleTimeString` / `toLocaleString` calls.
+ * Combines the 12h/24h choice (`hour12`) with the device-local timezone override
+ * (`timeZone`, see `timezone.ts`), so every clock render honours both with a
+ * single spread. Returns an empty object for the all-"auto" case so the locale
+ * and device zone defaults apply.
  */
-export function clockOptions(): { hour12?: boolean } {
-  if (current === "12h") return { hour12: true };
-  if (current === "24h") return { hour12: false };
-  return {};
+export function clockOptions(): { hour12?: boolean; timeZone?: string } {
+  const hour12 = current === "12h" ? { hour12: true } : current === "24h" ? { hour12: false } : {};
+  return { ...hour12, ...timeZoneOption() };
 }

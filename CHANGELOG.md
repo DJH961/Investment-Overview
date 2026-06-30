@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [5.1.3] — 2026-06-30
+## [5.2.1] — 2026-06-30
 
 ### Fixed
 
@@ -40,6 +40,70 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   proxy was configured, even though Twelve Data serves the same daily NAV bars;
   it now runs whenever **either** pipe is available (Twelve Data first, Tiingo
   as the overflow fallback), matching the provider order used everywhere else.
+
+## [5.2.0] — 2026-06-30
+
+### Added
+
+- **Settings parity between the web companion and the desktop app.** A field-by-field
+  review of both Settings screens closed the relevant gaps in each direction while
+  keeping each platform's collapsible, minimizable Settings groups intact:
+  - **Desktop — clock format toggle.** Display preferences gains a 12-hour / 24-hour /
+    auto control for the header clock, persisted via the `clock_format` app-config key
+    (`src/investment_dashboard/services/clock_format_service.py`,
+    `src/investment_dashboard/ui/layout.py`,
+    `src/investment_dashboard/ui/pages/settings.py`).
+  - **Desktop — "probe a price service" diagnostic.** Connectivity can now run a
+    one-shot single-symbol quote against yfinance (primary) and Tiingo (fallback) and
+    report a plain verdict (ok / no-quote / not-configured / rate-limited / unreachable),
+    mirroring the web companion's probe
+    (`src/investment_dashboard/services/price_probe_service.py`,
+    `src/investment_dashboard/ui/pages/settings.py`).
+  - **Web — timezone override.** Appearance gains an optional timezone preset (auto +
+    curated zones); it feeds the existing clock format so a travelling phone can show a
+    fixed zone (`web/src/timezone.ts`, `web/src/time-format.ts`, `web/src/ui.ts`,
+    `web/src/app.ts`).
+  - **Web — regular investment amount seeded from the exported blob.** The web field now
+    falls back to the desktop-exported `meta.investment_amount_eur` (the single source of
+    truth) and only overrides it when the user sets a device-local value, so the two can
+    no longer silently disagree (`src/investment_dashboard/readmodels/mobile_export.py`,
+    `web/src/config.ts`, `web/src/types.ts`, `web/src/app.ts`).
+  - **Web — provider usage panel.** The Data providers group now shows a read-only
+    used/cap readout for Twelve Data (per minute, per day) and the Tiingo fallback
+    (per day), mirroring the desktop's live Tiingo usage panel
+    (`web/src/provider-usage.ts`, `web/src/ui.ts`, `web/src/app.ts`,
+    `web/src/styles.css`).
+
+### Fixed
+
+- **The web Settings "Activity" section is now a collapsible, minimizable group** like
+  every other Settings group, instead of the lone flat heading it used to be
+  (`web/src/app.ts`).
+- Documented the **intentional auto-update bounds divergence** (desktop counts in
+  seconds, the web companion in minutes for free-tier credit economy) so future changes
+  don't "fix" one to match the other (`src/investment_dashboard/services/auto_refresh.py`,
+  `web/src/config.ts`).
+
+## [5.1.3] — 2026-06-30
+
+### Fixed
+
+- **The per-graph reload (↻) now actually reloads _and sticks_, and it moved to
+  the top-left of the graph.** Tapping reload re-pulled the in-view live window's
+  bars and redrew, but the very next network-free re-select (switch to another
+  window and back) sprang straight off the cached export blob again, so the
+  reloaded curve vanished the instant you looked away. The live builder now
+  remembers, per chart and per range, that you reloaded a window and — on every
+  later re-select — skips the export springboard to rebuild from the freshly
+  pulled stored bars instead, so the reload persists going forward (with a safe
+  fallback to the springboard when the stored bars are too thin to draw, e.g. a
+  cold new session, so the graph never blanks). Crucially, a reload only "sticks"
+  when it came back **complete** — every intraday-priced holding had its bars; an
+  incomplete, free-tier-deferred reload (some holdings carried flat) is left
+  un-persisted so a shape-missing curve never snaps back over the fuller export.
+  The reload button is also repositioned to the **top-left** of the graph, set
+  apart from the range pills on the top-right.
+  (`web/src/ui.ts`, `web/src/app.ts`, `web/src/styles.css`).
 
 ## [5.1.2] — 2026-06-30
 
@@ -115,6 +179,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   genuinely up to date. The per-minute / per-day budget in `loadQuotes` caps the
   actual spend and defers the overflow, so a forced pull can never burn the
   reserve in one tap.
+
 ## [5.0.9] — 2026-06-30
 
 ### Fixed

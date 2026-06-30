@@ -34,6 +34,7 @@ from nicegui import ui
 from investment_dashboard import __version__
 from investment_dashboard.db import session_scope
 from investment_dashboard.services import (
+    clock_format_service,
     diagnostics_service,
     display_currency_service,
     theme_service,
@@ -303,7 +304,11 @@ def page_frame(title: str, *, current: str) -> Iterator[None]:
             now = timezone_service.now(session)
             # Drop the zone suffix (``%Z``) from the header clock — the user
             # picks the zone in Settings, so repeating it on every page is noise.
-            now_label = now.strftime("%Y-%m-%d %H:%M")
+            # The 12h/24h/auto choice is a persisted preference (parity with the
+            # web companion's clock-format toggle).
+            now_label = clock_format_service.format_clock(
+                now, clock_format_service.get_clock_format(session)
+            )
             now_tz = now.tzinfo
     except Exception:  # pragma: no cover - defensive
         initial_theme = None

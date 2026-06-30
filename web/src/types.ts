@@ -15,6 +15,13 @@ export interface ExportMeta {
   display_currency: string;
   fx_pivot: string;
   fx_rate_eur_usd: DecimalString | null;
+  /**
+   * The desktop's "regular investment amount" preference (EUR), so the web
+   * companion can seed its own device-local override from the single desktop
+   * source of truth instead of silently diverging. Absent/null on older exports
+   * (the web then keeps its own default/override). See `investment-amount.ts`.
+   */
+  investment_amount_eur?: DecimalString | null;
   currency_note: string;
 }
 

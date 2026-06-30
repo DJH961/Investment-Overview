@@ -33,6 +33,13 @@ _INTERVAL_KEY = "live_refresh_interval_seconds"
 #: Default cadence (seconds). Each tick only hits the network for instruments
 #: whose per-asset-class TTL has expired (see ``prices_service``), so a brisk
 #: default is cheap.
+#:
+#: NOTE (intentional divergence from the web companion): this desktop cadence is
+#: in **seconds** (default 60, range 15-3600) because the desktop pulls from the
+#: keyless yfinance feed with no per-credit budget. The web companion's matching
+#: "update prices every" knob is in **minutes** (default 15, range 1-240, see
+#: ``web/src/config.ts``) because each pull there spends a scarce Twelve Data
+#: free-tier credit. The differing units/defaults are deliberate -- do not align.
 DEFAULT_INTERVAL_SECONDS = 60
 #: Guard-rails for the user-editable interval: fast enough to feel live, but
 #: never so fast it hammers the free price feed, and capped at an hour.

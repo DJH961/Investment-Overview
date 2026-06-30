@@ -34,11 +34,13 @@ from investment_dashboard.repositories import (
 from investment_dashboard.services import (
     auto_refresh,
     benchmark_service,
+    clock_format_service,
     display_currency_service,
     fetch_report,
     instrument_enrichment_service,
     investing_power_service,
     logging_service,
+    price_probe_service,
     prices_service,
     provider_status,
     risk_free_service,
@@ -260,6 +262,19 @@ def _set_timezone(value: str) -> None:  # pragma: no cover - UI
         ui.notify(str(exc), type="negative")
         return
     ui.notify(f"Timezone set to {value}", type="positive")
+    ui.navigate.reload()
+
+
+def _set_clock_format(value: str) -> None:  # pragma: no cover - UI
+    """Persist the 12h/24h/auto header clock format and re-render the header."""
+    try:
+        with session_scope() as session:
+            stored = clock_format_service.set_clock_format(session, value)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    labels = {"auto": "Auto (locale)", "12h": "12-hour", "24h": "24-hour"}
+    ui.notify(f"Clock format set to {labels.get(stored, stored)}", type="positive")
     ui.navigate.reload()
 
 
@@ -960,7 +975,7 @@ def _render_reset_section() -> None:  # pragma: no cover - UI
 
 
 def _render_display_prefs(
-    current_currency: str, current_timezone: str
+    current_currency: str, current_timezone: str, current_clock_format: str
 ) -> None:  # pragma: no cover - UI
     with ui.row().classes("items-center gap-md"):
         ui.label("Primary display currency:").classes("text-body2")
@@ -984,6 +999,17 @@ def _render_display_prefs(
         ui.label(
             'Sets the clock shown in the header. "Local" follows this '
             "computer's timezone; pick any zone to override it.",
+        ).classes("text-caption opacity-70")
+    with ui.row().classes("items-center gap-md q-mt-sm"):
+        ui.label("Clock format:").classes("text-body2")
+        ui.toggle(
+            {"auto": "Auto", "12h": "12-hour", "24h": "24-hour"},
+            value=current_clock_format,
+            on_change=lambda e: _set_clock_format(e.value),
+        ).props("dense unelevated")
+        ui.label(
+            'How the header clock reads the time. "Auto" follows this '
+            "computer's locale; 12-hour shows AM/PM, 24-hour shows 00-23.",
         ).classes("text-caption opacity-70")
     with session_scope() as session:
         current_interval = auto_refresh.get_interval_seconds(session)
@@ -1549,6 +1575,82 @@ def _status_chip_props(status: str) -> tuple[str, str, str]:
     return ("help", "grey", "Unknown")
 
 
+def _probe_verdict_props(verdict: str) -> tuple[str, str, str]:
+    """Map a price-probe verdict to (icon, qcolor, human label)."""
+    mapping = {
+        "ok": ("check_circle", "positive", "Quote OK"),
+        "no-quote": ("help", "warning", "No quote for symbol"),
+        "not-configured": ("info", "grey", "Not configured"),
+        "rate-limited": ("hourglass_top", "warning", "Rate limited"),
+        "unreachable": ("error", "negative", "Unreachable"),
+    }
+    return mapping.get(verdict, ("help", "grey", verdict))
+
+
+def _render_price_probe_outcome(
+    container: ui.element, outcome: price_probe_service.ProbeOutcome
+) -> None:  # pragma: no cover - UI
+    """Render a single probe outcome (verdict chip + detail) into ``container``."""
+    icon, color, label = _probe_verdict_props(outcome.verdict)
+    container.clear()
+    with container, ui.card().classes("p-sm w-full").style("max-width:34rem"):
+        with ui.row().classes("items-center gap-sm"):
+            ui.icon(icon, color=color)
+            ui.label(f"{outcome.provider_label} · {outcome.symbol}").classes("text-subtitle2")
+            ui.badge(label, color=color).props("outline")
+        ui.label(outcome.detail).classes("text-caption").style("max-width:32rem")
+        ui.label(f"Took {outcome.duration_ms} ms.").classes("text-caption opacity-70")
+
+
+async def _run_price_probe(
+    provider: price_probe_service.ProbeProvider,
+    symbol_in: ui.input,
+    button: ui.button,
+    container: ui.element,
+) -> None:  # pragma: no cover - UI
+    """Fire a one-shot probe for the symbol against ``provider`` and render it."""
+    symbol = (symbol_in.value or "").strip().upper()
+    if not symbol:
+        ui.notify("Enter a symbol to probe", type="warning")
+        return
+
+    def _work() -> price_probe_service.ProbeOutcome:
+        if provider == "yfinance":
+            return price_probe_service.probe_yfinance(symbol)
+        from investment_dashboard.services.prices_service import (  # noqa: PLC0415
+            _resolve_tiingo_token,
+        )
+
+        return price_probe_service.probe_tiingo(symbol, token=_resolve_tiingo_token())
+
+    async with _button_busy(button):
+        try:
+            outcome = await run.io_bound(_work)
+        except Exception as exc:  # pragma: no cover - defensive
+            log.exception("Price probe failed")
+            ui.notify(f"Probe failed: {exc}", type="negative")
+            return
+    _render_price_probe_outcome(container, outcome)
+
+
+def _render_price_probe_controls() -> None:  # pragma: no cover - UI
+    """A one-shot "probe one symbol" diagnostic (yfinance primary / Tiingo backup)."""
+    with ui.expansion("Probe a price service", icon="troubleshoot").classes("w-full"):
+        ui.label(
+            "Fire a single live quote for one symbol and see the raw verdict — "
+            "useful when a price won't update and you need to know whether the "
+            "ticker, the provider, or your Tiingo token is the problem. This "
+            "spends nothing on the Tiingo budget and never touches the dashboard."
+        ).classes("text-caption opacity-70").style("max-width:34rem")
+        symbol_in = ui.input("Symbol (e.g. VTI)").props("outlined dense").classes("w-full max-w-xs")
+        result = ui.column().classes("w-full q-mt-sm")
+        with ui.row().classes("gap-sm items-center"):
+            yf_btn = ui.button("Probe primary (yfinance)", icon="search").props("flat no-caps")
+            yf_btn.on_click(lambda: _run_price_probe("yfinance", symbol_in, yf_btn, result))
+            ti_btn = ui.button("Probe backup (Tiingo)", icon="backup").props("flat no-caps")
+            ti_btn.on_click(lambda: _run_price_probe("tiingo", symbol_in, ti_btn, result))
+
+
 def _format_relative(at: datetime, *, tz: tzinfo | None = None) -> str:
     """Render a timestamp as both relative ("3 m ago") and absolute wall-clock.
 
@@ -1616,6 +1718,7 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                 "'Refresh FX rates' above, or wait for the next background tick."
             ).classes("text-caption opacity-70")
             _render_tiingo_fallback_controls()
+            _render_price_probe_controls()
             return
 
         with (
@@ -1633,6 +1736,7 @@ def _render_connectivity_section() -> None:  # pragma: no cover - UI
                     ui.label(ev.message).classes("text-caption")
 
         _render_tiingo_fallback_controls()
+        _render_price_probe_controls()
 
 
 def _render_tiingo_fallback_controls() -> None:  # pragma: no cover - UI
@@ -2092,6 +2196,7 @@ def register() -> None:
                 allocations = list(allocations_repo.list_allocations(session))
                 current_currency = display_currency_service.get_display_currency(session)
                 current_timezone = timezone_service.get_timezone(session)
+                current_clock_format = clock_format_service.get_clock_format(session)
                 benchmark_symbol = benchmark_service.get_symbol(session)
                 rf_snapshot = risk_free_service.get_risk_free_rate(
                     session,
@@ -2108,7 +2213,7 @@ def register() -> None:
                     "options change presentation only — they never alter your "
                     "transactions or move money.",
                 ).classes("text-caption opacity-70 q-mb-sm")
-                _render_display_prefs(current_currency, current_timezone)
+                _render_display_prefs(current_currency, current_timezone, current_clock_format)
             with collapsible_section(
                 "Analytics preferences",
                 icon="tune",

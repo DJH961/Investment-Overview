@@ -27,6 +27,7 @@ import {
   parseProviderLimit,
   parseUpdateMinutes,
   parseInvestmentAmount,
+  hasStoredInvestmentAmount,
   resolveBlobUrl,
   resolveMetaUrl,
   resolvePriceProxyUrl,
@@ -252,8 +253,10 @@ import {
   markHoldingsUpdating,
   renderDashboard,
   renderExtendedGraphsToggle,
+  renderProviderUsage,
   renderThemeToggle,
   renderTimeFormatToggle,
+  renderTimezoneToggle,
   renderTransactionsToggle,
   type LiveGraphHooks,
 } from "./ui";
@@ -2908,7 +2911,10 @@ export class App {
       step: "1",
       autocomplete: "off",
       placeholder: String(DEFAULT_INVESTMENT_AMOUNT_EUR),
-      value: String(config.investmentAmountEur),
+      // Show the effective amount: the device override if set, else the value
+      // seeded from the desktop export, else the default. Saving any number
+      // makes it a sticky device-local override.
+      value: String(this.effectiveInvestmentAmountEur()),
     });
     // Data-provider rate limits (Settings only). Each defaults to the provider's
     // documented free-tier value, *recommended* for a free account but not forced:
@@ -3054,6 +3060,7 @@ export class App {
         settingsGroup(
           "Data providers",
           [
+            renderProviderUsage(),
             field("Twelve Data — per minute", tdPerMinute, `Free tier ${DEFAULT_TWELVE_DATA_PER_MINUTE}; raise on a paid plan.`),
             field("Twelve Data — per day", tdPerDay, `Free tier ${DEFAULT_TWELVE_DATA_PER_DAY}; raise on a paid plan.`),
             field("Tiingo — per hour", tiingoPerHour, `Free tier ${DEFAULT_TIINGO_PER_HOUR}; raise on a paid plan.`),
@@ -3072,9 +3079,14 @@ export class App {
       field("Theme", renderThemeToggle(), "System, light or dark."),
       field("Clock format", renderTimeFormatToggle(), "12-hour, 24-hour, or auto."),
       field(
+        "Clock timezone",
+        renderTimezoneToggle(),
+        "Which zone the on-screen times read in. Auto follows this device.",
+      ),
+      field(
         "Regular investment amount (€)",
         investmentAmount,
-        `Recurring euros you invest; powers the "bang for the buck" panel. Default €${DEFAULT_INVESTMENT_AMOUNT_EUR}.`,
+        `Recurring euros you invest; powers the "bang for the buck" panel. Seeded from your desktop export until you set it here. Default €${DEFAULT_INVESTMENT_AMOUNT_EUR}.`,
       ),
     ];
     const securityFields: Array<Node | string> = [
@@ -3199,15 +3211,18 @@ export class App {
       );
     }
     // Activity: the Transactions tab is opt-out — an export may omit the ledger,
-    // so this lets the user hide the tab entirely (Settings only).
+    // so this lets the user hide the tab entirely (Settings only). Wrapped in a
+    // collapsible group like every other Settings section so it minimizes and
+    // remembers its open/closed state.
     if (settingsMode) {
       formChildren.push(
-        h("h2", { class: "settings-section" }, ["Activity"]),
-        field(
-          "Transactions tab",
-          renderTransactionsToggle(),
-          "Show the Activity tab with your transaction ledger. If your export was published without transactions the tab shows a short notice — hide it here. Takes effect when you return to the dashboard.",
-        ),
+        settingsGroup("Activity", [
+          field(
+            "Transactions tab",
+            renderTransactionsToggle(),
+            "Show the Activity tab with your transaction ledger. If your export was published without transactions the tab shows a short notice — hide it here. Takes effect when you return to the dashboard.",
+          ),
+        ]),
       );
     }
     // Maintenance: two manual escape hatches for when prices look stuck. Both
@@ -3628,6 +3643,23 @@ export class App {
   }
 
   /**
+   * The regular-investment amount (EUR) to feed the render layer. An explicit
+   * device-local choice always wins (a sticky override); otherwise we seed from
+   * the desktop export's `meta.investment_amount_eur` so the desktop stays the
+   * single source of truth; failing that, the built-in default. Keeps the web
+   * field from silently disagreeing with the desktop the user actually edits.
+   */
+  private effectiveInvestmentAmountEur(): number {
+    if (hasStoredInvestmentAmount()) return this.state.config.investmentAmountEur;
+    const fromBlob = this.state.data?.meta.investment_amount_eur;
+    if (fromBlob != null && fromBlob !== "") {
+      const n = Number(fromBlob);
+      if (Number.isFinite(n) && n > 0) return parseInvestmentAmount(fromBlob);
+    }
+    return this.state.config.investmentAmountEur;
+  }
+
+  /**
    * Render the dashboard from baked-in sample data — no key, passphrase, or
    * network. A banner explains it is synthetic and carries the persona switcher,
    * the frozen/live-sim toggle and the guided-tour button. "Exit demo" (the
@@ -3789,6 +3821,7 @@ export class App {
       h("h2", { class: "settings-section" }, ["Appearance"]),
       field("Theme", renderThemeToggle(), "Switch between system, light and dark themes."),
       field("Clock format", renderTimeFormatToggle(), "Show times as 12-hour (AM/PM) or 24-hour. Auto follows your device locale."),
+      field("Clock timezone", renderTimezoneToggle(), "Which zone the on-screen times read in. Auto follows this device."),
       field(
         "Currency",
         h("p", { class: "field-static muted" }, ["Use the € / $ toggle in the topbar to flip the whole dashboard between EUR and USD."]),
@@ -7399,7 +7432,7 @@ export class App {
     }
     // Mirror the configured regular investment amount into the render-layer store
     // so the USD investing-power panel can read it without threading config through.
-    setInvestmentAmountEur(this.state.config.investmentAmountEur);
+    setInvestmentAmountEur(this.effectiveInvestmentAmountEur());
     this.mount(
       renderDashboard(
         model,
@@ -7569,13 +7602,21 @@ export class App {
         const doSession = async () => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
         const forceFetch = opts?.forceFetch ?? false;
+        // After the user reloads this window, every later network-free re-select
+        // asks to skip the export springboard and rebuild from the freshly-pulled
+        // stored bars instead, so the reload sticks rather than snapping back to
+        // the cached export. We still keep the springboard as a *fallback* when
+        // the stored bars turn out too thin to draw (e.g. a cold new day).
+        const preferStored = opts?.preferStored ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
         // Springboard off the exported session first — instant paint, no fetch —
         // and only build live when the export is absent or too stale. A per-graph
         // refresh tap (`forceFetch`) deliberately skips the springboard so the
-        // windowed fetcher actually re-pulls today's bars (Web-UI track O4(b)).
-        const sprung = forceFetch
+        // windowed fetcher actually re-pulls today's bars (Web-UI track O4(b)); a
+        // post-reload `preferStored` re-select skips it too so the reconstructed
+        // (reloaded) curve wins over the cached export.
+        const sprung = forceFetch || preferStored
           ? null
           : springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
         if (forceFetch) {
@@ -7606,7 +7647,16 @@ export class App {
                 : "1D graph: reused stored session bars (no live pull, 0 credits).",
             );
           }
-          if (curve.points.length < 2) return null;
+          if (curve.points.length < 2) {
+            // `preferStored` skipped the springboard to make a reload stick, but
+            // the stored bars can't draw (e.g. a cold new session): fall back to
+            // the exported springboard so the graph never blanks.
+            if (preferStored) {
+              const fallback = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
+              if (fallback) return { points: fallback };
+            }
+            return null;
+          }
           // Only surface the coverage caption once the market has shut: a full day
           // is expected by then, so a flat-for-want-of-bars holding is genuinely
           // worth flagging (scenario C). While open — and especially warming up —
@@ -7627,6 +7677,9 @@ export class App {
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
         const forceFetch = opts?.forceFetch ?? false;
+        // See the 1D builder: after a reload, prefer the freshly-pulled stored
+        // bars over the cached exported week sleeve so the reload sticks.
+        const preferStored = opts?.preferStored ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
         // The current day's slice of the week must be the same dense 1D session the
@@ -7662,7 +7715,7 @@ export class App {
         if (forceFetch) {
           this.pollLog("graph", "1W graph: reloading — re-pulling the week's bars on request.");
         }
-        if (sprung && !forceFetch) {
+        if (sprung && !forceFetch && !preferStored) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
           return this.harvestWeekCloses(capWeekToSessionClose(sprung));
         }
@@ -7698,7 +7751,15 @@ export class App {
                 : "1W graph: reused stored week bars (no live pull, 0 credits).",
             );
           }
-          if (curve.points.length < 2) return null;
+          if (curve.points.length < 2) {
+            // `preferStored` skipped the cached week-sleeve reuse to make a reload
+            // stick, but the stored bars can't draw: fall back to the springboard
+            // sleeve so the week graph never blanks.
+            if (preferStored && sprung) {
+              return this.harvestWeekCloses(capWeekToSessionClose(sprung));
+            }
+            return null;
+          }
           return this.harvestWeekCloses(capWeekToSessionClose(curve.points));
         } catch {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.", "warn");

@@ -81,8 +81,10 @@ import {
   signClass,
 } from "./format";
 import { computeCurrencyEffect } from "./currency-effect";
+import { buildProviderUsage } from "./provider-usage";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 import { getTimeFormat, setTimeFormat, type TimeFormat } from "./time-format";
+import { getTimezone, PRESET_TIMEZONES, setTimezone } from "./timezone";
 import {
   canConvertToUsd,
   convertFromEur,
@@ -2573,10 +2575,17 @@ export interface LiveCurveChart {
  * explicitly tapped the per-graph refresh button, so re-pull the in-view window's
  * bars from the live windowed fetcher even when a cached/springboard curve exists
  * (Web-UI track O4(b)).
+ *
+ * `opts.preferStored` makes a *reload stick*: once the user has tapped reload for
+ * a window, every later network-free re-select of that window asks the builder to
+ * skip the exported-blob springboard and rebuild from the freshly-pulled stored
+ * bars instead — so switching away and back shows the reloaded curve, not the
+ * cached export. The builder falls back to the springboard only when the stored
+ * bars are too thin to draw, so a cold day never blanks the graph.
  */
 export type LiveCurveBuilder = (
   range: LiveRange,
-  opts?: { regenerateOnly?: boolean; forceFetch?: boolean },
+  opts?: { regenerateOnly?: boolean; forceFetch?: boolean; preferStored?: boolean },
 ) => Promise<LiveCurveChart | null>;
 
 /**
@@ -2605,9 +2614,9 @@ export interface LiveGraphHooks {
    * **zero network**) — every UI interaction (range toggle, graph click) passes
    * it so chart interaction never fetches; only the initial paint may pull.
    */
-  session: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean }) => Promise<LiveSessionResult | null>;
+  session: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean; preferStored?: boolean }) => Promise<LiveSessionResult | null>;
   /** Build the live 1W (daily-close) curve points, or null when unavailable. */
-  week: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean }) => Promise<CurvePoint[] | null>;
+  week: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean; preferStored?: boolean }) => Promise<CurvePoint[] | null>;
 }
 
 /** One selectable preset: either a history slice or a live (fetched) curve. */
@@ -2826,7 +2835,12 @@ function chartWithTimeframe(
     };
     let built: LiveCurveChart | null = null;
     try {
-      built = await live(range, { regenerateOnly, forceFetch });
+      // Once this window has been reloaded, every later network-free re-select
+      // prefers the freshly-pulled stored bars over the cached export springboard
+      // so the reload sticks. A forceFetch tap is itself a reload, so it doesn't
+      // need the hint (it already bypasses the springboard).
+      const preferStored = !forceFetch && isGraphReloaded(persistKey, range);
+      built = await live(range, { regenerateOnly, forceFetch, preferStored });
     } catch {
       built = null;
     }
@@ -2879,6 +2893,15 @@ function chartWithTimeframe(
     wrap.replaceChildren(...children);
     setWrapRefreshing(false);
     shownLive = { range, complete };
+    // A user-tapped reload "sticks" only when it actually drew a *complete*
+    // curve — every intraday-priced holding had its bars. Persisting an
+    // incomplete reload (free-tier budget deferred some symbols, so they're
+    // carried flat) would make a graph that is *missing shape* snap back on every
+    // later re-select instead of the fuller export springboard — exactly the
+    // "looks nothing like the real graph" trap. So we remember the reload only
+    // when it's whole; an incomplete reload is left un-persisted and the user can
+    // tap again once the deferred bars arrive.
+    if (forceFetch && complete) markGraphReloaded(persistKey, range);
     rememberSize();
     // Now that the live curve is drawn, refine the headline to the growth the
     // line itself shows (1D from its previous-close reference, 1W from its first
@@ -2966,7 +2989,6 @@ function chartWithTimeframe(
     buttons.push(button);
     controls.appendChild(button);
   });
-  controls.appendChild(refreshBtn);
   // Reopen the remembered window (by label); default to the full history. This
   // sole initial selection is not user-initiated, so it may fetch for first paint.
   const savedLabel = storageKey ? loadStringPref(storageKey) : null;
@@ -2974,10 +2996,47 @@ function chartWithTimeframe(
   const initial = savedIndex >= 0 ? savedIndex : options.length - 1;
   select(initial, false, false);
 
-  return h("div", { class: "chart-block" }, [controls, wrap]);
+  // The per-graph reload (↻) lives at the **top-left of the graph**, set apart
+  // from the range pills (which stay top-right). It overlays the chart-block's
+  // top-left corner — a direct child of the block, so it survives the chart-wrap
+  // redraws that `applyLive` does — and the empty left half of the range strip
+  // means it never collides with a pill.
+  return h("div", { class: "chart-block" }, [refreshBtn, controls, wrap]);
 }
 
 const CHART_RANGE_KEY_PREFIX = "iv.web.chartRange.";
+
+/**
+ * localStorage prefix for the per-chart, per-range "the user reloaded this
+ * window" marker. Once set, every later network-free re-select of that window
+ * asks the live builder to skip the exported-blob springboard and rebuild from
+ * the freshly-pulled stored bars instead — so a reload genuinely sticks (the
+ * cached export no longer snaps back when you switch away and return). Persisted
+ * (not in-memory) so it survives the full re-render a refresh / currency toggle
+ * triggers as well as a page reload, until the device's graph data is cleared.
+ */
+const CHART_RELOADED_KEY_PREFIX = "iv.web.chartReloaded.";
+
+/** Build the reloaded-marker storage key for a chart window, or null without a persist key. */
+function reloadedKey(persistKey: string | null | undefined, range: LiveRange): string | null {
+  return persistKey ? `${CHART_RELOADED_KEY_PREFIX}${persistKey}.${range}` : null;
+}
+
+/**
+ * Remember that the user reloaded a live window, so subsequent re-selects prefer
+ * the freshly-pulled stored bars over the cached springboard. A no-op without a
+ * persist key (an unkeyed chart can't survive a re-render anyway).
+ */
+export function markGraphReloaded(persistKey: string | null | undefined, range: LiveRange): void {
+  const key = reloadedKey(persistKey, range);
+  if (key) saveBoolPref(key, true);
+}
+
+/** Whether the user has reloaded this live window (so a re-select should prefer stored bars). */
+export function isGraphReloaded(persistKey: string | null | undefined, range: LiveRange): boolean {
+  const key = reloadedKey(persistKey, range);
+  return key ? loadBoolPref(key, false) : false;
+}
 
 /** localStorage prefix for the remembered rendered height of each persisted chart. */
 const CHART_HEIGHT_KEY_PREFIX = "iv.web.chartHeight.";
@@ -5076,6 +5135,63 @@ export function renderTimeFormatToggle(): HTMLElement {
     setTimeFormat((select.value as TimeFormat) || "auto");
   });
   return select;
+}
+
+/**
+ * Self-contained timezone-override picker (Auto / a curated list of IANA zones).
+ * Like the clock-format toggle it persists its own choice and the new zone takes
+ * effect the next time the dashboard renders (e.g. on returning from Settings).
+ * Mirrors the desktop app's timezone preference.
+ */
+export function renderTimezoneToggle(): HTMLElement {
+  const labelFor = (zone: string): string => zone.replace(/_/g, " ").replace("/", " · ");
+  const options = [h("option", { value: "auto" }, ["Auto (device)"])];
+  for (const zone of PRESET_TIMEZONES) {
+    options.push(h("option", { value: zone }, [labelFor(zone)]));
+  }
+  const current = getTimezone();
+  // A previously-imported custom zone (not in the preset list) still shows up as
+  // its own selected option so the user sees what's in effect.
+  if (current !== "auto" && !PRESET_TIMEZONES.includes(current)) {
+    options.push(h("option", { value: current }, [labelFor(current)]));
+  }
+  const select = h("select", { class: "select", "data-action": "timezone" }, options) as HTMLSelectElement;
+  select.value = current;
+  select.setAttribute("aria-label", "Clock timezone");
+  select.addEventListener("change", () => {
+    setTimezone(select.value || "auto");
+  });
+  return select;
+}
+
+/**
+ * Read-only **provider usage** panel for the Settings "Data providers" group.
+ * Mirrors the desktop app's live Tiingo usage readout: it shows how much of each
+ * provider's budget has been spent against the configured cap (Twelve Data per
+ * minute and per day, plus the Tiingo fallback per day), with an "at limit"
+ * badge when a window is exhausted. Purely informational — it reads the same
+ * credit ledgers the live-data budget keeps and spends nothing.
+ */
+export function renderProviderUsage(): HTMLElement {
+  const usage = buildProviderUsage();
+  const row = (label: string, w: { used: number; cap: number; resets: string }): HTMLElement => {
+    const children: Array<Node | string> = [
+      h("span", { class: "usage-label" }, [label]),
+      h("span", { class: "usage-count" }, [`${w.used} / ${w.cap}`]),
+      h("span", { class: "usage-resets" }, [`resets ${w.resets}`]),
+    ];
+    if (w.used >= w.cap) children.push(h("span", { class: "usage-badge" }, ["at limit"]));
+    return h("div", { class: "usage-row" }, children);
+  };
+  return h("div", { class: "field provider-usage", role: "group", "aria-label": "Provider usage" }, [
+    h("span", { class: "field-label" }, ["Usage this period"]),
+    row("Twelve Data — minute", usage.twelveDataPerMinute),
+    row("Twelve Data — day", usage.twelveDataPerDay),
+    row("Tiingo — day", usage.tiingoPerDay),
+    h("span", { class: "field-hint" }, [
+      "Live spend against your caps. Twelve Data is the primary live feed; Tiingo is the fallback.",
+    ]),
+  ]);
 }
 
 /**

@@ -133,6 +133,23 @@ h2 { font-size: 1.02rem; margin: 0; letter-spacing: -0.01em; }
 .field { display: grid; gap: 0.3rem; margin: 0.9rem 0; }
 .field-label { font-weight: 600; font-size: 0.92rem; }
 .field-hint { color: var(--muted); font-size: 0.8rem; }
+.provider-usage .usage-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+}
+.provider-usage .usage-label { color: var(--muted); min-width: 9.5rem; }
+.provider-usage .usage-count { font-weight: 600; font-variant-numeric: tabular-nums; }
+.provider-usage .usage-resets { color: var(--muted); font-size: 0.78rem; }
+.provider-usage .usage-badge {
+  color: var(--bad, #c0392b);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 input {
   font: inherit;
   padding: 0.7rem 0.8rem;
@@ -1546,8 +1563,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   min-height: 0;
 }
 /* Time-range presets above a chart (mobile-first: a small wrapping button row). */
-.chart-block { display: grid; gap: 0.5rem; }
-.chart-range { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+.chart-block { display: grid; gap: 0.5rem; position: relative; }
+.chart-range { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; padding-left: 2.1rem; }
 .chart-range-btn {
   font: inherit;
   font-size: 0.74rem;
@@ -1569,20 +1586,26 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, var(--card));
 }
-/* Web-UI track O4(b): the per-graph "refresh bars" button sits after the range
-   pills and re-pulls the in-view live window. A circular, glyph-only icon action
-   — visually distinct from the pill-shaped range selectors and set slightly apart
-   so it never reads as a sixth range — using the same ↻ glyph as the global
-   Refresh button for a consistent "refresh" vocabulary. The glyph spins while a
-   pull is in flight (motion-reduced users get a static disabled state instead). */
+/* Web-UI track O4(b): the per-graph "refresh bars" button. It re-pulls the
+   in-view live window and now lives at the **top-left of the graph** — absolutely
+   positioned over the chart block's top-left corner, set apart from the range
+   pills (which stay top-right), so it reads as the graph's own reload control
+   rather than a sixth range. A circular, glyph-only icon action using the same ↻
+   glyph as the global Refresh button for a consistent "refresh" vocabulary. The
+   glyph spins while a pull is in flight (motion-reduced users get a static
+   disabled state instead). Being a direct child of `.chart-block` (not the
+   redrawn chart-wrap) it survives every live redraw. */
 .chart-range-refresh {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
   width: 1.7rem;
   height: 1.7rem;
   padding: 0;
-  margin-left: 0.45rem;
   color: var(--muted);
 }
 /* The button is `hidden` on the static history slices (1M/1Y/All) — nothing to
