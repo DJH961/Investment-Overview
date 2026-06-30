@@ -578,27 +578,6 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: thu0030 })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
-  it("rests instead of re-polling once the chase backoff has armed", () => {
-    // 17:30 ET Wed — closed, behind Wednesday's NAV (we only hold Tuesday's), but
-    // the chase has armed its cooldown (a NAV that simply is not published yet, so
-    // further hammering is pointless). Rest on the market-day window rather than
-    // returning the short poll window — this is what stops the after-hours loop.
-    const now = wed(22, 30);
-    const at = wed(22, 0); // when Tuesday's NAV was last observed
-    const ttl = navCacheTtlMs({ valueDate: "2024-01-09", at }, { now, chaseSuppressed: true });
-    expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - at);
-    expect(ttl).not.toBe(DEFAULT_CACHE_TTL_MS);
-  });
-
-  it("chases again on the short window when the cooldown is not armed", () => {
-    // Same behind-the-NAV state, but chaseSuppressed=false (no armed cooldown) →
-    // poll on the short window exactly as before, so the first tries still happen.
-    const now = wed(22, 30);
-    expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now, chaseSuppressed: false })).toBe(
-      DEFAULT_CACHE_TTL_MS,
-    );
-  });
-
   it("chases an unknown (uncached) value-date after the close", () => {
     expect(navCacheTtlMs(null, { now: wed(22, 30) })).toBe(DEFAULT_CACHE_TTL_MS);
     expect(navCacheTtlMs({ valueDate: null }, { now: wed(22, 30) })).toBe(DEFAULT_CACHE_TTL_MS);

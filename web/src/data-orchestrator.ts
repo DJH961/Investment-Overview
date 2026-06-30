@@ -158,9 +158,11 @@ export interface PullPlan {
  *   symbol once the close is in hand — so the executor's per-symbol skip, not the
  *   freshness tier, has the final say.
  * - **`auto`** — the steady cadence: identical table + overlays, fully gated, so
- *   a tick that finds everything fresh pulls nothing — except the moment the
- *   market closes with the day's NAV still awaited, when the `nav` leg is due at
- *   once (Overlay 0a) rather than after a further interval.
+ *   a tick that finds everything fresh pulls nothing. A NAV awaited after the
+ *   close is **not** special-cased here: the graded truth-table folds it into the
+ *   normal cadence (closed + NAV missing ⇒ the `nav` leg is due once the data ages
+ *   past one interval, for the rest of the evening), so an awaited NAV refreshes on
+ *   the same schedule as every other symbol instead of being chased every round.
  */
 export function planPull(ctx: PullContext): PullPlan {
   if (ctx.kind === "reset") {
@@ -185,25 +187,7 @@ export function planPull(ctx: PullContext): PullPlan {
   const legs: PullLegs = { ...graded.legs };
   const notes: string[] = [];
 
-  // Overlay 0a — NAV-as-soon-as-closed (every cadence, auto included). The instant
-  // the regular session closes the day's NAV funds begin publishing and are the
-  // ONLY price that can still change, so whenever the market is shut and today's
-  // NAV is not yet in hand the `nav` leg is due — a fresh quote book must NOT keep
-  // the tier at `fresh` and starve the NAV pull until the next interval has
-  // elapsed. The leg self-clears the moment the NAV lands (`navHeldForToday`), and
-  // the executor re-clamps each symbol against the NAV cache TTL + per-symbol NAV
-  // chase backoff (`App.navChaseBackoff` → `navCacheTtlMs`'s `chaseSuppressed`), so
-  // turning it on the moment it is awaited is safe and bounded: because NAV prices
-  // are not always there (a fund may publish hours late or skip a day), once a few
-  // fruitless tries arm that backoff the executor rests the fund instead of
-  // re-chasing it every round — the loop/loud "auto-updating" this overlay would
-  // otherwise drive.
-  if (ctx.market === "closed" && !ctx.freshness.navHeldForToday && !legs.nav) {
-    legs.nav = true;
-    notes.push("NAV due (market closed, awaiting today's NAV)");
-  }
-
-  // Overlay 0b — manual relevance. A manual tap is driven by RELEVANCE, never
+  // Overlay 0 — manual relevance. A manual tap is driven by RELEVANCE, never
   // freshness: a fresh symbol must NEVER swallow a tap (only the upstream
   // double-click cooldown can — see `manualRefreshDecision`). There is a reason
   // the user asked, so the relevant price legs are forced on regardless of the
@@ -211,7 +195,7 @@ export function planPull(ctx: PullContext): PullPlan {
   // a tap with everything already settled still spends nothing. Relevance by
   // market phase mirrors what can actually have moved:
   //   - market OPEN          → market symbols move ⇒ force quotes (NAV can't strike);
-  //   - CLOSED, NAV awaited   → only NAVs can still change ⇒ NAV only (Overlay 0a);
+  //   - CLOSED, NAV awaited   → only NAVs can still change ⇒ NAV only;
   //   - CLOSED, NAV in hand    → nothing is mid-move ⇒ re-verify ALL symbols (quotes + NAV).
   if (ctx.kind === "manual") {
     if (ctx.market === "open") {
@@ -231,9 +215,12 @@ export function planPull(ctx: PullContext): PullPlan {
         legs.nav = true;
         notes.push("NAV forced (manual: all symbols)");
       }
+    } else if (!legs.nav) {
+      // Closed with today's NAV still awaited: only the NAVs can have moved since
+      // the close (market symbols hold the settled close), so the tap is NAV-only.
+      legs.nav = true;
+      notes.push("NAV forced (manual: awaiting today's NAV)");
     }
-    // CLOSED with NAV still awaited needs no quotes leg here: Overlay 0a already lit
-    // the NAV leg, and market symbols hold the settled close, so the tap is NAV-only.
   }
 
   // Overlay 1 (O3) — the bar **staleness** promotion is the SOLE 1D-bar authority
@@ -248,7 +235,7 @@ export function planPull(ctx: PullContext): PullPlan {
   //   - **not** due ⇒ drop the single-session bar leg; breadcrumbs carry the line
   //     to the next promotion.
   // A **manual** tap is never a bar promotion (the global manual button is a pure
-  // quote round — relevance, Overlay 0b, forces its quotes): it neither promotes a
+  // quote round — relevance, Overlay 0, forces its quotes): it neither promotes a
   // fresh bar nor suppresses its quotes here. The gate is the 1D authority only: it
   // never strips a multi-session history window (`weekBars`, the `outdated` heavy
   // gap), so a stale round in a non-due window still backfills missing history.

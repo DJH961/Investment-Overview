@@ -555,14 +555,6 @@ export function manualRefreshDecision(args: {
  */
 const FETCHABLE_NAV_CLASSES = new Set(["mutual_fund"]);
 
-/**
- * Series-backoff key for a NAV fund's quote chase. Namespaced (`navquote:`) so it
- * never collides with the live-graph time-series keys that share the same store,
- * yet is still wiped by the global {@link clearAllSeriesBackoff} on a hard
- * refresh. See {@link App.navChaseBackoff}.
- */
-const navChaseKey = (symbol: string): string => `navquote:${symbol}`;
-
 interface SessionState {
   config: AppConfig;
   passphrase: string | null;
@@ -665,20 +657,6 @@ export class App {
    * cannot drive an infinite burst.
    */
   private deferredQueue = new DeferredQueue();
-  /**
-   * Per-symbol negative-result memo for **chasing a not-yet-published NAV**.
-   * NAV prices are not always there: after the close a fund's settled NAV can
-   * land hours late or not at all that day, so a NAV we keep attempting but can't
-   * price would otherwise be re-polled every round (the "constant loop / very
-   * loud auto-updating, waiting for holdings" the user flagged). Reusing the
-   * shared {@link cacheSeriesBackoff} (3 quick tries, then a 30-min wall-clock
-   * cooldown, persisted) we strike each fruitless NAV chase and, once it arms,
-   * {@link navCacheTtlMs} rests that fund on its market-day window until the
-   * cooldown lapses — try hard briefly, then be reasonable and quiet. A NAV that
-   * does land clears its memo, and the Settings hard refreshes
-   * ({@link clearAllSeriesBackoff}) wipe it so an explicit tap re-chases at once.
-   */
-  private navChaseBackoff = cacheSeriesBackoff();
   /**
    * Per-holding update-status signals threaded into the holdings render so each
    * card narrates its own price-pull cycle:
@@ -4541,15 +4519,13 @@ export class App {
           // NAV fund: while the market is open it cannot strike, so rest; once it
           // closes, poll like a normal symbol until the settled session's NAV is
           // in hand (no upper catch-up cap — catches a late NAV, even past midnight).
-          // But NAV prices are not always there: once the chase has armed its
-          // cooldown (a few fruitless tries for a NAV not yet published) we rest
-          // until it lapses instead of re-polling every round.
+          // The poll uses the standard auto-update interval, so the fund refreshes
+          // on the same cadence as every other symbol rather than on its own.
           return navCacheTtlMs(cached?.quote, {
             now: now.getTime(),
             marketOpen: isUsMarketOpen(now),
             shortTtlMs: cacheTtlMs,
             longTtlMs: DEFAULT_NAV_CACHE_TTL_MS,
-            chaseSuppressed: this.navChaseBackoff.suppressed(navChaseKey(symbol), now.getTime()),
           });
         }
         // Market symbol: while the exchange is shut and we already hold the latest
@@ -5212,19 +5188,6 @@ export class App {
       const landedAt = Date.now();
       for (const symbol of quoteLoad.report.fetched) {
         this.holdingUpdatedAt.set(symbol, landedAt);
-      }
-      // NAV chase backoff: a NAV fund we *attempted* but couldn't price this round
-      // (it is in `failed`, not merely budget-`deferred`) is one whose settled NAV
-      // simply is not published yet — NAV prices are not always there. Strike it so
-      // that, after a few quick tries, its chase arms a cooldown and stops being
-      // re-polled every round (no more after-hours "constant loop / loud auto-
-      // updating"); a NAV that did land — here or via the Tiingo fallback absorbed
-      // above — clears its memo so it rests on the normal market-day window again.
-      for (const symbol of quoteLoad.report.fetched) {
-        if (this.lastNavSymbols.has(symbol)) this.navChaseBackoff.succeed(navChaseKey(symbol));
-      }
-      for (const symbol of quoteLoad.report.failed) {
-        if (this.lastNavSymbols.has(symbol)) this.navChaseBackoff.fail(navChaseKey(symbol), landedAt);
       }
       this.holdingQueued = new Set(quoteLoad.report.deferred);
       // Resolve each deferred symbol's place in the free-tier queue into a

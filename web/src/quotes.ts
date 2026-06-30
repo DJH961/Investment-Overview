@@ -145,20 +145,6 @@ export interface NavRefreshOptions {
    * just a backstop.
    */
   longTtlMs?: number;
-  /**
-   * Whether this NAV's chase is in an **armed cooldown** — we have already tried
-   * to fetch the (not-yet-published) settled NAV enough times that hammering it
-   * again right now is pointless. NAV prices are simply not always there: a fund
-   * publishes its NAV only once, often hours after the close and sometimes not at
-   * all on a given day. So once the chase is suppressed we **rest** (on the
-   * market-day window) instead of re-polling every round — the fix for the
-   * "constant loop / very loud auto-updating, waiting for holdings" the user hit
-   * after the close — and try again only once the cooldown elapses (which flips
-   * this back to false). The arming/cooldown/strike-count logic lives in the
-   * caller's shared series backoff; this flag is just its verdict. Defaults to
-   * false (no cooldown ⇒ chase on the short window as before).
-   */
-  chaseSuppressed?: boolean;
 }
 
 /**
@@ -176,12 +162,9 @@ export interface NavRefreshOptions {
  *     ({@link latestSettledSessionDate}) there is nothing newer until the next
  *     session closes, so rest; otherwise poll like a normal symbol (the short
  *     window) until that NAV lands — however late, even past midnight, with no
- *     upper "catch-up" cap. But because **NAV prices are not always there** — a
- *     fund may publish hours after the close or skip a day entirely — once the
- *     caller's chase backoff arms (`chaseSuppressed`), we stop re-polling every
- *     round and rest on the market-day window, trying again only after the
- *     cooldown elapses. This is what ends the after-hours "constant loop /
- *     perpetually deferred / very loud auto-updating" the chase used to cause.
+ *     upper "catch-up" cap. The poll is the standard auto-update interval, so the
+ *     fund refreshes on the same cadence as every other symbol rather than being
+ *     chased on its own schedule.
  *
  * The **rest window is market-day based**, not a fixed number of hours: it
  * expires at the next session close ({@link nextSessionCloseMs}), the moment a
@@ -204,7 +187,6 @@ export function navCacheTtlMs(
     marketOpen = isUsMarketOpen(new Date(now)),
     shortTtlMs = DEFAULT_CACHE_TTL_MS,
     longTtlMs = DEFAULT_NAV_CACHE_TTL_MS,
-    chaseSuppressed = false,
   } = options;
 
   // Rest until the next session close (when a fresh NAV becomes due) rather than
@@ -223,14 +205,11 @@ export function navCacheTtlMs(
   // Session open: the NAV cannot strike until after the close, and we already
   // hold the prior settled session's NAV — nothing to chase.
   if (marketOpen) return restWindow();
-  // Closed: poll until the just-settled session's NAV is in hand, then rest.
+  // Closed: poll until the just-settled session's NAV is in hand, then rest. While
+  // behind it we use the short (standard auto-update interval) window, so the fund
+  // is re-checked on the same cadence as every other symbol until its NAV lands.
   const have = cached?.valueDate ?? null;
   if (have && have >= latestSettledSessionDate(new Date(now))) return restWindow();
-  // Behind the latest settled NAV. NAV prices are not always there: the fund may
-  // not have published tonight's NAV yet (or at all). Once the caller's chase
-  // backoff has armed after a few fruitless tries, rest on the market-day window
-  // instead of re-polling every round — try again only after the cooldown lapses.
-  if (chaseSuppressed) return restWindow();
   return shortTtlMs;
 }
 

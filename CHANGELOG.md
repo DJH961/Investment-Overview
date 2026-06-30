@@ -17,30 +17,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **A NAV fund whose price simply is not published yet no longer drives an
-  after-hours "constant loop" of fetches, perpetual deferral, and a very loud,
-  persistent "auto-updating… still filling in".** The data orchestrator's
-  "NAV-as-soon-as-closed" overlay deliberately re-arms the NAV leg every round the
-  moment the regular session closes (the day's NAV is then the only price that can
-  change), relying on the executor to clamp the actual fetching "against the NAV
-  cache TTL **and a per-symbol NAV chase backoff**". That backoff existed for the
-  live-graph time-series pulls but **never for the NAV quote chase**, so the NAV
-  cache TTL returned the short poll window every round while behind tonight's
-  not-yet-published NAV — re-attempting (and, once it overflowed the free-tier
-  per-minute budget, re-deferring) on every burst, which is what kept the loud
-  "filling in" pill lit. NAV prices are not always there: a fund publishes its NAV
-  only once, often hours after the close and sometimes not at all on a given day.
-  The chase now reuses the existing `cacheSeriesBackoff` (three quick tries, then a
-  persisted 30-minute cooldown): once it arms, `navCacheTtlMs` rests the fund on
-  its market-day window instead of re-polling, so the dashboard tries hard briefly
-  and then stays quiet until the cooldown lapses or the NAV actually lands (which
-  clears the memo). The Settings hard refreshes already wipe this shared backoff,
-  so an explicit "Force-fetch every price now" still re-chases immediately
-  (`web/src/app.ts`, `web/src/quotes.ts`, `web/src/data-orchestrator.ts`).
-
-
-
-### Fixed
+- **An after-close NAV fund now refreshes on the ordinary auto-update cadence —
+  like every other symbol — instead of being chased on its own loud, non-stop
+  schedule.** The earlier "NAV-as-soon-as-closed" overlay re-armed the NAV leg on
+  *every* round the moment the regular session closed and bolted on a dedicated
+  per-symbol NAV "chase backoff". In practice that meant a fund whose NAV had not
+  published yet was re-attempted on every burst, kept the burst cadence (and the
+  loud "auto-updating… still filling in" pill) lit without a break, and gave the
+  NAV its own bespoke poll/cooldown — none of which was the goal. The only real
+  problem was the opposite one: a fresh quote book could starve the NAV pull so it
+  was not attempted until well after the close. The overlay and the per-symbol
+  chase backoff are both removed; instead the graded freshness truth-table simply
+  folds the awaited NAV into the normal cadence — when the market is closed and
+  today's NAV is still missing, the `nav` leg comes due once the data ages past one
+  auto-update interval and keeps coming due (including past the one-hour mark, which
+  previously dropped it) until the NAV lands. The per-symbol NAV TTL still clamps
+  the genuine spend to one fetch per interval, so the fund is now an ordinary
+  cadence symbol: it starts being attempted right after the close, refreshes
+  quietly on the standard schedule, and no longer drives a perpetual burst or its
+  own pill (`web/src/freshness.ts`, `web/src/data-orchestrator.ts`,
+  `web/src/quotes.ts`, `web/src/app.ts`).
 
 - **Today's move, today's growth % and the 1 Day graph now share one global baseline —
   the last market close — so the headline number and the graph endpoints always

@@ -194,7 +194,7 @@ export interface GradedPull {
  * | Tier | Condition | Market | Pull |
  * |---|---|---|---|
  * | outdated | >1 day missing **and** best blob >1 day old | any | full window (≤5 sessions) + every leg |
- * | ″ | device **and** best blob ≤1 day old, but >1h | open ≥30m, or closed | today's session window + quotes + FX |
+ * | ″ | device **and** best blob ≤1 day old, but >1h | open ≥30m, or closed | today's session window + quotes + FX (+ NAV when closed & still awaited) |
  * | ″ | ″ | open <30m | quotes only (fill 1D from quote + breadcrumbs) |
  * | relatively-fresh | latest <1h but older than one interval | open | market data (quotes + FX) |
  * | ″ | ″ | closed, NAV missing | NAV + FX only |
@@ -222,6 +222,14 @@ export function gradedPull(input: FreshnessInputs): GradedPull {
     const legs = noLegs();
     legs.quotes = true;
     legs.fx = true;
+    // Closed with today's NAV still awaited: keep chasing it on this same cadence
+    // even once we are past the one-hour mark. A fund publishes its NAV only after
+    // the close and often well over an hour later, so without this the >1h tier
+    // (which otherwise supersedes the relatively-fresh closed branch below) would
+    // stop attempting the NAV for the rest of the evening. The per-symbol NAV TTL
+    // still clamps the genuine spend to one fetch per interval, so this is just a
+    // normal cadence symbol, not a per-round chase.
+    if (input.market === "closed" && !input.navHeldForToday) legs.nav = true;
     if (!(input.market === "open" && input.minutesSinceOpenMs < MARKET_WARMUP_MS)) {
       // Open ≥30 min, or closed: a settled bar exists — pull today's session window
       // (one session); too early in the session ⇒ quotes only, the curve accretes
