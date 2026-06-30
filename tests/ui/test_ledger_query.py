@@ -173,6 +173,76 @@ def test_net_eur_derived_from_trade_date_fx(session: Session) -> None:
     assert row["net_eur"] == "€-2,000.00"
 
 
+def test_money_market_reinvested_dividend_values_the_payout(session: Session) -> None:
+    """A VMFXX par-$1 reinvested dividend shows its payout, not €0.00 / $0.00.
+
+    Regression for the Activity-tab bug where a money-market dividend booked as
+    a cash-neutral ``dividend_reinvest`` (``net_native == 0``) rendered as 0 in
+    both currencies. The dividend's real value is its reinvested amount
+    (``quantity × price`` at the $1.00 NAV), valued at the trade-date FX rate.
+    """
+    from investment_dashboard.repositories import fx_repo
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="Vanguard",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    vmfxx = instruments_repo.get_or_create(session, symbol="VMFXX")
+    fx_repo.upsert_rates(session, {date(2024, 3, 31): Decimal("1.25")})
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 3, 31),
+            kind="dividend_reinvest",
+            instrument_id=vmfxx.id,
+            quantity=Decimal("12.50"),
+            price_native=Decimal("1"),
+            net_native=Decimal("0"),
+            source=TransactionSource.IMPORT_VANGUARD_XLSX,
+            external_id="div-1",
+        )
+    )
+    session.flush()
+    rows = list_ledger_rows(session, fx_rate=Decimal("1.10"))
+    row = rows[0]
+    # USD payout is the reinvested amount; EUR at the trade-date rate (÷1.25).
+    assert row["net_usd"] == "$12.50"
+    assert row["net_eur"] == "€10.00"
+
+
+def test_normal_reinvested_dividend_keeps_its_cash_flow(session: Session) -> None:
+    """A real (non money-market) reinvestment is untouched by the MM special case."""
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    instr = instruments_repo.get_or_create(session, symbol="VWCE")
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 3, 31),
+            kind="dividend_reinvest",
+            instrument_id=instr.id,
+            quantity=Decimal("0.42"),
+            price_native=Decimal("120.50"),
+            net_native=Decimal("-50.61"),
+            net_eur=Decimal("-46.00"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+    rows = list_ledger_rows(session, fx_rate=Decimal("1.10"))
+    row = rows[0]
+    assert row["net_usd"] == "$-50.61"
+    assert row["net_eur"] == "€-46.00"
+
+
 def _seed_with_settlement_leg(session: Session) -> None:
     acct = accounts_repo.create_account(
         session,
