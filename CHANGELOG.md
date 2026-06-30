@@ -13,6 +13,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.0.5] — 2026-06-30
+
+### Fixed
+
+- **An outdated NAV's daily move no longer collapses to 0 %.** When a fund still
+  sits on an older print than its freshest peers (its NAV hasn't refreshed yet),
+  the Overview holding card kept the row but forward-filled the price onto the
+  freshest book date, erasing the move down to FX alone and reading a misleading
+  `0.00 % / +$0.00`. It now keeps showing that holding's own latest *published*
+  move (its two most recent prints), greyed out by the staleness flag — exactly
+  like the web companion — so the figure reads as last session's move rather
+  than zero, even though it stays out of today's total growth
+  (`src/investment_dashboard/ui/pages/_overview_query.py`).
+
 ## [5.0.4] — 2026-06-30
 
 ### Fixed
