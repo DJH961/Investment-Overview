@@ -1467,6 +1467,21 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, var(--card));
 }
+/* Web-UI track O4(b): the per-graph "refresh bars" button sits after the range
+   pills and re-pulls the in-view live window. A slim glyph-only control so it
+   reads as an action, not another range; it spins while a pull is in flight. */
+.chart-range-refresh {
+  padding: 0.3rem 0.5rem;
+  margin-left: 0.15rem;
+}
+.chart-range-refresh:disabled { cursor: progress; opacity: 0.6; }
+.chart-range-refresh.is-refreshing { animation: chart-refresh-spin 0.9s linear infinite; }
+@keyframes chart-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-range-refresh.is-refreshing { animation: none; }
+}
 .chart-svg {
   display: block;
   width: 100%;

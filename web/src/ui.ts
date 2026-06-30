@@ -2228,10 +2228,17 @@ export interface LiveCurveChart {
  * Lazily build a live 1D/1W curve for the value chart, returning
  * `null` when the curve can't be drawn (no data yet, missing key/proxy, or a
  * failed fetch). Only invoked when the user actually selects a live preset.
+ *
+ * `opts.regenerateOnly` builds purely from stored bars (zero network); every
+ * passive UI interaction (range toggle, graph click) passes it so chart
+ * interaction never fetches. `opts.forceFetch` is the opposite intent: the user
+ * explicitly tapped the per-graph refresh button, so re-pull the in-view window's
+ * bars from the live windowed fetcher even when a cached/springboard curve exists
+ * (Web-UI track O4(b)).
  */
 export type LiveCurveBuilder = (
   range: LiveRange,
-  opts?: { regenerateOnly?: boolean },
+  opts?: { regenerateOnly?: boolean; forceFetch?: boolean },
 ) => Promise<LiveCurveChart | null>;
 
 /**
@@ -2260,9 +2267,9 @@ export interface LiveGraphHooks {
    * **zero network**) — every UI interaction (range toggle, graph click) passes
    * it so chart interaction never fetches; only the initial paint may pull.
    */
-  session: (opts?: { regenerateOnly?: boolean }) => Promise<LiveSessionResult | null>;
+  session: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean }) => Promise<LiveSessionResult | null>;
   /** Build the live 1W (daily-close) curve points, or null when unavailable. */
-  week: (opts?: { regenerateOnly?: boolean }) => Promise<CurvePoint[] | null>;
+  week: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean }) => Promise<CurvePoint[] | null>;
 }
 
 /** One selectable preset: either a history slice or a live (fetched) curve. */
@@ -2300,6 +2307,37 @@ export function chartTimeframeOptions(span: number, extended: boolean, hasLive: 
     ...presets.map((p): RangeOption => ({ label: p.label, kind: "history", days: p.days })),
     { label: "All", kind: "history", days: null },
   ];
+}
+
+/** Spec for the per-graph "refresh bars" button shown beside a live window. */
+export interface LiveRefreshControl {
+  /** Window the re-pull is scoped to, for the tooltip ("today" vs "the week"). */
+  range: LiveRange;
+  /** Accessible label, e.g. "Refresh 1D bars". */
+  ariaLabel: string;
+  /** Hover/long-press tooltip explaining the scoped, credit-bearing re-pull. */
+  title: string;
+}
+
+/**
+ * Web-UI track O4(b): decide whether the per-graph refresh button applies to the
+ * currently-selected chart window, and how to label it.
+ *
+ * The button only makes sense for the **live** 1D/1W windows — they are the only
+ * ones drawn from re-pullable price bars; the history slices (1M/1Y/All) are
+ * static exported data with nothing to re-fetch — so this returns `null` for any
+ * history preset. For a live window it returns the scoped labels: a 1D tap
+ * re-pulls just today's session, a 1W tap re-pulls the whole ~5-session week, so
+ * the tooltip can make the (credit-bearing) scope explicit.
+ */
+export function liveRefreshControl(option: RangeOption): LiveRefreshControl | null {
+  if (option.kind !== "live") return null;
+  const scope = option.range === "1D" ? "today's session" : "the full week";
+  return {
+    range: option.range,
+    ariaLabel: `Refresh ${option.range} bars`,
+    title: `Re-pull ${option.range} price bars for ${scope} (uses live credits)`,
+  };
 }
 
 /**
@@ -2391,7 +2429,12 @@ function chartWithTimeframe(
     }
   };
 
-  const applyLive = async (option: RangeOption & { kind: "live" }, token: number, regenerateOnly: boolean): Promise<void> => {
+  const applyLive = async (
+    option: RangeOption & { kind: "live" },
+    token: number,
+    regenerateOnly: boolean,
+    forceFetch = false,
+  ): Promise<void> => {
     if (!live) return;
     const range = option.range;
     // Defer the "Loading live data…" placeholder. A re-toggle (regenerate-only)
@@ -2412,7 +2455,7 @@ function chartWithTimeframe(
     };
     let built: LiveCurveChart | null = null;
     try {
-      built = await live(range, { regenerateOnly });
+      built = await live(range, { regenerateOnly, forceFetch });
     } catch {
       built = null;
     }
@@ -2455,6 +2498,36 @@ function chartWithTimeframe(
     }
   };
 
+  // Web-UI track O4(b): a per-graph "refresh bars" button. It re-pulls the price
+  // bars for the *currently-selected* live window only (1D → today, 1W → the
+  // week) via the windowed fetcher, then redraws — bars-only, so it refreshes the
+  // headline price as a side effect (the pulled bars prime the quote) without a
+  // separate quote round. It is hidden for the static history slices (nothing to
+  // re-fetch) and disabled while a pull is already in flight or when no live
+  // builder exists.
+  const refreshBtn = h("button", {
+    class: "chart-range-btn chart-range-refresh",
+    type: "button",
+    hidden: "",
+    "aria-hidden": "true",
+  }, ["⟳"]) as HTMLButtonElement;
+  let activeLive: (RangeOption & { kind: "live" }) | null = null;
+  let liveRefreshing = false;
+  const syncRefreshButton = (): void => {
+    const control = activeLive && live ? liveRefreshControl(activeLive) : null;
+    if (!control) {
+      refreshBtn.hidden = true;
+      refreshBtn.setAttribute("aria-hidden", "true");
+      return;
+    }
+    refreshBtn.hidden = false;
+    refreshBtn.removeAttribute("aria-hidden");
+    refreshBtn.setAttribute("aria-label", control.ariaLabel);
+    refreshBtn.title = control.title;
+    refreshBtn.disabled = liveRefreshing;
+    refreshBtn.classList.toggle("is-refreshing", liveRefreshing);
+  };
+
   // `userInitiated` distinguishes a tap on a range button (Pillar 6: interaction
   // = regenerate, never poll → network-free) from the one initial restore on
   // mount (allowed to fetch for first paint until the pull mechanisms warm the
@@ -2471,9 +2544,28 @@ function chartWithTimeframe(
     // the full re-render a refresh or currency toggle triggers.
     if (persist && storageKey) saveStringPref(storageKey, option.label);
     if (onRangeChange) onRangeChange(option);
+    activeLive = option.kind === "live" ? option : null;
+    syncRefreshButton();
     if (option.kind === "live") void applyLive(option, token, userInitiated);
     else applyHistory(option.days);
   };
+
+  // Re-pull the in-view live window's bars on demand. Guarded so a second tap
+  // while a pull is in flight is a no-op, and the button reflects the busy state.
+  const refreshActiveLive = async (): Promise<void> => {
+    const option = activeLive;
+    if (!option || liveRefreshing) return;
+    liveRefreshing = true;
+    syncRefreshButton();
+    const token = (activeToken += 1);
+    try {
+      await applyLive(option, token, false, true);
+    } finally {
+      liveRefreshing = false;
+      syncRefreshButton();
+    }
+  };
+  refreshBtn.addEventListener("click", () => void refreshActiveLive());
 
   const controls = h("div", { class: "chart-range", role: "group", "aria-label": "Chart time range" }, []);
   options.forEach((option, index) => {
@@ -2482,6 +2574,7 @@ function chartWithTimeframe(
     buttons.push(button);
     controls.appendChild(button);
   });
+  controls.appendChild(refreshBtn);
   // Reopen the remembered window (by label); default to the full history. This
   // sole initial selection is not user-initiated, so it may fetch for first paint.
   const savedLabel = storageKey ? loadStringPref(storageKey) : null;
