@@ -151,6 +151,7 @@ const BALANCED_EXPORT: MobileExport = {
       price_type: "nav",
       last_known_price_native: "19.80",
       last_price_date: "2026-06-19",
+      last_price_time: "2026-06-19T20:00:00+00:00",
       cashflows: [{ date: "2024-02-01", amount: "-3400" }],
     },
     {
