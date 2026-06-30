@@ -13,6 +13,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.0.2] — 2026-06-30
+
+### Fixed
+
+- **The 1W (and 1D) live value graph no longer nosedives to ~60 % at the right
+  edge on reload.** A both-currency NAV-collapse confined to **today** (the
+  trailing session, valued without its NAV-fund sleeve until the dense bars load,
+  with only the live tip snapping back) was healed only on the springboard fast
+  path. When the curve instead came from the live build or spliced breadcrumbs —
+  e.g. tapping the per-graph reload ↻ — the collapse reached the screen until a
+  graph switch rebuilt today from real bars. A new `repairTodayNavCollapse` final
+  safety net in the shared render funnel (`liveCurveToChart`) now lifts today's
+  collapsed body onto its own healthy live tip on **every** build path, in
+  whichever currency is shown; it is a conservative no-op on a healthy curve and
+  on a genuine today drop. The leading-run NAV repairs missed this (the settled
+  days in front of today are healthy) and the ratio-based currency-divergence
+  repair missed it too (both legs collapse together, preserving the ratio)
+  (`web/src/week-repair.ts`, `web/src/ui.ts`).
+- **The exported session's breadcrumb trail is now healed before it is persisted**
+  so a collapsed crumb can no longer re-introduce the nosedive into the live 1W
+  today slice on every paint (`web/src/app.ts`).
+- **Graph reloading is now logged honestly.** A user-initiated per-graph reload
+  (the ↻ button) logs an explicit "reloading — re-pulling…" line so it is never
+  mistaken for a background poll, and when that forced re-pull finds nothing new
+  it says "reload found no new bars (already up to date)" rather than the
+  background "reused stored bars" wording. The today NAV-collapse heal is folded
+  into the data-loading log when it fires (`web/src/app.ts`, `web/src/ui.ts`).
+
 ## [5.0.1] — 2026-06-30
 
 ### Fixed

@@ -95,7 +95,7 @@ import {
 import { buildLineChart, type ChartSeries } from "./chart";
 import { curveColumns } from "./value-graph";
 import type { CurvePoint } from "./timeseries";
-import { repairCurrencyDivergence } from "./week-repair";
+import { repairCurrencyDivergence, repairTodayNavCollapse } from "./week-repair";
 import { recordReconciliation } from "./consumption-log";
 import type { DailyClose } from "./value-history";
 import { APP_VERSION } from "./version";
@@ -3209,6 +3209,18 @@ export function liveCurveToChart(
   // already-published blob, in whichever currency the user is viewing. A no-op on
   // a healthy curve (returns the same array).
   points = repairCurrencyDivergence(points, undefined, (msg) => {
+    try {
+      recordReconciliation(msg);
+    } catch {
+      /* logging is best-effort */
+    }
+  });
+  // Companion safety net for a *both-currency* NAV collapse confined to **today**
+  // (the trailing session): the leading-run NAV repairs only fire on the
+  // springboard path, so a live-build / spliced-breadcrumb render (e.g. a per-graph
+  // reload) would otherwise nosedive today to ~60% until a graph switch rebuilt it.
+  // Lifts today's collapsed body onto its own healthy live tip; no-op when healthy.
+  points = repairTodayNavCollapse(points, (msg) => {
     try {
       recordReconciliation(msg);
     } catch {

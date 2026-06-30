@@ -170,6 +170,7 @@ import {
 import { planFanout, planTwelveDataSafetyNet, TIINGO_RESERVE_CREDITS } from "./provider-fanout";
 import { reconcileHandshake } from "./login-handshake";
 import { springboardSessionCurve, springboardWeekCurve, parseExportedPoints } from "./springboard";
+import { repairSessionNavCollapse } from "./week-repair";
 import { buildModelAnchor } from "./value-graph";
 import {
   graphAnchorFx,
@@ -7422,6 +7423,9 @@ export class App {
         const sprung = forceFetch
           ? null
           : springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
+        if (forceFetch) {
+          this.pollLog("graph", "1D graph: reloading — re-pulling today's bars on request.");
+        }
         if (sprung) {
           this.pollLog("graph", "1D graph: reused the exported session (no live pull, 0 credits).");
           // Persist the sprung session's dense points as today's breadcrumb trail
@@ -7440,7 +7444,12 @@ export class App {
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
-            this.pollLog("graph", "1D graph: reused stored session bars (no live pull, 0 credits).");
+            this.pollLog(
+              "graph",
+              forceFetch
+                ? "1D graph: reload found no new session bars (already up to date, 0 credits)."
+                : "1D graph: reused stored session bars (no live pull, 0 credits).",
+            );
           }
           if (curve.points.length < 2) return null;
           // Only surface the coverage caption once the market has shut: a full day
@@ -7492,7 +7501,12 @@ export class App {
           onRepair: (m) => this.repairLog(m),
         });
         // A per-graph refresh tap (`forceFetch`) skips the springboard reuse so the
-        // windowed fetcher re-pulls the whole week's bars (Web-UI track O4(b)).
+        // windowed fetcher re-pulls the whole week's bars (Web-UI track O4(b)). Log
+        // the user-initiated reload explicitly so it is never mistaken for a
+        // background poll in the data-loading log.
+        if (forceFetch) {
+          this.pollLog("graph", "1W graph: reloading — re-pulling the week's bars on request.");
+        }
         if (sprung && !forceFetch) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
           return this.harvestWeekCloses(capWeekToSessionClose(sprung));
@@ -7522,7 +7536,12 @@ export class App {
             loggingProviders("1W", spent),
           );
           if (spent.credits === 0) {
-            this.pollLog("graph", "1W graph: reused stored week bars (no live pull, 0 credits).");
+            this.pollLog(
+              "graph",
+              forceFetch
+                ? "1W graph: reload found no new week bars (already up to date, 0 credits)."
+                : "1W graph: reused stored week bars (no live pull, 0 credits).",
+            );
           }
           if (curve.points.length < 2) return null;
           return this.harvestWeekCloses(capWeekToSessionClose(curve.points));
@@ -7560,8 +7579,14 @@ export class App {
     // an unclamped pre-open crumb would surface as yesterday's data on today's 1D
     // curve. Mirrors the springboard's own left-edge clamp.
     const openMs = sessionOpenMs(sessionDate);
-    const points = parseExportedPoints(day.points).filter((p) => p.t >= openMs);
-    if (points.length < 1) return;
+    const rawPoints = parseExportedPoints(day.points).filter((p) => p.t >= openMs);
+    if (rawPoints.length < 1) return;
+    // Heal a NAV-collapse nosedive baked into the exported session before it is
+    // frozen into the breadcrumb trail: the trail is later spliced into the live
+    // 1W today slice, and a collapsed crumb would re-introduce the nosedive that
+    // the render-time safety net then has to undo on every paint. The session's own
+    // healthy tip donates the lift; a no-op on a healthy export.
+    const points = repairSessionNavCollapse(rawPoints, null, (m) => this.repairLog(m));
     const existing =
       (await store.loadSession(sessionDate)) ??
       { day: sessionDate, bars: {}, fx: [], tips: [], updatedAt: 0 };
