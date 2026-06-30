@@ -212,20 +212,39 @@ describe("planPull — manual relevance (freshness never filters a tap)", () => 
   });
 });
 
-describe("planPull — auto NAV the moment the market closes", () => {
-  it("raises the NAV leg on an otherwise-fresh auto tick the instant the close leaves the NAV awaited", () => {
+describe("planPull — auto NAV folds into the standard cadence after the close", () => {
+  it("leaves the NAV leg off on an otherwise-fresh auto tick the instant the close leaves the NAV awaited", () => {
     // Fresh quote book, market closed, today's NAV not yet published: an auto tick
-    // must pull the NAV at once rather than wait a further interval for the tier to
-    // age into the relatively-fresh closed branch.
+    // is NOT special-cased — the NAV is refreshed on the normal graded cadence
+    // (once the data ages past one interval), like every other symbol, rather than
+    // chased every round.
     const fresh = { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: false };
     const plan = planPull(ctx({ kind: "auto", market: "closed", minutesSinceOpenMs: 0, freshness: fresh }));
     expect(plan.tier).toBe("fresh");
+    expect(plan.legs.nav).toBe(false);
+  });
+
+  it("raises the NAV leg once the data ages past one interval while the NAV is still awaited", () => {
+    // Closed, NAV awaited, data older than one interval but under an hour:
+    // relatively-fresh closed branch pulls the NAV (and FX) on cadence.
+    const stale = { dataAgeMs: 30 * MIN, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 30 * MIN, navHeldForToday: false };
+    const plan = planPull(ctx({ kind: "auto", market: "closed", minutesSinceOpenMs: 0, freshness: stale }));
+    expect(plan.tier).toBe("relatively-fresh");
     expect(plan.legs.nav).toBe(true);
-    expect(plan.reason).toContain("awaiting today's NAV");
+  });
+
+  it("keeps chasing the awaited NAV on cadence past the one-hour mark", () => {
+    // Closed, NAV awaited, data over an hour stale: the >1h outdated-light tier
+    // still pulls the NAV so a late-publishing fund keeps being attempted all
+    // evening instead of being dropped after the first hour.
+    const stale = { dataAgeMs: 2 * ONE_HOUR_MS, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 2 * ONE_HOUR_MS, navHeldForToday: false };
+    const plan = planPull(ctx({ kind: "auto", market: "closed", minutesSinceOpenMs: 0, freshness: stale }));
+    expect(plan.tier).toBe("outdated");
+    expect(plan.legs.nav).toBe(true);
   });
 
   it("leaves the NAV leg off once today's NAV is held", () => {
-    const fresh = { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true };
+    const fresh = { dataAgeMs: 2 * ONE_HOUR_MS, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 2 * ONE_HOUR_MS, navHeldForToday: true };
     const plan = planPull(ctx({ kind: "auto", market: "closed", minutesSinceOpenMs: 0, freshness: fresh }));
     expect(plan.legs.nav).toBe(false);
   });

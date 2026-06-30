@@ -162,7 +162,9 @@ export interface NavRefreshOptions {
  *     ({@link latestSettledSessionDate}) there is nothing newer until the next
  *     session closes, so rest; otherwise poll like a normal symbol (the short
  *     window) until that NAV lands — however late, even past midnight, with no
- *     upper "catch-up" cap.
+ *     upper "catch-up" cap. The poll is the standard auto-update interval, so the
+ *     fund refreshes on the same cadence as every other symbol rather than being
+ *     chased on its own schedule.
  *
  * The **rest window is market-day based**, not a fixed number of hours: it
  * expires at the next session close ({@link nextSessionCloseMs}), the moment a
@@ -203,7 +205,9 @@ export function navCacheTtlMs(
   // Session open: the NAV cannot strike until after the close, and we already
   // hold the prior settled session's NAV — nothing to chase.
   if (marketOpen) return restWindow();
-  // Closed: poll until the just-settled session's NAV is in hand, then rest.
+  // Closed: poll until the just-settled session's NAV is in hand, then rest. While
+  // behind it we use the short (standard auto-update interval) window, so the fund
+  // is re-checked on the same cadence as every other symbol until its NAV lands.
   const have = cached?.valueDate ?? null;
   if (have && have >= latestSettledSessionDate(new Date(now))) return restWindow();
   return shortTtlMs;
