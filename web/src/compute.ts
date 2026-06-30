@@ -28,6 +28,7 @@ import {
 } from "./phase4";
 import type { ExportCashflow, ExportHolding, MobileExport } from "./types";
 import { buildCalculatorData, type CalcData } from "./calculator";
+import { buildTransactions, type TransactionsView } from "./transactions";
 import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
 import { LIVE_PRICE_MAX_STALENESS_MS, isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
@@ -415,6 +416,10 @@ export interface DashboardModel {
   plan: PlanView;
   /** Allocation calculator: per-instrument/-category facts + saved targets. */
   calculator: CalcData;
+  /** Raw ledger rows for the Transactions tab. `available` is false when the
+   * export opted out of `include_transactions` (the tab then shows a clear
+   * "not included in this export" state). */
+  transactions: TransactionsView;
   /**
    * Device-persisted whole-book daily closes (see `value-history.ts`), preloaded
    * by the app shell so the Overview value chart can rebuild the gap a *stale*
@@ -1585,8 +1590,9 @@ export function buildDashboard(
   const deposits = buildDeposits(data);
   const plan = buildPlan(data, overview);
   const calculator = buildCalculatorData(holdings, data.target_allocations);
+  const transactions = buildTransactions(data);
 
-  return { overview, holdings, allocation, periods, analytics, deposits, plan, calculator };
+  return { overview, holdings, allocation, periods, analytics, deposits, plan, calculator, transactions };
 }
 
 /**

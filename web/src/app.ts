@@ -224,6 +224,7 @@ import {
   renderExtendedGraphsToggle,
   renderThemeToggle,
   renderTimeFormatToggle,
+  renderTransactionsToggle,
   type LiveGraphHooks,
 } from "./ui";
 import {
@@ -2739,6 +2740,18 @@ export class App {
           "Extra ranges",
           renderExtendedGraphsToggle(),
           "Add the longer 3M and 6M history ranges to the value chart. Off by default for a cleaner look; the live 1D and 1W curves are always shown. Takes effect when you return to the dashboard.",
+        ),
+      );
+    }
+    // Activity: the Transactions tab is opt-out — an export may omit the ledger,
+    // so this lets the user hide the tab entirely (Settings only).
+    if (settingsMode) {
+      formChildren.push(
+        h("h2", { class: "settings-section" }, ["Activity"]),
+        field(
+          "Transactions tab",
+          renderTransactionsToggle(),
+          "Show the Activity tab with your transaction ledger. If your export was published without transactions the tab shows a short notice — hide it here. Takes effect when you return to the dashboard.",
         ),
       );
     }

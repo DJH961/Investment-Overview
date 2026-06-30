@@ -12,6 +12,7 @@
 import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
 import { buildMovers, fxSinceAnchorPct } from "./compute";
+import type { TransactionsView, TxnRow } from "./transactions";
 import { fxEffectSplit, fxBuyingPowerSplit } from "./session-fx";
 import { getInvestmentAmountEur } from "./investment-amount";
 import {
@@ -1454,9 +1455,18 @@ export function renderDashboard(
   const tabs: TabDef[] = [
     { id: "overview", label: "Overview", glyph: "◎", panel: renderOverviewPanel(model, liveGraph, options.holdingStatus) },
     { id: "periods", label: "Periods", glyph: "▦", panel: renderPeriodsPanel(model.periods, model.deposits, model.plan) },
+  ];
+  // The Transactions tab is opt-out (Settings): an export may omit the ledger,
+  // in which case the user can hide the tab entirely. When enabled it always
+  // appears (showing a clear "not included" state if the blob carried no rows)
+  // so the toggle, not the data, decides whether it is present.
+  if (transactionsTabEnabled()) {
+    tabs.push({ id: "transactions", label: "Activity", glyph: "≣", panel: renderTransactionsPanel(model.transactions) });
+  }
+  tabs.push(
     { id: "analytics", label: "Risk", glyph: "📈", panel: renderAnalyticsPanel(model.analytics, model.overview, model.deposits) },
     { id: "plan", label: "Calculator", glyph: "🧮", panel: renderCalculatorPanel(model.calculator) },
-  ];
+  );
 
   const { nav, content } = renderTabs(tabs, options.initialTabId);
   return h("main", { class: "app" }, [topbar, nav, content, appVersionFooter()]);
@@ -1901,8 +1911,235 @@ function renderPeriodsPanel(periods: PeriodsView, deposits: DepositsView | null,
   return h("section", { class: "panel-stack panel-periods" }, [left, right, disclaimer]);
 }
 
-// --- Analytics / risk tab ---------------------------------------------------
+// --- Transactions / activity tab --------------------------------------------
 
+/** Persisted opt-out for the Transactions ("Activity") tab. On by default; the
+ * user can switch it off when their export does not include the ledger. */
+const TRANSACTIONS_TAB_KEY = "iv.web.transactionsTab";
+
+/** Whether the Transactions tab should be shown (Settings preference). */
+export function transactionsTabEnabled(): boolean {
+  return loadBoolPref(TRANSACTIONS_TAB_KEY, true);
+}
+
+/**
+ * Self-contained Settings toggle for the Transactions tab. Persists its own
+ * choice; takes effect the next time the dashboard renders (on returning from
+ * Settings), exactly like the theme / clock / extra-ranges toggles. The export
+ * may omit the ledger, so this lets the user remove the tab entirely.
+ */
+export function renderTransactionsToggle(): HTMLElement {
+  const select = h("select", { class: "select", "data-action": "transactions-tab" }, [
+    h("option", { value: "1" }, ["Show the Activity tab"]),
+    h("option", { value: "0" }, ["Hide it"]),
+  ]) as HTMLSelectElement;
+  select.value = transactionsTabEnabled() ? "1" : "0";
+  select.setAttribute("aria-label", "Transactions tab");
+  select.addEventListener("change", () => {
+    saveBoolPref(TRANSACTIONS_TAB_KEY, select.value === "1");
+  });
+  return select;
+}
+
+/** Friendly label for a ledger-kind slug ("dividend_reinvest" → "Reinvest"). */
+function txnKindLabel(kind: string): string {
+  const map: Record<string, string> = {
+    buy: "Buy",
+    sell: "Sell",
+    dividend: "Dividend",
+    dividend_reinvest: "Reinvest",
+    deposit: "Deposit",
+    withdrawal: "Withdrawal",
+    interest: "Interest",
+    fee: "Fee",
+    split: "Split",
+    transfer: "Transfer",
+  };
+  return map[kind] ?? (kind ? titleCase(kind) : "—");
+}
+
+/** A short, currency-neutral CSS hook per kind, for the coloured pill. */
+function txnKindClass(kind: string): string {
+  if (kind === "buy" || kind === "deposit" || kind === "transfer") return "txn-in";
+  if (kind === "sell" || kind === "withdrawal" || kind === "fee") return "txn-out";
+  if (kind === "dividend" || kind === "dividend_reinvest" || kind === "interest") return "txn-income";
+  return "";
+}
+
+/** "20 Jun 2026" for an ISO `YYYY-MM-DD` (em dash when unparseable). */
+function txnDateLabel(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!match) return iso || "—";
+  const [, year, month, day] = match;
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${Number(day)} ${names[Number(month) - 1] ?? month} ${year}`;
+}
+
+/** The signed net cash flow of a row in the active display currency. */
+function txnNetPicked(row: TxnRow): Decimal | null {
+  return pickByCurrency(row.netEur, row.netUsd);
+}
+
+/** Format a row's net in the active display currency, raw (trade-date FX). */
+function txnNetText(row: TxnRow): string {
+  return getDisplayCurrency() === "USD"
+    ? formatSignedMoneyUsd(row.netUsd, 2)
+    : formatSignedMoneyEur(row.netEur, 2);
+}
+
+function renderTxnRow(row: TxnRow): HTMLElement {
+  const net = txnNetPicked(row);
+  const netCls = signClass(net);
+  const symbol = row.symbol || "Cash";
+
+  const main = h("div", { class: "holding-main" }, [
+    h("div", { class: "holding-id" }, [
+      h("div", { class: "holding-topline" }, [
+        h("span", { class: "holding-sym" }, [
+          h("span", { class: `txn-kind ${txnKindClass(row.kind)}`.trim() }, [txnKindLabel(row.kind)]),
+          h("span", { class: "txn-sym" }, [symbol]),
+        ]),
+        h("span", { class: "holding-asof" }, [txnDateLabel(row.date)]),
+      ]),
+      h("span", { class: "holding-name" }, [row.account || "—"]),
+    ]),
+    h("div", { class: "holding-figures" }, [
+      h("span", { class: `holding-value ${netCls}` }, [txnNetText(row)]),
+      h("span", { class: "holding-change muted" }, ["net"]),
+    ]),
+  ]);
+
+  // Secondary chips: only show the ones that carry signal for this row.
+  const meta: HTMLElement[] = [];
+  if (row.quantity !== null && !row.quantity.isZero()) {
+    meta.push(chip(`${formatShares(row.quantity.abs())} sh`));
+  }
+  if (row.priceNative !== null) {
+    meta.push(chip(`Px ${row.priceNative.toFixed(2)}`));
+  }
+  if (row.feesNative !== null && !row.feesNative.isZero()) {
+    meta.push(chip(`Fee ${row.feesNative.abs().toFixed(2)}`));
+  }
+  if (row.source) meta.push(chip(titleCase(row.source)));
+
+  const children: HTMLElement[] = [main];
+  if (meta.length > 0) children.push(h("div", { class: "holding-meta" }, meta));
+  return h("li", { class: "holding txn" }, children);
+}
+
+/** A single month group: a subheader (label + group net) over its rows. */
+function renderTxnMonthGroup(label: string, rows: TxnRow[]): HTMLElement {
+  const groupNet = rows.reduce<Decimal | null>((acc, r) => {
+    const v = txnNetPicked(r);
+    if (acc === null || v === null) return acc;
+    return acc.plus(v);
+  }, new Decimal(0));
+  const head = h("div", { class: "txn-month-head" }, [
+    h("span", { class: "txn-month-label" }, [periodLabel(label)]),
+    h("span", { class: `txn-month-net ${signClass(groupNet)}` }, [
+      getDisplayCurrency() === "USD" ? formatSignedMoneyUsd(groupNet, 2) : formatSignedMoneyEur(groupNet, 2),
+    ]),
+  ]);
+  const list = h("ul", { class: "holding-list txn-list" }, rows.map(renderTxnRow));
+  return h("div", { class: "txn-month" }, [head, list]);
+}
+
+/**
+ * The Transactions ("Activity") tab: the raw ledger as a searchable, currency-
+ * aware, month-grouped list. Mobile-first — a stacked filter bar over thumb-
+ * friendly cards — with the filter bar reflowing to a single row and the cards
+ * relaxing into a roomier layout on wide screens (see styles.css).
+ *
+ * When the export omitted the ledger (`available === false`) it shows a clear
+ * "not included in this export" note, hinting at the Settings toggle that hides
+ * the tab.
+ */
+function renderTransactionsPanel(view: TransactionsView): HTMLElement {
+  const head = sectionHead("Activity", view.available ? `${view.rows.length} ${view.rows.length === 1 ? "entry" : "entries"}` : undefined);
+
+  if (!view.available) {
+    return h("section", { class: "panel-stack panel-transactions" }, [
+      head,
+      h("div", { class: "panel" }, [
+        h("p", { class: "note" }, [
+          "This export does not include your transaction history. Re-publish from the desktop app with transactions enabled to see your ledger here, or hide this tab from Settings.",
+        ]),
+      ]),
+    ]);
+  }
+
+  if (view.rows.length === 0) {
+    return h("section", { class: "panel-stack panel-transactions" }, [
+      head,
+      h("div", { class: "panel" }, [h("p", { class: "note" }, ["No transactions recorded yet."])]),
+    ]);
+  }
+
+  // --- Filter controls (search + kind). Re-render only the list on change. ---
+  const search = h("input", {
+    class: "txn-search",
+    type: "search",
+    placeholder: "Search symbol, account, kind…",
+    "aria-label": "Search transactions",
+    autocomplete: "off",
+  }) as HTMLInputElement;
+
+  const kindSelect = h(
+    "select",
+    { class: "select txn-kind-filter", "aria-label": "Filter by type" },
+    [
+      h("option", { value: "" }, ["All types"]),
+      ...view.kinds.map((k) => h("option", { value: k }, [txnKindLabel(k)])),
+    ],
+  ) as HTMLSelectElement;
+
+  const filterBar = h("div", { class: "txn-filters" }, [search, kindSelect]);
+  const listHost = h("div", { class: "txn-host" });
+
+  const apply = (): void => {
+    const term = search.value.trim().toLowerCase();
+    const kind = kindSelect.value;
+    const filtered = view.rows.filter((r) => {
+      if (kind && r.kind !== kind) return false;
+      if (!term) return true;
+      const hay = `${r.symbol} ${r.account} ${txnKindLabel(r.kind)} ${r.kind} ${r.source ?? ""}`.toLowerCase();
+      return hay.includes(term);
+    });
+
+    listHost.replaceChildren();
+    if (filtered.length === 0) {
+      listHost.append(h("p", { class: "note" }, ["No transactions match your filters."]));
+      return;
+    }
+    // Group newest-first by calendar month (rows already arrive newest-first).
+    const order: string[] = [];
+    const byMonth = new Map<string, TxnRow[]>();
+    for (const r of filtered) {
+      const key = /^\d{4}-\d{2}/.test(r.date) ? r.date.slice(0, 7) : "—";
+      const bucket = byMonth.get(key);
+      if (bucket) bucket.push(r);
+      else {
+        byMonth.set(key, [r]);
+        order.push(key);
+      }
+    }
+    for (const key of order) {
+      listHost.append(renderTxnMonthGroup(key, byMonth.get(key) ?? []));
+    }
+  };
+
+  search.addEventListener("input", apply);
+  kindSelect.addEventListener("change", apply);
+  apply();
+
+  const disclaimer = h("p", { class: "disclaimer" }, [
+    "Amounts are signed cash flows (money in is positive, out negative) shown in your selected currency at each trade's own exchange rate. Auto-generated settlement sweeps are hidden.",
+  ]);
+
+  return h("section", { class: "panel-stack panel-transactions" }, [head, filterBar, listHost, disclaimer]);
+}
+
+// --- Analytics / risk tab ---------------------------------------------------
 /** Plain-language definitions for the (often cryptic) risk/return metrics. */
 const METRIC_INFO: Record<string, string> = {
   CAGR: "Compound Annual Growth Rate — the smoothed yearly return that would take you from the start value to today.",

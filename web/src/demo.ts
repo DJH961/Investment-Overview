@@ -287,6 +287,19 @@ const BALANCED_EXPORT: MobileExport = {
       { id: 1, date: "2023-02-15", account: "Taxable", kind: "contribution", amount_eur: "6000", currency: "EUR", description: "Initial VWCE buy" },
     ],
   },
+  // Sample ledger so the demo (and `?demo&tab=activity`) shows the Transactions
+  // tab. Newest-first; nets are signed cash flows (in +, out −) with the EUR/USD
+  // legs taken at each trade's own date, mirroring the desktop read-model.
+  transactions: {
+    rows: [
+      { id: 20, date: "2026-06-12", account: "Taxable", kind: "dividend", symbol: "VWCE", quantity: null, price_native: null, fees_native: null, gross_native: "42.00", net_native: "42.00", net_eur: "42.00", net_usd: "45.36", source: "import" },
+      { id: 19, date: "2026-06-01", account: "Taxable", kind: "buy", symbol: "VWCE", quantity: "8", price_native: "120.50", fees_native: "1.20", gross_native: "964.00", net_native: "-965.20", net_eur: "-965.20", net_usd: "-1042.42", source: "manual" },
+      { id: 18, date: "2026-05-15", account: "Pension", kind: "dividend_reinvest", symbol: "MSFT", quantity: "0.6", price_native: "445.00", fees_native: null, gross_native: "267.00", net_native: "-267.00", net_eur: "-247.22", net_usd: "-267.00", source: "import" },
+      { id: 17, date: "2026-05-01", account: "Taxable", kind: "deposit", symbol: "", quantity: null, price_native: null, fees_native: null, gross_native: "1200.00", net_native: "1200.00", net_eur: "1200.00", net_usd: "1296.00", source: "manual" },
+      { id: 16, date: "2026-04-18", account: "Taxable", kind: "sell", symbol: "AAPL", quantity: "-5", price_native: "210.00", fees_native: "1.00", gross_native: "1050.00", net_native: "1049.00", net_eur: "971.30", net_usd: "1049.00", source: "manual" },
+      { id: 15, date: "2026-03-09", account: "Taxable", kind: "interest", symbol: "VMFXX", quantity: null, price_native: null, fees_native: null, gross_native: "11.40", net_native: "11.40", net_eur: "10.56", net_usd: "11.40", source: "import" },
+    ],
+  },
 };
 
 /** Baked-in EUR-based FX (rates[X] = units of X per 1 EUR). */
@@ -757,7 +770,7 @@ export function buildDemoModel(options: BuildDemoOptions = {}): DashboardModel {
 // ---------------------------------------------------------------------------
 
 /** Tab ids the demo deep link may target (mirrors the dashboard tab bar). */
-export const DEMO_TAB_IDS = ["overview", "periods", "analytics", "plan"] as const;
+export const DEMO_TAB_IDS = ["overview", "periods", "transactions", "analytics", "plan"] as const;
 export type DemoTabId = (typeof DEMO_TAB_IDS)[number];
 
 export interface DemoParams {
@@ -800,7 +813,14 @@ export function parseDemoParams(search: string): DemoParams {
   const persona = getPersona(rawPersona).id;
 
   const rawTab = (params.get("tab") ?? "").toLowerCase();
-  const tabAlias = rawTab === "risk" ? "analytics" : rawTab === "calculator" ? "plan" : rawTab;
+  const tabAlias =
+    rawTab === "risk"
+      ? "analytics"
+      : rawTab === "calculator"
+        ? "plan"
+        : rawTab === "activity"
+          ? "transactions"
+          : rawTab;
   const tab = (DEMO_TAB_IDS as readonly string[]).includes(tabAlias) ? (tabAlias as DemoTabId) : null;
 
   return {

@@ -1302,6 +1302,60 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
  * below replaces this with a full grid layout. */
 .panel-overview { display: grid; gap: 1.15rem; }
 
+/* --- Transactions / Activity tab ----------------------------------------- */
+/* Mobile-first: a stacked filter bar over month-grouped cards (the cards reuse
+ * the .holding card shell so the Activity list reads like the Holdings list).
+ * The desktop media query below relaxes the filter bar into a single row. */
+.panel-transactions { display: grid; gap: 0.9rem; }
+.txn-filters { display: grid; gap: 0.6rem; }
+.txn-search { width: 100%; }
+.txn-kind-filter { width: 100%; }
+.txn-host { display: grid; gap: 1rem; }
+.txn-month { display: grid; gap: 0.5rem; }
+/* The month subheader sticks just under the topbar as the user scrolls a long
+ * ledger, so the period a row belongs to is always in view on a phone. */
+.txn-month-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.3rem 0.15rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.txn-month-label { font-weight: 700; font-size: 0.85rem; letter-spacing: -0.01em; }
+.txn-month-net { font-weight: 600; font-size: 0.82rem; font-variant-numeric: tabular-nums; color: var(--muted); }
+.txn-month-net.pos { color: var(--pos); }
+.txn-month-net.neg { color: var(--neg); }
+/* The leading kind pill: a small, colour-coded tag (cash in / out / income) so
+ * the ledger can be scanned by movement type at a glance. */
+.txn-kind {
+  display: inline-block;
+  padding: 0.04rem 0.42rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  background: var(--pill);
+  color: var(--muted);
+  flex: none;
+}
+.txn-kind.txn-in { color: var(--pos); background: var(--pos-soft); }
+.txn-kind.txn-out { color: var(--neg); background: color-mix(in srgb, var(--neg) 16%, transparent); }
+.txn-kind.txn-income { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.txn-sym { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* Roomier screens: the search box and type filter sit side by side (search
+ * grows, the kind dropdown stays compact) instead of stacking. */
+@media (min-width: 40rem) {
+  .txn-filters { grid-template-columns: 1fr auto; align-items: center; }
+  .txn-kind-filter { width: auto; min-width: 11rem; }
+}
+
 /* --- Generic card --------------------------------------------------------- */
 .card {
   background: var(--card);
