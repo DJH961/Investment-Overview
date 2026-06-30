@@ -2,22 +2,27 @@
  * Live **1 Week** curve orchestration for the web companion
  * (docs/v3.0_live_web_companion_proposal.md §10.8, Phase 4).
  *
- * The 1W curve is **self-built from stored daily closes**: one daily-close bar
- * per trading session across the week, reconstructed with the very same anchored
- * maths the 1D curve uses ({@link reconstructSessionCurve}) — only the bar
- * cadence differs (one bar per *day* instead of one per 5-minute interval). That
- * means the whole-book value at each day's close is
- * `base + Σ valueᵢ · closeᵢ(day)/closeᵢ`, closing on the headline total by
- * construction, with EUR genuinely re-marked at each day's FX rather than a flat
- * rescale of USD.
+ * The 1W curve is **self-built from dense 5-minute intraday bars** over the
+ * trailing-session window — the *same* bar type and the very same anchored maths
+ * the 1D curve uses ({@link reconstructSessionCurve}) — so its today-slice is
+ * *identical* to the 1D graph, not merely similar (plan C1/C5). The whole-book
+ * value at each instant is `base + Σ valueᵢ · priceᵢ(t)/priceᵢ`, closing on the
+ * headline total by construction, with EUR genuinely re-marked at each instant's
+ * FX rather than a flat rescale of USD.
  *
- * Economics (§10.8): the daily closes are a **one-time `interval=1day` backfill**
- * — a single request per symbol covers the whole window (bars are free on Twelve
- * Data; 1 credit/symbol). They are persisted in the {@link TimeSeriesStore} under
- * a dedicated namespaced key, separate from the per-session 1D caches, so a
- * re-open does **not** re-fetch a week already on the device. While the market is
- * open, today's still-forming close is represented by the **live tip** (the
- * headline total at `now`), so the curve always ends on the live figure.
+ * Economics (§10.8): a single windowed `interval=5min` request per symbol covers
+ * the whole window (Twelve Data bills **1 credit per symbol per request
+ * regardless of bar count**, so a dense 5-day week costs the same as one day).
+ * The fetched market bars are persisted **twice over**: into a window-level ledger
+ * under a dedicated namespaced key (the freshness/close-probe/FX/NAV memory so a
+ * re-open does **not** re-fetch a week already on the device) *and*, split by
+ * trading day and clamped to each regular session, into the **shared per-day
+ * session store** the 1D builder writes (plan C5/C6 — see {@link
+ * persistWindowBarsPerDay}). That shared store is what the body reconstructs
+ * from, so 1D and 1W draw the identical per-day intraday bars and a day either
+ * timeframe freshens enriches the other for free. While the market is open,
+ * today's still-forming close is represented by the **live tip** (the headline
+ * total at `now`), so the curve always ends on the live figure.
  *
  * The network (`fetchDailyBars`/`fetchFx`) and persistence (`store`) are injected,
  * so the whole orchestration is unit-testable with no DOM, IndexedDB, or live API.
@@ -135,6 +140,38 @@ export function wrapDailyNavFetcher(fetch: BarFetcher): BarFetcher {
 /** Keep only bars at or after `fromMs` (drops days that have rolled out of the window). */
 function barsFrom(bars: Bar[], fromMs: number): Bar[] {
   return bars.filter((b) => b.t >= fromMs);
+}
+
+/**
+ * Persist freshly-fetched **market** window bars into the **shared per-day
+ * session store** (plan C5/C6) — the very same `YYYY-MM-DD` keys the 1D builder
+ * writes — so 1D and 1W draw the *identical* per-day intraday bars instead of two
+ * parallel caches. Each symbol's window-spanning intraday bars are split by
+ * trading day and clamped to that day's regular session `[sessionOpenMs,
+ * sessionCloseMs]` (mirroring the 1D builder's `clampBarsToDay`) before being
+ * unioned into the day's session. The merge is **bars-only**, so it never wipes a
+ * day's live-tip breadcrumb trail or its FX track — it only thickens the day with
+ * the bars this 1W pull paid for, which a later 1D build then reads back for free.
+ */
+async function persistWindowBarsPerDay(
+  store: TimeSeriesStore,
+  barsBySymbol: Record<string, Bar[]>,
+  window: string[],
+  now: number,
+): Promise<void> {
+  if (Object.keys(barsBySymbol).length === 0) return;
+  for (const day of window) {
+    const openMs = sessionOpenMs(day);
+    const closeMs = sessionCloseMs(day);
+    const incoming: Record<string, Bar[]> = {};
+    for (const [symbol, bars] of Object.entries(barsBySymbol)) {
+      const dayBars = bars.filter((b) => b.t >= openMs && b.t <= closeMs);
+      if (dayBars.length > 0) incoming[symbol] = dayBars;
+    }
+    if (Object.keys(incoming).length > 0) {
+      await store.mergeSession(day, { bars: incoming }, now);
+    }
+  }
 }
 
 /**
@@ -543,6 +580,17 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
       { bars: incomingBars, fx: incomingFx, closeProbe: incomingProbe, closeProbeClear: probeClear },
       now.getTime(),
     );
+    // Plan C5/C6 — **shared per-day store.** The 1W market sleeve is fetched as
+    // dense 5-min intraday bars over the window (plan C1); persist those bars not
+    // only into the weekly ledger above but also — split by trading day and
+    // clamped to each regular session — into the **same `YYYY-MM-DD` per-day
+    // sessions the 1D builder writes**. That makes every window day genuinely
+    // dense in the shared store, so the 1W body reconstructs from the *identical*
+    // per-day intraday bars as 1D (the today-slice of 1W equals the 1D graph by
+    // construction, not merely similar), and a day the 1W pull freshens enriches
+    // the 1D session for free (and vice-versa). A bars-only merge preserves each
+    // day's live-tip breadcrumb trail and FX.
+    await persistWindowBarsPerDay(store, incomingBars, window, now.getTime());
   }
 
   // Item 7b — gap-fill the daily-NAV history of *moving* funds (mutual funds)

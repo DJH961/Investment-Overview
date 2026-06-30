@@ -39,6 +39,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     EUR/USD mark is now timed to the **quote's own reported price time** rather than
     the moment we happened to poll — so the EUR and USD lines diverge at the right
     instants instead of being mis-stamped to the pull clock.
+  - **Main track (Group 2 — Unify fetch & store):** the windowed 5-minute market
+    bars the 1W pull fetches are now persisted into the **shared per-day session
+    store** — the same `YYYY-MM-DD` caches the 1D graph writes — split by trading
+    day and clamped to each regular session, instead of living only in a parallel
+    weekly cache. The 1W body therefore reconstructs from the *identical* per-day
+    intraday bars as 1D (the today-slice of 1W equals the 1D graph by construction,
+    not merely similar), and a day either timeframe freshens enriches the other for
+    free. The store stays canonical **USD**; the EUR line remains a per-instant FX
+    re-mark on top, never a flat rescale.
 
 ## [4.21.15] — 2026-06-30
 

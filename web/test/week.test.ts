@@ -96,6 +96,60 @@ describe("loadOrBuildWeekCurve", () => {
     expect(days.every((day) => !/^\d{4}-\d{2}-\d{2}$/.test(day))).toBe(true);
   });
 
+  it("mirrors the fetched window bars into the shared per-day session store (plan C5/C6)", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    // The 1W market sleeve is fetched as dense intraday bars over the window
+    // (plan C1). They land inside each regular session, so the per-day mirror
+    // writes them under the same `YYYY-MM-DD` keys the 1D builder uses.
+    const thuOpen = sessionOpenMs("2026-03-12");
+    const thuClose = sessionCloseMs("2026-03-12");
+    const friOpen = sessionOpenMs("2026-03-13");
+    const friClose = sessionCloseMs("2026-03-13");
+    const intraday = new Map<string, Bar[]>([
+      [
+        "VTI",
+        [
+          bar(thuOpen, "98"),
+          bar(thuClose, "99"),
+          bar(friOpen, "99.5"),
+          bar(friClose, "100"),
+        ],
+      ],
+    ]);
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => intraday,
+      now: SAT_CLOSED,
+    });
+    // Each fetched day now exists as a dense per-day session — the shared store
+    // 1D reads, not a parallel weekly-only cache.
+    const thu = await s.loadSession("2026-03-12");
+    const fri = await s.loadSession("2026-03-13");
+    expect(thu?.bars["VTI"]?.map((b) => b.t)).toEqual([thuOpen, thuClose]);
+    expect(fri?.bars["VTI"]?.map((b) => b.t)).toEqual([friOpen, friClose]);
+    // Bars-only merge never seeds a phantom breadcrumb trail.
+    expect(thu?.tips ?? []).toHaveLength(0);
+  });
+
+  it("only mirrors bars that fall inside a regular session into the per-day store", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    // A day-start (00:00 ET) close sits *before* the 09:30 open, so it is not a
+    // genuine intraday session bar and must not be mirrored into the per-day
+    // store (it would otherwise inject a pre-open point). The weekly ledger still
+    // carries it for the coarse reconstruction.
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map([["VTI", [bar(dayMs("2026-03-13"), "100")]]]),
+      now: SAT_CLOSED,
+    });
+    expect(await s.loadSession("2026-03-13")).toBeNull();
+    expect((await s.loadSession(WEEK_STORE_KEY))?.bars["VTI"]?.length).toBe(1);
+  });
+
   it("does not re-fetch when the cache already covers the latest settled session", async () => {
     const s = store();
     await s.saveSession({
