@@ -178,6 +178,30 @@ def summarize_ledger(
     )
 
 
+def _reinvested_dividend_value(t: Transaction) -> Decimal | None:
+    """Native value of a money-market par-$1 reinvested dividend, else ``None``.
+
+    A settlement money-market fund (VMFXX, SPAXX …) pays its distribution as
+    cash that is immediately swept back into more shares at the constant $1.00
+    NAV, so the row is booked as a ``dividend_reinvest`` whose *cash flow* nets
+    to zero (``net_native == 0``). Valuing the currency legs off that zero makes
+    the Activity tab show a meaningless €0.00 / $0.00 for a real dividend.
+
+    The dividend's actual income is its reinvested value ``quantity × price``
+    (shares bought at $1.00), which we surface here so the EUR/USD legs reflect
+    the payout. Returns ``None`` for every other row (including normal
+    reinvestments, whose ``net_native`` is the genuine non-zero cash used), so
+    only this par-value case is special-cased.
+    """
+    if t.kind != "dividend_reinvest":
+        return None
+    if t.net_native not in (None, Decimal(0)):
+        return None
+    if t.quantity is None or t.price_native is None:
+        return None
+    return t.quantity * t.price_native
+
+
 def _to_record(
     t: Transaction,
     *,
@@ -193,15 +217,31 @@ def _to_record(
     # that day rather than today's spot. ``fallback_rate`` (current spot) only
     # kicks in for rows older than the available FX history.
     native_ccy = (account.native_currency if account else "").upper()
-    net_eur, net_usd = dual_currency_amounts(
-        native_currency=native_ccy,
-        net_native=t.net_native,
-        net_eur=t.net_eur,
-        net_usd=t.net_usd,
-        on=t.date,
-        eur_to_usd=eur_to_usd or {},
-        fallback_rate=fallback_rate,
-    )
+    # A money-market par-$1 reinvested dividend has a zero net cash flow but a
+    # real payout; value its legs off the reinvested amount so the Activity tab
+    # shows the dividend rather than €0.00. The stored (zero) net_eur/net_usd
+    # are dropped here so the legs are re-derived at the trade-date rate.
+    reinvested_value = _reinvested_dividend_value(t)
+    if reinvested_value is not None:
+        net_eur, net_usd = dual_currency_amounts(
+            native_currency=native_ccy,
+            net_native=reinvested_value,
+            net_eur=None,
+            net_usd=None,
+            on=t.date,
+            eur_to_usd=eur_to_usd or {},
+            fallback_rate=fallback_rate,
+        )
+    else:
+        net_eur, net_usd = dual_currency_amounts(
+            native_currency=native_ccy,
+            net_native=t.net_native,
+            net_eur=t.net_eur,
+            net_usd=t.net_usd,
+            on=t.date,
+            eur_to_usd=eur_to_usd or {},
+            fallback_rate=fallback_rate,
+        )
     return LedgerRecord(
         id=t.id,
         date=t.date,

@@ -2010,11 +2010,18 @@ def _save_live_web_prefs(  # pragma: no cover - UI
     ui.notify("Live web companion preferences saved.", type="positive")
 
 
-def _publish_now_clicked(repo: str, include_transactions: bool) -> None:  # pragma: no cover - UI
-    """Build → encrypt → publish the live-web blob, then record the timestamp."""
+async def _publish_now_clicked(  # pragma: no cover - UI
+    button: ui.button, repo: str, include_transactions: bool
+) -> None:
+    """Build → encrypt → publish the live-web blob, then record the timestamp.
+
+    The serialize + encrypt + network-upload work is offloaded to a worker
+    thread via :func:`run.io_bound` so it never blocks the UI processing loop
+    (matching the auto-publish-on-import path in the transactions page).
+    """
     from investment_dashboard.services import publish_service  # noqa: PLC0415
 
-    try:
+    def _work() -> publish_service.PublishResult:
         with session_scope() as session:
             result = publish_service.publish_now(
                 session,
@@ -2025,17 +2032,22 @@ def _publish_now_clicked(repo: str, include_transactions: bool) -> None:  # prag
             app_config_repo.set_value(
                 session, "live_web_last_published_at", result.published_at.isoformat()
             )
-    except publish_service.PublishError as exc:
-        ui.notify(str(exc), type="negative")
-        return
-    except Exception as exc:  # pragma: no cover - network/runtime
-        ui.notify(f"Publish failed: {exc}", type="negative")
-        return
-    ui.notify(
-        f"Published {result.asset_name} ({result.size_bytes} bytes) to "
-        f"{result.repo}@{result.release_tag}.",
-        type="positive",
-    )
+        return result
+
+    async with _button_busy(button):
+        try:
+            result = await run.io_bound(_work)
+        except publish_service.PublishError as exc:
+            ui.notify(str(exc), type="negative")
+            return
+        except Exception as exc:  # pragma: no cover - network/runtime
+            ui.notify(f"Publish failed: {exc}", type="negative")
+            return
+        ui.notify(
+            f"Published {result.asset_name} ({result.size_bytes} bytes) to "
+            f"{result.repo}@{result.release_tag}.",
+            type="positive",
+        )
 
 
 def _format_last_published(raw: str | None, tz: tzinfo) -> str:  # pragma: no cover - UI
@@ -2137,11 +2149,13 @@ def _render_live_web_companion_section() -> None:  # pragma: no cover - UI
 
     ui.separator()
     with ui.row().classes("items-center gap-md"):
-        ui.button(
+        publish_btn = ui.button(
             "Publish now",
             icon="cloud_upload",
-            on_click=lambda: _publish_now_clicked(repo_in.value or "", bool(include_sw.value)),
         ).props("unelevated color=primary no-caps")
+        publish_btn.on_click(
+            lambda: _publish_now_clicked(publish_btn, repo_in.value or "", bool(include_sw.value))
+        )
         last = cfg["last_published_at"]
         ui.label(_format_last_published(last, tz)).classes("text-caption opacity-70")
 

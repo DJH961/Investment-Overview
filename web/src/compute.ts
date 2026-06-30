@@ -873,9 +873,35 @@ function priceForHolding(
     }
   }
   if (holding.last_known_price_native !== null) {
-    return { price: new Decimal(holding.last_known_price_native), isLive: false, at: null, pulledAt: null, asOfDate: fallbackDate };
+    return {
+      price: new Decimal(holding.last_known_price_native),
+      isLive: false,
+      // Surface *when* the exported price was struck (the provider's
+      // `regularMarketTime`, shipped as `last_price_time`) so a blob-priced row
+      // stamps a precise "as of <time>" instead of only a date. `formatAsOf`
+      // shows the clock time only for a same-day strike and a date otherwise, so
+      // an old strike still reads as a date. This is a fallback, not a live mark
+      // (`isLive` stays false), and `buildDashboard` never grades a non-live
+      // price as "live".
+      at: strikeTimeMs(holding.last_price_time),
+      pulledAt: null,
+      asOfDate: fallbackDate,
+    };
   }
   return { price: null, isLive: false, at: null, pulledAt: null, asOfDate: fallbackDate };
+}
+
+/**
+ * Parse an exported strike-time (`last_price_time`, the provider's
+ * `regularMarketTime`) to epoch ms. Returns null when absent or unparseable. A
+ * timestamp without a timezone offset is read defensively as UTC so a naive
+ * desktop datetime can never drift by the viewer's local offset.
+ */
+export function strikeTimeMs(raw: string | null | undefined): number | null {
+  if (raw == null) return null;
+  const hasZone = /(?:[zZ]|[+-]\d\d:?\d\d)$/.test(raw);
+  const ms = Date.parse(hasZone ? raw : `${raw}Z`);
+  return Number.isNaN(ms) ? null : ms;
 }
 
 function buildHolding(
@@ -1272,7 +1298,10 @@ export function buildDashboard(
     view.priceFreshness = holdingFreshness({
       observedAtMs: view.priceAsOf,
       nowMs: now.getTime(),
-      marketOpen: marketOpenNow && view.priceMarketOpen !== false,
+      // A fallback (exported/blob) price carries its real strike time now, but it
+      // is never a *live* intraday mark we just fetched — only a genuinely live
+      // quote may grade "live". A same-day fallback still grades "recent".
+      marketOpen: view.priceIsLive && marketOpenNow && view.priceMarketOpen !== false,
       liveWindowMs: liveStalenessMs,
       lastSettledCloseMs: settledCloseMs,
     });

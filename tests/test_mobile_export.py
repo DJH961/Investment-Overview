@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -17,6 +17,7 @@ from investment_dashboard.repositories import (
     fx_repo,
     instrument_overrides_repo,
     instruments_repo,
+    price_cache_repo,
     prices_repo,
 )
 
@@ -76,6 +77,16 @@ def _seed_mobile_portfolio(session: Session) -> None:
             date(2024, 6, 1): Decimal("155.00"),
             AS_OF: Decimal("160.00"),
         },
+    )
+    # VTI's price carries a provider market time (``regularMarketTime``) — when
+    # its last close was actually struck on the exchange — so the export can ship
+    # a precise strike *time*, not just the value-date. FXAIX gets none, so its
+    # exported ``last_price_time`` stays null.
+    price_cache_repo.upsert_last_refreshed_at(
+        session,
+        vti.id,
+        datetime(2024, 6, 15, 20, 0, 0),
+        market_time=datetime(2024, 6, 15, 20, 0, 0),
     )
     prices_repo.upsert_closes(
         session,
@@ -236,6 +247,7 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
         "price_type",
         "is_money_market",
         "last_known_price_native",
+        "last_price_time",
         "cashflows",
     }
     by_symbol = {row["symbol"]: row for row in export["holdings"]}
@@ -266,6 +278,11 @@ def test_mobile_export_holdings_cash_and_transactions(session: Session) -> None:
     # so the web can show when the value was last updated (not the export date).
     assert by_symbol["VTI"]["last_price_date"] == AS_OF.isoformat()
     assert by_symbol["FXAIX"]["last_price_date"] == AS_OF.isoformat()
+    # And *when* the exported price was struck on the exchange (the provider's
+    # ``regularMarketTime``), so the web can stamp a precise "as of <time>". VTI
+    # carries one; FXAIX (no recorded market time) exports ``null``.
+    assert by_symbol["VTI"]["last_price_time"] == datetime(2024, 6, 15, 20, 0, 0).isoformat()
+    assert by_symbol["FXAIX"]["last_price_time"] is None
     # Each priced holding also carries its prior published close (native) and that
     # close's date, so the web can derive a today's move from the export alone when
     # the live provider serves no usable quote for the symbol.
