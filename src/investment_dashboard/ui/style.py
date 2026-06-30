@@ -1157,7 +1157,10 @@ html, body {{
 .inv-holding-badge-row {{
   position: absolute; right: 0; bottom: 100%;
   display: flex; justify-content: flex-end;
-  margin-bottom: 0.2rem; pointer-events: none;
+  /* Nudge the chip down a touch so it clears the holding name above it
+     instead of overlapping that text, while staying absolutely positioned
+     (out of flow) so a long "Top % loser" label still never wraps a line. */
+  margin-bottom: -0.15rem; pointer-events: none;
 }}
 .inv-holding-badge {{
   display: inline-block; padding: 0.05rem 0.45rem;
