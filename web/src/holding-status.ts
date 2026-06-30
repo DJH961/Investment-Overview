@@ -168,7 +168,11 @@ export function formatQueueCountdown(remainingMs: number): string {
 
 /** The free-tier round cadence and capacity {@link computeQueueEtas} reasons over. */
 export interface QueueEtaParams {
-  /** Symbols that were freshly pulled this round (they occupy the current round). */
+  /**
+   * Symbols that were freshly pulled this round (they occupy the just-completed
+   * round and are already done, so they do not shift the deferred ETAs). Retained
+   * for context / telemetry.
+   */
   fetched: readonly string[];
   /** Symbols deferred this round, in priority (pull) order — index 0 goes first. */
   deferred: readonly string[];
@@ -185,24 +189,25 @@ export interface QueueEtaParams {
  * in the free-tier pull queue turned into a wall-clock ETA the caption can count
  * down to.
  *
- * The model is the user's own: a symbol's position in the *whole* pipeline is
- * `fetched.length + its index among the deferred`, and the budget pulls
- * `capacityPerRound` symbols per round. So the round a symbol lands in is
- * `floor(position / capacity) + 1`, and its ETA is `anchor + round × interval`.
- * This is what makes the estimate **smart**: a holding sitting tenth of thirteen
- * waits for the eight ahead of it to clear the current round *and* then rides the
- * next round — "about 2 min", not a flat one — while a symbol comfortably inside
- * the next round shows ~1 min. Deeper queues fan out across as many rounds as the
- * capacity demands.
+ * The anchor is the instant the round that produced this split *completed*, so the
+ * symbols pulled in it (`fetched`) are already done — they do **not** push the
+ * deferred queue any further out. The remaining symbols are retried
+ * `capacityPerRound` at a time in the *subsequent* rounds, so a deferred symbol's
+ * round is decided purely by its index among the deferred: `floor(index /
+ * capacity) + 1`, and its ETA is `anchor + round × interval`.
+ *
+ * Counting the already-fetched symbols into the position was what made every
+ * deferred ETA overestimate by a whole round — the first deferred symbol rides the
+ * very next round (~1 min), not the one after (~2 min). The smart fan-out still
+ * holds for deep queues: the first `capacity` deferred share the next round, the
+ * following `capacity` the round after, and so on.
  */
 export function computeQueueEtas(params: QueueEtaParams): Map<string, number> {
   const etas = new Map<string, number>();
   const capacity = Math.max(1, Math.trunc(params.capacityPerRound));
-  const fetchedCount = params.fetched.length;
   params.deferred.forEach((symbol, index) => {
     if (!symbol) return;
-    const pipelinePosition = fetchedCount + index; // 0-based across the whole pull
-    const round = Math.floor(pipelinePosition / capacity) + 1; // 1-based round number
+    const round = Math.floor(index / capacity) + 1; // 1-based round among the deferred
     etas.set(symbol, params.anchorMs + round * params.roundIntervalMs);
   });
   return etas;
