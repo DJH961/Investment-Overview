@@ -482,13 +482,13 @@ class TestReconstruct:
         _seed_eur_holding(session)
         calls = {"n": 0}
 
-        # A fetch that covers the session gap-free (a ~15-min grid from the open
-        # to near the close) so the coverage-aware guard trusts it complete and the
+        # A fetch that covers the session gap-free (a 5-min grid from the open to
+        # near the close) so the coverage-aware guard trusts it complete and the
         # second call short-circuits. Spaced within RECONSTRUCT_MAX_GAP_SECONDS so
         # no internal hole is flagged.
         covering_bars = {
-            datetime(2024, 6, 3, 13, 30) + timedelta(minutes=15 * i): Decimal("100")
-            for i in range(26)  # 13:30 (09:30 ET) → 19:45 (15:45 ET) every 15 min
+            datetime(2024, 6, 3, 13, 30) + timedelta(minutes=5 * i): Decimal("100")
+            for i in range(76)  # 13:30 (09:30 ET) → 19:45 (15:45 ET) every 5 min
         }
 
         def fetch(symbols, day, *, interval):  # type: ignore[no-untyped-def]
@@ -994,12 +994,25 @@ _WEEK_DAY_BARS = [
     ((19, 30), Decimal("130")),  # close
 ]
 
-#: A full regular session of 30-minute bars (09:30→16:00 ET == 13:30→20:00 UTC),
-#: i.e. 14 instants — denser than the WEEK_POINTS_PER_COMPLETE_SESSION floor, used
-#: to prove every sourced bar is kept rather than thinned.
-_HALF_HOUR_SESSION = [(h, m) for h in range(13, 20) for m in (0, 30) if (h, m) >= (13, 30)] + [
-    (20, 0)
-]
+
+#: A full regular session of 5-minute bars (09:30→16:00 ET == 13:30→20:00 UTC),
+#: i.e. 79 instants — the genuine cadence the coverage checks now demand. Spans
+#: the whole open→close with no gap reaching WEEK_MAX_GAP_SECONDS, so it reads as
+#: covered and clears the WEEK_POINTS_PER_COMPLETE_SESSION floor with wide margin.
+def _five_minute_session() -> list[tuple[int, int]]:
+    base = datetime(2024, 1, 1, 13, 30)
+    out: list[tuple[int, int]] = []
+    for i in range(79):  # 13:30 → 20:00 UTC inclusive, every 5 minutes
+        t = base + timedelta(minutes=5 * i)
+        out.append((t.hour, t.minute))
+    return out
+
+
+_FIVE_MIN_SESSION = _five_minute_session()
+
+#: The same full 5-minute session as a (instant, price) bar list a fake fetcher
+#: can serve so a re-pulled day fills to a genuine, covered curve.
+_DENSE_DAY_BARS = [((h, m), Decimal("100")) for (h, m) in _FIVE_MIN_SESSION]
 
 
 class TestWeekSeries:
@@ -1035,9 +1048,9 @@ class TestWeekSeries:
         ]
 
     def test_keeps_all_bars_when_day_is_denser_than_the_floor(self, session: Session) -> None:
-        # A full 30-minute session carries far more than the coverage floor; none
+        # A full 5-minute session carries far more than the coverage floor; none
         # of those genuine bars are dropped.
-        dense = [((h, m), Decimal(100 + i)) for i, (h, m) in enumerate(_HALF_HOUR_SESSION)]
+        dense = [((h, m), Decimal(100 + i)) for i, (h, m) in enumerate(_FIVE_MIN_SESSION)]
         assert len(dense) > iss.WEEK_POINTS_PER_COMPLETE_SESSION
         _seed_eur_holding_for_week(session)
         samples = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher(dense))
@@ -1047,7 +1060,7 @@ class TestWeekSeries:
         first_day_times = sorted(s[0] for s in samples if s[0].date() == sessions[0])
         expected = [
             datetime(sessions[0].year, sessions[0].month, sessions[0].day, h, m)
-            for h, m in _HALF_HOUR_SESSION
+            for h, m in _FIVE_MIN_SESSION
         ]
         assert first_day_times == expected
 
@@ -1143,11 +1156,11 @@ class TestWeekSeries:
         # preserved alongside).
         _seed_eur_holding_for_week(session)
         after_close = datetime(2024, 6, 3, 20, 30, tzinfo=UTC)  # 16:30 ET — closed
-        lone_at = datetime(2024, 6, 3, 14, 15)  # off the picked-instant grid
+        lone_at = datetime(2024, 6, 3, 14, 17)  # off the picked-instant grid
         intraday_repo.insert_sample(session, lone_at, Decimal("5555.00"))
         session.flush()
         seen: dict[str, date] = {}
-        base = _fake_week_fetcher(self._DAY_BARS)
+        base = _fake_week_fetcher(_DENSE_DAY_BARS)
 
         def fetch(symbols, start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
             seen["end"] = end_day
@@ -1167,35 +1180,32 @@ class TestWeekSeries:
         _seed_eur_holding_for_week(session)
         sessions = iss.recent_trading_sessions(_NOW)
         stale_day = sessions[1]  # a completed, non-anchor session
-        lone_at = datetime(stale_day.year, stale_day.month, stale_day.day, 14, 15)
+        lone_at = datetime(stale_day.year, stale_day.month, stale_day.day, 14, 17)
         intraday_repo.insert_sample(session, lone_at, Decimal("4242.00"))
         session.flush()
 
-        out = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS))
-        # The day was re-pulled: its open→close span (1000/1100/1200/1250/1300,
-        # the scaled _DAY_BARS) is now present alongside the original stray point.
+        out = iss.week_series_with_fx(
+            session, now=_NOW, fetcher=_fake_week_fetcher(_DENSE_DAY_BARS)
+        )
+        # The day was re-pulled: its full open→close 5-minute span (scaled to
+        # 1000.00 from the flat 100 bars) is now present alongside the stray point.
         day_values = [eur for at, eur, _ in out if at.date() == stale_day]
         assert len(day_values) >= iss.WEEK_POINTS_PER_COMPLETE_SESSION
-        assert {
-            Decimal("1000.00"),
-            Decimal("1100.00"),
-            Decimal("1200.00"),
-            Decimal("1250.00"),
-            Decimal("1300.00"),
-        } <= set(day_values)
+        assert Decimal("1000.00") in day_values
+        assert Decimal("4242.00") in day_values  # the original stray point is preserved
 
     def test_completed_session_with_clustered_points_is_repulled(self, session: Session) -> None:
         # A finished earlier session that holds enough points to clear the count
         # floor but all *clustered* in the morning — the feed stalled before
         # midday — spans too little of the open→close day. The span-aware coverage
         # check must treat it as gappy and re-pull to lay the day's full set of
-        # 30-minute bars, rather than freezing it at a morning-only stub.
+        # 5-minute bars, rather than freezing it at a morning-only stub.
         _seed_eur_holding_for_week(session)
         sessions = iss.recent_trading_sessions(_NOW)
         stale_day = sessions[1]  # a completed, non-anchor session
-        # Five points (≥ the floor) all within the first 25 minutes → count passes,
-        # span fails, so the day is still judged gappy.
-        for minute in (30, 35, 40, 45, 50):
+        # Enough points to clear the count floor but all within the first half hour
+        # → count passes, span fails, so the day is still judged gappy.
+        for minute in range(30, 60):
             at = datetime(stale_day.year, stale_day.month, stale_day.day, 13, minute)
             intraday_repo.insert_sample(session, at, Decimal("4242.00"))
         session.flush()
@@ -1211,7 +1221,7 @@ class TestWeekSeries:
 
     def test_completed_session_with_full_span_is_not_repulled(self, session: Session) -> None:
         # A finished session already holding its full open→close span at the
-        # 30-minute sourcing grid (no hole wider than WEEK_MAX_GAP_SECONDS) is
+        # 5-minute sourcing grid (no hole reaching WEEK_MAX_GAP_SECONDS) is
         # covered and never re-fetched — even under force=True, which only bypasses
         # the once-per-anchor marker, not the coverage check. The day keeps exactly
         # its seeded points (no scaled _DAY_BARS values mixed in), proving the
@@ -1220,7 +1230,7 @@ class TestWeekSeries:
         sessions = iss.recent_trading_sessions(_NOW)
         full_day = sessions[1]  # a completed, non-anchor session
         seeded = Decimal("7777.00")
-        for hour, minute in _HALF_HOUR_SESSION:
+        for hour, minute in _FIVE_MIN_SESSION:
             at = datetime(full_day.year, full_day.month, full_day.day, hour, minute)
             intraday_repo.insert_sample(session, at, seeded)
         session.flush()
@@ -1230,32 +1240,34 @@ class TestWeekSeries:
         )
         day_values = [eur for at, eur, _ in out if at.date() == full_day]
         # Untouched: still exactly the seeded points, no re-fetched bars merged in.
-        assert day_values == [seeded] * len(_HALF_HOUR_SESSION)
+        assert day_values == [seeded] * len(_FIVE_MIN_SESSION)
 
     def test_completed_session_with_internal_hole_is_repulled(self, session: Session) -> None:
         # A finished earlier session that clears the count floor *and* the first→last
-        # span, yet has an internal hole of an hour or more (e.g. the live feed
+        # span, yet has an internal hole of 15 min or more (e.g. the live feed
         # stalled midday and resumed), is still gappy: the span test only sees
         # first→last, so without the gap check it would freeze at a flat straight
         # line across the hole. The day must be re-pulled to supplement the gap.
         _seed_eur_holding_for_week(session)
         sessions = iss.recent_trading_sessions(_NOW)
         stale_day = sessions[1]  # a completed, non-anchor session
-        # Points spanning open→close (span passes, ≥ floor) but with a 2-hour hole
-        # between 14:30 and 16:30 → the largest gap exceeds WEEK_MAX_GAP_SECONDS.
-        for hour, minute in ((13, 30), (14, 0), (14, 30), (16, 30), (18, 0), (19, 30)):
+        # A full 5-minute grid (count + span pass) but with a 30-minute midday hole
+        # carved out between 16:00 and 16:30 UTC → the largest gap reaches
+        # WEEK_MAX_GAP_SECONDS, so the gap check alone flags the day.
+        hole_start, hole_end = (16, 0), (16, 30)
+        for hour, minute in _FIVE_MIN_SESSION:
+            if hole_start < (hour, minute) < hole_end:
+                continue
             at = datetime(stale_day.year, stale_day.month, stale_day.day, hour, minute)
             intraday_repo.insert_sample(session, at, Decimal("4242.00"))
         session.flush()
 
-        out = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS))
+        out = iss.week_series_with_fx(
+            session, now=_NOW, fetcher=_fake_week_fetcher(_DENSE_DAY_BARS)
+        )
         # Re-pulled: the day's full open→close set of bars now fills the hole.
-        day_values = [eur for at, eur, _ in out if at.date() == stale_day]
-        assert {
-            Decimal("1000.00"),
-            Decimal("1200.00"),
-            Decimal("1300.00"),
-        } <= set(day_values)
+        day_times = [at for at, _, _ in out if at.date() == stale_day]
+        assert datetime(stale_day.year, stale_day.month, stale_day.day, 16, 15) in day_times
 
     def test_build_week_value_series_empty_for_empty_portfolio(self, session: Session) -> None:
         # With nothing to price intraday there is nothing to cache or fetch, so
@@ -1273,9 +1285,9 @@ class TestAssessGraphCoverage:
         _seed_eur_holding_for_week(session)
         sessions = iss.recent_trading_sessions(_NOW)
         for day in sessions[:-1]:  # finished sessions only
-            # The full 30-minute grid: a span-complete day with no hole wider than
+            # The full 5-minute grid: a span-complete day with no hole reaching
             # WEEK_MAX_GAP_SECONDS, so the week coverage check reads it as covered.
-            for hour, minute in _HALF_HOUR_SESSION:
+            for hour, minute in _FIVE_MIN_SESSION:
                 at = datetime(day.year, day.month, day.day, hour, minute)
                 intraday_repo.insert_sample(session, at, Decimal("1000.00"))
         # The in-progress anchor is exempt, but seed a live point so it is real.
