@@ -63,6 +63,14 @@ const META_ASSET_NAME = "portfolio.meta.json";
  * re-pulled roughly every N minutes. Tuned for the Twelve Data free tier
  * (8 credits/min, 800/day, 1 credit per symbol): a longer window means fewer
  * refetches and fewer credits spent, at the cost of slightly older prices.
+ *
+ * NOTE (intentional divergence from desktop): the desktop app's equivalent
+ * "auto-update prices every" setting is denominated in **seconds** (default 60,
+ * range 15–3600, see `services/auto_refresh.py`) because it pulls from the
+ * keyless yfinance feed with no per-credit budget. The web companion is in
+ * **minutes** (default 15, range 1–240) precisely because every pull spends a
+ * scarce Twelve Data free-tier credit. The units/defaults differ on purpose —
+ * do NOT "align" one to the other.
  */
 const DEFAULT_UPDATE_MINUTES = 15;
 /** Upper bound for the configurable price-refresh interval, in minutes. */
@@ -246,6 +254,17 @@ export function parseInvestmentAmount(raw: string): number {
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_INVESTMENT_AMOUNT_EUR;
   const clamped = Math.min(MAX_INVESTMENT_AMOUNT_EUR, Math.max(1, n));
   return Math.round(clamped * 100) / 100;
+}
+
+/**
+ * Whether the user has *explicitly* set a regular-investment amount on this
+ * device (a non-blank stored value). When `false`, the app is free to seed the
+ * amount from the desktop export's `meta.investment_amount_eur` so the desktop
+ * stays the single source of truth; once the user saves their own number in
+ * Settings it becomes a sticky device-local override. See `app.ts`.
+ */
+export function hasStoredInvestmentAmount(): boolean {
+  return read(KEYS.investmentAmountEur).trim() !== "";
 }
 
 /** A blank, unconfigured config — used as the initial in-memory state. */

@@ -81,8 +81,10 @@ import {
   signClass,
 } from "./format";
 import { computeCurrencyEffect } from "./currency-effect";
+import { buildProviderUsage } from "./provider-usage";
 import { cycleTheme, loadTheme, themeButtonContent } from "./theme";
 import { getTimeFormat, setTimeFormat, type TimeFormat } from "./time-format";
+import { getTimezone, PRESET_TIMEZONES, setTimezone } from "./timezone";
 import {
   canConvertToUsd,
   convertFromEur,
@@ -5133,6 +5135,63 @@ export function renderTimeFormatToggle(): HTMLElement {
     setTimeFormat((select.value as TimeFormat) || "auto");
   });
   return select;
+}
+
+/**
+ * Self-contained timezone-override picker (Auto / a curated list of IANA zones).
+ * Like the clock-format toggle it persists its own choice and the new zone takes
+ * effect the next time the dashboard renders (e.g. on returning from Settings).
+ * Mirrors the desktop app's timezone preference.
+ */
+export function renderTimezoneToggle(): HTMLElement {
+  const labelFor = (zone: string): string => zone.replace(/_/g, " ").replace("/", " · ");
+  const options = [h("option", { value: "auto" }, ["Auto (device)"])];
+  for (const zone of PRESET_TIMEZONES) {
+    options.push(h("option", { value: zone }, [labelFor(zone)]));
+  }
+  const current = getTimezone();
+  // A previously-imported custom zone (not in the preset list) still shows up as
+  // its own selected option so the user sees what's in effect.
+  if (current !== "auto" && !PRESET_TIMEZONES.includes(current)) {
+    options.push(h("option", { value: current }, [labelFor(current)]));
+  }
+  const select = h("select", { class: "select", "data-action": "timezone" }, options) as HTMLSelectElement;
+  select.value = current;
+  select.setAttribute("aria-label", "Clock timezone");
+  select.addEventListener("change", () => {
+    setTimezone(select.value || "auto");
+  });
+  return select;
+}
+
+/**
+ * Read-only **provider usage** panel for the Settings "Data providers" group.
+ * Mirrors the desktop app's live Tiingo usage readout: it shows how much of each
+ * provider's budget has been spent against the configured cap (Twelve Data per
+ * minute and per day, plus the Tiingo fallback per day), with an "at limit"
+ * badge when a window is exhausted. Purely informational — it reads the same
+ * credit ledgers the live-data budget keeps and spends nothing.
+ */
+export function renderProviderUsage(): HTMLElement {
+  const usage = buildProviderUsage();
+  const row = (label: string, w: { used: number; cap: number; resets: string }): HTMLElement => {
+    const children: Array<Node | string> = [
+      h("span", { class: "usage-label" }, [label]),
+      h("span", { class: "usage-count" }, [`${w.used} / ${w.cap}`]),
+      h("span", { class: "usage-resets" }, [`resets ${w.resets}`]),
+    ];
+    if (w.used >= w.cap) children.push(h("span", { class: "usage-badge" }, ["at limit"]));
+    return h("div", { class: "usage-row" }, children);
+  };
+  return h("div", { class: "field provider-usage", role: "group", "aria-label": "Provider usage" }, [
+    h("span", { class: "field-label" }, ["Usage this period"]),
+    row("Twelve Data — minute", usage.twelveDataPerMinute),
+    row("Twelve Data — day", usage.twelveDataPerDay),
+    row("Tiingo — day", usage.tiingoPerDay),
+    h("span", { class: "field-hint" }, [
+      "Live spend against your caps. Twelve Data is the primary live feed; Tiingo is the fallback.",
+    ]),
+  ]);
 }
 
 /**

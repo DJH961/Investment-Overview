@@ -133,6 +133,23 @@ h2 { font-size: 1.02rem; margin: 0; letter-spacing: -0.01em; }
 .field { display: grid; gap: 0.3rem; margin: 0.9rem 0; }
 .field-label { font-weight: 600; font-size: 0.92rem; }
 .field-hint { color: var(--muted); font-size: 0.8rem; }
+.provider-usage .usage-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+}
+.provider-usage .usage-label { color: var(--muted); min-width: 9.5rem; }
+.provider-usage .usage-count { font-weight: 600; font-variant-numeric: tabular-nums; }
+.provider-usage .usage-resets { color: var(--muted); font-size: 0.78rem; }
+.provider-usage .usage-badge {
+  color: var(--bad, #c0392b);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 input {
   font: inherit;
   padding: 0.7rem 0.8rem;

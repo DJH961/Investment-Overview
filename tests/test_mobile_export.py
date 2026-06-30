@@ -204,6 +204,9 @@ def test_mobile_export_shape_and_default_sensitivity(session: Session) -> None:
     assert "base_currency" not in export["meta"]
     assert export["meta"]["display_currency"] == "EUR"
     assert export["meta"]["fx_rate_eur_usd"] == "1.10000000"
+    # The desktop's regular-investment amount is carried in meta so the web
+    # companion can seed its own override from the single source of truth.
+    _assert_decimal_string_or_null(export["meta"]["investment_amount_eur"])
     assert export["portfolio_cashflows"]
     metrics = export["portfolio_metrics"]
     assert set(metrics) == {
