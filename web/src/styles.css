@@ -1481,6 +1481,36 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* --- Charts (shared line chart: value-over-time + equity curve) ------------ */
 .chart-wrap { width: 100%; }
+/* "Refreshing" cue for a held-over live graph: while a reload/refresh is in
+   flight the previous curve stays on screen (we never blank a good graph), so a
+   subtle sweeping shimmer + a dimmed chart make it clear an update is underway —
+   the same "busy" language the rest of the app uses. `aria-busy` is set on the
+   wrapper in tandem for assistive tech. */
+.chart-wrap--refreshing { position: relative; }
+.chart-wrap--refreshing > * { opacity: 0.72; transition: opacity 0.2s ease; }
+.chart-wrap--refreshing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 0.5rem;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--accent, #4c8dff) 18%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  animation: chart-refresh-sweep 1.1s ease-in-out infinite;
+}
+@keyframes chart-refresh-sweep {
+  from { background-position: 180% 0; }
+  to { background-position: -80% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No sweep — fall back to a calm static dim so the busy state is still legible. */
+  .chart-wrap--refreshing::after { animation: none; background: none; }
+}
 /* Placeholder shown while a live (1D/1W) curve loads, or when it
    has no data yet — keeps the chart area from collapsing during the fetch. */
 .chart-live-status {
@@ -1546,6 +1576,14 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   padding: 0;
   margin-left: 0.45rem;
   color: var(--muted);
+}
+/* The button is `hidden` on the static history slices (1M/1Y/All) — nothing to
+   re-fetch. The `display: inline-flex` above otherwise wins over the UA
+   `[hidden] { display: none }` rule (equal specificity, author sheet last), so
+   the button would never disappear on a long-range graph. Re-assert the hide
+   with a higher-specificity selector so the attribute is honoured. */
+.chart-range-refresh[hidden] {
+  display: none;
 }
 .chart-range-refresh-glyph { font-size: 0.95rem; line-height: 1; display: inline-block; }
 .chart-range-refresh:hover:not(:disabled) {

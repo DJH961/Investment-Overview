@@ -48,3 +48,21 @@ describe("liveCurveToChart coverage caption", () => {
     expect(liveCurveToChart(intradayPoints())!.note).toBeUndefined();
   });
 });
+
+describe("liveCurveToChart coverage passthrough", () => {
+  it("echoes a partial-sleeve coverage so the wrapper can hold the old graph", () => {
+    const chart = liveCurveToChart(intradayPoints(), null, { covered: 6, total: 10 });
+    expect(chart!.coverage).toEqual({ covered: 6, total: 10 });
+  });
+
+  it("reports complete coverage when every holding has bars", () => {
+    const chart = liveCurveToChart(intradayPoints(), null, { covered: 10, total: 10 });
+    expect(chart!.coverage).toEqual({ covered: 10, total: 10 });
+  });
+
+  it("omits coverage entirely when there is no sleeve (treated as complete)", () => {
+    expect(liveCurveToChart(intradayPoints(), null, { covered: 0, total: 0 })!.coverage).toBeUndefined();
+    expect(liveCurveToChart(intradayPoints(), null)!.coverage).toBeUndefined();
+    expect(liveCurveToChart(intradayPoints())!.coverage).toBeUndefined();
+  });
+});
