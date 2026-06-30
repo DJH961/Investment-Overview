@@ -255,12 +255,13 @@ heavily‑outdated pull is then **one windowed bar pass that serves both 1D and 
 (no separate `weekBars` + `dayBars`). `relatively‑fresh` / `fresh` stay as the
 quote‑cadence tiers (no bar pull).
 
-### O3 — Replace the `:00` clock-hour gate with a 30-min staleness promotion
-The gate stops being a clock alignment and becomes a **leg swap on the round that
-already fires** (auto / manual / startup) — never an extra pull:
+### O3 — Replace the `:00` clock-hour gate with a 30-min staleness promotion (auto/startup only)
+On **auto and startup rounds only** (never manual), the gate stops being a clock
+alignment and becomes a **leg swap on the round that already fires** — never an
+extra pull:
 
 ```
-on a scheduled round:
+on a scheduled (auto/startup) round:
   if last real bar > 30 min old (or days missing):
       leg   = BARS over window(gap)   # the bar subsumes the quote
       quotes = SUPPRESSED             # do NOT also pull ~25 quotes
@@ -275,11 +276,22 @@ INSTEAD‑OF quotes** keeps it to one ~3–4 min pass. Cadence while open become
 (excludes the in‑progress candle); the next 5‑min quote round restores the live
 tip.
 
-### O4 — Manual tap forces a bars round (still bars-instead-of-quotes)
-A manual tap forces a `bars` round regardless of staleness, relying on the
-**existing** `primeQuotesFromGraphBars` pipeline so the headline/quote display
-stays fresh from the bar's latest completed close — **best of both worlds**. Still
-never bars + quotes together.
+### O4 — Split the manual controls: global = quote, per-graph button = bars
+Manual behaviour is split into two distinct controls:
+
+- **(a) The existing global refresh button → always a QUOTE round, no matter
+  what.** No 30‑min bar promotion on manual. Its single job is the **freshest live
+  price on demand**; it never repulls bars.
+- **(b) A new per‑graph refresh button next to *each* graph** (one by 1D, one by
+  1W). Clicking it **repulls bars for the window currently in view only**:
+  - **1D button → `window(today's session)`**
+  - **1W button → `window(full ~5‑session week)`**
+
+  This is the explicit, **view‑scoped** "redraw the body from fresh bars" control.
+  The pulled bars feed the headline via the verified `primeQuotesFromGraphBars`
+  pipeline, so it refreshes price as a side effect too — but it is **bars‑only**
+  (no separate quote round). Scope is exactly the visible timeframe, so a 1D click
+  is cheap (today) while a 1W click pulls the whole window.
 
 ### O5 — `targetedWeekBackfill` absorbed
 The window‑sized pull already covers each symbol's missing settled days, so the
@@ -288,9 +300,12 @@ bounded safety net (leaning retire).
 
 ### Net orchestrator brain
 ```
-if bars stale (>30 min) or days missing -> BARS over window(needed), quotes OFF
-else                                     -> QUOTES heartbeat
-(+ FX / NAV overlays; manual forces a BARS round; reservation 8/min + breaker bind all)
+AUTO / STARTUP round:
+  if bars stale (>30 min) or days missing -> BARS over window(needed), quotes OFF
+  else                                     -> QUOTES heartbeat
+GLOBAL manual button   -> QUOTES round, always
+PER-GRAPH button (1D/1W) -> BARS over window(in view), bars-only
+(+ FX / NAV overlays; reservation 8/min + breaker bind all)
 ```
 
 **Explicitly unchanged:** the 5‑min quote heartbeat itself, FX/NAV overlays,
@@ -352,8 +367,9 @@ breaker.
 5. **C4** — FX leg → 5‑min; drop blob FX.
 6. **O1–O5** — collapse the orchestrator's two bar legs into one window‑sized
    `bars` leg; merge the two outdated tiers; swap the `:00` gate for the 30‑min
-   bars‑instead‑of‑quotes promotion; manual forces a bars round; absorb
-   `targetedWeekBackfill`.
+   bars‑instead‑of‑quotes promotion **on auto/startup only**; keep the **global
+   manual button as a quote round** and add a **per‑graph (1D/1W) bars‑refresh
+   button** scoped to the view; absorb `targetedWeekBackfill`.
 7. **C8** — Python mirror at 5‑min.
 
 > No code is to be written until this plan is explicitly approved for
