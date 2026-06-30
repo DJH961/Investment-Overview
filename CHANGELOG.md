@@ -13,7 +13,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [5.0.7] — 2026-06-30
+## [5.0.8] — 2026-06-30
+
+### Fixed
+
+- **A NAV fund whose price simply is not published yet no longer drives an
+  after-hours "constant loop" of fetches, perpetual deferral, and a very loud,
+  persistent "auto-updating… still filling in".** The data orchestrator's
+  "NAV-as-soon-as-closed" overlay deliberately re-arms the NAV leg every round the
+  moment the regular session closes (the day's NAV is then the only price that can
+  change), relying on the executor to clamp the actual fetching "against the NAV
+  cache TTL **and a per-symbol NAV chase backoff**". That backoff existed for the
+  live-graph time-series pulls but **never for the NAV quote chase**, so the NAV
+  cache TTL returned the short poll window every round while behind tonight's
+  not-yet-published NAV — re-attempting (and, once it overflowed the free-tier
+  per-minute budget, re-deferring) on every burst, which is what kept the loud
+  "filling in" pill lit. NAV prices are not always there: a fund publishes its NAV
+  only once, often hours after the close and sometimes not at all on a given day.
+  The chase now reuses the existing `cacheSeriesBackoff` (three quick tries, then a
+  persisted 30-minute cooldown): once it arms, `navCacheTtlMs` rests the fund on
+  its market-day window instead of re-polling, so the dashboard tries hard briefly
+  and then stays quiet until the cooldown lapses or the NAV actually lands (which
+  clears the memo). The Settings hard refreshes already wipe this shared backoff,
+  so an explicit "Force-fetch every price now" still re-chases immediately
+  (`web/src/app.ts`, `web/src/quotes.ts`, `web/src/data-orchestrator.ts`).
+
+
 
 ### Fixed
 

@@ -191,8 +191,13 @@ export function planPull(ctx: PullContext): PullPlan {
   // NAV is not yet in hand the `nav` leg is due — a fresh quote book must NOT keep
   // the tier at `fresh` and starve the NAV pull until the next interval has
   // elapsed. The leg self-clears the moment the NAV lands (`navHeldForToday`), and
-  // the executor re-clamps each symbol against the NAV cache TTL + per-series
-  // backoff, so turning it on the moment it is awaited is safe and bounded.
+  // the executor re-clamps each symbol against the NAV cache TTL + per-symbol NAV
+  // chase backoff (`App.navChaseBackoff` → `navCacheTtlMs`'s `chaseSuppressed`), so
+  // turning it on the moment it is awaited is safe and bounded: because NAV prices
+  // are not always there (a fund may publish hours late or skip a day), once a few
+  // fruitless tries arm that backoff the executor rests the fund instead of
+  // re-chasing it every round — the loop/loud "auto-updating" this overlay would
+  // otherwise drive.
   if (ctx.market === "closed" && !ctx.freshness.navHeldForToday && !legs.nav) {
     legs.nav = true;
     notes.push("NAV due (market closed, awaiting today's NAV)");
