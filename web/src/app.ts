@@ -543,6 +543,25 @@ export function manualRefreshDecision(args: {
   return "run";
 }
 
+/** Whether a low-credit manual tap should `"poll"` for new data or `"cache"`. */
+export type LowCreditManualPlan = "poll" | "cache";
+
+/**
+ * Decide what a manual tap does when the daily free-tier reserve is nearly spent
+ * ({@link App.canForceRefresh} is false), kept pure so the rule is testable in
+ * isolation. A manual refresh under *market conditions* must never fall back on
+ * the cache wrongfully: whenever the book is demonstrably behind (`fullyUpToDate`
+ * is false — market open, or a settled close / tonight's NAV still missing) the
+ * tap still `"poll"`s for new data. The per-minute / per-day budget in
+ * {@link loadQuotes} caps the actual spend and defers the overflow, so a forced
+ * pull can never burn the reserve in one tap. Only when the book is genuinely
+ * current ({@link App.fullyUpToDate}) is there nothing to chase, so the tap may
+ * honour the reserve and repaint the `"cache"`.
+ */
+export function lowCreditManualPlan(fullyUpToDate: boolean): LowCreditManualPlan {
+  return fullyUpToDate ? "cache" : "poll";
+}
+
 /**
  * NAV-priced asset classes that are real, tickered funds and so can be priced
  * live (their NAV publishes ~once a day). Only genuine `mutual_fund` holdings
@@ -5792,16 +5811,29 @@ export class App {
     //   - fully settled / pre-market / weekend → re-pull *everything*. The user
     //     only taps refresh outside market hours when unsure the cache is right,
     //     so verify the whole book from scratch rather than trust it.
-    // Unless the daily free-tier budget is nearly spent (<10% left), where we
-    // fall back to the normal cache-respecting refresh so the reserve isn't
-    // burnt in one tap.
+    // Unless the daily free-tier budget is nearly spent (<10% left). Even then,
+    // a manual tap under *market conditions* (the book is demonstrably behind —
+    // market open, or a settled close / tonight's NAV still missing) must still
+    // poll for new data: serving the cache there would be wrong. The per-minute /
+    // per-day budget in {@link loadQuotes} caps the actual spend and defers the
+    // overflow, so a forced pull can never burn the reserve in one tap. We only
+    // honour the reserve and repaint the cache when the book is *fully up to
+    // date* ({@link fullyUpToDate}) — nothing new is fetchable, so there is
+    // genuinely nothing to chase.
     const canForce = this.canForceRefresh();
+    const forceAll = this.currentRefreshPhase() === "settled";
     if (!canForce) {
-      this.toast("Low on credits, showing recent prices.");
-      void this.runScheduledRefresh(this.sessionId, "manual", { force: false });
+      if (lowCreditManualPlan(this.fullyUpToDate()) === "cache") {
+        this.toast("Low on credits, showing recent prices.");
+        void this.runScheduledRefresh(this.sessionId, "manual", { force: false });
+        return;
+      }
+      // Behind under market conditions — poll anyway (budget-capped), never
+      // fall back on cache wrongfully.
+      this.toast("Low on credits — checking for new prices anyway…");
+      void this.runScheduledRefresh(this.sessionId, "manual", { force: true, forceAll });
       return;
     }
-    const forceAll = this.currentRefreshPhase() === "settled";
     void this.runScheduledRefresh(this.sessionId, "manual", { force: true, forceAll });
   }
 

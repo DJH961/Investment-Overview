@@ -11,6 +11,7 @@ import {
   displayFxFreshness,
   isUserRefresh,
   liveRefreshProgress,
+  lowCreditManualPlan,
   manualRefreshDecision,
   manualRefreshSummary,
   refreshTickAction,
@@ -627,6 +628,20 @@ describe("manualRefreshDecision", () => {
         now: idle.now,
       }),
     ).toBe("cooldown");
+  });
+});
+
+describe("lowCreditManualPlan", () => {
+  it("polls for new data when the book is behind under market conditions", () => {
+    // Reserve nearly spent, but we are demonstrably behind (market open, or a
+    // settled close / NAV still missing): a manual tap must still poll — serving
+    // the cache there would be wrong. The loadQuotes budget caps the spend.
+    expect(lowCreditManualPlan(false)).toBe("poll");
+  });
+
+  it("serves the cache only when the whole book is genuinely up to date", () => {
+    // Nothing is fetchable, so honour the reserve and repaint the cache.
+    expect(lowCreditManualPlan(true)).toBe("cache");
   });
 });
 
