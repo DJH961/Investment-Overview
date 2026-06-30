@@ -670,19 +670,21 @@ function eurEffectFromAnchor(o: OverviewView, anchorFx: Decimal | null): Decimal
  * open" instead of disagreeing in sign with it (the v4.16.2 bug).
  */
 function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
-  const { marketOpen, holiday, singleOvernight, forexFrozen, weekendOvernight, forexOpen } =
-    fxBoxRegime(now);
+  const { marketOpen, holiday, singleOvernight, forexOpen } = fxBoxRegime(now);
   // The euro currency effect. Normally `todayFxMoveEur` (anchored to the settled
-  // previous close). Two regimes re-anchor it to the last session's *open* so the
-  // panel total agrees with the card's "since last open" stat rather than
-  // contradicting it (the v4.16.2 bug, where the total spanned Thursday→now and
-  // could read negative while the headline read positive):
-  //   - **frozen weekend** — the paused Friday session;
-  //   - **weekend spill-over** — Friday's session with the live overnight drift on
-  //     top, since the weekend close is just a pause and Friday stays the previous
-  //     session.
+  // previous close). Every **market-closed session view** re-anchors it to the last
+  // session's *open* so the panel total agrees with the card's "since last open"
+  // stat rather than contradicting it (the v4.16.2 bug, where the total spanned
+  // prior close→now while the headline spanned open→now, so they disagreed in scale
+  // and could even disagree in sign). This covers the regular weekday post-close /
+  // pre-open as well as the **frozen weekend** (the paused Friday session) and the
+  // **weekend spill-over** (Friday's session with the live overnight drift on top,
+  // since the weekend close is just a pause and Friday stays the previous session).
+  // It also turns the frozen "Market hours" split leg into the real last-session
+  // open→close move instead of the near-zero prior-close→close residual it was when
+  // anchored to the settled previous close (which sits ~at the session close).
   let net = o.todayFxMoveEur;
-  if (forexFrozen || weekendOvernight) {
+  if (!marketOpen && !singleOvernight) {
     const reanchored = eurEffectFromAnchor(o, o.fxRateEurUsdSessionOpen);
     if (reanchored !== null) net = reanchored;
   }
@@ -759,19 +761,20 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
  * rate pair or no swing to show.
  */
 function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | null {
-  const { marketOpen, holiday, singleOvernight, forexFrozen, weekendOvernight, forexOpen } =
-    fxBoxRegime(now);
+  const { marketOpen, holiday, singleOvernight, forexOpen } = fxBoxRegime(now);
   const fxNow = o.fxRateEurUsd;
   // Prior-close anchor: the settled previous close, else the session close so the
   // panel survives a closed-market / frozen-FX round the same way the EUR effect
   // panel does — rather than disappearing while the card still shows a rate move.
-  // Re-anchored (mirroring the EUR panel) to the last session's *open* so the
-  // headline agrees with the card — for the **frozen weekend** and the **weekend
-  // spill-over** alike (the weekend close is a pause; Friday stays the previous
+  // Re-anchored (mirroring the EUR panel) to the last session's *open* on every
+  // **market-closed session view** so the headline agrees with the card — the
+  // regular weekday post-close / pre-open as well as the **frozen weekend** and the
+  // **weekend spill-over** (the weekend close is a pause; Friday stays the previous
   // session, paused on Friday or with the live overnight drift on top).
   let fxPrev = fxEffectPriorFx(o);
   if (
-    (forexFrozen || weekendOvernight) &&
+    !marketOpen &&
+    !singleOvernight &&
     o.fxRateEurUsdSessionOpen !== null &&
     o.fxRateEurUsdSessionOpen.greaterThan(0)
   ) {

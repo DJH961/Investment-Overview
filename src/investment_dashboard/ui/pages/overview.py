@@ -491,12 +491,16 @@ def _fx_effect_html(
     ``renderEurFxEffect``. Returns ``""`` when there is no euro swing to describe.
 
     The net is normally ``usd · (1/live_fx − 1/prev_fx)`` (anchored to the settled
-    previous close). The frozen weekend and the weekend spill-over both re-anchor it
-    to the session *open* (matching the box's "since last open" stat) so the panel
-    total agrees with the headline rather than contradicting it — the weekend close
-    is a pause, so Friday stays the previous session. When the settled previous close
-    is missing entirely the net is re-anchored to the best prior anchor on hand (see
-    :func:`_prior_fx`) so the panel survives a closed-market round.
+    previous close). Every **market-closed session view** re-anchors it to the
+    session *open* (matching the box's "since last open" stat) so the panel total
+    agrees with the headline rather than contradicting it in scale or sign — the
+    regular weekday post-close / pre-open as well as the frozen weekend and the
+    weekend spill-over (the weekend close is a pause, so Friday stays the previous
+    session). This also turns the frozen "Market hours" split leg into the real
+    last-session open→close move instead of the near-zero prior-close→close residual.
+    When the settled previous close is missing entirely the net is re-anchored to the
+    best prior anchor on hand (see :func:`_prior_fx`) so the panel survives a
+    closed-market round.
 
     Below the net figure a *diverging* bar splits the move into its market-hours
     and overnight slices, with the **currently-live** slice on top and the frozen
@@ -509,11 +513,11 @@ def _fx_effect_html(
     usd = metrics.total_value_usd
 
     # The euro currency effect, anchored to the settled previous close, then
-    # re-anchored in the two regimes that would otherwise disagree with the headline.
+    # re-anchored on every market-closed session view so it agrees with the headline.
     net_eur = Decimal(0)
     if prev_fx is not None and prev_fx > 0 and usd is not None and live_fx > 0:
         net_eur = usd / live_fx - usd / prev_fx
-    if regime.forex_frozen or regime.weekend_overnight:
+    if regime.session_view and not market_open:
         open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
         reanchored = _eur_effect_from_anchor(usd, live_fx, open_fx)
         if reanchored is not None:
@@ -604,10 +608,11 @@ def _investing_power_html(
 
     The prior-close anchor is the settled previous close, else the session close so
     the panel survives a closed-market round (see :func:`_prior_fx`). Like the EUR
-    panel it is re-anchored so the headline agrees with the box: the **frozen
-    weekend** and the **weekend spill-over** both to the session *open* ("since last
-    open"), since the weekend close is a pause and Friday stays the previous session.
-    Returns ``""`` when there is no usable rate pair or no swing to show.
+    panel it is re-anchored on every **market-closed session view** to the session
+    *open* ("since last open") so the headline agrees with the box — the regular
+    weekday post-close / pre-open as well as the frozen weekend and the weekend
+    spill-over, since the weekend close is a pause and Friday stays the previous
+    session. Returns ``""`` when there is no usable rate pair or no swing to show.
 
     Like :func:`_fx_effect_html` it carries a *diverging* market-hours/overnight bar
     below the headline (and a single full-width bar in the single-overnight holiday
@@ -620,9 +625,10 @@ def _investing_power_html(
     market_open = regime.market_open
 
     # Prior-close anchor: the settled previous close, else the session close, then
-    # re-anchored (mirroring the EUR panel) so the headline agrees with the box.
+    # re-anchored (mirroring the EUR panel) on every market-closed session view so
+    # the headline agrees with the box.
     prev_fx = _prior_fx(session, metrics, now)
-    if regime.forex_frozen or regime.weekend_overnight:
+    if regime.session_view and not market_open:
         open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
         if open_fx is not None and open_fx > 0:
             prev_fx = open_fx
