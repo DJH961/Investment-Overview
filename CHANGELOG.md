@@ -59,6 +59,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   genuinely up to date. The per-minute / per-day budget in `loadQuotes` caps the
   actual spend and defers the overflow, so a forced pull can never burn the
   reserve in one tap.
+## [5.0.9] — 2026-06-30
+
+### Fixed
+
+- **An after-close NAV fund now refreshes on the ordinary auto-update cadence —
+  like every other symbol — instead of being chased on its own loud, non-stop
+  schedule.** The earlier "NAV-as-soon-as-closed" overlay re-armed the NAV leg on
+  *every* round the moment the regular session closed and bolted on a dedicated
+  per-symbol NAV "chase backoff". In practice that meant a fund whose NAV had not
+  published yet was re-attempted on every burst, kept the burst cadence (and the
+  loud "auto-updating… still filling in" pill) lit without a break, and gave the
+  NAV its own bespoke poll/cooldown — none of which was the goal. The only real
+  problem was the opposite one: a fresh quote book could starve the NAV pull so it
+  was not attempted until well after the close. The overlay and the per-symbol
+  chase backoff are both removed; instead the graded freshness truth-table simply
+  folds the awaited NAV into the normal cadence — when the market is closed and
+  today's NAV is still missing, the `nav` leg comes due once the data ages past one
+  auto-update interval and keeps coming due (including past the one-hour mark, which
+  previously dropped it) until the NAV lands. The per-symbol NAV TTL still clamps
+  the genuine spend to one fetch per interval, so the fund is now an ordinary
+  cadence symbol: it starts being attempted right after the close, refreshes
+  quietly on the standard schedule, and no longer drives a perpetual burst or its
+  own pill (`web/src/freshness.ts`, `web/src/data-orchestrator.ts`,
+  `web/src/quotes.ts`, `web/src/app.ts`).
 
 ## [5.0.8] — 2026-06-30
 

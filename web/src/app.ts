@@ -4621,6 +4621,8 @@ export class App {
           // NAV fund: while the market is open it cannot strike, so rest; once it
           // closes, poll like a normal symbol until the settled session's NAV is
           // in hand (no upper catch-up cap — catches a late NAV, even past midnight).
+          // The poll uses the standard auto-update interval, so the fund refreshes
+          // on the same cadence as every other symbol rather than on its own.
           return navCacheTtlMs(cached?.quote, {
             now: now.getTime(),
             marketOpen: isUsMarketOpen(now),
