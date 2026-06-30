@@ -58,8 +58,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     bars leg over the window of size needed (`relatively-fresh` / `fresh` stay the
     quote-cadence tiers). The market-hours bar gate switches from the rigid `:00`
     **clock-hour** cadence to a rolling **30-minute bar-staleness** promotion — the
-    first bar fires once the session has been open past its warm-up, then again
-    whenever the last bar is over half an hour old — and, on a scheduled (auto /
+    first bar fires once the session has been open past its 30-minute warm-up (no
+    settled bar exists before that), then again whenever the last bar is over half an
+    hour old — and, on a scheduled (auto /
     startup) round only, because each bar's newest point doubles as the quote, that
     bar round now **subsumes the quote leg** instead of paying for both (a steady
     ~5 quote rounds : 1 bar round cadence); manual taps never promote or suppress.
