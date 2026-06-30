@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [5.1.3] — 2026-06-30
+## [5.1.4] — 2026-06-30
 
 ### Added
 
@@ -55,10 +55,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   seconds, the web companion in minutes for free-tier credit economy) so future changes
   don't "fix" one to match the other (`src/investment_dashboard/services/auto_refresh.py`,
   `web/src/config.ts`).
-
-## [5.1.2] — 2026-06-30
-
-### Fixed
 
 ## [5.1.3] — 2026-06-30
 
