@@ -835,8 +835,17 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         {price_date for pairs in recent_closes.values() for price_date, _ in pairs},
         reverse=True,
     )
-    latest_price_date = book_price_dates[0] if book_price_dates else None
-    previous_price_date = book_price_dates[1] if len(book_price_dates) > 1 else None
+    # One global baseline (matching metrics_service._compute_daily_growth and the
+    # 1 Day chart's previous_session_close_value): every row's daily move is keyed
+    # off the last completed market session and the session before it, *not* the
+    # freshest print in the book. A holding whose own latest close predates the
+    # baseline session forward-fills (price move 0, only the FX revaluation), so a
+    # massively outdated fund reads 0% today instead of resurrecting an old move.
+    # Fall back to the book's freshest dates only when there is no session at all.
+    _baseline_last = intraday_snapshots_service.previous_trading_session(as_of + timedelta(days=1))
+    _baseline_prev = intraday_snapshots_service.previous_trading_session(_baseline_last)
+    latest_price_date = _baseline_last if book_price_dates else None
+    previous_price_date = _baseline_prev if book_price_dates else None
     for p in positions:
         iid = p.instrument.id
         native = p.account.native_currency

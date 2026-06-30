@@ -13,6 +13,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.0.7] — 2026-06-30
+
+### Fixed
+
+- **Today's move, today's growth % and the 1 Day graph now share one global baseline —
+  the last market close — so the headline number and the graph endpoints always
+  agree.** Previously the headline daily move was keyed off the *freshest price
+  date among the holdings* (which drifted as deferred free-tier quotes trickled in
+  and could resurrect a lagging fund's months-old print as if it were "today"),
+  while the 1 Day chart's dashed reference line summed each holding's *own* settled
+  prior close — a different basis that could disagree with the headline. Both are
+  now measured against a single market-clock session: the last completed trading
+  session and the session before it (option B — the day's move persists through the
+  after-hours/overnight window until the next open). A holding whose freshest price
+  predates the baseline session forward-fills the same price into both the prior
+  and current mark, so a massively outdated fund — or one that only has the last
+  close and nothing newer — contributes exactly **0 %** instead of leaking an old
+  session's move. Everything is computed natively in USD with EUR derived via FX,
+  so the numbers reconcile in USD and up to FX in EUR (`web/src/compute.ts`).
+- **The Python desktop side now matches that behavior across both the daily-growth
+  number and the graphs.** `metrics_service._compute_daily_growth` and the
+  per-holding daily growth in `_overview_query` were keyed off the freshest price
+  prints in the book (so a single stale fund could date "yesterday" months in the
+  past); they now use the same holiday-aware market-session calendar the 1 Day
+  chart marks (`intraday_snapshots_service.previous_trading_session` /
+  `last_session_date`), so the headline baseline and the chart's prior-close anchor
+  can never disagree and a wholly outdated book reads 0 % today
+  (`src/investment_dashboard/services/metrics_service.py`,
+  `src/investment_dashboard/ui/pages/_overview_query.py`).
+
 ## [5.0.6] — 2026-06-30
 
 ### Fixed
