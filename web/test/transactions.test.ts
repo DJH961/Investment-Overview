@@ -117,4 +117,68 @@ describe("buildTransactions", () => {
     expect(view.rows[0].netEur).toBeNull();
     expect(view.rows[0].netUsd?.toString()).toBe("1.5");
   });
+
+  it("normalises money-market reinvestments to a dividend with no shares or price", () => {
+    const view = buildTransactions(
+      exportWith({
+        rows: [
+          {
+            id: 1,
+            date: "2026-03-31",
+            account: "Taxable",
+            kind: "dividend_reinvest",
+            symbol: "VMFXX",
+            quantity: "12.34",
+            price_native: "1.00",
+            fees_native: null,
+            gross_native: "12.34",
+            net_native: "0",
+            net_eur: "11.42",
+            net_usd: "12.34",
+            source: "import",
+          },
+        ],
+      }),
+    );
+    const row = view.rows[0];
+    expect(row.kind).toBe("dividend");
+    expect(row.quantity).toBeNull();
+    expect(row.priceNative).toBeNull();
+    // The cash legs are untouched so the amount still shows.
+    expect(row.netUsd?.toString()).toBe("12.34");
+    // The dropdown lists the normalised kind, not the raw reinvest slug.
+    expect(view.kinds).toEqual(["dividend"]);
+  });
+
+  it("leaves a non-money-market reinvestment (real shares) untouched", () => {
+    const view = buildTransactions(
+      exportWith({
+        rows: [
+          { id: 1, date: "2026-03-31", account: "Taxable", kind: "dividend_reinvest", symbol: "VWCE", quantity: "0.42", price_native: "120.50", fees_native: null, gross_native: "50.61", net_native: "0", net_eur: "50.61", net_usd: "54.66", source: "import" },
+        ],
+      }),
+    );
+    const row = view.rows[0];
+    expect(row.kind).toBe("dividend_reinvest");
+    expect(row.quantity?.toString()).toBe("0.42");
+    expect(row.priceNative?.toString()).toBe("120.5");
+  });
+
+  it("detects money-market funds flagged on holdings, beyond the static symbol list", () => {
+    const data = exportWith({
+      rows: [
+        { id: 1, date: "2026-03-31", account: "Taxable", kind: "dividend_reinvest", symbol: "ZZMM", quantity: "5", price_native: "1.00", fees_native: null, gross_native: "5", net_native: "0", net_eur: "4.6", net_usd: "5", source: "import" },
+      ],
+    });
+    // A non-standard ticker the export marks as money-market.
+    (data.holdings as unknown as Array<Record<string, unknown>>).push({
+      symbol: "ZZMM",
+      price_symbol: "ZZMM",
+      is_money_market: true,
+    });
+    const row = buildTransactions(data).rows[0];
+    expect(row.kind).toBe("dividend");
+    expect(row.quantity).toBeNull();
+    expect(row.priceNative).toBeNull();
+  });
 });
