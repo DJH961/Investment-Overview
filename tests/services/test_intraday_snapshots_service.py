@@ -1007,6 +1007,14 @@ class TestWeekSeries:
     # sourced bar is plotted (here that is all five).
     _DAY_BARS = _WEEK_DAY_BARS
 
+    def test_day_and_week_share_one_5min_density(self) -> None:
+        # C8 (docs/graph-unification-plan.md): the 1D and 1W paths reconstruct at
+        # the *same* 5-minute density, so the 1-day slice of the week is identical
+        # to the standalone 1D curve.
+        assert iss.RECONSTRUCT_INTERVAL == "5m"
+        assert iss.WEEK_INTERVAL == "5m"
+        assert iss.RECONSTRUCT_INTERVAL == iss.WEEK_INTERVAL
+
     def test_keeps_every_sourced_bar_per_session(self, session: Session) -> None:
         _seed_eur_holding_for_week(session)
         samples = iss.week_series_with_fx(

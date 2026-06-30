@@ -24,18 +24,20 @@ Two complementary sources feed the samples:
   often the app auto-updates prices. A small dedupe floor collapses bursts (a
   page-load refresh + the periodic tick firing within seconds).
 * **Reconstruction** — :func:`reconstruct_last_session` backfills the most recent
-  trading session at ~15-minute granularity from the price feed's intraday bars,
+  trading session at **5-minute granularity** from the price feed's intraday bars,
   so opening the app late in the day, after the close, or over a weekend still
   shows a full "1 Day" curve for the last trading day rather than a stub. It
-  fills *gaps* only: any 15-minute mark already captured live is left untouched,
+  fills *gaps* only: any 5-minute mark already captured live is left untouched,
   so a live-watched stretch keeps its denser, real points. The coverage guard
   (:func:`_session_is_covered`) re-pulls not just an under-spanned curve but one
   with an *internal hole* — a midday stall where live captures stopped and later
   resumed, or a missing morning — so a transient gap is smartly refilled on the
   next render instead of being drawn as a flat straight line. The "1 Week"
-  curve (:func:`week_series_with_fx`) applies the same idea per finished session:
-  a day whose cached points don't *span* the open→close is re-pulled to lay down
-  that day's full set of 30-minute bars.
+  curve (:func:`week_series_with_fx`) applies the **same per-session
+  reconstruction** at the same 5-minute density: a day whose cached points don't
+  *span* the open→close is re-pulled to lay down that day's full set of 5-minute
+  bars, so the 1-day slice of the week is identical to the standalone 1D curve
+  (``docs/graph-unification-plan.md`` C8).
 
 :func:`day_series_market_eur` returns the current session's merged market
 components; :func:`build_intraday_value_series` (in the Overview query layer)
@@ -105,16 +107,20 @@ _MARKET_OPEN = time(9, 30)
 #: cadence is comfortably above it).
 MIN_CAPTURE_GAP_SECONDS = 20
 
-#: Bar width used to reconstruct a missed session — the user's "every 15 min".
-RECONSTRUCT_INTERVAL = "15m"
+#: Bar width used to reconstruct a missed session. **5-minute density** to match
+#: the web companion (``docs/graph-unification-plan.md`` C8: "if web is 5-min,
+#: Python is 5-min"), so the desktop's 1D / 1W curves and the web's are the same
+#: graph at the same resolution. yfinance bills nothing per request, so the denser
+#: grid is free on the desktop's unmetered primary.
+RECONSTRUCT_INTERVAL = "5m"
 
 #: Half-window (seconds) around a reconstructed bar within which an existing live
-#: sample counts as "already covered". Reconstruction only *backfills*: a 15-min
+#: sample counts as "already covered". Reconstruction only *backfills*: a 5-min
 #: bar is skipped when a live sample already sits inside its slot, so a
 #: live-watched stretch keeps its denser, real points instead of being thinned to
-#: the coarse 15-min grid. 7.5 min = half the bar width, so each bar is suppressed
-#: only by a live sample inside its own slot (never by one in a neighbouring slot).
-RECONSTRUCT_COVERAGE_GAP_SECONDS = 7 * 60 + 30
+#: the 5-min grid. 2.5 min = half the bar width, so each bar is suppressed only by
+#: a live sample inside its own slot (never by one in a neighbouring slot).
+RECONSTRUCT_COVERAGE_GAP_SECONDS = 2 * 60 + 30
 
 #: Minimum number of stored "1 Day" samples below which a reconstructed session is
 #: judged under-covered (a stray bar from a partial / stalled fetch) and re-pulled
@@ -134,7 +140,7 @@ RECONSTRUCT_COVERAGE_FRACTION = Decimal("0.6")
 #: so it cannot see a *hole in the middle* (live captures that stalled midday and
 #: resumed, leaving a flat straight line across the gap) or a *missing morning*
 #: (a late first sample with a still-wide overall span). A fully reconstructed
-#: 15-min grid has ~15-min spacing, so 45 min (3 bars) clears a normal curve while
+#: 5-min grid has ~5-min spacing, so 45 min clears a normal curve with margin while
 #: still catching a genuine multi-bar gap, which the next render refills.
 RECONSTRUCT_MAX_GAP_SECONDS = 45 * 60  # 45 minutes
 
@@ -142,7 +148,7 @@ RECONSTRUCT_MAX_GAP_SECONDS = 45 * 60  # 45 minutes
 #: span before that day is trusted complete. Mirrors
 #: :data:`RECONSTRUCT_COVERAGE_FRACTION` for the "1 Week" curve: a day left with
 #: only clustered morning points (the feed stalled before midday) spans too
-#: little, so it is re-pulled to lay down the day's full set of 30-minute bars
+#: little, so it is re-pulled to lay down the day's full set of 5-minute bars
 #: rather than freezing at a gappy curve. The in-progress anchor session is exempt
 #: (it grows from today's dense live captures, gap-filled by the 1D reconstruction).
 WEEK_COVERAGE_FRACTION = Decimal("0.6")
@@ -155,8 +161,8 @@ WEEK_COVERAGE_FRACTION = Decimal("0.6")
 #: *internal hole* — a missing morning (a late first sample with a still-wide
 #: overall span) or a midday stall (captures stopped and later resumed, leaving a
 #: flat straight line across the gap). A day sourced at :data:`WEEK_INTERVAL`
-#: (30-minute) bars normally spaces points 30 min apart, so a 1-hour hole means at
-#: least one bar is missing and the day is re-pulled to supplement it.
+#: (5-minute) bars normally spaces points 5 min apart, so a 1-hour hole means many
+#: bars are missing and the day is re-pulled to supplement it.
 WEEK_MAX_GAP_SECONDS = 60 * 60  # 1 hour
 
 #: ``app_config`` key recording the last session date we reconstructed, so we
@@ -173,20 +179,22 @@ _WEEK_FETCHED_PREFIX = "intraday_week_fetched:"
 #: Number of recent trading sessions the Overview "Week" (1W) curve spans.
 WEEK_SESSIONS = 5
 
-#: Bar width used to source the "Week" curve's intraday path. Every sourced bar
-#: is kept (no token/credit limit on the desktop feed), so a full session yields
-#: ~13 genuine 30-minute marks — a coarse-enough bar to keep the multi-day
-#: download small while still drawing each day's real intraday shape.
-WEEK_INTERVAL = "30m"
+#: Bar width used to source the "Week" curve's intraday path. **5-minute density**
+#: to match the "1 Day" curve (:data:`RECONSTRUCT_INTERVAL`) and the web companion
+#: (``docs/graph-unification-plan.md`` C8), so the 1-day slice of the week is the
+#: same dense per-session reconstruction as the standalone 1D curve — identical,
+#: not merely similar. Every sourced bar is kept (no token/credit limit on the
+#: desktop feed), so a full session yields ~78 genuine 5-minute marks.
+WEEK_INTERVAL = "5m"
 
 #: Minimum number of intraday points a *completed* week session must carry to
 #: count as fully sourced. A finished session holding fewer than this is treated
 #: as missing data and re-pulled (see ``_is_covered`` in
 #: :func:`week_series_with_fx`), so a partial earlier fetch or a single stray live
-#: capture can't freeze a day at an incomplete curve. This is only a *floor*:
-#: :func:`_pick_session_points` keeps *every* sourced bar (~13/day), well above
-#: it. The in-progress session is exempt: its close hasn't happened yet, so it
-#: grows from live captures and any sample counts.
+#: capture can't freeze a day at an incomplete curve. This is only a *floor*: a
+#: 5-minute session keeps *every* sourced bar (~78/day), well above it. The
+#: in-progress session is exempt: its close hasn't happened yet, so it grows from
+#: live captures and any sample counts.
 WEEK_POINTS_PER_COMPLETE_SESSION = 5
 
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
@@ -790,7 +798,7 @@ def reconstruct_last_session(
 ) -> int:
     """Backfill the most recent session's intraday curve from the price feed.
 
-    Fetches ~15-minute intraday bars for the held, intraday-priced instruments on
+    Fetches ~5-minute intraday bars for the held, intraday-priced instruments on
     the last trading day and records the *market component* per bar — the EUR
     value of those holdings, ``Σ value_i · price_i(t)/close_i``, each USD-booked
     holding re-marked at that minute's **own** EUR/USD rate (from intraday
@@ -799,7 +807,7 @@ def reconstruct_last_session(
     so a holding the feed served no bars for is simply carried flat and the
     reconstruction is on the same basis as the live captures.
 
-    Only *gaps* are filled: a 15-minute mark already captured live is skipped, so
+    Only *gaps* are filled: a 5-minute mark already captured live is skipped, so
     a live-watched stretch keeps its denser real points.
 
     Idempotent and guarded: it runs the network fetch at most once per session
@@ -966,24 +974,62 @@ def _reconstruct_session(
     # per-instant repricing below never re-sorts a symbol's bars per point.
     price_lookups = {sym: _make_forward_fill(bars) for sym, bars in bars_by_symbol.items()}
     fx_lookup = _make_forward_fill(fx_bars)
+    # Reprice every bar instant via the *shared* per-session reconstruction core,
+    # skipping any slot already covered by a live sample so a live-watched stretch
+    # keeps its denser real points. The same core builds the 1W path's gap days
+    # (:func:`_build_week_day_samples`), so the 1-day slice of the week is the
+    # identical dense reconstruction as this standalone 1D curve.
+    samples = _reconstruct_session_samples(
+        bar_times,
+        priced,
+        price_lookups,
+        fx_lookup,
+        base_fx=base_fx,
+        fx_present=bool(fx_bars),
+        skip=lambda t: _covered_by_live(live_times, t),
+    )
     with cache_write_session(session) as cache:
-        for t in bar_times:
-            if _covered_by_live(live_times, t):
-                continue
-            # The rate struck at this minute (forward-filled), or the day's
-            # settled spot when no intraday FX is available.
-            fx_t = fx_lookup(t) if fx_bars else None
-            point_fx = fx_t or base_fx
-            # The intraday-priced (market) component only — the cash + NAV base is
-            # reapplied at render time, keeping reconstruction on the same basis
-            # as the live captures.
-            market = _market_component_pivot_eur(
-                priced, price_lookups, t, fx_t=fx_t, base_fx=base_fx
-            )
+        for t, market, point_fx in samples:
             intraday_repo.insert_sample(cache, t, market, point_fx)
             written += 1
         intraday_repo.delete_before(cache, _week_window_start_for(session_date))
     return written
+
+
+def _reconstruct_session_samples(
+    bar_times: list[datetime],
+    priced: list[Position],
+    price_lookups: dict[str, Callable[[datetime], Decimal | None]],
+    fx_lookup: Callable[[datetime], Decimal | None],
+    *,
+    base_fx: Decimal | None,
+    fx_present: bool,
+    skip: Callable[[datetime], bool] | None = None,
+) -> list[tuple[datetime, Decimal, Decimal | None]]:
+    """Reprice each bar instant into a ``(t, market_value_eur, fx_eur_usd)`` sample.
+
+    The **one** per-session reconstruction shared by the "1 Day"
+    (:func:`_reconstruct_session`) and "1 Week" (:func:`_build_week_day_samples`)
+    paths, so both lay down the identical dense 5-minute curve for a session and
+    the 1-day slice of the week equals the standalone 1D curve by construction
+    (``docs/graph-unification-plan.md`` C8).
+
+    Records the intraday-priced (market) component only — the cash + NAV base is
+    reapplied at render time, keeping reconstruction on the same basis as the live
+    captures. ``fx_t`` is the rate struck at this minute (forward-filled), or the
+    day's settled spot (``base_fx``) when no intraday FX is available. ``skip``
+    (1D path) drops any instant already covered by a live sample so a live-watched
+    stretch keeps its denser real points.
+    """
+    samples: list[tuple[datetime, Decimal, Decimal | None]] = []
+    for t in bar_times:
+        if skip is not None and skip(t):
+            continue
+        fx_t = fx_lookup(t) if fx_present else None
+        point_fx = fx_t or base_fx
+        market = _market_component_pivot_eur(priced, price_lookups, t, fx_t=fx_t, base_fx=base_fx)
+        samples.append((t, market, point_fx))
+    return samples
 
 
 def _covered_by_live(live_times: list[datetime], at: datetime) -> bool:
@@ -1099,10 +1145,10 @@ def week_window_start_utc(now: datetime | None = None) -> datetime:
 def _pick_session_points(bar_times: list[datetime]) -> list[datetime]:
     """Return a day's bar instants to plot — *all* of them, chronologically.
 
-    The week curve is sourced at :data:`WEEK_INTERVAL` (30-minute) bars with no
+    The week curve is sourced at :data:`WEEK_INTERVAL` (5-minute) bars with no
     token/credit limit, so every sourced bar is kept rather than thinned to a few
-    representative points: a full trading day yields ~13 genuine 30-minute marks,
-    giving the curve its real intraday shape instead of a coarse five-point step.
+    representative points: a full trading day yields ~78 genuine 5-minute marks,
+    giving the curve the same dense intraday shape as the standalone 1D curve.
     De-duplicates and sorts defensively; the open and close stay exact as the
     first and last instants.
     """
@@ -1150,7 +1196,7 @@ def _week_day_is_covered(
         return False
     # No internal hole: measure the open→first gap and every consecutive gap, so a
     # missing morning or a midday stall (which the span test cannot see) re-pulls
-    # to fill it. A gap of 1 hour or larger means a 30-minute bar is missing.
+    # to fill it. A gap of 1 hour or larger means many 5-minute bars are missing.
     return _max_gap_seconds([open_utc, *sample_times]) < WEEK_MAX_GAP_SECONDS
 
 
@@ -1164,7 +1210,7 @@ def week_series_with_fx(
     fx_fallback_fetcher: object | None = None,
     interval: str = WEEK_INTERVAL,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
-    """All sourced 30-minute market-component samples over the week.
+    """All sourced 5-minute market-component samples over the week.
 
     Returns ``[(at_utc, market_value_eur, fx_eur_usd), ...]`` (oldest first) — the
     same shape as :func:`day_series_with_fx`, so the render path
@@ -1174,8 +1220,10 @@ def week_series_with_fx(
     EUR/USD rate, so the two currency lines genuinely diverge across the week.
 
     Each session is repriced against *that day's* held positions (so a buy or
-    sell mid-week is reflected), keeping *every* sourced 30-minute bar (~13/day)
-    so the curve carries each day's full intraday shape.
+    sell mid-week is reflected), keeping *every* sourced 5-minute bar (~78/day)
+    so the curve carries each day's full intraday shape — the same dense
+    per-session reconstruction the standalone 1D curve uses, so the 1-day slice of
+    the week is identical to it (``docs/graph-unification-plan.md`` C8).
 
     **Cache-first.** The rolling-week intraday cache (live "1 Day" captures plus
     previously-fetched/reconstructed earlier days — all on the identical EUR
@@ -1291,7 +1339,15 @@ def _build_week_day_samples(
     bars_by_symbol: dict[str, dict[datetime, Decimal]],
     fx_bars: dict[datetime, Decimal],
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
-    """All 30-minute market-component samples for one session day."""
+    """All 5-minute market-component samples for one session day.
+
+    Reprices via the **shared** per-session reconstruction core
+    (:func:`_reconstruct_session_samples`) — the same one the 1D path uses — so a
+    week day is laid down at the identical 5-minute density as the standalone 1D
+    curve. Unlike the 1D path it does not skip live-covered slots: the week merges
+    cached + freshly fetched by timestamp (:func:`week_series_with_fx`), which
+    dedupes against any live captures already on hand.
+    """
     from investment_dashboard.services import fx_service  # noqa: PLC0415
 
     start = _session_start_utc(session_date)
@@ -1307,17 +1363,18 @@ def _build_week_day_samples(
         if any(_is_usd_native(p) for p in priced)
         else None
     )
-    # Build each forward-fill lookup once so repricing every 30-minute instant
+    # Build each forward-fill lookup once so repricing every 5-minute instant
     # below never re-sorts a symbol's bars per point.
     price_lookups = {sym: _make_forward_fill(bars) for sym, bars in bars_by_symbol.items()}
     fx_lookup = _make_forward_fill(fx_bars)
-    samples: list[tuple[datetime, Decimal, Decimal | None]] = []
-    for t in _pick_session_points(day_bar_times):
-        fx_t = fx_lookup(t) if fx_bars else None
-        point_fx = fx_t or base_fx
-        market = _market_component_pivot_eur(priced, price_lookups, t, fx_t=fx_t, base_fx=base_fx)
-        samples.append((t, market, point_fx))
-    return samples
+    return _reconstruct_session_samples(
+        _pick_session_points(day_bar_times),
+        priced,
+        price_lookups,
+        fx_lookup,
+        base_fx=base_fx,
+        fx_present=bool(fx_bars),
+    )
 
 
 def _fetch_and_persist_week_days(
@@ -1493,7 +1550,7 @@ def backfill_graphs(*, now: datetime | None = None) -> GraphCoverage:
     cache-first and self-limiting (a fully-covered graph is a no-op):
 
     * **1 Day** — :func:`reconstruct_last_session` re-pulls the last session only
-      while it is under-covered, laying its 15-minute grid across any gap.
+      while it is under-covered, laying its 5-minute grid across any gap.
     * **1 Week** — :func:`week_series_with_fx` with ``force=True`` re-attempts the
       uncovered sessions each tick (bypassing the once-per-anchor render guard,
       which exists only to keep page renders off the network), so a day that came
