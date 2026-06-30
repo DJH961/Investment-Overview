@@ -40,7 +40,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     the moment we happened to poll — so the EUR and USD lines diverge at the right
     instants instead of being mis-stamped to the pull clock.
 
-
+## [4.21.15] — 2026-06-30
 
 ### Fixed
 
