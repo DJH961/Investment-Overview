@@ -1327,6 +1327,12 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .txn-filters { display: grid; gap: 0.6rem; }
 .txn-search { width: 100%; }
 .txn-kind-filter { width: 100%; }
+.txn-range-filter { width: 100%; }
+.txn-sort-filter { width: 100%; }
+/* The secondary-currency line beneath each row's net: a touch smaller and
+ * lighter than the primary figure, so both currency legs read at a glance
+ * without competing with the headline amount. */
+.txn-secondary { font-size: 0.78rem; font-weight: 500; opacity: 0.85; }
 .txn-host { display: grid; gap: 1rem; }
 .txn-month { display: grid; gap: 0.5rem; }
 /* The month subheader sticks just under the topbar as the user scrolls a long
@@ -1369,11 +1375,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .txn-kind.txn-income { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .txn-sym { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-/* Roomier screens: the search box and type filter sit side by side (search
- * grows, the kind dropdown stays compact) instead of stacking. */
+/* Roomier screens: the search box grows while the type and time dropdowns stay
+ * compact beside it instead of stacking. */
 @media (min-width: 40rem) {
-  .txn-filters { grid-template-columns: 1fr auto; align-items: center; }
+  .txn-filters { grid-template-columns: 1fr auto auto auto; align-items: center; }
   .txn-kind-filter { width: auto; min-width: 11rem; }
+  .txn-range-filter { width: auto; min-width: 9rem; }
+  .txn-sort-filter { width: auto; min-width: 9rem; }
 }
 
 /* On wide viewports the bottom tab bar reflows to a static strip beneath the

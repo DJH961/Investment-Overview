@@ -13,7 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [5.0.4] — 2026-06-30
+## [5.0.5] — 2026-06-30
 
 ### Fixed
 
@@ -40,6 +40,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   week re-pulls nothing and touches no network — and `force` re-fetches only
   *uncovered* days, never re-downloading already-complete ones
   (`src/investment_dashboard/ui/pages/overview.py`, `src/investment_dashboard/boot.py`).
+
+## [5.0.4] — 2026-06-30
+
+### Fixed
+
+- **The web companion's Activity tab gained a sort-order toggle, so the oldest
+  transaction is one tap away.** Beside the search, type and time-range filters,
+  a "Newest first / Oldest first" dropdown flips the whole ledger — months and
+  the rows within them — letting you jump straight to your very first
+  transaction instead of scrolling the entire history. The time-range filter is
+  unchanged; the two combine freely (`web/src/ui.ts`, `web/src/styles.css`).
+- **The web companion's Activity tab gained a time-range filter.** Alongside the
+  existing search and type filters, a "Last 30 days / 90 days / 12 months / This
+  year / All time" dropdown narrows the ledger to a window, anchored to the
+  newest row's date so a stale export still filters relative to its own latest
+  activity. The header's entry count now reflects the active filters live
+  (`web/src/ui.ts`, `web/src/styles.css`).
+- **Each Activity row now shows its secondary currency instead of the redundant
+  "net" label.** The small line beneath the headline amount used to just read
+  "net"; it now shows the same movement in the other currency (USD when EUR is
+  selected, and vice-versa), so both legs of every cash flow are visible at a
+  glance without toggling currency (`web/src/ui.ts`, `web/src/styles.css`).
+- **The "imported from where" provenance chip (e.g. "Vanguard Xlsx", "Import")
+  was removed from Activity rows** — it was noise the user did not need on every
+  line (`web/src/ui.ts`).
+- **Money-market "reinvestment" rows (Vanguard `VMFXX`, Fidelity `SPAXX`, …) now
+  log as a plain Dividend with no share count and no price.** These settlement
+  funds hold a constant $1.00 NAV, so a reinvested distribution's "shares" are
+  merely the dollar amount and its "price" is always 1 — both meaningless. The
+  Activity tab now normalises such `dividend_reinvest` rows to a `dividend`,
+  dropping the par-value share/price detail (`web/src/transactions.ts`).
 
 ## [5.0.3] — 2026-06-30
 
