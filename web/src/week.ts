@@ -148,8 +148,8 @@ function barsFrom(bars: Bar[], fromMs: number): Bar[] {
  * writes — so 1D and 1W draw the *identical* per-day intraday bars instead of two
  * parallel caches. Each symbol's window-spanning intraday bars are split by
  * trading day and clamped to that day's regular session `[sessionOpenMs,
- * sessionCloseMs]` (mirroring the 1D builder's `clampBarsToDay`) before being
- * unioned into the day's session. The merge is **bars-only**, so it never wipes a
+ * sessionCloseMs]` — boundaries **inclusive** on both ends, mirroring the 1D
+ * builder's `clampBarsToDay` — before being unioned into the day's session. The merge is **bars-only**, so it never wipes a
  * day's live-tip breadcrumb trail or its FX track — it only thickens the day with
  * the bars this 1W pull paid for, which a later 1D build then reads back for free.
  */

@@ -150,6 +150,42 @@ describe("loadOrBuildWeekCurve", () => {
     expect((await s.loadSession(WEEK_STORE_KEY))?.bars["VTI"]?.length).toBe(1);
   });
 
+  it("treats the session open/close instants as inclusive when mirroring", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    const open = sessionOpenMs("2026-03-13");
+    const close = sessionCloseMs("2026-03-13");
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      // One tick before the open is dropped; the open and close instants are kept.
+      fetchDailyBars: async () =>
+        new Map([["VTI", [bar(open - 1, "97"), bar(open, "98"), bar(close, "100")]]]),
+      now: SAT_CLOSED,
+    });
+    expect((await s.loadSession("2026-03-13"))?.bars["VTI"]?.map((b) => b.t)).toEqual([open, close]);
+  });
+
+  it("preserves an existing day's breadcrumb trail when mirroring (bars-only merge)", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    const open = sessionOpenMs("2026-03-13");
+    // The day already has a live-tip breadcrumb trail (e.g. from a prior 1D
+    // watch). The 1W mirror must thicken its bars without wiping the tips.
+    await s.appendTip("2026-03-13", { t: open + 60_000, valueEur: d(900), valueUsd: d(1000) });
+    const before = await s.loadSession("2026-03-13");
+    expect(before?.tips ?? []).toHaveLength(1);
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map([["VTI", [bar(open, "98")]]]),
+      now: SAT_CLOSED,
+    });
+    const after = await s.loadSession("2026-03-13");
+    expect(after?.bars["VTI"]?.map((b) => b.t)).toEqual([open]);
+    expect(after?.tips ?? []).toHaveLength(1);
+  });
+
   it("does not re-fetch when the cache already covers the latest settled session", async () => {
     const s = store();
     await s.saveSession({
