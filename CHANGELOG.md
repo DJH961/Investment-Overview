@@ -14,6 +14,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.0.0] — 2026-06-30
+
+### Added
+
+- **The live-web companion gains an "Activity" (transactions) tab — the raw
+  ledger, now browsable on your phone.** A new fifth section sits between Risk
+  and Calculator in the tab bar and renders the export's transaction ledger as a
+  searchable, type-filterable, month-grouped list of buys, sells, dividends, and
+  cash movements. Each row shows the signed net cash flow in your currently
+  selected currency (EUR/USD) at *that trade's own* exchange rate, so the figures
+  reconcile with the desktop ledger rather than being re-valued at today's spot.
+  Auto-generated settlement sweeps are hidden, mirroring the desktop view
+  (`web/src/transactions.ts`, `web/src/ui.ts`, `web/src/types.ts`,
+  `web/src/compute.ts`).
+- **The Activity tab is opt-out.** An export may legitimately omit the ledger,
+  so the tab can be hidden from **Settings → Activity → Transactions tab**, and
+  it shows a clear "not included in this export" note when the ledger is absent
+  (`web/src/app.ts`, `web/src/ui.ts`). It is mobile-first like the rest of the
+  companion: a fixed bottom-nav entry within thumb reach on phones, reflowing to
+  the top tab strip on desktop, with the month header parked below the sticky
+  topbar (`web/src/styles.css`).
+
+### Changed
+
+- **Bumped to v5.0.0** to mark the Activity tab as the headline of a new major
+  line of the live-web companion. The desktop app, the `web/` companion
+  (`web/package.json`), and `uv.lock` move in lock-step as always, and the
+  READMEs' status headers now read v5.0.
+
 ## [4.16.2] — 2026-06-28
 
 ### Fixed
