@@ -159,6 +159,56 @@ describe("planPull — fresh tick is a no-op", () => {
   });
 });
 
+describe("planPull — manual relevance (freshness never filters a tap)", () => {
+  const fresh = { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true };
+
+  it("forces market-symbol quotes on a manual tap while open, even on the fresh tier", () => {
+    // A fully-fresh book while the market is open: an auto tick pulls nothing, but
+    // a manual tap is relevance-driven — the user asked, so quotes are re-pulled.
+    const auto = planPull(ctx({ kind: "auto", market: "open", freshness: fresh }));
+    expect(auto.legs.quotes).toBe(false);
+    const manual = planPull(ctx({ kind: "manual", market: "open", freshness: fresh }));
+    expect(manual.tier).toBe("fresh");
+    expect(manual.legs.quotes).toBe(true);
+    expect(manual.legs.nav).toBe(false);
+    expect(manual.reason).toContain("quotes forced (manual: market open)");
+  });
+
+  it("pulls NAVs only on a manual tap post-close while the NAV is still awaited", () => {
+    const awaited = { ...fresh, navHeldForToday: false };
+    const manual = planPull(ctx({ kind: "manual", market: "closed", minutesSinceOpenMs: 0, freshness: awaited }));
+    expect(manual.legs.nav).toBe(true);
+    // Market symbols hold the settled close post-bell, so the tap stays NAV-only.
+    expect(manual.legs.quotes).toBe(false);
+  });
+
+  it("re-verifies all symbols on a manual tap once closed with the NAV in hand", () => {
+    const manual = planPull(ctx({ kind: "manual", market: "closed", minutesSinceOpenMs: 0, freshness: fresh }));
+    expect(manual.legs.quotes).toBe(true);
+    expect(manual.legs.nav).toBe(true);
+    expect(manual.reason).toContain("all symbols");
+  });
+});
+
+describe("planPull — auto NAV the moment the market closes", () => {
+  it("raises the NAV leg on an otherwise-fresh auto tick the instant the close leaves the NAV awaited", () => {
+    // Fresh quote book, market closed, today's NAV not yet published: an auto tick
+    // must pull the NAV at once rather than wait a further interval for the tier to
+    // age into the relatively-fresh closed branch.
+    const fresh = { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: false };
+    const plan = planPull(ctx({ kind: "auto", market: "closed", minutesSinceOpenMs: 0, freshness: fresh }));
+    expect(plan.tier).toBe("fresh");
+    expect(plan.legs.nav).toBe(true);
+    expect(plan.reason).toContain("awaiting today's NAV");
+  });
+
+  it("leaves the NAV leg off once today's NAV is held", () => {
+    const fresh = { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true };
+    const plan = planPull(ctx({ kind: "auto", market: "closed", minutesSinceOpenMs: 0, freshness: fresh }));
+    expect(plan.legs.nav).toBe(false);
+  });
+});
+
 describe("describePlan", () => {
   it("renders a readable one-liner naming the mechanism and legs", () => {
     const plan = planPull(ctx({ kind: "start", freshness: { dataAgeMs: 30 * MIN, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 30 * MIN, navHeldForToday: true } }));

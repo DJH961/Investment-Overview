@@ -148,12 +148,18 @@ export interface PullPlan {
  * - **`reset`** — the heaviest escape hatch: a full re-pull of every leg. It
  *   clears soft freshness/backoff (downstream), but **never** the budget or the
  *   breaker — those still bind every leg it fires.
- * - **`start` / `manual`** — run the Pillar-4 truth-table, then layer the two
- *   market-hours overlays (clock-hour bar gate + rolling quote TTL). A manual tap
- *   forces a quote re-pull (the user is explicitly asking "is there anything
- *   new?"), so it skips the rolling-TTL suppression.
+ * - **`start` / `manual`** — run the Pillar-4 truth-table, then layer the
+ *   market-hours overlays (clock-hour bar gate + rolling quote TTL). A **manual**
+ *   tap is driven purely by RELEVANCE, never freshness: a fresh symbol can never
+ *   swallow it (only the upstream double-click cooldown can — see
+ *   `manualRefreshDecision`). It forces the legs that can actually have moved on —
+ *   market symbols while open, NAVs-only post-close until the NAV arrives, every
+ *   symbol once the close is in hand — so the executor's per-symbol skip, not the
+ *   freshness tier, has the final say.
  * - **`auto`** — the steady cadence: identical table + overlays, fully gated, so
- *   a tick that finds everything fresh pulls nothing.
+ *   a tick that finds everything fresh pulls nothing — except the moment the
+ *   market closes with the day's NAV still awaited, when the `nav` leg is due at
+ *   once (Overlay 0a) rather than after a further interval.
  */
 export function planPull(ctx: PullContext): PullPlan {
   if (ctx.kind === "reset") {
@@ -177,6 +183,52 @@ export function planPull(ctx: PullContext): PullPlan {
 
   const legs: PullLegs = { ...graded.legs };
   const notes: string[] = [];
+
+  // Overlay 0a — NAV-as-soon-as-closed (every cadence, auto included). The instant
+  // the regular session closes the day's NAV funds begin publishing and are the
+  // ONLY price that can still change, so whenever the market is shut and today's
+  // NAV is not yet in hand the `nav` leg is due — a fresh quote book must NOT keep
+  // the tier at `fresh` and starve the NAV pull until the next interval has
+  // elapsed. The leg self-clears the moment the NAV lands (`navHeldForToday`), and
+  // the executor re-clamps each symbol against the NAV cache TTL + per-series
+  // backoff, so turning it on the moment it is awaited is safe and bounded.
+  if (ctx.market === "closed" && !ctx.freshness.navHeldForToday && !legs.nav) {
+    legs.nav = true;
+    notes.push("NAV due (market closed, awaiting today's NAV)");
+  }
+
+  // Overlay 0b — manual relevance. A manual tap is driven by RELEVANCE, never
+  // freshness: a fresh symbol must NEVER swallow a tap (only the upstream
+  // double-click cooldown can — see `manualRefreshDecision`). There is a reason
+  // the user asked, so the relevant price legs are forced on regardless of the
+  // graded tier; the executor's per-symbol skip then decides the genuine work, so
+  // a tap with everything already settled still spends nothing. Relevance by
+  // market phase mirrors what can actually have moved:
+  //   - market OPEN          → market symbols move ⇒ force quotes (NAV can't strike);
+  //   - CLOSED, NAV awaited   → only NAVs can still change ⇒ NAV only (Overlay 0a);
+  //   - CLOSED, NAV in hand    → nothing is mid-move ⇒ re-verify ALL symbols (quotes + NAV).
+  if (ctx.kind === "manual") {
+    if (ctx.market === "open") {
+      if (!legs.quotes) {
+        legs.quotes = true;
+        notes.push("quotes forced (manual: market open)");
+      }
+    } else if (ctx.freshness.navHeldForToday) {
+      // Outside both relevance windows (closed and today's NAV already in hand):
+      // re-verify every symbol; the executor's per-symbol skip drops any that
+      // already hold the latest settled mark, so this is bounded, not a blind pull.
+      if (!legs.quotes) {
+        legs.quotes = true;
+        notes.push("quotes forced (manual: all symbols)");
+      }
+      if (!legs.nav) {
+        legs.nav = true;
+        notes.push("NAV forced (manual: all symbols)");
+      }
+    }
+    // CLOSED with NAV still awaited needs no quotes leg here: Overlay 0a already lit
+    // the NAV leg, and market symbols hold the settled close, so the tap is NAV-only.
+  }
 
   // Overlay 1 — the clock-hour bar gate is the SOLE 1D-bar authority during
   // market hours, in **both** directions, so one plan per round decides bars and

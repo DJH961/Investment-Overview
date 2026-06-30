@@ -13,7 +13,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.13] — 2026-06-29
+## [4.21.14] — 2026-06-30
+
+### Fixed
+
+- **A manual refresh is now gated only by relevance, never by freshness.** A tap
+  of the Refresh button flows through the single data orchestrator (and its
+  provider fan-out / deferral) the same as before, but a symbol being "fresh"
+  could previously land the round on the `fresh` tier and strip the quote/NAV
+  legs before the per-symbol skip ever ran — so a deliberate tap pulled nothing.
+  The orchestrator now forces the legs that can actually have moved on for a
+  manual tap, regardless of the graded tier: **market symbols while the market is
+  open**, **NAVs only post-close until the day's NAV arrives**, and **every symbol
+  once the close is in hand**. The executor's existing per-symbol skip still has
+  the final say (so a tap with everything already settled spends nothing), and the
+  only thing that can stop a tap is the short double-click cooldown. A manual tap
+  therefore reliably "pulls up" and expands an automatic update instead of being
+  swallowed by a fresh cache.
+- **Auto-updates pull the day's NAVs the instant the market closes.** Previously a
+  fresh quote book kept a closed-market auto tick on the `fresh` tier, so the NAV
+  leg did not fire until the data aged past one auto-interval. The orchestrator now
+  raises the NAV leg the moment the market is shut with today's NAV still awaited,
+  self-clearing once the NAV lands.
+
+
 
 ### Fixed
 
