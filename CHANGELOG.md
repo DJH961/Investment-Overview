@@ -13,25 +13,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.16] — 2026-06-30
-
-### Fixed
-
-- **Documentation tidy-up: the `docs/` tree is now navigable and free of stray
-  artefacts.** Three ad-hoc data-`polling-log` `.txt` dumps that had been left in
-  `docs/` were removed (they are runtime debug output, not documentation), and
-  four completed/superseded plan documents — the deferred-symbols/freshness plan,
-  the weekly-chart session-axis plan, the pre-v3.0 audit follow-ups, and the
-  `web/` setup-simplification plan — were moved into `docs/history/` with the
-  standard "archived — historical" banner and indexed in
-  `docs/history/README.md`. Cross-references in `CHANGELOG.md` and
-  `docs/maintenance_audit.md` were repointed to the new paths. A new
-  `docs/README.md` index catalogues every remaining document by status (living
-  reference, implemented design record, or pending proposal), and the root
-  `README.md` status pill was refreshed to the current version and now links to
-  that index. No code-cited design docs were relocated, so existing in-source
-  `docs/…` citations stay valid.
-
 ## [4.21.15] — 2026-06-30
 
 ### Fixed
