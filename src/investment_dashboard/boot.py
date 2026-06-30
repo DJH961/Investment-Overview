@@ -892,7 +892,7 @@ def _refresh_intraday_day() -> None:
     """Re-pull the most recent session's intraday "1 Day" curve.
 
     The Overview "1 Day" graph reconstructs the last trading session from
-    ~15-minute intraday bars (the within-day samples a cache reset wipes). Until
+    ~5-minute intraday bars (the within-day samples a cache reset wipes). Until
     this runs the curve is only rebuilt lazily the first time the user opens that
     range, so a fresh re-download would otherwise leave it blank.
 
@@ -916,7 +916,7 @@ def _refresh_intraday_day() -> None:
 
 
 def _refresh_intraday_week() -> None:
-    """Warm the multi-day intraday "1 Week" sleeve (5 points/day: open→close).
+    """Warm the multi-day intraday "1 Week" sleeve (5-minute density per session).
 
     Mirrors :func:`_refresh_intraday_day` for the Overview "1 Week" graph: it
     fetches and persists any uncovered sessions in the rolling week so the curve

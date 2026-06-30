@@ -13,6 +13,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.0.8] — 2026-06-30
+
+### Fixed
+
+- **Data Health now flags a genuinely gappy or coarse intraday graph instead of
+  reporting "full" — and the much stricter coverage rules densify any leftover
+  15-minute data to the live 5-minute cadence on startup.** The live "1 Day" /
+  "1 Week" coverage checks carried thresholds from an older, coarser sourcing
+  grid, so a sparse curve sailed past them and Data Health showed no failures.
+  Three changes tighten them
+  (`src/investment_dashboard/services/intraday_snapshots_service.py`):
+  - the per-session "points floor" (`WEEK_POINTS_PER_COMPLETE_SESSION`) is raised
+    from a stale **5** to **30**, far below a genuine ~78-bar 5-minute session but
+    high enough to reject a thin, coarse-cadence day on the count alone;
+  - the "no hour without a strike price" max-gap tolerance is lowered from **1
+    hour** to **15 minutes** for both graphs (`WEEK_MAX_GAP_SECONDS`,
+    `RECONSTRUCT_MAX_GAP_SECONDS`), matching the new 5-minute cadence; and
+  - the "1 Day" gap check is now *strict* (a gap of 15 min or more is too wide),
+    so a session still stored at the legacy 15-minute cadence reads as
+    under-covered and is re-pulled — densifying it to the 5-minute grid on the
+    next backfill and, crucially, on startup (`boot._refresh_intraday_day` /
+    `boot._refresh_intraday_week`), where the coverage gate now reopens those
+    days for a fill. Both paths stay cache-first and self-limiting: a genuinely
+    covered 5-minute day re-pulls nothing.
+
 ## [5.0.7] — 2026-06-30
 
 ### Fixed

@@ -140,9 +140,11 @@ RECONSTRUCT_COVERAGE_FRACTION = Decimal("0.6")
 #: so it cannot see a *hole in the middle* (live captures that stalled midday and
 #: resumed, leaving a flat straight line across the gap) or a *missing morning*
 #: (a late first sample with a still-wide overall span). A fully reconstructed
-#: 5-min grid has ~5-min spacing, so 45 min clears a normal curve with margin while
-#: still catching a genuine multi-bar gap, which the next render refills.
-RECONSTRUCT_MAX_GAP_SECONDS = 45 * 60  # 45 minutes
+#: 5-min grid has ~5-min spacing, so a 15-minute hole means several bars are
+#: missing. The check is *strict* (a gap of 15 min or more is too wide), so a
+#: session stored at the legacy 15-min cadence reads as under-covered and is
+#: re-pulled, densifying it to the 5-min grid on the next backfill / startup.
+RECONSTRUCT_MAX_GAP_SECONDS = 15 * 60  # 15 minutes
 
 #: Fraction of a *finished* week session (open→close) that its cached samples must
 #: span before that day is trusted complete. Mirrors
@@ -161,9 +163,10 @@ WEEK_COVERAGE_FRACTION = Decimal("0.6")
 #: *internal hole* — a missing morning (a late first sample with a still-wide
 #: overall span) or a midday stall (captures stopped and later resumed, leaving a
 #: flat straight line across the gap). A day sourced at :data:`WEEK_INTERVAL`
-#: (5-minute) bars normally spaces points 5 min apart, so a 1-hour hole means many
-#: bars are missing and the day is re-pulled to supplement it.
-WEEK_MAX_GAP_SECONDS = 60 * 60  # 1 hour
+#: (5-minute) bars normally spaces points 5 min apart, so a 15-minute hole means
+#: several bars are missing and the day is re-pulled to supplement it (a day still
+#: stored at the legacy 15-min cadence likewise re-pulls and densifies to 5-min).
+WEEK_MAX_GAP_SECONDS = 15 * 60  # 15 minutes
 
 #: ``app_config`` key recording the last session date we reconstructed, so we
 #: fetch intraday bars at most once per session instead of on every page load.
@@ -190,12 +193,15 @@ WEEK_INTERVAL = "5m"
 #: Minimum number of intraday points a *completed* week session must carry to
 #: count as fully sourced. A finished session holding fewer than this is treated
 #: as missing data and re-pulled (see ``_is_covered`` in
-#: :func:`week_series_with_fx`), so a partial earlier fetch or a single stray live
-#: capture can't freeze a day at an incomplete curve. This is only a *floor*: a
-#: 5-minute session keeps *every* sourced bar (~78/day), well above it. The
-#: in-progress session is exempt: its close hasn't happened yet, so it grows from
-#: live captures and any sample counts.
-WEEK_POINTS_PER_COMPLETE_SESSION = 5
+#: :func:`week_series_with_fx`), so a partial earlier fetch or a sparse legacy
+#: capture can't freeze a day at an incomplete curve. The old floor of 5 dates
+#: from a coarse sourcing grid and was far too low: at the current 5-minute
+#: cadence a genuine session yields ~78 bars, so a curve carrying only a handful
+#: of points is plainly under-covered yet sailed past the old floor. This is still
+#: only a *floor* — the span + max-gap tests do the fine-grained work — but it is
+#: now set high enough to reject a thin, coarse-cadence day on the count alone. A
+#: fully sourced 5-minute session clears it with wide margin.
+WEEK_POINTS_PER_COMPLETE_SESSION = 30
 
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
 _MIN_SHARES = Decimal("0.0000001")
@@ -1057,12 +1063,13 @@ def _session_is_covered(session: Session, session_date: date, now: datetime) -> 
     * a first→last span of at least :data:`RECONSTRUCT_COVERAGE_FRACTION` of the
       session elapsed so far (catches a morning-only / trailing-stalled curve); and
     * no *internal hole* — neither the gap from the open to the first sample nor
-      any gap between consecutive samples exceeds :data:`RECONSTRUCT_MAX_GAP_SECONDS`
+      any gap between consecutive samples reaches :data:`RECONSTRUCT_MAX_GAP_SECONDS`
       (catches a midday stall the span test cannot see, where captures stopped and
-      later resumed, leaving a flat straight line across the gap).
+      later resumed, leaving a flat straight line across the gap — and a coarse
+      legacy 15-min cadence, which is re-pulled and densified to the 5-min grid).
 
     Any failure re-pulls to fill the gaps (cheap — yfinance is unmetered). The
-    next render's reconstruction lays its 15-min grid across the hole, after which
+    next render's reconstruction lays its 5-min grid across the hole, after which
     the session reads as covered and the re-pulling stops.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
@@ -1083,9 +1090,10 @@ def _session_is_covered(session: Session, session_date: date, now: datetime) -> 
     if Decimal(actual_span) < RECONSTRUCT_COVERAGE_FRACTION * Decimal(expected_span):
         return False
     # No internal hole: measure the open→first gap and every consecutive gap so an
-    # early premarket point can't mask a missing morning. A hole wider than the
-    # tolerance means data is missing mid-session, so re-pull to fill it.
-    return _max_gap_seconds([open_utc, *times]) <= RECONSTRUCT_MAX_GAP_SECONDS
+    # early premarket point can't mask a missing morning. A hole of the tolerance
+    # or wider means data is missing mid-session (or the curve is only at the
+    # legacy coarse cadence), so re-pull to fill / densify it.
+    return _max_gap_seconds([open_utc, *times]) < RECONSTRUCT_MAX_GAP_SECONDS
 
 
 def _max_gap_seconds(times: list[datetime]) -> float:
@@ -1174,8 +1182,8 @@ def _week_day_is_covered(
       :data:`WEEK_POINTS_PER_COMPLETE_SESSION` points, a first→last reach across
       at least :data:`WEEK_COVERAGE_FRACTION` of the open→close session, *and* no
       internal hole — neither the open→first gap nor any gap between consecutive
-      samples may exceed :data:`WEEK_MAX_GAP_SECONDS` (catches a missing morning
-      or a midday stall the count + span tests cannot see).
+      samples may reach :data:`WEEK_MAX_GAP_SECONDS` (catches a missing morning, a
+      midday stall the count + span tests cannot see, or a coarse legacy cadence).
 
     Too few points, points all clustered in one stretch, or a wide hole mid-day —
     means the day is below target (data is missing), so it reports uncovered to
@@ -1196,7 +1204,8 @@ def _week_day_is_covered(
         return False
     # No internal hole: measure the open→first gap and every consecutive gap, so a
     # missing morning or a midday stall (which the span test cannot see) re-pulls
-    # to fill it. A gap of 1 hour or larger means many 5-minute bars are missing.
+    # to fill it. A gap of 15 min or larger means several 5-minute bars are missing
+    # (or the day is still at the legacy 15-min cadence and is densified to 5-min).
     return _max_gap_seconds([open_utc, *sample_times]) < WEEK_MAX_GAP_SECONDS
 
 
