@@ -53,14 +53,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     one-pipeline graph model. The separate 1D-session and 1W-week bar legs collapse
     into **one window-sized `bars` leg** measured in trading sessions (the `dayBars` /
     `weekBars` booleans survive only as derived projections of that window, so a 1W
-    pull is simply a wider 1D pull). The four staleness tiers merge into a single
-    **`outdated`** verdict (`relatively-fresh` / `fresh` stay the quote-cadence
-    tiers). The market-hours bar gate switches from the rigid `:00` **clock-hour**
-    cadence to a rolling **30-minute bar-staleness** promotion — a bar is pulled once
-    the last one is over half an hour old — and, because each bar's newest point
-    doubles as the quote, a scheduled bar round now **subsumes the quote leg** instead
-    of paying for both. The old targeted week-bar backfill is absorbed by the windowed
-    pull and kept only as a small bounded safety net for freshly added holdings. No
+    pull is simply a wider 1D pull). The two stale tiers (`heavily-outdated` +
+    `minorly-outdated`) collapse into a single **`outdated`** verdict that pulls one
+    bars leg over the window of size needed (`relatively-fresh` / `fresh` stay the
+    quote-cadence tiers). The market-hours bar gate switches from the rigid `:00`
+    **clock-hour** cadence to a rolling **30-minute bar-staleness** promotion — the
+    first bar fires once the session has been open past its warm-up, then again
+    whenever the last bar is over half an hour old — and, on a scheduled (auto /
+    startup) round only, because each bar's newest point doubles as the quote, that
+    bar round now **subsumes the quote leg** instead of paying for both (a steady
+    ~5 quote rounds : 1 bar round cadence); manual taps never promote or suppress.
+    The old targeted week-bar backfill is absorbed by the windowed pull and kept only
+    as a small bounded safety net for freshly added holdings. No
     user-visible behaviour changes; the brain just makes fewer, better-deduplicated
     decisions and never decides 1D and 1W bars on two different clocks.
 
