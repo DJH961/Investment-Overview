@@ -31,7 +31,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   incomplete, free-tier-deferred reload (some holdings carried flat) is left
   un-persisted so a shape-missing curve never snaps back over the fuller export.
   The reload button is also repositioned to the **top-left** of the graph, set
-  apart from the range pills on the top-right
+  apart from the range pills on the top-right.
   (`web/src/ui.ts`, `web/src/app.ts`, `web/src/styles.css`).
 
 ## [5.1.1] — 2026-06-30
