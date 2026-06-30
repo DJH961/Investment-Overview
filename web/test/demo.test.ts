@@ -28,6 +28,14 @@ describe("buildDemoModel", () => {
     expect(model.overview.portfolioXirr).not.toBeNull();
   });
 
+  it("seeds a transaction ledger so the Activity tab has content", () => {
+    expect(model.transactions.available).toBe(true);
+    expect(model.transactions.rows.length).toBeGreaterThan(0);
+    // The kind filter list is populated and sorted.
+    expect(model.transactions.kinds.length).toBeGreaterThan(0);
+    expect([...model.transactions.kinds].sort()).toEqual(model.transactions.kinds);
+  });
+
   it("flags the money-market NAV holding as a non-live (fallback) price", () => {
     const navRow = model.holdings.find((holding) => holding.symbol === "VMFXX");
     expect(navRow).toBeDefined();
@@ -172,6 +180,7 @@ describe("parseDemoParams", () => {
   it("maps the tab (and friendly aliases) to a valid tab id or null", () => {
     expect(parseDemoParams("?demo&tab=risk").tab).toBe("analytics");
     expect(parseDemoParams("?demo&tab=calculator").tab).toBe("plan");
+    expect(parseDemoParams("?demo&tab=activity").tab).toBe("transactions");
     expect(parseDemoParams("?demo&tab=periods").tab).toBe("periods");
     expect(parseDemoParams("?demo&tab=nonsense").tab).toBeNull();
     expect(parseDemoParams("?demo").tab).toBeNull();

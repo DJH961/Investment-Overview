@@ -275,7 +275,8 @@ export interface ExportTargetAllocation {
 /**
  * The full export. The as-of-export read-models (`monthly`, `yearly`,
  * `analytics`, `deposits`) are surfaced in Phase 4 (periods, projection and the
- * analytics display); `transactions` remains optional and is carried opaquely.
+ * analytics display); `transactions` is now typed (see {@link ExportTransactions})
+ * and surfaced on the mobile Transactions tab when the desktop opts to include it.
  */
 /**
  * Portfolio-level scalars (from `mobile_export._portfolio_metrics`) that let the
@@ -317,7 +318,52 @@ export interface MobileExport {
    * web can flag "history revised" when a late desktop import rewrote old days.
    * Absent on exports predating this field. */
   history_fingerprint?: ExportHistoryFingerprint;
-  transactions?: unknown;
+  /** Raw ledger rows, present only when the desktop publishes with
+   * `include_transactions=True`. Newest-first, already settlement-swept. Absent
+   * (or `undefined`) on exports that opted out — the Transactions tab then shows
+   * an empty/disabled state and can be hidden from Settings. */
+  transactions?: ExportTransactions;
+}
+
+/**
+ * The transactions read-model (`readmodels/transactions.py`): the raw ledger as
+ * a flat, newest-first list of cash/holding movements. Each `net_*` figure is
+ * the signed cash flow (money **in** is positive, **out** negative) converted at
+ * the FX rate in force on that row's own date, so the EUR and USD legs reflect
+ * the trade-date rate rather than today's spot.
+ */
+export interface ExportTransactions {
+  rows: ExportTransactionRecord[];
+}
+
+/** One ledger row as exported for the mobile companion. */
+export interface ExportTransactionRecord {
+  /** Stable transaction id (may be null for synthesised rows). */
+  id: number | null;
+  /** Trade date, ISO `YYYY-MM-DD`. */
+  date: string;
+  /** Human-readable account label (e.g. "Taxable", "Pension"). */
+  account: string;
+  /** Ledger kind: `buy`, `sell`, `dividend`, `dividend_reinvest`, `deposit`, … */
+  kind: string;
+  /** Instrument symbol, or "" for pure cash movements. */
+  symbol: string;
+  /** Signed share quantity (negative for sells); null for cash-only rows. */
+  quantity: DecimalString | null;
+  /** Per-unit price in the row's native currency. */
+  price_native: DecimalString | null;
+  /** Fees in the native currency. */
+  fees_native: DecimalString | null;
+  /** Gross (pre-fee) amount in the native currency. */
+  gross_native: DecimalString | null;
+  /** Signed net cash flow in the native currency (in +, out −). */
+  net_native: DecimalString | null;
+  /** Signed net cash flow in EUR, at the trade-date FX rate. */
+  net_eur: DecimalString | null;
+  /** Signed net cash flow in USD, at the trade-date FX rate. */
+  net_usd: DecimalString | null;
+  /** Provenance of the row (`manual`, `import`, …), or null. */
+  source: string | null;
 }
 
 /** Summary of the exported equity-curve history, for revision detection. */

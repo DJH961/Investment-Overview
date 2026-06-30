@@ -20,10 +20,12 @@ Concretely, that means:
   allocation panel underneath, and two-column Periods/Risk/Calculator panels) so the
   extra space isn't wasted. This is layered on with `min-width` media queries
   only; the markup and mobile source order never change.
-- Sections (Overview / Periods / Risk / Calculator) switch through a **tab bar** that
+- Sections (Overview / Periods / Activity / Risk / Calculator) switch through a **tab bar** that
   is a fixed bottom navigation on phones (within thumb reach) and reflows to a
   top tab strip on desktop — same markup, `min-width` media queries only. The
-  last-viewed tab is remembered per device.
+  last-viewed tab is remembered per device. The **Activity** (transactions) tab
+  is opt-out: an export may omit the ledger, so it can be hidden from **Settings →
+  Activity → Transactions tab**.
 - Holdings render as a scannable **list** (symbol · name · value · today's
   move), never a wide horizontal-scrolling spreadsheet table. Long lists
   (holdings and the by-month / by-year period tables) are **collapsible** so you
@@ -179,6 +181,13 @@ responses, or any decrypted data (that lives in memory only) — see
    - **Risk** — the as-of-export analytics bundle (returns, risk metrics, an
      inline equity-curve sparkline and per-holding attribution), clearly stamped
      "as of <export>" because history-bound stats do not move intraday.
+   - **Activity** — the raw transaction ledger (when the export includes it): a
+     searchable, type-filterable, month-grouped list of buys/sells/dividends/
+     cash movements, each showing the signed net cash flow in your selected
+     currency at that trade's own exchange rate. Auto-generated settlement sweeps
+     are hidden, mirroring the desktop ledger. The tab is opt-out from Settings,
+     and shows a clear "not included in this export" note when the ledger is
+     absent.
    - **Calculator** — an interactive allocation/invest planner (a port of the
      desktop app's calculator): you set a **target mix** (by category or by
      fund) and turn a cash contribution into a concrete buy-only — or, with
