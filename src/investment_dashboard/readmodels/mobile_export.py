@@ -165,9 +165,15 @@ def _holding_dict(
     cost_basis_usd: dict[int, Decimal],
     price_dates: dict[int, date],
     previous_closes: dict[int, tuple[date, Decimal]],
+    market_times: dict[int, datetime],
 ) -> dict[str, Any]:
     iid = position.instrument.id
     prev_close = previous_closes.get(iid)
+    is_mm = is_money_market(
+        position.instrument.symbol,
+        asset_class=_asset_class(position),
+        name=_position_name(position),
+    )
     return {
         "symbol": position.instrument.symbol,
         "name": _position_name(position),
@@ -194,11 +200,7 @@ def _holding_dict(
         "cumulative_dividends_cash_native": dec(position.cumulative_dividends_cash_native),
         "price_symbol": position.instrument.symbol,
         "price_type": _price_type(position),
-        "is_money_market": is_money_market(
-            position.instrument.symbol,
-            asset_class=_asset_class(position),
-            name=_position_name(position),
-        ),
+        "is_money_market": is_mm,
         "last_known_price_native": dec(position.current_price_native),
         # The trading day the exported ``last_known_price_native`` actually came
         # from (the latest cached close on/before the export date), so the web
@@ -207,6 +209,15 @@ def _holding_dict(
         # is really days old. ``null`` for rows with no cached price history
         # (e.g. money-market funds pinned at their constant NAV).
         "last_price_date": iso(price_dates.get(iid)),
+        # *When* the exported price was last struck on the exchange — the
+        # provider's ``regularMarketTime`` (e.g. a market quote's intraday
+        # timestamp, or a fund's NAV publish instant), distinct from
+        # ``last_price_date`` (the value-date) and from when we pulled it. Lets
+        # the web companion show a precise "as of <time>" for a blob-priced row
+        # instead of only a date. ``None`` when the provider never published it
+        # or for money-market par rows (mirrors the desktop ``holding_freshness``
+        # rule), and absent on exports generated before this field was added.
+        "last_price_time": None if is_mm else iso(market_times.get(iid)),
         # The prior published close (native) and its date, so the web can derive a
         # today's move from the export alone when the live price provider serves no
         # usable quote for this symbol. ``None`` when under two closes are cached.
@@ -421,6 +432,10 @@ def build_mobile_export(
     previous_closes: dict[int, tuple[date, Decimal]] = {
         instr_id: rows[1] for instr_id, rows in recent_closes.items() if len(rows) >= 2
     }
+    # When each holding's exported price was last struck on the exchange (the
+    # provider's ``regularMarketTime``), so the web can stamp a precise "as of
+    # <time>" on a blob-priced row rather than only its value-date.
+    market_times = prices_service.market_time_for(session, instrument_ids)
     txns = list(transactions_repo.list_transactions(session, end=context.as_of))
     # The web companion carries figures in EUR as its internal FX-pivot (USD is
     # the native booked currency) but lets the reader flip to USD on the
@@ -451,6 +466,7 @@ def build_mobile_export(
                 cost_basis_usd=cost_basis_usd,
                 price_dates=price_dates,
                 previous_closes=previous_closes,
+                market_times=market_times,
             )
             for position in positions
         ],

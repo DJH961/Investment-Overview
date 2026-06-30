@@ -959,6 +959,29 @@ describe("buildDashboard", () => {
     const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
     expect(fxaix.priceFallbackDate).toBe("2024-06-01");
   });
+
+  it("reads the exported strike time (last_price_time) into a fallback row's priceAsOf", () => {
+    // No live quote for FXAIX → it falls back to the exported last-known price,
+    // and now carries *when* that price was struck (the provider's market time).
+    const exp = makeExport();
+    exp.holdings[1].last_price_date = "2024-06-01";
+    exp.holdings[1].last_price_time = "2024-06-01T20:00:00+00:00";
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T21:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceIsLive).toBe(false); // still a fallback, not a live mark
+    expect(fxaix.priceAsOf).toBe(Date.parse("2024-06-01T20:00:00Z"));
+    // A non-live fallback never grades "live", even within the live window while
+    // the market is open — a same-day strike grades "recent".
+    expect(fxaix.priceFreshness).not.toBe("live");
+  });
+
+  it("treats a timezone-less strike time as UTC (no local drift)", () => {
+    const exp = makeExport();
+    exp.holdings[1].last_price_time = "2024-06-01T20:00:00"; // naive ⇒ UTC
+    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T21:00:00Z"));
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.priceAsOf).toBe(Date.parse("2024-06-01T20:00:00Z"));
+  });
 });
 
 describe("FX-aware today's move", () => {
