@@ -13,6 +13,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.1.2] — 2026-06-30
+
+### Fixed
+
+- **The per-graph reload (↻) now actually reloads _and sticks_, and it moved to
+  the top-left of the graph.** Tapping reload re-pulled the in-view live window's
+  bars and redrew, but the very next network-free re-select (switch to another
+  window and back) sprang straight off the cached export blob again, so the
+  reloaded curve vanished the instant you looked away. The live builder now
+  remembers, per chart and per range, that you reloaded a window and — on every
+  later re-select — skips the export springboard to rebuild from the freshly
+  pulled stored bars instead, so the reload persists going forward (with a safe
+  fallback to the springboard when the stored bars are too thin to draw, e.g. a
+  cold new session, so the graph never blanks). Crucially, a reload only "sticks"
+  when it came back **complete** — every intraday-priced holding had its bars; an
+  incomplete, free-tier-deferred reload (some holdings carried flat) is left
+  un-persisted so a shape-missing curve never snaps back over the fuller export.
+  The reload button is also repositioned to the **top-left** of the graph, set
+  apart from the range pills on the top-right
+  (`web/src/ui.ts`, `web/src/app.ts`, `web/src/styles.css`).
+
 ## [5.1.1] — 2026-06-30
 
 ### Fixed

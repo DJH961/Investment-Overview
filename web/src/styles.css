@@ -1546,7 +1546,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   min-height: 0;
 }
 /* Time-range presets above a chart (mobile-first: a small wrapping button row). */
-.chart-block { display: grid; gap: 0.5rem; }
+.chart-block { display: grid; gap: 0.5rem; position: relative; }
 .chart-range { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
 .chart-range-btn {
   font: inherit;
