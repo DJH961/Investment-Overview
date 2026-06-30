@@ -246,26 +246,33 @@ function settledSessionStarts(now: Date, sessions: number): number[] {
 
 /**
  * Of the moving-fund NAV bars just (re)fetched for the week, which now carry a
- * settled NAV **tip** that reaches `settledDate` — i.e. their headline NAV is
- * genuinely current. Only these may be dropped from the separate NAV quote leg.
+ * settled NAV **tip** that reaches `navFloorDate` — i.e. their headline NAV is the
+ * freshest one obtainable. Only these may be dropped from the separate NAV quote
+ * leg.
  *
- * A fund whose freshest fetched bar is still *behind* `settledDate` is
- * deliberately **excluded**: the bar source (Tiingo `/price` daily) did not
- * actually freshen it this round, so it must stay on the quote leg for a real
- * fetch (which can reach Twelve Data, a potentially-fresher NAV source) instead
- * of being pinned on an old day with the quote skipped. `settledDate` is the
- * `YYYY-MM-DD` of {@link latestSettledSessionDate}; the tip's UTC day is compared
- * lexically against it (ISO dates sort chronologically).
+ * `navFloorDate` is the freshest *obtainable* NAV date — the latest **published**
+ * NAV session ({@link latestPublishedNavDate}), not merely the latest settled one.
+ * Right after the close tonight's NAV is still pending, so the floor is the prior
+ * session and a fund whose bar tip reaches it is genuinely current (nothing newer
+ * exists to fetch) — it is dropped rather than re-pulled in duplicate by the quote
+ * leg.
+ *
+ * A fund whose freshest fetched bar is still *behind* `navFloorDate` is
+ * deliberately **excluded**: the bar source did not actually freshen it to the
+ * latest obtainable NAV this round, so it must stay on the quote leg for a real
+ * fetch (which can reach the other provider, a potentially-fresher NAV source)
+ * instead of being pinned on an old day with the quote skipped. The tip's UTC day
+ * is compared lexically against it (ISO dates sort chronologically).
  */
 export function navTipCoveredSymbols(
   barsBySymbol: Map<string, Bar[]>,
-  settledDate: string,
+  navFloorDate: string,
 ): string[] {
   const covered: string[] = [];
   for (const [symbol, bars] of barsBySymbol) {
     if (bars.length === 0) continue;
     const tip = Math.max(...bars.map((b) => b.t));
-    if (utcDayOf(tip) >= settledDate) covered.push(symbol);
+    if (utcDayOf(tip) >= navFloorDate) covered.push(symbol);
   }
   return covered;
 }
@@ -281,25 +288,25 @@ export function navTipCoveredSymbols(
  * which case stamping it would freeze the fund on a stale day (the bar is newer
  * than the export yet older than the real settled NAV, so `priceForHolding`
  * accepts it and nothing re-fetches). This splits the bars so that:
- *   - NAV funds whose freshest bar reaches `settledDate` (`navCovered`) are the
+ *   - NAV funds whose freshest bar reaches `navFloorDate` (`navCovered`) are the
  *     only ones marked as a settled, value-dated headline NAV; and
- *   - NAV funds whose tip is still **behind** `settledDate` are dropped from the
+ *   - NAV funds whose tip is still **behind** `navFloorDate` are dropped from the
  *     prime entirely, leaving the holding on its genuine quote / the NAV quote
  *     leg instead of being pinned on an old day.
  *
- * Non-NAV (market) bars always pass through untouched. `settledDate` is the
- * `YYYY-MM-DD` of {@link latestSettledSessionDate}.
+ * Non-NAV (market) bars always pass through untouched. `navFloorDate` is the
+ * freshest obtainable NAV date (`YYYY-MM-DD` of {@link latestPublishedNavDate}).
  */
 export function navSafeBarsForPriming(
   barsBySymbol: Map<string, Bar[]>,
   navSymbols: ReadonlySet<string>,
-  settledDate: string,
+  navFloorDate: string,
 ): { bars: Map<string, Bar[]>; navCovered: Set<string> } {
   const navBarsOnly = new Map<string, Bar[]>();
   for (const [symbol, bars] of barsBySymbol) {
     if (navSymbols.has(symbol)) navBarsOnly.set(symbol, bars);
   }
-  const navCovered = new Set(navTipCoveredSymbols(navBarsOnly, settledDate));
+  const navCovered = new Set(navTipCoveredSymbols(navBarsOnly, navFloorDate));
   const bars = new Map<string, Bar[]>();
   for (const [symbol, list] of barsBySymbol) {
     // Drop a NAV fund whose freshest bar is behind the latest settled session:

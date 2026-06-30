@@ -26,6 +26,21 @@ const OPEN_MINUTES = 9 * 60 + 30; // 09:30
 const CLOSE_MINUTES = 16 * 60; // 16:00
 
 /**
+ * Exchange-local (New York) minute-of-day by which a US mutual-fund / NAV publish
+ * for *today's* just-closed session can plausibly be expected from the data
+ * providers. NAVs strike only after the 16:00 close — typically landing in the
+ * ~17:00–18:00 ET window — so between the close and this cutoff today's NAV is
+ * still **pending**: the freshest NAV that genuinely *exists* is the prior
+ * settled session's, and chasing tonight's before it can have published only
+ * burns free-tier credits on an unchanged value. After this cutoff we assume the
+ * NAV should be available and resume chasing it on the normal cadence. A
+ * conservative single knob (see {@link latestPublishedNavDate}); the bars-first
+ * pull's "a tip actually reached today" check freshens earlier the moment a
+ * provider genuinely has today's NAV.
+ */
+const NAV_PUBLISH_CUTOFF_MINUTES = 18 * 60 + 30; // 18:30 ET
+
+/**
  * How recently the freshest price must have been observed for the headline total
  * to be called *live* (rather than merely a same-day settled figure) while the
  * session is open. The auto-refresh runs on a ~1–5 min cadence, so a 15-minute
@@ -256,6 +271,37 @@ export function latestSettledSessionDate(now: Date = new Date()): string {
     date = new Date(date.getTime() - 24 * 60 * 60 * 1000);
   } while (!isTradingDay(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()));
   return ymd(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
+/**
+ * The trading day (`YYYY-MM-DD`, New-York calendar) of the most recent NYSE
+ * session whose **NAV could plausibly have been published** as of `now` — the
+ * NAV-aware sibling of {@link latestSettledSessionDate}.
+ *
+ * A mutual fund's NAV strikes only *after* the 16:00 close, landing some hours
+ * later. So in the window between today's close and {@link NAV_PUBLISH_CUTOFF_MINUTES}
+ * today's NAV is still **pending**: the freshest NAV that genuinely exists is the
+ * *previous* settled session's. This returns that previous session through the
+ * pending window, then rolls forward to today once the cutoff passes (when we
+ * resume chasing tonight's NAV on the normal cadence). At every other moment —
+ * mid-session, before the open, overnight past the cutoff, on weekends/holidays —
+ * it equals {@link latestSettledSessionDate}.
+ *
+ * The refresh layer uses this as the NAV "behind?" floor so that, right after the
+ * close, a fund already holding the latest *published* NAV is treated as current
+ * (it rests instead of being re-pulled), while a market symbol — which settles at
+ * the close itself, with no publish lag — keeps using {@link latestSettledSessionDate}.
+ */
+export function latestPublishedNavDate(now: Date = new Date()): string {
+  const settled = latestSettledSessionDate(now);
+  const moment = exchangeMoment(now);
+  const today = ymd(moment.year, moment.month, moment.day);
+  // Only after *today's* own close (settled === today) can a NAV be pending; until
+  // the publish cutoff the freshest NAV in existence is the prior settled session.
+  if (settled === today && moment.minutes < NAV_PUBLISH_CUTOFF_MINUTES) {
+    return previousTradingSession(settled);
+  }
+  return settled;
 }
 
 /**

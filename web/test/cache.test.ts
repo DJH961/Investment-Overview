@@ -24,6 +24,7 @@ import {
   readSymbolPlan,
   recordCredits,
   primeQuotesFromBars,
+  markNavChecked,
   primeQuotesFromExport,
   type ExportQuoteSeed,
   primeEurUsdFromFxBars,
@@ -237,6 +238,41 @@ describe("primeQuotesFromBars", () => {
       if (previous === undefined) Reflect.deleteProperty(globalThis, "localStorage");
       else Reflect.set(globalThis, "localStorage", previous);
     }
+  });
+});
+
+describe("markNavChecked", () => {
+  it("stamps the observation time forward without touching the value", () => {
+    const s = memStorage();
+    writeCachedQuotes(
+      new Map([["FXAIX", { ...quote("FXAIX", "210.5", "209"), priceTime: 2000, valueDate: "2026-06-19" }]]),
+      1000,
+      s,
+    );
+    const stamped = markNavChecked(["FXAIX"], 9000, s);
+    expect(stamped).toEqual(["FXAIX"]);
+    const got = readCachedQuotes(s).get("FXAIX")!;
+    // Only `at` moves; price, priceTime, previous close and value-date are intact.
+    expect(got.at).toBe(9000);
+    expect(got.quote.price?.toString()).toBe("210.5");
+    expect(got.quote.priceTime).toBe(2000);
+    expect(got.quote.previousClose?.toString()).toBe("209");
+    expect(got.quote.valueDate).toBe("2026-06-19");
+  });
+
+  it("never rewinds an already-fresher observation time", () => {
+    const s = memStorage();
+    writeCachedQuotes(new Map([["FXAIX", quote("FXAIX", "210.5")]]), 9000, s);
+    const stamped = markNavChecked(["FXAIX"], 5000, s);
+    expect(stamped).toEqual([]); // 5000 < 9000 → no change
+    expect(readCachedQuotes(s).get("FXAIX")!.at).toBe(9000);
+  });
+
+  it("ignores symbols the cache does not hold", () => {
+    const s = memStorage();
+    const stamped = markNavChecked(["MYSTERY"], 5000, s);
+    expect(stamped).toEqual([]);
+    expect(readCachedQuotes(s).has("MYSTERY")).toBe(false);
   });
 });
 

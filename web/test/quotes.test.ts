@@ -565,16 +565,20 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
     expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - now);
   });
 
-  it("polls like a normal fund while behind the settled NAV after the close", () => {
-    // 17:30 ET Wed — closed, Wednesday settled but we only hold Tuesday's NAV.
-    const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now: wed(22, 30) });
-    expect(ttl).toBe(DEFAULT_CACHE_TTL_MS);
+  it("rests during the post-close NAV-pending window while only the prior session's NAV is in hand", () => {
+    // 17:30 ET Wed — closed, Wednesday settled but tonight's NAV has not published
+    // yet (before the ~18:30 ET publish cutoff). We hold Tuesday's NAV, which is the
+    // freshest NAV that actually exists, so there is nothing fresher to chase: rest
+    // on the market-day window instead of re-polling the identical value in a loop.
+    const now = wed(22, 30);
+    const ttl = navCacheTtlMs({ valueDate: "2024-01-09" }, { now });
+    expect(ttl).toBe(nextSessionCloseMs(new Date(now)) - now);
   });
 
-  it("keeps chasing a late NAV past midnight (no catch-up cap)", () => {
-    // 00:30 Thursday UTC → 19:30 ET Wednesday: still chasing Wednesday's NAV,
-    // which we don't hold (only Tuesday's). Poll on, however late.
-    const thu0030 = new Date(2024, 0, 11, 0, 30).getTime();
+  it("polls once the NAV-pending window closes and the settled NAV is still missing", () => {
+    // 19:30 ET Wed (past the ~18:30 publish cutoff): Wednesday's NAV is now the
+    // freshest publishable NAV but we still only hold Tuesday's — fetch it now.
+    const thu0030 = new Date(2024, 0, 11, 0, 30).getTime(); // 00:30 UTC Thu → 19:30 ET Wed
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, { now: thu0030 })).toBe(DEFAULT_CACHE_TTL_MS);
   });
 
@@ -625,8 +629,11 @@ describe("navCacheTtlMs — adaptive NAV refresh", () => {
   });
 
   it("honours a custom short-TTL override while behind the settled NAV", () => {
-    const opts = { now: wed(22, 30), shortTtlMs: 1234, longTtlMs: 5678 };
-    // Behind the settled session ⇒ poll on the short window.
+    // 19:30 ET Wed — past the NAV-publish cutoff, so Wednesday's NAV is the freshest
+    // publishable value and we are genuinely behind holding only Tuesday's.
+    const now = new Date(2024, 0, 11, 0, 30).getTime(); // 00:30 UTC Thu → 19:30 ET Wed
+    const opts = { now, shortTtlMs: 1234, longTtlMs: 5678 };
+    // Behind the latest publishable session ⇒ poll on the short window.
     expect(navCacheTtlMs({ valueDate: "2024-01-09" }, opts)).toBe(1234);
     // Holding it ⇒ market-day rest window (the longTtlMs override is now only an
     // unreachable non-positive-window guard, so the rest window wins).

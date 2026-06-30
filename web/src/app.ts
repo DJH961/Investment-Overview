@@ -76,6 +76,7 @@ import {
   readSymbolPlan,
   type PlannedSymbol,
   primeQuotesFromBars,
+  markNavChecked,
   primeQuotesFromExport,
   type ExportQuoteSeed,
   primeEurUsdFromFxBars,
@@ -114,7 +115,7 @@ import {
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
 import { fxFreshness, targetedWeekBackfill, type FxFreshness } from "./freshness";
-import { isUsMarketOpen, isUsTradingDay, isUsMarketHoliday, isForexMarketOpen, isWeekendOvernight, latestSettledSessionDate, lastSessionDate, previousTradingSession, recentTradingSessions, exchangeDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
+import { isUsMarketOpen, isUsTradingDay, isUsMarketHoliday, isForexMarketOpen, isWeekendOvernight, latestSettledSessionDate, latestPublishedNavDate, lastSessionDate, previousTradingSession, recentTradingSessions, exchangeDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
   shouldQuickRefresh,
@@ -1227,10 +1228,14 @@ export class App {
     // headline NAV. The funds it primes are dropped from the quote leg below, so
     // the separate NAV quote is skipped — no duplicate spend, week correct in one.
     const navBarsPrimed = await this.prefetchNavWeekBars(prefetch.navSymbols, config, now, planCurrency);
-    // Drop from the quote leg only the funds whose primed NAV tip is genuinely
-    // current (`covered`). Funds the bar source left behind stay on the quote leg
-    // for a real fetch — never pinned on an old day with the quote silently skipped.
-    const navPrimedSet = new Set(navBarsPrimed.covered);
+    // Drop from the quote leg both the funds whose primed NAV tip is genuinely
+    // current (`covered`) **and** every fund the bars pull just fetched this round
+    // (`fetched`, plan B): a fund the bar source already hit must never be re-pulled
+    // by the quote leg in the same login second — that is the exact double-pull
+    // (bars + quote, both spilling to Tiingo) this guards against. A fund the bar
+    // source never touched stays on the quote leg for a real fetch; the next auto
+    // round re-checks anything the bars left behind, on the standard cadence.
+    const navPrimedSet = new Set([...navBarsPrimed.covered, ...navBarsPrimed.fetched]);
     const navQuoteSymbols = prefetch.navSymbols.filter((s) => !navPrimedSet.has(s));
     const quoteWork = prefetch.symbols.length + navQuoteSymbols.length;
     if (quoteWork === 0) {
@@ -1434,6 +1439,7 @@ export class App {
   } {
     const cached = readCachedQuotes();
     const settled = latestSettledSessionDate(now);
+    const navFloor = latestPublishedNavDate(now);
     const marketOpen = isUsMarketOpen(now);
     const marketSymbols: string[] = [];
     const outdatedMarketSymbols: string[] = [];
@@ -1445,11 +1451,15 @@ export class App {
         if (!holdsSettledClose(cq, settled)) outdatedMarketSymbols.push(entry.symbol);
       } else {
         // A NAV fund is worth warming only while the market is *closed* and we do
-        // not yet hold the latest settled session's NAV — the after-close window
-        // in which tonight's NAV is awaited until it lands. While the session is
-        // open the NAV cannot have struck yet, so there is nothing to chase.
+        // not yet hold the latest **published** session's NAV — the after-close
+        // window in which tonight's NAV is awaited until it lands. We compare
+        // against the published floor ({@link latestPublishedNavDate}), not merely
+        // the just-settled session: right after the close tonight's NAV cannot yet
+        // exist, so a fund holding the prior session's NAV is already as fresh as
+        // possible and is left at rest rather than chased (and re-pulled in
+        // duplicate). While the session is open the NAV cannot have struck yet.
         const have = cq?.valueDate ?? null;
-        if (!marketOpen && (!have || have < settled)) awaitingNavSymbols.push(entry.symbol);
+        if (!marketOpen && (!have || have < navFloor)) awaitingNavSymbols.push(entry.symbol);
       }
     }
     return { marketSymbols, outdatedMarketSymbols, awaitingNavSymbols };
@@ -2426,27 +2436,38 @@ export class App {
    * (value-dated, settled — never "live"). The funds it primes are then dropped
    * from the quote leg, so the separate NAV quote is skipped.
    *
+   * Provider routing mirrors every other bar pull: **Twelve Data (Pipe A) is the
+   * primary** NAV-bar source, with the Tiingo `/price` pipe as the overflow /
+   * fallback when it is configured. So a device with only a Twelve Data key still
+   * gets its NAV bars (Twelve Data carries daily mutual-fund NAV series too); we no
+   * longer bail just because the Tiingo proxy is absent. The capacity-aware split
+   * fills Twelve Data first and spills to Tiingo, exactly like the 1D/1W price bars.
+   *
    * Only the genuine, NAV-fetchable moving funds are eligible (money-market /
    * pinned-$1 funds are not in `navSymbols`, stay flat, and are never fetched).
    * Routed through the same reservation authority + 429 breaker as every other
    * pull, and fully best-effort — a failure just leaves the NAV quote leg to run.
    * Returns the funds whose headline NAV this primed (`primed`, booked as real
-   * fills) and — separately — those whose primed NAV tip actually reaches the
-   * latest settled session (`covered`). Only the **covered** funds are dropped
-   * from the quote leg: a fund the bar source could not freshen this round stays
-   * on the quote leg for a real fetch (which can reach Twelve Data, a
-   * potentially-fresher NAV source) instead of being pinned on an old day.
+   * fills), those whose primed NAV tip actually reaches the latest **published**
+   * NAV (`covered`), and every fund it fetched a bar for this round (`fetched`).
+   * The **covered** funds are dropped from the quote leg as genuinely current; the
+   * `fetched` set is the within-login dedup backstop (plan B) — a fund this pull
+   * just hit must not also be re-pulled by the quote leg in the same second, even
+   * if its tip lagged the floor (the next auto round re-checks it). A fund the bar
+   * source never touched stays on the quote leg for a real fetch.
    */
   private async prefetchNavWeekBars(
     navSymbols: string[],
     config: AppConfig,
     now: Date,
     currencyBySymbol: Map<string, string | null>,
-  ): Promise<{ primed: string[]; covered: string[] }> {
-    const none = { primed: [] as string[], covered: [] as string[] };
+  ): Promise<{ primed: string[]; covered: string[]; fetched: string[] }> {
+    const none = { primed: [] as string[], covered: [] as string[], fetched: [] as string[] };
     if (navSymbols.length === 0) return none;
     const proxyUrl = resolvePriceProxyUrl(config);
-    if (!proxyUrl) return none; // NAV daily bars only come cheaply via the Tiingo /price pipe
+    // Twelve Data is the primary NAV-bar source; the Tiingo proxy is an optional
+    // fallback. Only bail when neither pipe is usable (no API key *and* no proxy).
+    if (!config.apiKey && !proxyUrl) return none;
     const store = this.ensureTimeSeriesStore();
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
     const stale = navBackfillStaleSymbols(weekStored, navSymbols, now);
@@ -2500,21 +2521,32 @@ export class App {
       undefined,
       new Set(stale),
     );
-    // Only funds whose primed bar tip actually reaches the latest settled session
-    // are genuinely current and safe to drop from the quote leg. A fund the bar
-    // source left behind stays on the quote leg for a real (Twelve Data) fetch —
-    // never pinned on an old day with its quote silently skipped.
+    // Only funds whose primed bar tip actually reaches the latest **published** NAV
+    // are genuinely current and safe to drop from the quote leg. The published
+    // floor ({@link latestPublishedNavDate}) is the prior session through the
+    // post-close pending window, so a fund whose bars confirm that floor counts as
+    // covered (nothing fresher exists to fetch) instead of being chased in duplicate.
+    const navFloor = latestPublishedNavDate(now);
     const primedSet = new Set(primed);
-    const covered = navTipCoveredSymbols(navBars, latestSettledSessionDate(now)).filter((s) =>
-      primedSet.has(s),
-    );
+    const covered = navTipCoveredSymbols(navBars, navFloor).filter((s) => primedSet.has(s));
+    // The funds this pull actually fetched a bar for this round (plan B). Even a
+    // fund whose tip is at-or-behind the floor was just re-verified through the bar
+    // source, so it must not be re-pulled by the quote leg moments later.
+    const fetched = Object.keys(incoming);
+    // C — a confirming bar that was *not* primed (its tip is not strictly newer
+    // than the cached quote) still proves the held NAV is the freshest obtainable
+    // when the tip reaches the floor. Stamp those funds' observation time forward
+    // so the freshness ledger records "just checked" and rests them, rather than
+    // leaving the quote leg believing they are unverified.
+    const confirmed = navTipCoveredSymbols(navBars, navFloor).filter((s) => !primedSet.has(s));
+    if (confirmed.length > 0) markNavChecked(confirmed, Date.now());
     this.pollLog(
       "graph",
       `Login warm-up: NAV bars-first stored ${Object.keys(incoming).length} fund week(s) and ` +
         `primed ${primed.length} headline NAV(s) from the settled bar tip — ${covered.length} current, ` +
         `quote leg skips them (${primed.length - covered.length} still behind, left to the quote leg).`,
     );
-    return { primed, covered };
+    return { primed, covered, fetched };
   }
 
   /**
@@ -4556,6 +4588,7 @@ export class App {
     if (marketOpen) return plan.map((entry) => entry.symbol);
     const cached = readCachedQuotes();
     const settled = latestSettledSessionDate(now);
+    const navFloor = latestPublishedNavDate(now);
     const stale: string[] = [];
     for (const entry of plan) {
       const cq = cached.get(entry.symbol)?.quote;
@@ -4566,9 +4599,12 @@ export class App {
         if (!holdsSettledClose(cq, settled)) stale.push(entry.symbol);
       } else {
         // NAV fund (market closed here): outdated until we hold the latest
-        // settled session's NAV. Polled until it lands, however late.
+        // **published** session's NAV. The published floor ({@link latestPublishedNavDate})
+        // is the prior session through the post-close pending window, so a fund
+        // already holding it is not reported stale (and re-pulled) before tonight's
+        // NAV could possibly exist. Polled until it lands, however late.
         const have = cq?.valueDate ?? null;
-        if (!have || have < settled) stale.push(entry.symbol);
+        if (!have || have < navFloor) stale.push(entry.symbol);
       }
     }
     return stale;
@@ -4670,10 +4706,12 @@ export class App {
                 return !holdsSettledClose(cached?.quote, latestSettledSessionDate(at));
               }
               // NAV: nothing new while the market is open; once closed, re-pull
-              // until the latest settled session's NAV is in hand.
+              // until the latest **published** session's NAV is in hand — using the
+              // published floor so a manual "pull now" right after the close does
+              // not chase tonight's not-yet-struck NAV in duplicate.
               if (isUsMarketOpen(at)) return false;
               const have = cached?.quote.valueDate ?? null;
-              return !(have && have >= latestSettledSessionDate(at));
+              return !(have && have >= latestPublishedNavDate(at));
             }
           : undefined,
     };
@@ -7857,12 +7895,13 @@ export class App {
       if (h.priceType === "nav") navSymbols.add(symbol);
     }
     // Only stamp a NAV bar tip as the settled headline when it actually reaches
-    // the latest settled session; a lagging tip is dropped so it never pins the
-    // fund on an old day on the routine/manual graph-refresh path.
+    // the latest **published** NAV (the freshest one obtainable); a lagging tip is
+    // dropped so it never pins the fund on an old day on the routine/manual
+    // graph-refresh path.
     const { bars, navCovered } = navSafeBarsForPriming(
       barsBySymbol,
       navSymbols,
-      latestSettledSessionDate(new Date()),
+      latestPublishedNavDate(new Date()),
     );
     primeQuotesFromBars(bars, currencyBySymbol, Date.now(), undefined, navCovered);
   }
