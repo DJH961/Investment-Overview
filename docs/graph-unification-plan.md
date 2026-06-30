@@ -168,7 +168,14 @@ remains → **C** resolved.
 ### C4 — FX policy (no polling change)
 Switch the 1W FX leg from daily to 5‑min (same pipe, mirrors C1) and stop
 consuming the blob's `fx_eur_usd` (gone with C2). **Trust device‑pulled 5‑min
-FX.** Do **not** touch quote polling or live‑quote stamping.
+FX.** Do **not** change the FX **polling cadence**.
+
+**FX must use the quote's own price, not the pull time.** Today the live EUR/USD
+quote is stamped at fetch time (`quotes.ts:866`, `const at = now()`), which
+mis‑times the FX point to when we happened to poll rather than to the rate it
+represents. On web, use the **FX quote's reported price (and its own timestamp)**
+as the live FX mark — not the local pull clock. This is the only intentional
+change to live‑quote handling; the cadence is untouched.
 
 ### C5 — Shared per‑day store (answers "identical + carried forward")
 Both views reconstruct from the **same per‑day session bars** via the **same**
@@ -357,20 +364,49 @@ breaker.
 
 ---
 
-## Build order
+## Build order — tracks & groups
 
-1. **C1** — 1W bars → 5‑min over the window.
-2. **C2** — remove the blob merge from live 1W; add edge/offline daily fallback.
-3. **C3** — tail unification (drops to 1D's `capAtClose`).
-4. **C6** — unify the fetch into one windowed intraday fetcher + shared per‑day
-   store; retire the `daily/1day` week cache.
-5. **C4** — FX leg → 5‑min; drop blob FX.
-6. **O1–O5** — collapse the orchestrator's two bar legs into one window‑sized
-   `bars` leg; merge the two outdated tiers; swap the `:00` gate for the 30‑min
-   bars‑instead‑of‑quotes promotion **on auto/startup only**; keep the **global
-   manual button as a quote round** and add a **per‑graph (1D/1W) bars‑refresh
-   button** scoped to the view; absorb `targetedWeekBackfill`.
-7. **C8** — Python mirror at 5‑min.
+Work splits into **three tracks that run in parallel**. Within a track, **groups
+are sequential**. The **Main track** carries the dependency spine (its groups must
+go in order); the **Python** and **Web‑UI** tracks run alongside it, with one
+integration point noted.
+
+### MAIN TRACK (web graph + orchestrator) — groups are sequential
+
+- **Group 1 — Foundation (fixes A/B/C).** `C1 → C2 → C3`, with `C4` alongside.
+  Strictly ordered internally: C1 (1W draws dense 5‑min bars) before C2 (remove
+  the blob merge — no second aggregate left to reconcile) before C3 (tail drops to
+  1D's `capAtClose`); C4 (FX → 5‑min, FX‑quote‑price‑not‑pull‑time, drop blob FX)
+  rides alongside C2/C3 in the same builder. **This group alone eliminates the
+  three symptoms.**
+- **Group 2 — Unify fetch & store.** `C5 · C6 · C7`. One windowed `[start,end]`
+  intraday fetcher + shared per‑day store; retire the `daily/1day` week cache.
+  **Must follow Group 1** — can't dedup the 1W path until it already draws intraday
+  bars and the blob merge is deleted.
+- **Group 3 — Orchestrator.** `O1 → (O2 · O3 · O5)`. One window‑sized `bars` leg
+  (O1) gates the single `outdated` tier (O2), the 30‑min auto/startup promotion
+  (O3) and the absorbed backfill (O5). **Must follow Group 2** — the "pull a bar of
+  the size needed" capability only exists once the windowed fetcher does.
+
+### PYTHON TRACK — parallel, start anytime
+
+- **C8** — mirror the design in the Python desktop app at 5‑min density.
+  Independent codebase, shares only the frozen design (zero shared code with the
+  TS path), so it runs start‑to‑finish alongside the Main track.
+
+### WEB‑UI TRACK — parallel, start anytime
+
+- **O4(a)** — global manual button becomes a pure **quote** round. Trivial, no
+  dependencies.
+- **O4(b)** — new **per‑graph refresh button** (1D / 1W) that repulls bars for the
+  in‑view window. The button UI can be built anytime; its bars‑repull action
+  **wires into the windowed fetcher delivered by Main Group 2** (the one
+  cross‑track integration point).
+
+### The one hard rule
+Main track **Group 1 → 2 → 3 is strictly sequential**. The Python track and the
+Web‑UI track float free in parallel, with O4(b)'s data wiring as the only
+dependency back onto Main Group 2.
 
 > No code is to be written until this plan is explicitly approved for
 > implementation.
