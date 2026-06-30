@@ -13,6 +13,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.0.2] — 2026-06-30
+
+### Fixed
+
+- **The per-holding "Updating" countdown no longer overestimates the wait for
+  budget-deferred prices.** The free-tier queue ETA wrongly counted the symbols
+  *already pulled* in the just-completed round into each deferred symbol's
+  pipeline position, pushing every estimate out by a whole ~1-minute round (e.g.
+  the first deferred holding showed "about 2 min" when its turn was actually the
+  very next round, ~1 min). The ETA now derives a deferred symbol's round purely
+  from its index among the deferred (`floor(index / capacity) + 1`), since the
+  fetched symbols are done and cannot delay the queue. This corrects both the
+  per-row caption and the coverage line's "updating in XXs" estimate
+  (`web/src/holding-status.ts`).
+
 ## [5.0.1] — 2026-06-30
 
 ### Fixed
