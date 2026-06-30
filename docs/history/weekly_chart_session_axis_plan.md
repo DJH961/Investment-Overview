@@ -1,5 +1,8 @@
 # Weekly chart: collapse dead time, break gaps, mark sessions
 
+> 🗄️ **Archived — historical.** The work in this plan has shipped. Kept for
+> design context only; see `CHANGELOG.md` for the authoritative history.
+
 > **Update (2026):** with a sparse week the per-session line *break* (item 4) left
 > the days as disconnected islands and the inter-band *gutter* added distracting
 > whitespace. The 1W view now packs the session bands **directly adjacent (no
