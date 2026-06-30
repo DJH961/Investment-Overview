@@ -7624,6 +7624,28 @@ export class App {
           // worth flagging (scenario C). While open — and especially warming up —
           // partial coverage is normal and accrues tick-by-tick, so stay quiet.
           const coverage = curve.marketOpen ? undefined : curve.coverage;
+          // Reflect reality, don't just pin the tip. After the close the exported
+          // session IS the settled whole-book truth (complete by construction). A
+          // reload rebuilds live from stored bars to pick up any intraday detail the
+          // export lacks — but when that rebuild is *incomplete* (free-tier-deferred
+          // or short symbols carried flat at ratio 1) its whole BODY misrepresents the
+          // day, not just its endpoint. Anchoring the tip alone would leave a real-
+          // looking-but-wrong shape underneath. So when a closed-market reconstruction
+          // can't cover the sleeve, fall back to the exported springboard — the genuine
+          // settled curve — rather than draw a partial body. A *complete* reconstruction
+          // (every symbol has bars) is kept: it reflects reality and may be finer than
+          // the export.
+          const complete = !coverage || coverage.covered >= coverage.total;
+          if (!curve.marketOpen && !complete) {
+            const settled = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
+            if (settled) {
+              this.pollLog(
+                "graph",
+                "1D graph: reload incomplete (some prices not yet loaded) — showing the settled exported session so the shape stays true.",
+              );
+              return { points: settled };
+            }
+          }
           return { points: curve.points, coverage };
         } catch {
           this.pollLog("graph", "1D graph: live build failed — no curve drawn.", "warn");

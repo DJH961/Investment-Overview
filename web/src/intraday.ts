@@ -716,6 +716,20 @@ export async function loadOrBuildSessionCurve(
       rebaseBreadcrumbs(stored?.tips ?? [], anchor.baseEur, anchor.baseUsd),
     );
     points = capAtClose(points, closeMs);
+    // Pin the settled whole-book total at the session close. The export
+    // springboard (the normal closed-market path) closes on this figure by
+    // construction, but a live **reconstruction** — taken when the user reloads
+    // the window (`preferStored`/`forceFetch` skip the springboard) — closes on
+    // `base + Σ valueᵢ·ratio(lastBar)` instead. When the stored bars are short of
+    // the close (a mid-session partial, a settled-but-short or budget-deferred
+    // symbol carried flat at ratio 1), that endpoint drifts from the headline, so
+    // the "% today" the line measures disagrees with the headline growth and the
+    // reloaded curve lands on the wrong total. Pinning the settled tip at the
+    // close anchors the reloaded curve to the same headline the springboard uses,
+    // exactly as `appendLiveTip` pins the live headline while the market is open.
+    if (options.liveTip) {
+      points = appendLiveTip(points, closeMs, options.liveTip);
+    }
   }
 
   return { day, points, marketOpen, coverage };

@@ -409,8 +409,38 @@ describe("loadOrBuildSessionCurve", () => {
     expect(result.points).toHaveLength(1);
   });
 
-  it("re-fetches a stale partial-day session after the close to complete the tail (scenario F)", async () => {
+  it("pins a reloaded closed-market curve to the settled headline tip at the close", async () => {
+    // A reload after the close rebuilds from stored bars (the springboard is
+    // skipped). If those bars reconstruct to a total that disagrees with the
+    // settled headline — short / budget-deferred symbols carried flat — the curve
+    // must still END on the headline, so the "% today" it measures matches the
+    // headline growth rather than drifting (the reload total/growth bug).
     const store = new TimeSeriesStore(memoryBackend());
+    // A bar reaching the close (19:55Z) but priced 90 ⇒ reconstruction USD =
+    // 100 + 1000·(90/100) = 1000, deliberately below the settled headline 1100.
+    await store.mergeSession("2026-06-23", {
+      bars: { VTI: [bar(Date.parse("2026-06-23T19:55:00Z"), "90")] },
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const now = new Date("2026-06-23T22:00:00Z"); // 18:00 ET, after close
+    const result = await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+      liveTip: { valueEur: d(1010), valueUsd: d(1100) },
+    });
+    expect(fetchBars).not.toHaveBeenCalled();
+    expect(result.marketOpen).toBe(false);
+    // The reconstructed body keeps its shape, but the final point is the settled
+    // headline pinned at the close — not the drifted reconstruction endpoint.
+    const last = result.points[result.points.length - 1];
+    expect(last.valueUsd.toString()).toBe("1100");
+    expect(last.valueEur.toString()).toBe("1010");
+    expect(last.t).toBeGreaterThan(Date.parse("2026-06-23T19:55:00Z"));
+  });
+
+  it("re-fetches a stale partial-day session after the close to complete the tail (scenario F)", async () => {    const store = new TimeSeriesStore(memoryBackend());
     // A session whose stored bars stop at 14:00 ET (18:00Z) — an earlier
     // mid-session fetch that was never completed. It *looks* present, but never
     // reached the 16:00 ET close, so after the close it must be re-pulled.
