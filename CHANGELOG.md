@@ -17,6 +17,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`positions_service` no longer treats today's ET trading day as a historical
+  date when the server clock is UTC.** `is_historical` was compared against
+  `date.today()` (the UTC calendar date) while `as_of` was derived from
+  `market_hours.exchange_today()` (the New-York ET date). Around midnight UTC the
+  two disagree — the ET session date is still yesterday — so `is_historical` was
+  `True` for the *current* day, triggering the forward-filled `closes_as_of` path
+  instead of `latest_closes`. Any price seeded for the UTC calendar date was not
+  found, collapsing `current_value_native` to zero and producing a `-100 %` total
+  growth and a wildly negative `capital_gain_native` in the overview read-model.
+  The comparison now uses `market_hours.exchange_today()` on both sides so the
+  clocks are consistent.
+
 - **A manual refresh is now gated only by relevance, never by freshness.** A tap
   of the Refresh button flows through the single data orchestrator (and its
   provider fan-out / deferral) the same as before, but a symbol being "fresh"
