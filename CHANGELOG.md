@@ -48,8 +48,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   raises the NAV leg the moment the market is shut with today's NAV still awaited,
   self-clearing once the NAV lands.
 
-
-
 ### Fixed
 
 - **The "1 Week" graph now re-pulls a day that is too *spaced out*, not just one
