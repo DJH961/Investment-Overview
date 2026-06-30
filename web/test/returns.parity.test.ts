@@ -24,6 +24,7 @@ import {
   yearsBetween,
   type Cashflow,
 } from "../src/returns";
+import { projectForward } from "../src/phase4";
 
 const VECTORS_PATH = fileURLToPath(new URL("../../tests/parity/vectors.json", import.meta.url));
 
@@ -43,6 +44,17 @@ interface Vectors {
     name: string;
     inputs: { contributions: string; current_value: string; cumulative_dividends_cash: string };
     expected: string | null;
+  }>;
+  project: Array<{
+    name: string;
+    inputs: {
+      starting_value_eur: string;
+      annual_contribution_eur: string;
+      years: number;
+      base_year: number;
+      scenarios: string[];
+    };
+    expected: Array<{ year: number; contributed: string; values_by_rate: Record<string, string> }>;
   }>;
 }
 
@@ -140,6 +152,31 @@ describe("capital_gain parity", () => {
         c.expected,
         TOL.money,
       );
+    });
+  }
+});
+
+describe("project (annuity) parity", () => {
+  for (const c of vectors.project) {
+    it(c.name, () => {
+      const rows = projectForward(
+        new Decimal(c.inputs.starting_value_eur),
+        new Decimal(c.inputs.annual_contribution_eur),
+        c.inputs.years,
+        c.inputs.base_year,
+        c.inputs.scenarios,
+      );
+      expect(rows.length, "row count").toBe(c.expected.length);
+      for (let i = 0; i < c.expected.length; i += 1) {
+        const expectedRow = c.expected[i];
+        const actualRow = rows[i];
+        expect(actualRow.year, `row ${i} year`).toBe(expectedRow.year);
+        expectClose(actualRow.contributedEur, expectedRow.contributed, TOL.money);
+        for (const rate of c.inputs.scenarios) {
+          const actualValue = actualRow.valuesByRate.get(rate) ?? null;
+          expectClose(actualValue, expectedRow.values_by_rate[rate], TOL.money);
+        }
+      }
     });
   }
 });
