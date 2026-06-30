@@ -25,7 +25,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `prices_service.market_time_for(...)` and `null` for money-market par rows
   (mirroring the desktop's `holding_freshness` rule). The web companion reads it
   into a blob-priced row's `priceAsOf` (`web/src/compute.ts` `priceForHolding`),
-  so a fallback row stamps a precise "as of &lt;time&gt;" instead of only a date.
+  so a fallback row stamps a precise `as of <time>` instead of only a date.
   A timezone-less stamp is read as UTC so a naive desktop datetime can never
   drift by the viewer's local offset, and a fallback price is still never graded
   "live" (only a genuinely live quote can be), so the new strike time never
