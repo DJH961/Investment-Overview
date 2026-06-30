@@ -2459,6 +2459,16 @@ export interface LiveCurveChart {
    * currency the curve is denominated). `null` when it can't be measured.
    */
   growthPct?: Decimal | null;
+  /**
+   * Sleeve coverage of the build — how many of the intraday-priced holdings
+   * actually had bars (`covered`) out of the total expected (`total`). The chart
+   * wrapper reads this to decide whether a freshly-built curve is *complete*
+   * (`covered >= total`, or no coverage info at all) or still waiting on
+   * budget-deferred bars, so it can keep the last complete graph on screen rather
+   * than downgrade it to a partly-flat line. Absent for curves with no sleeve
+   * (e.g. the 1W / exported-springboard path), which are treated as complete.
+   */
+  coverage?: { covered: number; total: number };
 }
 
 /**
@@ -2621,6 +2631,23 @@ function chartWithTimeframe(
   // Monotonic token so a slow live fetch never overwrites a newer selection.
   let activeToken = 0;
 
+  // What live (1D/1W) curve is currently visible in `wrap`, so a reload can hold
+  // the last *complete* graph in place rather than blanking it or downgrading it
+  // to a partly-flat line while budget-deferred bars are still arriving. `null`
+  // whenever the wrapper shows the exported history, a placeholder, or an error.
+  let shownLive: { range: LiveRange; complete: boolean } | null = null;
+
+  // Toggle a "refreshing" cue on a held-over graph: a busy shimmer + `aria-busy`
+  // so it is visibly clear an update is in flight even though the old curve is
+  // still on screen — matching the refresh affordance the rest of the app uses.
+  // The flag lives on `wrap` itself, so it survives the child redraw and is
+  // cleared once the new curve (or the held-over decision) settles.
+  const setWrapRefreshing = (busy: boolean): void => {
+    wrap.classList.toggle("chart-wrap--refreshing", busy);
+    if (busy) wrap.setAttribute("aria-busy", "true");
+    else wrap.removeAttribute("aria-busy");
+  };
+
   const liveStatus = (text: string): HTMLElement => {
     const el = h("div", { class: "chart-live-status note muted" }, [text]);
     // Copy the exact height the chart last rendered at (remembered across reloads)
@@ -2662,6 +2689,10 @@ function chartWithTimeframe(
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
     if (chart) {
       wrap.replaceChildren(...withLegend(enter(chart) as unknown as HTMLElement, baseLegend));
+      // The wrapper now shows static history, not a live curve — drop any
+      // held-over live state and clear the refreshing cue.
+      shownLive = null;
+      setWrapRefreshing(false);
       rememberSize();
     }
   };
@@ -2674,16 +2705,28 @@ function chartWithTimeframe(
   ): Promise<void> => {
     if (!live) return;
     const range = option.range;
+    // A live curve for THIS range is already on screen: a reload/refresh can hold
+    // it in place rather than blanking to a placeholder, and a *complete* one must
+    // never be downgraded to a still-incomplete rebuild while bars are deferred.
+    const heldOver = shownLive !== null && shownLive.range === range;
+    const heldComplete = heldOver && shownLive!.complete;
+    // While the old graph is held up during the fetch, show the refreshing cue so
+    // it is clear an update is in flight even though the curve stays visible.
+    if (heldOver) setWrapRefreshing(true);
     // Defer the "Loading live data…" placeholder. A re-toggle (regenerate-only)
     // or any cache hit resolves almost instantly, so flashing the placeholder
     // for a single frame — and collapsing the chart's height with it — is the
     // visible "jump" when clicking 1D/1W. Holding the previous chart in place
     // for a short grace period lets a fast build swap straight in, calmly; only
-    // a genuinely slow fetch ever shows the placeholder.
-    let placeholderTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-      placeholderTimer = null;
-      if (token === activeToken) wrap.replaceChildren(liveStatus("Loading live data…"));
-    }, LIVE_PLACEHOLDER_DELAY_MS);
+    // a genuinely slow fetch ever shows the placeholder. When a graph for this
+    // same range is already up we never blank it — the held-over curve (with its
+    // refreshing cue) stands in for the placeholder entirely.
+    let placeholderTimer: ReturnType<typeof setTimeout> | null = heldOver
+      ? null
+      : setTimeout(() => {
+          placeholderTimer = null;
+          if (token === activeToken) wrap.replaceChildren(liveStatus("Loading live data…"));
+        }, LIVE_PLACEHOLDER_DELAY_MS);
     const clearPlaceholderTimer = (): void => {
       if (placeholderTimer !== null) {
         clearTimeout(placeholderTimer);
@@ -2699,7 +2742,12 @@ function chartWithTimeframe(
     clearPlaceholderTimer();
     if (token !== activeToken) return; // a newer selection superseded this build
     if (!built) {
+      // Keep the existing graph rather than blanking it on a failed/empty
+      // rebuild; only show the error when there is nothing to hold over.
+      setWrapRefreshing(false);
+      if (heldOver) return;
       wrap.replaceChildren(liveStatus("Live data isn't available yet — try refreshing."));
+      shownLive = null;
       return;
     }
     const chart = buildLineChart({
@@ -2712,7 +2760,21 @@ function chartWithTimeframe(
       collapseSessions: range === "1W",
     });
     if (!chart) {
+      setWrapRefreshing(false);
+      if (heldOver) return;
       wrap.replaceChildren(liveStatus("Not enough live points to draw a curve yet."));
+      shownLive = null;
+      return;
+    }
+    // A build is *complete* when every intraday-priced holding had bars (or it
+    // carries no coverage info at all — the 1W / exported-springboard path).
+    const complete = !built.coverage || built.coverage.covered >= built.coverage.total;
+    // Persist the old graph: a complete on-screen curve is never replaced by a
+    // still-incomplete rebuild (bars budget-deferred on the free tier), so the
+    // whole-day line stays put until every holding's bars are in. The next round,
+    // with the rest of the bars present, swaps the complete curve in.
+    if (!complete && heldComplete) {
+      setWrapRefreshing(false);
       return;
     }
     // Re-draw the legend for the live series (e.g. the rebased other-currency
@@ -2724,6 +2786,8 @@ function chartWithTimeframe(
     const children = withLegend(enter(chart) as unknown as HTMLElement, built.legend);
     if (built.note) children.push(liveStatus(built.note));
     wrap.replaceChildren(...children);
+    setWrapRefreshing(false);
+    shownLive = { range, complete };
     rememberSize();
     // Now that the live curve is drawn, refine the headline to the growth the
     // line itself shows (1D from its previous-close reference, 1W from its first
@@ -3200,7 +3264,12 @@ export function liveCurveToChart(
   // reference line, measures from its first plotted point. The tip is the last
   // plotted point either way.
   const growthPct = curveGrowthPct(primary, prevCloseValue);
-  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine, note, growthPct };
+  // Pass the sleeve coverage through so the chart wrapper can hold the last
+  // complete graph in place while budget-deferred bars are still arriving,
+  // instead of swapping in this partly-flat curve. Normalised to undefined when
+  // there is no sleeve to cover (treated as complete).
+  const coverageOut = coverage && coverage.total > 0 ? { covered: coverage.covered, total: coverage.total } : undefined;
+  return { dates: cols.dates, series, yAxisLabel, legend, referenceLine, note, growthPct, coverage: coverageOut };
 }
 
 /**
