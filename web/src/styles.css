@@ -1467,6 +1467,37 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, var(--card));
 }
+/* Web-UI track O4(b): the per-graph "refresh bars" button sits after the range
+   pills and re-pulls the in-view live window. A circular, glyph-only icon action
+   — visually distinct from the pill-shaped range selectors and set slightly apart
+   so it never reads as a sixth range — using the same ↻ glyph as the global
+   Refresh button for a consistent "refresh" vocabulary. The glyph spins while a
+   pull is in flight (motion-reduced users get a static disabled state instead). */
+.chart-range-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  margin-left: 0.45rem;
+  color: var(--muted);
+}
+.chart-range-refresh-glyph { font-size: 0.95rem; line-height: 1; display: inline-block; }
+.chart-range-refresh:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.chart-range-refresh:disabled { cursor: progress; opacity: 0.55; }
+.chart-range-refresh.is-refreshing .chart-range-refresh-glyph {
+  animation: chart-refresh-spin 0.9s linear infinite;
+}
+@keyframes chart-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-range-refresh.is-refreshing .chart-range-refresh-glyph { animation: none; }
+}
 .chart-svg {
   display: block;
   width: 100%;

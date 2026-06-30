@@ -1740,6 +1740,19 @@ export class App {
         reason: `force-all → quotes only, graphs skipped (use the Regenerate buttons) (${orchestrator})`,
       };
     }
+    // Web-UI track O4(a): the global manual Refresh button is a pure *quote*
+    // round — "the freshest live price on demand" — and never re-pulls 1D/1W
+    // bars. The 30-min bar promotion stays an auto/startup concern; a manual tap
+    // leaves the curves to the dedicated per-graph refresh buttons (O4(b)), which
+    // own the in-view-window bar re-pull. (A `reset` still re-primes in full above;
+    // only a plain user tap is diverted here.)
+    if (kind === "manual") {
+      return {
+        due: false,
+        market,
+        reason: `manual → quotes only, graphs skipped (use the per-graph 1D/1W refresh buttons) (${orchestrator})`,
+      };
+    }
     if (market === "closed") {
       return { due: true, market, reason: `market closed → prime self-gates on staleness (${orchestrator})` };
     }
@@ -7386,11 +7399,16 @@ export class App {
       session: async (opts) => {
         const doSession = async () => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const forceFetch = opts?.forceFetch ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
         // Springboard off the exported session first — instant paint, no fetch —
-        // and only build live when the export is absent or too stale.
-        const sprung = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
+        // and only build live when the export is absent or too stale. A per-graph
+        // refresh tap (`forceFetch`) deliberately skips the springboard so the
+        // windowed fetcher actually re-pulls today's bars (Web-UI track O4(b)).
+        const sprung = forceFetch
+          ? null
+          : springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
         if (sprung) {
           this.pollLog("graph", "1D graph: reused the exported session (no live pull, 0 credits).");
           // Persist the sprung session's dense points as today's breadcrumb trail
@@ -7431,6 +7449,7 @@ export class App {
       },
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const forceFetch = opts?.forceFetch ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
         // The current day's slice of the week must be the same dense 1D session the
@@ -7459,7 +7478,9 @@ export class App {
           todayCurve: todaySlice,
           onRepair: (m) => this.repairLog(m),
         });
-        if (sprung) {
+        // A per-graph refresh tap (`forceFetch`) skips the springboard reuse so the
+        // windowed fetcher re-pulls the whole week's bars (Web-UI track O4(b)).
+        if (sprung && !forceFetch) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
           return this.harvestWeekCloses(capWeekToSessionClose(sprung));
         }
