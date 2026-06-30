@@ -26,6 +26,7 @@ from investment_dashboard.repositories import (
     instruments_repo,
     transactions_repo,
 )
+from investment_dashboard.domain import market_hours
 from investment_dashboard.services import fx_service, prices_service
 from investment_dashboard.services.instrument_enrichment_service import (
     EffectiveInstrument,
@@ -131,7 +132,7 @@ def compute_positions(  # noqa: PLR0912, PLR0915
     scoped query would.
     """
     as_of = as_of or date.today()
-    is_historical = as_of < date.today()
+    is_historical = as_of < market_hours.exchange_today()
     if transactions is None:
         txns: Sequence[Transaction] = transactions_repo.list_transactions(session, end=as_of)
     else:
