@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -41,7 +41,11 @@ from investment_dashboard.repositories import (
     snapshots_repo,
     transactions_repo,
 )
-from investment_dashboard.services import fx_service, positions_service, prices_service
+from investment_dashboard.services import (
+    fx_service,
+    intraday_snapshots_service,
+    positions_service,
+)
 
 ZERO = Decimal(0)
 
@@ -731,15 +735,21 @@ def _compute_daily_growth(
     eur_to_usd: dict[date, Decimal],
     cache: _ValuationCache | None = None,
 ) -> _DailyGrowth:
-    """Single-day growth on the most recent completed trading day.
+    """Single-day growth on the last completed market session (global baseline).
 
-    The "last daily growth day" is the latest date (``<= as_of``) on which
-    *any* currently-held instrument has a price print — so on a Sunday it is
-    Friday's data, and before the US close (e.g. 10am CET) it is yesterday's.
-    The portfolio is valued on that date and on the prior print date with
-    forward-filled prices, which transparently accommodates the fact that some
-    holdings are ETFs (daily close) and some are mutual funds (lagged NAV):
-    each date is a consistent mark of the whole book.
+    The "today's move" baseline is **one global market-close session**, not the
+    freshest print among the held instruments: ``last_date`` is the most recent
+    trading session on or before ``as_of`` and ``prev_date`` the session before
+    it (both holiday-aware, the *same* calendar the Overview "1 Day" chart marks
+    via :func:`_overview_query.previous_session_close_value`). The portfolio is
+    valued on those two market dates with forward-filled prices, so the headline
+    move and the graph endpoints reconcile by construction.
+
+    This unifies the price step across the whole book: a holding whose freshest
+    print *predates* the baseline session forward-fills the same stale price into
+    *both* marks, contributing nothing — so a massively outdated fund (or one that
+    only has the last close and nothing newer) reads 0% today rather than leaking
+    an older session's move into the headline.
 
     Returns a :class:`_DailyGrowth` whose growth legs are ``None`` when there
     aren't two priced dates yet; the EUR→USD marks on each date are carried
@@ -752,10 +762,12 @@ def _compute_daily_growth(
         else positions_service.compute_positions(session, as_of=as_of)
     )
     held_ids = [p.instrument.id for p in positions]
-    dates = prices_service.recent_price_dates(session, held_ids, on_or_before=as_of, limit=2)
-    if len(dates) < 2:
+    if not held_ids:
         return _DailyGrowth(None, None, None, None, None, None)
-    last_date, prev_date = dates[0], dates[1]
+    # One global baseline: the most recent market session on/before ``as_of`` and
+    # the session before it (holiday-aware), matching the 1 Day chart's anchor.
+    last_date = intraday_snapshots_service.previous_trading_session(as_of + timedelta(days=1))
+    prev_date = intraday_snapshots_service.previous_trading_session(last_date)
     fx_last = lookup_rate_with_forward_fill(eur_to_usd, last_date)
     fx_prev = lookup_rate_with_forward_fill(eur_to_usd, prev_date)
     last_eur, last_usd = _value_in_both(session, last_date, eur_to_usd=eur_to_usd, cache=cache)
@@ -768,6 +780,12 @@ def _compute_daily_growth(
         growth_usd = (last_usd - prev_usd) / prev_usd
     else:
         growth_usd = None
+    # Not enough priced history yet (no settled prior mark to grow from): report a
+    # blank Today square rather than dating an em-dash. Distinct from a genuinely
+    # *outdated* book, which forward-fills the same price into both marks and so
+    # yields a computable 0% (prev value > 0) — that case keeps its dates.
+    if growth_eur is None and growth_usd is None:
+        return _DailyGrowth(None, None, None, None, None, None)
     # Guard against a *fabricated* one-day currency swing. The EUR leg differs
     # from the USD leg only by the EUR→USD change between the two dates' FX
     # marks. FX rates are forward-filled (Frankfurter publishes business days

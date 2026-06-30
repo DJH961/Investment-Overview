@@ -31,7 +31,7 @@ import { buildCalculatorData, type CalcData } from "./calculator";
 import { buildTransactions, type TransactionsView } from "./transactions";
 import type { DailyClose } from "./value-history";
 import { isMoneyMarketHolding } from "./money-market";
-import { LIVE_PRICE_MAX_STALENESS_MS, exchangeDate, isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
+import { LIVE_PRICE_MAX_STALENESS_MS, exchangeDate, isUsMarketOpen, lastSessionDate, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
 import { holdingCoversLatestClose, holdingFreshness, type RowFreshness } from "./freshness";
 import { providerLimits } from "./provider-limits";
 
@@ -1369,41 +1369,38 @@ export function buildDashboard(
     (acc, h) => (h.costBasisEur !== null ? acc.plus(h.costBasisEur) : acc),
     new Decimal(0),
   );
-  // The freshness basis must be dated off rows that track the *market's* session,
-  // never a money-market fund. A par-NAV money market re-marks to its own "today"
-  // whenever it is re-fetched — it does not care whether the stock market is open —
-  // so a quote pulled on a weekend/holiday/after-hours would otherwise raise this
-  // bar above every equity's genuine last-session move, stranding them all as
-  // `todayMoveIsStale` and collapsing the prev-value/move math. Money-market funds
-  // never carry a today's move anyway, so they have no business defining the bar.
-  const latestPriceDate = holdingContexts.reduce<string | null>(
-    (latest, { view }) =>
-      view.priceNative !== null &&
-      view.isMoneyMarket !== true &&
-      (latest === null || view.priceFallbackDate > latest)
-        ? view.priceFallbackDate
-        : latest,
-    null,
-  );
-  // A holding whose price date is older than the freshest peer is lagging (e.g. a
-  // fund still on yesterday's NAV while ETFs printed today). We *flag* it stale —
-  // so the UI greys it and the headline total below excludes its price tick (the
-  // `moveDate === latestPriceDate` gate in the prev-value reduction forward-fills
-  // it to an FX-only contribution) — but we deliberately keep the row's own
-  // genuine last-session move intact rather than zeroing it. The stale *flag* and
-  // the per-row move *figure* are decoupled: a NAV fund still on Friday's close on
-  // a Monday open shows its real Thursday→Friday growth (greyed, "an earlier
-  // session's move"), instead of collapsing to ~0. Money-market par-NAVs never
-  // carry a move, so they are never flagged.
+  // ONE GLOBAL BASELINE (option B): every holding's today's move is measured from
+  // the close of the session *before* the current live market session — a fixed
+  // market-clock date, never the freshest holding's own print date. `lastSessionDate`
+  // is the most recent NYSE session that has *started* (today once it opens, else the
+  // prior session through the after-hours/overnight window), so today's move persists
+  // after the close until the next open. A holding contributes a real price step only
+  // when its own price is *as of* this live session; anything that prints earlier
+  // (a wholly-stale book, a lagging NAV fund) is forward-filled at the settled prior
+  // FX, so its price tick drops out and it contributes only the FX revaluation — and
+  // in USD, nothing at all (0%). This is the single reference the 1D graph also draws
+  // against, so the headline number and the graph endpoints always agree.
+  //
+  // Crucially this is decoupled from which holding is *freshest*: a book whose newest
+  // print is days old reads 0% today (its stale price flows into both the baseline and
+  // the current mark), instead of resurrecting an old session's move as if it were
+  // today's. Money-market par-NAVs never carry a move and are never the basis.
+  const liveSessionIso = lastSessionDate(now);
+  // A holding whose price predates the live session is lagging (e.g. a fund still on
+  // an earlier NAV while ETFs printed today). We *flag* it stale — so the UI greys it
+  // and the headline forward-fills it to an FX-only contribution (the
+  // `moveDate >= liveSessionIso` gate below) — but keep the row's own genuine
+  // last-session move *figure* intact rather than zeroing it, so a NAV fund still on
+  // Friday's close on a Monday shows its real Thursday→Friday growth (greyed, "an
+  // earlier session's move"). Money-market par-NAVs never carry a move, never flagged.
   for (const { view } of holdingContexts) {
-    const lagsFreshest =
-      latestPriceDate !== null && view.priceNative !== null && view.priceFallbackDate < latestPriceDate;
-    view.todayMoveIsStale = lagsFreshest && !view.isMoneyMarket;
+    const lagsLiveSession = view.priceNative !== null && view.priceFallbackDate < liveSessionIso;
+    view.todayMoveIsStale = lagsLiveSession && !view.isMoneyMarket;
   }
   const prevHoldingsValueEur = holdingContexts.reduce(
     (acc, { view, currentValueNative, moveDate }) => {
       if (view.valueEur === null) return acc;
-      if (latestPriceDate !== null && moveDate === latestPriceDate && view.todayMoveEur !== null) {
+      if (moveDate !== null && moveDate >= liveSessionIso && view.todayMoveEur !== null) {
         return acc.plus(view.valueEur.minus(view.todayMoveEur));
       }
       if (currentValueNative !== null) {
@@ -1417,8 +1414,8 @@ export function buildDashboard(
   const todayMoveEur = totalValueEur.minus(prevTotal);
   const priceOnlyMoveEur = holdingContexts.reduce(
     (acc, { view, moveDate }) =>
-      latestPriceDate !== null &&
-      moveDate === latestPriceDate &&
+      moveDate !== null &&
+      moveDate >= liveSessionIso &&
       view.todayMoveEur !== null &&
       view.todayFxMoveEur !== null
         ? acc.plus(view.todayMoveEur.minus(view.todayFxMoveEur))
@@ -1536,7 +1533,7 @@ export function buildDashboard(
   const prevHoldingsValueUsd = holdingContexts.reduce<Decimal | null>(
     (acc, { view, currentValueNative, moveDate }) => {
       if (acc === null || view.valueUsd === null) return acc;
-      if (latestPriceDate !== null && moveDate === latestPriceDate && view.todayMoveUsd !== null) {
+      if (moveDate !== null && moveDate >= liveSessionIso && view.todayMoveUsd !== null) {
         return acc.plus(view.valueUsd.minus(view.todayMoveUsd));
       }
       if (currentValueNative !== null) {
@@ -1559,27 +1556,15 @@ export function buildDashboard(
       ? prevTotalUsd.greaterThan(0) ? todayMoveUsd.dividedBy(prevTotalUsd) : null
       : null;
 
-  // Session-stable settled prior-close anchor for the 1D graph's dashed reference
-  // line. Unlike `prevTotal`/`todayMove` above (which gate on `latestPriceDate` and
-  // so re-classify holdings as deferred quotes arrive), this sums each holding's
-  // own settled prior-close value — frozen at the settled prior FX and independent
-  // of the freshest-date flip — so the line stays put between polls. Holdings with
-  // no resolvable prior close forward-fill to their current value (no move). Cash
-  // is carried at its settled prior-FX value, mirroring the headline baseline.
-  const prevCloseHoldingsEur = holdings.reduce(
-    (acc, h) => (h.valueEur === null ? acc : acc.plus(h.priorCloseValueEur ?? h.valueEur)),
-    new Decimal(0),
-  );
-  const prevCloseAnchorEur = prevCloseHoldingsEur.plus(cashPrevValueEur);
-  const prevCloseHoldingsUsd = holdings.reduce<Decimal | null>((acc, h) => {
-    if (acc === null || h.valueEur === null) return acc;
-    const usd = h.priorCloseValueUsd ?? h.valueUsd;
-    return usd === null ? null : acc.plus(usd);
-  }, holdingsValueUsd === null ? null : new Decimal(0));
-  const prevCloseAnchorUsd =
-    prevCloseHoldingsUsd === null || cashPrevValueUsd === null
-      ? null
-      : prevCloseHoldingsUsd.plus(cashPrevValueUsd);
+  // The 1D graph's dashed reference line and the headline baseline are now ONE and
+  // the same: the anchor IS `prevTotal` (the global-session baseline computed above),
+  // so the dashed line, the headline "today's move" and the live curve's tip all
+  // reconcile by construction — `tip − anchor == todayMove`. The baseline gates on the
+  // fixed live market session (`liveSessionIso`), not the freshest deferred quote, so
+  // it is session-stable: it does not twitch as free-tier quotes trickle in, nor drift
+  // with the live EUR/USD rate (current marks use `fx`, the prior mark `fxPrev`).
+  const prevCloseAnchorEur = prevTotal;
+  const prevCloseAnchorUsd = prevTotalUsd;
   // Provisional while the settled prior FX is not yet recovered: the anchor was
   // valued at a non-settled (possibly live) rate, so callers hold the last
   // non-provisional value rather than redraw the line on a moving rate.

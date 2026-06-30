@@ -394,13 +394,13 @@ describe("buildDashboard", () => {
     expect(movers.eligibleCount).toBe(1);
   });
 
-  it("a freshly-quoted money-market NAV must not flag equity moves stale (market closed)", () => {
+  it("keeps a lagging equity in Top-movers even when the headline flags it stale (money-market NAV fresher)", () => {
     // Root cause of the vanishing Top-movers band: a money-market fund re-marks to
     // its own "today" whenever it is re-fetched — it does not care whether the
-    // stock market is open. A quote pulled after-hours/over a weekend gave VMFXX a
-    // newer value-date than every equity's genuine last-session move, which used to
-    // raise the freshness basis and flag those real moves `todayMoveIsStale`. The
-    // money-market row must never define that basis.
+    // stock market is open. Under the global market-clock baseline the headline may
+    // legitimately flag a lagging equity stale, but Top-movers measures its own
+    // freshest *move* date (holding-independent of the money-market NAV), so a real
+    // last-session equity move still surfaces on the board instead of vanishing.
     const exp = makeExport();
     exp.holdings = [
       {
@@ -462,9 +462,13 @@ describe("buildDashboard", () => {
     // The money-market row is genuinely the freshest priced row...
     expect(vmfxx.priceFallbackDate).toBe("2024-06-03");
     expect(vmfxx.todayMoveEur).toBeNull();
-    // ...but VTI's real last-session move is NOT stranded as stale by it.
+    // ...and under the global market-clock baseline (option B), the live session at
+    // Monday 18:00 ET is Monday itself, so a VTI still parked on Friday's close has
+    // genuinely missed a session: it is flagged stale (greyed, forward-filled to a 0
+    // contribution in the headline) — independent of the money-market NAV's date. Its
+    // own row figure stays decoupled, so its real Friday move survives on the card.
     expect(vti.todayMoveEur).not.toBeNull();
-    expect(vti.todayMoveIsStale).toBe(false);
+    expect(vti.todayMoveIsStale).toBe(true);
     const movers = buildMovers(m.holdings);
     expect(movers.winners.map((w) => w.symbol)).toContain("VTI");
   });
@@ -810,7 +814,7 @@ describe("buildDashboard", () => {
         },
       ],
     ]);
-    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T17:00:00Z"));
     // Desktop methodology values the whole book on 2024-06-03 and the prior
     // global print date. FXAIX has not repriced since 2024-05-31, so its Friday
     // 108→110 move must not leak into Monday's overview move.
@@ -845,7 +849,7 @@ describe("buildDashboard", () => {
         },
       ],
     ]);
-    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T12:00:00Z"));
+    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T17:00:00Z"));
     const vti = m.holdings.find((h) => h.symbol === "VTI")!;
     const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
     // VTI printed on the freshest date; FXAIX still sits on the older NAV. The
@@ -919,7 +923,7 @@ describe("buildDashboard", () => {
         },
       ],
     ]);
-    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T12:00:00Z"), null, {
+    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T17:00:00Z"), null, {
       fxPrevEurUsd: new Decimal("1.05"),
     });
     // On the 2024-06-03 global step, both holdings keep their current native
@@ -953,11 +957,40 @@ describe("buildDashboard", () => {
     expect(fxaix.priceFallbackDate).toBe("2024-05-31");
   });
 
-  it("falls back to the export date when last_price_date is absent (older exports)", () => {
-    const exp = makeExport(); // as_of 2024-06-01, no last_price_date
-    const m = buildDashboard(exp, quotes, fx, new Date("2024-06-01T12:00:00Z"));
-    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
-    expect(fxaix.priceFallbackDate).toBe("2024-06-01");
+  it("reads 0% today for an entirely outdated book (prev == current on the global step)", () => {
+    // Every holding's freshest print predates the live session (Monday): both VTI
+    // and FXAIX last struck on Friday. The global baseline forward-fills each stale
+    // price into *both* the prior and current marks, so — natively in USD — the book
+    // contributes nothing: a massively outdated fund reads 0% today by construction.
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31";
+    exp.cash = []; // strip EUR cash so the USD-native invariant is unobstructed
+    const staleBook = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD", valueDate: "2024-05-31" }],
+      ["FXAIX", { symbol: "FXAIX", price: new Decimal("110"), previousClose: new Decimal("108"), currency: "USD", valueDate: "2024-05-31" }],
+    ]);
+    // Monday 17:00Z (13:00 ET) → the live session is Monday; Friday strikes lag it.
+    const m = buildDashboard(exp, staleBook, fx, new Date("2024-06-03T17:00:00Z"));
+    approx(m.overview.todayMoveUsd, 0, 1e-6);
+    approx(m.overview.todayMovePctUsd, 0, 1e-9);
+  });
+
+  it("reconciles the headline today's move with the 1D graph anchor (tip − anchor)", () => {
+    // The dashed 1D reference line is the same number as the headline baseline, so
+    // the live tip (current total) minus the anchor must equal today's move exactly,
+    // natively in USD and up to FX in EUR — graph and headline can never disagree.
+    const exp = makeExport();
+    exp.meta.as_of = "2024-05-31";
+    const mixedQuotes = new Map<string, Quote>([
+      ["VTI", { symbol: "VTI", price: new Decimal("100"), previousClose: new Decimal("95"), currency: "USD", valueDate: "2024-06-03" }],
+      ["FXAIX", { symbol: "FXAIX", price: new Decimal("110"), previousClose: new Decimal("108"), currency: "USD", valueDate: "2024-05-31" }],
+    ]);
+    const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T17:00:00Z"), null, {
+      fxPrevEurUsd: new Decimal("1.05"),
+    });
+    const o = m.overview;
+    approx(o.totalValueEur.minus(o.prevCloseAnchorEur), o.todayMoveEur.toNumber(), 1e-9);
+    approx((o.totalValueUsd as Decimal).minus(o.prevCloseAnchorUsd as Decimal), (o.todayMoveUsd as Decimal).toNumber(), 1e-9);
   });
 
   it("reads the exported strike time (last_price_time) into a fallback row's priceAsOf", () => {

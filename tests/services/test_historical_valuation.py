@@ -283,3 +283,84 @@ def test_feed_split_overrides_ledger_for_held_instrument(session: Session) -> No
     assert positions_service.total_portfolio_value(session, as_of=date(2025, 7, 1)) == Decimal(
         "2200.00"
     )
+
+
+def test_outdated_book_reads_zero_today_on_global_session_baseline(session: Session) -> None:
+    """One global market-close baseline ⇒ a stale book contributes 0% today.
+
+    The only price print predates *both* the last completed session and the one
+    before it, so the global baseline forward-fills the same stale mark into both
+    valuations: the daily move collapses to exactly zero (no resurrected old-print
+    move), yet the daily-growth dates are still the *market* sessions — proving the
+    baseline is session-keyed, not keyed off the freshest print in the book.
+    """
+    acct_id = _seed_eur_brokerage(session)
+    instr = instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=acct_id,
+            instrument_id=instr.id,
+            date=date(2024, 12, 15),
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("100.00"),
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    # A single, months-old print — nothing on or near the valuation sessions.
+    prices_repo.upsert_closes(session, instr.id, {date(2025, 1, 2): Decimal("120.00")})
+    session.flush()
+
+    metrics = metrics_service.compute_portfolio_metrics(session, as_of=date(2025, 6, 2))
+    # Stale price flows into both the prior and current mark ⇒ no move at all.
+    assert metrics.daily_growth_pct == Decimal("0")
+    assert metrics.daily_growth_money_eur == Decimal("0")
+    # ...but the move is dated to the market sessions, not the 2025-01-02 print.
+    assert metrics.daily_growth_as_of == date(2025, 6, 2)  # Monday session
+    assert metrics.daily_growth_prev_as_of == date(2025, 5, 30)  # prior Friday session
+
+
+def test_daily_growth_baseline_matches_the_one_day_chart_anchor(session: Session) -> None:
+    """The headline daily-growth baseline and the 1 Day chart anchor share a calendar.
+
+    The chart's dashed "prev close" line is keyed off
+    :func:`intraday_snapshots_service.previous_trading_session` of the live
+    session; the headline today's-move must use the *same* prior session, so the
+    two never disagree about which close they measure against.
+    """
+    from datetime import UTC, datetime
+
+    from investment_dashboard.services import intraday_snapshots_service
+
+    acct_id = _seed_eur_brokerage(session)
+    instr = instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR")
+    session.add(
+        Transaction(
+            account_id=acct_id,
+            instrument_id=instr.id,
+            date=date(2024, 12, 15),
+            kind="buy",
+            quantity=Decimal("10"),
+            price_native=Decimal("100.00"),
+            net_native=Decimal("-1000.00"),
+            net_eur=Decimal("-1000.00"),
+            source="manual",
+        )
+    )
+    prices_repo.upsert_closes(
+        session,
+        instr.id,
+        {date(2025, 5, 30): Decimal("120.00"), date(2025, 6, 2): Decimal("130.00")},
+    )
+    session.flush()
+
+    as_of = date(2025, 6, 2)
+    now = datetime(2025, 6, 2, 20, 0, tzinfo=UTC)  # after the US close
+    metrics = metrics_service.compute_portfolio_metrics(session, as_of=as_of)
+    chart_live_session = intraday_snapshots_service.last_session_date(now)
+    chart_prev_session = intraday_snapshots_service.previous_trading_session(chart_live_session)
+    # Same prior session backs both the headline baseline and the chart anchor.
+    assert metrics.daily_growth_as_of == chart_live_session
+    assert metrics.daily_growth_prev_as_of == chart_prev_session
