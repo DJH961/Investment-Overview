@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
 from investment_dashboard.models import (
     Account,
@@ -26,7 +27,6 @@ from investment_dashboard.repositories import (
     instruments_repo,
     transactions_repo,
 )
-from investment_dashboard.domain import market_hours
 from investment_dashboard.services import fx_service, prices_service
 from investment_dashboard.services.instrument_enrichment_service import (
     EffectiveInstrument,
