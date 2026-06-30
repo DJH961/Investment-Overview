@@ -1313,10 +1313,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .txn-host { display: grid; gap: 1rem; }
 .txn-month { display: grid; gap: 0.5rem; }
 /* The month subheader sticks just under the topbar as the user scrolls a long
- * ledger, so the period a row belongs to is always in view on a phone. */
+ * ledger, so the period a row belongs to is always in view on a phone. The
+ * offset mirrors the topbar height (same value the welcome toast uses) so the
+ * label parks just below the sticky topbar instead of vanishing behind its
+ * translucent, higher-z-index pane. */
 .txn-month-head {
   position: sticky;
-  top: 0;
+  top: calc(env(safe-area-inset-top, 0px) + 3.6rem);
   z-index: 1;
   display: flex;
   align-items: baseline;
@@ -1354,6 +1357,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (min-width: 40rem) {
   .txn-filters { grid-template-columns: 1fr auto; align-items: center; }
   .txn-kind-filter { width: auto; min-width: 11rem; }
+}
+
+/* On wide viewports the bottom tab bar reflows to a static strip beneath the
+ * (slightly taller) topbar, so the sticky month label parks under the topbar
+ * alone — matching the welcome toast's desktop offset. */
+@media (min-width: 64rem) {
+  .txn-month-head { top: 4.4rem; }
 }
 
 /* --- Generic card --------------------------------------------------------- */
