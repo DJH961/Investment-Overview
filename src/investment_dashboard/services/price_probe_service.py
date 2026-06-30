@@ -56,7 +56,11 @@ class ProbeOutcome:
 
 def probe_provider_label(provider: ProbeProvider) -> str:
     """A short, friendly provider label for headlines."""
-    return "yfinance (primary)" if provider == "yfinance" else "Tiingo (backup)"
+    if provider == "yfinance":
+        return "yfinance (primary)"
+    if provider == "tiingo":
+        return "Tiingo (backup)"
+    raise ValueError(f"unknown probe provider: {provider!r}")
 
 
 #: A fetcher returns ``(date, close)`` for a symbol, or ``None`` when the
