@@ -13,6 +13,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.0.4] — 2026-06-30
+
+### Fixed
+
+- **The web companion's Activity tab gained a sort-order toggle, so the oldest
+  transaction is one tap away.** Beside the search, type and time-range filters,
+  a "Newest first / Oldest first" dropdown flips the whole ledger — months and
+  the rows within them — letting you jump straight to your very first
+  transaction instead of scrolling the entire history. The time-range filter is
+  unchanged; the two combine freely (`web/src/ui.ts`, `web/src/styles.css`).
+
 ## [5.0.3] — 2026-06-30
 
 ### Fixed

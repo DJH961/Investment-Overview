@@ -2130,6 +2130,22 @@ function txnRangeCutoffIso(range: string, anchorIso: string): string | null {
   return anchor.toISOString().slice(0, 10);
 }
 
+/** Sort-order options for the Activity tab (value → label). */
+const TXN_SORT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+];
+
+/**
+ * Order ledger rows by trade date for display. Rows arrive newest-first, so
+ * "newest" is a cheap pass-through and "oldest" reverses them — letting the user
+ * jump straight to their very first transaction without endless scrolling.
+ * Stable: equal-dated rows keep their original (export) relative order.
+ */
+function sortTxnRows(rows: readonly TxnRow[], order: string): TxnRow[] {
+  return order === "oldest" ? [...rows].reverse() : [...rows];
+}
+
 /** The signed net cash flow of a row in the active display currency. */
 function txnNetPicked(row: TxnRow): Decimal | null {
   return pickByCurrency(row.netEur, row.netUsd);
@@ -2268,24 +2284,31 @@ function renderTransactionsPanel(view: TransactionsView): HTMLElement {
     TXN_RANGE_OPTIONS.map((o) => h("option", { value: o.value }, [o.label])),
   ) as HTMLSelectElement;
 
+  const sortSelect = h(
+    "select",
+    { class: "select txn-sort-filter", "aria-label": "Sort order" },
+    TXN_SORT_OPTIONS.map((o) => h("option", { value: o.value }, [o.label])),
+  ) as HTMLSelectElement;
+
   // Anchor the time filter to the newest row's date (rows are newest-first), so
   // ranges like "Last 30 days" measure from the ledger's latest activity.
   const anchorIso = view.rows[0]?.date ?? "";
 
-  const filterBar = h("div", { class: "txn-filters" }, [search, kindSelect, rangeSelect]);
+  const filterBar = h("div", { class: "txn-filters" }, [search, kindSelect, rangeSelect, sortSelect]);
   const listHost = h("div", { class: "txn-host" });
 
   const apply = (): void => {
     const term = search.value.trim().toLowerCase();
     const kind = kindSelect.value;
     const cutoff = txnRangeCutoffIso(rangeSelect.value, anchorIso);
-    const filtered = view.rows.filter((r) => {
+    const matched = view.rows.filter((r) => {
       if (kind && r.kind !== kind) return false;
       if (cutoff && r.date < cutoff) return false;
       if (!term) return true;
       const hay = `${r.symbol} ${r.account} ${txnKindLabel(r.kind)} ${r.kind} ${r.source ?? ""}`.toLowerCase();
       return hay.includes(term);
     });
+    const filtered = sortTxnRows(matched, sortSelect.value);
 
     if (countSpan) countSpan.textContent = countText(filtered.length);
 
@@ -2294,7 +2317,8 @@ function renderTransactionsPanel(view: TransactionsView): HTMLElement {
       listHost.append(h("p", { class: "note" }, ["No transactions match your filters."]));
       return;
     }
-    // Group newest-first by calendar month (rows already arrive newest-first).
+    // Group by calendar month, preserving the chosen sort order (newest- or
+    // oldest-first) for both the month buckets and the rows within them.
     const order: string[] = [];
     const byMonth = new Map<string, TxnRow[]>();
     for (const r of filtered) {
@@ -2314,6 +2338,7 @@ function renderTransactionsPanel(view: TransactionsView): HTMLElement {
   search.addEventListener("input", apply);
   kindSelect.addEventListener("change", apply);
   rangeSelect.addEventListener("change", apply);
+  sortSelect.addEventListener("change", apply);
   apply();
 
   const disclaimer = h("p", { class: "disclaimer" }, [
