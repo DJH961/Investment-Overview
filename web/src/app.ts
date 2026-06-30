@@ -223,15 +223,7 @@ import {
 import { planPull, describePlan, deviceDaysMissing, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
 import {
   aggregateMoneyMarketValue,
-  describeFlag,
-  describeMerge,
-  hasMarketSleeve,
-  mergeSleeveSeries,
-  parseMarketSeries,
   parseMoneyMarketValue,
-  pinMergedTipToWebTip,
-  rebaseSleeveToWholeBook,
-  type SleevePoint,
 } from "./market-sleeve";
 import type { Bar, CurvePoint } from "./timeseries";
 import type { MobileExport } from "./types";
@@ -7466,9 +7458,7 @@ export class App {
         });
         if (sprung) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
-          return this.harvestWeekCloses(
-            capWeekToSessionClose(this.enrichWeekWithBlobSleeve(sprung, exported, baseFx)),
-          );
+          return this.harvestWeekCloses(capWeekToSessionClose(sprung));
         }
         const spent = { credits: 0 };
         try {
@@ -7498,9 +7488,7 @@ export class App {
             this.pollLog("graph", "1W graph: reused stored week bars (no live pull, 0 credits).");
           }
           if (curve.points.length < 2) return null;
-          return this.harvestWeekCloses(
-            capWeekToSessionClose(this.enrichWeekWithBlobSleeve(curve.points, exported, baseFx)),
-          );
+          return this.harvestWeekCloses(capWeekToSessionClose(curve.points));
         } catch {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.", "warn");
           return null;
@@ -7557,115 +7545,6 @@ export class App {
       // Breadcrumbs are not a bar fetch — leave the refetch throttle's stamp alone.
       updatedAt: existing.updatedAt,
     });
-  }
-
-  /**
-   * WS7 — merge the web's reconstructed 1W curve with the blob's **v3 aggregate
-   * market-sleeve backbone** (Pillar 3). Both sides speak the same FX-free sleeve
-   * value over time, so they reconcile per grid slot: agreeing slots thicken the
-   * line, a slot that disagrees beyond τ keeps the desktop-authoritative blob and
-   * raises a **reconciliation flag** — surfaced verbatim in the polling log so the
-   * owner can deep-dive *why* the two apps diverge instead of seeing a silently
-   * averaged lie (the cross-app scenario this merge exists for).
-   *
-   * Degrades gracefully: a v1/v2 blob carries no `market_series`, so the web curve
-   * is returned unchanged. The whole-book base is **auto-calibrated** from a real
-   * web↔blob time overlap (so the constant cash + NAV base never has to be guessed
-   * or double-counted), and the merged curve is only rendered when it is strictly
-   * richer than the web curve and its live tip stays sane — otherwise the trusted
-   * web curve is kept. Either way the reconciliation is fully logged.
-   */
-  private enrichWeekWithBlobSleeve(
-    webCurve: CurvePoint[],
-    exported: MobileExport["live_graphs"] | undefined,
-    fallbackFx: Decimal | null,
-  ): CurvePoint[] {
-    if (!hasMarketSleeve(exported) || webCurve.length < 2) return webCurve;
-    const blobSleeve = parseMarketSeries(exported?.market_series);
-    if (blobSleeve.length < 2) return webCurve;
-
-    // Auto-calibrate the constant whole-book base (cash + NAV) from the closest
-    // web↔blob time overlap: base = webValue − blobSleeveValue at that instant. By
-    // reading the base off the actual rendered web curve we sidestep the
-    // NAV-in-sleeve vs NAV-in-base ambiguity entirely and align the two series.
-    const overlap = this.calibrateSleeveBase(webCurve, blobSleeve);
-    if (!overlap) {
-      recordReconciliation("1W reconciliation: no web↔blob time overlap to calibrate the base — kept the web curve", "info");
-      return webCurve;
-    }
-    const { baseUsd, baseEur } = overlap;
-    const webSleeve: SleevePoint[] = webCurve.map((p) => {
-      const valueNativeUsd = p.valueUsd.minus(baseUsd);
-      const valueNativeEur = p.valueEur.minus(baseEur);
-      // The sleeve's true per-instant FX (USD/EUR) is the ratio of the *sleeve-only*
-      // values — after the calibrated whole-book base is removed from both currencies.
-      // Using the whole-book ratio would fold the constant cash + NAV base into the
-      // rate and skew the EUR line wherever a web point survives the merge.
-      return {
-        t: p.t,
-        valueNativeUsd,
-        fxEurUsd: valueNativeEur.gt(0) ? valueNativeUsd.div(valueNativeEur) : fallbackFx,
-      };
-    });
-
-    const gridMs = exported?.grid === "15m" ? 15 * 60 * 1000 : 30 * 60 * 1000;
-    const merge = mergeSleeveSeries(webSleeve, blobSleeve, { gridMs });
-    // The merge is a reconciliation against already-loaded data (not a live pull),
-    // so it belongs in the data-loading log. The snapshot de-dup spells it out in
-    // full once and collapses identical reloads to a repeat count.
-    recordReconciliation(`1W reconciliation: ${describeMerge(merge)}`, "info");
-    for (const flag of merge.flags) {
-      recordReconciliation(`1W reconciliation: ${describeFlag(flag)}`, "info");
-    }
-
-    // Render the merged curve only when it is genuinely richer (more points) than
-    // the web curve — never coarsen the carefully-built week line (Pillar 3 + the
-    // WS8 regression guard). Reapply the calibrated base + per-instant FX.
-    if (merge.points.length <= webCurve.length) {
-      recordReconciliation("1W reconciliation: web curve already as dense — kept it (no coarsening)", "info");
-      return webCurve;
-    }
-    const merged = rebaseSleeveToWholeBook(merge.points, { baseUsd, baseEur }, fallbackFx);
-    // "Live tip stays sane": pin the merged curve's trailing edge to the web
-    // curve's trusted tail (the same dense bars+tip 1D ends on) so a blob sleeve
-    // sample — captured on the desktop's own coarse cadence and able to land just
-    // past the tip *or* in the gap before it — can never dent or overrun the final
-    // segment. Without this the richer merged curve draws a "final-minute" nosedive
-    // on 1W that 1D never shows: pinning only the very last point still left a
-    // stale blob sample as the *penultimate* point, a notch right before the tip
-    // (capWeekToSessionClose only trims past the *close*, blind to that pre-tip dip).
-    const pinned = pinMergedTipToWebTip(merged, webCurve);
-    recordReconciliation(
-      `1W reconciliation: rendered the richer merged curve (${pinned.length} points, was ${webCurve.length})`,
-      "info",
-    );
-    return pinned;
-  }
-
-  /**
-   * Calibrate the constant whole-book base from the nearest web↔blob time overlap
-   * (within one hour): `baseUsd = webValueUsd − blobSleeveUsd`, `baseEur` likewise
-   * with the blob's per-instant FX. Returns `null` when the two series never come
-   * within an hour of each other (no trustworthy calibration point).
-   */
-  private calibrateSleeveBase(
-    webCurve: CurvePoint[],
-    blobSleeve: SleevePoint[],
-  ): { baseUsd: Decimal; baseEur: Decimal } | null {
-    const MAX_GAP_MS = 60 * 60 * 1000;
-    let best: { web: CurvePoint; blob: SleevePoint; gap: number } | null = null;
-    for (const w of webCurve) {
-      for (const b of blobSleeve) {
-        const gap = Math.abs(w.t - b.t);
-        if (best === null || gap < best.gap) best = { web: w, blob: b, gap };
-      }
-    }
-    if (!best || best.gap > MAX_GAP_MS) return null;
-    const baseUsd = best.web.valueUsd.minus(best.blob.valueNativeUsd);
-    const fx = best.blob.fxEurUsd;
-    const blobSleeveEur = fx && fx.gt(0) ? best.blob.valueNativeUsd.div(fx) : best.blob.valueNativeUsd;
-    const baseEur = best.web.valueEur.minus(blobSleeveEur);
-    return { baseUsd, baseEur };
   }
 
   /**

@@ -818,6 +818,28 @@ describe("loadEurUsd", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("stamps the live FX mark at the quote's own price time, not the pull clock (plan C4)", async () => {
+    const storage = memStorage();
+    // The provider reports the rate's genuine strike time via `last_quote_at`
+    // (Unix seconds). The FX mark must be timed to that instant, not to whenever
+    // we happened to poll — otherwise the live FX tip lands at the wrong place.
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      jsonResponse({
+        symbol: "EUR/USD",
+        close: "1.0900",
+        previous_close: "1.0750",
+        currency: "USD",
+        last_quote_at: 1700,
+      }),
+    );
+    const res = await loadEurUsd("key", { fetchImpl, storage, now: clock(50_000) });
+    expect(res.source).toBe("live");
+    expect(res.now?.toString()).toBe("1.09");
+    // 1700 Unix seconds → 1_700_000 ms — the quote's price time, not the pull clock (50_000).
+    expect(res.at).toBe(1_700_000);
+    expect(res.observedAt).toBe(1_700_000);
+  });
+
   it("keeps FX frozen over the weekend even on a forced tap", async () => {
     const storage = memStorage();
     // Hold a prior "yesterday" baseline so we can assert it survives the re-pull.

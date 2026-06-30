@@ -13,7 +13,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.15] — 2026-06-30
+## [4.22.0] — 2026-06-30
+
+### Changed
+
+- **Graph unification — the live 1D and 1W portfolio graphs now share one
+  intraday-window builder, killing the long-standing 1D-vs-1W divergence**
+  (`docs/graph-unification-plan.md`). For a long time the same recent period
+  looked smooth on 1D but spiky/sawtooth on 1W, settled days subtly reshaped
+  overnight, and the trailing tip ticked *up* on 1D while ticking *down* on 1W —
+  all because 1D and 1W were two different code paths (dense intraday bars vs. one
+  coarse daily close per day, then a second lower-resolution "blob" source merged
+  back in). This release begins the Main track (Group 1 — Foundation):
+  - The live **1W** curve is now drawn from the **same dense 5-minute intraday
+    bars** as 1D over the trailing-session window, instead of one daily close per
+    session — so the today-slice of 1W is *identical* to the 1D graph, not merely
+    similar. Cost is unchanged: Twelve Data bills one credit per symbol per request
+    regardless of bar count, so a dense 5-day week costs the same as a single day.
+  - The **web⇄blob market-sleeve merge** is **removed from the live path** (it was
+    the source of the sawtooth and the trailing-tip mismatch — it unioned web
+    5-minute points with blob 30-minute points whenever they agreed within
+    tolerance). The blob is kept only as a springboard / offline fallback, never a
+    live merge source. The 1W tail now uses the same close-cap as 1D.
+  - The 1W **FX leg rides the same intraday pipe** (5-minute EUR/USD), and the live
+    EUR/USD mark is now timed to the **quote's own reported price time** rather than
+    the moment we happened to poll — so the EUR and USD lines diverge at the right
+    instants instead of being mis-stamped to the pull clock.
+
+
 
 ### Fixed
 
