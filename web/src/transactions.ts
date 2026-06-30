@@ -13,7 +13,8 @@
  * leg from the other here.
  */
 import { Decimal } from "./decimal-config";
-import type { ExportTransactionRecord, ExportTransactions, MobileExport } from "./types";
+import { MONEY_MARKET_SYMBOLS, isMoneyMarketHolding } from "./money-market";
+import type { ExportHolding, ExportTransactionRecord, ExportTransactions, MobileExport } from "./types";
 
 /** One ledger row, parsed into Decimals for display. */
 export interface TxnRow {
@@ -62,21 +63,54 @@ function dec(value: string | null | undefined): Decimal | null {
   }
 }
 
-function toRow(r: ExportTransactionRecord): TxnRow {
+function toRow(r: ExportTransactionRecord, mmSymbols: ReadonlySet<string>): TxnRow {
+  const symbol = typeof r.symbol === "string" ? r.symbol : "";
+  let kind = typeof r.kind === "string" ? r.kind : "";
+  let quantity = dec(r.quantity);
+  let priceNative = dec(r.price_native);
+
+  // Money-market settlement funds (VMFXX, SPAXX …) hold a constant $1.00 NAV by
+  // design, so a *reinvested* distribution's "shares" are merely the dollar
+  // amount and its "price" is always 1 — both meaningless noise. Log these as a
+  // plain dividend with no share/price detail, matching how the desktop treats
+  // them (the income is recognised, the par-value mechanics are hidden).
+  if (kind === "dividend_reinvest" && symbol !== "" && mmSymbols.has(symbol.trim().toUpperCase())) {
+    kind = "dividend";
+    quantity = null;
+    priceNative = null;
+  }
+
   return {
     id: typeof r.id === "number" ? r.id : null,
     date: typeof r.date === "string" ? r.date : "",
     account: typeof r.account === "string" ? r.account : "",
-    kind: typeof r.kind === "string" ? r.kind : "",
-    symbol: typeof r.symbol === "string" ? r.symbol : "",
-    quantity: dec(r.quantity),
-    priceNative: dec(r.price_native),
+    kind,
+    symbol,
+    quantity,
+    priceNative,
     feesNative: dec(r.fees_native),
     netNative: dec(r.net_native),
     netEur: dec(r.net_eur),
     netUsd: dec(r.net_usd),
     source: typeof r.source === "string" ? r.source : null,
   };
+}
+
+/**
+ * The set of money-market / settlement-fund symbols this export knows about:
+ * the desktop's well-known ticker list plus any holding the export explicitly
+ * flags (`is_money_market`) or that matches the ticker/name heuristic. Used to
+ * normalise reinvested money-market distributions into plain dividends.
+ */
+function moneyMarketSymbolSet(data: MobileExport): ReadonlySet<string> {
+  const set = new Set<string>(MONEY_MARKET_SYMBOLS);
+  const holdings: ExportHolding[] = Array.isArray(data.holdings) ? data.holdings : [];
+  for (const holding of holdings) {
+    if (!isMoneyMarketHolding(holding)) continue;
+    const sym = (holding.price_symbol || holding.symbol || "").trim().toUpperCase();
+    if (sym) set.add(sym);
+  }
+  return set;
 }
 
 /** Narrow the loosely-typed export block to a rows array, or null when absent. */
@@ -96,7 +130,8 @@ export function buildTransactions(data: MobileExport): TransactionsView {
   if (raw === null) {
     return { available: false, rows: [], kinds: [] };
   }
-  const rows = raw.map(toRow);
+  const mmSymbols = moneyMarketSymbolSet(data);
+  const rows = raw.map((r) => toRow(r, mmSymbols));
   const kinds = [...new Set(rows.map((r) => r.kind).filter((k) => k !== ""))].sort();
   return { available: true, rows, kinds };
 }

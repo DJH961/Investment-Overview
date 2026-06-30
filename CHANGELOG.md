@@ -13,11 +13,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [5.0.4] — 2026-06-30
+## [5.0.7] — 2026-06-30
 
 ### Fixed
 
-- **Today's move, total growth and the 1 Day graph now share one global baseline —
+- **Today's move, today's growth % and the 1 Day graph now share one global baseline —
   the last market close — so the headline number and the graph endpoints always
   agree.** Previously the headline daily move was keyed off the *freshest price
   date among the holdings* (which drifted as deferred free-tier quotes trickled in
@@ -32,16 +32,89 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   close and nothing newer — contributes exactly **0 %** instead of leaking an old
   session's move. Everything is computed natively in USD with EUR derived via FX,
   so the numbers reconcile in USD and up to FX in EUR (`web/src/compute.ts`).
-- **The Python desktop side now matches that behavior across both the total
-  daily-growth number and the graphs.** `metrics_service._compute_daily_growth`
-  and the per-holding daily growth in `_overview_query` were keyed off the freshest
-  price prints in the book (so a single stale fund could date "yesterday" months in
-  the past); they now use the same holiday-aware market-session calendar the 1 Day
+- **The Python desktop side now matches that behavior across both the daily-growth
+  number and the graphs.** `metrics_service._compute_daily_growth` and the
+  per-holding daily growth in `_overview_query` were keyed off the freshest price
+  prints in the book (so a single stale fund could date "yesterday" months in the
+  past); they now use the same holiday-aware market-session calendar the 1 Day
   chart marks (`intraday_snapshots_service.previous_trading_session` /
   `last_session_date`), so the headline baseline and the chart's prior-close anchor
   can never disagree and a wholly outdated book reads 0 % today
   (`src/investment_dashboard/services/metrics_service.py`,
   `src/investment_dashboard/ui/pages/_overview_query.py`).
+
+## [5.0.6] — 2026-06-30
+
+### Fixed
+
+- **The Python Overview "Top gainer" / movers badge no longer overlaps the
+  holding name.** The pinned chip sat hard against the figures row's top edge
+  with an upward lift that pushed it onto the muted name line above it. It is now
+  nudged a hair lower (a small negative `margin-bottom`) so it clears that text,
+  while staying absolutely positioned (out of flow) so a long "Top % loser"
+  label still never wraps a card line (`src/investment_dashboard/ui/style.py`).
+- **The Python "Value over time" graph now fills to its full 5-minute density —
+  and refills internal holes — on a manual reload and on startup, not only from a
+  background tick.** The "1 Week" curve gated its network re-pulls behind a
+  once-per-anchor "fetched-day" marker that lives in `app_config` and *survives a
+  restart*, so a same-day reopen (or any page reload) skipped an earlier session
+  that came up short, freezing the gap as a flat straight line until the next
+  trading day or a background auto-refresh tick — which can't be relied on if the
+  app was closed or the live timer is degraded. The Week render now self-heals
+  before drawing, mirroring the Day range: `reconstruct_last_session` densifies
+  *today*'s slice (written to the shared 1-Day cache the week reads) and a forced
+  week pass re-pulls any earlier session still holding an internal hole, bypassing
+  the render guard. Startup warming (`boot._refresh_intraday_week`) now likewise
+  forces the week fill so a same-day restart fills holes instead of inheriting the
+  stale marker. Both paths stay cache-first and self-limiting — a fully-covered
+  week re-pulls nothing and touches no network — and `force` re-fetches only
+  *uncovered* days, never re-downloading already-complete ones
+  (`src/investment_dashboard/ui/pages/overview.py`, `src/investment_dashboard/boot.py`).
+
+## [5.0.5] — 2026-06-30
+
+### Fixed
+
+- **An outdated NAV's daily move no longer collapses to 0 %.** When a fund still
+  sits on an older print than its freshest peers (its NAV hasn't refreshed yet),
+  the Overview holding card kept the row but forward-filled the price onto the
+  freshest book date, erasing the move down to FX alone and reading a misleading
+  `0.00 % / +$0.00`. It now keeps showing that holding's own latest *published*
+  move (its two most recent prints), greyed out by the staleness flag — exactly
+  like the web companion — so the figure reads as last session's move rather
+  than zero, even though it stays out of today's total growth
+  (`src/investment_dashboard/ui/pages/_overview_query.py`).
+
+## [5.0.4] — 2026-06-30
+
+### Fixed
+
+- **The web companion's Activity tab gained a sort-order toggle, so the oldest
+  transaction is one tap away.** Beside the search, type and time-range filters,
+  a "Newest first / Oldest first" dropdown flips the whole ledger — months and
+  the rows within them — letting you jump straight to your very first
+  transaction instead of scrolling the entire history. The time-range filter is
+  unchanged; the two combine freely (`web/src/ui.ts`, `web/src/styles.css`).
+- **The web companion's Activity tab gained a time-range filter.** Alongside the
+  existing search and type filters, a "Last 30 days / 90 days / 12 months / This
+  year / All time" dropdown narrows the ledger to a window, anchored to the
+  newest row's date so a stale export still filters relative to its own latest
+  activity. The header's entry count now reflects the active filters live
+  (`web/src/ui.ts`, `web/src/styles.css`).
+- **Each Activity row now shows its secondary currency instead of the redundant
+  "net" label.** The small line beneath the headline amount used to just read
+  "net"; it now shows the same movement in the other currency (USD when EUR is
+  selected, and vice-versa), so both legs of every cash flow are visible at a
+  glance without toggling currency (`web/src/ui.ts`, `web/src/styles.css`).
+- **The "imported from where" provenance chip (e.g. "Vanguard Xlsx", "Import")
+  was removed from Activity rows** — it was noise the user did not need on every
+  line (`web/src/ui.ts`).
+- **Money-market "reinvestment" rows (Vanguard `VMFXX`, Fidelity `SPAXX`, …) now
+  log as a plain Dividend with no share count and no price.** These settlement
+  funds hold a constant $1.00 NAV, so a reinvested distribution's "shares" are
+  merely the dollar amount and its "price" is always 1 — both meaningless. The
+  Activity tab now normalises such `dividend_reinvest` rows to a `dividend`,
+  dropping the par-value share/price detail (`web/src/transactions.ts`).
 
 ## [5.0.3] — 2026-06-30
 

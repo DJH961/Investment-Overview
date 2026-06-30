@@ -2093,6 +2093,59 @@ function txnDateLabel(iso: string): string {
   return `${Number(day)} ${names[Number(month) - 1] ?? month} ${year}`;
 }
 
+/** Time-range filter options for the Activity tab (value → label). */
+const TXN_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "", label: "All time" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "90d", label: "Last 90 days" },
+  { value: "12m", label: "Last 12 months" },
+  { value: "ytd", label: "This year" },
+];
+
+/**
+ * The inclusive lower-bound ISO date for a time-range value, anchored to the
+ * ledger's newest row (`anchorIso`) so a stale export still filters relative to
+ * its own latest activity rather than the wall clock. Returns null for "all
+ * time" or an unparseable anchor — meaning "no lower bound".
+ */
+function txnRangeCutoffIso(range: string, anchorIso: string): string | null {
+  if (!range) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(anchorIso);
+  if (!m) return null;
+  if (range === "ytd") return `${m[1]}-01-01`;
+  const anchor = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  switch (range) {
+    case "30d":
+      anchor.setUTCDate(anchor.getUTCDate() - 30);
+      break;
+    case "90d":
+      anchor.setUTCDate(anchor.getUTCDate() - 90);
+      break;
+    case "12m":
+      anchor.setUTCFullYear(anchor.getUTCFullYear() - 1);
+      break;
+    default:
+      return null;
+  }
+  return anchor.toISOString().slice(0, 10);
+}
+
+/** Sort-order options for the Activity tab (value → label). */
+const TXN_SORT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+];
+
+/**
+ * Order ledger rows by trade date for display. Rows arrive newest-first, so
+ * "newest" is a cheap pass-through and "oldest" reverses them — letting the user
+ * jump straight to their very first transaction without endless scrolling.
+ * Stable: equal-dated rows keep their original (export) relative order.
+ */
+function sortTxnRows(rows: readonly TxnRow[], order: string): TxnRow[] {
+  return order === "oldest" ? [...rows].reverse() : [...rows];
+}
+
 /** The signed net cash flow of a row in the active display currency. */
 function txnNetPicked(row: TxnRow): Decimal | null {
   return pickByCurrency(row.netEur, row.netUsd);
@@ -2103,6 +2156,17 @@ function txnNetText(row: TxnRow): string {
   return getDisplayCurrency() === "USD"
     ? formatSignedMoneyUsd(row.netUsd, 2)
     : formatSignedMoneyEur(row.netEur, 2);
+}
+
+/**
+ * Format a row's net in the *other* (secondary) currency, shown small beneath
+ * the primary figure — so both the EUR and USD leg of every movement are
+ * visible at a glance without a currency toggle (replaces the old "net" label).
+ */
+function txnNetSecondaryText(row: TxnRow): string {
+  return getDisplayCurrency() === "USD"
+    ? formatSignedMoneyEur(row.netEur, 2)
+    : formatSignedMoneyUsd(row.netUsd, 2);
 }
 
 function renderTxnRow(row: TxnRow): HTMLElement {
@@ -2123,7 +2187,7 @@ function renderTxnRow(row: TxnRow): HTMLElement {
     ]),
     h("div", { class: "holding-figures" }, [
       h("span", { class: `holding-value ${netCls}` }, [txnNetText(row)]),
-      h("span", { class: "holding-change muted" }, ["net"]),
+      h("span", { class: "holding-change muted txn-secondary" }, [txnNetSecondaryText(row)]),
     ]),
   ]);
 
@@ -2138,7 +2202,6 @@ function renderTxnRow(row: TxnRow): HTMLElement {
   if (row.feesNative !== null && !row.feesNative.isZero()) {
     meta.push(chip(`Fee ${row.feesNative.abs().toFixed(2)}`));
   }
-  if (row.source) meta.push(chip(titleCase(row.source)));
 
   const children: HTMLElement[] = [main];
   if (meta.length > 0) children.push(h("div", { class: "holding-meta" }, meta));
@@ -2173,7 +2236,11 @@ function renderTxnMonthGroup(label: string, rows: TxnRow[]): HTMLElement {
  * the tab.
  */
 function renderTransactionsPanel(view: TransactionsView): HTMLElement {
-  const head = sectionHead("Activity", view.available ? `${view.rows.length} ${view.rows.length === 1 ? "entry" : "entries"}` : undefined);
+  // A live count span the filter pass updates, so the header reflects how many
+  // entries currently match rather than the unfiltered total.
+  const countText = (n: number): string => `${n} ${n === 1 ? "entry" : "entries"}`;
+  const countSpan = view.available ? h("span", { class: "muted" }, [countText(view.rows.length)]) : null;
+  const head = h("div", { class: "section-head" }, countSpan ? [h("h2", {}, ["Activity"]), countSpan] : [h("h2", {}, ["Activity"])]);
 
   if (!view.available) {
     return h("section", { class: "panel-stack panel-transactions" }, [
@@ -2193,7 +2260,7 @@ function renderTransactionsPanel(view: TransactionsView): HTMLElement {
     ]);
   }
 
-  // --- Filter controls (search + kind). Re-render only the list on change. ---
+  // --- Filter controls (search + type + time). Re-render only the list on change. ---
   const search = h("input", {
     class: "txn-search",
     type: "search",
@@ -2211,25 +2278,47 @@ function renderTransactionsPanel(view: TransactionsView): HTMLElement {
     ],
   ) as HTMLSelectElement;
 
-  const filterBar = h("div", { class: "txn-filters" }, [search, kindSelect]);
+  const rangeSelect = h(
+    "select",
+    { class: "select txn-range-filter", "aria-label": "Filter by time range" },
+    TXN_RANGE_OPTIONS.map((o) => h("option", { value: o.value }, [o.label])),
+  ) as HTMLSelectElement;
+
+  const sortSelect = h(
+    "select",
+    { class: "select txn-sort-filter", "aria-label": "Sort order" },
+    TXN_SORT_OPTIONS.map((o) => h("option", { value: o.value }, [o.label])),
+  ) as HTMLSelectElement;
+
+  // Anchor the time filter to the newest row's date (rows are newest-first), so
+  // ranges like "Last 30 days" measure from the ledger's latest activity.
+  const anchorIso = view.rows[0]?.date ?? "";
+
+  const filterBar = h("div", { class: "txn-filters" }, [search, kindSelect, rangeSelect, sortSelect]);
   const listHost = h("div", { class: "txn-host" });
 
   const apply = (): void => {
     const term = search.value.trim().toLowerCase();
     const kind = kindSelect.value;
-    const filtered = view.rows.filter((r) => {
+    const cutoff = txnRangeCutoffIso(rangeSelect.value, anchorIso);
+    const matched = view.rows.filter((r) => {
       if (kind && r.kind !== kind) return false;
+      if (cutoff && r.date < cutoff) return false;
       if (!term) return true;
       const hay = `${r.symbol} ${r.account} ${txnKindLabel(r.kind)} ${r.kind} ${r.source ?? ""}`.toLowerCase();
       return hay.includes(term);
     });
+    const filtered = sortTxnRows(matched, sortSelect.value);
+
+    if (countSpan) countSpan.textContent = countText(filtered.length);
 
     listHost.replaceChildren();
     if (filtered.length === 0) {
       listHost.append(h("p", { class: "note" }, ["No transactions match your filters."]));
       return;
     }
-    // Group newest-first by calendar month (rows already arrive newest-first).
+    // Group by calendar month, preserving the chosen sort order (newest- or
+    // oldest-first) for both the month buckets and the rows within them.
     const order: string[] = [];
     const byMonth = new Map<string, TxnRow[]>();
     for (const r of filtered) {
@@ -2248,6 +2337,8 @@ function renderTransactionsPanel(view: TransactionsView): HTMLElement {
 
   search.addEventListener("input", apply);
   kindSelect.addEventListener("change", apply);
+  rangeSelect.addEventListener("change", apply);
+  sortSelect.addEventListener("change", apply);
   apply();
 
   const disclaimer = h("p", { class: "disclaimer" }, [

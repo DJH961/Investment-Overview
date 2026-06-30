@@ -2129,6 +2129,20 @@ def register() -> None:  # noqa: PLR0915
                             session, currency=display_ccy
                         )
                     elif range_label == "Week":
+                        # Self-heal the intraday curve before building so a manual
+                        # reload or a same-day restart fills it to 5-minute density
+                        # rather than freezing a gap until a background tick fires
+                        # (which can't be relied on — the app may have been closed
+                        # or the auto-refresh timer degraded). ``reconstruct_last_session``
+                        # densifies *today*'s slice (written to the shared 1D cache
+                        # the week curve reads), and the forced week pass re-pulls
+                        # any earlier session left with an internal hole — bypassing
+                        # the once-per-anchor render guard, mirroring the "Day"
+                        # branch's reconstruct call above. Both are cache-first and a
+                        # no-op once covered, so a fully-filled week renders without
+                        # touching the network.
+                        intraday_snapshots_service.reconstruct_last_session(session)
+                        intraday_snapshots_service.week_series_with_fx(session, force=True)
                         # Multi-day intraday curve (open / +1/4 / midday / +3/4 /
                         # close per session), inspired by the "1 Day" curve. Built
                         # in both currencies so the right-axis comparison line

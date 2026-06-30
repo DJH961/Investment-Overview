@@ -990,9 +990,12 @@ def _instrument_daily_growth(  # noqa: PLR0911
 ) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None, date | None]:
     """Single-day growth for one instrument, in EUR and USD.
 
-    Values the holding on the book's two most recent print dates. Holdings that
-    did not reprint on the freshest date are forward-filled, so they contribute
-    zero price move and only the FX revaluation between the book dates.
+    Values the holding on the book's two most recent print dates. A holding that
+    did not reprint on the freshest peer date (an outdated NAV) keeps showing its
+    own latest *published* move — its two most recent prints — rather than being
+    forward-filled to a zero price move; the staleness flag downstream greys it,
+    so it reads as last session's move (never a misleading 0 %) even though it is
+    left out of today's total growth.
 
     Returns a 5-tuple ``(growth_eur, growth_usd, move_eur, move_usd,
     last_date)``: the two growth *fractions*, the two signed *money* moves (the
@@ -1025,6 +1028,29 @@ def _instrument_daily_growth(  # noqa: PLR0911
         and previous_price_date is not None
         and last_date < latest_price_date
     ):
+        # This holding sits on an older print than the freshest peer (an outdated
+        # NAV that hasn't refreshed yet). Mirror the web companion: keep showing
+        # its own latest *published* move (its two most recent prints) rather than
+        # forward-filling the price onto the freshest book date, which would erase
+        # the move down to FX alone and read a misleading 0 %. The staleness flag
+        # downstream greys it, so it reads as "last session's move" — never zero —
+        # even though it is excluded from today's total growth.
+        if len(pairs) >= 2 and pairs[1][1] is not None:
+            prev_date, close_prev = pairs[1]
+            e_last, u_last = _convert_native(
+                shares * close_last, native_currency, last_date, eur_to_usd, today_rate
+            )
+            e_prev, u_prev = _convert_native(
+                shares * close_prev, native_currency, prev_date, eur_to_usd, today_rate
+            )
+            growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
+            growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
+            move_eur = _round_cent(e_last - e_prev)
+            move_usd = _round_cent(u_last - u_prev)
+            return growth_eur, growth_usd, move_eur, move_usd, last_date
+        # No prior print of its own to diff against — fall back to a flat
+        # (FX-only) forward-fill so the row still carries a date for the
+        # staleness gate without inventing a price move.
         current_native = shares * close_last
         e_last, u_last = _convert_native(
             current_native, native_currency, latest_price_date, eur_to_usd, today_rate
