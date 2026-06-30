@@ -1483,6 +1483,14 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   margin-left: 0.45rem;
   color: var(--muted);
 }
+/* The button is `hidden` on the static history slices (1M/1Y/All) — nothing to
+   re-fetch. The `display: inline-flex` above otherwise wins over the UA
+   `[hidden] { display: none }` rule (equal specificity, author sheet last), so
+   the button would never disappear on a long-range graph. Re-assert the hide
+   with a higher-specificity selector so the attribute is honoured. */
+.chart-range-refresh[hidden] {
+  display: none;
+}
 .chart-range-refresh-glyph { font-size: 0.95rem; line-height: 1; display: inline-block; }
 .chart-range-refresh:hover:not(:disabled) {
   color: var(--accent);

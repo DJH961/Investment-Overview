@@ -13,6 +13,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.22.1] — 2026-06-30
+
+### Fixed
+
+- **The per-graph "refresh bars" button now disappears on the long-range value
+  graphs (1M/1Y/All) as intended.** The button is only meaningful for the live
+  1D/1W windows — the static history slices have no bars to re-pull — and the
+  JS already set its `hidden` attribute when a history range was selected. But
+  the `.chart-range-refresh` style declared `display: inline-flex`, which (equal
+  specificity, author sheet last) overrode the user-agent `[hidden]
+  { display: none }` rule, so the button stayed visible on every range. A
+  higher-specificity `.chart-range-refresh[hidden]` rule now re-asserts the hide
+  so the attribute is honoured. The 1D/1W graphs' NAV handling (NAV funds ride
+  flat in the 1D base; the 1W curve re-marks them from accumulated daily-NAV
+  bars) and growth-rate headlines (1D from the previous-close reference, 1W from
+  the first plotted point) were reviewed alongside this and confirmed correct.
+
 ## [4.22.0] — 2026-06-30
 
 ### Changed
