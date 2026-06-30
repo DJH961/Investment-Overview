@@ -17,6 +17,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [5.1.3] — 2026-06-30
+
+### Fixed
+
 - **The per-graph reload (↻) now actually reloads _and sticks_, and it moved to
   the top-left of the graph.** Tapping reload re-pulled the in-view live window's
   bars and redrew, but the very next network-free re-select (switch to another
@@ -33,6 +37,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The reload button is also repositioned to the **top-left** of the graph, set
   apart from the range pills on the top-right.
   (`web/src/ui.ts`, `web/src/app.ts`, `web/src/styles.css`).
+
+## [5.1.2] — 2026-06-30
+
+### Fixed
+
+- **Money-market dividends (VMFXX et al.) now show their real payout in the
+  Activity tab instead of €0.00 / $0.00.** A settlement fund's distribution is
+  booked as a cash-neutral `dividend_reinvest` — the dividend is immediately
+  swept back into more shares at the constant $1.00 NAV, so the row's
+  `net_native` is exactly zero. The ledger valued both currency legs off that
+  zero, so a genuine dividend rendered as nothing. The ledger query
+  (`_ledger_query.py` `_reinvested_dividend_value`) now values this par-$1
+  reinvestment case off its reinvested amount (`quantity × price`, native USD),
+  converted to EUR at the **trade-date** rate, so the payout is visible while
+  the true cash flow stays zero. Normal (non money-market) reinvestments, whose
+  `net_native` is the genuine cash used, are untouched.
 
 ## [5.1.1] — 2026-06-30
 
