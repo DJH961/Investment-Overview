@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { Decimal } from "../src/decimal-config";
 import type { CurvePoint } from "../src/timeseries";
-import { repairWeekNavCollapse, repairSessionNavCollapse, repairCurrencyDivergence } from "../src/week-repair";
+import { repairWeekNavCollapse, repairSessionNavCollapse, repairCurrencyDivergence, repairTodayNavCollapse } from "../src/week-repair";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 
@@ -248,6 +248,80 @@ describe("repairSessionNavCollapse (the today / single-session case, issue #169)
     expect(repairSessionNavCollapse([])).toEqual([]);
     const one = [p("2024-06-05T18:00:00Z", 600, 660)];
     expect(repairSessionNavCollapse(one)).toBe(one);
+  });
+});
+
+describe("repairTodayNavCollapse (the trailing today-on-a-week case, 1W reload)", () => {
+  it("lifts a both-currency collapse confined to today, leaving healthy settled days alone", () => {
+    // Mon/Tue settled healthy at ~46k; today (Wed) is valued without its NAV
+    // sleeve (~28k) until the dense bars load, then the live tip snaps back. The
+    // leading-run repairs cannot reach this (the leading days are healthy) and the
+    // ratio is preserved (both legs collapse), so only this repair heals it.
+    const points = [
+      p("2024-06-03T20:00:00Z", 46000, 50600), // Mon settled
+      p("2024-06-04T20:00:00Z", 46100, 50710), // Tue settled
+      p("2024-06-05T14:00:00Z", 28000, 30800), // today body collapsed
+      p("2024-06-05T15:00:00Z", 28100, 30910),
+      p("2024-06-05T16:00:00Z", 28050, 30855),
+      p("2024-06-05T20:00:00Z", 46050, 50655), // live tip — healthy
+    ];
+    const repaired = repairTodayNavCollapse(points);
+    // Settled days untouched; today's body lifts onto its own healthy tip.
+    expect(eur(repaired).slice(0, 2)).toEqual([46000, 46100]);
+    expect(repaired[5].valueEur.toNumber()).toBe(46050);
+    expect(repaired[2].valueEur.toNumber()).toBeGreaterThan(45000);
+    expect(repaired[3].valueEur.toNumber()).toBeGreaterThan(45000);
+    // The today body keeps its own intraday shape (a constant lift).
+    expect(repaired[3].valueEur.minus(repaired[2].valueEur).toNumber()).toBe(100);
+  });
+
+  it("is a no-op on a healthy week (same array back)", () => {
+    const points = [
+      p("2024-06-03T20:00:00Z", 46000, 50600),
+      p("2024-06-04T20:00:00Z", 46100, 50710),
+      p("2024-06-05T14:00:00Z", 46050, 50655),
+      p("2024-06-05T20:00:00Z", 46080, 50688),
+    ];
+    expect(repairTodayNavCollapse(points)).toBe(points);
+  });
+
+  it("does not lift a genuine today drop (the live tip is itself low)", () => {
+    const points = [
+      p("2024-06-03T20:00:00Z", 46000, 50600),
+      p("2024-06-04T20:00:00Z", 46100, 50710),
+      p("2024-06-05T14:00:00Z", 28000, 30800),
+      p("2024-06-05T20:00:00Z", 28050, 30855), // tip confirms the real drop
+    ];
+    expect(repairTodayNavCollapse(points)).toBe(points);
+  });
+
+  it("matches the single-session repair on a 1D-only curve", () => {
+    const points = [
+      p("2024-06-05T13:30:00Z", 600, 660),
+      p("2024-06-05T15:00:00Z", 605, 665),
+      p("2024-06-05T17:00:00Z", 610, 670),
+      p("2024-06-05T18:00:00Z", 1000, 1100), // live tip
+    ];
+    expect(eur(repairTodayNavCollapse(points))).toEqual([990, 995, 1000, 1000]);
+  });
+
+  it("logs once when it heals today, relabelled from the 1D note", () => {
+    const points = [
+      p("2024-06-03T20:00:00Z", 46000, 50600),
+      p("2024-06-04T20:00:00Z", 46100, 50710),
+      p("2024-06-05T14:00:00Z", 28000, 30800),
+      p("2024-06-05T15:00:00Z", 28100, 30910),
+      p("2024-06-05T20:00:00Z", 46050, 50655),
+    ];
+    const msgs: string[] = [];
+    repairTodayNavCollapse(points, (m) => msgs.push(m));
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toContain("today NAV-collapse heal");
+  });
+
+  it("returns short curves unchanged", () => {
+    const one = [p("2024-06-05T18:00:00Z", 600, 660)];
+    expect(repairTodayNavCollapse(one)).toBe(one);
   });
 });
 
