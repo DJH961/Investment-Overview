@@ -96,6 +96,20 @@ def test_bundle_populates_curve_and_kpis(populated_session) -> None:  # type: ig
     assert len(bench_points) >= 25
 
 
+def test_bundle_defaults_as_of_to_exchange_today_not_local(session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # The exported curve must be stamped on the NYSE exchange date (one ET clock,
+    # schema 2), never the publisher's local ``date.today()``. Pin a divergent ET
+    # date and assert the default flows from ``exchange_today``.
+    import investment_dashboard.ui.pages._analytics_query as aq
+
+    et_day = date(2026, 6, 26)
+    monkeypatch.setattr(aq.market_hours, "exchange_today", lambda *a, **k: et_day)
+    bundle = build_bundle(session, currency="EUR", lookback_days=3)
+    assert bundle.as_of == et_day
+    # The curve's last point is filed under that ET trading day, not local today.
+    assert bundle.curve[-1].date == et_day
+
+
 def test_bundle_safe_on_empty_db(session) -> None:  # type: ignore[no-untyped-def]
     # ``as_of`` is the live "today" (as on the page), so the bounded equity-curve
     # recompute still renders a gap-free recent window straight from a cold cache

@@ -375,4 +375,45 @@ describe("efficiencySpillEligible", () => {
     // Omitting tiingoCreditsAvailable keeps the pure size/deferred policy.
     expect(efficiencySpillEligible(base)).toBe(true);
   });
+
+  describe("loginPriority", () => {
+    it("spills a small (≤threshold) login round that Twelve Data deferred", () => {
+      // Login is top priority: even a single-symbol sleeve spills to Tiingo so
+      // the dashboard is ready immediately, where a steady-state round would not.
+      const small = { ...base, requestedCount: 1, deferred: new Set(["AAA"]) };
+      expect(efficiencySpillEligible(small)).toBe(false);
+      expect(efficiencySpillEligible({ ...small, loginPriority: true })).toBe(true);
+    });
+
+    it("still only spills symbols the round actually deferred", () => {
+      expect(
+        efficiencySpillEligible({
+          ...base,
+          requestedCount: 1,
+          deferred: new Set(["BBB"]),
+          loginPriority: true,
+        }),
+      ).toBe(false);
+    });
+
+    it("may consume even the fan-out reserve (login waives it)", () => {
+      // A non-login spill needs a credit beyond the reserve; login needs only one
+      // credit free at all, so it spills while the reserve is the last thing left.
+      const within = { ...base, requestedCount: 1, tiingoCreditsAvailable: 1 };
+      expect(efficiencySpillEligible(within)).toBe(false);
+      expect(efficiencySpillEligible({ ...within, loginPriority: true })).toBe(true);
+    });
+
+    it("still defers when Tiingo has no credits at all", () => {
+      // The one thing that defers a login pull is Tiingo genuinely being empty.
+      expect(
+        efficiencySpillEligible({
+          ...base,
+          requestedCount: 1,
+          tiingoCreditsAvailable: 0,
+          loginPriority: true,
+        }),
+      ).toBe(false);
+    });
+  });
 });

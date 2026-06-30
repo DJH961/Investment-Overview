@@ -111,6 +111,13 @@ export interface AppendConsumptionOptions {
   at?: number;
   /** Storage to persist into (defaults to localStorage). */
   storage?: StorageLike | null;
+  /**
+   * Force a brand-new snapshot row even when the signature matches the last one,
+   * so the full reconciliation detail is re-emitted verbatim instead of folding
+   * into a repeat count. Set by a hard Settings "Regenerate 1D/1W graph": the
+   * owner explicitly asked to see the merge spelled out, not collapsed.
+   */
+  forceNewRow?: boolean;
 }
 
 function defaultStorage(): StorageLike | null {
@@ -512,6 +519,15 @@ export function summariseConsumption(model: DashboardModel, now: Date = new Date
   // Currency before graph so a missing FX rate is the first "needed" item.
   const currency = summariseCurrency(model, needed, fx);
   const graph = summariseGraph(model, needed, fx);
+  // Fold any queued data-fixing/reconciliation notes into the graph domain so
+  // every repair shows up in the data-loading log (not the polling log). They
+  // drain once: a recurring fix re-queues next round, but the snapshot signature
+  // collapses identical states, so it is detailed once and then folds to a count.
+  if (pendingReconcile.length > 0) {
+    graph.flags.push(...pendingReconcile);
+    if (pendingReconcile.some((f) => f.level !== "info")) graph.perfect = false;
+    pendingReconcile = [];
+  }
   const perfect = holdings.perfect && currency.perfect && graph.perfect;
   // De-dupe the "needed" list while preserving order.
   const neededUnique = [...new Set(needed)];
@@ -528,6 +544,25 @@ export function summariseConsumption(model: DashboardModel, now: Date = new Date
 // ---------------------------------------------------------------------------
 
 let memoryTail: ConsumptionSnapshot[] = [];
+
+/**
+ * Pending **data-fixing / reconciliation** notes to fold into the next snapshot's
+ * graph domain. The repairs (NAV-collapse heal, currency-divergence rebuild, the
+ * 1W web⇄blob merge) happen in the build/render path, not derivable from the
+ * model — so they queue here and are drained into the graph flags by
+ * {@link summariseConsumption}. De-duplicated downstream by the snapshot
+ * signature, giving the detailed-first / collapse-on-repeat policy for free.
+ */
+let pendingReconcile: ConsumptionFlag[] = [];
+
+/**
+ * Queue a reconciliation/fixing note for the data-loading log. Best-effort and
+ * de-duplicated: the same message queued twice before a snapshot is kept once.
+ */
+export function recordReconciliation(message: string, level: ConsumptionLevel = "warn"): void {
+  if (pendingReconcile.some((f) => f.message === message)) return;
+  pendingReconcile.push({ level, message });
+}
 
 function isSnapshot(value: unknown): value is ConsumptionSnapshot {
   if (!value || typeof value !== "object") return false;
@@ -573,7 +608,7 @@ export function appendConsumptionSnapshot(summary: ConsumptionSummary, opts: App
   const existing = pickFreshest(readRaw(storage));
   let next: ConsumptionSnapshot[];
   const last = existing[existing.length - 1];
-  if (last && last.signature === summary.signature) {
+  if (last && last.signature === summary.signature && !opts.forceNewRow) {
     // Same flagged state: merge in place, refreshing the headline figures and the
     // last-seen stamp, and bumping the repeat count.
     const merged: ConsumptionSnapshot = {
@@ -610,6 +645,7 @@ export function readConsumptionLog(storage: StorageLike | null = defaultStorage(
 /** Clear the persisted consumption log (and the in-memory tail). */
 export function clearConsumptionLog(storage: StorageLike | null = defaultStorage()): void {
   memoryTail = [];
+  pendingReconcile = [];
   if (!storage) return;
   try {
     storage.removeItem(LOG_KEY);

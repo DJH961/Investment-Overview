@@ -12,11 +12,20 @@ import {
   MAX_BUDGET_SLOWDOWN,
   MIN_BURST_RELIEF_MS,
   MIN_JUMPSTART_DELAY_MS,
+  MIN_STALE_ROUND_ABORT_MS,
+  STALE_ROUND_INTERVAL_MULTIPLIER,
+  DEFAULT_WAKE_COALESCE_MS,
   burstReliefMs,
+  burstFillDetail,
   dailyBudgetSlowdown,
   jumpstartDelayMs,
   minuteBudgetReliefMs,
   nextRefreshDelayMs,
+  prefetchDebounceMs,
+  prefetchDebounceActive,
+  roundIsStale,
+  staleRoundAbortMs,
+  wakeCoalesceActive,
 } from "../src/refresh-policy";
 
 describe("nextRefreshDelayMs", () => {
@@ -176,5 +185,121 @@ describe("dailyBudgetSlowdown", () => {
 
   it("disables pacing when the remaining budget is unknown", () => {
     expect(dailyBudgetSlowdown(undefined)).toBe(1);
+  });
+});
+
+describe("prefetchDebounceMs", () => {
+  it("is half the auto-update cycle", () => {
+    expect(prefetchDebounceMs(20 * 60 * 1000)).toBe(10 * 60 * 1000);
+    expect(prefetchDebounceMs(8 * 60 * 1000)).toBe(4 * 60 * 1000);
+  });
+
+  it("floors a tiny interval at the burst floor so the gate is never disabled", () => {
+    expect(prefetchDebounceMs(30 * 1000)).toBe(MIN_JUMPSTART_DELAY_MS);
+  });
+});
+
+describe("prefetchDebounceActive", () => {
+  const now = 1_700_000_000_000;
+  const interval = 20 * 60 * 1000; // half = 10 min
+
+  it("debounces a reload within half the cycle (skip the duplicate warm-up)", () => {
+    expect(prefetchDebounceActive(now - 5 * 60 * 1000, now, interval)).toBe(true);
+  });
+
+  it("warms again once half the cycle has elapsed", () => {
+    expect(prefetchDebounceActive(now - 10 * 60 * 1000, now, interval)).toBe(false);
+    expect(prefetchDebounceActive(now - 15 * 60 * 1000, now, interval)).toBe(false);
+  });
+
+  it("warms on a first-ever load (no prior prefetch)", () => {
+    expect(prefetchDebounceActive(null, now, interval)).toBe(false);
+  });
+
+  it("warms when the stamp is in the future (clock skew)", () => {
+    expect(prefetchDebounceActive(now + 5 * 60 * 1000, now, interval)).toBe(false);
+  });
+});
+
+describe("staleRoundAbortMs", () => {
+  it("scales with the configured interval (× the multiplier)", () => {
+    const interval = 15 * 60 * 1000;
+    expect(staleRoundAbortMs(interval)).toBe(interval * STALE_ROUND_INTERVAL_MULTIPLIER);
+  });
+
+  it("floors a short interval so a genuinely-slow round still finishes", () => {
+    // 5s × 3 = 15s, well under the floor.
+    expect(staleRoundAbortMs(5_000)).toBe(MIN_STALE_ROUND_ABORT_MS);
+  });
+
+  it("floors a zero / non-finite interval", () => {
+    expect(staleRoundAbortMs(0)).toBe(MIN_STALE_ROUND_ABORT_MS);
+    expect(staleRoundAbortMs(Number.NaN)).toBe(MIN_STALE_ROUND_ABORT_MS);
+  });
+});
+
+describe("roundIsStale", () => {
+  const now = 1_700_000_000_000;
+  const interval = 2 * 60 * 1000; // abort threshold = max(90s, 6 minutes) = 6 minutes
+
+  it("is false when no round is in flight", () => {
+    expect(roundIsStale(null, now, interval)).toBe(false);
+  });
+
+  it("is false for a freshly-started round", () => {
+    expect(roundIsStale(now - 1_000, now, interval)).toBe(false);
+  });
+
+  it("is false right up to the abort threshold", () => {
+    expect(roundIsStale(now - (staleRoundAbortMs(interval) - 1), now, interval)).toBe(false);
+  });
+
+  it("is true once a round has run past the abort threshold (the log-44 hour-long round)", () => {
+    expect(roundIsStale(now - 60 * 60 * 1000, now, interval)).toBe(true);
+  });
+
+  it("is false when the start stamp is in the future (clock skew)", () => {
+    expect(roundIsStale(now + 5_000, now, interval)).toBe(false);
+  });
+});
+
+describe("wakeCoalesceActive", () => {
+  const now = 1_700_000_000_000;
+
+  it("suppresses a second wake within the window (collapse the resume storm)", () => {
+    expect(wakeCoalesceActive(now - 1_000, now)).toBe(true);
+  });
+
+  it("lets a wake run once the window has elapsed", () => {
+    expect(wakeCoalesceActive(now - (DEFAULT_WAKE_COALESCE_MS + 1), now)).toBe(false);
+  });
+
+  it("runs the first-ever wake (no prior recorded)", () => {
+    expect(wakeCoalesceActive(null, now)).toBe(false);
+  });
+
+  it("runs when the stamp is in the future (clock skew)", () => {
+    expect(wakeCoalesceActive(now + 1_000, now)).toBe(false);
+  });
+
+  it("honours a custom window", () => {
+    expect(wakeCoalesceActive(now - 2_000, now, 1_000)).toBe(false);
+    expect(wakeCoalesceActive(now - 500, now, 1_000)).toBe(true);
+  });
+});
+
+describe("burstFillDetail", () => {
+  it("is empty when nothing is left to fill (take the pill down)", () => {
+    expect(burstFillDetail(0)).toBe("");
+    expect(burstFillDetail(-1)).toBe("");
+    expect(burstFillDetail(Number.NaN)).toBe("");
+  });
+
+  it("uses the singular for a lone remaining holding", () => {
+    expect(burstFillDetail(1)).toBe("1 holding still filling in");
+  });
+
+  it("pluralises for several remaining holdings", () => {
+    expect(burstFillDetail(4)).toBe("4 holdings still filling in");
   });
 });

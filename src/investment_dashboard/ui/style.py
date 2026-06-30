@@ -404,6 +404,18 @@ html, body {{
   letter-spacing: 0.05em;
   color: var(--inv-muted);
 }}
+/* Horizontal body: the rate stats sit on the left, the currency-effect /
+ * investing-power panel on the right, so the box fills the full width instead of
+ * stacking tall. Collapses to a single column on narrow viewports (media query
+ * below); a one-child body (no effect panel) stays full-width too. */
+.inv-fx-box-body {{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 0.75rem 1.25rem;
+  align-items: start;
+}}
+.inv-fx-box-body-single {{ grid-template-columns: minmax(0, 1fr); }}
+.inv-fx-box-main {{ display: grid; gap: 0.75rem; align-content: start; min-width: 0; }}
 .inv-fx-box-stats {{
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -432,6 +444,24 @@ html, body {{
   color: var(--inv-muted);
   font-weight: 500;
 }}
+.inv-fx-box-asof-row {{
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}}
+.inv-fx-box-asof {{ white-space: nowrap; }}
+.inv-fx-box-eod {{
+  color: var(--inv-muted);
+  background: color-mix(in srgb, var(--inv-muted) 16%, transparent);
+  border-radius: 999px;
+  padding: 0.02rem 0.4rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}}
 .inv-fx-box-closed {{
   color: var(--inv-loss);
   background: color-mix(in srgb, var(--inv-loss) 14%, transparent);
@@ -458,7 +488,21 @@ html, body {{
 .inv-fx-effect {{
   display: grid;
   gap: 0.55rem;
+  min-width: 0;
+  align-content: start;
+}}
+/* In the horizontal (two-column) body the effect panel sits to the RIGHT of the
+ * rate stats, separated by a vertical hairline. When the body collapses to a
+ * single column (one-child body, or a narrow viewport) it drops below the stats
+ * with the familiar stacked top border instead. */
+.inv-fx-box-body .inv-fx-effect {{
+  padding-left: 1.25rem;
+  border-left: 1px solid var(--inv-hairline);
+}}
+.inv-fx-box-body-single .inv-fx-effect {{
+  padding-left: 0;
   padding-top: 0.75rem;
+  border-left: 0;
   border-top: 1px solid var(--inv-hairline);
 }}
 .inv-fx-effect-head {{
@@ -507,14 +551,26 @@ html, body {{
 .inv-fx-diverge {{ display: grid; gap: 0.4rem; }}
 .inv-fx-diverge-row {{
   display: grid;
-  grid-template-columns: 6.75rem 1fr 5rem;
+  grid-template-columns: 6.75rem 1fr auto;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }}
-.inv-fx-diverge-label {{ color: var(--inv-muted); display: flex; align-items: baseline; gap: 0.35rem; }}
+.inv-fx-diverge-label {{ color: var(--inv-muted); white-space: nowrap; }}
+/* v3.7 — the live/last/paused tag now sits *horizontally* beside the value (not
+ * stacked beneath it), so the row stays short and uses width rather than height.
+ * The value+tag share one nowrap cell on the right; the fixed label column keeps
+ * "Market hours" / "Overnight" on a single line regardless. */
+.inv-fx-diverge-valcell {{
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  white-space: nowrap;
+}}
 .inv-fx-diverge-tag {{
   font-size: 0.6rem;
   font-weight: 700;
@@ -570,6 +626,18 @@ html, body {{
 .inv-fx-diverge-value.pos {{ color: var(--inv-gain); }}
 .inv-fx-diverge-value.neg {{ color: var(--inv-loss); }}
 .inv-fx-diverge-value.flat {{ color: var(--inv-ink); }}
+/* On a narrow viewport the horizontal currency box collapses back to a single
+ * stacked column, with the effect panel below the rate stats (top border, not a
+ * left one) so nothing is crushed into too little width. */
+@media (max-width: 48rem) {{
+  .inv-fx-box-body {{ grid-template-columns: minmax(0, 1fr); }}
+  .inv-fx-box-body .inv-fx-effect {{
+    padding-left: 0;
+    padding-top: 0.75rem;
+    border-left: 0;
+    border-top: 1px solid var(--inv-hairline);
+  }}
+}}
 
 .inv-section {{
   background: var(--inv-surface) !important;
@@ -711,9 +779,11 @@ html, body {{
   border: 1px solid var(--inv-hairline);
   border-radius: var(--inv-radius-lg);
   box-shadow: var(--inv-shadow-soft);
-  padding: 1rem 1.125rem;
+  /* v3.7 — a touch less vertical breathing room (was 1rem / 7.5rem) so the
+     tidy 4-by-2 KPI block reads tighter without crowding its contents. */
+  padding: 0.7rem 1.125rem;
   min-width: 0;
-  min-height: 7.5rem;
+  min-height: 6rem;
   height: 100%;
   flex: 1 1 13rem;
   display: flex;
@@ -747,6 +817,14 @@ html, body {{
   font-size: 1.25rem;
   font-weight: 600;
 }}
+/* Compact word-headline variant (e.g. the Vs Market verdict) — smaller and
+   kept on a single line so "Beating/Trailing the market" never wraps to two
+   rows, saving vertical space. */
+.inv-kpi-verdict {{
+  font-size: clamp(0.95rem, 0.8rem + 0.45vw, 1.15rem);
+  line-height: 1.2;
+  white-space: nowrap;
+}}
 .inv-kpi-sub {{
   font-size: 0.8125rem;
   color: var(--inv-muted);
@@ -779,6 +857,34 @@ html, body {{
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--inv-muted);
+}}
+/* "Today" tile — title row carries a top-right live/clock stamp, and the
+   secondary-currency line shares its row with the absolute money move pushed
+   right, so the card sheds the old "as of …" caption row and reads tighter. */
+.inv-kpi-head {{
+  gap: 0.5rem;
+}}
+.inv-kpi-corner {{
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--inv-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}}
+.inv-kpi-secondary-row {{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}}
+.inv-kpi-secondary-money {{
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--inv-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }}
 
 /* ------------------------------------------------------------------ */
@@ -881,7 +987,7 @@ html, body {{
 }}
 .inv-holding-figures {{
   display: flex; align-items: baseline; justify-content: space-between;
-  gap: 0.5rem; margin-top: 0.15rem;
+  gap: 0.5rem; margin-top: 0.15rem; position: relative;
 }}
 .inv-holding-value {{
   font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em;
@@ -957,16 +1063,43 @@ html, body {{
   margin-right: 0.4rem;
   color: var(--inv-accent);
 }}
+/* When the movers band is rendered as a collapsible section it carries the
+   ``.inv-collapse`` base (whose surface background is set with ``!important``),
+   so re-assert the accent band gradient/border with matching weight and tint
+   the leading star icon with the accent colour. */
+.inv-collapse.inv-movers-band {{
+  border-color: color-mix(in srgb, var(--inv-accent) 35%, var(--inv-hairline));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--inv-accent) 7%, var(--inv-surface)),
+      var(--inv-surface)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--inv-accent) 10%, transparent);
+}}
+.inv-collapse.inv-movers-band :deep(.q-item__section--avatar .q-icon) {{
+  color: var(--inv-accent);
+}}
+/* The headline row carries the title on the left and the basis date on the
+   right, at the same height — Quasar appends the expand chevron after it. */
+.inv-mover-header {{
+  gap: 0.5rem; min-width: 0;
+}}
+.inv-mover-star {{
+  color: var(--inv-accent); font-size: 1.15rem;
+}}
+.inv-mover-title {{
+  font-size: 0.875rem; font-weight: 600; color: var(--inv-ink); letter-spacing: -0.005em;
+}}
 .inv-mover-sub {{
-  font-size: 0.75rem; color: var(--inv-muted); margin: -0.25rem 0 0.6rem;
+  font-size: 0.75rem; color: var(--inv-muted); white-space: nowrap;
 }}
 .inv-mover-grid {{
-  display: grid; grid-template-columns: 1fr; gap: 0.55rem;
+  display: grid; grid-template-columns: 1fr; gap: 0.55rem; width: 100%;
 }}
 @media (min-width: 600px) {{
   .inv-mover-grid {{ grid-template-columns: repeat(2, 1fr); }}
 }}
-@media (min-width: 1024px) {{
+/* On any reasonably wide surface the four blocks line up side to side as a
+   single full-width row, using the whole band rather than wrapping to 2x2. */
+@media (min-width: 768px) {{
   .inv-mover-grid {{ grid-template-columns: repeat(4, 1fr); }}
 }}
 .inv-mover-block {{
@@ -1016,11 +1149,15 @@ html, body {{
 }}
 .inv-mover-empty {{ font-size: 0.8125rem; color: var(--inv-muted); padding: 0.2rem 0; }}
 /* A compact badge on a holding card that topped today's movers leaderboard.
-   It sits on its own right-aligned row (``.inv-holding-badge-row``) just above
-   the daily-growth figures, so it never widens the topline and shifts the
-   freshness time. */
+   It is pinned (absolutely positioned) to the top-right of the figures row,
+   sitting just above the daily-change column, so it is taken out of the card's
+   vertical flow entirely: a long "Top % loser" badge can never add a line
+   break that pushes the headline value (or the rest of the card) down, and the
+   values stay aligned across neighbouring cards. */
 .inv-holding-badge-row {{
-  display: flex; justify-content: flex-end; margin-top: 0.3rem;
+  position: absolute; right: 0; bottom: 100%;
+  display: flex; justify-content: flex-end;
+  margin-bottom: 0.2rem; pointer-events: none;
 }}
 .inv-holding-badge {{
   display: inline-block; padding: 0.05rem 0.45rem;

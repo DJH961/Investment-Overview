@@ -10,9 +10,14 @@ import {
   hasMarketSleeve,
   mergeSleeveSeries,
   parseMarketSeries,
+  parseMoneyMarketValue,
+  moneyMarketValueOnDate,
+  aggregateMoneyMarketValue,
+  pinMergedTipToWebTip,
   rebaseSleeveToWholeBook,
   type SleevePoint,
 } from "../src/market-sleeve";
+import type { CurvePoint } from "../src/timeseries";
 import type { ExportLiveGraphs, ExportMarketSeries } from "../src/types";
 
 const T0 = Date.parse("2026-06-22T13:30:00Z");
@@ -168,6 +173,68 @@ describe("rebaseSleeveToWholeBook", () => {
   });
 });
 
+describe("pinMergedTipToWebTip", () => {
+  const curve = (t: number, usd: string, eur: string): CurvePoint => ({
+    t,
+    valueUsd: new Decimal(usd),
+    valueEur: new Decimal(eur),
+  });
+  const webTip = curve(T0 + 5 * STEP, "10500", "9800");
+  const webPrev = curve(T0 + 4 * STEP, "10450", "9750");
+
+  it("drops a blob sample stamped past the web tip and pins the tip (no nosedive)", () => {
+    const merged = [
+      curve(T0 + 4 * STEP, "10400", "9700"),
+      webTip,
+      // A stale/partial blob sleeve sample captured a minute past the tip — the
+      // exact "final-minute nosedive" the guard exists to stop.
+      curve(T0 + 5 * STEP + 60_000, "9800", "9750"),
+    ];
+    const pinned = pinMergedTipToWebTip(merged, [webPrev, webTip]);
+    const last = pinned[pinned.length - 1];
+    expect(last).toBe(webTip);
+    expect(last.valueUsd.toString()).toBe("10500"); // trusted tip, not the dip
+  });
+
+  it("drops a stale blob sample sitting just BEFORE the tip (the penultimate nosedive)", () => {
+    const merged = [
+      curve(T0 + 3 * STEP, "10300", "9600"),
+      // A low blob sleeve sample between the web tail and the tip — pinning only
+      // the final point would leave this as the penultimate dip notch.
+      curve(T0 + 4 * STEP + 60_000, "9800", "9100"),
+      webTip,
+    ];
+    const pinned = pinMergedTipToWebTip(merged, [webPrev, webTip]);
+    expect(pinned.map((p) => p.t)).toEqual([T0 + 3 * STEP, T0 + 4 * STEP, T0 + 5 * STEP]);
+    expect(pinned[pinned.length - 1]).toBe(webTip);
+    expect(pinned[pinned.length - 2]).toBe(webPrev); // dense web tail owns the edge
+  });
+
+  it("replaces a diving blob sample sharing the tip's instant with the trusted tip", () => {
+    const merged = [
+      curve(T0 + 3 * STEP, "10300", "9600"),
+      // Same instant as the web tip but a low blob value — dropped by the cutoff.
+      curve(T0 + 5 * STEP, "9800", "9750"),
+    ];
+    const pinned = pinMergedTipToWebTip(merged, [webPrev, webTip]);
+    expect(pinned[pinned.length - 1]).toBe(webTip);
+    expect(pinned.map((p) => p.t)).toEqual([T0 + 3 * STEP, T0 + 4 * STEP, T0 + 5 * STEP]);
+  });
+
+  it("is a no-op when the merged curve already ends at the web tail", () => {
+    const body = curve(T0 + 3 * STEP, "10300", "9600");
+    const pinned = pinMergedTipToWebTip([body, webPrev, webTip], [webPrev, webTip]);
+    expect(pinned).toEqual([body, webPrev, webTip]);
+  });
+
+  it("preserves the densified body before the tail", () => {
+    const a = curve(T0 + 2 * STEP, "10200", "9500");
+    const b = curve(T0 + 3 * STEP, "10300", "9600");
+    const pinned = pinMergedTipToWebTip([a, b], [webPrev, webTip]);
+    expect(pinned).toEqual([a, b, webPrev, webTip]);
+  });
+});
+
 describe("hasMarketSleeve / describers", () => {
   it("detects a usable v3 backbone and degrades on v2", () => {
     const v2: ExportLiveGraphs = { captured_at: "2026-06-22T20:00:00Z" };
@@ -205,5 +272,54 @@ describe("hasMarketSleeve / describers", () => {
 
   it("exposes the documented default tolerance", () => {
     expect(DEFAULT_RECON_TAU).toBe(0.0025);
+  });
+
+  it("parses per-fund money-market value, ascending and gap-tolerant", () => {
+    const exported = {
+      mm_value_native: {
+        VMFXX: [
+          ["2026-06-23", "6000.00"],
+          ["2026-06-22", "5000.00"],
+          ["2026-06-21", null],
+        ],
+      },
+    } as unknown as ExportLiveGraphs;
+    const parsed = parseMoneyMarketValue(exported);
+    const days = parsed.get("VMFXX");
+    expect(days?.map((d) => d.date)).toEqual(["2026-06-22", "2026-06-23"]);
+    expect(days?.[1].valueNativeUsd.toFixed(0)).toBe("6000");
+  });
+
+  it("money-market value on a date is the latest balance at or before it (never a future deposit)", () => {
+    const days = parseMoneyMarketValue({
+      mm_value_native: { VMFXX: [["2026-06-22", "5000"], ["2026-06-23", "9000"]] },
+    } as unknown as ExportLiveGraphs).get("VMFXX")!;
+    expect(moneyMarketValueOnDate(days, "2026-06-22")?.toFixed(0)).toBe("5000");
+    expect(moneyMarketValueOnDate(days, "2026-06-23")?.toFixed(0)).toBe("9000");
+    expect(moneyMarketValueOnDate(days, "2026-06-20")).toBeNull();
+  });
+
+  it("money-market parse is absent-tolerant for legacy/v2 exports", () => {
+    expect(parseMoneyMarketValue(undefined).size).toBe(0);
+    expect(parseMoneyMarketValue({} as ExportLiveGraphs).size).toBe(0);
+  });
+
+  it("aggregates per-fund money-market value into one whole-book USD/day, carrying funds flat", () => {
+    const series = parseMoneyMarketValue({
+      mm_value_native: {
+        VMFXX: [["2026-06-22", "5000"], ["2026-06-24", "9000"]],
+        SPAXX: [["2026-06-23", "1000"]],
+      },
+    } as unknown as ExportLiveGraphs);
+    const agg = aggregateMoneyMarketValue(series);
+    // Union of dates; each absent fund contributes its last known balance (or 0).
+    expect(agg.map((d) => d.date)).toEqual(["2026-06-22", "2026-06-23", "2026-06-24"]);
+    expect(agg[0].valueNativeUsd.toFixed(0)).toBe("5000"); // VMFXX only
+    expect(agg[1].valueNativeUsd.toFixed(0)).toBe("6000"); // VMFXX 5000 + SPAXX 1000
+    expect(agg[2].valueNativeUsd.toFixed(0)).toBe("10000"); // VMFXX 9000 + SPAXX 1000
+  });
+
+  it("aggregate is empty for an export without money-market funds", () => {
+    expect(aggregateMoneyMarketValue(parseMoneyMarketValue(undefined))).toEqual([]);
   });
 });

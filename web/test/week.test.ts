@@ -19,15 +19,18 @@ import {
   toDailyNavBars,
   weekStaleSymbols,
   wrapDailyNavFetcher,
+  capWeekToSessionClose,
 } from "../src/week";
-import type { Bar } from "../src/timeseries";
+import type { Bar, CurvePoint } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore, type StoredCloseProbe } from "../src/timeseries-store";
 import { FX_PROBE_KEY } from "../src/close-completeness";
-import { sessionOpenMs } from "../src/market-hours";
+import { exchangeDayStartMs, sessionCloseMs, sessionOpenMs } from "../src/market-hours";
 
 const d = (v: string | number): Decimal => new Decimal(v);
 const bar = (t: number, value: string): Bar => ({ t, value: new Decimal(value) });
-const dayMs = (day: string): number => Date.parse(`${day}T00:00:00Z`);
+// Daily-close bars and the window grid are bucketed at 00:00 ET (the exchange
+// trading-day start), matching production (`week.ts` dayStartMs / `parseBarTime`).
+const dayMs = (day: string): number => exchangeDayStartMs(day);
 
 function holding(over: Partial<AnchorHoldingInput> = {}): AnchorHoldingInput {
   return {
@@ -91,6 +94,96 @@ describe("loadOrBuildWeekCurve", () => {
     const days = await s.listDays();
     expect(days).toContain(WEEK_STORE_KEY);
     expect(days.every((day) => !/^\d{4}-\d{2}-\d{2}$/.test(day))).toBe(true);
+  });
+
+  it("mirrors the fetched window bars into the shared per-day session store (plan C5/C6)", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    // The 1W market sleeve is fetched as dense intraday bars over the window
+    // (plan C1). They land inside each regular session, so the per-day mirror
+    // writes them under the same `YYYY-MM-DD` keys the 1D builder uses.
+    const thuOpen = sessionOpenMs("2026-03-12");
+    const thuClose = sessionCloseMs("2026-03-12");
+    const friOpen = sessionOpenMs("2026-03-13");
+    const friClose = sessionCloseMs("2026-03-13");
+    const intraday = new Map<string, Bar[]>([
+      [
+        "VTI",
+        [
+          bar(thuOpen, "98"),
+          bar(thuClose, "99"),
+          bar(friOpen, "99.5"),
+          bar(friClose, "100"),
+        ],
+      ],
+    ]);
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => intraday,
+      now: SAT_CLOSED,
+    });
+    // Each fetched day now exists as a dense per-day session — the shared store
+    // 1D reads, not a parallel weekly-only cache.
+    const thu = await s.loadSession("2026-03-12");
+    const fri = await s.loadSession("2026-03-13");
+    expect(thu?.bars["VTI"]?.map((b) => b.t)).toEqual([thuOpen, thuClose]);
+    expect(fri?.bars["VTI"]?.map((b) => b.t)).toEqual([friOpen, friClose]);
+    // Bars-only merge never seeds a phantom breadcrumb trail.
+    expect(thu?.tips ?? []).toHaveLength(0);
+  });
+
+  it("only mirrors bars that fall inside a regular session into the per-day store", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    // A day-start (00:00 ET) close sits *before* the 09:30 open, so it is not a
+    // genuine intraday session bar and must not be mirrored into the per-day
+    // store (it would otherwise inject a pre-open point). The weekly ledger still
+    // carries it for the coarse reconstruction.
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map([["VTI", [bar(dayMs("2026-03-13"), "100")]]]),
+      now: SAT_CLOSED,
+    });
+    expect(await s.loadSession("2026-03-13")).toBeNull();
+    expect((await s.loadSession(WEEK_STORE_KEY))?.bars["VTI"]?.length).toBe(1);
+  });
+
+  it("treats the session open/close instants as inclusive when mirroring", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    const open = sessionOpenMs("2026-03-13");
+    const close = sessionCloseMs("2026-03-13");
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      // One tick before the open is dropped; the open and close instants are kept.
+      fetchDailyBars: async () =>
+        new Map([["VTI", [bar(open - 1, "97"), bar(open, "98"), bar(close, "100")]]]),
+      now: SAT_CLOSED,
+    });
+    expect((await s.loadSession("2026-03-13"))?.bars["VTI"]?.map((b) => b.t)).toEqual([open, close]);
+  });
+
+  it("preserves an existing day's breadcrumb trail when mirroring (bars-only merge)", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    const open = sessionOpenMs("2026-03-13");
+    // The day already has a live-tip breadcrumb trail (e.g. from a prior 1D
+    // watch). The 1W mirror must thicken its bars without wiping the tips.
+    await s.appendTip("2026-03-13", { t: open + 60_000, valueEur: d(900), valueUsd: d(1000) });
+    const before = await s.loadSession("2026-03-13");
+    expect(before?.tips ?? []).toHaveLength(1);
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars: async () => new Map([["VTI", [bar(open, "98")]]]),
+      now: SAT_CLOSED,
+    });
+    const after = await s.loadSession("2026-03-13");
+    expect(after?.bars["VTI"]?.map((b) => b.t)).toEqual([open]);
+    expect(after?.tips ?? []).toHaveLength(1);
   });
 
   it("does not re-fetch when the cache already covers the latest settled session", async () => {
@@ -1284,5 +1377,42 @@ describe("loadOrBuildWeekCurve — FX-track completeness (C5 currency parity)", 
     fetchFx.mockClear();
     await loadOrBuildWeekCurve({ anchor: anchor(), store: s, fetchDailyBars, fetchFx, now: SAT_CLOSED });
     expect(fetchFx).not.toHaveBeenCalled();
+  });
+});
+
+describe("capWeekToSessionClose", () => {
+  const pt = (t: number, eur: string, usd: string): CurvePoint => ({
+    t,
+    valueEur: d(eur),
+    valueUsd: d(usd),
+  });
+  // Friday is the last session for both the closed and open reference instants.
+  const FRI = "2026-03-13";
+  const friClose = sessionCloseMs(FRI);
+
+  it("drops a trailing point past the last session close when the market is shut", () => {
+    // A spurious blob market_series sample stamped 30 min after the 16:00 ET close
+    // (with a low USD value + low FX, the divergent USD/EUR nosedive signature).
+    const points = [
+      pt(friClose - 60 * 60 * 1000, "53.50", "53.55"),
+      pt(friClose, "53.49", "53.52"),
+      pt(friClose + 30 * 60 * 1000, "53.33", "53.08"),
+    ];
+    const capped = capWeekToSessionClose(points, SAT_CLOSED);
+    expect(capped).toHaveLength(2);
+    expect(capped[capped.length - 1].t).toBe(friClose);
+    expect(capped.some((p) => p.t > friClose)).toBe(false);
+  });
+
+  it("leaves an in-session curve untouched while the market is open", () => {
+    const points = [pt(friClose - 2 * 60 * 60 * 1000, "53.5", "53.5"), pt(friClose - 60 * 60 * 1000, "53.6", "53.6")];
+    expect(capWeekToSessionClose(points, THU_OPEN)).toEqual(points);
+  });
+
+  it("keeps the curve rather than blanking it when every point is post-close", () => {
+    // capAtClose's safety net: a curve made only of post-close points is returned
+    // as-is rather than emptied (mirrors the 1D builder).
+    const points = [pt(friClose + 10 * 60 * 1000, "53.4", "53.4"), pt(friClose + 20 * 60 * 1000, "53.3", "53.0")];
+    expect(capWeekToSessionClose(points, SAT_CLOSED)).toEqual(points);
   });
 });

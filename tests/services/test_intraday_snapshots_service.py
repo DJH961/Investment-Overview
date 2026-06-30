@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
@@ -769,6 +770,63 @@ class TestPerTimestampFx:
         # The stored rate falls back to the settled spot (1.00), never NULL here.
         assert all(fx == Decimal("1.00") for _, _, fx in series)
 
+    def test_tiingo_secondary_fills_per_minute_fx_when_yfinance_empty(
+        self, session: Session
+    ) -> None:
+        # yfinance serves no intraday FX, so the budget-gated Tiingo secondary
+        # steps in with the *historical* per-minute rates — yfinance is still
+        # tried first, and the recovered EUR pivot tracks the moving rate just as
+        # if yfinance had supplied it.
+        captured: dict[str, object] = {}
+
+        def fx_fallback(start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            captured["range"] = (start_day, end_day)
+            captured["interval"] = interval
+            return dict(self._FX_BARS)
+
+        _seed_usd_holding(session)
+        iss.reconstruct_last_session(
+            session,
+            now=_NOW,
+            fetcher=_fake_fetcher(self._STOCK_BARS),
+            fx_fetcher=_fake_fx_fetcher({}),  # primary serves nothing
+            fx_fallback_fetcher=fx_fallback,
+        )
+        session.flush()
+        # The Tiingo secondary was asked for the last session only, at the 1D grid.
+        assert captured["range"] == (date(2024, 6, 3), date(2024, 6, 3))
+        assert captured["interval"] == iss.RECONSTRUCT_INTERVAL
+        series = iss.day_series_with_fx(session, now=_NOW)
+        by_time = {at: (eur, fx) for at, eur, fx in series}
+        # 13:30 @ 1.00 ⇒ €1,000; 14:00 @ 1.25 ⇒ €800 — the secondary's rates land.
+        assert by_time[datetime(2024, 6, 3, 13, 30)] == (Decimal("1000.00"), Decimal("1.00"))
+        assert by_time[datetime(2024, 6, 3, 14, 0)] == (Decimal("800.00"), Decimal("1.25"))
+
+    def test_tiingo_secondary_not_consulted_when_yfinance_has_fx(self, session: Session) -> None:
+        # The primary (yfinance) succeeds, so the Tiingo secondary is never
+        # consulted — yfinance-first, no wasted budget call.
+        called = False
+
+        def fx_fallback(start_day, end_day, *, interval):  # type: ignore[no-untyped-def]
+            nonlocal called
+            called = True
+            return {datetime(2024, 6, 3, 13, 30): Decimal("9.99")}
+
+        _seed_usd_holding(session)
+        iss.reconstruct_last_session(
+            session,
+            now=_NOW,
+            fetcher=_fake_fetcher(self._STOCK_BARS),
+            fx_fetcher=_fake_fx_fetcher(self._FX_BARS),  # primary delivers
+            fx_fallback_fetcher=fx_fallback,
+        )
+        session.flush()
+        assert called is False
+        series = iss.day_series_with_fx(session, now=_NOW)
+        by_time = {at: fx for at, _eur, fx in series}
+        # The primary's rates stand (never the secondary's sentinel 9.99).
+        assert by_time[datetime(2024, 6, 3, 14, 0)] == Decimal("1.25")
+
 
 class TestSessionCloseFx:
     """The rate the most recent session settled at (anchor for the after-hours freeze)."""
@@ -948,6 +1006,14 @@ class TestWeekSeries:
     # Five bars per session day spanning open→close. With all data kept, every
     # sourced bar is plotted (here that is all five).
     _DAY_BARS = _WEEK_DAY_BARS
+
+    def test_day_and_week_share_one_5min_density(self) -> None:
+        # C8 (docs/graph-unification-plan.md): the 1D and 1W paths reconstruct at
+        # the *same* 5-minute density, so the 1-day slice of the week is identical
+        # to the standalone 1D curve.
+        assert iss.RECONSTRUCT_INTERVAL == "5m"
+        assert iss.WEEK_INTERVAL == "5m"
+        assert iss.RECONSTRUCT_INTERVAL == iss.WEEK_INTERVAL
 
     def test_keeps_every_sourced_bar_per_session(self, session: Session) -> None:
         _seed_eur_holding_for_week(session)
@@ -1144,16 +1210,17 @@ class TestWeekSeries:
         } <= set(day_values)
 
     def test_completed_session_with_full_span_is_not_repulled(self, session: Session) -> None:
-        # A finished session already holding its full open→close span is covered
-        # and never re-fetched — even under force=True, which only bypasses the
-        # once-per-anchor marker, not the coverage check. The day keeps exactly
+        # A finished session already holding its full open→close span at the
+        # 30-minute sourcing grid (no hole wider than WEEK_MAX_GAP_SECONDS) is
+        # covered and never re-fetched — even under force=True, which only bypasses
+        # the once-per-anchor marker, not the coverage check. The day keeps exactly
         # its seeded points (no scaled _DAY_BARS values mixed in), proving the
         # coverage gate, not the marker, suppressed the re-pull.
         _seed_eur_holding_for_week(session)
         sessions = iss.recent_trading_sessions(_NOW)
         full_day = sessions[1]  # a completed, non-anchor session
         seeded = Decimal("7777.00")
-        for hour, minute in ((13, 30), (15, 0), (16, 30), (18, 0), (19, 30)):
+        for hour, minute in _HALF_HOUR_SESSION:
             at = datetime(full_day.year, full_day.month, full_day.day, hour, minute)
             intraday_repo.insert_sample(session, at, seeded)
         session.flush()
@@ -1162,8 +1229,33 @@ class TestWeekSeries:
             session, now=_NOW, force=True, fetcher=_fake_week_fetcher(self._DAY_BARS)
         )
         day_values = [eur for at, eur, _ in out if at.date() == full_day]
-        # Untouched: still the five seeded points, no re-fetched bars merged in.
-        assert day_values == [seeded] * iss.WEEK_POINTS_PER_COMPLETE_SESSION
+        # Untouched: still exactly the seeded points, no re-fetched bars merged in.
+        assert day_values == [seeded] * len(_HALF_HOUR_SESSION)
+
+    def test_completed_session_with_internal_hole_is_repulled(self, session: Session) -> None:
+        # A finished earlier session that clears the count floor *and* the first→last
+        # span, yet has an internal hole of an hour or more (e.g. the live feed
+        # stalled midday and resumed), is still gappy: the span test only sees
+        # first→last, so without the gap check it would freeze at a flat straight
+        # line across the hole. The day must be re-pulled to supplement the gap.
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        stale_day = sessions[1]  # a completed, non-anchor session
+        # Points spanning open→close (span passes, ≥ floor) but with a 2-hour hole
+        # between 14:30 and 16:30 → the largest gap exceeds WEEK_MAX_GAP_SECONDS.
+        for hour, minute in ((13, 30), (14, 0), (14, 30), (16, 30), (18, 0), (19, 30)):
+            at = datetime(stale_day.year, stale_day.month, stale_day.day, hour, minute)
+            intraday_repo.insert_sample(session, at, Decimal("4242.00"))
+        session.flush()
+
+        out = iss.week_series_with_fx(session, now=_NOW, fetcher=_fake_week_fetcher(self._DAY_BARS))
+        # Re-pulled: the day's full open→close set of bars now fills the hole.
+        day_values = [eur for at, eur, _ in out if at.date() == stale_day]
+        assert {
+            Decimal("1000.00"),
+            Decimal("1200.00"),
+            Decimal("1300.00"),
+        } <= set(day_values)
 
     def test_build_week_value_series_empty_for_empty_portfolio(self, session: Session) -> None:
         # With nothing to price intraday there is nothing to cache or fetch, so
@@ -1171,3 +1263,105 @@ class TestWeekSeries:
         from investment_dashboard.ui.pages._overview_query import build_week_value_series
 
         assert build_week_value_series(session, currency="EUR", now=_NOW) == []
+
+
+class TestAssessGraphCoverage:
+    """The read-only coverage probe that drives the Data Health flag."""
+
+    def _seed_full_week(self, session: Session) -> list[date]:
+        """Seed every *finished* session in the window with a full open→close span."""
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+        for day in sessions[:-1]:  # finished sessions only
+            # The full 30-minute grid: a span-complete day with no hole wider than
+            # WEEK_MAX_GAP_SECONDS, so the week coverage check reads it as covered.
+            for hour, minute in _HALF_HOUR_SESSION:
+                at = datetime(day.year, day.month, day.day, hour, minute)
+                intraday_repo.insert_sample(session, at, Decimal("1000.00"))
+        # The in-progress anchor is exempt, but seed a live point so it is real.
+        anchor = sessions[-1]
+        intraday_repo.insert_sample(
+            session, datetime(anchor.year, anchor.month, anchor.day, 14, 0), Decimal("1000.00")
+        )
+        session.flush()
+        return sessions
+
+    def test_empty_portfolio_has_no_gaps(self, session: Session) -> None:
+        # Nothing held intraday → nothing to plot → vacuously covered.
+        coverage = iss.assess_graph_coverage(session, now=_NOW)
+        assert not coverage.has_gaps
+        assert coverage.day_below_target is False
+        assert coverage.week_days_below_target == ()
+
+    def test_finished_uncovered_week_sessions_are_flagged(self, session: Session) -> None:
+        # Holding intraday-priced shares all week but no intraday samples cached:
+        # every *finished* session is below target; the in-progress anchor (which
+        # is still filling) is exempt.
+        _seed_eur_holding_for_week(session)
+        sessions = iss.recent_trading_sessions(_NOW)
+
+        coverage = iss.assess_graph_coverage(session, now=_NOW)
+
+        assert set(coverage.week_days_below_target) == set(sessions[:-1])
+        # At 16:00 ET the anchor session is exactly at its close, not yet past it,
+        # so the "1 Day" graph is not yet judged a permanent gap.
+        assert coverage.day_below_target is False
+        assert coverage.has_gaps
+
+    def test_fully_covered_week_has_no_gaps(self, session: Session) -> None:
+        self._seed_full_week(session)
+        coverage = iss.assess_graph_coverage(session, now=_NOW)
+        assert not coverage.has_gaps
+
+    def test_one_day_flagged_only_after_session_closes(self, session: Session) -> None:
+        # After the session has closed, a "1 Day" curve still under-covered (the
+        # anchor day holds only a single live sample) can no longer fill, so it is
+        # flagged — while the span-and-gap week check passes for the finished days.
+        self._seed_full_week(session)
+        after_close = datetime(2024, 6, 3, 21, 0, tzinfo=UTC)  # 17:00 ET
+
+        coverage = iss.assess_graph_coverage(session, now=after_close)
+
+        assert coverage.day_below_target is True
+        assert coverage.week_days_below_target == ()
+
+
+class TestBackfillGraphs:
+    """The every-tick orchestration that tops up both graphs regardless of market state."""
+
+    def test_runs_both_backfills_force_pulling_the_week(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import contextlib
+        from collections.abc import Iterator
+        from typing import Any
+
+        from investment_dashboard import db as db_module
+
+        @contextlib.contextmanager
+        def _fake_scope() -> Iterator[Session]:
+            yield session
+
+        calls: dict[str, object] = {}
+
+        def _fake_reconstruct(sess: Session, **kwargs: Any) -> int:
+            calls["reconstruct"] = True
+            return 0
+
+        def _fake_week(sess: Session, **kwargs: Any) -> list[Any]:
+            calls["week_force"] = kwargs.get("force")
+            return []
+
+        sentinel = iss.GraphCoverage(day_below_target=False, week_days_below_target=())
+
+        monkeypatch.setattr(db_module, "ledger_session_scope", _fake_scope)
+        monkeypatch.setattr(iss, "reconstruct_last_session", _fake_reconstruct)
+        monkeypatch.setattr(iss, "week_series_with_fx", _fake_week)
+        monkeypatch.setattr(iss, "assess_graph_coverage", lambda sess, **kw: sentinel)
+
+        result = iss.backfill_graphs(now=_NOW)
+
+        # Both graphs are topped up, and the week is force-pulled so an uncovered
+        # day is re-attempted every tick rather than frozen by the render guard.
+        assert calls == {"reconstruct": True, "week_force": True}
+        assert result is sentinel

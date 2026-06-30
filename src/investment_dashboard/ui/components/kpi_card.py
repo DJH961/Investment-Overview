@@ -30,6 +30,7 @@ def kpi_card(
     color: str | None = None,
     arrow: str | None = None,
     sparkline: Sequence[float] | None = None,
+    value_class: str | None = None,
 ) -> None:
     """Render a single KPI card.
 
@@ -42,7 +43,10 @@ def kpi_card(
         arrow: optional ↑/↓ directional indicator (colorblind redundancy).
         sparkline: optional small sequence of numbers; when provided a tiny
             inline trend chart is drawn at the bottom of the card.
+        value_class: optional extra CSS class on the primary value span (e.g.
+            a compact, single-line variant for word headlines).
     """
+    value_classes = "inv-kpi-value" + (f" {value_class}" if value_class else "")
     with ui.element("div").classes("inv-kpi"):
         if tooltip_key:
             label_with_tooltip(label, tooltip_key, classes="inv-kpi-label")
@@ -55,7 +59,7 @@ def kpi_card(
                     f"{arrow}</span>"
                 )
             ui.html(
-                f'<span class="inv-kpi-value" style="color: {color or "inherit"}">{value}</span>'
+                f'<span class="{value_classes}" style="color: {color or "inherit"}">{value}</span>'
             )
         if sub:
             ui.html(f'<div class="inv-kpi-sub">{sub}</div>')
@@ -150,6 +154,56 @@ def dual_pct_kpi_card(
         )
         if sub:
             ui.html(f'<div class="inv-kpi-sub">{sub}</div>')
+
+
+def today_kpi_card(
+    label: str,
+    primary_value: str,
+    secondary_value: str,
+    *,
+    primary_ccy: str,
+    secondary_ccy: str,
+    money: str | None = None,
+    corner: str | None = None,
+    tooltip_key: str | None = None,
+    color: str | None = None,
+    arrow: str | None = None,
+) -> None:
+    """Render the Overview "Today" KPI tile in its compact, tightened layout.
+
+    A variant of :func:`dual_pct_kpi_card` tuned for the daily-move square:
+
+    * the ``label`` is the trading-day title ("Today" / "Yesterday" / a date) and
+      any ``corner`` stamp (a clock or "live") sits at the card's top-right rather
+      than on a separate "as of …" caption line;
+    * the secondary-currency percentage shares its line with the absolute daily
+      ``money`` move, pushed to the right, so the whole card loses a row and reads
+      tighter.
+    """
+    with ui.element("div").classes("inv-kpi"):
+        with ui.row().classes("inv-kpi-head items-center justify-between no-wrap w-full"):
+            if tooltip_key:
+                label_with_tooltip(label, tooltip_key, classes="inv-kpi-label")
+            else:
+                ui.html(f'<div class="inv-kpi-label">{label}</div>')
+            if corner:
+                ui.html(f'<span class="inv-kpi-corner">{corner}</span>')
+        with ui.row().classes("items-baseline gap-xs no-wrap q-mt-xs"):
+            if arrow:
+                ui.html(
+                    f'<span class="inv-kpi-arrow" style="color: {color or "inherit"}">'
+                    f"{arrow}</span>"
+                )
+            ui.html(
+                f'<span class="inv-kpi-value" style="color: {color or "inherit"}">'
+                f'<span class="inv-kpi-dual-ccy">{primary_ccy}</span> {primary_value}</span>'
+            )
+        money_html = f'<span class="inv-kpi-secondary-money">{money}</span>' if money else ""
+        ui.html(
+            f'<div class="inv-kpi-dual-secondary inv-kpi-secondary-row">'
+            f'<span><span class="inv-kpi-dual-ccy">{secondary_ccy}</span> {secondary_value}</span>'
+            f"{money_html}</div>"
+        )
 
 
 def _spark(values: list[float], *, color: str | None) -> None:  # pragma: no cover - UI

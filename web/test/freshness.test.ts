@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   ONE_HOUR_MS,
+  BAR_STALENESS_MS,
+  MARKET_WARMUP_MS,
+  FULL_WEEK_SESSIONS,
   allLegs,
-  barClockHourDue,
-  ceilToClockHour,
+  barStalenessPromotionDue,
+  barWindowSessions,
+  setBarWindow,
   gradedPull,
   hasAnyLeg,
   holdingCoversLatestClose,
@@ -15,6 +19,7 @@ import {
   fxFreshness,
   type FreshnessInputs,
   type FxFreshnessInput,
+  type PullLegs,
 } from "../src/freshness";
 
 const MIN = 60 * 1000;
@@ -38,43 +43,71 @@ describe("leg helpers", () => {
     expect(hasAnyLeg(allLegs())).toBe(true);
     const a = allLegs();
     expect(a.weekBars && a.dayBars && a.quotes && a.nav && a.fx).toBe(true);
+    // O1 — allLegs carries the full trailing-week window; noLegs is window 0.
+    expect(a.barsWindowSessions).toBe(FULL_WEEK_SESSIONS);
+    expect(noLegs().barsWindowSessions).toBe(0);
+  });
+
+  it("setBarWindow keeps dayBars/weekBars projections in lock-step (O1)", () => {
+    const legs: PullLegs = noLegs();
+    setBarWindow(legs, 0);
+    expect([legs.barsWindowSessions, legs.dayBars, legs.weekBars]).toEqual([0, false, false]);
+    setBarWindow(legs, 1);
+    expect([legs.barsWindowSessions, legs.dayBars, legs.weekBars]).toEqual([1, true, false]);
+    setBarWindow(legs, 5);
+    expect([legs.barsWindowSessions, legs.dayBars, legs.weekBars]).toEqual([5, true, true]);
+  });
+
+  it("barWindowSessions clamps to [0, FULL_WEEK_SESSIONS] whole sessions", () => {
+    expect(barWindowSessions(-3)).toBe(0);
+    expect(barWindowSessions(0)).toBe(0);
+    expect(barWindowSessions(2)).toBe(2);
+    expect(barWindowSessions(99)).toBe(FULL_WEEK_SESSIONS);
+    expect(barWindowSessions(Number.NaN)).toBe(0);
   });
 });
 
 describe("gradedPull truth-table", () => {
-  it("heavily-outdated when >1 day missing AND blob >1 day old ⇒ everything", () => {
+  it("outdated (heavy gap) when >1 day missing AND blob >1 day old ⇒ everything", () => {
     const g = gradedPull(inputs({ deviceDaysMissing: 3, blobDaysOld: 2, dataAgeMs: 5 * ONE_HOUR_MS }));
-    expect(g.tier).toBe("heavily-outdated");
+    expect(g.tier).toBe("outdated");
     expect(g.legs).toEqual(allLegs());
+    // O1 — the heavy gap pulls the full trailing-week window.
+    expect(g.legs.barsWindowSessions).toBe(FULL_WEEK_SESSIONS);
   });
 
-  it("not heavily-outdated if a fresh blob covers the gap (blob ≤1 day)", () => {
-    // Device behind, but the best-available blob is current → not heavily.
+  it("not a heavy-gap re-pull if a fresh blob covers the gap (blob ≤1 day)", () => {
+    // Device behind, but the best-available blob is current → relatively-fresh, no
+    // windowed bar re-pull (the blob download covers it).
     const g = gradedPull(inputs({ deviceDaysMissing: 3, blobDaysOld: 1, dataAgeMs: 2 * ONE_HOUR_MS }));
-    expect(g.tier).not.toBe("heavily-outdated");
+    expect(g.tier).toBe("relatively-fresh");
+    expect(g.legs.barsWindowSessions).toBe(0);
   });
 
-  it("minorly-outdated, market open ≥30m ⇒ 1D bars + quotes + FX", () => {
+  it("outdated, market open ≥30m ⇒ today's session window + quotes + FX", () => {
     const g = gradedPull(inputs({ dataAgeMs: 2 * ONE_HOUR_MS, minutesSinceOpenMs: 2 * ONE_HOUR_MS }));
-    expect(g.tier).toBe("minorly-outdated");
+    expect(g.tier).toBe("outdated");
+    expect(g.legs.barsWindowSessions).toBe(1);
     expect(g.legs.dayBars).toBe(true);
     expect(g.legs.quotes).toBe(true);
     expect(g.legs.fx).toBe(true);
     expect(g.legs.weekBars).toBe(false);
   });
 
-  it("minorly-outdated, market open <30m ⇒ quotes only (no bars)", () => {
+  it("outdated, market open <30m ⇒ quotes only (no settled bar yet)", () => {
     const g = gradedPull(inputs({ dataAgeMs: 2 * ONE_HOUR_MS, minutesSinceOpenMs: 10 * MIN }));
-    expect(g.tier).toBe("minorly-outdated");
+    expect(g.tier).toBe("outdated");
+    expect(g.legs.barsWindowSessions).toBe(0);
     expect(g.legs.dayBars).toBe(false);
     expect(g.legs.quotes).toBe(true);
     expect(g.legs.fx).toBe(true);
   });
 
-  it("minorly-outdated, closed ⇒ 1D series (bars + quotes + FX)", () => {
+  it("outdated, closed ⇒ today's session window (bars + quotes + FX)", () => {
     const g = gradedPull(inputs({ market: "closed", minutesSinceOpenMs: 0, dataAgeMs: 2 * ONE_HOUR_MS }));
-    expect(g.tier).toBe("minorly-outdated");
+    expect(g.tier).toBe("outdated");
     expect(g.legs.dayBars).toBe(true);
+    expect(g.legs.barsWindowSessions).toBe(1);
   });
 
   it("relatively-fresh, open ⇒ quotes + FX (market data)", () => {
@@ -109,35 +142,41 @@ describe("gradedPull truth-table", () => {
   });
 });
 
-describe("clock-hour bar gate", () => {
-  it("ceilToClockHour rounds up to the next :00 (and is idempotent on a boundary)", () => {
-    const base = Date.UTC(2026, 5, 25, 15, 0, 0);
-    expect(ceilToClockHour(base + 30 * MIN)).toBe(Date.UTC(2026, 5, 25, 16, 0, 0));
-    expect(ceilToClockHour(base)).toBe(base);
+describe("bar staleness promotion (O3)", () => {
+  const open = Date.UTC(2026, 5, 25, 13, 30, 0); // 09:30 ET ≈ 13:30 UTC
+
+  it("first bar of the session waits until the 30-min warm-up has elapsed", () => {
+    expect(barStalenessPromotionDue({ nowMs: open + 5 * MIN, lastBarPullMs: null, sessionOpenMs: open })).toBe(false);
+    expect(barStalenessPromotionDue({ nowMs: open + MARKET_WARMUP_MS, lastBarPullMs: null, sessionOpenMs: open })).toBe(true);
   });
 
-  it("first bar of the session waits one interval after the open", () => {
-    const open = Date.UTC(2026, 5, 25, 13, 30, 0); // 09:30 ET ≈ 13:30 UTC
-    expect(barClockHourDue({ nowMs: open + 5 * MIN, lastBarPullMs: null, sessionOpenMs: open })).toBe(false);
-    expect(barClockHourDue({ nowMs: open + ONE_HOUR_MS, lastBarPullMs: null, sessionOpenMs: open })).toBe(true);
-  });
-
-  it("after a 15:30 pull the next bar is due at 17:00, not before", () => {
-    const open = Date.UTC(2026, 5, 25, 13, 30, 0);
+  it("a subsequent bar is due once 30 min have elapsed since the last bar", () => {
     const lastPull = Date.UTC(2026, 5, 25, 15, 30, 0);
-    const at1545 = Date.UTC(2026, 5, 25, 15, 45, 0);
-    const at1659 = Date.UTC(2026, 5, 25, 16, 59, 0);
-    const at1700 = Date.UTC(2026, 5, 25, 17, 0, 0);
-    expect(barClockHourDue({ nowMs: at1545, lastBarPullMs: lastPull, sessionOpenMs: open })).toBe(false);
-    expect(barClockHourDue({ nowMs: at1659, lastBarPullMs: lastPull, sessionOpenMs: open })).toBe(false);
-    expect(barClockHourDue({ nowMs: at1700, lastBarPullMs: lastPull, sessionOpenMs: open })).toBe(true);
+    const at1545 = Date.UTC(2026, 5, 25, 15, 45, 0); // +15 min — held
+    const at1559 = Date.UTC(2026, 5, 25, 15, 59, 0); // +29 min — held
+    const at1600 = Date.UTC(2026, 5, 25, 16, 0, 0); // +30 min — due
+    expect(barStalenessPromotionDue({ nowMs: at1545, lastBarPullMs: lastPull, sessionOpenMs: open })).toBe(false);
+    expect(barStalenessPromotionDue({ nowMs: at1559, lastBarPullMs: lastPull, sessionOpenMs: open })).toBe(false);
+    expect(barStalenessPromotionDue({ nowMs: at1600, lastBarPullMs: lastPull, sessionOpenMs: open })).toBe(true);
   });
 
-  it("a pull aligned exactly to :00 allows the next at the following :00", () => {
-    const open = Date.UTC(2026, 5, 25, 13, 30, 0);
+  it("the staleness window equals BAR_STALENESS_MS exactly", () => {
     const lastPull = Date.UTC(2026, 5, 25, 15, 0, 0);
-    expect(barClockHourDue({ nowMs: Date.UTC(2026, 5, 25, 15, 59, 0), lastBarPullMs: lastPull, sessionOpenMs: open })).toBe(false);
-    expect(barClockHourDue({ nowMs: Date.UTC(2026, 5, 25, 16, 0, 0), lastBarPullMs: lastPull, sessionOpenMs: open })).toBe(true);
+    expect(
+      barStalenessPromotionDue({ nowMs: lastPull + BAR_STALENESS_MS - 1, lastBarPullMs: lastPull, sessionOpenMs: open }),
+    ).toBe(false);
+    expect(
+      barStalenessPromotionDue({ nowMs: lastPull + BAR_STALENESS_MS, lastBarPullMs: lastPull, sessionOpenMs: open }),
+    ).toBe(true);
+  });
+
+  it("honours an explicit first-bar warm-up override", () => {
+    expect(
+      barStalenessPromotionDue({ nowMs: open + 45 * MIN, lastBarPullMs: null, sessionOpenMs: open, firstBarAfterMs: ONE_HOUR_MS }),
+    ).toBe(false);
+    expect(
+      barStalenessPromotionDue({ nowMs: open + ONE_HOUR_MS, lastBarPullMs: null, sessionOpenMs: open, firstBarAfterMs: ONE_HOUR_MS }),
+    ).toBe(true);
   });
 });
 

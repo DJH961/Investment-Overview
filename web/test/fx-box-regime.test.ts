@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fxBoxRegime } from "../src/ui";
+import { fxBoxRegime, effectSincePhrase } from "../src/ui";
 
 // EDT (UTC-4) reference week around Fri 2026-06-26 → Mon 2026-06-29. Forex closes
 // Fri 17:00 ET (21:00 UTC) and reopens Sun 17:00 ET (21:00 UTC); the NYSE session
@@ -34,20 +34,23 @@ describe("fxBoxRegime", () => {
     expect(r.singleOvernight).toBe(false);
   });
 
-  it("is a single weekend-overnight on Sunday evening after the reopen", () => {
+  it("keeps the Friday session view on Sunday evening after the reopen (pause)", () => {
     const r = fxBoxRegime(new Date("2026-06-28T22:00:00Z")); // Sun 18:00 ET
     expect(r.forexFrozen).toBe(false);
     expect(r.marketOpen).toBe(false);
     expect(r.weekendOvernight).toBe(true);
-    expect(r.singleOvernight).toBe(true);
-    expect(r.sessionView).toBe(false);
+    // The weekend close is a pause: Friday stays the previous session, so the box
+    // keeps the two-leg session view rather than collapsing to a single overnight.
+    expect(r.singleOvernight).toBe(false);
+    expect(r.sessionView).toBe(true);
     expect(r.holiday).toBe(false);
   });
 
-  it("is a single weekend-overnight on Monday before the open", () => {
+  it("keeps the Friday session view on Monday before the open", () => {
     const r = fxBoxRegime(new Date("2026-06-29T12:00:00Z")); // Mon 08:00 ET
     expect(r.weekendOvernight).toBe(true);
-    expect(r.singleOvernight).toBe(true);
+    expect(r.singleOvernight).toBe(false);
+    expect(r.sessionView).toBe(true);
   });
 
   it("returns to a regular session view once Monday opens", () => {
@@ -73,5 +76,24 @@ describe("fxBoxRegime", () => {
     expect(r.forexFrozen).toBe(false);
     expect(r.singleOvernight).toBe(true);
     expect(r.weekendOvernight).toBe(false);
+  });
+});
+
+describe("effectSincePhrase (regime-aware currency-effect 'since …' wording)", () => {
+  it("names the settled weekday over the frozen weekend ('on Friday')", () => {
+    // Sun morning (pre-reopen) — forex frozen at Friday's close, two days removed.
+    expect(effectSincePhrase(new Date("2026-06-28T14:00:00Z"))).toBe("on Friday");
+  });
+
+  it("reads 'since Friday' once forex reopens Sunday evening (weekend spill-over)", () => {
+    expect(effectSincePhrase(new Date("2026-06-28T22:00:00Z"))).toBe("since Friday");
+  });
+
+  it("reads 'since Friday' on Monday pre-open (still one overnight since Friday)", () => {
+    expect(effectSincePhrase(new Date("2026-06-29T12:00:00Z"))).toBe("since Friday");
+  });
+
+  it("falls back to the regular 'since yesterday' midweek", () => {
+    expect(effectSincePhrase(new Date("2026-06-30T12:00:00Z"))).toBe("since yesterday");
   });
 });

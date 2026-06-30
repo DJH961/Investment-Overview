@@ -1,5 +1,10 @@
 """Live 1D / 1W graph **springboard** export for the v3.0 browser companion.
 
+💵 CURRENCY: USD is the PRIMARY/canonical currency across the backend. ~100% of
+holdings and 100% of market funds are USD-denominated. EUR is a frontend display
+preset only (default toggle). ``value_native`` is native USD; the EUR pivot is a
+display convenience, never the base currency. Never treat EUR as primary.
+
 The desktop already captures (and reconstructs) the within-day intraday "1 Day"
 curve and the multi-day "1 Week" sleeve
 (:mod:`investment_dashboard.services.intraday_snapshots_service`). Re-deriving
@@ -28,6 +33,13 @@ base to, so blob and live data merge without base-change spikes:
   authoritative anchor the web fits finer points to / cross-checks against).
 * ``nav_prices`` — per-day published NAV per NAV holding, so the web reapplies
   the NAV base per day.
+* ``mm_value_native`` — per-day money-market / settlement **value** (USD) per
+  fund (VMFXX, SPAXX …). Money-market funds pin a constant $1.00 NAV, so a NAV
+  *price* line is uninformative; their value moves with the **share count**,
+  which transactions (deposits/dividends) change — sometimes while the market is
+  shut, so the freshest value is *newer* than the last market close. Shipping
+  the value-as-of each session date lets the web step the base on the day a flow
+  landed instead of shifting the whole 1D/1W curve up by today's balance.
 * ``trail`` — the desktop's dense whole-book live samples, flagged
   ``display_only`` (never merged or cross-checked), downsampled so the blob stays
   small.
@@ -50,6 +62,7 @@ currencies:
       "market_series": {"times": [...], "value_native": [...], "fx_eur_usd": [...]},
       "daily_close_native": {"2026-06-22": "10310.40", ...},
       "nav_prices": {"FUND_X": [["2026-06-22", "102.40"], ...], ...},
+      "mm_value_native": {"VMFXX": [["2026-06-22", "5000.00"], ...], ...},
       "trail": {"display_only": true, "points": [...]},
       "day":  {"session_date": "2026-06-23", "market_open": true, "points": [...]},
       "week": {"start_date": "2026-06-17", "end_date": "2026-06-23", ...}
@@ -84,9 +97,10 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
+from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
 from investment_dashboard.readmodels._context import ReadModelContext
 from investment_dashboard.readmodels._serialize import dec, iso
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.repositories import app_config_repo, transactions_repo
 from investment_dashboard.services import (
     fx_service,
     intraday_snapshots_service,
@@ -162,6 +176,7 @@ def build(
     week = _week_series(session, positions=positions, now=now)
     backbone = _market_series(session, now=now, grid=grid)
     nav_prices = _nav_prices(session, positions=positions, now=now)
+    mm_value = _money_market_value_native(session, positions=positions, now=now)
     trail = _trail(day)
     if day is None and week is None and backbone is None:
         return None
@@ -176,6 +191,8 @@ def build(
         out["daily_close_native"] = backbone["daily_close_native"]
     if nav_prices:
         out["nav_prices"] = nav_prices
+    if mm_value:
+        out["mm_value_native"] = mm_value
     if trail is not None:
         out["trail"] = trail
     if day is not None:
@@ -331,6 +348,58 @@ def _nav_prices(
         rows = sorted((d, close) for d, close in recent.get(instrument_id, []) if d in window_dates)
         if rows:
             out[symbol] = [[iso(d), dec(close)] for d, close in rows]
+    return out
+
+
+def _money_market_value_native(
+    session: Session,
+    *,
+    positions: list[positions_service.Position],
+    now: datetime | None,
+) -> dict[str, list[list[str | None]]]:
+    """Per-day money-market / settlement value (native USD) over the 1W window.
+
+    Money-market funds (VMFXX, SPAXX …) hold a constant $1.00 NAV by design, so
+    ``nav_prices`` would ship a flat, uninformative ``$1`` line — yet their value
+    *does* move, because **transactions** (deposits, withdrawals, dividend
+    reinvests) change the *share count*. Those flows can settle while the US
+    market is shut, so a fund's freshest value is genuinely **newer** than the
+    last market close: pinning the web's base to today's balance retroactively
+    shifts the *whole* 1D/1W curve up by a deposit it never had, instead of
+    stepping at the day it landed. The fix is to ship the **value-as-of each
+    session date** (cumulative shares × par NAV) so the web reapplies the *right*
+    base per day and shows the correct settled close.
+
+    Shape: ``{symbol: [[date, value_native], ...]}`` over the window's session
+    dates, de-duplicated by symbol (one instrument may span accounts). Sourced
+    purely from the ledger — no network. ``value_native[-1]`` is the latest
+    settled close per fund. Empty when the book holds no money-market funds.
+    """
+    window = intraday_snapshots_service.recent_trading_sessions(now)
+    if not window:
+        return {}
+    mm_ids = {
+        p.instrument.id
+        for p in positions
+        if is_money_market(p.instrument.symbol, name=p.instrument.name)
+    }
+    if not mm_ids:
+        return {}
+    symbol_by_id = {p.instrument.id: p.instrument.symbol for p in positions}
+    txns = transactions_repo.list_transactions(session, end=window[-1])
+    out: dict[str, list[list[str | None]]] = {}
+    for iid in mm_ids:
+        running = Decimal(0)
+        rows: list[list[str | None]] = []
+        cursor = 0
+        ordered = [t for t in txns if t.instrument_id == iid]
+        for d in window:
+            while cursor < len(ordered) and ordered[cursor].date <= d:
+                running += ordered[cursor].quantity or Decimal(0)
+                cursor += 1
+            rows.append([iso(d), dec(running * MONEY_MARKET_NAV)])
+        if rows:
+            out[symbol_by_id[iid]] = rows
     return out
 
 

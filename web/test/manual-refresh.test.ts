@@ -14,10 +14,13 @@ import {
   manualRefreshDecision,
   manualRefreshSummary,
   refreshTickAction,
+  regenerateStoreKeys,
   regenerateSummary,
   summarizeCoverage,
   type CoverageFacts,
 } from "../src/app";
+import { WEEK_STORE_KEY, DEFAULT_WEEK_SESSIONS } from "../src/week";
+import { lastSessionDate, recentTradingSessions } from "../src/market-hours";
 import type { QuoteLoadReport } from "../src/quotes";
 import { PriceError } from "../src/prices";
 
@@ -43,6 +46,7 @@ function facts(overrides: Partial<CoverageFacts> = {}): CoverageFacts {
     marketHeld: 0,
     marketFresh: 0,
     marketUpdating: 0,
+    updatingEtaSeconds: null,
     marketAtClose: 0,
     navTotal: 0,
     navExpectedTonight: 0,
@@ -83,20 +87,35 @@ describe("summarizeCoverage", () => {
     ).toBe("8 live, 5 cached · FX live");
   });
 
-  it("market open: surfaces budget-deferred holdings as their own 'updating…' bucket", () => {
+  it("market open: surfaces budget-deferred holdings as their own 'updating' bucket", () => {
     // freshness-plan §4.2: a still-draining holding (held from cache, deferred this
     // round) reads as actively catching up, not folded silently into "cached".
+    // With no resolved ETA the bucket is a plain "updating" (no trailing "…").
     expect(
       summarizeCoverage(
         facts({ marketOpen: true, marketTotal: 13, marketHeld: 13, marketFresh: 8, marketUpdating: 4 }),
       ),
-    ).toBe("8 live, 4 updating…, 1 cached · FX live");
-    // When every still-held holding is updating, it reads as N/N updating….
+    ).toBe("8 live, 4 updating, 1 cached · FX live");
+    // When every still-held holding is updating, it reads as N/N updating.
     expect(
       summarizeCoverage(
         facts({ marketOpen: true, marketTotal: 5, marketHeld: 5, marketFresh: 0, marketUpdating: 5 }),
       ),
-    ).toBe("5/5 updating… · FX live");
+    ).toBe("5/5 updating · FX live");
+    // The deferred bucket always reads a plain "updating" — no countdown, since the
+    // coverage line does not auto-tick the seconds down.
+    expect(
+      summarizeCoverage(
+        facts({
+          marketOpen: true,
+          marketTotal: 13,
+          marketHeld: 13,
+          marketFresh: 8,
+          marketUpdating: 4,
+          updatingEtaSeconds: 90,
+        }),
+      ),
+    ).toBe("8 live, 4 updating, 1 cached · FX live");
   });
 
   it("market open: never says 0/N when everything is held from cache", () => {
@@ -428,7 +447,7 @@ describe("buildCoverageFacts", () => {
     expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1/1 cached · FX live");
   });
 
-  it("counts a budget-deferred, not-yet-live holding as 'updating…', not cached", () => {
+  it("counts a budget-deferred, not-yet-live holding as 'updating', not cached", () => {
     // freshness-plan §4.2: a holding parked this round (deferred) but still held
     // from cache is actively catching up — its own honest bucket. A second holding
     // freshly fetched keeps the split visible.
@@ -447,7 +466,10 @@ describe("buildCoverageFacts", () => {
     expect(f.marketHeld).toBe(2);
     expect(f.marketFresh).toBe(1);
     expect(f.marketUpdating).toBe(1);
-    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1 live, 1 updating… · FX live");
+    // The single deferred holding rides the next burst round; its bucket reads a
+    // plain "updating" with no countdown.
+    expect(f.updatingEtaSeconds).toBe(60);
+    expect(summarizeCoverage({ ...f, fx: "live" })).toBe("1 live, 1 updating · FX live");
   });
 
   it("does not promote a fresh cache to live while the market is closed", () => {
@@ -894,5 +916,24 @@ describe("regenerateSummary", () => {
     expect(line).toContain("no live pull (reused stored bars, 0 credits)");
     expect(line).not.toContain("backup");
     expect(line).toContain("Budget left 8/min · 599/day");
+  });
+});
+
+describe("regenerateStoreKeys (full from-scratch wipe scope)", () => {
+  const now = new Date("2026-06-29T15:00:00Z");
+
+  it("1D wipes only today's session day", () => {
+    expect(regenerateStoreKeys("day", now)).toEqual([lastSessionDate(now)]);
+  });
+
+  it("1W wipes the daily sleeve AND every per-day key in the rolling window", () => {
+    const keys = regenerateStoreKeys("week", now);
+    expect(keys[0]).toBe(WEEK_STORE_KEY);
+    const days = recentTradingSessions(DEFAULT_WEEK_SESSIONS, now);
+    expect(keys.slice(1)).toEqual(days);
+    // The dense 1D bars feeding "1D fills 1W" are dropped too, so a corrupt day
+    // cannot survive a week regenerate.
+    expect(keys).toContain(lastSessionDate(now));
+    expect(keys.length).toBe(DEFAULT_WEEK_SESSIONS + 1);
   });
 });

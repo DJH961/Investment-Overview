@@ -48,6 +48,9 @@ uv run pre-commit install
   Never call `prices_repo` / `fx_repo` / `snapshots_repo` directly on a ledger
   session — it silently returns empty under a split-DB layout. See
   "Storage tiers" in [`docs/architecture.md`](docs/architecture.md).
+- **Currency rule:** backend computation/storage/reconciliation are USD-native.
+  EUR is derived presentation (`usd ÷ fx`) and must not become a backend source
+  of truth.
 
 ## Tests
 

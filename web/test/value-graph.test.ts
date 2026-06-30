@@ -38,6 +38,8 @@ function holding(over: Partial<HoldingView>): HoldingView {
     todayMovePct: null,
     todayMoveIsStale: false,
     todayFxMoveEur: null,
+    priorCloseValueEur: null,
+    priorCloseValueUsd: null,
     weight: null,
     unrealisedPlEur: null,
     totalGrowthPct: null,
@@ -129,6 +131,48 @@ describe("buildModelAnchor", () => {
     );
     expect(anchor.baseFx?.toString()).toBe("1.08");
     expect(anchor.holdings[0].valueEur.toString()).toBe("1000");
+  });
+});
+
+describe("market-closed freeze invariant (1D/1W STAY PUT on the close FX)", () => {
+  // Locks the cross-currency contract the live 1D/1W graphs must honour once the
+  // equity session has shut but FX still trades:
+  //   - the **USD** leg is FX-free, so the frozen (market-closed) curve and the
+  //     live (market-open) curve carry the *identical* USD value. The 1D graph's
+  //     USD growth therefore equals the overview's "today" USD move by
+  //     construction — neither involves FX.
+  //   - the **EUR** leg of the frozen curve is re-marked at the session-close FX
+  //     (`graphFx`), so once the rate drifts overnight it diverges from the live
+  //     EUR view (which keeps tracking the live spot on the headline / 1M+
+  //     graphs). They reconcile only while the close rate still equals the live
+  //     rate.
+  const usd = holding({ priceSymbol: "VOO", nativeCurrency: "USD", valueEur: d(1000), valueUsd: d(1080) });
+
+  it("keeps the USD leg identical whether frozen at close or live (FX-free)", () => {
+    const live = buildModelAnchor([usd], d(0), d(0), d("1.08"));
+    const frozen = buildModelAnchor([usd], d(0), d(0), d("1.08"), { graphFx: d("1.05") });
+    // The 1D/1W USD curve does not move when the EUR view freezes — it is the
+    // same native-USD total the overview values "today" from.
+    expect(frozen.holdings[0].valueUsd.toString()).toBe(live.holdings[0].valueUsd.toString());
+    expect(frozen.holdings[0].valueUsd.toString()).toBe("1080");
+  });
+
+  it("diverges the EUR leg once the close FX differs from the live FX", () => {
+    const live = buildModelAnchor([usd], d(0), d(0), d("1.08"));
+    const frozen = buildModelAnchor([usd], d(0), d(0), d("1.08"), { graphFx: d("1.05") });
+    // Live EUR tracks the live spot (1080 / 1.08 = 1000); the frozen EUR is
+    // re-marked at the close (1080 / 1.05 = 1028.57…), so the EUR lines part.
+    expect(live.holdings[0].valueEur.toString()).toBe("1000");
+    expect(frozen.holdings[0].valueEur.toNumber()).toBeCloseTo(1028.5714, 3);
+    expect(frozen.holdings[0].valueEur.equals(live.holdings[0].valueEur)).toBe(false);
+  });
+
+  it("reconciles the EUR leg when the close FX still equals the live FX", () => {
+    // The "unless FX rate stays the same" clause: a flat overnight rate leaves the
+    // frozen and live EUR views identical.
+    const live = buildModelAnchor([usd], d(0), d(0), d("1.08"));
+    const frozen = buildModelAnchor([usd], d(0), d(0), d("1.08"), { graphFx: d("1.08") });
+    expect(frozen.holdings[0].valueEur.toString()).toBe(live.holdings[0].valueEur.toString());
   });
 });
 

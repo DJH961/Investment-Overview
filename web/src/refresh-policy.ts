@@ -143,6 +143,126 @@ export function jumpstartDelayMs(
 }
 
 /**
+ * Reload-debounce window: how recently a login prefetch must have run for the
+ * next page-load to skip warming again. Set to **half the auto-update cycle**, so
+ * a fingerprint fumble, a wrong-passphrase retry, or the constant
+ * reload-to-bust-the-cache-for-a-new-version dance never re-spends credits — yet
+ * a deliberate return after a real gap still warms. Clamped to the burst floor so
+ * a sub-minute interval can't disable the gate entirely.
+ */
+export function prefetchDebounceMs(intervalMs: number): number {
+  return Math.max(MIN_JUMPSTART_DELAY_MS, Math.round(intervalMs / 2));
+}
+
+/**
+ * Whether a fresh login prefetch should be **skipped** because one already ran
+ * within {@link prefetchDebounceMs half the auto-update cycle}. The shortened
+ * first auto-update is preserved by the jumpstart cadence ({@link jumpstartDelayMs}),
+ * which anchors on the oldest still-fresh value — so a debounced reload still
+ * refreshes exactly when that value is about to age out, just without a duplicate
+ * warm-up. Returns false (warm now) when no prior prefetch is recorded or the
+ * stamp is in the future (clock skew).
+ */
+export function prefetchDebounceActive(
+  lastPrefetchAtMs: number | null,
+  nowMs: number,
+  intervalMs: number,
+): boolean {
+  if (lastPrefetchAtMs === null) return false;
+  const since = nowMs - lastPrefetchAtMs;
+  if (since < 0) return false;
+  return since < prefetchDebounceMs(intervalMs);
+}
+
+/**
+ * How many auto-update intervals an in-flight refresh round may run before it is
+ * presumed **hung** and may be abandoned. A round normally completes in well
+ * under one interval; one that has been "in flight" for several is almost always
+ * a frozen timer/`fetch` that the OS suspended when the device slept mid-round
+ * (the log-44 case: a 16:37 round resumed and *completed* at 17:36, an hour
+ * later, stamping stale work as fresh). Tied to the user's own setting so a long
+ * configured cadence tolerates a proportionally longer round.
+ */
+export const STALE_ROUND_INTERVAL_MULTIPLIER = 3;
+
+/**
+ * Floor for {@link staleRoundAbortMs} so a very short auto-update interval still
+ * gives an honestly-slow round (a big portfolio fanning out over the backup,
+ * say) enough time to finish before it is judged hung.
+ */
+export const MIN_STALE_ROUND_ABORT_MS = 90_000;
+
+/**
+ * How long an in-flight refresh round may run before it counts as hung — the
+ * user's configured auto-update interval times {@link STALE_ROUND_INTERVAL_MULTIPLIER},
+ * floored by {@link MIN_STALE_ROUND_ABORT_MS}. The scheduler ties its stale-round
+ * abort to this so the watchdog scales with the setting rather than a magic
+ * constant.
+ */
+export function staleRoundAbortMs(intervalMs: number): number {
+  const base = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 0;
+  return Math.max(MIN_STALE_ROUND_ABORT_MS, Math.round(base * STALE_ROUND_INTERVAL_MULTIPLIER));
+}
+
+/**
+ * Whether a refresh round that began at `startedAtMs` has been in flight long
+ * enough ({@link staleRoundAbortMs}) to be presumed hung and safe to abandon.
+ *
+ * Returns false when there is no round in flight (`startedAtMs === null`) or the
+ * stamp is in the future / now (clock skew), so a freshly-started round is never
+ * mistaken for a stale one. This is what lets a wake-up *replace* a suspended
+ * round with a fresh pull instead of waiting on — then completing — hour-old work.
+ */
+export function roundIsStale(startedAtMs: number | null, nowMs: number, intervalMs: number): boolean {
+  if (startedAtMs === null) return false;
+  const age = nowMs - startedAtMs;
+  if (age <= 0) return false;
+  return age >= staleRoundAbortMs(intervalMs);
+}
+
+/**
+ * Default window in which repeated "the app woke up" triggers collapse to a
+ * single refresh — see {@link wakeCoalesceActive}. A resume commonly fires
+ * `visibilitychange`, `pageshow`, `focus`, *and* `online` within a beat of each
+ * other (plus a post-unlock kickoff and a resumed timer): in log 44 three
+ * back-to-back warm-ups/kickoffs fanned out over the same 4-second wake,
+ * double-spending the per-minute budget and forcing the "real" pull to defer.
+ */
+export const DEFAULT_WAKE_COALESCE_MS = 5_000;
+
+/**
+ * Whether a wake-driven refresh should be **suppressed** because another already
+ * ran within {@link DEFAULT_WAKE_COALESCE_MS} — the debounce that collapses the
+ * resume "storm" (visibility + pageshow + focus + online, all firing at once)
+ * into one pull. Returns false (let it run) when no prior wake is recorded or the
+ * stamp is in the future (clock skew), so the first wake of a genuine return
+ * always pulls.
+ */
+export function wakeCoalesceActive(
+  lastWakeAtMs: number | null,
+  nowMs: number,
+  windowMs = DEFAULT_WAKE_COALESCE_MS,
+): boolean {
+  if (lastWakeAtMs === null) return false;
+  const since = nowMs - lastWakeAtMs;
+  if (since < 0) return false;
+  return since < windowMs;
+}
+
+/**
+ * Human caption for the *continuous* "auto-updating" pill while a portfolio too
+ * big for one free-tier minute fills in over several catch-up rounds. Keeping a
+ * single pill (whose text this updates in place) instead of tearing it down and
+ * rebuilding it each round is what stops the spinner animation restarting on
+ * every burst — the "multiple auto-update animations" the user flagged. Returns
+ * `""` when nothing is left to fill in, so the caller can take the pill down.
+ */
+export function burstFillDetail(remaining: number): string {
+  if (!Number.isFinite(remaining) || remaining <= 0) return "";
+  return remaining === 1 ? "1 holding still filling in" : `${remaining} holdings still filling in`;
+}
+
+/**
  * Credit-aware burst relief — how long until the Twelve Data per-minute window
  * frees its **next** credit, given the timestamps (epoch-ms) of the credits
  * spent so far.

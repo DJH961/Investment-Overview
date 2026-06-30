@@ -314,6 +314,10 @@ export interface MobileExport {
    * off (instant paint, no re-fetch). Absent on exports predating schema v2 or
    * when no intraday history had been captured. */
   live_graphs?: ExportLiveGraphs;
+  /** Cheap per-day history fingerprint (count, last date, short digest) so the
+   * web can flag "history revised" when a late desktop import rewrote old days.
+   * Absent on exports predating this field. */
+  history_fingerprint?: ExportHistoryFingerprint;
   /** Raw ledger rows, present only when the desktop publishes with
    * `include_transactions=True`. Newest-first, already settlement-swept. Absent
    * (or `undefined`) on exports that opted out — the Transactions tab then shows
@@ -360,6 +364,16 @@ export interface ExportTransactionRecord {
   net_usd: DecimalString | null;
   /** Provenance of the row (`manual`, `import`, …), or null. */
   source: string | null;
+}
+
+/** Summary of the exported equity-curve history, for revision detection. */
+export interface ExportHistoryFingerprint {
+  /** Number of daily points in the exported curve. */
+  days: number;
+  /** Last `YYYY-MM-DD` covered, or null when the curve is empty. */
+  last_date: string | null;
+  /** Short stable digest over each day's `(date, whole-unit value)`. */
+  digest: string;
 }
 
 /** One whole-book point of an exported live curve, in both currencies. */
@@ -427,9 +441,10 @@ export interface ExportLiveTrail {
  * stale session as the live one.
  *
  * Schema v3 adds the **market-sleeve backbone** ({@link market_series} +
- * {@link daily_close_native} + {@link nav_prices} + {@link trail}); these are all
- * optional so a reader stays tolerant of older v1/v2 exports that omit them
- * (graceful degradation — the legacy `day`/`week` curves still drive the render).
+ * {@link daily_close_native} + {@link nav_prices} + {@link mm_value_native} +
+ * {@link trail}); these are all optional so a reader stays tolerant of older
+ * v1/v2 exports that omit them (graceful degradation — the legacy `day`/`week`
+ * curves still drive the render).
  */
 export interface ExportLiveGraphs {
   /** ISO-8601 UTC instant the export was captured (the freshness stamp). */
@@ -444,6 +459,16 @@ export interface ExportLiveGraphs {
   daily_close_native?: Record<string, DecimalString | null>;
   /** v3 per-day published NAV per NAV/cash holding: `{ symbol: [[date, price], …] }`. */
   nav_prices?: Record<string, [string, DecimalString | null][]>;
+  /**
+   * v3 per-day money-market / settlement **value** (native USD) per fund:
+   * `{ "VMFXX": [[date, value], …] }`. Money-market funds pin a constant $1.00
+   * NAV, so a NAV *price* line is flat and uninformative; their value moves with
+   * the share count, which transactions (deposits/dividends) change — sometimes
+   * while the market is shut, so the freshest balance is *newer* than the last
+   * market close. This ships the value-as-of each session date so the base can
+   * step on the day a flow landed instead of shifting the whole curve up by
+   * today's balance. `[-1]` is the latest settled close per fund. */
+  mm_value_native?: Record<string, [string, DecimalString | null][]>;
   /** v3 display-only dense whole-book trail (never merged/cross-checked). */
   trail?: ExportLiveTrail | null;
   /** The intraday 1D session, if the desktop had one to ship. */

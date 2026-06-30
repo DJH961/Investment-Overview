@@ -258,6 +258,35 @@ def invalidate_from(session: Session, start: date) -> int:
     return snapshots_repo.delete_from(session, start)
 
 
+def invalidate_for_trade_dates(
+    session: Session,
+    dates: Iterable[date],
+    *,
+    today: date | None = None,
+) -> int:
+    """Drop cached snapshots from the earliest affected *past* trade date on.
+
+    Call this whenever a transaction is inserted, updated, or deleted with a
+    ``date`` in the past: every cached daily close on or after that date is now
+    stale (the ledger roll-up behind it changed), so dropping those rows lets
+    ``/monthly``, ``/yearly`` and the equity curve recompute the affected window
+    lazily on next read. Dates equal to (or after) ``today`` are ignored —
+    today's snapshot is always recomputed live, so it never needs clearing.
+
+    Routes through the cache-tier write session so it works under split-DB
+    layouts. Returns the number of snapshots dropped (``0`` if nothing was in
+    the past, e.g. a brand-new same-day entry).
+    """
+    today = today or date.today()
+    past = [d for d in dates if d < today]
+    if not past:
+        return 0
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    with cache_write_session(session) as cache:
+        return invalidate_from(cache, min(past))
+
+
 def stored_snapshots_in_range(
     session: Session,
     start: date,

@@ -240,6 +240,113 @@ def build_value_series(
     return points
 
 
+def build_window_value_series(
+    session: Session,
+    *,
+    currency: str,
+    sessions: int,
+    tz: tzinfo | None = None,
+    now: datetime | None = None,
+    positions: list[Position] | None = None,
+    freeze_after_hours: bool = False,
+) -> list[ValueSeriesPoint]:
+    """One range-parameterized intraday-window value series — the unified builder.
+
+    The Python parity for ``docs/graph-unification-plan.md`` C8: there is no
+    separate "1 Day" and "1 Week" code path, only **one intraday-window builder**
+    parameterised by how many recent trading sessions it spans. ``sessions <= 1``
+    is the within-day "Day" window; ``sessions > 1`` is the multi-session "Week"
+    window (its span fixed by :data:`intraday_snapshots_service.WEEK_SESSIONS`).
+    Both draw the *same* dense 5-minute per-session reconstruction from the shared
+    intraday cache, so the 1-day slice of the week is literally the same points as
+    the standalone Day curve, and both share the identical currency model
+    (:func:`_compose_currency_points`) and after-hours EUR tip freeze
+    (:func:`_freeze_eur_live_tip`).
+
+    See :func:`build_intraday_value_series` for the full currency model (USD native
+    and FX-free, EUR derived per-minute) and ``freeze_after_hours`` semantics. The
+    only window-dependent differences are:
+
+    * **base decomposition** — the Day window holds every NAV holding flat in the
+      base; the multi-session window pulls the *day-drifting* NAV funds out so each
+      session can slope at its own dated NAV (see
+      :func:`intraday_snapshots_service.week_nav_drift_with_fx`); and
+    * **empty-book tip** — only the Day window seeds a lone live tip on a
+      brand-new book with no samples yet (the multi-session window needs at least
+      one real sourced sample before it caps with the live tip).
+
+    Returns ``[]`` when there is nothing to plot, so the caller can fall back to
+    the empty state / the daily snapshot series.
+    """
+    currency = currency.upper()
+    now = now or datetime.now(UTC)
+
+    if positions is None:
+        positions = compute_positions(session)
+    total_now = total_portfolio_value(session, positions=positions)
+    market_now = intraday_snapshots_service.market_value_eur(positions)
+
+    rate: Decimal | None = None
+    if currency != "EUR":
+        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
+
+    multi_session = sessions > 1
+    nav_now = ZERO
+    if multi_session:
+        # Pull the day-drifting NAV funds out of the flat base so each session can
+        # reapply its own dated NAV (sloping per-day) instead of riding flat at
+        # today's. ``base`` then keeps only the genuinely constant cash + savings +
+        # money-market remainder.
+        nav_now = intraday_snapshots_service.nav_drift_value_eur(positions)
+        base = total_now - market_now - nav_now
+        samples = intraday_snapshots_service.week_series_with_fx(session, now=now)
+    else:
+        base = total_now - market_now
+        samples = intraday_snapshots_service.day_series_with_fx(session, now=now)
+
+    # Cap the curve with the live current value so the tip equals the headline
+    # Total Value, pinned to the market close once the session is over (so it
+    # doesn't trail a flat line overnight / all weekend). The Day window also
+    # seeds a lone tip on a genuinely empty book (no samples and a non-zero live
+    # value); the multi-session window requires a real sample first.
+    live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
+    live_at = min(live_at, intraday_snapshots_service.session_close_utc(now))
+    appended_tip = False
+    seed_empty = not multi_session and not samples and total_now != 0
+    if seed_empty or (samples and samples[-1][0] < live_at):
+        samples = [*samples, (live_at, market_now, rate)]
+        appended_tip = True
+
+    if not samples:
+        return []
+
+    nav_components: dict[datetime, tuple[Decimal, Decimal | None]] | None = None
+    if multi_session:
+        # Per-session NAV-fund track, mapped onto each sample by its exchange date,
+        # so every point gets the fund sleeve's value *as published that day*
+        # rather than today's. Reads only the price cache (no extra network fetch);
+        # ``live_fallback`` (today's live NAV value + spot EUR/USD) is a last-resort
+        # stand-in for a window day whose NAV/FX hasn't been cached yet, re-derived
+        # each render so a later good close/FX pull patches the gap.
+        nav_fx_today = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
+        nav_by_date = intraday_snapshots_service.week_nav_drift_with_fx(
+            session, now=now, live_fallback=(nav_now, nav_fx_today)
+        )
+        nav_components = {
+            at_utc: nav_by_date.get(
+                intraday_snapshots_service.session_date_of(at_utc), (ZERO, None)
+            )
+            for at_utc, _market, _fx in samples
+        }
+
+    points = _compose_currency_points(
+        samples, base=base, currency=currency, rate=rate, tz=tz, nav_components=nav_components
+    )
+    if freeze_after_hours and appended_tip:
+        points = _freeze_eur_live_tip(session, points, currency=currency, now=now)
+    return points
+
+
 def build_intraday_value_series(
     session: Session,
     *,
@@ -294,48 +401,19 @@ def build_intraday_value_series(
     is open, for the FX-free USD line, or when no close rate is known; the longer
     history ranges deliberately keep the live after-hours rate and so do not pass
     it.
+
+    This is the **window(1 session)** case of the unified
+    :func:`build_window_value_series` (``docs/graph-unification-plan.md`` C8).
     """
-    currency = currency.upper()
-    now = now or datetime.now(UTC)
-
-    # Decompose: the stored samples are the intraday-priced component; the
-    # base (cash + NAV holdings) is constant across the session and reapplied
-    # here, so it can never distort or spike the intraday shape.
-    if positions is None:
-        positions = compute_positions(session)
-    total_now = total_portfolio_value(session, positions=positions)
-    market_now = intraday_snapshots_service.market_value_eur(positions)
-    base = total_now - market_now
-
-    samples = intraday_snapshots_service.day_series_with_fx(session, now=now)
-
-    rate: Decimal | None = None
-    if currency != "EUR":
-        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
-
-    # Cap the curve with the live current value so the tip equals the headline
-    # Total Value, even between captures. Skip the duplicate when the most recent
-    # sample is effectively "now". For a genuinely empty portfolio (no samples
-    # and a zero live value) there is nothing to plot. The live tip carries
-    # today's spot, the same rate the headline figure uses.
-    live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
-    # Stop the curve at the market close: once the session is over the live
-    # value is just the settled close, so pin its point to 16:00 ET instead of
-    # trailing a flat line out to the current time (overnight, or all weekend).
-    session_close = intraday_snapshots_service.session_close_utc(now)
-    live_at = min(live_at, session_close)
-    appended_tip = False
-    if (not samples and total_now != 0) or (samples and samples[-1][0] < live_at):
-        samples = [*samples, (live_at, market_now, rate)]
-        appended_tip = True
-
-    if not samples:
-        return []
-
-    points = _compose_currency_points(samples, base=base, currency=currency, rate=rate, tz=tz)
-    if freeze_after_hours and appended_tip:
-        points = _freeze_eur_live_tip(session, points, currency=currency, now=now)
-    return points
+    return build_window_value_series(
+        session,
+        currency=currency,
+        sessions=1,
+        tz=tz,
+        now=now,
+        positions=positions,
+        freeze_after_hours=freeze_after_hours,
+    )
 
 
 def _compose_currency_points(
@@ -458,14 +536,15 @@ def build_week_value_series(
 ) -> list[ValueSeriesPoint]:
     """Multi-day portfolio-value series for the Overview "Week" (1W) range.
 
-    Inspired by the intraday "Day" curve, but instead of a single closing value
-    per day this plots up to **five** points for each of the last few trading
-    sessions — the day's *open* (first intraday bar), three evenly-spaced interior
-    instants (+1/4, *midday*, +3/4) and the *close* (last bar) — so a week reads
-    as a smooth, detailed curve rather than five jagged daily steps.
+    The same dense intraday curve as the "Day" range, drawn over the last few
+    trading sessions instead of one: each session lays down its full set of
+    **5-minute** bars — the identical per-session reconstruction the Day curve uses
+    (``docs/graph-unification-plan.md`` C8) — so the week reads as a smooth,
+    detailed curve and its 1-day slice is identical to the standalone Day curve,
+    not merely similar.
 
-    The intraday-priced (market) component at each chosen instant is sourced
-    best-effort from the price feed (see
+    The intraday-priced (market) component at each instant is sourced best-effort
+    from the price feed (see
     :func:`intraday_snapshots_service.week_series_with_fx`); the constant cash +
     savings + money-market base is reapplied here exactly as the Day curve does,
     and the same per-minute FX / currency model applies (USD native and FX-free,
@@ -482,67 +561,19 @@ def build_week_value_series(
     once the US market has shut, exactly as the Day curve does, so the week's
     market-day trajectory does not slide with overnight FX (see
     :mod:`investment_dashboard.domain.session_fx`).
+
+    This is the **window(WEEK_SESSIONS)** case of the unified
+    :func:`build_window_value_series`.
     """
-    currency = currency.upper()
-    now = now or datetime.now(UTC)
-
-    if positions is None:
-        positions = compute_positions(session)
-    total_now = total_portfolio_value(session, positions=positions)
-    market_now = intraday_snapshots_service.market_value_eur(positions)
-    # Pull the day-drifting NAV funds out of the flat base so the week curve can
-    # reapply each at *its own* dated NAV (sloping per-day) instead of riding
-    # flat at today's. ``flat_base`` keeps only the genuinely constant cash +
-    # savings + money-market remainder.
-    nav_now = intraday_snapshots_service.nav_drift_value_eur(positions)
-    flat_base = total_now - market_now - nav_now
-
-    samples = intraday_snapshots_service.week_series_with_fx(session, now=now)
-
-    rate: Decimal | None = None
-    if currency != "EUR":
-        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
-
-    # Cap the curve with the live current value so its tip equals the headline
-    # Total Value, pinned to the market close once the session is over (so it
-    # doesn't trail a flat line over a weekend). Mirrors the Day curve.
-    live_at = now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now
-    live_at = min(live_at, intraday_snapshots_service.session_close_utc(now))
-    appended_tip = False
-    if samples and samples[-1][0] < live_at:
-        samples = [*samples, (live_at, market_now, rate)]
-        appended_tip = True
-
-    if not samples:
-        return []
-
-    # Per-session NAV-fund track, mapped onto each sample by its exchange date —
-    # so every point gets the fund sleeve's value *as published that day* rather
-    # than today's. The map reads only the price cache (no extra network fetch).
-    # ``live_fallback`` is today's live NAV value + spot EUR/USD: a smart, last-
-    # resort stand-in for a window day whose NAV/FX hasn't been cached yet, so the
-    # sleeve never nose-dives to zero. It is re-derived every render, so once a
-    # later good close/FX pull patches the gap the genuine per-day NAV is used.
-    nav_fx_today = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
-    nav_by_date = intraday_snapshots_service.week_nav_drift_with_fx(
-        session, now=now, live_fallback=(nav_now, nav_fx_today)
-    )
-    nav_components = {
-        at_utc: nav_by_date.get(intraday_snapshots_service.session_date_of(at_utc), (ZERO, None))
-        for at_utc, _market, _fx in samples
-    }
-
-    points = _compose_currency_points(
-        samples,
-        base=flat_base,
+    return build_window_value_series(
+        session,
         currency=currency,
-        rate=rate,
+        sessions=intraday_snapshots_service.WEEK_SESSIONS,
         tz=tz,
-        nav_components=nav_components,
+        now=now,
+        positions=positions,
+        freeze_after_hours=freeze_after_hours,
     )
-    if freeze_after_hours and appended_tip:
-        points = _freeze_eur_live_tip(session, points, currency=currency, now=now)
-    return points
 
 
 def previous_session_close_value(
@@ -800,6 +831,12 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         on_or_before=as_of,
         limit=2,
     )
+    book_price_dates = sorted(
+        {price_date for pairs in recent_closes.values() for price_date, _ in pairs},
+        reverse=True,
+    )
+    latest_price_date = book_price_dates[0] if book_price_dates else None
+    previous_price_date = book_price_dates[1] if len(book_price_dates) > 1 else None
     for p in positions:
         iid = p.instrument.id
         native = p.account.native_currency
@@ -886,6 +923,8 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
                 eur_to_usd=eur_to_usd,
                 today_rate=today_rate,
                 recent_closes=recent_closes,
+                latest_price_date=latest_price_date,
+                previous_price_date=previous_price_date,
                 is_money_market=is_mm,
             )
         )
@@ -928,7 +967,7 @@ def _round_cent(value: Decimal) -> Decimal:
     return value.quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
-def _instrument_daily_growth(
+def _instrument_daily_growth(  # noqa: PLR0911
     *,
     instrument_id: int,
     shares: Decimal,
@@ -936,14 +975,15 @@ def _instrument_daily_growth(
     eur_to_usd: dict[date, Decimal],
     today_rate: Decimal | None,
     recent_closes: dict[int, list[tuple[date, Decimal]]],
+    latest_price_date: date | None = None,
+    previous_price_date: date | None = None,
     is_money_market: bool = False,
 ) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None, date | None]:
     """Single-day growth for one instrument, in EUR and USD.
 
-    Values the holding on the two most recent print dates (forward-filled
-    closes) and converts each with the FX rate of *that* day, so the USD and
-    EUR figures differ only by the (small) intraday FX move — exactly the
-    per-currency daily growth the KPI strip shows, but per instrument.
+    Values the holding on the book's two most recent print dates. Holdings that
+    did not reprint on the freshest date are forward-filled, so they contribute
+    zero price move and only the FX revaluation between the book dates.
 
     Returns a 5-tuple ``(growth_eur, growth_usd, move_eur, move_usd,
     last_date)``: the two growth *fractions*, the two signed *money* moves (the
@@ -965,16 +1005,42 @@ def _instrument_daily_growth(
     if is_money_market:
         return None, None, None, None, None
     pairs = recent_closes.get(instrument_id, [])
+    if not pairs:
+        return None, None, None, None, None
+    last_date, close_last = pairs[0]
+    if close_last is None:
+        return None, None, None, None, None
+
+    if (
+        latest_price_date is not None
+        and previous_price_date is not None
+        and last_date < latest_price_date
+    ):
+        current_native = shares * close_last
+        e_last, u_last = _convert_native(
+            current_native, native_currency, latest_price_date, eur_to_usd, today_rate
+        )
+        e_prev, u_prev = _convert_native(
+            current_native, native_currency, previous_price_date, eur_to_usd, today_rate
+        )
+        growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
+        growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
+        move_eur = _round_cent(e_last - e_prev)
+        move_usd = _round_cent(u_last - u_prev)
+        return growth_eur, growth_usd, move_eur, move_usd, last_date
+
     if len(pairs) < 2:
         return None, None, None, None, None
-    (last_date, close_last), (prev_date, close_prev) = pairs[0], pairs[1]
-    if close_last is None or close_prev is None:
+    prev_date, close_prev = pairs[1]
+    if close_prev is None:
         return None, None, None, None, None
+    current_book_date = latest_price_date or last_date
+    previous_book_date = previous_price_date or prev_date
     e_last, u_last = _convert_native(
-        shares * close_last, native_currency, last_date, eur_to_usd, today_rate
+        shares * close_last, native_currency, current_book_date, eur_to_usd, today_rate
     )
     e_prev, u_prev = _convert_native(
-        shares * close_prev, native_currency, prev_date, eur_to_usd, today_rate
+        shares * close_prev, native_currency, previous_book_date, eur_to_usd, today_rate
     )
     growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
     growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None

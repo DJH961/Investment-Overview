@@ -43,6 +43,12 @@ export interface HoldingStatusView {
   dots: boolean;
   /** Whether to paint the success check mark (the `updated` flash). */
   check: boolean;
+  /**
+   * A live countdown to when a *queued* (free-tier deferred) holding is expected
+   * to update, e.g. `"2:00"`. Null in every other state — and also while queued
+   * when no ETA is known — in which case the animated dots stand in instead.
+   */
+  countdown: string | null;
   /** Full tooltip naming the exact moment / what's happening. */
   title: string;
 }
@@ -50,6 +56,13 @@ export interface HoldingStatusView {
 export interface ResolveHoldingStatusInput {
   /** A live phase asserted by the App for this round, if any. */
   livePhase?: HoldingLivePhase | null;
+  /**
+   * Epoch ms a *queued* holding is expected to update (its place in the
+   * free-tier pull queue, resolved by {@link computeQueueEtas}). When present and
+   * still in the future, the `queued` caption shows a live countdown to it
+   * instead of the bare animated dots.
+   */
+  queueReadyAt?: number | null;
   /** Epoch ms the displayed price was observed (null ⇒ use `fallbackDate`). */
   asOf: number | null;
   /**
@@ -81,13 +94,28 @@ export function resolveHoldingStatus(input: ResolveHoldingStatusInput): HoldingS
 
   if (input.livePhase === "updating" || input.livePhase === "queued") {
     const queued = input.livePhase === "queued";
+    // A queued holding waiting behind the free-tier per-minute budget shows a
+    // live seconds countdown to its expected turn (resolved from its queue
+    // position) so the wait is legible — "Updating 120" — rather than a "…".
+    let countdown: string | null = null;
+    let title = queued ? "Queued for the next update…" : "Fetching the latest price…";
+    if (queued && input.queueReadyAt !== null && input.queueReadyAt !== undefined) {
+      const remaining = input.queueReadyAt - input.nowMs;
+      if (remaining > 0) {
+        countdown = formatQueueCountdown(remaining);
+        title = `Queued behind the free-tier limit — about ${countdown}s until this price updates`;
+      }
+    }
     return {
       kind: input.livePhase,
       label: "Updating",
       stamp: null,
-      dots: true,
+      // Show the dots only while no countdown is available; the timer replaces
+      // them once a queue ETA is known so the caption reads as a real estimate.
+      dots: countdown === null,
       check: false,
-      title: queued ? "Queued for the next update…" : "Fetching the latest price…",
+      countdown,
+      title,
     };
   }
 
@@ -111,6 +139,7 @@ export function resolveHoldingStatus(input: ResolveHoldingStatusInput): HoldingS
       stamp: null,
       dots: false,
       check: true,
+      countdown: null,
       title: `Updated ${formatLastPull(input.updatedAt, now)}`,
     };
   }
@@ -121,22 +150,79 @@ export function resolveHoldingStatus(input: ResolveHoldingStatusInput): HoldingS
     stamp,
     dots: false,
     check: false,
+    countdown: null,
     title: `Last updated ${fullWhen}`,
   };
+}
+
+/**
+ * Format a remaining-time span (ms) as a whole-seconds countdown — `"120"`,
+ * `"119"`, … `"1"`. Deliberately seconds-only (never `m:ss`) so a queued wait
+ * past a minute keeps ticking down a single number. Always at least `"0"`;
+ * sub-second remainders round up so the timer shows `"1"` rather than `"0"` in
+ * its final second.
+ */
+export function formatQueueCountdown(remainingMs: number): string {
+  return String(Math.max(0, Math.ceil(remainingMs / 1000)));
+}
+
+/** The free-tier round cadence and capacity {@link computeQueueEtas} reasons over. */
+export interface QueueEtaParams {
+  /** Symbols that were freshly pulled this round (they occupy the current round). */
+  fetched: readonly string[];
+  /** Symbols deferred this round, in priority (pull) order — index 0 goes first. */
+  deferred: readonly string[];
+  /** How many symbols a single free-tier round can pull (credits per minute). */
+  capacityPerRound: number;
+  /** Epoch ms the round that produced this split completed (the countdown anchor). */
+  anchorMs: number;
+  /** Spacing between free-tier rounds in ms (≈ one minute on the free tier). */
+  roundIntervalMs: number;
+}
+
+/**
+ * Resolve, per deferred symbol, the epoch ms it is expected to update — its place
+ * in the free-tier pull queue turned into a wall-clock ETA the caption can count
+ * down to.
+ *
+ * The model is the user's own: a symbol's position in the *whole* pipeline is
+ * `fetched.length + its index among the deferred`, and the budget pulls
+ * `capacityPerRound` symbols per round. So the round a symbol lands in is
+ * `floor(position / capacity) + 1`, and its ETA is `anchor + round × interval`.
+ * This is what makes the estimate **smart**: a holding sitting tenth of thirteen
+ * waits for the eight ahead of it to clear the current round *and* then rides the
+ * next round — "about 2 min", not a flat one — while a symbol comfortably inside
+ * the next round shows ~1 min. Deeper queues fan out across as many rounds as the
+ * capacity demands.
+ */
+export function computeQueueEtas(params: QueueEtaParams): Map<string, number> {
+  const etas = new Map<string, number>();
+  const capacity = Math.max(1, Math.trunc(params.capacityPerRound));
+  const fetchedCount = params.fetched.length;
+  params.deferred.forEach((symbol, index) => {
+    if (!symbol) return;
+    const pipelinePosition = fetchedCount + index; // 0-based across the whole pull
+    const round = Math.floor(pipelinePosition / capacity) + 1; // 1-based round number
+    etas.set(symbol, params.anchorMs + round * params.roundIntervalMs);
+  });
+  return etas;
 }
 
 /**
  * The App's per-round status signals, threaded into the render layer so every
  * holding card paints the right point in its update cycle:
  *   - `phases`: symbols currently `updating` or `queued` (live, this round);
- *   - `updatedAt`: epoch ms each symbol last had a fresh price land (success flash).
+ *   - `updatedAt`: epoch ms each symbol last had a fresh price land (success flash);
+ *   - `queueReadyAt`: epoch ms each *queued* symbol is expected to update next
+ *     (its free-tier queue ETA — drives the countdown caption).
  */
 export interface HoldingStatusModel {
   phases: Map<string, HoldingLivePhase>;
   updatedAt: Map<string, number>;
+  queueReadyAt: Map<string, number>;
 }
 
 /** An empty status model — the default when no refresh context is available. */
 export function emptyHoldingStatusModel(): HoldingStatusModel {
-  return { phases: new Map(), updatedAt: new Map() };
+  return { phases: new Map(), updatedAt: new Map(), queueReadyAt: new Map() };
 }

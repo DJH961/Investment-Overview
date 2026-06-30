@@ -328,6 +328,18 @@ export function fxAnchorCompleteness(opts: {
    * `prev` anchor never forces a (wider, +1-credit) pull.
    */
   prevAnchorAvailable: boolean;
+  /**
+   * Whether a **weekend / long-weekend overnight** separates the last settled
+   * session from now — spot FX has reopened (or is frozen) but no US session has
+   * run since Friday's close. In that phase the live "since Friday" baseline is
+   * Friday's *settled close*, which lives one trading session back from the
+   * current-session anchors, so whenever a pull is already due the window must
+   * reach back two sessions (Thursday→Friday over a normal weekend; the same
+   * skip-aware reach handles a Monday-holiday long weekend) to co-fetch it in one
+   * request rather than ending at Friday and missing the baseline. Defaults to
+   * `false`, leaving the regular single-session reach untouched.
+   */
+  weekendGap?: boolean;
 }): FxAnchorCompleteness {
   const close = opts.marketClosed && !sessionFxBarsComplete(opts.fxBars, opts.sessionCloseMs);
   const open =
@@ -338,8 +350,11 @@ export function fxAnchorCompleteness(opts: {
   const needs: FxAnchorNeeds = { open, close, prev };
   const anyMissing = open || close || prev;
   // Recovering the prior-session close needs a two-session window (Thursday→Friday);
-  // every other anchor lives in the current session, so one session suffices.
-  const sessionsBack = prev ? 2 : 1;
+  // every other anchor lives in the current session, so one session suffices. A
+  // weekend / long-weekend overnight likewise reaches back two sessions whenever a
+  // pull is already due, so the "since Friday" close baseline rides the same
+  // request instead of being stranded a session away.
+  const sessionsBack = prev || (anyMissing && (opts.weekendGap ?? false)) ? 2 : 1;
   return { needs, anyMissing, sessionsBack };
 }
 
@@ -675,6 +690,71 @@ export function readPrevSessionCloseFx(day: string): Decimal | null {
     if (parsed.day !== day || typeof parsed.rate !== "string") return null;
     const rate = new Decimal(parsed.rate);
     return rate.greaterThan(0) ? rate : null;
+  } catch {
+    return null;
+  }
+}
+
+/** localStorage key holding the last settled whole-book prior-close anchor. */
+const PREV_CLOSE_ANCHOR_KEY = "iv.web.prevCloseAnchor";
+
+/** A persisted settled prior-close anchor (whole-book EUR + USD totals). */
+export interface PrevCloseAnchor {
+  eur: Decimal | null;
+  usd: Decimal | null;
+}
+
+/**
+ * Remember the settled whole-book **previous-session close** (the 1D graph's
+ * dashed reference line and the headline "since close" baseline), keyed by the
+ * trading session `day` it belongs to. Only the *non-provisional* anchor — valued
+ * once the settled prior FX is known — should be persisted, so a mid-session tab
+ * reload restores the identical line instead of re-deriving it from whichever
+ * deferred quotes happen to be warm. A no-op (swallowed) when storage is
+ * unavailable, or when neither leg carries a positive value to remember.
+ */
+export function recordPrevCloseAnchor(day: string, anchor: PrevCloseAnchor): void {
+  const eurOk = anchor.eur !== null && anchor.eur.greaterThan(0);
+  const usdOk = anchor.usd !== null && anchor.usd.greaterThan(0);
+  if (!eurOk && !usdOk) return;
+  try {
+    localStorage.setItem(
+      PREV_CLOSE_ANCHOR_KEY,
+      JSON.stringify({
+        day,
+        eur: eurOk ? anchor.eur!.toString() : null,
+        usd: usdOk ? anchor.usd!.toString() : null,
+      }),
+    );
+  } catch {
+    // Storage-less (private mode, disabled): the line simply uses the live anchor.
+  }
+}
+
+/**
+ * Read back the persisted settled prior-close anchor, but only when it was
+ * captured for the session `day` the caller is now drawing — an anchor from an
+ * older session is not the baseline for *this* one, so it is ignored. Returns null
+ * when nothing usable is stored.
+ */
+export function readPrevCloseAnchor(day: string): PrevCloseAnchor | null {
+  try {
+    const raw = localStorage.getItem(PREV_CLOSE_ANCHOR_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { day?: unknown; eur?: unknown; usd?: unknown };
+    if (parsed.day !== day) return null;
+    const toRate = (v: unknown): Decimal | null => {
+      if (typeof v !== "string") return null;
+      try {
+        const d = new Decimal(v);
+        return d.isFinite() && d.greaterThan(0) ? d : null;
+      } catch {
+        return null;
+      }
+    };
+    const eur = toRate(parsed.eur);
+    const usd = toRate(parsed.usd);
+    return eur === null && usd === null ? null : { eur, usd };
   } catch {
     return null;
   }

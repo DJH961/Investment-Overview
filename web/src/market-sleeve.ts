@@ -3,6 +3,10 @@
  * backbone (`docs/centralized_data_pull_plan.md` §"Pillar 3 — 1D fills 1W, and
  * web⇄blob merge"; the matching desktop export is `live_graphs.py` schema_v3).
  *
+ * 💵 CURRENCY: USD is the PRIMARY/canonical currency (backend). ~100% of holdings
+ * and 100% of market funds are USD. EUR is a frontend display preset only. This
+ * merge reconciles in **native USD** — never EUR. Do not "fix" it to EUR.
+ *
  * The desktop now ships, per the owner's decision, **not** per-symbol bars but
  * its own aggregate representation: the value of the intraday-priced sleeve over
  * the whole week, at true capture instants, with a per-instant FX rate. The web
@@ -69,7 +73,14 @@ export interface ReconciliationFlag {
   webValueUsd: Decimal;
   /** The blob's representative sleeve value for the bucket. */
   blobValueUsd: Decimal;
-  /** Signed relative gap `(web − blob) / |blob|`, as a fraction. */
+  /** The web's representative sleeve value re-expressed in booked EUR. */
+  webValueEur: Decimal;
+  /** The blob's representative sleeve value re-expressed in booked EUR. */
+  blobValueEur: Decimal;
+  /** EUR→USD rate used to recover each EUR value, or `null` when none was on hand. */
+  webFx: Decimal | null;
+  blobFx: Decimal | null;
+  /** Signed relative gap `(web − blob) / |blob|`, measured in EUR. */
   deltaFraction: number;
 }
 
@@ -196,8 +207,10 @@ export function mergeSleeveSeries(
     }
     if (!w || !b) continue; // unreachable (key came from one of the maps)
 
-    const wv = representative(w).valueNativeUsd;
-    const bv = representative(b).valueNativeUsd;
+    const wp = representative(w);
+    const bp = representative(b);
+    const wv = wp.valueNativeUsd;
+    const bv = bp.valueNativeUsd;
     const denom = bv.abs();
     const deltaFraction = denom.isZero()
       ? wv.isZero()
@@ -213,7 +226,16 @@ export function mergeSleeveSeries(
       // Disagree — keep the blob (authoritative) and raise a flag, never a spike.
       points.push(...tag(b, "blob"));
       counts.blob += 1;
-      flags.push({ bucketStartMs: key, webValueUsd: wv, blobValueUsd: bv, deltaFraction });
+      flags.push({
+        bucketStartMs: key,
+        webValueUsd: wv,
+        blobValueUsd: bv,
+        webValueEur: wp.fxEurUsd && wp.fxEurUsd.gt(0) ? wv.div(wp.fxEurUsd) : wv,
+        blobValueEur: bp.fxEurUsd && bp.fxEurUsd.gt(0) ? bv.div(bp.fxEurUsd) : bv,
+        webFx: wp.fxEurUsd,
+        blobFx: bp.fxEurUsd,
+        deltaFraction,
+      });
     }
   }
 
@@ -260,9 +282,121 @@ export function rebaseSleeveToWholeBook(
   });
 }
 
+/**
+ * Pin a merged 1W curve's **trailing edge** to the trusted web curve's tail, so a
+ * blob sleeve sample can never dent or overrun the rightmost rendered segment.
+ *
+ * The web curve ends on the dense, authoritative "today" slice the 1D graph also
+ * draws — its final point is the live tip (market open) or capped 16:00 close, and
+ * its last bars before that lead smoothly up to it. The blob's market-sleeve
+ * backbone is a *denser historical* second source, but its trailing samples are
+ * captured on the desktop's own coarse (30-min) cadence and can land *after* the
+ * web tip (a capture-instant skew) **or** in the gap *between* the web tail and
+ * the tip with a stale/low value. Pinning only the last point fixes the former
+ * but leaves the latter as the *penultimate* point — a near-vertical nosedive
+ * notch right before the tip that 1D (no blob, dense web bars) never shows,
+ * breaking the "1D fills 1W" invariant for both currency legs.
+ *
+ * The web tail (its second-to-last real bar through the tip) therefore owns the
+ * trailing edge: keep every merged point strictly before that bar — the densified
+ * historical body — then append the web tail, so no blob sample renders inside the
+ * final segment. A no-op when the merged curve already ends within the web tail.
+ */
+export function pinMergedTipToWebTip(merged: CurvePoint[], web: CurvePoint[]): CurvePoint[] {
+  if (web.length === 0) return merged;
+  const tail = web.slice(-2);
+  const cutoff = tail[0].t;
+  const kept = merged.filter((p) => p.t < cutoff);
+  return [...kept, ...tail];
+}
+
 /** Whether an export carries a usable v3 market-sleeve backbone (else: degrade). */
 export function hasMarketSleeve(exported: ExportLiveGraphs | undefined): boolean {
   return parseMarketSeries(exported?.market_series).length >= 2;
+}
+
+/** One money-market fund's value-as-of a session date (`YYYY-MM-DD` → USD). */
+export interface MoneyMarketDayValue {
+  date: string;
+  valueNativeUsd: Decimal;
+}
+
+/**
+ * Per-day money-market value series keyed by fund symbol, ascending by date.
+ *
+ * Money-market settlement funds (VMFXX, SPAXX …) pin a constant $1.00 NAV, so
+ * their *price* never moves and a NAV-price line is uninformative. Their value
+ * moves with the **share count**, which deposits/dividends change — sometimes
+ * while the US market is shut, so the freshest balance is genuinely **newer**
+ * than the last market close. The export ships {@link ExportLiveGraphs.mm_value_native}
+ * (value-as-of each session date) so the base can **step on the day a flow
+ * landed** instead of shifting the whole 1D/1W curve up by today's balance.
+ */
+export type MoneyMarketValueSeries = Map<string, MoneyMarketDayValue[]>;
+
+/** Parse {@link ExportLiveGraphs.mm_value_native} into ascending per-fund days. */
+export function parseMoneyMarketValue(
+  exported: ExportLiveGraphs | undefined,
+): MoneyMarketValueSeries {
+  const out: MoneyMarketValueSeries = new Map();
+  const raw = exported?.mm_value_native;
+  if (!raw) return out;
+  for (const [symbol, rows] of Object.entries(raw)) {
+    if (!Array.isArray(rows)) continue;
+    const days: MoneyMarketDayValue[] = [];
+    for (const row of rows) {
+      const [date, value] = row;
+      if (typeof date !== "string" || value === null || value === undefined) continue;
+      try {
+        days.push({ date, valueNativeUsd: new Decimal(value) });
+      } catch {
+        continue;
+      }
+    }
+    days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    if (days.length > 0) out.set(symbol, days);
+  }
+  return out;
+}
+
+/**
+ * The money-market value (USD) as of a session date: the latest day on or before
+ * `date`, so a graph point lands on the balance actually settled by then (never
+ * today's post-close deposit). `null` when the fund has no day at/under `date`.
+ */
+export function moneyMarketValueOnDate(
+  days: MoneyMarketDayValue[],
+  date: string,
+): Decimal | null {
+  let picked: Decimal | null = null;
+  for (const d of days) {
+    if (d.date <= date) picked = d.valueNativeUsd;
+    else break;
+  }
+  return picked;
+}
+
+/**
+ * Collapse the per-fund {@link MoneyMarketValueSeries} into one **whole-book**
+ * money-market value (USD) per session date: on each date that any fund moved,
+ * sum every fund's value-as-of that date ({@link moneyMarketValueOnDate}), so a
+ * fund that did not change still contributes its last balance. The result is the
+ * single MM total a curve adds at each day, ascending and ready to step the base.
+ */
+export function aggregateMoneyMarketValue(series: MoneyMarketValueSeries): MoneyMarketDayValue[] {
+  const dates = new Set<string>();
+  for (const days of series.values()) {
+    for (const d of days) dates.add(d.date);
+  }
+  const sorted = [...dates].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return sorted.map((date) => {
+    let total = new Decimal(0);
+    for (const days of series.values()) {
+      const v = moneyMarketValueOnDate(days, date);
+      if (v) total = total.plus(v);
+    }
+    return { date, valueNativeUsd: total };
+  });
 }
 
 /**
@@ -285,5 +419,11 @@ export function describeFlag(flag: ReconciliationFlag): string {
   // A zero blob value makes deltaFraction non-finite (±Infinity); render it as
   // "∞" rather than the bare "Infinity%" the default formatter would emit.
   const pct = Number.isFinite(flag.deltaFraction) ? `${(flag.deltaFraction * 100).toFixed(2)}%` : "∞";
-  return `${when}Z web ${flag.webValueUsd.toFixed(2)} vs blob ${flag.blobValueUsd.toFixed(2)} (Δ ${pct})`;
+  const webFx = flag.webFx ? flag.webFx.toFixed(4) : "—";
+  const blobFx = flag.blobFx ? flag.blobFx.toFixed(4) : "—";
+  const eurPct =
+    flag.blobValueEur.isZero()
+      ? "∞"
+      : `${flag.webValueEur.minus(flag.blobValueEur).div(flag.blobValueEur.abs()).times(100).toFixed(2)}%`;
+  return `${when}Z web ${flag.webValueUsd.toFixed(2)} vs blob ${flag.blobValueUsd.toFixed(2)} (Δ ${pct}) · EUR web ${flag.webValueEur.toFixed(2)} vs blob ${flag.blobValueEur.toFixed(2)} (Δ ${eurPct}) · fx web ${webFx} vs blob ${blobFx}`;
 }

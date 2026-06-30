@@ -370,6 +370,18 @@ export interface LoadQuotesOptions {
    * inject a fake to assert grants without touching storage.
    */
   reservation?: Reservation;
+  /**
+   * Fired **synchronously the instant the budget-resolved fetch plan is fixed**
+   * (after the per-minute reservation, before the network request). Reports which
+   * stale symbols will actually be fetched this round (`fetching`, forced /
+   * deferred-from-last first) versus which overflow the per-minute cap and are
+   * held for a later round (`deferred`). Lets a caller paint an honest "updating
+   * now vs. still-queued" status without re-deriving the budget split or flashing
+   * every stale symbol as "updating" and then re-queuing the overflow. Symbols
+   * served fresh from cache are not reported (they aren't being pulled). Not fired
+   * on the cache-only path (no API key / nothing stale).
+   */
+  onPlan?: (plan: { fetching: string[]; deferred: string[] }) => void;
 }
 
 /** What {@link loadQuotes} actually did, for an honest staleness banner. */
@@ -438,6 +450,7 @@ export async function loadQuotes(
     backoffBaseMs = 1000,
     backoffCapMs = 8000,
     reservation = ledgerReservation(storage ?? null),
+    onPlan,
   } = options;
 
   const unique = [...new Set(symbols.filter((s) => s.length > 0))];
@@ -523,6 +536,14 @@ export async function loadQuotes(
     const granted = reservation.reserve("twelvedata", stale.length, reservedAt);
     const toFetch = stale.slice(0, granted);
     for (const symbol of toFetch) attempted.add(symbol);
+    // Announce the budget-resolved split the moment it is fixed — before the
+    // network call — so a caller can paint an honest "updating now vs. still
+    // queued" status. `toFetch` is forced-first (deferred-from-last symbols lead),
+    // and the overflow this round's per-minute cap can't fund is `stale.slice
+    // (granted)`. This is the single source of truth for the row animation: it
+    // guarantees deferred-from-last symbols show as updating (they are pulled
+    // first), never mislabelled as queued while there is budget for them.
+    onPlan?.({ fetching: [...toFetch], deferred: stale.slice(granted) });
 
     if (toFetch.length > 0) {
       try {
@@ -820,13 +841,11 @@ export async function loadEurUsd(
     tiingoProxyUrl = null,
     tiingoFetchImpl,
     forexOpen = true,
-    force = false,
     reservation = ledgerReservation(storage ?? null),
   } = options;
-  // A manual tap may re-pull the live legs even while the forex weekend freeze is
-  // on; the result is then settled (no live instant), not a live spot.
-  const liveLegsAllowed = forexOpen || force;
-  const settledPull = force && !forexOpen;
+  // Live FX legs are allowed only while the forex market is open. A forced
+  // refresh may bypass scheduling, but it must not break the weekend freeze.
+  const liveLegsAllowed = forexOpen;
 
   const cached = readCachedEurUsd(storage ?? undefined);
   if (cached && cached.now !== null && now() - cached.at < ttlMs) {
@@ -839,27 +858,29 @@ export async function loadEurUsd(
     // rationale as loadQuotes): the grant atomically reads-and-debits the shared
     // ledger, so two overlapping loads can't both fire and 429, and the FX leg
     // no longer reads-and-debits the budget itself.
-    if (reservation.reserve("twelvedata", FREE_TIER.creditsPerSymbol, now()) >= FREE_TIER.creditsPerSymbol) {
+    const granted = reservation.reserve("twelvedata", FREE_TIER.creditsPerSymbol, now());
+    if (granted >= FREE_TIER.creditsPerSymbol) {
       try {
         const reading: EurUsdQuote = await fetchEurUsd(apiKey, fetchImpl);
         if (reading.now !== null) {
-          const at = now();
-          if (settledPull) {
-            // A forced off-hours re-pull: the forex market has no live spot, so the
-            // settled close (the quote's `previous_close`, the genuine Friday close)
-            // is the frozen mark — the thin indicative `now` is discarded so it can
-            // never masquerade as a live value. Stamp settled (no live instant), and
-            // keep the cached "yesterday" baseline since a quote's prior close is the
-            // settle we are now showing, not the baseline behind it.
-            const settledNow = reading.previousClose ?? reading.now;
-            const prevBaseline = cached?.previousClose ?? null;
-            writeCachedEurUsd({ now: settledNow, previousClose: prevBaseline }, at, storage ?? undefined, { observedAt: null });
-            return { now: settledNow, previousClose: prevBaseline, source: "live", at, observedAt: null, cached: false, error: null };
-          }
-          writeCachedEurUsd(reading, at, storage ?? undefined);
-          return { now: reading.now, previousClose: reading.previousClose, source: "live", at, observedAt: at, cached: false, error: null };
+          // Plan C4: time the FX mark to the **quote's own reported price time**
+          // (`fetchEurUsd` already surfaces it via `reading.at`, from Twelve Data's
+          // `timestamp`/`last_quote_at`), not the local pull clock. Stamping at
+          // `now()` mis-times the rate to when we happened to poll rather than to
+          // the instant it represents; the graphs need the rate's true instant so
+          // the live FX tip lands at the right place. Fall back to `now()` only
+          // when the provider omits a timestamp. (Mirrors the Tiingo FX leg below.)
+          const observedAt = reading.at ?? now();
+          writeCachedEurUsd(reading, observedAt, storage ?? undefined);
+          return { now: reading.now, previousClose: reading.previousClose, source: "live", at: observedAt, observedAt, cached: false, error: null };
         }
       } catch (err) {
+        // The call was rejected (over-quota 429, a 5xx, or a transport throw): the
+        // provider never billed it, so hand the reserved credit back — otherwise a
+        // transient FX miss that falls through to the cached spot below leaves a
+        // phantom credit booked, shrinking the same minute's quote budget and
+        // needlessly deferring symbols there was room for. Mirrors loadQuotes.
+        reservation.release("twelvedata", granted, now());
         liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
       }
     }
@@ -875,7 +896,8 @@ export async function loadEurUsd(
   // a single `reserve("tiingo", 1)` atomically folds in the 429 breaker AND the
   // hourly/daily caps and debits the grant, replacing both a separate frozen
   // guard and a read-then-record budget check.
-  if (tiingoProxyUrl && liveLegsAllowed && reservation.reserve("tiingo", 1, now()) > 0) {
+  const tiingoGranted = tiingoProxyUrl && liveLegsAllowed ? reservation.reserve("tiingo", 1, now()) : 0;
+  if (tiingoProxyUrl && tiingoGranted > 0) {
     try {
       const reading = await fetchTiingoEurUsd(tiingoProxyUrl, {
         fetchImpl: tiingoFetchImpl ?? fetchImpl,
@@ -884,16 +906,19 @@ export async function loadEurUsd(
         const at = now();
         const prevClose = cached && isSameUtcDay(cached.at, at) ? cached.previousClose : null;
         const observedAt = reading.at ?? at;
-        // A forced off-hours re-pull is settled: the weekend Tiingo mid simply
-        // repeats the last settled rate, so carry no live instant (observedAt:null)
-        // rather than dressing it up as a fresh "as of HH:MM" clock.
-        const displayObservedAt = settledPull ? null : observedAt;
-        writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined, { observedAt: displayObservedAt });
-        return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, observedAt: displayObservedAt, cached: false, error: liveError };
+        writeCachedEurUsd({ now: reading.now, previousClose: prevClose }, observedAt, storage ?? undefined);
+        return { now: reading.now, previousClose: prevClose, source: "tiingo", at: observedAt, observedAt, cached: false, error: liveError };
       }
     } catch (err) {
-      // A transient backup failure is non-fatal: record it on `error` and keep
-      // degrading to the cache / EOD rate below, never dead-ending the screen.
+      // The backup call was rejected (over-quota 429, a 5xx, or a transport
+      // throw): the provider never billed it, so hand the reserved Tiingo credit
+      // back before degrading to the cache / EOD rate below. Otherwise a transient
+      // Tiingo miss leaves a phantom credit booked against the *scarce* 40/hr web
+      // budget — the same phantom-credit bug just fixed for the primary FX leg and
+      // the Twelve Data quote pass, but on the much tighter Tiingo ledger. The 429
+      // breaker (armed by the caller) is what stops further attempts; the ledger
+      // must stay truthful. Mirrors loadQuotes / the primary leg / tiingo-fallback.
+      reservation.release("tiingo", tiingoGranted, now());
       liveError = err instanceof PriceError ? err : new PriceError((err as Error).message, { retryable: true });
     }
   }

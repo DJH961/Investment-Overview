@@ -80,7 +80,7 @@ describe("runScenario", () => {
       },
     };
     const result = await runScenario(scenario);
-    expect(result.plan?.tier).toBe("heavily-outdated");
+    expect(result.plan?.tier).toBe("outdated");
     expect(result.requests).toHaveLength(0);
   });
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -25,6 +25,7 @@ from investment_dashboard.adapters.frankfurter_client import (
     FrankfurterError,
     fetch_rates,
 )
+from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.repositories import fx_repo
 
@@ -57,10 +58,16 @@ class LiveSpot:
     ``observed_on`` lets :func:`get_rates` decide whether the spot is fresh
     enough to overlay as *today's* mark — a weekend/stale reading (dated before
     the real today) is ignored so we never pass off an old rate as live.
+
+    ``observed_at`` is the *instant* the spot was captured (the refresh tick's
+    clock), so the UI can surface the **live time** — "as of HH:MM" — exactly
+    like the web companion, instead of a vaguer "as of today". ``None`` for a
+    legacy reading recorded without a timestamp.
     """
 
     observed_on: date
     rate: Decimal
+    observed_at: datetime | None = None
 
 
 #: In-memory live FX spots keyed by quote currency (e.g. ``"USD"``). Populated
@@ -73,9 +80,24 @@ class LiveSpot:
 _LIVE_SPOT: dict[str, LiveSpot] = {}
 
 
-def set_live_spot(quote: str, rate: Decimal, *, observed_on: date) -> None:
-    """Record a live FX spot for ``quote`` (units of ``quote`` per 1 EUR)."""
-    _LIVE_SPOT[quote.upper()] = LiveSpot(observed_on=observed_on, rate=rate)
+def set_live_spot(
+    quote: str,
+    rate: Decimal,
+    *,
+    observed_on: date,
+    observed_at: datetime | None = None,
+) -> None:
+    """Record a live FX spot for ``quote`` (units of ``quote`` per 1 EUR).
+
+    ``observed_at`` is the capture instant for the UI's live "as of HH:MM" stamp;
+    when omitted it defaults to *now* (UTC) so a freshly-fetched spot always
+    carries an honest live time.
+    """
+    _LIVE_SPOT[quote.upper()] = LiveSpot(
+        observed_on=observed_on,
+        rate=rate,
+        observed_at=observed_at or datetime.now(UTC),
+    )
 
 
 def get_live_spot(quote: str = "USD") -> LiveSpot | None:
@@ -95,6 +117,7 @@ def refresh_live_spot(
     *,
     quote: str = "USD",
     today: date | None = None,
+    now: datetime | None = None,
     fetcher: object = None,
     tiingo_fetcher: object = None,
     tiingo_token: str | None = None,
@@ -103,18 +126,40 @@ def refresh_live_spot(
     """Fetch and store the live EUR→``quote`` spot, primary then Tiingo backup.
 
     The keyless yfinance ``EURUSD=X`` feed is the primary. When it is unavailable
-    or only offers a stale (pre-today) reading, **Tiingo** is tried as the
-    secondary live FX provider (mirroring the equity/NAV fallback): one budgeted
-    call to its FX top-of-book endpoint, gated so a sustained yfinance FX outage
-    can't burn the desktop Tiingo cap. Only fires when a Tiingo token is
-    configured; a vanilla install never touches Tiingo.
+    or only offers a stale (pre-today) reading **and the forex market is actually
+    open**, Tiingo is tried as the secondary live FX provider (mirroring the
+    equity/NAV fallback): one budgeted call to its FX top-of-book endpoint, gated
+    so a sustained yfinance FX outage can't burn the desktop Tiingo cap. Only
+    fires when a Tiingo token is configured; a vanilla install never touches it.
+
+    Crucially, Tiingo is **never** consulted while the spot-FX market is closed
+    (the weekend, or Friday-evening→Sunday-evening ET): there is no live quote to
+    fetch then, so the frozen last-settled rate stands and a Tiingo call would be
+    pure waste — the most common false routing this guards against. The currency
+    KPI still reads its settled rate from the ECB history; it just isn't given a
+    bogus "live" overlay outside trading hours.
+
+    The spot-FX (forex) market trades only ~24×5, dark across the weekend (Friday
+    17:00 → Sunday 17:00 ET). While it is **closed** no provider is polled at all:
+    any EUR/USD a feed still hands back over the weekend is an indicative
+    *projection*, not a live traded price, so accepting it would slide the EUR view
+    on a rate that never actually printed. The last in-session spot is left in
+    place as the frozen Friday close (it stops overlaying as *today's* mark of its
+    own accord once the calendar rolls past its observation day). ``now`` (the
+    instant judged against the forex clock; defaults to the current UTC instant) is
+    injectable for tests.
 
     Best-effort: returns the stored rate, or ``None`` when neither provider offers
-    a fresh today-dated reading. Only EUR→USD is sourced today; other quotes keep
-    the ECB daily rate. ``fetcher`` (yfinance), ``tiingo_fetcher``,
+    a fresh today-dated reading (or the forex market is closed). Only EUR→USD is
+    sourced today; other quotes keep the ECB daily rate. ``now`` (the instant
+    judged against the forex clock), ``fetcher`` (yfinance), ``tiingo_fetcher``,
     ``tiingo_token`` and ``charge_budget`` are injectable for tests.
     """
     if quote.upper() != "USD":
+        return None
+    # Never poll a provider while the forex market is shut: a weekend EUR/USD is a
+    # projection, not a live print, so it must not overlay as today's live mark.
+    if not market_hours.is_forex_market_open(now):
         return None
     today = today or date.today()
     if fetcher is None:
@@ -139,8 +184,17 @@ def refresh_live_spot(
     ):
         set_live_spot(quote, record.close, observed_on=record.date)
         return record.close
-    # Primary fell short (failed, unavailable, or only a stale reading) — engage
-    # the Tiingo secondary FX provider before conceding to the ECB daily rate.
+    # The primary fell short. Only escalate to the Tiingo secondary FX provider
+    # when the spot-FX market is genuinely open — a closed market has no live
+    # quote to retrieve, so we leave the settled ECB rate in place rather than
+    # waste a budgeted Tiingo call on a reading that would itself be stale.
+    from investment_dashboard.domain.market_hours import (  # noqa: PLC0415
+        is_forex_market_open,
+    )
+
+    if not is_forex_market_open(now):
+        log.debug("Live EUR/USD: forex market closed; skipping Tiingo backup")
+        return None
     return _refresh_live_spot_via_tiingo(
         quote=quote,
         today=today,
@@ -222,6 +276,7 @@ def _refresh_live_spot_via_tiingo(
     try:
         reading = fetcher()  # type: ignore[operator]
     except Exception as exc:  # pragma: no cover - network churn
+        _note_tiingo_rate_limit(exc)
         log.warning("Tiingo FX backup fetch failed (%s); keeping ECB daily rate", exc)
         return None
     if reading is None or reading.rate is None or reading.rate <= 0:
@@ -233,6 +288,111 @@ def _refresh_live_spot_via_tiingo(
     set_live_spot(quote, reading.rate, observed_on=today)
     log.info("Live EUR/USD spot sourced from Tiingo backup (%s)", reading.rate)
     return reading.rate
+
+
+def intraday_fx_bars_via_tiingo(
+    start_day: date,
+    end_day: date,
+    *,
+    interval: str = "15m",
+    base: str = "EUR",
+    quote: str = "USD",
+    fetcher: object | None = None,
+    token: str | None = None,
+    charge_budget: object | None = None,
+) -> dict[datetime, Decimal]:
+    """Budget-gated Tiingo intraday EUR→``quote`` bars for ``[start_day, end_day]``.
+
+    The **secondary** source for the 1D / 1W graphs' per-minute EUR/USD overlay,
+    consulted only *after* the keyless yfinance intraday feed yields nothing — so
+    yfinance is always tried first. Returns ``{bar_time_utc: rate}`` (the same
+    shape the yfinance intraday FX fetchers return), or ``{}`` to leave the day's
+    settled ECB rate in place.
+
+    Crucially this is **not** a live call: it pulls *settled* historical bars for
+    a completed/last session over an explicit date window, so — unlike the live
+    spot — it is sourced even while the spot-FX market is shut over the weekend
+    (the 1D graph still shows Friday's intraday FX shape). The live-spot path
+    stays the one that must never poll a closed market.
+
+    One budget-gated call. Returns ``{}`` when no Tiingo token is configured (a
+    vanilla install never touches it), the desktop budget is exhausted, or the
+    fetch fails / comes back empty. ``fetcher`` / ``token`` / ``charge_budget``
+    are injectable for tests.
+    """
+    if quote.upper() != "USD":
+        return {}
+    if token is None:
+        from investment_dashboard.services.prices_service import (  # noqa: PLC0415
+            _resolve_tiingo_token,
+        )
+
+        token = _resolve_tiingo_token()
+    if not token:
+        return {}  # No Tiingo configured — vanilla install, no backup.
+
+    gate = charge_budget if charge_budget is not None else _charge_desktop_tiingo_budget
+    if not gate():  # type: ignore[operator]
+        log.info("Tiingo intraday FX backup skipped: desktop Tiingo budget exhausted")
+        return {}
+
+    if fetcher is None:
+        from investment_dashboard.adapters.tiingo_client import (  # noqa: PLC0415
+            fetch_fx_intraday,
+        )
+
+        resolved_token = token
+
+        def fetcher() -> dict[datetime, Decimal]:
+            return fetch_fx_intraday(
+                start_day,
+                end_day,
+                base=base,
+                quote=quote,
+                interval=interval,
+                token=resolved_token,
+            )
+
+    try:
+        bars = fetcher()  # type: ignore[operator]
+    except Exception as exc:  # pragma: no cover - network churn
+        _note_tiingo_rate_limit(exc)
+        log.warning("Tiingo intraday FX backup fetch failed (%s); keeping settled rate", exc)
+        return {}
+    if not bars:
+        return {}
+    log.info(
+        "Intraday EUR/USD overlay sourced from Tiingo backup (%d bar(s), %s..%s)",
+        len(bars),
+        start_day,
+        end_day,
+    )
+    return dict(bars)
+
+
+def _note_tiingo_rate_limit(exc: BaseException) -> None:
+    """If ``exc`` is a Tiingo 429, pin the shared budget as spent until next :00.
+
+    A 429 means the account's hourly allowance is gone regardless of our own
+    counter, so we max out the hourly bucket (and stamp the rate-limit time for
+    Settings). Best-effort and fully isolated — never let a budget write break the
+    FX refresh itself.
+    """
+    from investment_dashboard.adapters._retry import RateLimitedError  # noqa: PLC0415
+
+    if not isinstance(exc, RateLimitedError):
+        return
+    try:
+        from datetime import UTC, datetime  # noqa: PLC0415
+
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.repositories import tiingo_state_repo  # noqa: PLC0415
+
+        now_utc = datetime.now(tz=UTC).replace(tzinfo=None)
+        with ledger_session_scope() as session:
+            tiingo_state_repo.mark_rate_limited(session, now_utc)
+    except Exception:  # pragma: no cover - defensive: never block FX on DB issues
+        log.warning("Could not record Tiingo rate-limit against the budget", exc_info=True)
 
 
 def _record_status(status: str, message: str) -> None:
@@ -418,7 +578,11 @@ def _fallback_today_via_tiingo(
     budget is exhausted, the fetch fails, or the reading is stale (not dated
     today) — leaving the cached/stale rate as the floor.
     """
-    if quote.upper() != "USD":
+    # Skip non-USD quotes, and don't reach for a "live" Tiingo tip on a non-trading
+    # FX day: the spot-FX market is dark across the weekend (and ECB never fixes
+    # then), so there is no genuine today-dated rate to fetch — only the settled
+    # Friday rate stands.
+    if quote.upper() != "USD" or today.weekday() >= 5:
         return None
     if token is None:
         from investment_dashboard.services.prices_service import (  # noqa: PLC0415
@@ -447,6 +611,7 @@ def _fallback_today_via_tiingo(
     try:
         reading = fetcher()  # type: ignore[operator]
     except Exception as exc:  # pragma: no cover - network churn
+        _note_tiingo_rate_limit(exc)
         log.warning("Tiingo FX history fallback fetch failed (%s); keeping stale rate", exc)
         return None
     # Reject an unusable or stale reading (e.g. a weekend/holiday last quote) —
@@ -525,3 +690,64 @@ def get_rate_eur_to_quote(
     """
     rates = get_rates(session, base=base, quote=quote)
     return lookup_rate_with_forward_fill(rates, target)
+
+
+@dataclass(frozen=True)
+class FxAsOf:
+    """Provenance of the EUR→``quote`` rate currently driving the UI.
+
+    Mirrors the web companion's FX "as of" / "EOD FX" stamps so the desktop is
+    just as transparent about *which day's rate* it is showing:
+
+    * ``as_of`` — the calendar date the displayed rate genuinely belongs to.
+      For a ``"live"`` reading that is today; for an ``"eod"`` reading it is the
+      most recent settled ECB/Frankfurter fixing at or before today (forward-fill
+      means a Friday rate is what values a Saturday).
+    * ``source`` — ``"live"`` when a today-dated intraday spot is overlaid (see
+      :func:`get_rates`), else ``"eod"`` for the keyless end-of-day reference
+      rate that carries no intraday observation instant.
+    * ``observed_at`` — the *instant* a live spot was captured, so the UI can
+      stamp the **live time** ("as of HH:MM") just like the web. ``None`` for an
+      end-of-day reading (which has no intraday observation) or a legacy spot.
+    """
+
+    as_of: date
+    source: str  # "live" | "eod"
+    observed_at: datetime | None = None
+
+    @property
+    def is_live(self) -> bool:
+        return self.source == "live"
+
+
+def eur_quote_as_of(
+    session: Session,
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+    today: date | None = None,
+) -> FxAsOf | None:
+    """Describe *which day's* EUR→``quote`` rate the UI is currently showing.
+
+    Resolves the same way :func:`get_rate_eur_to_quote` resolves *today's* mark,
+    then reports its provenance for an honest "as of" / "EOD FX" stamp:
+
+    * a today-dated live intraday spot (when overlaid by :func:`get_rates`) →
+      :class:`FxAsOf` ``source="live"``, ``as_of`` = today, ``observed_at`` = the
+      spot's capture instant (for a live "as of HH:MM" clock);
+    * otherwise the most recent settled ECB fixing at or before today →
+      ``source="eod"``, ``as_of`` = that fixing's date.
+
+    Returns ``None`` only when no rate is available at all (an empty history with
+    no live overlay), so the caller can simply omit the stamp.
+    """
+    today = today or date.today()
+    if base == "EUR":
+        live = _LIVE_SPOT.get(quote.upper())
+        if live is not None and live.observed_on == today:
+            return FxAsOf(as_of=today, source="live", observed_at=live.observed_at)
+    rates = get_rates(session, base=base, quote=quote)
+    prior = [d for d in rates if d <= today]
+    if not prior:
+        return None
+    return FxAsOf(as_of=max(prior), source="eod")

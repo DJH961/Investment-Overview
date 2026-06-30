@@ -47,6 +47,8 @@ function holding(over: Over): HoldingView {
     todayMovePct: num(over.todayMovePct),
     todayMoveIsStale: over.todayMoveIsStale ?? false,
     todayFxMoveEur: null,
+    priorCloseValueEur: null,
+    priorCloseValueUsd: null,
     weight: null,
     unrealisedPlEur: null,
     totalGrowthPct: null,
@@ -179,5 +181,33 @@ describe("buildMovers", () => {
     ];
     expect(buildMovers(holdings, "EUR").winners.map((w) => w.symbol)).toEqual(["BIG", "AAA"]);
     expect(buildMovers(holdings, "USD").winners.map((w) => w.symbol)).toEqual(["BIG", "BBB"]);
+  });
+
+  it("dates the board off the moves, not a fresher no-move price (stale/cold start)", () => {
+    // A holding can be flagged `todayMoveIsStale` because some *other* row carries
+    // a fresher price while itself contributing no move (e.g. a par-NAV money
+    // market that always sits on today). The leaderboard must ignore that global
+    // flag and date itself off the freshest holding that actually moved, so a cold
+    // book of last-session moves on one shared older date still shows.
+    const movers = buildMovers([
+      holding({
+        symbol: "AAA",
+        todayMoveEur: 300,
+        todayMovePct: 0.03,
+        todayMoveIsStale: true,
+        priceFallbackDate: "2024-06-02",
+      }),
+      holding({
+        symbol: "BBB",
+        todayMoveEur: -120,
+        todayMovePct: -0.02,
+        todayMoveIsStale: true,
+        priceFallbackDate: "2024-06-02",
+      }),
+    ]);
+    expect(movers.winners.map((w) => w.symbol)).toEqual(["AAA"]);
+    expect(movers.losers.map((l) => l.symbol)).toEqual(["BBB"]);
+    expect(movers.basisDate).toBe("2024-06-02");
+    expect(movers.eligibleCount).toBe(2);
   });
 });

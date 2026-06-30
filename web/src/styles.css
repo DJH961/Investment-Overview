@@ -873,7 +873,7 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
    line that narrates the price-pull cycle — a quiet "Updated <time>" stamp, an
    "Updating…" state with lit dots while a pull is live or queued, and a brief
    "Updated ✓" success flash that settles back to the stamp once a price lands. */
-.holding-status-row { display: flex; justify-content: flex-end; margin-top: -0.1rem; }
+.holding-status-row { display: flex; justify-content: flex-end; margin-top: -0.1rem; min-width: 0; }
 .holding-status {
   display: inline-flex;
   align-items: center;
@@ -883,8 +883,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   font-variant-numeric: tabular-nums;
   color: var(--faint);
   line-height: 1.2;
+  /* Stay within the card on the narrowest layouts (mobile, two-column desktop):
+     never let the caption push past its row — the label ellipsises first while
+     the seconds countdown (the part that matters) is always kept whole. */
+  max-width: 100%;
+  min-width: 0;
 }
-.holding-status-text { white-space: nowrap; }
+.holding-status-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 /* The "Updating…" state (live pull or queued) reads in the muted accent so a
    glance across the list separates the cards in motion from the settled ones. */
 .holding-status--updating,
@@ -905,6 +915,13 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .holding-status-dot:nth-child(3) { animation-delay: 0.36s; }
 /* Queued dots breathe slower, reinforcing the "parked, not pulling" feel. */
 .holding-status--queued .holding-status-dot { animation-duration: 1.8s; }
+/* The queued ETA countdown ("120", "119", … seconds to this holding's turn).
+   Tabular figures so the single digit ticking down doesn't shuffle the layout. */
+.holding-status-eta {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  flex: none;
+}
 @keyframes holding-dot-pulse {
   0%, 100% { opacity: 0.25; transform: translateY(0); }
   40% { opacity: 1; transform: translateY(-0.06rem); }
@@ -1477,6 +1494,18 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   min-height: 8rem;
   text-align: center;
   padding: 0 1rem;
+  /* The `.note` class this also carries adds a small horizontal margin; zero it
+     so the full-width box can never spill past its wrapper and nudge the page
+     into a tiny horizontal overflow (it must match the graph's width exactly). */
+  margin: 0;
+}
+/* Once the real chart's height has been remembered, the placeholder copies it
+   verbatim (inline `height`), so the loading box is a pixel match for the graph
+   on every viewport — drop the aspect-ratio/min-height estimate that the inline
+   height supersedes. */
+.chart-live-status--measured {
+  aspect-ratio: auto;
+  min-height: 0;
 }
 /* Time-range presets above a chart (mobile-first: a small wrapping button row). */
 .chart-block { display: grid; gap: 0.5rem; }
@@ -1501,6 +1530,37 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
   background: color-mix(in srgb, var(--accent) 12%, var(--card));
+}
+/* Web-UI track O4(b): the per-graph "refresh bars" button sits after the range
+   pills and re-pulls the in-view live window. A circular, glyph-only icon action
+   — visually distinct from the pill-shaped range selectors and set slightly apart
+   so it never reads as a sixth range — using the same ↻ glyph as the global
+   Refresh button for a consistent "refresh" vocabulary. The glyph spins while a
+   pull is in flight (motion-reduced users get a static disabled state instead). */
+.chart-range-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  margin-left: 0.45rem;
+  color: var(--muted);
+}
+.chart-range-refresh-glyph { font-size: 0.95rem; line-height: 1; display: inline-block; }
+.chart-range-refresh:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.chart-range-refresh:disabled { cursor: progress; opacity: 0.55; }
+.chart-range-refresh.is-refreshing .chart-range-refresh-glyph {
+  animation: chart-refresh-spin 0.9s linear infinite;
+}
+@keyframes chart-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart-range-refresh.is-refreshing .chart-range-refresh-glyph { animation: none; }
 }
 .chart-svg {
   display: block;
@@ -1882,8 +1942,11 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .content { padding-bottom: 3.5rem; order: 2; }
 
   /* The tab bar is no longer a fixed bottom overlay here, so the build-version
-     line needs no bottom clearance for it. */
-  .app-version { padding-bottom: 1.4rem; }
+     line needs no bottom clearance for it. The flex order must keep it last —
+     topbar (0) → tabbar (1) → content (2) → version (3) — otherwise it falls
+     back to order 0 and floats up beside the topbar instead of sitting at the
+     bottom. */
+  .app-version { padding-bottom: 1.4rem; order: 3; }
 
   /* Reflow the nav from a fixed bottom bar to a top tab strip. */
   .tabbar {
@@ -2195,10 +2258,58 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .settings-section:first-of-type { margin-top: 1rem; }
 .settings-slot[hidden] { display: none; }
 
+/* Collapsible Settings sections: each is a tappable header over a folded body
+ * so the menu reads as a short, scannable list. Reuses the shared .collapsible
+ * chevron. The header uppercase styling matches the old .settings-section. */
+.settings-group {
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+.settings-group > .collapsible-summary { margin: 0.9rem 0.1rem; }
+.settings-group > .collapsible-summary h2 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.settings-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding-bottom: 1rem;
+}
+.settings-group-sub { margin: 0 0 0.2rem; }
+
 /* Export/Import config button row — keeps the portable-config buttons on one
  * line, wrapping on narrow screens. */
 .import-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .import-row .btn { flex: 0 0 auto; }
+
+/* The diagnostic price-service probe's result block: a readable, scrollable
+ * monospace transcript of the full raw provider response, colour-keyed by
+ * outcome (green border = a usable quote, red = a failure/over-limit). */
+.probe-result {
+  margin: 0.6rem 0 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  max-height: 22rem;
+}
+.probe-result.ok { border-left-color: var(--pos); }
+.probe-result.err { border-left-color: var(--neg); }
+.probe-warn-text { color: var(--neg); font-weight: 600; margin-bottom: 0.5rem; white-space: pre-wrap; }
+.probe-warn-actions { margin-top: 0.2rem; }
 
 /* A small, non-blocking "Updating…" pill while a live refresh runs in the
  * background. Bottom-centred so it clears the fixed mobile tab bar. */

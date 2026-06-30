@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 
 from investment_dashboard.ui.charts import padded_range
 from investment_dashboard.ui.pages._overview_query import ValueSeriesPoint
-from investment_dashboard.ui.pages.overview import _value_curve_figure
+from investment_dashboard.ui.pages.overview import _value_curve_figure, _week_xaxis_range
 from investment_dashboard.ui.theme import register_plotly_template
 
 # The figure uses the app's custom Plotly template; register it for these tests.
@@ -155,3 +155,98 @@ class TestWeekSessionAxis:
         assert not fig.layout.xaxis.rangebreaks
         assert None not in list(fig.data[0].y)
         assert not [s for s in fig.layout.shapes if s.type == "line"]
+
+
+class TestWeekFullDayPlane:
+    """The latest 1W session gets a full-width day-plane so a still-forming today's
+    live tip sits at its true time-of-day rather than the band's right edge."""
+
+    def test_axis_end_reaches_the_session_close_on_the_last_day(self) -> None:
+        # Two settled sessions (open 15:00 → close 22:00) plus a today that has
+        # only just opened (a single 15:30 point). The axis must still end at the
+        # close hour (22:00) on today's date, reserving today a full band.
+        pts = [
+            *_week_session_pts(),
+            ValueSeriesPoint(date=datetime(2024, 6, 5, 15, 30), value=Decimal("108")),
+        ]
+        rng = _week_xaxis_range([p.date for p in pts])
+        assert rng is not None
+        start, end = rng
+        assert start == datetime(2024, 6, 3, 15, 0)  # first session open
+        assert end == datetime(2024, 6, 5, 22, 0)  # close hour, today's date
+
+    def test_axis_range_applied_to_week_figure(self) -> None:
+        pts = [
+            *_week_session_pts(),
+            ValueSeriesPoint(date=datetime(2024, 6, 5, 15, 30), value=Decimal("108")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", week=True)
+        rng = fig.layout.xaxis.range
+        assert rng is not None
+        # Plotly stores the range as ISO strings; the end carries the 22:00 close.
+        end_str = str(rng[1])
+        assert "2024-06-05" in end_str
+        assert "22:00" in end_str
+
+    def test_closed_session_end_is_a_noop_at_the_real_close(self) -> None:
+        # When the last point already sits at the close, the reserved end equals
+        # it — the band is full and nothing is stretched.
+        pts = _week_session_pts()  # last point is 2024-06-04 22:00 (the close)
+        rng = _week_xaxis_range([p.date for p in pts])
+        assert rng is not None
+        assert rng[1] == datetime(2024, 6, 4, 22, 0)
+
+    def test_no_range_for_daily_fallback_or_too_few_points(self) -> None:
+        # Plain date points (daily fallback) and single points keep autorange.
+        assert _week_xaxis_range([date(2024, 6, 3)]) is None  # type: ignore[list-item]
+        assert _week_xaxis_range([datetime(2024, 6, 3, 15, 0)]) is None
+
+    def test_no_range_when_session_wraps_past_midnight(self) -> None:
+        # A session whose close time-of-day is not later than its open (wraps
+        # midnight) keeps the plain autorange, mirroring the rangebreaks guard.
+        wrap = [
+            datetime(2024, 6, 3, 22, 0),
+            datetime(2024, 6, 4, 22, 0),
+        ]
+        # min/max time-of-day are equal here ⇒ no usable open→close span.
+        assert _week_xaxis_range(wrap) is None
+
+
+class TestHoverTimestamp:
+    def test_week_hover_header_includes_time(self) -> None:
+        # The "x unified" tooltip header is formatted by ``hoverformat`` (not the
+        # per-trace template), so the 1W read-out must carry the timestamp.
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        assert fig.layout.xaxis.hoverformat == "%a %d %b %H:%M"
+
+    def test_intraday_hover_header_is_time_of_day(self) -> None:
+        pts = [
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 14, 0), value=Decimal("100")),
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 18, 0), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert fig.layout.xaxis.hoverformat == "%H:%M"
+
+
+class TestIntradayDayLabel:
+    def test_title_names_the_day_when_not_today(self) -> None:
+        # A frozen weekend session (3 June 2024) is not "today": the title must
+        # name the real day instead of misleadingly reading "today".
+        pts = [
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 14, 0), value=Decimal("100")),
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 18, 0), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert "today" not in fig.layout.title.text
+        assert "Mon 03 Jun" in fig.layout.title.text
+
+    def test_title_says_today_for_todays_session(self) -> None:
+        # Anchor to today's calendar date at midday so the assertion stays
+        # deterministic (never straddles a midnight boundary mid-run).
+        today_noon = datetime.combine(date.today(), datetime.min.time()).replace(hour=12)
+        pts = [
+            ValueSeriesPoint(date=today_noon.replace(hour=10), value=Decimal("100")),
+            ValueSeriesPoint(date=today_noon.replace(hour=11), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert "today" in fig.layout.title.text

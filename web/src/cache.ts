@@ -882,6 +882,27 @@ export function writeLastPull(at: number, storage: StorageLike | null = defaultS
   writeJson(storage, LAST_PULL_KEY, { at });
 }
 
+// --- Last login prefetch (reload debounce) ---------------------------------
+
+const LAST_PREFETCH_KEY = "iv.web.last_prefetch";
+
+/**
+ * Read the epoch-ms timestamp of the last time the login-time prefetch *started*,
+ * or null when none has been recorded. Persisted (unlike {@link readLastPull},
+ * which only stamps a *successful* network pull) so it survives a full-page
+ * reload and lets the next boot debounce a duplicate warm-up — the human
+ * fingerprint-fumble / cache-busting reload spam the prefetch is gated against.
+ */
+export function readLastPrefetch(storage: StorageLike | null = defaultStorage()): number | null {
+  const raw = readJson<{ at?: unknown }>(storage, LAST_PREFETCH_KEY);
+  return raw && typeof raw.at === "number" ? raw.at : null;
+}
+
+/** Persist the last-prefetch-start timestamp (epoch ms). */
+export function writeLastPrefetch(at: number, storage: StorageLike | null = defaultStorage()): void {
+  writeJson(storage, LAST_PREFETCH_KEY, { at });
+}
+
 // --- Live-data prefetch plan ------------------------------------------------
 
 const SYMBOL_PLAN_KEY = "iv.web.symbol_plan";
@@ -1030,4 +1051,71 @@ export function clearPriceCaches(storage: StorageLike | null = defaultStorage())
       /* best-effort: a storage failure just leaves that cache in place. */
     }
   }
+}
+
+// --- Long-term deferred work-queue persistence -----------------------------
+
+const DEFERRED_QUEUE_KEY = "iv.web.deferred_queue";
+
+/**
+ * One persisted deferred-queue entry — the storage shape mirroring
+ * `DeferredSnapshotEntry` in `deferred-queue.ts` (kept structurally compatible
+ * rather than imported so the cache layer stays free of engine types). Persisting
+ * the queue is what makes it **long-term**: a symbol parked because no price
+ * service could be reached is re-attempted on the next session too, instead of
+ * being forgotten the moment the tab closes.
+ */
+export interface StoredDeferredEntry {
+  symbol: string;
+  reason: string;
+  attempts: number;
+  force: boolean;
+}
+
+/**
+ * Read the persisted deferred work-queue (oldest first), or an empty array when
+ * nothing is stored / the blob is malformed. Each entry is sanitised so a junk
+ * value in storage can never crash the restore.
+ */
+export function readDeferredQueue(
+  storage: StorageLike | null = defaultStorage(),
+): StoredDeferredEntry[] {
+  const raw = readJson<unknown[]>(storage, DEFERRED_QUEUE_KEY);
+  if (!Array.isArray(raw)) return [];
+  const out: StoredDeferredEntry[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const e = item as Record<string, unknown>;
+    if (typeof e.symbol !== "string" || e.symbol.length === 0) continue;
+    out.push({
+      symbol: e.symbol,
+      reason: typeof e.reason === "string" ? e.reason : "restored",
+      attempts:
+        typeof e.attempts === "number" && Number.isFinite(e.attempts)
+          ? Math.max(0, Math.trunc(e.attempts))
+          : 0,
+      force: e.force === true,
+    });
+  }
+  return out;
+}
+
+/**
+ * Persist the deferred work-queue. An empty list removes the key so a drained
+ * queue leaves no stale storage behind.
+ */
+export function writeDeferredQueue(
+  entries: readonly StoredDeferredEntry[],
+  storage: StorageLike | null = defaultStorage(),
+): void {
+  if (!storage) return;
+  if (entries.length === 0) {
+    try {
+      storage.removeItem(DEFERRED_QUEUE_KEY);
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
+  writeJson(storage, DEFERRED_QUEUE_KEY, entries);
 }

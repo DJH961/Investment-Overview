@@ -8,7 +8,10 @@ import {
   recordCredits,
   recordTiingoCredits,
   releaseCredits,
-  readCachedEurUsd,
+  readCreditLog,
+  readTiingoCreditLog,
+  tiingoCreditsSpentToday,
+  creditsSpentWithin,
   writeCachedEurUsd,
   writeCachedFx,
   writeCachedQuotes,
@@ -303,6 +306,41 @@ describe("loadQuotes — free-tier budget", () => {
     expect(report.deferred).not.toContain("S10");
     expect(report.deferred).not.toContain("S11");
     expect(report.deferred.length).toBe(4);
+  });
+
+  it("onPlan reports the deferred-from-last (forced) symbols in `fetching`, never bumped to a later round", async () => {
+    // Regression for the auto-update animation bug: a round must pull the symbols
+    // deferred from last time *first* and only push genuinely-ordinary overflow to
+    // a later round — it must never do "its own" symbols and re-defer the forced
+    // ones while there was budget for them. `onPlan` is the single source of truth
+    // the row animation paints from, so we assert it splits forced-first.
+    const storage = memStorage();
+    const symbols = Array.from({ length: 12 }, (_, i) => `S${i}`);
+    // S8..S11 are drained from the deferred queue this round (forced). They trail
+    // the incoming order, yet there is budget (8/min) for all four plus four
+    // ordinary symbols — so all four forced symbols belong in `fetching`.
+    const forced = new Set(["S8", "S9", "S10", "S11"]);
+    const fetchImpl = vi.fn<FetchLike>(async (url) => quoteResponse(url));
+    let plan: { fetching: string[]; deferred: string[] } | null = null;
+    await loadQuotes(symbols, "key", {
+      fetchImpl,
+      storage,
+      now: clock(0),
+      sleep: noSleep,
+      creditsPerMinute: 8,
+      forceFetch: (s) => forced.has(s),
+      onPlan: (p) => {
+        plan = p;
+      },
+    });
+    expect(plan).not.toBeNull();
+    const resolved = plan as unknown as { fetching: string[]; deferred: string[] };
+    // Every deferred-from-last (forced) symbol is fetched this round…
+    for (const s of forced) expect(resolved.fetching).toContain(s);
+    // …and the overflow pushed to a later round is purely ordinary stale symbols.
+    for (const s of forced) expect(resolved.deferred).not.toContain(s);
+    expect(resolved.fetching.length).toBe(8);
+    expect(resolved.deferred.length).toBe(4);
   });
 
   it("reports an attempted-but-unpriced symbol as failed, not deferred", async () => {
@@ -780,12 +818,33 @@ describe("loadEurUsd", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("re-pulls FX over the weekend freeze on a forced tap, returning a settled close (no live instant)", async () => {
+  it("stamps the live FX mark at the quote's own price time, not the pull clock (plan C4)", async () => {
+    const storage = memStorage();
+    // The provider reports the rate's genuine strike time via `last_quote_at`
+    // (Unix seconds). The FX mark must be timed to that instant, not to whenever
+    // we happened to poll — otherwise the live FX tip lands at the wrong place.
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      jsonResponse({
+        symbol: "EUR/USD",
+        close: "1.0900",
+        previous_close: "1.0750",
+        currency: "USD",
+        last_quote_at: 1700,
+      }),
+    );
+    const res = await loadEurUsd("key", { fetchImpl, storage, now: clock(50_000) });
+    expect(res.source).toBe("live");
+    expect(res.now?.toString()).toBe("1.09");
+    // 1700 Unix seconds → 1_700_000 ms — the quote's price time, not the pull clock (50_000).
+    expect(res.at).toBe(1_700_000);
+    expect(res.observedAt).toBe(1_700_000);
+  });
+
+  it("keeps FX frozen over the weekend even on a forced tap", async () => {
     const storage = memStorage();
     // Hold a prior "yesterday" baseline so we can assert it survives the re-pull.
     writeCachedEurUsd({ now: new Decimal("1.084"), previousClose: new Decimal("1.071") }, 1000, storage);
     const fetchImpl = vi.fn<FetchLike>(async () =>
-      // A weekend quote: a thin indicative `close` plus Friday's settled close.
       jsonResponse({ symbol: "EUR/USD", close: "1.0930", previous_close: "1.0850", currency: "USD" }),
     );
     const res = await loadEurUsd("key", {
@@ -796,15 +855,11 @@ describe("loadEurUsd", () => {
       forexOpen: false,
       force: true,
     });
-    // The forced tap genuinely hits the wire even though the forex market is shut.
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(res.source).toBe("live");
-    // The settled close (previous_close) is the frozen mark — never the indicative.
-    expect(res.now?.toString()).toBe("1.085");
-    // The reading is settled: no live observation instant, so the UI shows a date.
-    expect(res.observedAt).toBeNull();
-    // Stored settled too, so a follow-up cache read stays date-labelled.
-    expect(readCachedEurUsd(storage)!.observedAt).toBeNull();
+    // The forced tap still obeys the freeze: no wire hit, no indicative quote.
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(res.source).toBe("cache");
+    expect(res.now?.toString()).toBe("1.084");
+    expect(res.previousClose?.toString()).toBe("1.071");
   });
 
   it("does not re-pull FX over the weekend freeze on an ordinary (non-forced) round", async () => {
@@ -860,6 +915,59 @@ describe("loadEurUsd", () => {
     expect(res.source).toBe("cache");
     expect(res.now?.toString()).toBe("1.084");
     expect(res.previousClose?.toString()).toBe("1.071");
+  });
+
+  it("releases the reserved credit when a transient FX failure falls back to cache", async () => {
+    const storage = memStorage();
+    // A cached intraday reading from earlier today, now past its TTL so a live
+    // tap is attempted.
+    writeCachedEurUsd({ now: new Decimal("1.10"), previousClose: new Decimal("1.09") }, 1000, storage);
+    // The live leg is rejected (429): the provider never billed the credit.
+    const fetchImpl = vi.fn<FetchLike>(async () => {
+      throw new PriceError("rate limited", { retryable: true, status: 429 });
+    });
+    const res = await loadEurUsd("key", {
+      fetchImpl,
+      storage,
+      now: clock(3_600_000),
+      ttlMs: 15 * 60 * 1000,
+    });
+    // We degrade to today's cached spot…
+    expect(res.source).toBe("cache");
+    // …and the reserved-but-unbilled credit is handed back, so it does not eat
+    // into the same minute's quote budget (which would needlessly defer symbols).
+    const spent = creditsSpentWithin(readCreditLog(3_600_000, 24 * 3600 * 1000, storage), 3_600_000, 60 * 1000);
+    expect(spent).toBe(0);
+  });
+
+  it("releases the reserved Tiingo credit when the FX backup transiently fails", async () => {
+    const storage = memStorage();
+    // Exhaust the Twelve Data per-minute budget so the primary leg is skipped and
+    // we reach the Tiingo FX backup.
+    recordCredits(8, 1000, storage);
+    // A same-day cached intraday reading (past its TTL) so a degrade lands on the
+    // cached spot rather than the flat EOD rate — proving we fell back, not billed.
+    writeCachedEurUsd({ now: new Decimal("1.10"), previousClose: new Decimal("1.095") }, 1000, storage);
+    // The Tiingo backup is rejected (429): the provider never billed the credit.
+    const tiingoFetchImpl = vi.fn<FetchLike>(async () => {
+      throw new PriceError("rate limited", { retryable: true, status: 429 });
+    });
+    const res = await loadEurUsd("key", {
+      fetchImpl: vi.fn<FetchLike>(),
+      tiingoFetchImpl,
+      storage,
+      now: clock(120_000), // same UTC day, past the TTL
+      ttlMs: 60_000,
+      tiingoProxyUrl: "https://worker.example.dev/price",
+      eodFallback: new Decimal("1.07"),
+    });
+    expect(tiingoFetchImpl).toHaveBeenCalledTimes(1);
+    // We degrade to today's cached spot…
+    expect(res.source).toBe("cache");
+    // …and the reserved-but-unbilled Tiingo credit is handed back, so it does not
+    // eat into the scarce hourly/daily Tiingo budget.
+    const spent = tiingoCreditsSpentToday(readTiingoCreditLog(120_000, 24 * 3600 * 1000, storage), 120_000);
+    expect(spent).toBe(0);
   });
 
   it("drops to the end-of-day rate when the cache is from before today", async () => {

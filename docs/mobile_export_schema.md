@@ -238,6 +238,15 @@ new sections are **optional and absent-tolerant**: a reader that knows only
 - `nav_prices`: `{ symbol: [[date, price_native], ...] }` — per-day published
   NAV per NAV/cash holding over the window (token-free, from the settled closes
   the daily pull already persisted), so the web reapplies the NAV base per day.
+- `mm_value_native`: `{ symbol: [[date, value_native], ...] }` — per-day
+  money-market / settlement **value** (USD) per fund (VMFXX, SPAXX …). Money
+  market funds pin a constant $1.00 NAV, so a NAV *price* line is flat and
+  uninformative; their value moves with the **share count**, which transactions
+  (deposits/dividends) change — sometimes while the market is shut, so the
+  freshest balance is *newer* than the last market close. Shipping the
+  value-as-of each session date lets the web step the base on the day a flow
+  landed instead of shifting the whole 1D/1W curve up by today's balance; `[-1]`
+  is the latest settled close per fund. Sourced from the ledger (no network).
 - `trail`: the desktop's dense whole-book live samples, **display-only** — the
   web rebases and splices them after its freshest real point but **never** merges
   or cross-checks them.

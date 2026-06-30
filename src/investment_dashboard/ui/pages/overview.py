@@ -17,6 +17,7 @@ from investment_dashboard.domain.returns import years_between
 from investment_dashboard.domain.session_fx import fx_buying_power_split, fx_effect_split
 from investment_dashboard.services import (
     display_currency_service,
+    fx_service,
     intraday_snapshots_service,
     investing_power_service,
     prices_service,
@@ -24,6 +25,7 @@ from investment_dashboard.services import (
     timezone_service,
 )
 from investment_dashboard.services.daily_growth_view import (
+    DailyGrowthCaption,
     build_daily_growth_caption,
     fx_move_pct,
 )
@@ -34,7 +36,11 @@ from investment_dashboard.ui.components import (
     kpi_card,
     section,
 )
-from investment_dashboard.ui.components.kpi_card import dual_kpi_card, dual_pct_kpi_card
+from investment_dashboard.ui.components.kpi_card import (
+    dual_kpi_card,
+    dual_pct_kpi_card,
+    today_kpi_card,
+)
 from investment_dashboard.ui.layout import page_frame
 from investment_dashboard.ui.money_format import (
     currency_symbol,
@@ -180,6 +186,7 @@ def _verdict_card(verdict: MarketVerdict) -> None:
         tooltip_key="market_verdict",
         color=color,
         arrow=arrow,
+        value_class="inv-kpi-verdict",
     )
 
 
@@ -250,17 +257,19 @@ class _FxBoxRegime:
       closed". This is a ``session_view``.
     * **market_open** — the live US session; the regular live view (a session_view).
     * **weekend_overnight** — forex has reopened (Sun ≥17:00 ET) but no US session
-      has opened since: Sunday evening through Monday's 09:30 open. The only honest
-      move is the single overnight drift since Friday's close — no stale Friday
-      market-hours leg.
+      has opened since: Sunday evening through Monday's 09:30 open. The spot-FX
+      weekend close is just a *pause*, so Friday's session stays the previous
+      session: the box keeps the full two-leg split (Friday's market-hours leg + the
+      live overnight drift since its close), re-anchored to Friday's open exactly
+      like the frozen weekend. A ``session_view``.
     * **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
-      July): forex trades but the US session is shut, so likewise a single overnight
-      number, kept under its "Market holiday" wording.
+      July): forex trades but the US session is shut, so a single overnight number,
+      kept under its "Market holiday" wording.
     * otherwise a **regular weekday post-close / pre-open** (a session_view).
 
-    ``single_overnight`` (holiday ∨ weekend_overnight, with forex open and US shut)
-    marks the two one-number, no-split regimes; ``session_view`` (its complement)
-    marks the three-stat, two-leg-split regimes.
+    ``single_overnight`` (holiday only, with forex open and US shut) marks the lone
+    one-number, no-split regime; ``session_view`` (its complement) marks the
+    three-stat, two-leg-split regimes.
     """
 
     market_open: bool
@@ -285,7 +294,7 @@ def _fx_box_regime(now: datetime) -> _FxBoxRegime:
         and not holiday
         and market_hours.regular_session_open(last_session) < market_hours.last_forex_reopen(now)
     )
-    single_overnight = forex_open and not market_open and (holiday or weekend_overnight)
+    single_overnight = forex_open and not market_open and holiday
     session_view = not single_overnight
     return _FxBoxRegime(
         market_open=market_open,
@@ -317,82 +326,231 @@ def _format_forex_reopen(reopen_at: datetime, now: datetime, *, tz: tzinfo | Non
     return f"reopens {when.strftime('%a')} {clock}"
 
 
+def _local_date(now: datetime, tz: tzinfo | None) -> date:
+    """``now``'s calendar date on the viewer's own clock (``tz``), else UTC."""
+    return (now.astimezone(tz) if tz is not None else now).date()
+
+
+def _frozen_day_label(session_date: date, now: datetime, *, tz: tzinfo | None = None) -> str:
+    """The frozen-state day label for the box's "Today" stat.
+
+    Mirrors the web companion's ``frozenDayLabel``: while the FX market is frozen at
+    a settled session (the weekend) that figure is no longer "today" — it is the last
+    trading day. So it reads **"Yesterday"** when the settled session was the day
+    before, else the **weekday name** ("Friday") once it is further removed.
+    """
+    diff = (_local_date(now, tz) - session_date).days
+    if diff <= 1:
+        return "Yesterday"
+    return session_date.strftime("%A")
+
+
+def _effect_since_phrase(now: datetime, *, tz: tzinfo | None = None) -> str:
+    """The regime-aware "since …" phrase shared by the EUR currency-effect and USD
+    investing-power panel titles, so both name the same reference the headline
+    measures against. Mirrors the web companion's ``effectSincePhrase``:
+
+    * **frozen weekend** — the effect is the *last completed session's* swing, so
+      name that real settled day ("on Friday" / "yesterday");
+    * **weekend spill-over** (forex reopened Sunday, US still shut) — Friday stays
+      the previous session (the weekend close is a pause), so "since Friday";
+    * otherwise the regular "since yesterday".
+    """
+    regime = _fx_box_regime(now)
+    last_session = intraday_snapshots_service.last_session_date(now)
+    if regime.forex_frozen:
+        diff = (_local_date(now, tz) - last_session).days
+        return "yesterday" if diff <= 1 else f"on {last_session.strftime('%A')}"
+    if regime.weekend_overnight:
+        return f"since {last_session.strftime('%A')}"
+    return "since yesterday"
+
+
+def _prior_fx(
+    session,  # type: ignore[no-untyped-def]
+    metrics: PortfolioMetrics,
+    now: datetime,
+) -> Decimal | None:
+    """The prior-session EUR/USD anchor for the "since yesterday" panels.
+
+    Mirrors the web companion's ``fxEffectPriorFx``: prefer the FX provider's settled
+    previous close; when that is missing — a closed-market / frozen-FX round where it
+    is left ``None`` — fall back to the session close, the same prior-close anchor the
+    box's "Since close" stat already reads, so the panels survive instead of vanishing
+    while the box still shows a real rate move. ``None`` only when neither is known.
+    """
+    prev = metrics.daily_growth_fx_eur_usd_prev
+    if prev is not None and prev > 0:
+        return prev
+    close = intraday_snapshots_service.session_close_fx(session, now=now)
+    if close is not None and close > 0:
+        return close
+    return None
+
+
+def _eur_effect_from_anchor(
+    usd: Decimal | None, live_fx: Decimal | None, anchor_fx: Decimal | None
+) -> Decimal | None:
+    """Re-mark the book's EUR FX swing from ``anchor_fx`` to the live spot.
+
+    ``usd · (1/live_fx − 1/anchor_fx)`` — the same basis the split legs use. Mirrors
+    the web companion's ``eurEffectFromAnchor``: ``None`` when any input is missing so
+    the caller keeps its existing basis rather than fabricating a zero.
+    """
+    if anchor_fx is None or anchor_fx <= 0 or live_fx is None or live_fx <= 0 or usd is None:
+        return None
+    return usd / live_fx - usd / anchor_fx
+
+
+def _fx_diverge_row(
+    label: str,
+    value: Decimal,
+    formatted: str,
+    *,
+    overnight_leg: bool,
+    tag: str,
+    width_pct: float,
+) -> str:
+    """One leg of the diverging FX bar. Mirrors the web companion's ``fxDivergeRow``:
+    the status label stands alone in its own column; the formatted value and the
+    live/last/paused tag share a **value cell on the right, laid out horizontally**
+    (the tag beside the value, not stacked under it), so the row stays short and
+    "Market holiday", "Market hours" and "Overnight" still keep to one line.
+    """
+    stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
+    fill = (
+        f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
+        f' style="width:{width_pct:.4f}%"></span>'
+    )
+    return (
+        '<div class="inv-fx-diverge-row">'
+        f'<span class="inv-fx-diverge-label">{label}</span>'
+        f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
+        '<span class="inv-fx-diverge-valcell">'
+        f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">{formatted}</span>'
+        f'<span class="inv-fx-diverge-tag">{tag}</span>'
+        "</span>"
+        "</div>"
+    )
+
+
+def _fx_diverge_bar(
+    market: Decimal | None,
+    overnight: Decimal | None,
+    *,
+    market_open: bool,
+    fmt,  # type: ignore[no-untyped-def]
+    forex_live: bool,
+) -> str:
+    """The two-leg diverging bar (market hours + overnight), or ``""`` when the split
+    can't be drawn. Mirrors the web companion's ``fxDivergeBar``: the currently-live
+    leg leads — market hours while open, overnight once shut — with the frozen "last"
+    leg below. ``forex_live`` tags the leading leg honestly: **"live"** only while spot
+    FX is genuinely trading, else **"paused"** (never "live" on a frozen weekend).
+    """
+    if market is None or overnight is None or (market == 0 and overnight == 0):
+        return ""
+    max_mag = max(abs(market), abs(overnight))
+
+    def _width(v: Decimal) -> float:
+        return 0.0 if max_mag == 0 else float(abs(v) / max_mag * 50)
+
+    live_tag = "live" if forex_live else "paused"
+
+    def _mk(label: str, value: Decimal, overnight_leg: bool, tag: str) -> str:
+        return _fx_diverge_row(
+            label, value, fmt(value), overnight_leg=overnight_leg, tag=tag, width_pct=_width(value)
+        )
+
+    if market_open:
+        rows = _mk("Market hours", market, False, live_tag) + _mk(
+            "Overnight", overnight, True, "last"
+        )
+    else:
+        rows = _mk("Overnight", overnight, True, live_tag) + _mk(
+            "Market hours", market, False, "last"
+        )
+    return f'<div class="inv-fx-diverge">{rows}</div>'
+
+
 def _fx_effect_html(
     session,  # type: ignore[no-untyped-def]
     metrics: PortfolioMetrics,
     *,
-    net_eur: Decimal,
+    live_fx: Decimal,
+    prev_fx: Decimal | None,
     now: datetime,
+    tz: tzinfo | None = None,
 ) -> str:
-    """The "Currency effect since yesterday" panel inside the currency box.
+    """The "Currency effect …" panel inside the currency box (EUR display).
 
     The book is **USD-booked**, so the EUR/USD move since yesterday's close is only
     real money once it is measured back in euros — so this panel always speaks
     **EUR**, in both EUR and USD display (a rate move hands you no extra dollars;
     the euro figure is the one that means something). Mirrors the web companion's
-    ``renderFxEffect``.
+    ``renderEurFxEffect``. Returns ``""`` when there is no euro swing to describe.
+
+    The net is normally ``usd · (1/live_fx − 1/prev_fx)`` (anchored to the settled
+    previous close). Every **market-closed session view** re-anchors it to the
+    session *open* (matching the box's "since last open" stat) so the panel total
+    agrees with the headline rather than contradicting it in scale or sign — the
+    regular weekday post-close / pre-open as well as the frozen weekend and the
+    weekend spill-over (the weekend close is a pause, so Friday stays the previous
+    session). This also turns the frozen "Market hours" split leg into the real
+    last-session open→close move instead of the near-zero prior-close→close residual.
+    When the settled previous close is missing entirely the net is re-anchored to the
+    best prior anchor on hand (see :func:`_prior_fx`) so the panel survives a
+    closed-market round.
 
     Below the net figure a *diverging* bar splits the move into its market-hours
     and overnight slices, with the **currently-live** slice on top and the frozen
-    last slice below: while the market is open the live market-hours move leads and
-    last night's overnight slice survives beneath it; once shut the live overnight
-    drift leads and the last session's market-hours move sits below. Each leg grows
-    from a shared centre line (right for a gain, left for a loss), so two legs
-    pulling in opposite directions read clearly instead of being crammed into one
-    stacked bar.
-
-    In the two **single-overnight** regimes there is no fresh session to split, so
-    the market-hours leg is dropped and one full-width bar carries the whole swing:
-    a **US-only market holiday** (e.g. 4th of July, FX still trading) keeps the
-    "Market holiday" label, while the **weekend spill-over** (Sunday evening through
-    Monday's open, after the forex reopen) reads "Overnight". The frozen Friday
-    weekend itself is *not* one of these — it keeps the full two-leg split, frozen.
+    last slice below. In the single-overnight regime (a **US-only market holiday**)
+    there is no fresh session to split, so one full-width bar carries the whole swing
+    under the "Market holiday" label.
     """
+    regime = _fx_box_regime(now)
+    market_open = regime.market_open
+    usd = metrics.total_value_usd
+
+    # The euro currency effect, anchored to the settled previous close, then
+    # re-anchored on every market-closed session view so it agrees with the headline.
+    net_eur = Decimal(0)
+    if prev_fx is not None and prev_fx > 0 and usd is not None and live_fx > 0:
+        net_eur = usd / live_fx - usd / prev_fx
+    if regime.session_view and not market_open:
+        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
+        reanchored = _eur_effect_from_anchor(usd, live_fx, open_fx)
+        if reanchored is not None:
+            net_eur = reanchored
+    if net_eur == 0 and (prev_fx is None or prev_fx <= 0):
+        reanchored = _eur_effect_from_anchor(usd, live_fx, _prior_fx(session, metrics, now))
+        if reanchored is not None:
+            net_eur = reanchored
+    # No euro swing at all today ⇒ nothing worth a panel (the rate line still shows).
+    if net_eur == 0:
+        return ""
+
+    since = _effect_since_phrase(now, tz=tz)
+    title = f"Currency effect {since}"
     head = (
         '<div class="inv-fx-effect-head">'
-        '<span class="inv-fx-effect-title">Currency effect since yesterday</span>'
+        f'<span class="inv-fx-effect-title">{escape(title)}</span>'
         "{value}</div>"
     )
     value = f'<span class="inv-fx-effect-net {_fx_sign_class(net_eur)}">{_fx_signed_eur(net_eur)}</span>'
 
-    # Market-hours vs overnight split. The live leg is measured straight from the
-    # relevant session anchor; the frozen leg is the remainder of today's move.
-    regime = _fx_box_regime(now)
-    market_open = regime.market_open
-    half_track_pct = 50
-
-    def _row(
-        label: str, value: Decimal, *, overnight_leg: bool, live: bool, max_mag: Decimal
-    ) -> str:
-        width = 0.0 if max_mag == 0 else float(abs(value) / max_mag * half_track_pct)
-        stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
-        tag = "live" if live else "last"
-        fill = (
-            f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
-            f' style="width:{width:.4f}%"></span>'
-        )
-        return (
-            '<div class="inv-fx-diverge-row">'
-            f'<span class="inv-fx-diverge-label">{label}'
-            f'<span class="inv-fx-diverge-tag">{tag}</span></span>'
-            f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
-            f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
-            f"{_fx_signed_eur(value)}</span>"
-            "</div>"
-        )
-
     if regime.single_overnight:
-        # No fresh session to split (US-only holiday, or the weekend spill-over): the
-        # whole swing is one overnight drift, so a market-hours leg would be a
-        # meaningless ~zero stub — drop it and show a single full-width bar instead.
-        # A genuine US holiday keeps the "Market holiday" wording; the weekend
-        # spill-over reads "Overnight".
+        # No fresh session to split (a US-only market holiday): the whole swing is one
+        # overnight drift, so a market-hours leg would be a meaningless ~zero stub —
+        # drop it and show a single full-width "Market holiday" bar instead.
         label = "Market holiday" if regime.holiday else "Overnight"
-        row = _row(label, net_eur, overnight_leg=True, live=True, max_mag=abs(net_eur))
+        row = _fx_diverge_row(
+            label, net_eur, _fx_signed_eur(net_eur), overnight_leg=True, tag="live", width_pct=50
+        )
         body = f'<div class="inv-fx-diverge">{row}</div>'
         return (
             '<div class="inv-fx-effect" role="group"'
-            ' aria-label="Currency effect since yesterday">'
+            f' aria-label="{escape(title)}">'
             f"{head.format(value=value)}{body}</div>"
         )
 
@@ -400,8 +558,8 @@ def _fx_effect_html(
         open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
         split = fx_effect_split(
             market_open=True,
-            total_value_usd=metrics.total_value_usd,
-            live_fx=metrics.daily_growth_fx_eur_usd,
+            total_value_usd=usd,
+            live_fx=live_fx,
             session_close_fx=None,
             session_open_fx=open_fx,
             today_fx_move_eur=net_eur,
@@ -410,29 +568,21 @@ def _fx_effect_html(
         close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
         split = fx_effect_split(
             market_open=False,
-            total_value_usd=metrics.total_value_usd,
-            live_fx=metrics.daily_growth_fx_eur_usd,
+            total_value_usd=usd,
+            live_fx=live_fx,
             session_close_fx=close_fx,
             today_fx_move_eur=net_eur,
         )
-    market = split.market_hours_eur
-    overnight = split.overnight_eur
-    body = ""
-    if market is not None and overnight is not None and not (market == 0 and overnight == 0):
-        max_mag = max(abs(market), abs(overnight))
-        # Current market mode on top: open ⇒ live market-hours leads; closed ⇒ live
-        # overnight leads, with the other (frozen) leg below.
-        if market_open:
-            rows = _row(
-                "Market hours", market, overnight_leg=False, live=True, max_mag=max_mag
-            ) + _row("Overnight", overnight, overnight_leg=True, live=False, max_mag=max_mag)
-        else:
-            rows = _row(
-                "Overnight", overnight, overnight_leg=True, live=True, max_mag=max_mag
-            ) + _row("Market hours", market, overnight_leg=False, live=False, max_mag=max_mag)
-        body = f'<div class="inv-fx-diverge">{rows}</div>'
+    body = _fx_diverge_bar(
+        split.market_hours_eur,
+        split.overnight_eur,
+        market_open=market_open,
+        fmt=_fx_signed_eur,
+        forex_live=regime.forex_open,
+    )
     return (
-        '<div class="inv-fx-effect" role="group" aria-label="Currency effect since yesterday">'
+        '<div class="inv-fx-effect" role="group"'
+        f' aria-label="{escape(title)}">'
         f"{head.format(value=value)}{body}</div>"
     )
 
@@ -443,10 +593,10 @@ def _investing_power_html(
     *,
     amount_eur: Decimal,
     live_fx: Decimal,
-    prev_fx: Decimal,
     now: datetime,
+    tz: tzinfo | None = None,
 ) -> str:
-    """The "Investing power since yesterday" panel — the **USD-display** twin.
+    """The "Investing power …" panel — the **USD-display** twin.
 
     In USD a EUR/USD move hands the owner no extra dollars on assets already held
     (the portfolio FX effect is exactly ``$0``), so instead of that zero this panel
@@ -456,30 +606,53 @@ def _investing_power_html(
     USD; a positive number means the euro strengthened, so the same euros buy *more*
     dollars to invest. Mirrors the web companion's ``renderInvestingPowerEffect``.
 
+    The prior-close anchor is the settled previous close, else the session close so
+    the panel survives a closed-market round (see :func:`_prior_fx`). Like the EUR
+    panel it is re-anchored on every **market-closed session view** to the session
+    *open* ("since last open") so the headline agrees with the box — the regular
+    weekday post-close / pre-open as well as the frozen weekend and the weekend
+    spill-over, since the weekend close is a pause and Friday stays the previous
+    session. Returns ``""`` when there is no usable rate pair or no swing to show.
+
     Like :func:`_fx_effect_html` it carries a *diverging* market-hours/overnight bar
-    below the headline (and a single full-width bar in the single-overnight regimes),
-    with the currently-live leg on top. It is rendered to **exactly match** that EUR
-    currency-effect visualisation — only the basis differs — so it carries no extra
-    explanatory note. The lone formatting twist: the swing rides a single regular
-    contribution rather than the whole book, so it is tiny, and cents are kept
-    whenever the effect amount is two digits or less (``|net_usd| < 100``); above
-    that it renders in whole dollars like the EUR panel.
+    below the headline (and a single full-width bar in the single-overnight holiday
+    regime), with the currently-live leg on top. The lone formatting twist: the swing
+    rides a single regular contribution rather than the whole book, so it is tiny, and
+    cents are kept whenever the effect amount is two digits or less (``|net_usd| <
+    100``); above that it renders in whole dollars like the EUR panel.
     """
+    regime = _fx_box_regime(now)
+    market_open = regime.market_open
+
+    # Prior-close anchor: the settled previous close, else the session close, then
+    # re-anchored (mirroring the EUR panel) on every market-closed session view so
+    # the headline agrees with the box.
+    prev_fx = _prior_fx(session, metrics, now)
+    if regime.session_view and not market_open:
+        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
+        if open_fx is not None and open_fx > 0:
+            prev_fx = open_fx
+    if prev_fx is None or live_fx <= 0 or prev_fx <= 0:
+        return ""
     net_usd = amount_eur * (live_fx - prev_fx)
+    if net_usd == 0:
+        return ""
 
     # Whole dollars to mirror the EUR panel, but keep cents while the swing is two
     # digits or less so the (typically small) figure doesn't round away to "$0".
     decimals = 2 if abs(net_usd) < 100 else 0
 
+    def _fmt(value: Decimal) -> str:
+        return _fx_signed_usd(value, decimals=decimals)
+
+    since = _effect_since_phrase(now, tz=tz)
+    title = f"Investing power {since}"
     head = (
         '<div class="inv-fx-effect-head">'
-        '<span class="inv-fx-effect-title">Investing power since yesterday</span>'
+        f'<span class="inv-fx-effect-title">{escape(title)}</span>'
         "{value}</div>"
     )
-    value = (
-        f'<span class="inv-fx-effect-net {_fx_sign_class(net_usd)}">'
-        f"{_fx_signed_usd(net_usd, decimals=decimals)}</span>"
-    )
+    value = f'<span class="inv-fx-effect-net {_fx_sign_class(net_usd)}">{_fmt(net_usd)}</span>'
 
     # Anchor the swing to the figures it rides: the regular EUR amount set in
     # Settings on the left, and the dollars it actually buys at today's live rate
@@ -498,37 +671,15 @@ def _investing_power_html(
         "</div>"
     )
 
-    regime = _fx_box_regime(now)
-    market_open = regime.market_open
-    half_track_pct = 50
-
-    def _row(
-        label: str, value: Decimal, *, overnight_leg: bool, live: bool, max_mag: Decimal
-    ) -> str:
-        width = 0.0 if max_mag == 0 else float(abs(value) / max_mag * half_track_pct)
-        stripe = " inv-fx-diverge-overnight" if overnight_leg else ""
-        tag = "live" if live else "last"
-        fill = (
-            f'<span class="inv-fx-diverge-fill {_fx_sign_class(value)}{stripe}"'
-            f' style="width:{width:.4f}%"></span>'
-        )
-        return (
-            '<div class="inv-fx-diverge-row">'
-            f'<span class="inv-fx-diverge-label">{label}'
-            f'<span class="inv-fx-diverge-tag">{tag}</span></span>'
-            f'<div class="inv-fx-diverge-track" aria-hidden="true">{fill}</div>'
-            f'<span class="inv-fx-diverge-value {_fx_sign_class(value)}">'
-            f"{_fx_signed_usd(value, decimals=decimals)}</span>"
-            "</div>"
-        )
-
     if regime.single_overnight:
         label = "Market holiday" if regime.holiday else "Overnight"
-        row = _row(label, net_usd, overnight_leg=True, live=True, max_mag=abs(net_usd))
+        row = _fx_diverge_row(
+            label, net_usd, _fmt(net_usd), overnight_leg=True, tag="live", width_pct=50
+        )
         body = f'<div class="inv-fx-diverge">{row}</div>'
         return (
             '<div class="inv-fx-effect" role="group"'
-            ' aria-label="Investing power since yesterday">'
+            f' aria-label="{escape(title)}">'
             f"{head.format(value=value)}{body}{amount_caption}</div>"
         )
 
@@ -551,24 +702,62 @@ def _investing_power_html(
             prev_fx=prev_fx,
             session_close_fx=close_fx,
         )
-    market = split.market_hours_usd
-    overnight = split.overnight_usd
-    body = ""
-    if market is not None and overnight is not None and not (market == 0 and overnight == 0):
-        max_mag = max(abs(market), abs(overnight))
-        if market_open:
-            rows = _row(
-                "Market hours", market, overnight_leg=False, live=True, max_mag=max_mag
-            ) + _row("Overnight", overnight, overnight_leg=True, live=False, max_mag=max_mag)
-        else:
-            rows = _row(
-                "Overnight", overnight, overnight_leg=True, live=True, max_mag=max_mag
-            ) + _row("Market hours", market, overnight_leg=False, live=False, max_mag=max_mag)
-        body = f'<div class="inv-fx-diverge">{rows}</div>'
+    body = _fx_diverge_bar(
+        split.market_hours_usd,
+        split.overnight_usd,
+        market_open=market_open,
+        fmt=_fmt,
+        forex_live=regime.forex_open,
+    )
     return (
-        '<div class="inv-fx-effect" role="group" aria-label="Investing power since yesterday">'
+        '<div class="inv-fx-effect" role="group"'
+        f' aria-label="{escape(title)}">'
         f"{head.format(value=value)}{body}{amount_caption}</div>"
     )
+
+
+def _fx_as_of_stamp(
+    session,  # type: ignore[no-untyped-def]
+    *,
+    today: date,
+    tz: tzinfo | None = None,
+) -> str:
+    """The FX "as of …" / "EOD FX" provenance stamp for the rate stat.
+
+    Mirrors the web companion's FX-box stamps so the desktop is just as honest
+    about *which day's* — and, when live, *which minute's* — EUR/USD rate it is
+    showing (transparency / correctness):
+
+    * a today-dated live intraday spot → ``as of HH:MM`` on the viewer's clock
+      (the live capture time), exactly like the web; a legacy spot without a
+      timestamp falls back to ``as of Today``;
+    * the settled ECB/Frankfurter end-of-day rate → ``as of <date>`` plus an
+      explicit ``EOD FX`` tag, since that rate carries no intraday observation.
+
+    Returns an empty string when no rate is available at all (the caller already
+    bails out in that case), so the stamp simply doesn't render.
+    """
+    info = fx_service.eur_quote_as_of(session, quote="USD", today=today)
+    if info is None:
+        return ""
+    if info.is_live and info.observed_at is not None:
+        observed = info.observed_at.astimezone(tz) if tz is not None else info.observed_at
+        label = observed.strftime("%H:%M")
+        title = f"EUR/USD spot observed {observed.strftime('%d %b %Y %H:%M')}"
+    elif info.is_live or info.as_of == today:
+        label = "Today"
+        title = f"EUR/USD rate as of {info.as_of.strftime('%d %b %Y')}"
+    else:
+        label = info.as_of.strftime("%d %b %Y")
+        title = f"EUR/USD rate as of {info.as_of.strftime('%d %b %Y')}"
+    stamp = f'<span class="inv-fx-box-asof" title="{escape(title)}">as of {escape(label)}</span>'
+    if info.source == "eod":
+        stamp += (
+            '<span class="inv-fx-box-eod"'
+            ' title="End-of-day ECB reference rate (no intraday observation)">'
+            "EOD FX</span>"
+        )
+    return f'<span class="inv-fx-box-stat-sub inv-fx-box-asof-row">{stamp}</span>'
 
 
 def _currency_box_html(
@@ -591,9 +780,11 @@ def _currency_box_html(
 
     The box is regime-aware (see :class:`_FxBoxRegime`): over the spot-FX weekend
     close it freezes to the *whole Friday session view* badged "Market closed ·
-    reopens Sun …"; on the Sunday-evening-through-Monday-open spill-over and on a
-    US-only market holiday it shows a single honest overnight number (no second
-    stat, no two-leg split); otherwise it is the regular live / settled view.
+    reopens Sun …"; on the Sunday-evening-through-Monday-open spill-over it keeps that
+    Friday session view (the weekend close is a pause, so Friday stays the previous
+    session) with the live overnight drift on top; on a US-only market holiday it
+    shows a single honest overnight number (no second stat, no two-leg split);
+    otherwise it is the regular live / settled view.
     """
     now = now or datetime.now(UTC)
     live_fx = metrics.daily_growth_fx_eur_usd
@@ -608,34 +799,39 @@ def _currency_box_html(
     rate = live_fx if in_usd else Decimal(1) / live_fx
     # "Today" uses a regime-dependent baseline so it never just mirrors the "Since
     # open/close" stat beside it. Live: the move since the *prior close* (overnight +
-    # intraday so far). Single-overnight: the lone drift since the last session close
-    # — Friday's FX close for the weekend spill-over (or the settled previous close as
-    # a holiday's overnight). Session view (settled weekday, or the frozen Friday
-    # weekend): the full move since this — or Friday's frozen — session open, so it
-    # stops collapsing onto "Since close" the moment the provider rolls previousClose.
-    # ``fx_move_pct`` already follows the display-currency strength convention
-    # (negated for the EUR-display reciprocal), matching the web box.
+    # intraday so far). Single-overnight (a US-only holiday): the lone drift since the
+    # settled previous close. Session view (settled weekday, the frozen Friday
+    # weekend, or the Sunday-evening spill-over): the full move since this — or
+    # Friday's — session open, so it stops collapsing onto "Since close" the moment
+    # the provider rolls previousClose. ``fx_move_pct`` already follows the
+    # display-currency strength convention (negated for the EUR-display reciprocal),
+    # matching the web box.
     if market_open:
         today_anchor = prev_fx
         today_sub = "since last close"
     elif regime.single_overnight:
-        if regime.weekend_overnight:
-            close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-            today_anchor = close_fx if close_fx is not None else prev_fx
-        else:
-            today_anchor = prev_fx
+        today_anchor = prev_fx
         today_sub = "overnight"
     else:
         today_anchor = intraday_snapshots_service.session_open_fx(session, now=now)
         today_sub = "since last open"
     move = fx_move_pct(live_fx, today_anchor, display_ccy) if today_anchor is not None else None
+    # While the FX market is frozen at a settled session (the weekend) the move is
+    # no longer "today" — name the real settled day instead ("Yesterday" / "Friday"),
+    # mirroring the web companion's ``frozenDayLabel``.
+    today_label = (
+        _frozen_day_label(intraday_snapshots_service.last_session_date(now), now, tz=tz)
+        if regime.forex_frozen
+        else "Today"
+    )
 
     # Third number: how far the rate has moved since the current session's
     # reference point — since the **open** while the market is live, since the
     # **close** once it has shut. Same strength convention as the "Today" move.
-    # Dropped in the single-overnight regimes (weekend spill-over, US-only holiday):
-    # there is only one honest move to show, so a second stat would just echo the
-    # overnight "Today" figure beside it. The frozen Friday weekend keeps it.
+    # Dropped only in the single-overnight regime (a US-only holiday): there is one
+    # honest move to show, so a second stat would just echo the overnight "Today"
+    # figure beside it. The frozen Friday weekend and the Sunday-evening spill-over
+    # both keep it (Friday's session stays the previous session).
     since_stat = ""
     stats_class = "inv-fx-box-stats inv-fx-box-stats-pair"
     if regime.session_view:
@@ -655,14 +851,21 @@ def _currency_box_html(
         )
         stats_class = "inv-fx-box-stats"
 
+    # The "as of …" / "EOD FX" provenance stamp under the rate value — mirrors the
+    # web companion so the desktop is just as transparent about which day's rate it
+    # is showing. ``now``'s calendar date (on the viewer's clock) is the reference
+    # "today" the live overlay and ECB forward-fill resolve against.
+    as_of_stamp = _fx_as_of_stamp(session, today=_local_date(now, tz), tz=tz)
+
     stats = (
         f'<div class="{stats_class}">'
         '<div class="inv-fx-box-stat">'
         f'<span class="inv-fx-box-stat-label">{pair}</span>'
         f'<span class="inv-fx-box-stat-value">{rate:,.4f}</span>'
+        f"{as_of_stamp}"
         "</div>"
         '<div class="inv-fx-box-stat">'
-        '<span class="inv-fx-box-stat-label">Today</span>'
+        f'<span class="inv-fx-box-stat-label">{escape(today_label)}</span>'
         f"{_fx_box_pct_value(move)}"
         f'<span class="inv-fx-box-stat-sub">{today_sub}</span>'
         "</div>"
@@ -690,16 +893,27 @@ def _currency_box_html(
     # :func:`_currency_effect_html`). Shown only when there is a usable USD book
     # value and prior mark to measure a non-zero swing.
     effect = _currency_effect_html(
-        session, metrics, in_usd=in_usd, live_fx=live_fx, prev_fx=prev_fx, now=now
+        session, metrics, in_usd=in_usd, live_fx=live_fx, prev_fx=prev_fx, now=now, tz=tz
     )
 
+    # Lay the box out horizontally on a wide screen: the rate stats (and any frozen
+    # reopen caption) sit on the **left**, the currency-effect / investing-power
+    # panel sits on the **right**, so the box fills the full horizontal space
+    # instead of stacking into a tall column. Collapses back to a single column on
+    # narrow viewports (see the CSS). When there is no effect panel the body still
+    # renders the left column full-width.
+    body_class = "inv-fx-box-body" if effect else "inv-fx-box-body inv-fx-box-body-single"
     return (
         '<section class="inv-fx-box" aria-label="Currency EUR to USD">'
         '<div class="inv-fx-box-head">'
         '<span class="inv-fx-box-title">Currency · EUR \u2194 USD</span>'
         f"{head_extra}"
         "</div>"
-        f"{stats}{reopen_caption}{effect}</section>"
+        f'<div class="{body_class}">'
+        f'<div class="inv-fx-box-main">{stats}{reopen_caption}</div>'
+        f"{effect}"
+        "</div>"
+        "</section>"
     )
 
 
@@ -711,6 +925,7 @@ def _currency_effect_html(
     live_fx: Decimal,
     prev_fx: Decimal | None,
     now: datetime,
+    tz: tzinfo | None = None,
 ) -> str:
     """The currency panel inside the box, dispatched by display currency.
 
@@ -722,34 +937,35 @@ def _currency_effect_html(
       versus yesterday's close. The portfolio FX effect is exactly ``$0`` in
       dollars, so that reframing is the one that means something in USD.
 
-    Returns ``""`` when there is no usable USD book value / prior mark, or no
-    non-zero swing to show.
+    The two renderers own their own "no swing" handling (each returns ``""`` when
+    there is nothing to show), so — mirroring the web companion's ``renderFxEffect``
+    — this dispatcher no longer short-circuits on a missing settled previous close:
+    both panels fall back to the best prior anchor on hand (see :func:`_prior_fx`)
+    rather than vanishing while the box still shows a real rate move.
     """
-    usd = metrics.total_value_usd
-    if usd is None or prev_fx is None or prev_fx <= 0:
+    if metrics.total_value_usd is None:
         return ""
     if in_usd:
         amount_eur = investing_power_service.get_amount_eur(session)
-        if amount_eur > 0 and live_fx != prev_fx:
-            return _investing_power_html(
-                session,
-                metrics,
-                amount_eur=amount_eur,
-                live_fx=live_fx,
-                prev_fx=prev_fx,
-                now=now,
-            )
-        return ""
-    net_eur = usd / live_fx - usd / prev_fx
-    if net_eur != 0:
-        return _fx_effect_html(session, metrics, net_eur=net_eur, now=now)
-    return ""
+        if amount_eur <= 0:
+            return ""
+        return _investing_power_html(
+            session,
+            metrics,
+            amount_eur=amount_eur,
+            live_fx=live_fx,
+            now=now,
+            tz=tz,
+        )
+    return _fx_effect_html(session, metrics, live_fx=live_fx, prev_fx=prev_fx, now=now, tz=tz)
 
 
 def _render_currency_box(html: str | None) -> None:
     """Render the standalone currency box, or nothing when there is no rate."""
     if html is not None:
-        ui.html(html)
+        # ``w-full`` so the box stretches edge-to-edge like the KPI grid above it,
+        # rather than shrink-wrapping to its content width.
+        ui.html(html).classes("w-full")
 
 
 def _hero_total_value(
@@ -758,13 +974,16 @@ def _hero_total_value(
     *,
     display_ccy: str,
     daily_pct: Decimal | None,
+    daily_label: str = "today",
 ) -> None:  # pragma: no cover - UI
     """Render the header's big Total Value hero box.
 
     Leads the page with the headline money figure (neobroker style): the display
     currency large, the other currency just under it, and a small coloured
-    "today" badge with the latest single-day move so the number reads as *live*
-    rather than static.
+    badge with the latest single-day move so the number reads as *live* rather
+    than static. ``daily_label`` names *which* day that move lands on — "today"
+    when it is today's, otherwise the real settled day ("yesterday" / "Fri 26
+    Jun") so a frozen weekend/holiday figure is never mislabelled "today".
     """
     primary = display_ccy.upper()
     if primary == "EUR":
@@ -787,7 +1006,8 @@ def _hero_total_value(
         arrow = arrow_for_signed(float(daily_pct))
         ui.html(
             f'<div class="inv-hero-change" style="color:{color}">{arrow} '
-            f'{fmt_pct(daily_pct)} <span style="opacity:0.7;font-weight:600">today</span></div>'
+            f'{fmt_pct(daily_pct)} <span style="opacity:0.7;font-weight:600">'
+            f"{escape(daily_label)}</span></div>"
         )
 
 
@@ -796,7 +1016,7 @@ def _render_kpi_grid(
     verdict: object,
     *,
     display_ccy: str,
-    today_sub: str,
+    today_caption: DailyGrowthCaption,
 ) -> None:  # pragma: no cover - UI
     """Render the 4×2 KPI grid beneath the hero.
 
@@ -848,14 +1068,41 @@ def _render_kpi_grid(
             display_ccy=display_ccy,
             tooltip_key="mtd_growth",
         )
-        _pct_card(
-            "Today",
-            metrics.daily_growth_pct,
-            metrics.daily_growth_pct_usd,
-            display_ccy=display_ccy,
-            tooltip_key="daily_growth",
-            sub=today_sub,
-        )
+        _today_card(metrics, display_ccy=display_ccy, caption=today_caption)
+
+
+def _today_card(
+    metrics: PortfolioMetrics,
+    *,
+    display_ccy: str,
+    caption: DailyGrowthCaption,
+) -> None:  # pragma: no cover - UI
+    """Render the compact "Today" daily-move KPI tile.
+
+    Unlike the other return cards it titles itself by the trading day the move
+    lands on ("Today" / "Yesterday" / a date), floats the live/clock stamp to the
+    top-right corner, and tucks the absolute money move onto the secondary
+    currency's line — dropping the old "as of …" caption row for a tighter tile.
+    """
+    primary = display_ccy.upper()
+    if primary == "EUR":
+        primary_pct, primary_ccy = metrics.daily_growth_pct, "EUR"
+        secondary_pct, secondary_ccy = metrics.daily_growth_pct_usd, "USD"
+    else:
+        primary_pct, primary_ccy = metrics.daily_growth_pct_usd, "USD"
+        secondary_pct, secondary_ccy = metrics.daily_growth_pct, "EUR"
+    today_kpi_card(
+        caption.title,
+        fmt_pct(primary_pct),
+        fmt_pct(secondary_pct),
+        primary_ccy=primary_ccy,
+        secondary_ccy=secondary_ccy,
+        money=caption.money_text,
+        corner=caption.corner_text,
+        tooltip_key="daily_growth",
+        color=color_for_signed(float(primary_pct or 0)),
+        arrow=arrow_for_signed(float(primary_pct or 0)),
+    )
 
 
 def format_price_freshness(card: HoldingCard, *, tz: tzinfo | None = None) -> str:
@@ -907,6 +1154,23 @@ def _fmt_updated(value: datetime, *, tz: tzinfo | None = None) -> str:
     return value.strftime("%d %b %H:%M")
 
 
+def _holding_badge_html(badge: str | None) -> str:
+    """Return the HTML for a holding's movers badge, or "" when there is none.
+
+    The badge is wrapped in ``.inv-holding-badge-row``, which the stylesheet
+    pins to the top-right of the figures row (out of the card's vertical flow)
+    so it can never add a line break that pushes the headline value down.
+    """
+    if not badge:
+        return ""
+    badge_cls = "inv-holding-badge-loss" if "loser" in badge else "inv-holding-badge-gain"
+    return (
+        '<div class="inv-holding-badge-row">'
+        f'<span class="inv-holding-badge {badge_cls}">{escape(badge)}</span>'
+        "</div>"
+    )
+
+
 def _holding_card(
     card: HoldingCard, *, display_ccy: str, tz: tzinfo | None = None, badge: str | None = None
 ) -> None:  # pragma: no cover - UI
@@ -943,10 +1207,6 @@ def _holding_card(
             pills += '<span class="inv-holding-pill inv-holding-pill-warn">stale value</span>'
         if card.price_data_warning:
             pills += '<span class="inv-holding-pill inv-holding-pill-warn">bad history</span>'
-        # A movers badge reminds the viewer this holding topped today's
-        # leaderboard. It is rendered on its own right-aligned line above the
-        # daily-growth figures (below) rather than inline beside the symbol, so a
-        # long "Top % loser" badge can never push the freshness time out of place.
         ui.html(
             '<div class="inv-holding-topline">'
             f'<span class="inv-holding-sym">{escape(card.symbol)}{pills}</span>'
@@ -956,13 +1216,13 @@ def _holding_card(
         ui.html(
             f'<div class="inv-holding-name" title="{escape(card.name)}">{escape(card.name)}</div>'
         )
-        if badge:
-            badge_cls = "inv-holding-badge-loss" if "loser" in badge else "inv-holding-badge-gain"
-            ui.html(
-                '<div class="inv-holding-badge-row">'
-                f'<span class="inv-holding-badge {badge_cls}">{escape(badge)}</span>'
-                "</div>"
-            )
+        # A movers badge reminds the viewer this holding topped today's
+        # leaderboard. It is rendered as an absolutely-positioned chip pinned to
+        # the top-right of the figures row (see ``.inv-holding-badge-row`` in
+        # style.py) rather than as a flow element, so a long "Top % loser" badge
+        # never adds a line break that pushes the value (and the rest of the
+        # card) down — keeping the headline figures aligned across cards.
+        badge_html = _holding_badge_html(badge)
 
         daily_color = color_for_signed(float(daily)) if daily is not None else "var(--inv-muted)"
         daily_txt = (
@@ -986,6 +1246,7 @@ def _holding_card(
             )
             ui.html(
                 '<div class="inv-holding-figures">'
+                f"{badge_html}"
                 f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
                 '<span class="inv-holding-change-wrap">'
                 '<span class="inv-holding-change inv-holding-change-stale" '
@@ -1004,6 +1265,7 @@ def _holding_card(
             )
             ui.html(
                 '<div class="inv-holding-figures">'
+                f"{badge_html}"
                 f'<span class="inv-holding-value">{escape(fmt_money(value, ccy))}</span>'
                 '<span class="inv-holding-change-wrap">'
                 f'<span class="inv-holding-change" style="color:{daily_color}">'
@@ -1097,20 +1359,34 @@ def _render_mover_block(
 
 
 def _render_movers(movers: MoversView, *, display_ccy: str) -> None:  # pragma: no cover - UI
-    """Render the "Today's movers" section — a distinct winners/losers notice band.
+    """Render the "Top movers" section — a distinct winners/losers notice band.
 
-    Laid out as up to four blocks across (two winners, two losers), each leading
-    with the stat it was ranked on. Measured on the freshest price date across
-    the book, so before the open it reflects last session and during the session
-    only what has printed today.
+    Laid out as up to four blocks across (two winners, two losers) that span the
+    full width side to side, each leading with the stat it was ranked on.
+    Measured on the freshest price date across the book, so before the open it
+    reflects last session and during the session only what has printed today.
+
+    The basis date (e.g. "last close · 26 Jun") rides on the headline row itself,
+    right-aligned beside the title, rather than on a separate line below it.
+
+    The band is a collapsible section (starting open) so the leaderboard can be
+    folded away once glanced at, keeping the long Overview page tidy. The Quasar
+    expansion appends its own toggle chevron after this custom header.
     """
-    with section("Today's movers", classes="inv-movers-band"):
-        ui.html(f'<div class="inv-mover-sub">{escape(_mover_basis_label(movers.basis_date))}</div>')
-        with ui.element("div").classes("inv-mover-grid"):
-            for entry in movers.winners:
-                _render_mover_block(entry, "winner", display_ccy=display_ccy)
-            for entry in movers.losers:
-                _render_mover_block(entry, "loser", display_ccy=display_ccy)
+    expansion = ui.expansion(value=True).classes("inv-collapse w-full inv-movers-band")
+    with (
+        expansion.add_slot("header"),
+        ui.row().classes("inv-mover-header items-center w-full no-wrap"),
+    ):
+        ui.icon("star").classes("inv-mover-star")
+        ui.label("Top movers").classes("inv-mover-title")
+        ui.space()
+        ui.label(_mover_basis_label(movers.basis_date)).classes("inv-mover-sub")
+    with expansion, ui.element("div").classes("inv-mover-grid"):
+        for entry in movers.winners:
+            _render_mover_block(entry, "winner", display_ccy=display_ccy)
+        for entry in movers.losers:
+            _render_mover_block(entry, "loser", display_ccy=display_ccy)
 
 
 def _mover_badges(movers: MoversView) -> dict[str, str]:
@@ -1259,6 +1535,16 @@ def _week_session_opens(dates: list[datetime]) -> list[datetime]:
     return opens
 
 
+def _time_of_day_hours(when: datetime) -> float:
+    """Wall-clock time-of-day of ``when`` as fractional hours (e.g. 15.5 = 15:30).
+
+    The 1W axis helpers position and bound sessions by their displayed time-of-day,
+    so a single shared converter keeps :func:`_week_rangebreaks` and
+    :func:`_week_xaxis_range` in lock-step.
+    """
+    return when.hour + when.minute / 60 + when.second / 3600
+
+
 def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
     """Plotly x-axis ``rangebreaks`` that collapse the 1W curve's dead time.
 
@@ -1277,7 +1563,7 @@ def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
     breaks: list[dict[str, object]] = [{"bounds": ["sat", "mon"]}]
     if not dates:
         return breaks
-    tods = [d.hour + d.minute / 60 + d.second / 3600 for d in dates]
+    tods = [_time_of_day_hours(d) for d in dates]
     open_h, close_h = min(tods), max(tods)
     # Only collapse the overnight gap when the session stays within one local day
     # (close later than open); a session that wraps past local midnight is left
@@ -1294,6 +1580,45 @@ def _week_rangebreaks(dates: list[datetime]) -> list[dict[str, object]]:
     return breaks
 
 
+def _week_xaxis_range(dates: list[datetime]) -> list[datetime] | None:
+    """Explicit x-axis ``[start, end]`` so the *latest* 1W session gets a full
+    day-plane, even while it is still forming.
+
+    Plotly auto-ranges to the last data point. During a live session that point is
+    the current value at ``now``, so today's band would be a narrow sliver pinned
+    to the right while every settled day fills a full open→close band — and the
+    live tip would sit at the band's right edge regardless of the time of day.
+
+    Anchoring the axis end to the *close* time-of-day on the last session's date
+    instead reserves today a full-width band: the live tip then lands at its true
+    fraction of the session (hard left at the open, sliding right as the day wears
+    on), matching the scaling of the days beside it. The empty space to its right
+    is the rest of today, yet to happen. A no-op once the market has closed (the
+    tip is already capped to the session close), and skipped when the session
+    wraps past local midnight (mirrors the :func:`_week_rangebreaks` guard) so a
+    wrapping session is never mis-bounded.
+
+    Returns ``None`` (keep Plotly's autorange) when there are too few points, the
+    labels aren't datetimes, or the session wraps midnight.
+    """
+    if len(dates) < 2 or not isinstance(dates[0], datetime):
+        return None
+    tods = [_time_of_day_hours(d) for d in dates]
+    open_h, close_h = min(tods), max(tods)
+    if not close_h > open_h:
+        return None
+    # The data point sitting at the session close (latest time-of-day), rebased
+    # onto the most recent session's calendar date — that is where a full day-plane
+    # should end. Keeps the close instant's exact h:m:s and tzinfo.
+    close_point = max(dates, key=_time_of_day_hours)
+    last_day = dates[-1].date()
+    end = close_point.replace(year=last_day.year, month=last_day.month, day=last_day.day)
+    start = dates[0]
+    if not end > start:
+        return None
+    return [start, end]
+
+
 def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR0912
     points,
     *,
@@ -1303,6 +1628,7 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
     week: bool = False,
     secondary=None,
     secondary_currency: str | None = None,
+    tz: tzinfo | None = None,
 ):
     """Classic portfolio-value area graph over the selected time range.
 
@@ -1342,10 +1668,19 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
     symbol = currency_symbol(currency)
     fig = go.Figure()
     has_secondary = False
+    # The intraday "Day" curve names the session it shows: "today" for today's
+    # session, otherwise the real day it is frozen at (e.g. a weekend showing
+    # Friday) so the title never misleads with "today" when it isn't.
+    intraday_day_label = "today"
     if points:
         points = downsample(points)
         dates = [p.date for p in points]
         values = [float(p.value) for p in points]
+        if intraday and dates and isinstance(dates[-1], datetime):
+            today = datetime.now(tz).date()
+            session_date = dates[-1].date()
+            if session_date != today:
+                intraday_day_label = f"\u00b7 {session_date:%a %d %b}"
         # The session-collapse treatment (break per day + rangebreaks +
         # separators) only applies to the *intraday* 1W curve, whose points are
         # datetimes within each session. When the week range falls back to the
@@ -1373,6 +1708,17 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             hovertemplate = f"%{{x|%a %d %b %H:%M}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
         else:
             hovertemplate = f"%{{x|%d %b %Y}}<br><b>{symbol}%{{y:,.2f}}</b><extra></extra>"
+        # The x-axis hover label (the bold header of the "x unified" tooltip) is
+        # formatted by ``hoverformat``, *not* the per-trace template — so without
+        # this the 1W tooltip header reads only the day ("Mon 23") and drops the
+        # time. Mirror each range's hovertemplate so the 1W (and 1D) read-out
+        # carries the timestamp, not just the date.
+        if intraday:
+            hoverformat = "%H:%M"
+        elif week:
+            hoverformat = "%a %d %b %H:%M"
+        else:
+            hoverformat = "%d %b %Y"
         # Tint the intraday curve by its position versus the previous close, so
         # the day's direction *relative to yesterday* is read at a glance. The
         # palette is the colourblind-safe Wong blue (up) / orange (down) — never
@@ -1410,6 +1756,7 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
         )
         fig.update_xaxes(
             tickformat=tickformat,
+            hoverformat=hoverformat,
             ticks="outside",
             ticklen=5,
             nticks=8,
@@ -1422,6 +1769,10 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
             spikecolor="rgba(91,107,124,0.5)",
             # Collapse nights/weekends/holidays on the 1W axis only.
             rangebreaks=_week_rangebreaks(dates) if week_sessions else None,
+            # Reserve the latest session a full-width day-plane so a still-forming
+            # today's live tip sits at its true time-of-day (left at the open,
+            # sliding right) rather than pinned to the band's right edge.
+            range=_week_xaxis_range(dates) if week_sessions else None,
         )
         # Thin separators between trading days on the 1W axis (each session's
         # open), so the collapsed bands read as distinct sessions.
@@ -1556,9 +1907,9 @@ def _value_curve_figure(  # type: ignore[no-untyped-def]  # noqa: PLR0915, PLR09
     fig.update_layout(
         title=(
             (
-                f"Portfolio value today — {currency} vs {secondary_currency}"
+                f"Portfolio value {intraday_day_label} — {currency} vs {secondary_currency}"
                 if has_secondary
-                else f"Portfolio value today ({currency})"
+                else f"Portfolio value {intraday_day_label} ({currency})"
             )
             if intraday
             else (
@@ -1638,6 +1989,7 @@ def _value_over_time_section(  # type: ignore[no-untyped-def]
                         prev_close=prev_close,
                         secondary=secondary,
                         secondary_currency=secondary_ccy,
+                        tz=display_tz,
                     )
                 )
                 .classes("w-full")
@@ -1692,6 +2044,7 @@ def _install_intraday_live_update(plot, *, display_ccy, tz, prev_close=None, sec
                         prev_close=prev_close,
                         secondary=secondary,
                         secondary_currency=secondary_ccy if secondary else None,
+                        tz=tz,
                     )
                 )
         except Exception:  # pragma: no cover - best-effort live redraw
@@ -1927,6 +2280,18 @@ def register() -> None:  # noqa: PLR0915
                 )
 
                 # Fill the header's Total Value hero box (created in register()).
+                # The badge names the day the move lands on — "today" for today's
+                # move, else the real settled day ("yesterday" / "Fri 26 Jun"),
+                # sharing the Daily Growth caption's title so the two never disagree.
+                # Only the relative words "Today"/"Yesterday" are lowercased to match
+                # the badge's quiet style; an absolute date ("Fri 26 Jun") keeps its
+                # natural capitalisation.
+                _caption_title = _caption.title
+                _hero_day_label = (
+                    _caption_title.lower()
+                    if _caption_title in {"Today", "Yesterday"}
+                    else _caption_title
+                )
                 hero_slot.clear()
                 with hero_slot:
                     _hero_total_value(
@@ -1936,13 +2301,14 @@ def register() -> None:  # noqa: PLR0915
                         daily_pct=_by_ccy(
                             metrics.daily_growth_pct, metrics.daily_growth_pct_usd, display_ccy
                         ),
+                        daily_label=_hero_day_label,
                     )
 
                 _render_kpi_grid(
                     metrics,
                     verdict,
                     display_ccy=display_ccy,
-                    today_sub=_caption.combined(),
+                    today_caption=_caption,
                 )
                 # The standalone Currency · EUR ↔ USD box sits directly beneath the
                 # KPI grid (mirroring the web companion, which moved it out from a

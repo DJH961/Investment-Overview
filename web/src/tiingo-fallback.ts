@@ -152,6 +152,16 @@ export interface TiingoFallbackOptions {
    * full self-capped budget.
    */
   reserveCredits?: number;
+  /**
+   * **Login / start priority** — the post-decrypt kickoff (and any start round).
+   * On login everything must be ready immediately: any symbol Twelve Data defers
+   * (over budget or in per-minute cooldown) spills to Tiingo as long as it still
+   * has credits, regardless of sleeve size and even into the fan-out reserve. This
+   * waives the steady-state >16 efficiency-spill threshold for this round so a
+   * small login book is never left waiting on the per-minute cap when Tiingo could
+   * serve it now. Defaults to `false`. See {@link efficiencySpillEligible}.
+   */
+  loginPriority?: boolean;
   /** Last-known EUR size per symbol. Retained for callers; not used for routing. */
   sizeForSymbol?: (symbol: string) => number;
   /**
@@ -374,6 +384,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     forceAll = false,
     manualForce = false,
     reserveCredits = 0,
+    loginPriority = false,
     reservation = ledgerReservation(storage ?? null),
   } = options;
 
@@ -444,7 +455,11 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     // for a big sleeve (`symbols` is the whole requested set, e.g. all 17), its
     // Twelve Data deferred overflow is spilled to Tiingo in parallel rather than
     // left to trickle through the per-minute cap — regardless of market hours or
-    // whether the round was manual or automatic.
+    // whether the round was manual or automatic. On a **login / start** round
+    // (`loginPriority`) the size threshold is waived entirely: any symbol Twelve
+    // Data deferred (over budget or in per-minute cooldown) spills to Tiingo while
+    // a credit remains, so login is never left deferring to the queue when the
+    // backup could serve it now ("on log in, everything should always be ready").
     const requestedCount = symbols.length;
     const deferredSet = new Set(report.deferred);
     // The live Tiingo credits spendable right now (raw hour/day budget, with the
@@ -468,6 +483,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
         deferred: deferredSet,
         tiingoCreditsAvailable,
         tiingoReserve: TIINGO_RESERVE_CREDITS,
+        loginPriority,
       });
       if (eligible || efficiencyEligible) {
         candidates.push(symbol);

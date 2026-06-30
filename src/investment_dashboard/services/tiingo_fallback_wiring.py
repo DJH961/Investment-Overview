@@ -18,14 +18,13 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters import tiingo_client
+from investment_dashboard.adapters._retry import RateLimitedError
 from investment_dashboard.domain.market_hours import is_us_market_holiday
 from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import price_cache_repo, prices_repo
 from investment_dashboard.repositories import tiingo_state_repo as state_repo
 from investment_dashboard.services import fetch_report, provider_status, pull_log
 from investment_dashboard.services.tiingo_fallback import (
-    DESKTOP_DAILY_CAP,
-    DESKTOP_HOURLY_CAP,
     choose_canary,
     now_eastern,
 )
@@ -202,19 +201,28 @@ def apply_desktop_fallback(
     def _fetch(symbols: Sequence[str]) -> dict[str, dict[date, Decimal]]:
         return fetch_impl(list(symbols), fetch_start, fetch_end, token=token)
 
-    outcome = run_desktop_fallback(
-        candidates=candidates,
-        expected_market_date=expected,
-        expected_nav_date=expected,
-        primary_failed_symbols=primary_failed,
-        peer_published=peer_published,
-        peer_published_at=peer_at,
-        canary_pick=canary_pick,
-        state=state,
-        now_utc=now_utc,
-        fetch_closes=_fetch,
-        manual=manual,
-    )
+    try:
+        outcome = run_desktop_fallback(
+            candidates=candidates,
+            expected_market_date=expected,
+            expected_nav_date=expected,
+            primary_failed_symbols=primary_failed,
+            peer_published=peer_published,
+            peer_published_at=peer_at,
+            canary_pick=canary_pick,
+            state=state,
+            now_utc=now_utc,
+            fetch_closes=_fetch,
+            manual=manual,
+        )
+    except RateLimitedError:
+        # Tiingo answered HTTP 429: the account's hourly allowance is spent (no
+        # matter what our own counter said). Pin the hourly bucket to its cap and
+        # persist before re-raising, so no further call fires until the next :00
+        # reset and Settings can show the budget as maxed/rate-limited.
+        state_repo.exhaust_hour(state, now_utc)
+        state_repo.save(session, state)
+        raise
 
     write_cutoff = expected - timedelta(days=_WRITE_LOOKBACK_DAYS)
     result: dict[str, int] = {}
@@ -250,10 +258,10 @@ def apply_desktop_fallback(
             round_.fallback("tiingo", result, outcome.reasons)
             round_.budget(
                 "tiingo",
-                hour_remaining=max(0, DESKTOP_HOURLY_CAP - state.hour_used),
-                hourly_cap=DESKTOP_HOURLY_CAP,
-                day_remaining=max(0, DESKTOP_DAILY_CAP - state.day_used),
-                daily_cap=DESKTOP_DAILY_CAP,
+                hour_remaining=max(0, state.hourly_cap - state.hour_used),
+                hourly_cap=state.hourly_cap,
+                day_remaining=max(0, state.daily_cap - state.day_used),
+                daily_cap=state.daily_cap,
             )
         else:
             log.info("Tiingo fallback recovered %s", joined)

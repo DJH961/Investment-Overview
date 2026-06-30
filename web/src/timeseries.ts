@@ -80,6 +80,20 @@ export interface ReconstructInput {
   baseEur: Decimal;
   /** Constant USD base (settled cash + NAV funds) added at every point. */
   baseUsd: Decimal;
+  /**
+   * Optional per-day money-market value (USD) so the MM portion of the base
+   * **steps** on the day a flow landed instead of carrying today's balance flat
+   * across the whole window. Ascending by date (`YYYY-MM-DD`); each point's day
+   * picks the latest entry at/before it ({@link moneyMarketValueOnDate}). USD is
+   * booked, EUR is derived at the point's own FX. When omitted the base is flat.
+   */
+  mmDaysUsd?: { date: string; valueNativeUsd: Decimal }[];
+  /**
+   * The MM value (USD) already folded into {@link baseEur}/{@link baseUsd}
+   * (today's balance). Each historical day shifts the base by `mmOnDay − this`.
+   * Defaults to the last `mmDaysUsd` entry (the latest settled MM total).
+   */
+  mmBaselineUsd?: Decimal;
 }
 
 const ZERO = new Decimal(0);
@@ -185,16 +199,46 @@ export function reconstructSessionCurve(input: ReconstructInput): CurvePoint[] {
   }
   const times = [...instants].sort((a, b) => a - b);
 
+  // Per-day money-market base step: a flow that landed mid-window must not lift
+  // earlier days to today's balance. Pre-sort the MM day series and pin the
+  // baseline already folded into the base (today's total) so each historical
+  // day shifts the base by `mmOnDay − baseline`; absent ⇒ flat (no step).
+  const mmDays = input.mmDaysUsd ? [...input.mmDaysUsd].sort((a, b) => (a.date < b.date ? -1 : 1)) : [];
+  const mmBaseline = input.mmBaselineUsd ?? (mmDays.length > 0 ? mmDays[mmDays.length - 1].valueNativeUsd : ZERO);
+
   const points: CurvePoint[] = [];
   for (const t of times) {
     const fxT = sortedFx.length > 0 ? forwardFilled(sortedFx, t) : null;
     const marketEur = marketComponentEur(holdings, sortedBars, t, fxT, baseFx);
     const marketUsd = marketComponentUsd(holdings, sortedBars, t);
-    points.push({
-      t,
-      valueEur: baseEur.plus(marketEur),
-      valueUsd: baseUsd.plus(marketUsd),
-    });
+    let stepEur = baseEur.plus(marketEur);
+    let stepUsd = baseUsd.plus(marketUsd);
+    if (mmDays.length > 0) {
+      const mmOn = mmValueOnOrBefore(mmDays, localDayKey(t)) ?? mmBaseline;
+      const dUsd = mmOn.minus(mmBaseline);
+      stepUsd = stepUsd.plus(dUsd);
+      const fx = fxT ?? baseFx;
+      stepEur = stepEur.plus(fx && fx.gt(0) ? dUsd.div(fx) : dUsd);
+    }
+    points.push({ t, valueEur: stepEur, valueUsd: stepUsd });
   }
   return points;
+}
+
+/** The `YYYY-MM-DD` local calendar day a stamped instant falls on. */
+export function localDayKey(t: number): string {
+  const d = new Date(t);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** Latest MM value at or before `date` (days ascending), else null. */
+function mmValueOnOrBefore(days: { date: string; valueNativeUsd: Decimal }[], date: string): Decimal | null {
+  let picked: Decimal | null = null;
+  for (const d of days) {
+    if (d.date <= date) picked = d.valueNativeUsd;
+    else break;
+  }
+  return picked;
 }

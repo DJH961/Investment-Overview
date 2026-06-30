@@ -5,7 +5,6 @@ All notable changes to this project are documented here. The format follows
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Versioning policy
-
 - **0.x** — pre-UI scaffolding milestones. The app does **not** yet present a
   usable web UI.
 - **1.0.0** — first release with a runnable UI: end-to-end flow from CSV
@@ -42,6 +41,782 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   line of the live-web companion. The desktop app, the `web/` companion
   (`web/package.json`), and `uv.lock` move in lock-step as always, and the
   READMEs' status headers now read v5.0.
+## [4.22.0] — 2026-06-30
+
+### Changed
+
+- **Graph unification — the live 1D and 1W portfolio graphs now share one
+  intraday-window builder, killing the long-standing 1D-vs-1W divergence**
+  (`docs/graph-unification-plan.md`). For a long time the same recent period
+  looked smooth on 1D but spiky/sawtooth on 1W, settled days subtly reshaped
+  overnight, and the trailing tip ticked *up* on 1D while ticking *down* on 1W —
+  all because 1D and 1W were two different code paths (dense intraday bars vs. one
+  coarse daily close per day, then a second lower-resolution "blob" source merged
+  back in). This release begins the Main track (Group 1 — Foundation):
+  - The live **1W** curve is now drawn from the **same dense 5-minute intraday
+    bars** as 1D over the trailing-session window, instead of one daily close per
+    session — so the today-slice of 1W is *identical* to the 1D graph, not merely
+    similar. Cost is unchanged: Twelve Data bills one credit per symbol per request
+    regardless of bar count, so a dense 5-day week costs the same as a single day.
+  - The **web⇄blob market-sleeve merge** is **removed from the live path** (it was
+    the source of the sawtooth and the trailing-tip mismatch — it unioned web
+    5-minute points with blob 30-minute points whenever they agreed within
+    tolerance). The blob is kept only as a springboard / offline fallback, never a
+    live merge source. The 1W tail now uses the same close-cap as 1D.
+  - The 1W **FX leg rides the same intraday pipe** (5-minute EUR/USD), and the live
+    EUR/USD mark is now timed to the **quote's own reported price time** rather than
+    the moment we happened to poll — so the EUR and USD lines diverge at the right
+    instants instead of being mis-stamped to the pull clock.
+  - **Main track (Group 2 — Unify fetch & store):** the windowed 5-minute market
+    bars the 1W pull fetches are now persisted into the **shared per-day session
+    store** — the same `YYYY-MM-DD` caches the 1D graph writes — split by trading
+    day and clamped to each regular session, instead of living only in a parallel
+    weekly cache. The 1W body therefore reconstructs from the *identical* per-day
+    intraday bars as 1D (the today-slice of 1W equals the 1D graph by construction,
+    not merely similar), and a day either timeframe freshens enriches the other for
+    free. The store stays canonical **USD**; the EUR line remains a per-instant FX
+    re-mark on top, never a flat rescale.
+  - **Main track (Group 3 — Orchestrator):** the single data-pull brain
+    (`web/src/freshness.ts` + `web/src/data-orchestrator.ts`) is unified to match the
+    one-pipeline graph model. The separate 1D-session and 1W-week bar legs collapse
+    into **one window-sized `bars` leg** measured in trading sessions (the `dayBars` /
+    `weekBars` booleans survive only as derived projections of that window, so a 1W
+    pull is simply a wider 1D pull). The two stale tiers (`heavily-outdated` +
+    `minorly-outdated`) collapse into a single **`outdated`** verdict that pulls one
+    bars leg over the window of size needed (`relatively-fresh` / `fresh` stay the
+    quote-cadence tiers). The market-hours bar gate switches from the rigid `:00`
+    **clock-hour** cadence to a rolling **30-minute bar-staleness** promotion — the
+    first bar fires once the session has been open past its 30-minute warm-up (no
+    settled bar exists before that), then again whenever the last bar is over half an
+    hour old — and, on a scheduled (auto /
+    startup) round only, because each bar's newest point doubles as the quote, that
+    bar round now **subsumes the quote leg** instead of paying for both (a steady
+    ~5 quote rounds : 1 bar round cadence); manual taps never promote or suppress.
+    The old targeted week-bar backfill is absorbed by the windowed pull and kept only
+    as a small bounded safety net for freshly added holdings. No
+    user-visible behaviour changes; the brain just makes fewer, better-deduplicated
+    decisions and never decides 1D and 1W bars on two different clocks.
+  - **Web-UI track (O4 — split the manual controls):** the manual refresh is now
+    two distinct controls instead of one overloaded button. The **global Refresh
+    button is a pure *quote* round** — "the freshest live price on demand" — and no
+    longer re-pulls 1D/1W bars or triggers the 30-minute bar promotion (that stays
+    an auto/startup concern). Alongside it, a **per-graph "refresh bars" button sits
+    beside each live window**: a **1D** tap re-pulls just **today's session**, a
+    **1W** tap re-pulls the **full ~5-session week**, each scoped to exactly the
+    in-view timeframe so the cost is explicit (the tooltip says so) and a 1D redraw
+    stays cheap. The per-graph re-pull is **bars-only** — it feeds the headline via
+    the existing `primeQuotesFromGraphBars` pipeline, so it refreshes price as a
+    side effect without paying for a second quote round. The button only appears on
+    the re-pullable live 1D/1W windows; the static history slices (1M/1Y/All) have
+    nothing to re-fetch and show no button.
+  - **Python track (Group C8 — desktop parity at 5-minute density):** the desktop
+    app's two divergent graph builders ("1 Day" at 15-minute, "1 Week" at
+    30-minute) collapse into **one range-parameterized intraday builder at 5-minute
+    density** sharing a single per-session reconstruction core
+    (`services/intraday_snapshots_service.py` `_reconstruct_session_samples`;
+    `RECONSTRUCT_INTERVAL == WEEK_INTERVAL == "5m"`). `_overview_query.py` gains
+    `build_window_value_series` (`sessions <= 1` = Day window, `sessions > 1` = Week
+    window), and `build_intraday_value_series` / `build_week_value_series` become
+    thin wrappers over it — so, exactly as on the web side, the desktop today-slice
+    of 1W now equals the standalone 1D curve and Python graph density matches the
+    web companion. The blob export backbone (`live_graphs.py`, `GRID_DEFAULT="30m"`,
+    bounded by `MAX_BACKBONE_CELLS`) is deliberately left unchanged. The store stays
+    canonical **USD**; the EUR line remains a per-instant FX re-mark, never a flat
+    rescale.
+
+## [4.21.16] — 2026-06-30
+
+### Added
+
+- **Expanded the golden desktop↔web math contract (v5.0 plan B6): the shared
+  parity-vector fixture now covers the projection annuity and far more return-
+  function edge cases (16 → 39 vectors).** `tools/gen_parity_vectors.py` is the
+  single source of truth that dumps canonical input→output vectors from the
+  authoritative Python domain functions; `tests/parity/vectors.json` is the
+  committed artefact (kept fresh by `tests/parity/test_vectors_fresh.py`) and
+  `web/test/returns.parity.test.ts` proves the TypeScript port reproduces it
+  within tolerance, so the phone can never silently drift from the desktop — the
+  divergence B6 warns about is now caught at PR time. New coverage:
+  - **Projection annuity.** The web `projectForward` (`web/src/phase4.ts`) now has
+    a row-by-row golden lock against the desktop `project`
+    (`ui/pages/_projection_query.py`) — starting value, cumulative contribution
+    and every scenario column per year — across ordinary, empty-start,
+    no-contribution (USD scale), single-year and zero-year horizons. This is the
+    calculator B6 explicitly names ("so the web calculator agrees with the
+    desktop one") and it was previously unguarded.
+  - **Return-function edge cases.** Concentrated on the highest-risk paths: the
+    `float ** float` annualisation legs (`cagr`, `annualize_return`,
+    `total_growth_pct_compounded`) where `Decimal.js` and Python could diverge on
+    `libm pow`; the real-valued-domain guards that must return `null`/`None`
+    identically (negative end value, base ≤ 0, non-positive horizon); genuine
+    loss / underwater / total-wipeout sign cases; an XIRR ledger with a mid-life
+    withdrawal; and USD-scale magnitudes (USD is the canonical backend currency)
+    to confirm no precision drift at realistic portfolio size.
+
+  No production code changed — this only widens the safety net under the shared
+  maths, the foundation the rest of the v5.0 B-workstream (and the O1 end-to-end
+  trust test) builds on.
+
+## [4.21.15] — 2026-06-30
+
+### Fixed
+
+- **The Overview currency box's "Currency effect" / "Investing power" panel now
+  agrees with the headline "Today" stat on a regular weekday after the close.**
+  While the US market is shut the card's "Today" rate stat is anchored to the
+  session **open** ("since last open"), but the money panel below it stayed
+  anchored to the settled **previous close** — so the two measured different
+  windows and could disagree in scale, and even in sign (the panel could read a
+  large positive currency effect while the headline showed a small move the other
+  way). Because the settled previous close sits ~at the session close, the frozen
+  "Market hours" split leg also collapsed to a near-zero prior-close→close residual
+  instead of the real last-session open→close move. The existing v4.16.2 fix
+  already re-anchored to the session open, but only for the frozen-weekend and
+  weekend-spill-over regimes; the everyday weekday post-close / pre-open case was
+  left out. The re-anchoring now covers **every market-closed session view**, so
+  the panel total matches the headline and the market-hours leg shows the genuine
+  session move. Mirrored in the desktop app (`overview.py`) and the web companion
+  (`ui.ts`).
+
+
+
+### Fixed
+
+- **`positions_service` no longer treats today's ET trading day as a historical
+  date when the server clock is UTC.** `is_historical` was compared against
+  `date.today()` (the UTC calendar date) while `as_of` was derived from
+  `market_hours.exchange_today()` (the New-York ET date). Around midnight UTC the
+  two disagree — the ET session date is still yesterday — so `is_historical` was
+  `True` for the *current* day, triggering the forward-filled `closes_as_of` path
+  instead of `latest_closes`. Any price seeded for the UTC calendar date was not
+  found, collapsing `current_value_native` to zero and producing a `-100 %` total
+  growth and a wildly negative `capital_gain_native` in the overview read-model.
+  The comparison now uses `market_hours.exchange_today()` on both sides so the
+  clocks are consistent.
+
+- **A manual refresh is now gated only by relevance, never by freshness.** A tap
+  of the Refresh button flows through the single data orchestrator (and its
+  provider fan-out / deferral) the same as before, but a symbol being "fresh"
+  could previously land the round on the `fresh` tier and strip the quote/NAV
+  legs before the per-symbol skip ever ran — so a deliberate tap pulled nothing.
+  The orchestrator now forces the legs that can actually have moved on for a
+  manual tap, regardless of the graded tier: **market symbols while the market is
+  open**, **NAVs only post-close until the day's NAV arrives**, and **every symbol
+  once the close is in hand**. The executor's existing per-symbol skip still has
+  the final say (so a tap with everything already settled spends nothing), and the
+  only thing that can stop a tap is the short double-click cooldown. A manual tap
+  therefore reliably "pulls up" and expands an automatic update instead of being
+  swallowed by a fresh cache.
+- **Auto-updates pull the day's NAVs the instant the market closes.** Previously a
+  fresh quote book kept a closed-market auto tick on the `fresh` tier, so the NAV
+  leg did not fire until the data aged past one auto-interval. The orchestrator now
+  raises the NAV leg the moment the market is shut with today's NAV still awaited,
+  self-clearing once the NAV lands.
+
+### Fixed
+
+- **The "1 Week" graph now re-pulls a day that is too *spaced out*, not just one
+  with too few points.** The week coverage check already re-fetched a finished
+  session that fell below the point-count floor or whose first→last reach spanned
+  too little of the day, but it could not see an *internal hole*: a missing
+  morning (a late first sample with a still-wide overall span) or a midday stall
+  where live captures stopped and later resumed left a flat straight line across
+  the gap yet still passed both tests. Such a day is now judged uncovered when any
+  hole — between the session open and the first sample, or between two consecutive
+  samples — reaches an hour or more (at the 30-minute sourcing grid that means at
+  least one bar is missing), so it is re-pulled to supplement the gap. This
+  mirrors the "1 Day" curve's existing internal-gap guard, which already re-pulls
+  on holes wider than 45 minutes.
+
+## [4.21.12] — 2026-06-29
+
+### Fixed
+
+- **Back-to-back auto-update bursts after the device wakes are coalesced and the
+  stalled-round duplication is gone.** Investigating the 5 pm window in polling
+  log 44 showed an auto-update round that started before the device slept, froze
+  for ~59 minutes, then completed as if fresh the instant the app woke — while a
+  resumed warm-up, the unlock session-start warm-up, and a forced kickoff all
+  re-fetched the same book within seconds, exhausting the per-minute free-tier
+  budget and forcing the "real" pull to defer every symbol. As a result:
+  - A round that has been in flight longer than the configured auto-update
+    interval (threshold `max(90s, interval × 3)`) is now abandoned on the next
+    tick instead of resurfacing stale, with a generation guard so the resurrected
+    hung round can no longer clobber the fresh one's state, verdict, or schedule.
+  - Locking the device / backgrounding the tab now **always aborts** the in-flight
+    update round (auto *and* manual), via both `visibilitychange` and `pagehide`,
+    so a round can never freeze across a lock and "complete" hour-old work as
+    fresh on the next wake.
+  - Wake triggers (visibility / pageshow / online) are funnelled through a single
+    coalescing entry point, so one physical wake no longer fans out three times;
+    duplicate fan-outs that re-fetch already-pulled symbols are now flagged in the
+    poll trail.
+  - A multi-round catch-up burst shows **one** continuous update pill (with an
+    "N holdings still filling in" detail) instead of re-triggering the update
+    animation every ~2 seconds.
+  - Per-holding "updating" countdowns are anchored on the burst's real
+    credit-paced delay rather than a flat 60 s assumption, so the timers stop
+    being wildly wrong, and the round-complete verdict now names a catch-up burst
+    explicitly instead of implying the steady cadence.
+
+## [4.21.11] — 2026-06-29
+
+### Fixed
+
+- **The live coverage caption now reads a plain "updating" with no "(60s)"
+  countdown.** The market-open coverage line (e.g. "12/12 live, 4 updating … ")
+  appended a parenthetical "(XXs)" queue ETA to the "updating" bucket, but that
+  caption never ticks down on its own, so the stale number was misleading. The
+  bucket now always renders as a plain "updating" — no seconds and no ellipsis.
+  The per-holding "Updating in XXs" countdown and the underlying
+  `updatingEtaSeconds` fact are unaffected.
+
+## [4.21.10] — 2026-06-29
+
+### Fixed
+
+- **A NAV fund no longer loses its day-over-day growth the moment the market opens
+  on a new session.** Mutual-fund / money-market NAVs publish only once a day, so
+  on a Monday open a fund still carries Friday's close while equities have already
+  printed Monday's price. The book flags that fund's move "stale" (it is last
+  session's move, not today's) — but it was *also* zeroing the fund's own per-row
+  figure, so its genuine Thursday→Friday growth suddenly vanished into ~0 every
+  session open. The stale **flag** and the per-row move **figure** are now
+  decoupled: a lagging holding keeps and shows its real last-session move (greyed,
+  "an earlier session's move"), while the headline / overall totals still exclude
+  its stale price tick — the whole-book "today" number counts only holdings that
+  repriced on the freshest session, exactly as before.
+
+## [4.21.9] — 2026-06-29
+
+### Fixed
+
+- **Logging in never parks a holding in the queue while the backup provider still
+  has credits — login always serves the data immediately.** The orchestrator had
+  regressed so that when Twelve Data was over its per-minute budget (or frozen in a
+  cooldown), the post-decrypt login round left the overflow holdings deferred to
+  the work-queue — showing "Updating…" — even though Tiingo had credits free to
+  fill them instantly. The login fast-track now spills *any* Twelve-Data-deferred
+  symbol to Tiingo regardless of sleeve size and even into the fan-out reserve
+  (login may use it), so the only thing that ever defers a login pull is Tiingo
+  itself running out of fallback credits. This applies to the post-decrypt
+  reconcile loop too, so a blob surprise (a newly-bought holding the prefetch never
+  knew about) is priced on Tiingo at once instead of waiting on the next Twelve
+  Data minute. Steady-state auto rounds are unchanged: they keep the >16-symbol
+  efficiency-spill threshold and the reserve.
+
+## [4.21.8] — 2026-06-29
+
+### Fixed
+
+- **The deferred-holding countdown now reads "Updating in XXs" and the coverage
+  line says "N updating (XXs)" — no more bare numbers or open-ended "…".** A
+  queued holding's caption spells the wait out as `Updating in 120s` rather than a
+  lone `120`, and the dashboard coverage summary swaps the vague `5 updating…` for
+  a concrete `5 updating (90s)` (the soonest deferred holding's queue ETA, sharing
+  the same cadence as the per-row countdown). When no ETA is known it reads a plain
+  `updating` — never a trailing "…".
+- **An auto-update round now paints an honest "updating vs. still-queued" split, so
+  the symbols deferred from last time are shown being pulled first instead of
+  appearing to be bumped to another round.** The round used to flash *every* stale
+  symbol as "Updating" the instant it began — including the budget overflow — which
+  then snapped back to "queued", making it look as if the round did its own symbols
+  and re-deferred the carried-over ones even when there was budget for them. The
+  fetch layer already prioritised the deferred-from-last (forced) symbols
+  correctly; now the animation tells the truth too: `loadQuotes` reports its
+  budget-resolved plan (`onPlan`) the moment it is fixed — forced/deferred-from-last
+  first — and only those symbols read as "updating", with the genuine overflow
+  staying "queued".
+- **A transient live FX miss no longer leaves a phantom Twelve Data credit booked,
+  so an auto-update round stops starving its own quote budget and needlessly
+  deferring symbols there was room for.** When the EUR/USD live leg reserved a
+  credit and then failed (a 429/5xx/transport throw) before degrading to today's
+  cached spot, the reservation was kept — burning a per-minute credit on a fetch
+  that never billed. That phantom credit shrank the same minute's quote budget and
+  pushed otherwise-fittable symbols into the deferred queue. `loadEurUsd` now hands
+  the reserved credit back on a transient failure (mirroring `loadQuotes`), so the
+  freed slot is available to the deferred drain in the same round.
+- **The Tiingo EUR/USD backup leg now also refunds its reserved credit on a
+  transient failure, so a failed FX backup never burns a slot of the scarce 40/hr
+  web Tiingo budget.** The same phantom-credit bug as the primary FX leg lived one
+  branch below it: when the Tiingo `/price` fallback reserved its single credit and
+  then threw (a 429/5xx/transport reject the provider never billed), the reservation
+  was kept before degrading to the cached spot — quietly eating into the much
+  tighter Tiingo hourly cap. `loadEurUsd` now hands that credit back on a transient
+  Tiingo failure too (mirroring `loadQuotes`, the primary FX leg, and the
+  `tiingo-fallback` quote path), keeping the Tiingo ledger truthful.
+
+## [4.21.7] — 2026-06-29
+
+### Fixed
+
+- **The 1W live tooltip now sits at its true time-of-day within today's session,
+  on both the web companion and the Python desktop.** The "1 Week" graph packs each
+  trading day into an equal-width band, but a still-forming *today* was scaled to its
+  own open→`now` span, so the live tip was pinned to the far right of today's band
+  from the very first print — out of step with the settled days beside it. Both
+  renderers now anchor every band to the window's shared session **open→close** span:
+  the live tip starts hard left at the open and slides right as the session wears on,
+  matching the scaling of the days displayed before. On the web (`sessionFractions`)
+  each point is placed by its fraction of that shared span; on Python
+  (`_value_curve_figure`) the x-axis end is reserved at the close time-of-day on the
+  latest session's date so today gets a full-width day-plane instead of a narrow
+  right-hand sliver.
+
+## [4.21.6] — 2026-06-29
+
+### Fixed
+
+- **The live graph's loading box now matches the graph it stands in for, so it no
+  longer nudges the page into a tiny horizontal overflow on desktop.** The
+  "Loading live data…" placeholder carried the shared `.note` class's small
+  horizontal margin, so the full-width box spilled a few pixels past its wrapper
+  and gave the page a faint sideways scroll. The margin is zeroed, and the
+  placeholder now *remembers* the chart's last rendered height (persisted per
+  chart across reloads) and copies it verbatim — a pixel match for the graph on
+  every viewport instead of an aspect-ratio guess that could mis-size.
+- **A deferred holding now shows a live seconds countdown to its turn instead of an
+  open-ended "…".** When the free-tier per-minute budget parks a holding, its
+  status caption counts down — `120`, `119`, `118`, … — to when it is expected to
+  update. The estimate is queue-aware: a holding tenth in line waits for the eight
+  ahead of it to clear the current round *and* rides the next one (~2 min, not a
+  flat one), and a deeper queue fans out across as many rounds as the per-minute
+  capacity demands.
+
+## [4.21.5] — 2026-06-29
+
+### Fixed
+
+- **Locked the market-closed FX-freeze contract for the live 1D/1W value graphs
+  with a regression test.** Confirmed and pinned the intended behaviour: once the
+  US equity session has shut but FX still trades, the **1D** and **1W** curves stay
+  put on the **session-close** EUR/USD rate (`graphFx`), while the headline total,
+  the per-holding growth rates and the **1M and longer** history graphs keep
+  re-marking at the **live** spot. Because the USD leg is FX-free, the 1D graph's
+  USD growth equals the overview's "today" USD move by construction; in EUR the two
+  diverge once the overnight rate drifts from the close, and reconcile only while
+  the rate is unchanged. No behavioural change — the freeze (`graphAnchorFx` /
+  `buildModelAnchor`) and live history paths were already correct; this adds a
+  `value-graph` test that asserts the USD legs match and the EUR legs part exactly
+  as specified, so the invariant cannot silently regress.
+
+## [4.21.4] — 2026-06-29
+
+### Fixed
+
+- **The Python desktop exporter now keeps the same one clock as the web companion —
+  New-York exchange time (ET) — completing the both-sides time alignment.** The
+  exported `analytics.curve` stamped each daily close on the publisher's *local*
+  calendar (`date.today()`), so a desktop run east/west of New York around the date
+  roll filed a close under the wrong trading day and the web's ET buckets could not
+  line up — souring the value graph and the 1W reconciliation regardless of the web
+  fix. The read-model `as_of` (and therefore the equity curve's last day) now
+  defaults to the New-York exchange date via a new `market_hours.exchange_today()`
+  helper, so every daily close is filed under its NYSE session. The 1W sleeve session
+  dates were already ET and are confirmed unchanged.
+- **Blob meta schema bumped `1 → 2` (ET curve contract).** The `portfolio.meta.json`
+  sidecar's `schema` is the marker the web companion gates on to read legacy
+  (publisher-local, `≤ 1`) vs ET (`≥ 2`) curve dates — never a calendar date. The web
+  ships before the desktop and its single ingest adapter (`blobCurveDayMs`) is
+  forward-tolerant, filing both legacy-local and ET bare dates on the same ET bucket
+  grid as web-recorded closes, so no client mis-buckets during the staggered ~3-week
+  desktop rollout. A small 1W USD/FX reconciliation offset is expected only while a
+  desktop remains on schema ≤ 1; it collapses to ~0 once that desktop ships the ET
+  exporter, not before.
+
+## [4.21.3] — 2026-06-29
+
+### Fixed
+
+- **The web companion now keeps one clock — New-York exchange time (ET) — so its
+  graphs line up with the desktop instead of sliding ~4–5 hours past them.** Daily
+  closes and every day-boundary bucket (1W, 5Y/MAX, value-history, springboard,
+  week-repair, freshness) were computed at UTC- or viewer-local midnight, while the
+  Python desktop stamps each trading day at 00:00 ET. That mismatch calibrated the
+  weekly overlay on points that did not truly coincide and read as a fake ~1% gap,
+  and left some backup-provider funds looking "incomplete" forever so they were
+  re-pulled on every login. A bare-date daily bar is now stamped at the ET
+  trading-day start (matching the desktop's `_session_start_utc` to the
+  millisecond), and all internal day bucketing runs on the New-York calendar;
+  intraday instants and the display layer are unchanged.
+- **Legacy-blob coexistence.** The desktop still publishes `analytics.curve` dates
+  the old (publisher-local) way until it ships ET stamping, so the cutover is gated
+  on the meta sidecar's `schema` (legacy `≤ 1`, ET `≥ 2`) — never a calendar date —
+  and a single adapter at the blob-ingest edge files those dates on the same ET
+  bucket as web-recorded closes, so a viewer west of UTC never sees a day split into
+  two points. While the desktop remains on the legacy schema a small 1W USD/FX
+  reconciliation offset is expected; it is not a regression and is intentionally
+  left in place until the desktop ships ET.
+
+## [4.21.2] — 2026-06-29
+
+### Changed
+
+- **The polling log now explains *why* the orchestrator re-pulls graph bars, not
+  just that it did.** Login warm-up bars/FX re-fetches now carry a short reason
+  codeword: 1W bars show a `short-coverage` tag with the latest stored bar vs the
+  settled cutoff, the FX-bar anchor names which anchor is due (`open`/`close`/
+  `prevFx`), and the cold-start FX backfill reports how many minutes short of the
+  prior close the newest bar lands. This surfaces the case where stored bars are
+  re-pulled because they don't *reach* the required close timestamp — bars that
+  re-fetching can't advance — which was previously silent.
+
+## [4.21.1] — 2026-06-29
+
+### Fixed
+
+- **The web companion's "jumpstart" auto-refresh now reports when it fires.**
+  After a refresh round that pulls nothing because every held quote/FX value is
+  still fresh, the scheduler brings the next automatic update forward to land
+  exactly when the *oldest* value ages out (rather than waiting a full interval).
+  This shortening previously ran silently, so a regression that once collapsed it
+  toward ~0 — the old non-stop-update bug — and a jumpstart never firing both
+  looked identical in the trail. It now logs the brought-forward delay to the
+  schedule log, confirming the burst floor that keeps it from spinning hot, so the
+  cadence is visible and verifiable.
+
+## [4.21.0] — 2026-06-29
+
+### Changed
+
+- **The web companion's Settings screen is now organised and far less
+  cluttered.** Returning users see most controls folded into collapsible
+  groups — *Data source*, *Appearance*, *Security*, *Backup* and *Graphs* — so
+  the screen opens compact and you expand only what you need; first-run setup
+  stays flat so the data-source fields are immediately visible. The app version
+  is pulled out of the body and pinned to the bottom of the screen as a quiet
+  footer (with the desktop footer ordering fixed) instead of competing for space
+  with the settings themselves, keeping the mobile-first layout clean.
+
+## [4.20.10] — 2026-06-29
+
+### Fixed
+
+- **Web data-fixing / reconciliation messages now go to the data-loading log.**
+  Curve reconciliation and other data-repair notes (e.g. the 1W blob↔web merge
+  and NAV-collapse repairs) are reconciliations against already-loaded data, not
+  live pulls, so they are routed through `recordReconciliation` into the
+  data-loading log instead of leaking into other polling streams — keeping the
+  log coherent and making the 1W merge outcome discoverable. Strengthened the 1W
+  NAV-collapse repair-log test assertion accordingly.
+
+## [4.20.9] — 2026-06-29
+
+### Added
+
+- **The 1D, 1W and long-range value graphs now follow the exported per-day money-market balance instead of carrying today's balance flat across the whole window.** Money-market / settlement funds (VMFXX, SPAXX …) pin a constant $1.00 NAV, so their value moves only with the share count — which deposits and dividends change, sometimes while the market is shut. The whole-book base now **steps on the day a flow landed** using the export's `mm_value_native` series (aggregated across funds, USD booked / EUR derived at each point's own FX), so historical days are no longer lifted to today's higher balance. Covered by new tests in `web/test/timeseries.test.ts` and `web/test/market-sleeve.test.ts`.
+
+### Fixed
+
+- **Money-market growth/XIRR no longer reads negative on the web companion for a dividends-only fund.** Settlement / money-market funds (VMFXX, SPAXX …) are USD-native and pin a constant $1.00 NAV, so a fund that only ever received dividends — with no drawdowns — must show a small *positive* return. Older export blobs omitted the per-flow USD cashflow legs and the USD cost basis, so the USD figure silently fell back to the FX-negative EUR one and showed a misleading negative growth/XIRR despite no losses. The web now backfills the USD cost basis and per-flow USD legs natively from the booked USD (par, FX-free) for money-market holdings, so USD growth/XIRR computes correctly positive while EUR stays FX-derived. Confirmed both wallets handle reinvested money-market dividends as gain (cost excludes the reinvest), and the Python retained-cash guard still excludes dividends swept into a money-market account from portfolio XIRR. Covered by new web `compute.test.ts` cases (dividends-only and a par-MM no-sell `value ≥ cost ⇒ growth ≥ 0` invariant) and a Python `test_overview_query.py` test.
+
+## [4.20.8] — 2026-06-29
+
+### Fixed
+
+- **Editing the ledger now actually rebuilds the affected history.** Cached
+  daily portfolio closes power `/monthly`, `/yearly` and the equity curve, but
+  nothing dropped them when a *past-dated* transaction was imported, added,
+  edited, or deleted — so a late import or correction left those periods showing
+  stale, pre-edit numbers until the whole cache happened to be cleared. Every
+  ledger mutation now calls `snapshots_service.invalidate_for_trade_dates`, which
+  drops every cached daily close on/after the earliest affected past trade date
+  so that window recomputes lazily on next read; same-day-only entries are
+  skipped because today is always recomputed live. Wired into the importer batch
+  insert and the manual add/edit/delete paths (edits cover both the old and new
+  trade date in case the date moved), with covering tests in
+  `tests/services/test_snapshots_service.py` and `test_importer_service.py`.
+- **The web companion now flags "history revised" instead of silently
+  overwriting late-import corrections.** The exporter emits a cheap per-day
+  `history_fingerprint` (count, last date, short digest), and on each sync the
+  companion compares the incoming blob's daily curve against its own persisted
+  closes — when a previously-stored day's whole-book value is rewritten (a late
+  desktop import / correction), a polling-log `blob` note records exactly which
+  days changed and by how much, so revised history is discoverable when
+  debugging rather than vanishing. Adds `diffBlobHistory` + covering tests.
+
+## [4.20.7] — 2026-06-29
+
+### Changed
+
+- **Settings "Regenerate 1D / 1W graph" now wipes the curve completely before
+  re-pulling, so any latent corrupt data is dropped rather than spliced back in.**
+  Previously the 1W regenerate only deleted the daily-close sleeve
+  (`1W-daily`), leaving each rolling-week day's dense `YYYY-MM-DD` bars in the
+  store — so a single bad day survived because "1D fills 1W" re-enriched the
+  curve from it. Both regenerators now clear *every* store key feeding their
+  range (1D: today's session; 1W: the sleeve **and** every day in the window) so
+  the curve rebuilds from the truly-empty slate a brand-new login starts from,
+  blob-springboard first. Adds `regenerateStoreKeys` + covering tests.
+
+## [4.20.6] — 2026-06-29
+
+### Fixed
+
+- **The 1W value graph no longer dips at its final dot (PR #249/#252 follow-up).**
+  Pinning only the very last point still left a stale, coarse blob market-sleeve
+  sample as the *penultimate* point — a near-vertical nosedive notch right before
+  the live tip that 1D (dense web bars, no blob) never shows, for both EUR and
+  USD. `pinMergedTipToWebTip` now hands the entire trailing edge to the dense
+  web/1D tail (its last bar through the tip), dropping any blob sample inside the
+  final segment. Adds covering tests in `web/test/market-sleeve.test.ts`.
+
+## [4.20.5] — 2026-06-28
+
+### Fixed
+
+- **Daily per-holding moves now use the same whole-book two-date convention as the headline in both desktop and web.** Lagging NAV/mutual-fund holdings are forward-filled when a fresher peer has printed, so their stale price tick is dropped and only the appropriate FX revaluation remains; money-market rows still show dashes.
+- **The web companion now keeps EUR/USD frozen while forex is closed, even for forced refreshes.** This matches the desktop rule: live spot while the forex market is open, then the last settled close once it shuts.
+
+## [4.20.4] — 2026-06-28
+
+### Fixed
+
+- **The 1W value graph no longer dips at its trailing edge.** The merged
+  intraday/historical 1W curve used to end on the historical close, which lagged
+  behind the live market and produced a spurious end-of-curve dip. The 1W
+  curve's trailing edge is now pinned to the trusted web/1D live tip so the most
+  recent point matches the current intraday value. Adds covering tests in
+  `web/test/market-sleeve.test.ts`. Merges `main` (4.20.3) conflict-free.
+
+## [4.20.3] — 2026-06-28
+
+### Fixed
+
+- **The 1D graph's "Prev close" reference line is now a stable, session-constant
+  anchor.** The dashed previous-close baseline used to wobble during the session
+  because it was re-derived from the live overlay's shifting FX, so the EUR line
+  could appear to cross its own opening anchor even when nothing changed. It is
+  now pinned to the session-close FX (`graphAnchorFx`) for the duration of the
+  trading day, so the reference line stays put and the 1D curve reads against a
+  fixed prior-close datum. Adds `web/src/session-fx.ts` and covering tests.
+
+## [4.20.2] — 2026-06-28
+
+### Fixed
+
+- **The 1D / 1W graphs can now source their per-minute EUR/USD overlay from a
+  budget-gated Tiingo *secondary* when the keyless yfinance intraday feed serves
+  nothing — including over the weekend.** The graphs reprice each USD-booked
+  holding at the *actual* EUR/USD rate struck each minute (so the EUR line
+  genuinely diverges from the FX-free USD line). That overlay was sourced solely
+  from yfinance's intraday `EURUSD=X`; on a yfinance FX outage the curve silently
+  collapsed to the day's single settled rate. yfinance is still always tried
+  first, but when it returns nothing the reconstruction now falls back to Tiingo's
+  per-pair FX *prices* endpoint (`fetch_fx_intraday`) for the last market day's
+  settled intraday bars. Crucially this is a **historical** pull (an explicit
+  past-session date window), never a live weekend "projection", so — unlike the
+  live spot, which both providers still refuse to poll while the spot-FX market is
+  shut — it is valid even on Saturday/Sunday, when the 1D graph still shows
+  Friday's session. The fallback is token-gated (a vanilla install never touches
+  Tiingo) and charged against the shared desktop Tiingo budget, so a sustained
+  yfinance FX outage can't burn the cap.
+
+## [4.20.1] — 2026-06-28
+
+### Fixed
+
+- **The currency panel now treats the spot-FX weekend close as a *pause*, so
+  Friday's session stays the previous session when forex reopens Sunday evening.**
+  Previously, the moment spot FX reopened (Sun 17:00 ET) the box collapsed the
+  Sunday-evening-through-Monday-open "weekend spill-over" into a single overnight
+  drift "since Friday" — the whole Friday market-hours leg (and the "Since close"
+  third stat) simply *disappeared*. Since the weekend close is just a pause, that
+  was wrong: Friday remains the previous session until the next US session opens.
+  The spill-over is now a full **session view**, identical to the frozen Friday
+  weekend but with the rate live again — the two-leg split keeps Friday's
+  market-hours leg ("last") with the live overnight drift since its close on top,
+  the "Since close" stat returns, and the currency-effect / investing-power panels
+  re-anchor to Friday's session **open** (matching the box's "since last open") so
+  the totals never disagree in sign with the headline. The single-overnight collapse
+  is now reserved for a genuine US-only market holiday (e.g. 4th of July, FX still
+  trading). Mirrored on web and Python (`web/src/ui.ts`,
+  `src/investment_dashboard/ui/pages/overview.py`).
+
+## [4.20.0] — 2026-06-28
+
+### Added
+
+- **The web companion's Settings now offers a "Test price service" probe that
+  checks Twelve Data reachability without silently burning your free-tier
+  budget.** The probe (`web/src/probe.ts`) is budget-gated against the rolling
+  per-minute / per-day credit log, surfaces an explicit over-limit override for
+  when you knowingly want to spend a credit anyway, and meters every credit it
+  spends back into the shared credit ledger so the auto-refresh economy stays
+  honest (`web/src/app.ts`, `web/src/cache.ts`, `web/src/styles.css`,
+  `web/README.md`).
+
+### Fixed
+
+- **A price-service outage no longer pins the web companion in a non-stop
+  update loop.** When Twelve Data becomes unreachable the app now backs off,
+  persists a long-term deferred-symbol queue across reloads
+  (`web/src/deferred-queue.ts`), and records *why* the service was deemed
+  unreachable (`web/src/unreachable.ts`) so the UI can explain the degradation
+  instead of hammering a dead endpoint.
+
+## [4.19.2] — 2026-06-28
+
+### Fixed
+
+- **A freshly-fetched money-market NAV no longer strands every equity's daily
+  move as "stale" and wipes the Top-movers band on the web companion.** A
+  par-NAV money-market fund (e.g. VMFXX) re-marks to its own "today" whenever it
+  is re-fetched — it does not care whether the *stock* market is open — so a quote
+  pulled after-hours, over a weekend, or on a holiday carried a value-date newer
+  than every equity's genuine last-session move. That row defined the freshness
+  basis (`latestPriceDate` in `web/src/compute.ts`), which then flagged the real
+  equity moves `todayMoveIsStale` and collapsed the prev-value/move math, leaving
+  the Top-movers band empty. The freshness basis now ignores money-market
+  holdings — which never carry a today's move and so have no business dating it —
+  guarding the symptom at its source rather than only in `buildMovers`
+  (`web/src/compute.ts`).
+
+## [4.19.1] — 2026-06-28
+
+### Fixed
+
+- **The desktop no longer sources a "live" EUR/USD spot while the spot-FX
+  (forex) market is closed — a weekend quote is an indicative *projection*, not a
+  live traded price, so it never overlays as "today's" live rate.** Previously
+  the live-spot refresh polled yfinance's `EURUSD=X` (and the Tiingo FX backup) on
+  every tick regardless of the forex clock; over the weekend close (Friday 17:00 →
+  Sunday 17:00 ET) any reading a feed still returned could slide the EUR view on a
+  rate that never actually printed. `fx_service.refresh_live_spot` now short-
+  circuits while `market_hours.is_forex_market_open` is `False`: no provider is
+  polled and the last genuine in-session spot is left in place as the frozen
+  Friday close (it stops overlaying as *today's* mark on its own once the calendar
+  rolls past its observation day). As a result the **1M and longer** value graphs
+  — which legitimately re-mark at the live after-hours spot — only ever see an
+  open-market rate, and the **1D / 1W** live tip continues to stop at the session
+  close and freeze to that session's settled FX (unchanged `freeze_after_hours`
+  behaviour). Mirrors the web companion's forex-hours gating.
+
+## [4.19.0] — 2026-06-28
+
+### Changed
+
+- **Desktop Tiingo is now a strict, budgeted, and visible last resort instead of
+  a fallback in name only.** Its caps are no longer hardcoded with a misleading
+  rolling-hour window, its usage is no longer invisible, FX is no longer routed
+  to it while the market is closed, and a `429` now actually stops further calls:
+  - **Configurable caps with correct reset windows.** The hourly and daily caps
+    are persisted config (`tiingo_hourly_cap` / `tiingo_daily_cap` in
+    `app_config`; defaults 10/hr · 200/day) and are bound onto the budget on load
+    so every gate honours them. The hourly bucket now resets on the **wall-clock
+    hour (`:00`)** rather than a rolling 60-minute window, matching how Tiingo
+    itself resets; the daily bucket still resets at midnight ET.
+  - **Settings visibility.** A new budget panel shows live `hour_used/cap` and
+    `day_used/cap`, "limit reached" badges, reset-timing captions, an editable
+    caps form, and a timestamped `429` notice.
+  - **FX no longer falsely routed.** `fx_service.refresh_live_spot` only escalates
+    to the Tiingo live-FX backup when the forex market is actually open; while it
+    is closed there is no live quote to fetch, so the settled ECB rate stands and
+    no call is spent. yfinance remains the primary source throughout.
+  - **`429` backstop.** An HTTP `429` from Tiingo pins `hour_used` to the cap and
+    stamps `rate_limited_at`, so the quota is treated as spent (regardless of the
+    local counter) until the next `:00` — wired into both the price path and the
+    FX paths.
+
+## [4.18.1] — 2026-06-28
+
+### Changed
+
+- **The Overview "Top movers" band is tidier and uses the full width.** The
+  basis date (e.g. "last close · 26 Jun") now rides on the headline row itself,
+  right-aligned beside the title at the same height, instead of sitting on a
+  separate line below it. The band's headline was renamed from "Today's movers"
+  to **"Top movers"** (it reflects the freshest settled session, which is not
+  always *today*), and the winners/losers blocks now line up side to side as a
+  single full-width row on a wider range of desktop widths (the four-up layout
+  kicks in from 768px rather than 1024px), using the whole band.
+
+## [4.18.0] — 2026-06-28
+
+### Added
+
+- **The desktop now stamps the EUR/USD rate with an honest "as of …" /
+  "EOD FX" provenance — and the live capture time when it is live — matching the
+  web companion for transparency and correctness.** The Overview "Currency ·
+  EUR ↔ USD" box and the Holdings "Current FX" tile previously showed a bare rate
+  with no indication of *which day's* (or minute's) FX it was: a settled
+  end-of-day ECB reference rate looked identical to a fresh live spot. A new
+  `fx_service.eur_quote_as_of` resolves the displayed rate's provenance — a
+  today-dated live intraday spot vs the forward-filled ECB end-of-day fixing — and
+  the live spot now carries its capture instant (`LiveSpot.observed_at`). The FX
+  box stamps **"as of HH:MM"** on the viewer's clock for a live reading (just like
+  the web), **"as of <date>"** plus an explicit **"EOD FX"** tag for the settled
+  end-of-day rate; the Holdings tile mirrors this in a compact line
+  (`src/investment_dashboard/services/fx_service.py`,
+  `src/investment_dashboard/ui/pages/overview.py`,
+  `src/investment_dashboard/ui/pages/holdings.py`,
+  `src/investment_dashboard/ui/style.py`).
+
+## [4.17.0] — 2026-06-28
+
+### Fixed
+
+- **The live "1 Day" / "1 Week" graphs now keep trying to fill themselves to
+  their coverage target on *every* auto-update — whether or not the US market is
+  open — and a graph that still can't be completed is flagged in Data Health.**
+  Previously the per-tick refresh only *appended* a live point while the market
+  traded; the gap-filling backfill ran only at startup, so a graph that came up
+  short (a blank start, a stalled feed, or a partial fetch) stayed gappy until the
+  next restart. Each auto-update now runs a cache-first backfill
+  (`intraday_snapshots_service.backfill_graphs`): the "1 Day" curve re-pulls its
+  15-minute grid while under-covered, and the "1 Week" sleeve re-attempts its
+  uncovered sessions (force-pulling past the once-per-anchor render guard) so an
+  under-filled day is topped up rather than frozen. When a finished session still
+  can't reach its target — usually because the price feed has no intraday history
+  for that day — the new **"Intraday graph coverage"** Data Health probe surfaces
+  it as a warning instead of silently drawing a short curve
+  (`investment_dashboard/services/intraday_snapshots_service.py`,
+  `investment_dashboard/services/auto_refresh.py`,
+  `investment_dashboard/services/diagnostics_service.py`).
+
+## [4.16.4] — 2026-06-28
+
+### Fixed
+
+- **The Overview's "Today" KPI card no longer sprawls or wraps awkwardly — the
+  Vs Market verdict, the card layout, and the movers badges are all tightened
+  into a compact, single-screen block.** The "Beating/Trailing the market"
+  verdict headline could wrap onto two lines and the day's movers badges spilled
+  into the card flow, pushing content around and wasting vertical space. The fix
+  keeps the verdict on a single line via a compact word-headline variant
+  (`.inv-kpi-verdict`: clamped font size, `white-space: nowrap`), tightens the
+  "Today" KPI card layout, and lifts the mover badges out of the card flow while
+  making the **Today's movers** list collapsible so it no longer crowds the
+  Overview (`src/investment_dashboard/ui/pages/overview.py`,
+  `src/investment_dashboard/ui/components/kpi_card.py`,
+  `src/investment_dashboard/ui/style.py`,
+  `src/investment_dashboard/services/daily_growth_view.py`). The all-time
+  (Yearly) growth chart now also plots **both EUR and USD** lines so the two
+  currencies genuinely diverge instead of showing a single rescaled curve
+  (`src/investment_dashboard/ui/pages/yearly.py`).
+
+## [4.16.3] — 2026-06-28
+
+### Fixed
+
+- **The currency panel no longer mislabels the frozen-weekend EUR/USD rate as a
+  live, "LIVE" overnight reading — and its total no longer disagrees in sign with
+  the headline.** Spot FX trades ~24/5, so over a US weekend the rate is paused at
+  Friday's 16:00-ET close while the rest of the UI still treated it as live: the
+  diverging market-hours/overnight split tagged the leading leg **"LIVE"** on a
+  Saturday, the rate stamp showed no honest "as of" at all, and the panel total
+  spanned Thursday→now so it could read *negative* while the headline's
+  "since last open" read positive. The fix teaches the FX box the
+  **weekend-overnight** and **weekend spill-over** regimes (`isWeekendOvernight`,
+  `fxBoxRegime`): the leading leg now reads **"paused"** on a shut market, the
+  frozen rate falls back to Friday's settled session-close instant for an honest
+  "as of" date, and the effect is re-anchored — to the session **open** on a
+  frozen weekend (matching "since last open") and to the last session's **close**
+  during the Sunday-evening spill-over (the genuine **"since Friday"** baseline,
+  also named consistently across the EUR and USD panels). The FX backfill window
+  reaches back the extra session so that Friday-close baseline is co-fetched in a
+  single request rather than missed (`web/src/ui.ts`, `web/src/market-hours.ts`,
+  `web/src/session-fx.ts`, `web/src/format.ts`, `web/src/app.ts`).
 
 ## [4.16.2] — 2026-06-28
 
@@ -797,7 +1572,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Per-row freshness chips and an honest "updating…" bucket** for the live web
   companion, completing the deferred-symbols freshness plan
-  (`docs/deferred_symbols_freshness_plan.md`). Each holding row now carries a
+  (`docs/history/deferred_symbols_freshness_plan.md`). Each holding row now carries a
   three-way freshness tier — a live dot + "live" while its own price was
   confirmed inside the refresh window during market hours, a quiet "recent", or
   the honest "as of <time>" once genuinely aged — driven by the new
@@ -1615,7 +2390,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   binary-search forward-fill (`_make_forward_fill`) so repricing many instants no
   longer re-sorts each symbol's bars per point. The web 1W graph drops its
   synthetic interior points (open/close only). See
-  `docs/weekly_chart_session_axis_plan.md`.
+  `docs/history/weekly_chart_session_axis_plan.md`.
 
 ## [4.2.0] — 2026-06-24
 

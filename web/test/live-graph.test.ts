@@ -640,9 +640,9 @@ describe("buildLiveSessionCurve", () => {
 });
 
 describe("buildLiveWeekCurve", () => {
-  it("wires Tiingo daily prices + a daily FX track over the trailing-session window", async () => {
+  it("wires intraday 5-min price bars + an FX track over the trailing-session window", async () => {
     const { calls, fetchImpl } = recordingFetch([
-      { date: "2026-06-23T00:00:00.000Z", close: 100 },
+      { date: "2026-06-23T13:00:00.000Z", close: 100 },
     ]);
     const store = new TimeSeriesStore(memoryBackend());
     const providers: LiveGraphProviders = {
@@ -652,21 +652,23 @@ describe("buildLiveWeekCurve", () => {
     };
     const now = new Date("2026-06-23T14:00:00Z");
     await buildLiveWeekCurve({ anchor: anchor(), store, now, sessions: 5 }, providers);
-    // The daily closes were pulled from the Tiingo daily pipe (not Twelve Data).
-    const dailyCall = calls.find((u) => u.includes("daily=VTI"));
-    expect(dailyCall).toBeDefined();
-    expect(dailyCall).toContain("startDate=");
-    expect(calls.some((u) => u.includes("time_series"))).toBe(false);
+    // Plan C1: the 1W market bars are now pulled from the Tiingo **intraday** route
+    // (the same dense cadence as 1D), not the coarse daily-close route.
+    const priceCall = calls.find((u) => u.includes("intraday=VTI"));
+    expect(priceCall).toBeDefined();
+    expect(priceCall).toContain("startDate=");
+    expect(calls.some((u) => u.includes("daily=VTI"))).toBe(false);
+    // FX rides that same intraday pipe (plan C4): fxHistory at the 1D intraday cadence.
     const fxCall = calls.find((u) => u.includes("fxHistory=eurusd"));
     expect(fxCall).toBeDefined();
-    expect(fxCall).toContain("resampleFreq=1day");
+    expect(fxCall).toContain("resampleFreq=1hour");
     expect(fxCall).toContain("endDate=2026-06-23");
   });
 
-  it("falls back to Twelve Data daily closes when Tiingo returns nothing", async () => {
-    // The Tiingo daily pipe answers empty for the price symbol, so the dual pipe
-    // degrades to Twelve Data's interval=1day; the FX track still comes from Tiingo.
-    const fxBody = [{ date: "2026-06-23T00:00:00.000Z", close: 1.1 }];
+  it("falls back to Twelve Data intraday bars when Tiingo returns nothing", async () => {
+    // The Tiingo intraday pipe answers empty for the price symbol, so the dual pipe
+    // degrades to Twelve Data's `time_series`; the FX track still comes from Tiingo.
+    const fxBody = [{ date: "2026-06-23T13:00:00.000Z", close: 1.1 }];
     const calls: string[] = [];
     const fetchImpl: FetchLike = async (url) => {
       const u = String(url);
@@ -674,7 +676,7 @@ describe("buildLiveWeekCurve", () => {
       const body = u.includes("fxHistory")
         ? fxBody
         : u.includes("time_series")
-          ? { values: [{ datetime: "2026-06-23", close: "100" }] }
+          ? { values: [{ datetime: "2026-06-23 13:00:00", close: "100" }] }
           : [];
       return { ok: true, status: 200, json: async () => body } as unknown as Response;
     };
@@ -684,7 +686,7 @@ describe("buildLiveWeekCurve", () => {
       { anchor: anchor(), store, now: new Date("2026-06-23T14:00:00Z"), sessions: 5 },
       providers,
     );
-    expect(calls.some((u) => u.includes("daily=VTI"))).toBe(true);
+    expect(calls.some((u) => u.includes("intraday=VTI"))).toBe(true);
     expect(calls.some((u) => u.includes("time_series"))).toBe(true);
   });
 });

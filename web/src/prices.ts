@@ -12,6 +12,7 @@
  */
 
 import { Decimal } from "./decimal-config";
+import { exchangeDayStartMs } from "./market-hours";
 import type { Bar } from "./timeseries";
 
 const TWELVE_DATA_ROOT = "https://api.twelvedata.com";
@@ -413,18 +414,25 @@ function navQuoteFromNode(symbol: string, node: Record<string, unknown>): Quote 
 
 /**
  * Parse a Twelve Data `datetime` (`YYYY-MM-DD HH:MM:SS` intraday, or a bare
- * `YYYY-MM-DD` daily bar) into epoch milliseconds, treating the wall-clock as
- * UTC. This is only correct because {@link fetchTimeSeries} explicitly requests
- * `timezone=UTC`, so the provider's intraday datetimes are genuine UTC and align
- * with the real session boundaries, the EUR/USD track and the live tip — one
- * clock for the whole curve. Daily bars carry only a date. Returns null if
- * unparseable.
+ * `YYYY-MM-DD` daily bar) into epoch milliseconds.
+ *
+ * Intraday datetimes are treated as genuine UTC — correct only because
+ * {@link fetchTimeSeries} explicitly requests `timezone=UTC`, so they align with
+ * the real session boundaries, the EUR/USD track and the live tip (one clock for
+ * the whole curve). A **bare-date daily bar** carries no strike time, so we pin
+ * it to 00:00 ET (the exchange trading day's start) — matching the desktop's
+ * `_session_start_utc` — rather than UTC midnight, so a daily close buckets onto
+ * the same NYSE calendar day in both apps regardless of the viewer's timezone.
+ * Returns null if unparseable.
  */
 function parseBarTime(value: unknown): number | null {
   if (typeof value !== "string") return null;
   const s = value.trim().replace(" ", "T");
-  const iso = s.length <= 10 ? `${s}T00:00:00Z` : `${s}Z`;
-  const ms = Date.parse(iso);
+  if (s.length <= 10) {
+    const ms = exchangeDayStartMs(s);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const ms = Date.parse(`${s}Z`);
   return Number.isFinite(ms) ? ms : null;
 }
 

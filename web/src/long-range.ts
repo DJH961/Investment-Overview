@@ -53,8 +53,9 @@
  */
 
 import { intradaySymbols, marketSleeveSymbols, type BarFetcher, type IntradayAnchor } from "./intraday";
-import { isUsTradingDay, previousTradingSession } from "./market-hours";
+import { exchangeDayOf, isUsTradingDay, previousTradingSession } from "./market-hours";
 import { reconstructSessionCurve, type Bar, type CurvePoint, type ReconHolding } from "./timeseries";
+import type { Decimal } from "./decimal-config";
 import { harvestDailyCloses, loadValueHistory, type DailyClose } from "./value-history";
 import type { TimeSeriesStore } from "./timeseries-store";
 
@@ -173,15 +174,11 @@ function toReconHoldings(holdings: IntradayAnchor["holdings"]): ReconHolding[] {
   }));
 }
 
-/** The `YYYY-MM-DD` (local calendar) a stamped instant falls on — mirrors the
+/** The `YYYY-MM-DD` (New-York calendar) a stamped instant falls on — mirrors the
  * value-history harvest's own bucketing so the window clamp lines up with how a
  * point is later stored. */
 function localDayOfInstant(t: number): string {
-  const d = new Date(t);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return exchangeDayOf(t);
 }
 
 /** Inputs to {@link reconstructLongRangeCloses}. */
@@ -192,6 +189,8 @@ export interface ReconstructLongRangeInput {
   barsBySymbol: Map<string, Bar[]>;
   /** EUR→USD daily bars across the window; empty ⇒ every day falls back to `baseFx`. */
   fxBars?: Bar[];
+  /** Per-day whole-book money-market value (USD) so the base steps per day. */
+  mmDaysUsd?: { date: string; valueNativeUsd: Decimal }[];
 }
 
 /**
@@ -210,6 +209,7 @@ export function reconstructLongRangeCloses(input: ReconstructLongRangeInput): Cu
     baseFx: input.anchor.baseFx,
     baseEur: input.anchor.baseEur,
     baseUsd: input.anchor.baseUsd,
+    mmDaysUsd: input.mmDaysUsd,
   });
 }
 
@@ -242,6 +242,8 @@ export interface LongRangeOptions {
   force?: boolean;
   /** Reference instant for the harvest stamp (defaults to now). */
   now?: number;
+  /** Per-day whole-book money-market value (USD) so the base steps per day. */
+  mmDaysUsd?: { date: string; valueNativeUsd: Decimal }[];
 }
 
 /** The outcome of a long-range build. */
@@ -320,7 +322,7 @@ export async function loadOrBuildLongRangeHistory(
     }
   }
 
-  const points = reconstructLongRangeCloses({ anchor, barsBySymbol, fxBars });
+  const points = reconstructLongRangeCloses({ anchor, barsBySymbol, fxBars, mmDaysUsd: options.mmDaysUsd });
   // Blob-basis contract (new requirement): the blob's analytics.curve is the
   // authoritative history up to its last export, so reconstruction is *only* a
   // gap-filler. Clamp the harvested points to the window — strictly after the

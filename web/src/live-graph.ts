@@ -93,6 +93,25 @@ export function weekFxWindow(
   return { startDate: window[0], endDate: window[window.length - 1] };
 }
 
+/**
+ * The intraday bar interval the 1W curve pulls (plan C1) — the same 5-minute
+ * cadence the 1D curve uses, so the today-slice of 1W is identical to 1D.
+ */
+export const WEEK_INTRADAY_INTERVAL = "5min";
+
+/** Approximate count of 5-minute bars in one regular US session (09:30–16:00 ET). */
+const BARS_PER_SESSION = 78;
+
+/**
+ * Twelve Data `outputsize` for the windowed intraday 1W pull: enough 5-min bars to
+ * cover every session in the window with a small pad for holiday-shortened days and
+ * the in-progress session. The request is *also* bounded by `start_date`/`end_date`
+ * (see {@link makePriceBarFetcher}); the outputsize is just the upper cap.
+ */
+export function weekIntradayOutputsize(sessions: number = DEFAULT_WEEK_SESSIONS): number {
+  return Math.max(1, sessions) * BARS_PER_SESSION + BARS_PER_SESSION;
+}
+
 /** A callback that books `n` API credits against a source's budget log. */
 export type SpendRecorder = (n: number) => void;
 
@@ -742,11 +761,19 @@ export function buildLiveSessionCurve(
 }
 
 /**
- * Build the live **1 Week** curve with both backfills wired in: a dual-pipe
- * daily-close price fetcher (Tiingo `?daily=` first, Twelve Data `interval=1day`
- * fallback) and the batched Tiingo FX-history fetcher (daily cadence) over the
- * trailing-session window. `anchor`, `store`, `now`, `liveTip`, `sessions` and
- * `storeKey` pass straight through to {@link loadOrBuildWeekCurve}.
+ * Build the live **1 Week** curve with both backfills wired in: a dense
+ * **intraday 5-min** price fetcher over the trailing-session window (plan C1 —
+ * the 1W curve now draws the same dense per-symbol bars as 1D, so its today-slice
+ * is *identical* to the 1D graph and there is no second aggregate to merge), the
+ * EUR/USD FX track riding that same intraday pipe (plan C4), and a separate
+ * **daily-cadence** NAV fetcher for moving funds (which have no intraday series).
+ * `anchor`, `store`, `now`, `liveTip`, `sessions` and `storeKey` pass straight
+ * through to {@link loadOrBuildWeekCurve}.
+ *
+ * Cost is unchanged: Twelve Data bills **1 credit per symbol per request
+ * regardless of bar count**, so a dense 5-day week costs the same as the old
+ * single daily close — and a windowed intraday pull is a strict superset of the
+ * 1D pull at identical cost.
  */
 export function buildLiveWeekCurve(
   base: Omit<WeekCurveOptions, "fetchDailyBars" | "fetchFx">,
@@ -757,18 +784,21 @@ export function buildLiveWeekCurve(
   const window = weekFxWindow(now, sessions);
   const { tiingoMeter, twelveDataMeter } = spendMeters(providers);
   const backoff = providers.backoff ?? cacheSeriesBackoff();
-  // The 1W curve is built from one daily close per session. With a reservation,
-  // Twelve Data's `interval=1day` Pipe A fills first up to its budget and the
-  // overflow spills to Tiingo's `?daily=<ticker>` route (off Tiingo's own
-  // budget); without one it keeps the legacy Tiingo-first dual pipe. The FX track
-  // is simply the EUR/USD symbol on that same pipe (see {@link makeFxFetcher}), so
-  // it follows whatever the price pipe does — there is no separate FX subsystem.
+  // Plan C1: the 1W curve is built from **dense 5-min intraday bars** over the
+  // whole window — the same bar type the 1D curve uses — not one coarse daily
+  // close per session. With a reservation, Twelve Data's `interval=5min` Pipe A
+  // fills first up to its budget and the overflow spills to Tiingo's intraday
+  // route (off Tiingo's own budget); without one it keeps the legacy Tiingo-first
+  // dual pipe. The FX track is simply the EUR/USD symbol on that same intraday
+  // pipe (plan C4, see {@link makeFxFetcher}), so it follows the price cadence —
+  // there is no separate FX subsystem and no blob `fx_eur_usd` to consume.
+  const intradayOutputsize = weekIntradayOutputsize(sessions);
   const priceFetcher = makePriceBarFetcher({
     apiKey: providers.apiKey,
     proxyUrl: providers.priceProxyUrl,
-    param: "daily",
-    interval: "1day",
-    outputsize: Math.max(sessions + 2, 8),
+    param: "intraday",
+    interval: WEEK_INTRADAY_INTERVAL,
+    outputsize: intradayOutputsize,
     startDate: window.startDate,
     endDate: window.endDate,
     fetchImpl: providers.fetchImpl,
@@ -781,16 +811,16 @@ export function buildLiveWeekCurve(
   const fetchDailyBars = priceFetcher ?? emptyBarFetcher;
   const fetchFx = makeFxFetcher(priceFetcher);
   // The after-close escalation legs (plan C5 / FX parity): a second, independent
-  // provider used only for the daily closes / FX the primary could not advance to
+  // provider used only for the intraday bars / FX the primary could not advance to
   // the settled close. Built only when both providers exist (see the 1D builder).
   const hasBothProviders = Boolean(providers.apiKey.trim()) && Boolean(providers.priceProxyUrl);
   const secondaryPriceFetcher = hasBothProviders
     ? makePriceBarFetcher({
-        apiKey: "", // Tiingo-only: the independent second source (daily closes + FX)
+        apiKey: "", // Tiingo-only: the independent second source (intraday bars + FX)
         proxyUrl: providers.priceProxyUrl,
-        param: "daily",
-        interval: "1day",
-        outputsize: Math.max(sessions + 2, 8),
+        param: "intraday",
+        interval: WEEK_INTRADAY_INTERVAL,
+        outputsize: intradayOutputsize,
         startDate: window.startDate,
         endDate: window.endDate,
         fetchImpl: providers.fetchImpl,
@@ -801,10 +831,27 @@ export function buildLiveWeekCurve(
     : null;
   const fetchSecondaryDailyBars = secondaryPriceFetcher;
   const fetchSecondaryFx = makeFxFetcher(secondaryPriceFetcher);
-  // Item 7b: gap-fill moving-fund NAV history through the *same* capacity-split
-  // daily fetcher (Twelve Data up to budget, Tiingo overflow), re-stamped onto
-  // the NAV day-start cadence so it aligns with the free-accumulated NAV bars.
-  const fetchNavBars = wrapDailyNavFetcher(fetchDailyBars);
+  // Item 7b: gap-fill moving-fund NAV history through a dedicated **daily** fetcher
+  // (Twelve Data `interval=1day` up to budget, Tiingo `?daily=` overflow). Moving
+  // funds carry no intraday 5-min series, so the NAV leg stays on the daily cadence
+  // even though the market sleeve is now intraday (plan C1). Its bars are re-stamped
+  // onto the NAV day-start cadence so they align with the free-accumulated NAV bars.
+  const navDailyFetcher = makePriceBarFetcher({
+    apiKey: providers.apiKey,
+    proxyUrl: providers.priceProxyUrl,
+    param: "daily",
+    interval: "1day",
+    outputsize: Math.max(sessions + 2, 8),
+    startDate: window.startDate,
+    endDate: window.endDate,
+    fetchImpl: providers.fetchImpl,
+    tiingoMeter,
+    twelveDataMeter,
+    reservation: providers.reservation,
+    now: providers.now,
+    backoff: { memo: backoff, scope: "1W-nav" },
+  });
+  const fetchNavBars = wrapDailyNavFetcher(navDailyFetcher ?? emptyBarFetcher);
   return loadOrBuildWeekCurve({
     ...base,
     fetchDailyBars,

@@ -1,0 +1,412 @@
+# Graph Unification Plan — One Intraday‑Window Builder
+
+> Status: **design‑frozen, not yet implemented.** This document is the agreed
+> blueprint for eliminating the long‑standing 1D vs 1W graph divergence.
+
+---
+
+## The goal, in plain English
+
+For a long time the portfolio graphs have disagreed with themselves:
+
+- **A — the spiky week.** The same recent period looks smooth on **1D** but
+  spiky/sawtooth on **1W**.
+- **B — overnight shape drift.** A settled day's 1D shape shifts slightly between
+  the night view and the next morning, even though only the level (NAV) should
+  move, not the shape.
+- **C — the trailing tip.** At the right edge, **1D ends ticking up** while **1W
+  ends ticking down** on the *same* close — which is impossible if they describe
+  the same portfolio.
+
+The root cause is simple once you see it: **1D and 1W are two different code
+paths.** 1D draws dense intraday bars straight from the web provider. 1W draws
+one coarse close per day and then *merges in a second, lower‑resolution data
+source* (the desktop "blob") to try to add detail back. That merge is where the
+spikes, the drift and the trailing‑tip mismatch all come from.
+
+### The idea
+
+Stop treating 1D and 1W as different things. **They are the same graph over a
+different number of days.** So we build **one "intraday‑window" graph**:
+
+- It fetches **5‑minute bars per symbol** over a window of `N` days.
+- **"1D" is just `window(1 day)`. "1W" is just `window(5 days)`.** 2, 3 or 4‑day
+  windows are the exact same builder for free.
+- The "1D slice" of the 1W graph is therefore **literally the same bars** as the
+  1D graph — not similar, identical.
+
+This is affordable because the price provider (Twelve Data) **bills 1 credit per
+symbol per request regardless of how many bars come back** — a dense 5‑day week
+costs the same as a single day. So a single windowed fetch is a *superset* of the
+1D fetch at *identical cost*: when you log in heavily outdated, **one fetch fills
+both graphs.**
+
+And because everything is now drawn from the same dense, per‑symbol intraday data,
+the second data source (the blob merge) that caused the spikes is **removed
+entirely**, not patched. We keep the blob only as an offline/edge fallback.
+
+Finally, the **Python desktop app gets the same treatment at the same 5‑minute
+density**, so neither app — and neither timeframe — can drift from the other.
+
+### What is explicitly *not* changing
+
+- The **update/polling orchestrator**, caching, reservation and back‑off — all
+  untouched. We only change **what data is loaded** and the **bar type/settings**.
+- **Breadcrumbs** stay as the live‑tail filler for the open session.
+- The **provider‑disagreement / settle** machinery stays.
+- Nothing is "frozen" at close — that was never the behaviour and isn't changing.
+
+---
+
+## Evidence (live API probes, 2026‑06‑30)
+
+Probes run against the live Twelve Data and Tiingo keys:
+
+| Finding | Result |
+| --- | --- |
+| TD `time_series interval=5min` + `start_date` over a week | Returns the **full 5 trading days** — `78 bars/day × 5 = 390 bars` — in **one call per symbol** |
+| TD billing | **1 credit per symbol per request, regardless of bar count** (`prices.ts:460`) |
+| TD coverage at 5min (one call) | Full (78/day): MSFT, VOO, VXUS, VT, VGK, VUG, VTV, VTI, IAUM, VWO. Near‑full: SCHK (74–78). Sparse: **DAX** (20–36/day) |
+| Why DAX is sparse on TD | TD omits **no‑trade 5‑min buckets** for the thin Global X DAX ETF; the price info is identical to Tiingo's — Tiingo just forward‑fills empty buckets with synthetic flats |
+| EUR/USD at 5min | Dense on **both** TD (~288/day) and Tiingo (~288/day) |
+| 5‑min history depth | **~5 trading days** — exactly matches `DEFAULT_WEEK_SESSIONS = 5` (`week.ts:72`) |
+| Rate limit | **8 calls/min** on the supplied TD key is real (a 10‑symbol batch returned HTTP 429) |
+
+**Conclusion:** Twelve Data alone can self‑cover the entire 1W window at 5‑minute
+density for the whole book in one call per symbol. Tiingo is an *optional*
+backfill (DAX/SCHK) and is **not** needed for live FX (credit‑constrained). Thin
+symbols are handled by the per‑symbol forward‑fill already present in
+`reconstructSessionCurve`.
+
+---
+
+## Current state (verified against `main`)
+
+### 1D — session pipeline
+`buildLiveSessionCurve` (`live-graph.ts:680`) → `makePriceBarFetcher`
+(`param:"intraday"`, 5‑min) over `sessionFxWindow` (today) →
+`loadOrBuildSessionCurve` (`intraday.ts:456`) → per‑symbol bars in
+`stored.bars[s]` → `reconstructSessionCurve` (`timeseries.ts:185`).
+
+- Live tip: whole‑book **breadcrumb** spliced after the last bar while the market
+  is open (`intraday.ts:699‑712`).
+- After close: `capAtClose(points, closeMs)` filters `t > closeMs`
+  (`intraday.ts:232‑234, 713‑718`).
+- **Never merges the blob.** Clean and smooth.
+
+### 1W — week pipeline
+`buildLiveWeekCurve` (`live-graph.ts:751`) → `makePriceBarFetcher`
+(`param:"daily"`, `interval:"1day"`, `outputsize ≈ 8`) → `loadOrBuildWeekCurve`
+(`week.ts:431`): **one close per session per symbol** in `stored.bars[s]`.
+
+- Per‑day enrichment (`week.ts:660‑723`) swaps each day's coarse close for fine
+  1D intraday bars **read from that day's session cache** via
+  `store.loadSession(day)` (`week.ts:674`) — but that cache only exists for days
+  the dashboard watched live, so **older days stay one coarse point/day**.
+- `reconstructSessionCurve` (`week.ts:725`), **then** `enrichWeekWithBlobSleeve`
+  (app.ts) → `mergeSleeveSeries` (`market-sleeve.ts:180`), **then**
+  `capWeekToSessionClose` (`week.ts:801`).
+
+### The defect, exactly
+`mergeSleeveSeries` agree‑branch (`market-sleeve.ts:221‑224`):
+
+```ts
+if (Math.abs(deltaFraction) <= tau) {
+  // Agree — thicken the line with the union of both sources' true points.
+  points.push(...tag(w, "both"), ...tag(b, "both"));
+  counts.both += 1;
+}
+```
+
+It **unions** web 5‑min points and blob 30‑min points whenever they agree within
+`tau = 0.25%`. They agree but are not equal, so the blob sample sits offset from
+the web line and, sorted by time, interleaves web/blob/web → **sawtooth = A**. The
+EUR leg is doubly affected because the two sources carry different per‑instant FX.
+The conditional tail pin `pinMergedTipToWebTip` (`market-sleeve.ts:305`) plus the
+post‑merge cap seam produce the **trailing‑tip mismatch = C**. (The disagree‑branch
+already keeps the blob authoritative and raises a `ReconciliationFlag` — that part
+is fine.)
+
+### Supporting systems (unchanged by this plan)
+- **Blob** ships an **aggregate** market sleeve (`market_series`: FX‑free USD
+  value + per‑instant `fx_eur_usd`), **not per‑symbol**; only the 1W builder
+  consumes it.
+- **Disagreement:** `resolveCloseCompleteness` (`close-completeness.ts`) — primary
+  TD + secondary Tiingo; a symbol is **settled** when one source reaches the close
+  *or* two sources agree 3×. Used by **both** 1D (`tol ≈ 1h`) and 1W
+  (`tol ≈ 12h`). Provider‑agnostic; kept.
+- **FX:** EUR/USD is just another symbol on the same price pipe
+  (`makeFxFetcher`); applied per bar in `reconstructSessionCurve`
+  (`timeseries.ts:127‑145, 211`). The live quote is stamped at **fetch time**
+  (`quotes.ts:866` `const at = now()`).
+
+---
+
+## The changes
+
+### C1 — 1W bar type/settings → intraday 5‑min over the window
+`live-graph.ts:766‑801`: change the 1W fetcher from
+`param:"daily" / interval:"1day" / outputsize≈8` to
+`param:"intraday" / interval:"5min" / outputsize ≈ sessions·78 + pad` with
+`startDate = week‑window start`. Now `stored.bars[s]` holds **dense 5‑min bars for
+every window day**, feeding the same `reconstructSessionCurve`. The today‑slice of
+1W becomes the same bars as 1D.
+
+### C2 — Remove the blob merge from the live 1W path
+Drop the `enrichWeekWithBlobSleeve` call and retire `mergeSleeveSeries` /
+`calibrateSleeveBase` / `rebaseSleeveToWholeBook` / `pinMergedTipToWebTip` from
+the live path. With C1 there is **no second aggregate to reconcile** → the union
+sawtooth (**A**) and the pin/cap tail seam (**C**) disappear by construction.
+This is why **no per‑symbol blob export is needed** — we delete the unifier rather
+than perfect it.
+
+### C3 — Tail unification
+Once the merge and pin are gone, 1W uses the **same `capAtClose`** as 1D (it
+already calls it internally via `capWeekToSessionClose`). No special tail logic
+remains → **C** resolved.
+
+### C4 — FX policy (no polling change)
+Switch the 1W FX leg from daily to 5‑min (same pipe, mirrors C1) and stop
+consuming the blob's `fx_eur_usd` (gone with C2). **Trust device‑pulled 5‑min
+FX.** Do **not** change the FX **polling cadence**.
+
+**FX must use the quote's own price, not the pull time.** Today the live EUR/USD
+quote is stamped at fetch time (`quotes.ts:866`, `const at = now()`), which
+mis‑times the FX point to when we happened to poll rather than to the rate it
+represents. On web, use the **FX quote's reported price (and its own timestamp)**
+as the live FX mark — not the local pull clock. This is the only intentional
+change to live‑quote handling; the cadence is untouched.
+
+### C5 — Shared per‑day store (answers "identical + carried forward")
+Both views reconstruct from the **same per‑day session bars** via the **same**
+`reconstructSessionCurve`, so the 1D slice of 1W is identical, not similar. The
+carry‑forward already exists (`week.ts:674` reads each window day's session);
+today's dense session persists per‑day and is read as a prior day tomorrow. We
+just make **every** window day dense.
+
+### C6 — Unify the fetch (answers "for outdated situations, one bar set")
+The windowed 5‑min pull is a **strict superset** of the 1D pull at **identical
+cost** (1 credit/symbol regardless of length). Collapse the two fetchers into one
+windowed intraday fetcher feeding the shared per‑day store; each view is a slice:
+
+- **Heavily outdated / fresh login:** one windowed fetch serves **both** 1D and
+  1W — no separate 1D call.
+- **Warm store, market open:** only today's slice is refreshed.
+
+The orchestrator's timing/triggers are **untouched**; only *what* is loaded is
+deduplicated. **Consequence:** the separate `WEEK_STORE_KEY` daily‑close cache
+(`week.ts:639‑658`) and the `daily/1day` close‑completeness path **retire** — the
+week reconstructs from the shared per‑day intraday store. This is the load‑bearing
+deletion; it is gated behind the test suite.
+
+### C7 — Reframe: it's just intraday‑window fetching
+There is no "1D path" and "1W path" — there is **one intraday‑window builder
+parameterized by `[start, end]`**. "1D" = `window(1 session)`, "1W" =
+`window(5 sessions)`; 2–4‑day windows are the same builder/fetch/reconstruction
+for free. **Bound:** 5‑min depth ≈ 5 trading days (probe ceiling) → the intraday
+builder covers any range up to ~5 sessions at 5‑min; **beyond that the existing
+long‑range/daily path** (`app.ts:8032`, interval steps up with window length)
+takes over unchanged.
+
+### C8 — Python parity at 5‑min
+Collapse Python's `build_intraday_value_series` vs `build_week_value_series` into
+**one range‑parameterized intraday builder at 5‑min**, sharing the per‑session
+reconstruction, so Python graphs match web density and Python's own
+1D‑slice‑of‑1W equals Python 1D. **If web is 5‑min, Python is 5‑min.**
+
+---
+
+## Orchestrator adaptation — one window-sized bar leg
+
+The graph builder above (C1–C8) decides *how a graph is drawn*. This section is
+the matching change to the **data orchestrator** — *what bars get pulled when*.
+Because every bar is now just "intraday of length N", the orchestrator no longer
+needs separate 1D and 1W bar concepts; it pulls **one bar leg of the length
+needed**. Timing, cadence, reservation budget and back-off are **unchanged** —
+only the bar-leg selection changes.
+
+### Current state (verified against `main`)
+
+`data-orchestrator.ts:planPull` + `freshness.ts:gradedPull` carry **two** bar legs
+(`freshness.ts:49‑51`):
+
+- **`weekBars`** (1W, one daily close per session, all symbols) lights **only** on
+  the `heavily‑outdated` tier (`deviceDaysMissing > 1` AND `blobDaysOld > 1` →
+  `allLegs`, `freshness.ts:134`) or a `reset`. Otherwise the 1W graph never pulls
+  its own bars — it fills from the 1D session cache (`week.ts:674`) plus a tiny
+  `≤4‑symbol targetedWeekBackfill` (`freshness.ts:191‑221`).
+- **`dayBars`** (1D intraday): while the market is open, governed **solely** by the
+  clock‑hour `:00` gate (`data-orchestrator.ts:246‑261`, `barClockHourDue`) — at
+  most once per clock‑hour per symbol, first bar only >1h after open; between hours
+  `dayBars` is forced off and **breadcrumbs** carry the line. Via the tier table,
+  `dayBars` lights on `minorly‑outdated` (open ≥30 min, or closed).
+- **`quotes`** = rolling TTL on the user's auto‑interval (5 min) = the heartbeat
+  (`freshness.ts:272‑278`).
+- **Verified:** a bar pull already updates the displayed mark/headline —
+  `onFreshBars → primeQuotesFromGraphBars → primeQuotesFromBars`
+  (`app.ts:7344‑7347, 7791‑7809`), NAV‑guarded by `navSafeBarsForPriming`. **"A bar
+  subsumes the quote" is real today**, which is what makes a bar‑instead‑of‑quote
+  round safe for the headline.
+
+### O1 — Collapse the two bar legs into one window-sized `bars` leg
+`weekBars` + `dayBars` become a single `bars` leg carrying a **window length**
+(sessions / span). Per‑request flat billing (1 credit/symbol regardless of length)
+makes the length just a number, not a separate concept.
+
+### O2 — Collapse `heavily‑outdated` + `minorly‑outdated` into one `outdated` tier
+Their only real difference was bar **count**, which is now just window length. The
+merged `outdated` tier pulls `bars` over the **window of size needed** — length
+derived continuously from the stale span / `deviceDaysMissing` (30‑min gap → tiny
+fill; several days missing → up to the full ~5‑session window). A fresh‑login /
+heavily‑outdated pull is then **one windowed bar pass that serves both 1D and 1W**
+(no separate `weekBars` + `dayBars`). `relatively‑fresh` / `fresh` stay as the
+quote‑cadence tiers (no bar pull).
+
+### O3 — Replace the `:00` clock-hour gate with a 30-min staleness promotion (auto/startup only)
+On **auto and startup rounds only** (never manual), the gate stops being a clock
+alignment and becomes a **leg swap on the round that already fires** — never an
+extra pull:
+
+```
+on a scheduled (auto/startup) round:
+  if last real bar > 30 min old (or days missing):
+      leg   = BARS over window(gap)   # the bar subsumes the quote
+      quotes = SUPPRESSED             # do NOT also pull ~25 quotes
+  else:
+      leg   = QUOTES (heartbeat tip)
+  + FX / NAV overlays unchanged
+```
+
+Rationale: ~25 symbols × (bars + quotes) at 8/min ≈ 6–7 min/round; **bars
+INSTEAD‑OF quotes** keeps it to one ~3–4 min pass. Cadence while open becomes
+~**5 quote rounds : 1 bar round**. The bar round ingests only **completed** slots
+(excludes the in‑progress candle); the next 5‑min quote round restores the live
+tip.
+
+### O4 — Split the manual controls: global = quote, per-graph button = bars
+Manual behaviour is split into two distinct controls:
+
+- **(a) The existing global refresh button → always a QUOTE round, no matter
+  what.** No 30‑min bar promotion on manual. Its single job is the **freshest live
+  price on demand**; it never repulls bars.
+- **(b) A new per‑graph refresh button next to *each* graph** (one by 1D, one by
+  1W). Clicking it **repulls bars for the window currently in view only**:
+  - **1D button → `window(today's session)`**
+  - **1W button → `window(full ~5‑session week)`**
+
+  This is the explicit, **view‑scoped** "redraw the body from fresh bars" control.
+  The pulled bars feed the headline via the verified `primeQuotesFromGraphBars`
+  pipeline, so it refreshes price as a side effect too — but it is **bars‑only**
+  (no separate quote round). Scope is exactly the visible timeframe, so a 1D click
+  is cheap (today) while a 1W click pulls the whole window.
+
+### O5 — `targetedWeekBackfill` absorbed
+The window‑sized pull already covers each symbol's missing settled days, so the
+`≤4‑symbol targetedWeekBackfill` is absorbed by O1/O2 → **retire**, or keep as a
+bounded safety net (leaning retire).
+
+### Net orchestrator brain
+```
+AUTO / STARTUP round:
+  if bars stale (>30 min) or days missing -> BARS over window(needed), quotes OFF
+  else                                     -> QUOTES heartbeat
+GLOBAL manual button   -> QUOTES round, always
+PER-GRAPH button (1D/1W) -> BARS over window(in view), bars-only
+(+ FX / NAV overlays; reservation 8/min + breaker bind all)
+```
+
+**Explicitly unchanged:** the 5‑min quote heartbeat itself, FX/NAV overlays,
+manual‑relevance forcing, the reservation budget (8/min TD cap), and the 429
+breaker.
+
+---
+
+## What stays (explicit)
+
+- **Breadcrumbs** — unchanged; still the live‑tail filler in both views
+  (`intraday.ts:699‑712`, `week.ts:758‑778`). They simply matter less for the body
+  once it is dense.
+- **Blob loading** — kept as springboard/initial paint **and offline/edge
+  fallback only** (no longer a live merge source). If a window day's 5‑min pull
+  can't reach (offline, or the oldest edge beyond depth), fall back to that day's
+  **daily close** — a fallback, never a blended merge.
+- **Disagreement** — keep `resolveCloseCompleteness` (TD primary + Tiingo
+  secondary). 1W simply moves from daily granularity to the intraday granularity
+  1D already uses. Thin symbols (DAX) rely on the per‑symbol forward‑fill already
+  in `reconstructSessionCurve`.
+- **Orchestrator / polling / caching** — untouched (`regenerateOnly` redraw path,
+  store, reservation, back‑off).
+- **No‑freeze** — already the existing behaviour (`capAtClose` only *filters*
+  post‑close); not a change.
+
+---
+
+## How this kills the three symptoms
+
+| Symptom | Mechanism removed/added | Result |
+| --- | --- | --- |
+| **A** — 1W spiky | C1 + C2: dense per‑symbol bars, no two‑aggregate union merge | sawtooth gone |
+| **B** — overnight shape drift | C5: same per‑day bars + same builder; settled days stop being reshaped by a second source | only level moves, never shape |
+| **C** — 1D‑up / 1W‑down tail | C2 + C3: same builder, same today bars, no pin/cap seam | trailing tip identical |
+
+---
+
+## Cost / risk
+
+- 1W refresh ≈ 17 credits (1/symbol; dense week = same as one day). The existing
+  orchestrator already gates *when* — no budget‑regime change.
+- **Exact depth fit:** window = 5 sessions vs 5‑min depth = 5 sessions has no
+  margin at the oldest edge → the C2 daily‑close fallback covers a
+  holiday‑shortened or edge miss.
+- Removing the blob merge and the weekly daily‑close cache is the largest
+  deletion → gated behind tests (`market-sleeve.test.ts` contract flips from
+  "union/thicken" to "no live merge").
+
+---
+
+## Build order — tracks & groups
+
+Work splits into **three tracks that run in parallel**. Within a track, **groups
+are sequential**. The **Main track** carries the dependency spine (its groups must
+go in order); the **Python** and **Web‑UI** tracks run alongside it, with one
+integration point noted.
+
+### MAIN TRACK (web graph + orchestrator) — groups are sequential
+
+- **Group 1 — Foundation (fixes A/B/C).** `C1 → C2 → C3`, with `C4` alongside.
+  Strictly ordered internally: C1 (1W draws dense 5‑min bars) before C2 (remove
+  the blob merge — no second aggregate left to reconcile) before C3 (tail drops to
+  1D's `capAtClose`); C4 (FX → 5‑min, FX‑quote‑price‑not‑pull‑time, drop blob FX)
+  rides alongside C2/C3 in the same builder. **This group alone eliminates the
+  three symptoms.**
+- **Group 2 — Unify fetch & store.** `C5 · C6 · C7`. One windowed `[start,end]`
+  intraday fetcher + shared per‑day store; retire the `daily/1day` week cache.
+  **Must follow Group 1** — can't dedup the 1W path until it already draws intraday
+  bars and the blob merge is deleted.
+- **Group 3 — Orchestrator.** `O1 → (O2 · O3 · O5)`. One window‑sized `bars` leg
+  (O1) gates the single `outdated` tier (O2), the 30‑min auto/startup promotion
+  (O3) and the absorbed backfill (O5). **Must follow Group 2** — the "pull a bar of
+  the size needed" capability only exists once the windowed fetcher does.
+
+### PYTHON TRACK — parallel, start anytime
+
+- **C8** — mirror the design in the Python desktop app at 5‑min density.
+  Independent codebase, shares only the frozen design (zero shared code with the
+  TS path), so it runs start‑to‑finish alongside the Main track.
+
+### WEB‑UI TRACK — parallel, start anytime
+
+- **O4(a)** — global manual button becomes a pure **quote** round. Trivial, no
+  dependencies.
+- **O4(b)** — new **per‑graph refresh button** (1D / 1W) that repulls bars for the
+  in‑view window. The button UI can be built anytime; its bars‑repull action
+  **wires into the windowed fetcher delivered by Main Group 2** (the one
+  cross‑track integration point).
+
+### The one hard rule
+Main track **Group 1 → 2 → 3 is strictly sequential**. The Python track and the
+Web‑UI track float free in parallel, with O4(b)'s data wiring as the only
+dependency back onto Main Group 2.
+
+> No code is to be written until this plan is explicitly approved for
+> implementation.

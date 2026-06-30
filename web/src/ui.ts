@@ -13,7 +13,7 @@ import { Decimal } from "./decimal-config";
 import type { AllocationSlice, DashboardModel, HoldingView, MoverEntry, OverviewView } from "./compute";
 import { buildMovers, fxSinceAnchorPct } from "./compute";
 import type { TransactionsView, TxnRow } from "./transactions";
-import { fxEffectSplit, fxBuyingPowerSplit } from "./session-fx";
+import { fxEffectSplit, fxBuyingPowerSplit, readPrevCloseAnchor, recordPrevCloseAnchor } from "./session-fx";
 import { getInvestmentAmountEur } from "./investment-amount";
 import {
   isUsMarketOpen,
@@ -25,6 +25,7 @@ import {
   lastSessionDate,
   exchangeDate,
   sessionOpenMs,
+  sessionCloseMs,
 } from "./market-hours";
 import { windowGrowthPct, type GrowthMode, type WindowPoint } from "./window-growth";
 import {
@@ -76,6 +77,7 @@ import {
   formatForexReopen,
   frozenDayLabel,
   frozenSincePhrase,
+  weekdaySincePhrase,
   signClass,
 } from "./format";
 import { computeCurrencyEffect } from "./currency-effect";
@@ -94,6 +96,7 @@ import { buildLineChart, type ChartSeries } from "./chart";
 import { curveColumns } from "./value-graph";
 import type { CurvePoint } from "./timeseries";
 import { repairCurrencyDivergence } from "./week-repair";
+import { recordReconciliation } from "./consumption-log";
 import type { DailyClose } from "./value-history";
 import { APP_VERSION } from "./version";
 import {
@@ -257,15 +260,18 @@ function valueBasisLabel(o: OverviewView, now: Date = new Date()): string {
  *   - **marketOpen** — the live US session; the regular live view (a sessionView).
  *   - **weekendOvernight** — forex has reopened (Sun ≥17:00 ET) but no US session
  *     has opened since: Sunday evening through Monday's 09:30 open (extending past a
- *     Monday holiday to the next real open). The only honest move is the single
- *     overnight drift since Friday's close — no stale Friday market-hours leg.
+ *     Monday holiday to the next real open). The spot-FX weekend close is just a
+ *     *pause*, so Friday's session stays the previous session: this keeps the full
+ *     two-leg split (Friday's market-hours leg + the live overnight drift since its
+ *     close), re-anchored to Friday's open exactly like the frozen weekend. A
+ *     {@link sessionView}.
  *   - **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
- *     July): forex trades but the US session is shut, so likewise a single
- *     overnight number, kept under its "Market holiday" wording.
+ *     July): forex trades but the US session is shut, so a single overnight number,
+ *     kept under its "Market holiday" wording.
  *   - otherwise a **regular weekday post-close / pre-open** (a sessionView).
  *
- * `singleOvernight` (holiday ∨ weekendOvernight, with forex open and US shut) marks
- * the two one-number, no-split regimes; `sessionView` (its complement) marks the
+ * `singleOvernight` (holiday only, with forex open and US shut) marks the lone
+ * one-number, no-split regime; `sessionView` (its complement) marks the
  * three-stat, two-leg-split regimes.
  */
 export interface FxBoxRegime {
@@ -288,7 +294,7 @@ export function fxBoxRegime(now: Date = new Date()): FxBoxRegime {
     !marketOpen &&
     !holiday &&
     sessionOpenMs(lastSessionDate(now)) < lastForexReopenMs(now);
-  const singleOvernight = forexOpen && !marketOpen && (holiday || weekendOvernight);
+  const singleOvernight = forexOpen && !marketOpen && holiday;
   const sessionView = !singleOvernight;
   return {
     marketOpen,
@@ -321,23 +327,21 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
   // The rate + today's move. USD display shows the stored EUR/USD spot directly;
   // EUR display shows USD/EUR (its reciprocal). The % still follows the currency
   // strength convention used here (negated for the reciprocal).
-  const { marketOpen, forexFrozen, weekendOvernight, singleOvernight, sessionView } =
+  const { marketOpen, forexFrozen, singleOvernight, sessionView } =
     fxBoxRegime(now);
 
   // "Today" baseline. Live: since the *prior close* (overnight + intraday so far).
-  // Single-overnight: the lone drift since the last session close — Friday's FX
-  // close for the weekend spill-over (or the settled previous close as a holiday's
-  // overnight). Session view (open or shut): the full move since this — or Friday's
-  // frozen — session open, so it never just mirrors the "Since close" stat beside it.
+  // Single-overnight (a US-only holiday): the lone drift since the settled previous
+  // close. Session view (open or shut, including the frozen Friday weekend and the
+  // Sunday-evening spill-over): the full move since this — or Friday's — session
+  // open, so it never just mirrors the "Since close" stat beside it.
   let todayAnchor: Decimal | null;
   let todaySub: string;
   if (marketOpen) {
     todayAnchor = o.fxRateEurUsdPrev;
     todaySub = "since last close";
   } else if (singleOvernight) {
-    todayAnchor = weekendOvernight
-      ? (o.fxRateEurUsdSessionClose ?? o.fxRateEurUsdPrev)
-      : o.fxRateEurUsdPrev;
+    todayAnchor = o.fxRateEurUsdPrev;
     todaySub = "overnight";
   } else {
     todayAnchor = o.fxRateEurUsdSessionOpen;
@@ -350,16 +354,21 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
 
   // The "when is this rate from" stamps: an intraday clock/date when we have an
   // observation time, and the honest "end-of-day FX" tag for the keyless ECB
-  // fallback that carries no intraday timestamp.
+  // fallback that carries no intraday timestamp. Over the frozen weekend the live
+  // pipeline drops the observation time (loadEurUsd freezes / cache-only paint),
+  // so fall back to Friday's settled session-close instant — the rate genuinely
+  // *is* that close — rather than leaving the frozen 0.8780 with no "as of" at all.
+  const observedAt =
+    o.fxObservedAt ?? (forexFrozen ? sessionCloseMs(lastSessionDate(now)) : null);
   const stamps: HTMLElement[] = [];
-  if (o.fxObservedAt !== null) {
-    const when = new Date(o.fxObservedAt);
+  if (observedAt !== null) {
+    const when = new Date(observedAt);
     const title = Number.isNaN(when.getTime())
       ? undefined
       : `EUR/USD rate observed ${when.toLocaleString()}`;
     stamps.push(
       h("span", title ? { class: "fx-box-asof", title } : { class: "fx-box-asof" }, [
-        `as of ${formatAsOf(o.fxObservedAt, o.liveAsOfFallbackDate, now)}`,
+        `as of ${formatAsOf(observedAt, o.liveAsOfFallbackDate, now)}`,
       ]),
     );
   }
@@ -383,9 +392,9 @@ export function renderFxBox(o: OverviewView, now: Date = new Date()): HTMLElemen
   // Third number: how far the rate has moved since the current session's reference
   // point — since the open while the market is live, since the close once shut.
   // Same strength convention as the "Today" move (negated for the EUR reciprocal).
-  // Dropped in the single-overnight regimes (weekend spill-over, US-only holiday):
-  // there is only one honest move to show, so a second stat would just echo the
-  // overnight "Today" figure beside it.
+  // Dropped only in the single-overnight regime (a US-only holiday): there is one
+  // honest move to show, so a second stat would just echo the overnight "Today"
+  // figure beside it. The Sunday-evening spill-over keeps it (Friday's session).
   const stats: HTMLElement[] = [rateStat, moveStat];
   if (sessionView) {
     const anchorFx = marketOpen ? o.fxRateEurUsdSessionOpen : o.fxRateEurUsdSessionClose;
@@ -442,10 +451,10 @@ function fxDivergeRow(opts: {
   value: Decimal;
   formatted: string;
   overnightLeg: boolean;
-  live: boolean;
+  tag: string;
   widthPct: number;
 }): HTMLElement {
-  const { label, value, formatted, overnightLeg, live, widthPct } = opts;
+  const { label, value, formatted, overnightLeg, tag, widthPct } = opts;
   const fill = h(
     "span",
     { class: `fx-diverge-fill ${signClass(value)}${overnightLeg ? " fx-diverge-overnight" : ""}` },
@@ -457,7 +466,7 @@ function fxDivergeRow(opts: {
     h("div", { class: "fx-diverge-track", "aria-hidden": "true" }, [fill]),
     h("span", { class: "fx-diverge-valcell" }, [
       h("span", { class: `fx-diverge-value ${signClass(value)}` }, [formatted]),
-      h("span", { class: "fx-diverge-tag" }, [live ? "live" : "last"]),
+      h("span", { class: "fx-diverge-tag" }, [tag]),
     ]),
   ]);
 }
@@ -467,12 +476,18 @@ function fxDivergeRow(opts: {
  * can't be drawn (a missing live anchor leaves one leg null). The
  * currently-live leg leads: market hours while open, overnight once shut, with
  * the frozen "last" leg below. `format` adapts the leg values to EUR or USD.
+ *
+ * `forexLive` tags the leading leg honestly: only **"live"** while spot FX is
+ * genuinely trading; over the frozen weekend the rate is paused at Friday's
+ * close, so the leading (overnight) leg reads **"paused"** — never "live" on a
+ * shut market (the bug v4.16.2 showed as "Overnight … LIVE" on a Saturday).
  */
 function fxDivergeBar(
   market: Decimal | null,
   overnight: Decimal | null,
   marketOpen: boolean,
   format: (v: Decimal) => string,
+  forexLive = true,
 ): HTMLElement | null {
   if (market === null || overnight === null || (market.isZero() && overnight.isZero())) {
     return null;
@@ -480,11 +495,14 @@ function fxDivergeBar(
   const maxMag = Decimal.max(market.abs(), overnight.abs());
   const widthOf = (v: Decimal): number =>
     maxMag.isZero() ? 0 : v.abs().dividedBy(maxMag).times(HALF_TRACK_PCT).toNumber();
-  const mk = (label: string, value: Decimal, overnightLeg: boolean, live: boolean): HTMLElement =>
-    fxDivergeRow({ label, value, formatted: format(value), overnightLeg, live, widthPct: widthOf(value) });
+  // The currently-live leg leads. Its tag is "live" only while FX trades; on the
+  // frozen weekend it is "paused" (the overnight session is on its long break).
+  const liveTag = forexLive ? "live" : "paused";
+  const mk = (label: string, value: Decimal, overnightLeg: boolean, tag: string): HTMLElement =>
+    fxDivergeRow({ label, value, formatted: format(value), overnightLeg, tag, widthPct: widthOf(value) });
   const rows = marketOpen
-    ? [mk("Market hours", market, false, true), mk("Overnight", overnight, true, false)]
-    : [mk("Overnight", overnight, true, true), mk("Market hours", market, false, false)];
+    ? [mk("Market hours", market, false, liveTag), mk("Overnight", overnight, true, "last")]
+    : [mk("Overnight", overnight, true, liveTag), mk("Market hours", market, false, "last")];
   return h("div", { class: "fx-diverge" }, rows);
 }
 
@@ -600,40 +618,89 @@ function fxAnchorWarnBadge(reason: string): HTMLElement {
 }
 
 /**
- * EUR display: the "Currency effect since yesterday" panel — the net EUR P/L
- * from today's EUR/USD move on the USD-booked book, with the diverging
- * market-hours/overnight split below.
+ * The regime-aware "since …" phrase shared by the EUR currency-effect and USD
+ * investing-power panels, so both name the same reference the headline measures
+ * against and can never disagree:
+ *   - **frozen weekend** — the effect is the *last completed session's* swing, so
+ *     name that real settled day ("on Friday" / "yesterday").
+ *   - **weekend spill-over** (forex reopened Sunday, US still shut) — Friday stays
+ *     the previous session (the weekend close is a pause), so name that real settled
+ *     day: **"since Friday"** ("since Thursday" across a Friday holiday).
+ *   - otherwise the regular **"since yesterday"**.
+ */
+export function effectSincePhrase(now: Date): string {
+  const { forexFrozen, weekendOvernight } = fxBoxRegime(now);
+  if (forexFrozen) return frozenSincePhrase(lastSessionDate(now), now);
+  if (weekendOvernight) return weekdaySincePhrase(lastSessionDate(now));
+  return "since yesterday";
+}
+
+/**
+ * Re-mark the book's EUR FX swing from `anchorFx` to the live spot — the same
+ * `value · (1/liveFx − 1/anchorFx)` the split legs use. Returns null when any
+ * input is missing so the caller keeps its existing basis rather than fabricating
+ * a zero. Used to re-anchor the frozen-weekend currency effect to the session
+ * **open** (so the panel total matches the headline's "since last open") and the
+ * weekend spill-over to the last session's **close** ("since Friday").
+ */
+function eurEffectFromAnchor(o: OverviewView, anchorFx: Decimal | null): Decimal | null {
+  const fxNow = o.fxRateEurUsd;
+  if (
+    anchorFx === null ||
+    !anchorFx.greaterThan(0) ||
+    fxNow === null ||
+    !fxNow.greaterThan(0) ||
+    o.totalValueUsd === null
+  ) {
+    return null;
+  }
+  return o.totalValueUsd.dividedBy(fxNow).minus(o.totalValueUsd.dividedBy(anchorFx));
+}
+
+/**
+ * EUR display: the "Currency effect …" panel — the net EUR P/L from the EUR/USD
+ * move on the USD-booked book, with the diverging market-hours/overnight split
+ * below.
  *
- * In the two **single-overnight** regimes there is no fresh session to split, so
- * one full-width bar carries the whole swing: a **US-only market holiday** (e.g.
- * 4th of July, FX still trading) keeps the "Market holiday" label, while the
- * **weekend spill-over** (Sunday evening through Monday's open) reads
- * "Overnight". The frozen Friday weekend keeps the full two-leg split, frozen.
+ * In the **single-overnight** regime (a US-only market holiday, e.g. 4th of July
+ * with FX still trading) there is no fresh session to split, so one full-width bar
+ * carries the whole swing under the "Market holiday" label. The frozen Friday
+ * weekend and the Sunday-evening spill-over both keep the full two-leg split (the
+ * weekend close is just a pause, so Friday stays the previous session): their total
+ * is re-anchored to the session **open** so it matches the headline's "since last
+ * open" instead of disagreeing in sign with it (the v4.16.2 bug).
  */
 function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
-  // The euro currency effect since the prior close. Normally `todayFxMoveEur`
-  // (anchored to the settled previous close). When that close is unknown the
-  // compute layer leaves the move at zero, so fall back to the session-close
-  // anchor and derive the book's EUR FX swing directly — the same overnight
-  // story the card's "Since close" stat reports — rather than dropping the panel.
+  const { marketOpen, holiday, singleOvernight, forexOpen } = fxBoxRegime(now);
+  // The euro currency effect. Normally `todayFxMoveEur` (anchored to the settled
+  // previous close). Every **market-closed session view** re-anchors it to the last
+  // session's *open* so the panel total agrees with the card's "since last open"
+  // stat rather than contradicting it (the v4.16.2 bug, where the total spanned
+  // prior close→now while the headline spanned open→now, so they disagreed in scale
+  // and could even disagree in sign). This covers the regular weekday post-close /
+  // pre-open as well as the **frozen weekend** (the paused Friday session) and the
+  // **weekend spill-over** (Friday's session with the live overnight drift on top,
+  // since the weekend close is just a pause and Friday stays the previous session).
+  // It also turns the frozen "Market hours" split leg into the real last-session
+  // open→close move instead of the near-zero prior-close→close residual it was when
+  // anchored to the settled previous close (which sits ~at the session close).
   let net = o.todayFxMoveEur;
+  if (!marketOpen && !singleOvernight) {
+    const reanchored = eurEffectFromAnchor(o, o.fxRateEurUsdSessionOpen);
+    if (reanchored !== null) net = reanchored;
+  }
   if (
     net.isZero() &&
     (o.fxRateEurUsdPrev === null || !o.fxRateEurUsdPrev.greaterThan(0))
   ) {
     const priorFx = fxEffectPriorFx(o);
-    const fxNow = o.fxRateEurUsd;
-    if (priorFx !== null && fxNow !== null && fxNow.greaterThan(0) && o.totalValueUsd !== null) {
-      net = o.totalValueUsd.dividedBy(fxNow).minus(o.totalValueUsd.dividedBy(priorFx));
-    }
+    const reanchored = eurEffectFromAnchor(o, priorFx);
+    if (reanchored !== null) net = reanchored;
   }
   // No euro swing at all today ⇒ nothing worth a panel (the rate line still shows).
   if (net.isZero()) return null;
 
-  const { marketOpen, holiday, singleOvernight, forexFrozen } = fxBoxRegime(now);
-  // Frozen at a settled session: name the real day the effect is measured over
-  // ("yesterday" / "on Friday") instead of an always-"yesterday" placeholder.
-  const sincePhrase = forexFrozen ? frozenSincePhrase(lastSessionDate(now), now) : "since yesterday";
+  const sincePhrase = effectSincePhrase(now);
   const wrap = (kids: HTMLElement[]): HTMLElement =>
     h(
       "div",
@@ -657,7 +724,7 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
           value: net,
           formatted: formatSignedMoneyEur(net),
           overnightLeg: true,
-          live: true,
+          tag: "live",
           widthPct: HALF_TRACK_PCT,
         }),
       ]),
@@ -672,7 +739,7 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
     sessionOpenFx: o.fxRateEurUsdSessionOpen,
     todayFxMoveEur: net,
   });
-  const bar = fxDivergeBar(split.marketHoursEur, split.overnightEur, marketOpen, formatSignedMoneyEur);
+  const bar = fxDivergeBar(split.marketHoursEur, split.overnightEur, marketOpen, formatSignedMoneyEur, forexOpen);
   if (bar) children.push(bar);
   return wrap(children);
 }
@@ -695,11 +762,25 @@ function renderEurFxEffect(o: OverviewView, now: Date): HTMLElement | null {
  * rate pair or no swing to show.
  */
 function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | null {
+  const { marketOpen, holiday, singleOvernight, forexOpen } = fxBoxRegime(now);
   const fxNow = o.fxRateEurUsd;
   // Prior-close anchor: the settled previous close, else the session close so the
   // panel survives a closed-market / frozen-FX round the same way the EUR effect
   // panel does — rather than disappearing while the card still shows a rate move.
-  const fxPrev = fxEffectPriorFx(o);
+  // Re-anchored (mirroring the EUR panel) to the last session's *open* on every
+  // **market-closed session view** so the headline agrees with the card — the
+  // regular weekday post-close / pre-open as well as the **frozen weekend** and the
+  // **weekend spill-over** (the weekend close is a pause; Friday stays the previous
+  // session, paused on Friday or with the live overnight drift on top).
+  let fxPrev = fxEffectPriorFx(o);
+  if (
+    !marketOpen &&
+    !singleOvernight &&
+    o.fxRateEurUsdSessionOpen !== null &&
+    o.fxRateEurUsdSessionOpen.greaterThan(0)
+  ) {
+    fxPrev = o.fxRateEurUsdSessionOpen;
+  }
   if (fxNow === null || fxPrev === null || !fxNow.greaterThan(0) || !fxPrev.greaterThan(0)) {
     return null;
   }
@@ -712,8 +793,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
   const fractionDigits = net.abs().lessThan(100) ? 2 : 0;
   const fmt = (v: Decimal): string => formatSignedMoneyUsd(v, fractionDigits);
 
-  const { marketOpen, holiday, singleOvernight, forexFrozen } = fxBoxRegime(now);
-  const sincePhrase = forexFrozen ? frozenSincePhrase(lastSessionDate(now), now) : "since yesterday";
+  const sincePhrase = effectSincePhrase(now);
   const wrap = (kids: HTMLElement[]): HTMLElement =>
     h(
       "div",
@@ -750,7 +830,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
           value: net,
           formatted: fmt(net),
           overnightLeg: true,
-          live: true,
+          tag: "live",
           widthPct: HALF_TRACK_PCT,
         }),
       ]),
@@ -766,7 +846,7 @@ function renderInvestingPowerEffect(o: OverviewView, now: Date): HTMLElement | n
     sessionCloseFx: o.fxRateEurUsdSessionClose,
     sessionOpenFx: o.fxRateEurUsdSessionOpen,
   });
-  const bar = fxDivergeBar(split.marketHoursUsd, split.overnightUsd, marketOpen, fmt);
+  const bar = fxDivergeBar(split.marketHoursUsd, split.overnightUsd, marketOpen, fmt, forexOpen);
   if (bar) children.push(bar);
   children.push(amountRow);
   return wrap(children);
@@ -835,7 +915,7 @@ function renderStats(o: OverviewView): HTMLElement {
 
 /**
  * The freshness-legend affordance (freshness-plan §4.1): one small `?` that
- * expands to explain every term the coverage line uses ("live", "updating…",
+ * expands to explain every term the coverage line uses ("live", "updating",
  * "cached", "at last close", "awaiting", and the FX clauses). The status line is
  * honest but dense, so this defuses the "why does it say cached?" confusion at
  * the source. A native `<details>`/`<summary>` keeps it zero-JS, accessible and
@@ -851,7 +931,7 @@ function freshnessLegend(): HTMLElement {
     h("summary", { class: "freshness-legend-toggle", "aria-label": "What do these freshness terms mean?" }, ["?"]),
     h("ul", { class: "freshness-legend-list" }, [
       entry("live", "freshly confirmed within your refresh window while the market is open."),
-      entry("updating…", "held from cache and re-pulling now — waiting its turn under the free-tier per-minute cap."),
+      entry("updating", "held from cache and re-pulling now under the free-tier per-minute cap."),
       entry("cached", "a recent confirmed price, just not re-checked this round."),
       entry("at last close", "the market is shut; this is the latest settled closing price."),
       entry("awaiting", "no value yet — still being fetched (a price, or a fund's once-a-day NAV)."),
@@ -1115,6 +1195,15 @@ function renderStatusContent(span: HTMLElement, view: HoldingStatusView): void {
   }
   const text = view.stamp ? `${view.label} ${view.stamp}` : view.label;
   children.push(h("span", { class: "holding-status-text" }, [text]));
+  if (view.countdown) {
+    // A live "in XXs" estimate for a queued holding — replaces the dots so the
+    // wait reads as a real countdown ("Updating in 120s") rather than a bare
+    // number. `aria-hidden` keeps the per-second ticks decorative; the final
+    // state is what gets announced.
+    children.push(
+      h("span", { class: "holding-status-eta", "aria-hidden": "true" }, [`in ${view.countdown}s`]),
+    );
+  }
   if (view.dots) children.push(statusDots());
   span.replaceChildren(...children);
 }
@@ -1132,6 +1221,7 @@ function renderHoldingStatus(
 ): HTMLElement {
   const view = resolveHoldingStatus({
     livePhase: status.phases.get(holding.symbol) ?? null,
+    queueReadyAt: status.queueReadyAt.get(holding.symbol) ?? null,
     asOf: holding.priceAsOf,
     pulledAt: holding.pricePulledAt,
     fallbackDate: holding.priceFallbackDate,
@@ -1141,6 +1231,34 @@ function renderHoldingStatus(
   });
   const span = h("span", { class: "holding-status", "data-symbol": holding.symbol });
   renderStatusContent(span, view);
+  // A queued holding with a known ETA counts down once a second to its expected
+  // turn, re-resolving the caption in place so the "m:ss" estimate ticks without a
+  // full re-render. The interval is a one-shot per row: it stops the moment the
+  // row leaves the DOM (a refresh re-renders it) or the countdown reaches zero.
+  if (view.kind === "queued" && view.countdown !== null) {
+    const readyAt = status.queueReadyAt.get(holding.symbol);
+    if (readyAt !== undefined && typeof setInterval === "function") {
+      const timer = setInterval(() => {
+        if (!span.isConnected) {
+          clearInterval(timer);
+          return;
+        }
+        const ticked = resolveHoldingStatus({
+          livePhase: "queued",
+          queueReadyAt: readyAt,
+          asOf: holding.priceAsOf,
+          pulledAt: holding.pricePulledAt,
+          fallbackDate: holding.priceFallbackDate,
+          nowMs: Date.now(),
+          now: new Date(),
+        });
+        renderStatusContent(span, ticked);
+        // Once the estimate elapses the countdown falls back to the dots — the
+        // pull is imminent — so stop ticking and let the next round take over.
+        if (ticked.countdown === null) clearInterval(timer);
+      }, 1000);
+    }
+  }
   // When a row mounts mid-flash, let the "Updated ✓" success state play out then
   // settle back into the quiet "Updated <time>" stamp on its own — so the cycle
   // completes even without a further re-render. The settle is a one-shot timer;
@@ -2347,10 +2465,17 @@ export interface LiveCurveChart {
  * Lazily build a live 1D/1W curve for the value chart, returning
  * `null` when the curve can't be drawn (no data yet, missing key/proxy, or a
  * failed fetch). Only invoked when the user actually selects a live preset.
+ *
+ * `opts.regenerateOnly` builds purely from stored bars (zero network); every
+ * passive UI interaction (range toggle, graph click) passes it so chart
+ * interaction never fetches. `opts.forceFetch` is the opposite intent: the user
+ * explicitly tapped the per-graph refresh button, so re-pull the in-view window's
+ * bars from the live windowed fetcher even when a cached/springboard curve exists
+ * (Web-UI track O4(b)).
  */
 export type LiveCurveBuilder = (
   range: LiveRange,
-  opts?: { regenerateOnly?: boolean },
+  opts?: { regenerateOnly?: boolean; forceFetch?: boolean },
 ) => Promise<LiveCurveChart | null>;
 
 /**
@@ -2379,9 +2504,9 @@ export interface LiveGraphHooks {
    * **zero network**) — every UI interaction (range toggle, graph click) passes
    * it so chart interaction never fetches; only the initial paint may pull.
    */
-  session: (opts?: { regenerateOnly?: boolean }) => Promise<LiveSessionResult | null>;
+  session: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean }) => Promise<LiveSessionResult | null>;
   /** Build the live 1W (daily-close) curve points, or null when unavailable. */
-  week: (opts?: { regenerateOnly?: boolean }) => Promise<CurvePoint[] | null>;
+  week: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean }) => Promise<CurvePoint[] | null>;
 }
 
 /** One selectable preset: either a history slice or a live (fetched) curve. */
@@ -2419,6 +2544,37 @@ export function chartTimeframeOptions(span: number, extended: boolean, hasLive: 
     ...presets.map((p): RangeOption => ({ label: p.label, kind: "history", days: p.days })),
     { label: "All", kind: "history", days: null },
   ];
+}
+
+/** Spec for the per-graph "refresh bars" button shown beside a live window. */
+export interface LiveRefreshControl {
+  /** Window the re-pull is scoped to, for the tooltip ("today" vs "the week"). */
+  range: LiveRange;
+  /** Accessible label, e.g. "Refresh 1D bars". */
+  ariaLabel: string;
+  /** Hover/long-press tooltip explaining the scoped, credit-bearing re-pull. */
+  title: string;
+}
+
+/**
+ * Web-UI track O4(b): decide whether the per-graph refresh button applies to the
+ * currently-selected chart window, and how to label it.
+ *
+ * The button only makes sense for the **live** 1D/1W windows — they are the only
+ * ones drawn from re-pullable price bars; the history slices (1M/1Y/All) are
+ * static exported data with nothing to re-fetch — so this returns `null` for any
+ * history preset. For a live window it returns the scoped labels: a 1D tap
+ * re-pulls just today's session, a 1W tap re-pulls the whole ~5-session week, so
+ * the tooltip can make the (credit-bearing) scope explicit.
+ */
+export function liveRefreshControl(option: RangeOption): LiveRefreshControl | null {
+  if (option.kind !== "live") return null;
+  const scope = option.range === "1D" ? "today's session" : "the full week";
+  return {
+    range: option.range,
+    ariaLabel: `Refresh ${option.range} bars`,
+    title: `Re-pull ${option.range} price bars for ${scope} (uses live credits)`,
+  };
 }
 
 /**
@@ -2465,7 +2621,24 @@ function chartWithTimeframe(
   // Monotonic token so a slow live fetch never overwrites a newer selection.
   let activeToken = 0;
 
-  const liveStatus = (text: string): HTMLElement => h("div", { class: "chart-live-status note muted" }, [text]);
+  const liveStatus = (text: string): HTMLElement => {
+    const el = h("div", { class: "chart-live-status note muted" }, [text]);
+    // Copy the exact height the chart last rendered at (remembered across reloads)
+    // so the loading box matches the graph it stands in for — instead of an
+    // aspect-ratio guess that can mis-size and nudge the page into a tiny
+    // horizontal overflow. Falls back to the CSS aspect-ratio on a cold first run.
+    const remembered = persistKey ? loadRememberedChartHeight(persistKey) : null;
+    if (remembered !== null) {
+      el.style.height = `${remembered}px`;
+      el.classList.add("chart-live-status--measured");
+    }
+    return el;
+  };
+
+  // After a real chart is drawn, remember the wrapper's rendered height so the
+  // next loading placeholder can copy it exactly (no collapse, no overflow).
+  const rememberSize = (): void => rememberChartHeight(wrap, persistKey);
+  rememberSize();
 
   // Mark a freshly drawn chart so the stylesheet can fade it in (a gentle
   // cross-fade keeps re-toggling 1D/1W/… calm instead of snapping). Purely
@@ -2487,10 +2660,18 @@ function chartWithTimeframe(
     const slicedDates = dates.slice(start);
     const slicedSeries = rebaseWindowOverlays(series.map((s) => ({ ...s, values: s.values.slice(start) })));
     const chart = buildLineChart({ dates: slicedDates, series: slicedSeries, ...chartOpts });
-    if (chart) wrap.replaceChildren(...withLegend(enter(chart) as unknown as HTMLElement, baseLegend));
+    if (chart) {
+      wrap.replaceChildren(...withLegend(enter(chart) as unknown as HTMLElement, baseLegend));
+      rememberSize();
+    }
   };
 
-  const applyLive = async (option: RangeOption & { kind: "live" }, token: number, regenerateOnly: boolean): Promise<void> => {
+  const applyLive = async (
+    option: RangeOption & { kind: "live" },
+    token: number,
+    regenerateOnly: boolean,
+    forceFetch = false,
+  ): Promise<void> => {
     if (!live) return;
     const range = option.range;
     // Defer the "Loading live data…" placeholder. A re-toggle (regenerate-only)
@@ -2511,7 +2692,7 @@ function chartWithTimeframe(
     };
     let built: LiveCurveChart | null = null;
     try {
-      built = await live(range, { regenerateOnly });
+      built = await live(range, { regenerateOnly, forceFetch });
     } catch {
       built = null;
     }
@@ -2543,6 +2724,7 @@ function chartWithTimeframe(
     const children = withLegend(enter(chart) as unknown as HTMLElement, built.legend);
     if (built.note) children.push(liveStatus(built.note));
     wrap.replaceChildren(...children);
+    rememberSize();
     // Now that the live curve is drawn, refine the headline to the growth the
     // line itself shows (1D from its previous-close reference, 1W from its first
     // session) so the percentage is identical to the plotted line — superseding
@@ -2551,6 +2733,36 @@ function chartWithTimeframe(
     if (onLiveGrowth && built.growthPct !== null && built.growthPct !== undefined) {
       onLiveGrowth(option, built.growthPct);
     }
+  };
+
+  // Web-UI track O4(b): a per-graph "refresh bars" button. It re-pulls the price
+  // bars for the *currently-selected* live window only (1D → today, 1W → the
+  // week) via the windowed fetcher, then redraws — bars-only, so it refreshes the
+  // headline price as a side effect (the pulled bars prime the quote) without a
+  // separate quote round. It is hidden for the static history slices (nothing to
+  // re-fetch) and disabled while a pull is already in flight or when no live
+  // builder exists.
+  const refreshBtn = h("button", {
+    class: "chart-range-btn chart-range-refresh",
+    type: "button",
+    hidden: "",
+    "aria-hidden": "true",
+  }, [h("span", { class: "chart-range-refresh-glyph", "aria-hidden": "true" }, ["↻"])]) as HTMLButtonElement;
+  let activeLive: (RangeOption & { kind: "live" }) | null = null;
+  let liveRefreshing = false;
+  const syncRefreshButton = (): void => {
+    const control = activeLive && live ? liveRefreshControl(activeLive) : null;
+    if (!control) {
+      refreshBtn.hidden = true;
+      refreshBtn.setAttribute("aria-hidden", "true");
+      return;
+    }
+    refreshBtn.hidden = false;
+    refreshBtn.removeAttribute("aria-hidden");
+    refreshBtn.setAttribute("aria-label", control.ariaLabel);
+    refreshBtn.title = control.title;
+    refreshBtn.disabled = liveRefreshing;
+    refreshBtn.classList.toggle("is-refreshing", liveRefreshing);
   };
 
   // `userInitiated` distinguishes a tap on a range button (Pillar 6: interaction
@@ -2569,9 +2781,28 @@ function chartWithTimeframe(
     // the full re-render a refresh or currency toggle triggers.
     if (persist && storageKey) saveStringPref(storageKey, option.label);
     if (onRangeChange) onRangeChange(option);
+    activeLive = option.kind === "live" ? option : null;
+    syncRefreshButton();
     if (option.kind === "live") void applyLive(option, token, userInitiated);
     else applyHistory(option.days);
   };
+
+  // Re-pull the in-view live window's bars on demand. Guarded so a second tap
+  // while a pull is in flight is a no-op, and the button reflects the busy state.
+  const refreshActiveLive = async (): Promise<void> => {
+    const option = activeLive;
+    if (!option || liveRefreshing) return;
+    liveRefreshing = true;
+    syncRefreshButton();
+    const token = (activeToken += 1);
+    try {
+      await applyLive(option, token, false, true);
+    } finally {
+      liveRefreshing = false;
+      syncRefreshButton();
+    }
+  };
+  refreshBtn.addEventListener("click", () => void refreshActiveLive());
 
   const controls = h("div", { class: "chart-range", role: "group", "aria-label": "Chart time range" }, []);
   options.forEach((option, index) => {
@@ -2580,6 +2811,7 @@ function chartWithTimeframe(
     buttons.push(button);
     controls.appendChild(button);
   });
+  controls.appendChild(refreshBtn);
   // Reopen the remembered window (by label); default to the full history. This
   // sole initial selection is not user-initiated, so it may fetch for first paint.
   const savedLabel = storageKey ? loadStringPref(storageKey) : null;
@@ -2591,6 +2823,38 @@ function chartWithTimeframe(
 }
 
 const CHART_RANGE_KEY_PREFIX = "iv.web.chartRange.";
+
+/** localStorage prefix for the remembered rendered height of each persisted chart. */
+const CHART_HEIGHT_KEY_PREFIX = "iv.web.chartHeight.";
+
+/**
+ * Read the last rendered height (px) remembered for a persisted chart, so its
+ * loading placeholder can copy the graph's exact size. Returns null when nothing
+ * sensible is stored (cold start, or a corrupt/zero value).
+ */
+function loadRememberedChartHeight(persistKey: string): number | null {
+  const raw = loadStringPref(`${CHART_HEIGHT_KEY_PREFIX}${persistKey}`);
+  if (raw === null) return null;
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Remember a freshly-drawn chart wrapper's rendered height (measured after layout
+ * settles) so the next loading placeholder for the same chart can reproduce it
+ * exactly. A no-op without a persist key or when the element isn't measurable
+ * (e.g. detached / jsdom), and it never persists a zero height.
+ */
+function rememberChartHeight(el: Element, persistKey?: string): void {
+  if (!persistKey || typeof requestAnimationFrame !== "function") return;
+  // Measure on the next animation frame: it fires after the browser has applied
+  // the just-inserted chart's styles and laid it out, so getBoundingClientRect
+  // reads the settled rendered height rather than a pre-layout zero.
+  requestAnimationFrame(() => {
+    const height = (el as HTMLElement).getBoundingClientRect?.().height ?? 0;
+    if (height > 0) saveStringPref(`${CHART_HEIGHT_KEY_PREFIX}${persistKey}`, String(Math.round(height)));
+  });
+}
 
 /**
  * Grace period before a live (1D/1W) curve shows its "Loading…" placeholder.
@@ -2865,9 +3129,14 @@ function renderDrawdownChart(curve: AnalyticsView["curve"]): HTMLElement | null 
  * marks it so the user reads whether the live value sits above or below where the
  * portfolio last *closed* — exactly as the desktop "1 Day" chart does.
  */
+/**
+ * The draw-time currency-divergence heal runs on every chart render; queueing its
+ * note through the de-duplicated data-loading log keeps it spelled out once and
+ * collapsed thereafter, so repaints never flood the trail.
+ */
 export function liveCurveToChart(
   points: CurvePoint[],
-  prevClose?: { eur: Decimal | null; usd: Decimal | null } | null,
+  prevClose?: { eur: Decimal | null; usd: Decimal | null; provisional?: boolean } | null,
   coverage?: { covered: number; total: number } | null,
 ): LiveCurveChart | null {
   // Final safety net: heal any single-currency (typically USD-only) whole-book
@@ -2875,7 +3144,13 @@ export function liveCurveToChart(
   // drawn. Covers every build path (springboard / live / blob merge) and any
   // already-published blob, in whichever currency the user is viewing. A no-op on
   // a healthy curve (returns the same array).
-  points = repairCurrencyDivergence(points);
+  points = repairCurrencyDivergence(points, undefined, (msg) => {
+    try {
+      recordReconciliation(msg);
+    } catch {
+      /* logging is best-effort */
+    }
+  });
   const cols = curveColumns(points);
   if (cols.dates.length < 2) return null;
   const inUsd = getDisplayCurrency() === "USD" && canConvertToUsd();
@@ -2896,11 +3171,18 @@ export function liveCurveToChart(
   const yAxisLabel = (value: number, digits?: number): string =>
     formatCurrencyShortRaw(new Decimal(value), code, digits);
   // The previous-session close (display-currency value) as a dashed reference
-  // line, marked only when it is known for the active currency.
+  // line, marked only when it is known for the active currency. When the anchor is
+  // still provisional (the settled prior FX not yet recovered, and no cached
+  // non-provisional value to hold) the label says so rather than letting the figure
+  // twitch silently — the line stays put and the uncertainty is shown honestly.
   const prevCloseValue = prevClose ? (inUsd ? prevClose.usd : prevClose.eur) : null;
+  const prevCloseProvisional = prevClose?.provisional === true;
   const referenceLine =
     prevCloseValue !== null && prevCloseValue !== undefined
-      ? { value: prevCloseValue, label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}` }
+      ? {
+          value: prevCloseValue,
+          label: `Prev close ${formatMoneyRaw(prevCloseValue, code)}${prevCloseProvisional ? " (provisional)" : ""}`,
+        }
       : undefined;
   // Honest coverage caption: when the curve was reconstructed from fewer than all
   // of the sleeve's holdings, the rest were carried flat for want of bars, so the
@@ -3077,24 +3359,40 @@ function renderValueChart(
   // Live 1D/1W are now always on: wire the builders so their presets fetch and
   // draw on demand whenever a live graph is available. The 1D curve marks the
   // previous session's settled close as a dashed reference line — the same cue
-  // the desktop "1 Day" chart draws. We anchor it on the live "today" baseline
-  // (`totalValue − todayMove`, in each currency) rather than the last exported
-  // settled point, so the rule lands exactly where the headline "% today" is
-  // measured from. The two can differ — the exported point may be an older
-  // session or carry a different FX snapshot — which left the line at the wrong
-  // height (e.g. hugging the live value while the day was clearly down). Fall
-  // back to the last exported point only when no live move is known.
+  // the desktop "1 Day" chart draws.
+  //
+  // The reference reads the compute layer's **session-stable** prior-close anchor
+  // (`prevCloseAnchorEur/Usd`) rather than `totalValue − todayMove`. The latter
+  // twitched on every poll: it inherits the live EUR/USD rate and re-classifies
+  // holdings as deferred free-tier quotes trickle in, so the flat line visibly
+  // walked between updates. The anchor instead sums each holding's own settled
+  // prior close, frozen at the settled prior FX and independent of the
+  // freshest-date flip, so it stays put while only the live tip moves.
+  //
+  // It is also cached per session (keyed by the last trading session): a
+  // mid-session reload restores the identical line, and while the anchor is still
+  // *provisional* (the settled prior FX not yet recovered) we hold the last
+  // non-provisional value rather than redraw on a moving rate.
   const lastPoint = points[points.length - 1];
-  const prevClose =
-    o.todayMovePct !== null
-      ? {
-          eur: o.totalValueEur.minus(o.todayMoveEur),
-          usd:
-            o.totalValueUsd !== null && o.todayMoveUsd !== null
-              ? o.totalValueUsd.minus(o.todayMoveUsd)
-              : null,
-        }
-      : { eur: lastPoint.portfolioValue, usd: lastPoint.portfolioValueUsd };
+  const anchorSessionKey = lastSessionDate(new Date());
+  let anchorEur: Decimal | null = o.prevCloseAnchorEur;
+  let anchorUsd: Decimal | null = o.prevCloseAnchorUsd;
+  if (o.prevCloseProvisional) {
+    const cached = readPrevCloseAnchor(anchorSessionKey);
+    if (cached !== null) {
+      anchorEur = cached.eur ?? anchorEur;
+      anchorUsd = cached.usd ?? anchorUsd;
+    }
+  } else {
+    recordPrevCloseAnchor(anchorSessionKey, { eur: anchorEur, usd: anchorUsd });
+  }
+  // Fall back to the last exported settled point only when the anchor is unknown
+  // (e.g. a book with no resolvable prior close at all).
+  const prevClose = {
+    eur: anchorEur ?? lastPoint.portfolioValue,
+    usd: anchorUsd ?? lastPoint.portfolioValueUsd,
+    provisional: o.prevCloseProvisional && readPrevCloseAnchor(anchorSessionKey) === null,
+  };
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph
       ? async (range, opts) => {

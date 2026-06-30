@@ -214,6 +214,69 @@ describe("buildDashboard", () => {
     approx(vmfxx.totalGrowthPct, 0.005, 1e-3);
   });
 
+  it("USD growth/XIRR for a dividends-only money-market stays non-negative (no negative-EUR fallback)", () => {
+    // Reproduces the web bug: a USD-native money-market fund that only ever
+    // received dividends (no drawdowns) showed a *negative* USD growth/XIRR
+    // because old blobs lacked per-flow USD legs and the figure fell back to the
+    // FX-negative EUR. MM is par/$1 USD-native, so USD must compute natively as a
+    // small positive return. EUR may still be negative from FX drift; USD must not.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1100",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "100",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        is_money_market: true,
+        // Old-blob cashflows: EUR-only, no `amount_usd`.
+        cashflows: [{ date: "2020-01-01", amount: "-909.09" }],
+      },
+    ];
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-01T12:00:00Z"));
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    expect(vmfxx.xirrUsd).not.toBeNull();
+    expect(vmfxx.totalGrowthPctUsd).not.toBeNull();
+    expect(vmfxx.xirrUsd!.toNumber()).toBeGreaterThanOrEqual(0);
+    expect(vmfxx.totalGrowthPctUsd!.toNumber()).toBeGreaterThanOrEqual(0);
+  });
+
+  it("invariant: a par money-market with no sells has growth ≥ 0 in both currencies", () => {
+    // Value (shares × $1) ≥ cost ⇒ growth must never read negative for either
+    // wallet. Guards against the sign bug recurring via either FX leg.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "SPAXX",
+        name: "Fidelity Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1005",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "5",
+        price_symbol: "SPAXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        is_money_market: true,
+        cost_basis_eur: "909.09",
+        cost_basis_usd: "1000",
+        cashflows: [{ date: "2023-01-01", amount: "-909.09", amount_usd: "-1000" }],
+      },
+    ];
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-01T12:00:00Z"));
+    const mm = m.holdings.find((h) => h.symbol === "SPAXX")!;
+    expect(mm.totalGrowthPct!.toNumber()).toBeGreaterThanOrEqual(0);
+    expect(mm.totalGrowthPctUsd!.toNumber()).toBeGreaterThanOrEqual(0);
+  });
   it("never shows a daily move for a money-market fund (par NAV)", () => {
     // Even when the export carries a previous close (a repeated $1.00 bar), a
     // money-market fund holds a constant $1.00 NAV and genuinely does not move
@@ -271,6 +334,139 @@ describe("buildDashboard", () => {
     expect(vmfxx.isMoneyMarket).toBe(true);
     expect(vmfxx.priceFallbackDate).toBe("2024-06-01");
     expect(vmfxx.priceAsOf).toBeNull();
+  });
+
+  it("keeps the movers band alive when a no-move money-market row is the freshest", () => {
+    // Regression: a par-NAV money-market fund always sits on the export's own
+    // "today" date but never has a daily move. It used to raise the freshest
+    // priced date above every blob-derived last-session move, flagging them all
+    // stale and wiping the whole Top-movers band (winners & losers both empty).
+    // The leaderboard must date itself off the moves themselves, so the genuine
+    // mover (VTI, last session's blob move) still shows.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VTI",
+        name: "Vanguard Total Market",
+        asset_class: "etf",
+        broker: "Broker",
+        account: "Taxable",
+        native_currency: "USD",
+        shares: "10",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VTI",
+        price_type: "market",
+        last_known_price_native: "100",
+        last_price_date: "2024-05-31",
+        previous_close_native: "90",
+        previous_close_date: "2024-05-30",
+        cashflows: [{ date: "2023-01-01", amount: "-900" }],
+      },
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1000",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+      },
+    ];
+    // No live quotes: a cold/stale load that relies on the export blob alone.
+    const m = buildDashboard(exp, new Map(), fx, new Date("2024-06-03T12:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    // The money-market row is the freshest priced row but carries no move...
+    expect(vmfxx.priceFallbackDate).toBe("2024-06-01");
+    expect(vmfxx.todayMoveEur).toBeNull();
+    // ...and VTI's move, though older than that date, still leads the board.
+    expect(vti.todayMoveEur).not.toBeNull();
+    const movers = buildMovers(m.holdings);
+    expect(movers.winners.map((w) => w.symbol)).toContain("VTI");
+    expect(movers.basisDate).toBe("2024-05-31");
+    expect(movers.eligibleCount).toBe(1);
+  });
+
+  it("a freshly-quoted money-market NAV must not flag equity moves stale (market closed)", () => {
+    // Root cause of the vanishing Top-movers band: a money-market fund re-marks to
+    // its own "today" whenever it is re-fetched — it does not care whether the
+    // stock market is open. A quote pulled after-hours/over a weekend gave VMFXX a
+    // newer value-date than every equity's genuine last-session move, which used to
+    // raise the freshness basis and flag those real moves `todayMoveIsStale`. The
+    // money-market row must never define that basis.
+    const exp = makeExport();
+    exp.holdings = [
+      {
+        symbol: "VTI",
+        name: "Vanguard Total Market",
+        asset_class: "etf",
+        broker: "Broker",
+        account: "Taxable",
+        native_currency: "USD",
+        shares: "10",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VTI",
+        price_type: "market",
+        last_known_price_native: "100",
+        last_price_date: "2024-05-31",
+        previous_close_native: "90",
+        previous_close_date: "2024-05-30",
+        cashflows: [{ date: "2023-01-01", amount: "-900" }],
+      },
+      {
+        symbol: "VMFXX",
+        name: "Vanguard Federal Money Market",
+        asset_class: "money_market",
+        broker: "Broker",
+        account: "Settlement",
+        native_currency: "USD",
+        shares: "1000",
+        cost_basis_native: "1000",
+        cumulative_dividends_cash_native: "0",
+        price_symbol: "VMFXX",
+        price_type: "nav",
+        last_known_price_native: "1",
+        cashflows: [{ date: "2023-01-01", amount: "-1000" }],
+      },
+    ];
+    // VTI's live mark is last Friday's session; VMFXX gets a fresher NAV stamped on
+    // a *newer* trading day — the "new price that does not care about market open".
+    const liveQuotes = new Map<string, Quote>([
+      [
+        "VTI",
+        {
+          symbol: "VTI",
+          price: new Decimal("100"),
+          previousClose: new Decimal("90"),
+          currency: "USD",
+          valueDate: "2024-05-31",
+          priceTime: new Date("2024-05-31T20:00:00Z").getTime(),
+        },
+      ],
+      [
+        "VMFXX",
+        { symbol: "VMFXX", price: new Decimal("1"), previousClose: null, currency: "USD", valueDate: "2024-06-03" },
+      ],
+    ]);
+    const m = buildDashboard(exp, liveQuotes, fx, new Date("2024-06-03T22:00:00Z"));
+    const vti = m.holdings.find((h) => h.symbol === "VTI")!;
+    const vmfxx = m.holdings.find((h) => h.symbol === "VMFXX")!;
+    // The money-market row is genuinely the freshest priced row...
+    expect(vmfxx.priceFallbackDate).toBe("2024-06-03");
+    expect(vmfxx.todayMoveEur).toBeNull();
+    // ...but VTI's real last-session move is NOT stranded as stale by it.
+    expect(vti.todayMoveEur).not.toBeNull();
+    expect(vti.todayMoveIsStale).toBe(false);
+    const movers = buildMovers(m.holdings);
+    expect(movers.winners.map((w) => w.symbol)).toContain("VTI");
   });
 
   it("produces a portfolio XIRR (sign change present)", () => {
@@ -624,7 +820,7 @@ describe("buildDashboard", () => {
     approx(m.overview.todayMovePct, (50 / 1.1) / (950 / 1.1 + 550 / 1.1 + 200), 1e-4);
   });
 
-  it("flags a lagging holding's daily move as stale when a peer has repriced more recently", () => {
+  it("keeps a lagging holding's own last-session move while flagging it stale", () => {
     const exp = makeExport();
     exp.meta.as_of = "2024-05-31";
     const mixedQuotes = new Map<string, Quote>([
@@ -652,10 +848,20 @@ describe("buildDashboard", () => {
     const m = buildDashboard(exp, mixedQuotes, fx, new Date("2024-06-03T12:00:00Z"));
     const vti = m.holdings.find((h) => h.symbol === "VTI")!;
     const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
-    // VTI printed on the freshest date; FXAIX still sits on the older NAV, so its
-    // daily figure is last session's move and must be greyed (stale) — VTI's not.
+    // VTI printed on the freshest date; FXAIX still sits on the older NAV. The
+    // stale *flag* and the per-row move *figure* are decoupled: FXAIX is flagged
+    // stale (greyed in the UI, excluded from the headline total) yet keeps its
+    // genuine last-session 108→110 move instead of collapsing to ~0.
     expect(vti.todayMoveIsStale).toBe(false);
     expect(fxaix.todayMoveIsStale).toBe(true);
+    // (110 − 108) × 5 = 10 USD; FX cancels on the USD side.
+    approx(fxaix.todayMoveUsd, 10, 1e-6);
+    approx(fxaix.todayMovePctUsd, 10 / 540, 1e-6);
+    // EUR side at the (here unchanged) FX 1.10: 10 / 1.10 ≈ 9.0909.
+    approx(fxaix.todayMoveEur, 10 / 1.1, 1e-6);
+    approx(fxaix.todayMovePct, (10 / 1.1) / (540 / 1.1), 1e-6);
+    // USD-native, so none of the move is FX (the prices, not the rate, moved).
+    approx(fxaix.todayFxMoveEur, 0, 1e-6);
   });
 
   it("marks no daily move as stale before peers diverge (all on the same close)", () => {
@@ -687,7 +893,7 @@ describe("buildDashboard", () => {
     expect(m.holdings.every((h) => !h.todayMoveIsStale)).toBe(true);
   });
 
-  it("keeps FX revaluation on lagged holdings while dropping their stale price move from the overview", () => {
+  it("drops a lagged holding's stale price move from the overview but keeps it on the row", () => {
     const exp = makeExport();
     exp.meta.as_of = "2024-05-31";
     exp.cash = [];
@@ -718,10 +924,19 @@ describe("buildDashboard", () => {
     });
     // On the 2024-06-03 global step, both holdings keep their current native
     // prices in USD. EUR still feels the FX swing on the whole 1550 USD book, but
-    // FXAIX's older 108→110 price move must not be counted again.
+    // FXAIX's older 108→110 price move must not be counted again in the headline.
     approx(m.overview.todayMoveUsd, 0, 1e-6);
     approx(m.overview.todayMoveEur, 1550 / 1.1 - 1550 / 1.05, 1e-3);
     approx(m.overview.todayFxMoveEur, 1550 / 1.1 - 1550 / 1.05, 1e-3);
+    // The row itself, however, keeps its genuine last-session move (decoupled from
+    // the stale flag): USD 540→550 = 10, with the EUR figure also feeling the FX
+    // swing between the prior (1.05) and current (1.10) rate.
+    const fxaix = m.holdings.find((h) => h.symbol === "FXAIX")!;
+    expect(fxaix.todayMoveIsStale).toBe(true);
+    approx(fxaix.todayMoveUsd, 10, 1e-6);
+    approx(fxaix.todayMoveEur, 550 / 1.1 - 540 / 1.05, 1e-3);
+    // FX part = full EUR move minus the price-only slice (10 USD at today's 1.10).
+    approx(fxaix.todayFxMoveEur, 550 / 1.1 - 540 / 1.05 - 10 / 1.1, 1e-3);
   });
 
   it("shows a fallback NAV's real last-update date (last_price_date), not the export date", () => {

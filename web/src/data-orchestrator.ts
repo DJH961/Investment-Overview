@@ -24,11 +24,12 @@ import {
   type PullLegs,
   ONE_HOUR_MS,
   allLegs,
-  barClockHourDue,
+  barStalenessPromotionDue,
   gradedPull,
   hasAnyLeg,
   noLegs,
   quoteRefreshDue,
+  setBarWindow,
 } from "./freshness";
 
 /**
@@ -94,7 +95,7 @@ export function deviceDaysMissing(args: {
   return 0;
 }
 
-/** Per-symbol-independent bar-gate state for the clock-hour overlay. */
+/** Per-symbol-independent bar-gate state for the staleness-promotion overlay. */
 export interface PullBarGate {
   /** When 1D bars were last pulled this session (epoch ms), or null if never. */
   lastBarPullMs: number | null;
@@ -148,18 +149,24 @@ export interface PullPlan {
  * - **`reset`** — the heaviest escape hatch: a full re-pull of every leg. It
  *   clears soft freshness/backoff (downstream), but **never** the budget or the
  *   breaker — those still bind every leg it fires.
- * - **`start` / `manual`** — run the Pillar-4 truth-table, then layer the two
- *   market-hours overlays (clock-hour bar gate + rolling quote TTL). A manual tap
- *   forces a quote re-pull (the user is explicitly asking "is there anything
- *   new?"), so it skips the rolling-TTL suppression.
+ * - **`start` / `manual`** — run the Pillar-4 truth-table, then layer the
+ *   market-hours overlays (30-min bar-staleness promotion + rolling quote TTL). A
+ *   **manual** tap is driven purely by RELEVANCE, never freshness: a fresh symbol
+ *   can never swallow it (only the upstream double-click cooldown can — see
+ *   `manualRefreshDecision`). It forces the legs that can actually have moved on —
+ *   market symbols while open, NAVs-only post-close until the NAV arrives, every
+ *   symbol once the close is in hand — so the executor's per-symbol skip, not the
+ *   freshness tier, has the final say.
  * - **`auto`** — the steady cadence: identical table + overlays, fully gated, so
- *   a tick that finds everything fresh pulls nothing.
+ *   a tick that finds everything fresh pulls nothing — except the moment the
+ *   market closes with the day's NAV still awaited, when the `nav` leg is due at
+ *   once (Overlay 0a) rather than after a further interval.
  */
 export function planPull(ctx: PullContext): PullPlan {
   if (ctx.kind === "reset") {
     return {
       kind: ctx.kind,
-      tier: "heavily-outdated",
+      tier: "outdated",
       legs: allLegs(),
       reason: "reset: full re-pull of every leg (budget + breaker still bind)",
     };
@@ -178,33 +185,92 @@ export function planPull(ctx: PullContext): PullPlan {
   const legs: PullLegs = { ...graded.legs };
   const notes: string[] = [];
 
-  // Overlay 1 — the clock-hour bar gate is the SOLE 1D-bar authority during
-  // market hours, in **both** directions, so one plan per round decides bars and
+  // Overlay 0a — NAV-as-soon-as-closed (every cadence, auto included). The instant
+  // the regular session closes the day's NAV funds begin publishing and are the
+  // ONLY price that can still change, so whenever the market is shut and today's
+  // NAV is not yet in hand the `nav` leg is due — a fresh quote book must NOT keep
+  // the tier at `fresh` and starve the NAV pull until the next interval has
+  // elapsed. The leg self-clears the moment the NAV lands (`navHeldForToday`), and
+  // the executor re-clamps each symbol against the NAV cache TTL + per-series
+  // backoff, so turning it on the moment it is awaited is safe and bounded.
+  if (ctx.market === "closed" && !ctx.freshness.navHeldForToday && !legs.nav) {
+    legs.nav = true;
+    notes.push("NAV due (market closed, awaiting today's NAV)");
+  }
+
+  // Overlay 0b — manual relevance. A manual tap is driven by RELEVANCE, never
+  // freshness: a fresh symbol must NEVER swallow a tap (only the upstream
+  // double-click cooldown can — see `manualRefreshDecision`). There is a reason
+  // the user asked, so the relevant price legs are forced on regardless of the
+  // graded tier; the executor's per-symbol skip then decides the genuine work, so
+  // a tap with everything already settled still spends nothing. Relevance by
+  // market phase mirrors what can actually have moved:
+  //   - market OPEN          → market symbols move ⇒ force quotes (NAV can't strike);
+  //   - CLOSED, NAV awaited   → only NAVs can still change ⇒ NAV only (Overlay 0a);
+  //   - CLOSED, NAV in hand    → nothing is mid-move ⇒ re-verify ALL symbols (quotes + NAV).
+  if (ctx.kind === "manual") {
+    if (ctx.market === "open") {
+      if (!legs.quotes) {
+        legs.quotes = true;
+        notes.push("quotes forced (manual: market open)");
+      }
+    } else if (ctx.freshness.navHeldForToday) {
+      // Outside both relevance windows (closed and today's NAV already in hand):
+      // re-verify every symbol; the executor's per-symbol skip drops any that
+      // already hold the latest settled mark, so this is bounded, not a blind pull.
+      if (!legs.quotes) {
+        legs.quotes = true;
+        notes.push("quotes forced (manual: all symbols)");
+      }
+      if (!legs.nav) {
+        legs.nav = true;
+        notes.push("NAV forced (manual: all symbols)");
+      }
+    }
+    // CLOSED with NAV still awaited needs no quotes leg here: Overlay 0a already lit
+    // the NAV leg, and market symbols hold the settled close, so the tap is NAV-only.
+  }
+
+  // Overlay 1 (O3) — the bar **staleness** promotion is the SOLE 1D-bar authority
+  // during market hours, in both directions, so one plan per round decides bars and
   // legs together (no second bars-only plan that could disagree):
-  //   - a new clock hour is **due** ⇒ turn the 1D bar leg *on*, even when the
-  //     freshness tier alone wouldn't have asked for it (e.g. quotes are fresh but
-  //     a `:00` has passed) — the gate, not the tier, owns the bar during hours;
-  //   - **not** due ⇒ drop the 1D bar leg; breadcrumbs carry the line to the next
-  //     `:00`.
-  // The gate is the 1D authority *only*: it never touches `weekBars` (history
-  // backfill stays owned by the table). It also never strips when the tier is
-  // `heavily-outdated`, so a stale manual/auto round in a non-`:00` window still
-  // backfills missing history. Outside market hours the table governs bar pulls
-  // directly (a missing settled close still backfills, self-gated by the executor).
+  //   - on a SCHEDULED (auto / startup) round, a bar older than 30 min is **due** ⇒
+  //     turn the bars leg *on* (today's session window), even when the freshness
+  //     tier alone wouldn't have asked for it — and SUPPRESS this round's quotes,
+  //     because the bar subsumes the quote (a ~25-symbol round stays one ~3–4 min
+  //     bar pass, not bars + ~25 quotes). The next quote round restores the tip,
+  //     giving the steady ~5 quote rounds : 1 bar round cadence.
+  //   - **not** due ⇒ drop the single-session bar leg; breadcrumbs carry the line
+  //     to the next promotion.
+  // A **manual** tap is never a bar promotion (the global manual button is a pure
+  // quote round — relevance, Overlay 0b, forces its quotes): it neither promotes a
+  // fresh bar nor suppresses its quotes here. The gate is the 1D authority only: it
+  // never strips a multi-session history window (`weekBars`, the `outdated` heavy
+  // gap), so a stale round in a non-due window still backfills missing history.
+  // Outside market hours the table governs bar pulls directly (a missing settled
+  // close still backfills, self-gated by the executor).
   if (ctx.market === "open") {
-    const barsDue = barClockHourDue({
+    const scheduled = ctx.kind === "auto" || ctx.kind === "start";
+    const barDue = barStalenessPromotionDue({
       nowMs: ctx.nowMs,
       lastBarPullMs: ctx.barGate.lastBarPullMs,
       sessionOpenMs: ctx.barGate.sessionOpenMs,
     });
-    if (barsDue) {
-      if (!legs.dayBars) {
-        legs.dayBars = true;
-        notes.push("1D bar due (clock-hour gate)");
+    if (barDue) {
+      if (scheduled && !legs.dayBars) {
+        setBarWindow(legs, Math.max(1, legs.barsWindowSessions));
+        notes.push("1D bar due (30-min staleness)");
       }
-    } else if (legs.dayBars && graded.tier !== "heavily-outdated") {
-      legs.dayBars = false;
-      notes.push("1D bar held (clock-hour gate)");
+      // The bar subsumes the quote — don't also pull ~25 quotes this scheduled
+      // round. A heavy history round (multi-session window) legitimately re-pulls
+      // everything, so it keeps its quotes.
+      if (scheduled && legs.quotes && !legs.weekBars) {
+        legs.quotes = false;
+        notes.push("quotes suppressed (bar subsumes the quote)");
+      }
+    } else if (legs.dayBars && !legs.weekBars) {
+      setBarWindow(legs, 0);
+      notes.push("1D bar held (30-min staleness)");
     }
   }
 

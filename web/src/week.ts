@@ -2,22 +2,27 @@
  * Live **1 Week** curve orchestration for the web companion
  * (docs/v3.0_live_web_companion_proposal.md §10.8, Phase 4).
  *
- * The 1W curve is **self-built from stored daily closes**: one daily-close bar
- * per trading session across the week, reconstructed with the very same anchored
- * maths the 1D curve uses ({@link reconstructSessionCurve}) — only the bar
- * cadence differs (one bar per *day* instead of one per 5-minute interval). That
- * means the whole-book value at each day's close is
- * `base + Σ valueᵢ · closeᵢ(day)/closeᵢ`, closing on the headline total by
- * construction, with EUR genuinely re-marked at each day's FX rather than a flat
- * rescale of USD.
+ * The 1W curve is **self-built from dense 5-minute intraday bars** over the
+ * trailing-session window — the *same* bar type and the very same anchored maths
+ * the 1D curve uses ({@link reconstructSessionCurve}) — so its today-slice is
+ * *identical* to the 1D graph, not merely similar (plan C1/C5). The whole-book
+ * value at each instant is `base + Σ valueᵢ · priceᵢ(t)/priceᵢ`, closing on the
+ * headline total by construction, with EUR genuinely re-marked at each instant's
+ * FX rather than a flat rescale of USD.
  *
- * Economics (§10.8): the daily closes are a **one-time `interval=1day` backfill**
- * — a single request per symbol covers the whole window (bars are free on Twelve
- * Data; 1 credit/symbol). They are persisted in the {@link TimeSeriesStore} under
- * a dedicated namespaced key, separate from the per-session 1D caches, so a
- * re-open does **not** re-fetch a week already on the device. While the market is
- * open, today's still-forming close is represented by the **live tip** (the
- * headline total at `now`), so the curve always ends on the live figure.
+ * Economics (§10.8): a single windowed `interval=5min` request per symbol covers
+ * the whole window (Twelve Data bills **1 credit per symbol per request
+ * regardless of bar count**, so a dense 5-day week costs the same as one day).
+ * The fetched market bars are persisted **twice over**: into a window-level ledger
+ * under a dedicated namespaced key (the freshness/close-probe/FX/NAV memory so a
+ * re-open does **not** re-fetch a week already on the device) *and*, split by
+ * trading day and clamped to each regular session, into the **shared per-day
+ * session store** the 1D builder writes (plan C5/C6 — see {@link
+ * persistWindowBarsPerDay}). That shared store is what the body reconstructs
+ * from, so 1D and 1W draw the identical per-day intraday bars and a day either
+ * timeframe freshens enriches the other for free. While the market is open,
+ * today's still-forming close is represented by the **live tip** (the headline
+ * total at `now`), so the curve always ends on the live figure.
  *
  * The network (`fetchDailyBars`/`fetchFx`) and persistence (`store`) are injected,
  * so the whole orchestration is unit-testable with no DOM, IndexedDB, or live API.
@@ -25,6 +30,7 @@
 
 import {
   appendLiveTip,
+  capAtClose,
   intradaySymbols,
   rebaseBreadcrumbs,
   marketSleeveSymbols,
@@ -33,9 +39,12 @@ import {
   type BarFetcher,
 } from "./intraday";
 import {
+  exchangeDayOf,
+  exchangeDayStartMs,
   isUsMarketOpen,
   lastSessionDate,
   recentTradingSessions,
+  sessionCloseMs,
   sessionOpenMs,
 } from "./market-hours";
 import {
@@ -78,17 +87,17 @@ function toReconHoldings(holdings: IntradayAnchor["holdings"]): ReconHolding[] {
   }));
 }
 
-/** Epoch-ms of `YYYY-MM-DD` at UTC midnight — the instant a daily-close bar is stamped at. */
+/** Epoch-ms of `YYYY-MM-DD` at 00:00 ET — the instant a daily-close bar is stamped at. */
 function dayStartMs(day: string): number {
-  return Date.parse(`${day}T00:00:00Z`);
+  return exchangeDayStartMs(day);
 }
 
 /** Milliseconds in a calendar day — the span a single trading day's bars/crumbs occupy. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The `YYYY-MM-DD` UTC calendar day an epoch-ms instant falls on. */
+/** The `YYYY-MM-DD` New-York calendar day an epoch-ms instant falls on. */
 function utcDayOf(t: number): string {
-  return new Date(t).toISOString().slice(0, 10);
+  return exchangeDayOf(t);
 }
 
 /**
@@ -134,6 +143,38 @@ function barsFrom(bars: Bar[], fromMs: number): Bar[] {
 }
 
 /**
+ * Persist freshly-fetched **market** window bars into the **shared per-day
+ * session store** (plan C5/C6) — the very same `YYYY-MM-DD` keys the 1D builder
+ * writes — so 1D and 1W draw the *identical* per-day intraday bars instead of two
+ * parallel caches. Each symbol's window-spanning intraday bars are split by
+ * trading day and clamped to that day's regular session `[sessionOpenMs,
+ * sessionCloseMs]` — boundaries **inclusive** on both ends, mirroring the 1D
+ * builder's `clampBarsToDay` — before being unioned into the day's session. The merge is **bars-only**, so it never wipes a
+ * day's live-tip breadcrumb trail or its FX track — it only thickens the day with
+ * the bars this 1W pull paid for, which a later 1D build then reads back for free.
+ */
+async function persistWindowBarsPerDay(
+  store: TimeSeriesStore,
+  barsBySymbol: Record<string, Bar[]>,
+  window: string[],
+  now: number,
+): Promise<void> {
+  if (Object.keys(barsBySymbol).length === 0) return;
+  for (const day of window) {
+    const openMs = sessionOpenMs(day);
+    const closeMs = sessionCloseMs(day);
+    const incoming: Record<string, Bar[]> = {};
+    for (const [symbol, bars] of Object.entries(barsBySymbol)) {
+      const dayBars = bars.filter((b) => b.t >= openMs && b.t <= closeMs);
+      if (dayBars.length > 0) incoming[symbol] = dayBars;
+    }
+    if (Object.keys(incoming).length > 0) {
+      await store.mergeSession(day, { bars: incoming }, now);
+    }
+  }
+}
+
+/**
  * The instant the 1W curve treats as its freshness cutoff for a given `now`: a
  * stored daily-close cache is "fresh" only if it carries a bar at/after this
  * instant for every needed symbol. While the market is open today rides on the
@@ -165,6 +206,30 @@ export function weekStaleSymbols(
   const cutoff = weekCoverageCutoffMs(now, sessions);
   const bars = stored?.bars ?? {};
   return symbols.filter((s) => !(bars[s] ?? []).some((b) => b.t >= cutoff));
+}
+
+/**
+ * Coverage diagnostics for the stale set: the settled cutoff `now` requires and
+ * the latest stored bar across `symbols`, so the log can explain *why* a 1W
+ * re-pull fired — "bars present but end before the cutoff" — rather than just
+ * "stale". Returns `null` when nothing is stored. `latestMs` is the freshest
+ * `bar.t` seen; a value below `cutoffMs` is the short-coverage smoking gun.
+ */
+export function weekCoverageGap(
+  stored: { bars: Record<string, Bar[]> } | null,
+  symbols: string[],
+  now: Date = new Date(),
+  sessions = DEFAULT_WEEK_SESSIONS,
+): { cutoffMs: number; latestMs: number | null } {
+  const cutoffMs = weekCoverageCutoffMs(now, sessions);
+  const bars = stored?.bars ?? {};
+  let latestMs: number | null = null;
+  for (const s of symbols) {
+    for (const b of bars[s] ?? []) {
+      if (latestMs === null || b.t > latestMs) latestMs = b.t;
+    }
+  }
+  return { cutoffMs, latestMs };
 }
 
 /**
@@ -367,6 +432,12 @@ export interface WeekCurveOptions {
   onCloseResolve?: (event: CloseResolveLog) => void;
   /** Render a bar instant for the close-resolution log (defaults to raw ms). */
   formatInstant?: (t: number) => string;
+  /**
+   * Per-day whole-book money-market value (USD) so the 1W base steps on the day
+   * a flow landed instead of carrying today's balance flat across the week. Omit
+   * to keep the MM portion flat (legacy behaviour). See {@link ReconstructInput.mmDaysUsd}.
+   */
+  mmDaysUsd?: { date: string; valueNativeUsd: Decimal }[];
 }
 
 /** A built 1W curve plus the window it covers. */
@@ -509,6 +580,17 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
       { bars: incomingBars, fx: incomingFx, closeProbe: incomingProbe, closeProbeClear: probeClear },
       now.getTime(),
     );
+    // Plan C5/C6 — **shared per-day store.** The 1W market sleeve is fetched as
+    // dense 5-min intraday bars over the window (plan C1); persist those bars not
+    // only into the weekly ledger above but also — split by trading day and
+    // clamped to each regular session — into the **same `YYYY-MM-DD` per-day
+    // sessions the 1D builder writes**. That makes every window day genuinely
+    // dense in the shared store, so the 1W body reconstructs from the *identical*
+    // per-day intraday bars as 1D (the today-slice of 1W equals the 1D graph by
+    // construction, not merely similar), and a day the 1W pull freshens enriches
+    // the 1D session for free (and vice-versa). A bars-only merge preserves each
+    // day's live-tip breadcrumb trail and FX.
+    await persistWindowBarsPerDay(store, incomingBars, window, now.getTime());
   }
 
   // Item 7b — gap-fill the daily-NAV history of *moving* funds (mutual funds)
@@ -695,6 +777,7 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     baseFx: anchor.baseFx,
     baseEur: anchor.baseEur,
     baseUsd: anchor.baseUsd,
+    mmDaysUsd: options.mmDaysUsd,
   });
 
   // Splice each window day's rebased breadcrumb trail into the gaps so the line
@@ -741,6 +824,31 @@ function spliceWeekBreadcrumbs(
   }
   if (extra.length === 0) return points;
   return [...points, ...extra].sort((a, b) => a.t - b.t);
+}
+
+/**
+ * Cap a *finished* 1W curve at the latest regular session's 16:00 ET close once
+ * the market is shut — the trailing-edge mirror of the 1D builder's
+ * {@link capAtClose} ({@link ./intraday}, applied at `intraday.ts`'s
+ * `!marketOpen` branch).
+ *
+ * The 1W curve is assembled from several sources that the 1D curve either does
+ * not use or trims itself: the springboarded blob `day.points`, the live
+ * reconstruction, the per-day breadcrumb splice, and — crucially — the web⇄blob
+ * **`market_series` merge** ({@link ../app}'s `enrichWeekWithBlobSleeve`), which
+ * the 1D graph never runs. Any of these can contribute a point *after* the last
+ * session's close: a blob sleeve sample captured past 16:00 ET, a breadcrumb
+ * whose instant slipped past the close, or a stray daily bar. Left in, that point
+ * draws a near-vertical drop at the right edge of 1W that the 1D curve — capped
+ * at the close — never shows, breaking the "1D fills 1W" invariant (issue:
+ * trailing nosedive that appears only after a newer blob, markets closed).
+ *
+ * A no-op while the market is open: the live tip legitimately sits at `now`,
+ * which precedes the (future) close, so nothing is trimmed.
+ */
+export function capWeekToSessionClose(points: CurvePoint[], now: Date = new Date()): CurvePoint[] {
+  if (isUsMarketOpen(now)) return points;
+  return capAtClose(points, sessionCloseMs(lastSessionDate(now)));
 }
 
 /** Whether trimming actually dropped any bar (so a re-save is worthwhile). */

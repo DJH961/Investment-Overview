@@ -16,6 +16,7 @@ import {
   elapsedSessionMs,
   sessionIsWarmingUp,
   isForexMarketOpen,
+  isWeekendOvernight,
   forexMarketReopenMs,
   lastForexReopenMs,
   INTRADAY_BAR_INTERVAL_MS,
@@ -398,5 +399,37 @@ describe("lastForexReopenMs", () => {
   it("honours EST (winter): Sunday 17:00 ET is 22:00 UTC", () => {
     const now = new Date("2026-01-14T12:00:00Z"); // Wed in January (EST)
     expect(new Date(lastForexReopenMs(now)).toISOString()).toBe("2026-01-11T22:00:00.000Z");
+  });
+});
+
+describe("isWeekendOvernight (weekend spill-over: FX reopened, US still shut since Friday)", () => {
+  it("true on Sunday evening once spot FX reopens", () => {
+    // Sun 18:00 ET — forex just reopened, no US session since Friday's close.
+    expect(isWeekendOvernight(new Date("2026-06-28T22:00:00Z"))).toBe(true);
+  });
+
+  it("true on Monday pre-open (still tracing back to Friday)", () => {
+    // Mon 08:00 ET — forex open, US not open yet.
+    expect(isWeekendOvernight(new Date("2026-06-29T12:00:00Z"))).toBe(true);
+  });
+
+  it("false once the US session opens Monday", () => {
+    // Mon 10:00 ET — US market open, a fresh session has begun.
+    expect(isWeekendOvernight(new Date("2026-06-29T14:00:00Z"))).toBe(false);
+  });
+
+  it("false midweek (the overnight no longer traces to Friday)", () => {
+    // Wed 08:00 ET — last session was Tuesday, reopened long ago.
+    expect(isWeekendOvernight(new Date("2026-07-01T12:00:00Z"))).toBe(false);
+  });
+
+  it("false on Saturday while spot FX is shut", () => {
+    expect(isWeekendOvernight(new Date("2026-06-27T15:00:00Z"))).toBe(false);
+  });
+
+  it("true across a long weekend — Tuesday pre-open after a Monday holiday (Memorial Day 2026)", () => {
+    // Fri 2026-05-22 was the last session, Mon 2026-05-25 a holiday: on Tue
+    // pre-open the lone overnight still traces back to Friday's close.
+    expect(isWeekendOvernight(new Date("2026-05-26T12:00:00Z"))).toBe(true);
   });
 });

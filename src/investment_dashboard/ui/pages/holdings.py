@@ -11,13 +11,19 @@ concentrated position, weighted expense and the per-currency totals.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, tzinfo
 from decimal import Decimal
 from typing import Any
 
 from nicegui import ui
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.services import display_currency_service, prices_service
+from investment_dashboard.services import (
+    display_currency_service,
+    fx_service,
+    prices_service,
+    timezone_service,
+)
 from investment_dashboard.services.daily_growth_view import fx_move_pct
 from investment_dashboard.ui.components import (
     deferred,
@@ -65,6 +71,7 @@ class _HoldingsData:
     fx_rate: Decimal | None
     rows: list[dict[str, Any]]
     cards: list[HoldingCard]
+    fx_as_of: str | None = None
 
 
 #: AG-Grid ``valueFormatter`` (JS expression) rendering a numeric fraction as a
@@ -203,8 +210,39 @@ def _holdings_summary(
             )
 
 
+def _format_fx_as_of(
+    info: fx_service.FxAsOf | None,
+    *,
+    today: date | None = None,
+    tz: tzinfo | None = None,
+) -> str | None:
+    """A concise "as of …" label for the Holdings Current-FX tile.
+
+    Mirrors the Overview FX box's provenance stamp in a single compact line: a
+    today-dated live spot reads ``as of HH:MM`` (the live capture time on the
+    viewer's clock, exactly like the web); the settled ECB end-of-day reference
+    rate is tagged ``EOD`` alongside its date, so the dedicated FX tile is just as
+    honest about which day's rate it is showing.
+    """
+    if info is None:
+        return None
+    today = today or date.today()
+    if info.is_live:
+        if info.observed_at is not None:
+            observed = info.observed_at.astimezone(tz) if tz is not None else info.observed_at
+            return f"as of {observed.strftime('%H:%M')}"
+        return "as of today"
+    if info.as_of == today:
+        return "EOD · today"
+    return f"EOD · {info.as_of.strftime('%d %b')}"
+
+
 def _kpi_metrics_row(
-    metrics: PortfolioMetrics, *, display_ccy: str, fx_rate: Decimal | None
+    metrics: PortfolioMetrics,
+    *,
+    display_ccy: str,
+    fx_rate: Decimal | None,
+    fx_as_of: str | None = None,
 ) -> None:  # pragma: no cover - UI
     """Second headline KPI row: dividend return, dividend yield, fund fees, FX.
 
@@ -257,6 +295,10 @@ def _kpi_metrics_row(
         else:
             fx_sub = "EUR → USD"
             fx_color = None
+        # Stamp which day's rate this is (live overlay vs settled ECB end-of-day),
+        # mirroring the Overview FX box, so the dedicated FX tile is just as honest.
+        if fx_as_of:
+            fx_sub = f"{fx_sub} · {fx_as_of}"
         kpi_card("Current FX", fx_value, sub=fx_sub, color=fx_color, tooltip_key="fx_rate")
 
 
@@ -279,6 +321,12 @@ def register() -> None:
                     freshness = holding_freshness(session, positions)
                     display_ccy = display_currency_service.get_display_currency(session)
                     usd_rate = display_currency_service.current_rate(session, quote="USD")
+                    display_tz = timezone_service.resolve_tzinfo(
+                        timezone_service.get_timezone(session)
+                    )
+                    fx_as_of = _format_fx_as_of(
+                        fx_service.eur_quote_as_of(session, quote="USD"), tz=display_tz
+                    )
                 _min_shares = Decimal("0.0000001")
                 held_positions = [p for p in positions if p.shares >= _min_shares]
                 rows = position_rows(
@@ -301,6 +349,7 @@ def register() -> None:
                     fx_rate=usd_rate,
                     rows=rows,
                     cards=cards,
+                    fx_as_of=fx_as_of,
                 )
 
             def _build(data: _HoldingsData) -> None:
@@ -351,7 +400,12 @@ def register() -> None:
 
                 # Second headline row: income & cost KPIs (dividend return,
                 # dividend yield, fund fees, FX) with money figures underneath.
-                _kpi_metrics_row(metrics, display_ccy=display_ccy, fx_rate=data.fx_rate)
+                _kpi_metrics_row(
+                    metrics,
+                    display_ccy=display_ccy,
+                    fx_rate=data.fx_rate,
+                    fx_as_of=data.fx_as_of,
+                )
 
                 _zero_value_warning([c.symbol for c in cards if c.value_warning])
                 _price_data_warning([c.symbol for c in cards if c.price_data_warning])
