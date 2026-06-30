@@ -2510,7 +2510,7 @@ function chartWithTimeframe(
     type: "button",
     hidden: "",
     "aria-hidden": "true",
-  }, ["⟳"]) as HTMLButtonElement;
+  }, [h("span", { class: "chart-range-refresh-glyph", "aria-hidden": "true" }, ["↻"])]) as HTMLButtonElement;
   let activeLive: (RangeOption & { kind: "live" }) | null = null;
   let liveRefreshing = false;
   const syncRefreshButton = (): void => {
