@@ -34,6 +34,7 @@ from investment_dashboard.repositories import (
 from investment_dashboard.services import (
     auto_refresh,
     benchmark_service,
+    clock_format_service,
     display_currency_service,
     fetch_report,
     instrument_enrichment_service,
@@ -260,6 +261,19 @@ def _set_timezone(value: str) -> None:  # pragma: no cover - UI
         ui.notify(str(exc), type="negative")
         return
     ui.notify(f"Timezone set to {value}", type="positive")
+    ui.navigate.reload()
+
+
+def _set_clock_format(value: str) -> None:  # pragma: no cover - UI
+    """Persist the 12h/24h/auto header clock format and re-render the header."""
+    try:
+        with session_scope() as session:
+            stored = clock_format_service.set_clock_format(session, value)
+    except ValueError as exc:
+        ui.notify(str(exc), type="negative")
+        return
+    labels = {"auto": "Auto (locale)", "12h": "12-hour", "24h": "24-hour"}
+    ui.notify(f"Clock format set to {labels.get(stored, stored)}", type="positive")
     ui.navigate.reload()
 
 
@@ -960,7 +974,7 @@ def _render_reset_section() -> None:  # pragma: no cover - UI
 
 
 def _render_display_prefs(
-    current_currency: str, current_timezone: str
+    current_currency: str, current_timezone: str, current_clock_format: str
 ) -> None:  # pragma: no cover - UI
     with ui.row().classes("items-center gap-md"):
         ui.label("Primary display currency:").classes("text-body2")
@@ -984,6 +998,17 @@ def _render_display_prefs(
         ui.label(
             'Sets the clock shown in the header. "Local" follows this '
             "computer's timezone; pick any zone to override it.",
+        ).classes("text-caption opacity-70")
+    with ui.row().classes("items-center gap-md q-mt-sm"):
+        ui.label("Clock format:").classes("text-body2")
+        ui.toggle(
+            {"auto": "Auto", "12h": "12-hour", "24h": "24-hour"},
+            value=current_clock_format,
+            on_change=lambda e: _set_clock_format(e.value),
+        ).props("dense unelevated")
+        ui.label(
+            'How the header clock reads the time. "Auto" follows this '
+            "computer's locale; 12-hour shows AM/PM, 24-hour shows 00-23.",
         ).classes("text-caption opacity-70")
     with session_scope() as session:
         current_interval = auto_refresh.get_interval_seconds(session)
@@ -2078,6 +2103,7 @@ def register() -> None:
                 allocations = list(allocations_repo.list_allocations(session))
                 current_currency = display_currency_service.get_display_currency(session)
                 current_timezone = timezone_service.get_timezone(session)
+                current_clock_format = clock_format_service.get_clock_format(session)
                 benchmark_symbol = benchmark_service.get_symbol(session)
                 rf_snapshot = risk_free_service.get_risk_free_rate(
                     session,
@@ -2094,7 +2120,9 @@ def register() -> None:
                     "options change presentation only — they never alter your "
                     "transactions or move money.",
                 ).classes("text-caption opacity-70 q-mb-sm")
-                _render_display_prefs(current_currency, current_timezone)
+                _render_display_prefs(
+                    current_currency, current_timezone, current_clock_format
+                )
             with collapsible_section(
                 "Analytics preferences",
                 icon="tune",
