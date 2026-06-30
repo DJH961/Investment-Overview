@@ -24,6 +24,8 @@ import {
   readSymbolPlan,
   recordCredits,
   primeQuotesFromBars,
+  primeQuotesFromExport,
+  type ExportQuoteSeed,
   primeEurUsdFromFxBars,
   writeCachedEnvelope,
   writeCachedEurUsd,
@@ -45,6 +47,7 @@ import type { Envelope } from "../src/crypto";
 import type { Quote } from "../src/prices";
 import type { Bar } from "../src/timeseries";
 import { lastSessionDate, sessionCloseMs } from "../src/market-hours";
+import { holdsSettledClose } from "../src/quotes";
 
 function memStorage(): StorageLike {
   const map = new Map<string, string>();
@@ -234,6 +237,83 @@ describe("primeQuotesFromBars", () => {
       if (previous === undefined) Reflect.deleteProperty(globalThis, "localStorage");
       else Reflect.set(globalThis, "localStorage", previous);
     }
+  });
+});
+
+describe("primeQuotesFromExport", () => {
+  const seed = (over: Partial<ExportQuoteSeed> = {}): ExportQuoteSeed => ({
+    symbol: "VTI",
+    price: "101",
+    previousClose: "99",
+    currency: "USD",
+    strikeMs: 5000,
+    valueDate: "2026-06-19",
+    marketOpen: false,
+    ...over,
+  });
+
+  it("seeds an uncached blob symbol stamped at its strike instant, like a fetched quote", () => {
+    const s = memStorage();
+    const primed = primeQuotesFromExport([seed()], s);
+    expect(primed).toEqual(["VTI"]);
+    const got = readCachedQuotes(s).get("VTI")!;
+    expect(got.quote.price?.toString()).toBe("101");
+    expect(got.quote.previousClose?.toString()).toBe("99");
+    expect(got.quote.currency).toBe("USD");
+    // The blob price's true age drives freshness: `at` and `priceTime` are the
+    // strike instant, never "now", so a stale blob price reads as stale.
+    expect(got.at).toBe(5000);
+    expect(got.quote.priceTime).toBe(5000);
+    expect(got.quote.valueDate).toBe("2026-06-19");
+    expect(got.quote.marketOpen).toBe(false);
+  });
+
+  it("only extends freshness — never overwrites a newer genuine quote", () => {
+    const s = memStorage();
+    writeCachedQuotes(new Map([["VTI", { ...quote("VTI", "100"), priceTime: 8000 }]]), 8000, s);
+    // A blob struck before the cached live quote must not clobber it.
+    const primed = primeQuotesFromExport([seed({ price: "200", strikeMs: 6000 })], s);
+    expect(primed).toEqual([]);
+    const got = readCachedQuotes(s).get("VTI")!;
+    expect(got.quote.price?.toString()).toBe("100");
+    expect(got.at).toBe(8000);
+  });
+
+  it("advances a stale cached quote when the blob strike is newer", () => {
+    const s = memStorage();
+    writeCachedQuotes(new Map([["VTI", { ...quote("VTI", "100", "95"), priceTime: 1000 }]]), 1000, s);
+    const primed = primeQuotesFromExport([seed({ price: "108", strikeMs: 4000 })], s);
+    expect(primed).toEqual(["VTI"]);
+    const got = readCachedQuotes(s).get("VTI")!;
+    expect(got.quote.price?.toString()).toBe("108");
+    expect(got.at).toBe(4000);
+    expect(got.quote.priceTime).toBe(4000);
+  });
+
+  it("grades a mixed-freshness blob per symbol against the latest settled close", () => {
+    // The reported bug: a blob fresh for some symbols and stale for others must be
+    // graded per symbol, not all-or-nothing. `holdsSettledClose` is the gate the
+    // freshness ledger uses while the market is shut.
+    const s = memStorage();
+    const settled = lastSessionDate(new Date(Date.parse("2026-06-22T18:00:00Z")));
+    primeQuotesFromExport(
+      [
+        // FRESH: a settled close for the latest session (marketOpen false).
+        seed({ symbol: "FRESH", valueDate: settled, marketOpen: false, strikeMs: sessionCloseMs(settled) }),
+        // STALE: its value-date trails the latest settled session.
+        seed({ symbol: "STALE", valueDate: "2026-06-01", marketOpen: false, strikeMs: sessionCloseMs("2026-06-01") }),
+      ],
+      s,
+    );
+    const cached = readCachedQuotes(s);
+    expect(holdsSettledClose(cached.get("FRESH")!.quote, settled)).toBe(true);
+    expect(holdsSettledClose(cached.get("STALE")!.quote, settled)).toBe(false);
+  });
+
+  it("skips an empty symbol and writes nothing for a no-op batch", () => {
+    const s = memStorage();
+    expect(primeQuotesFromExport([seed({ symbol: "" })], s)).toEqual([]);
+    expect(readCachedQuotes(s).size).toBe(0);
   });
 });
 

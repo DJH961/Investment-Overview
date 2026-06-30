@@ -15,7 +15,7 @@
  * session and dropped on "Lock". Decrypted figures never leave the browser.
  */
 import { fetchBlobMeta, fetchEnvelopeConditional } from "./blob";
-import { buildDashboard, buildFetchPlan, suspectQuoteSymbols, undatableQuoteSymbols, type DashboardModel } from "./compute";
+import { buildDashboard, buildFetchPlan, strikeTimeMs, suspectQuoteSymbols, undatableQuoteSymbols, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
 import { buildDemoModel, parseDemoParams, getPersona, DEMO_PERSONAS, type DemoParams } from "./demo";
 import { startTour, DEMO_TOUR_STEPS } from "./tour";
@@ -76,6 +76,8 @@ import {
   readSymbolPlan,
   type PlannedSymbol,
   primeQuotesFromBars,
+  primeQuotesFromExport,
+  type ExportQuoteSeed,
   primeEurUsdFromFxBars,
   readSessionStatus,
   writeSessionStatus,
@@ -541,6 +543,25 @@ export function manualRefreshDecision(args: {
   // An automatic pull is in flight: hand it the manual baton instead of bailing.
   if (args.refreshing && args.inFlightKind === "auto") return "promote";
   return "run";
+}
+
+/** Whether a low-credit manual tap should `"poll"` for new data or `"cache"`. */
+export type LowCreditManualPlan = "poll" | "cache";
+
+/**
+ * Decide what a manual tap does when the daily free-tier reserve is nearly spent
+ * ({@link App.canForceRefresh} is false), kept pure so the rule is testable in
+ * isolation. A manual refresh under *market conditions* must never fall back on
+ * the cache wrongfully: whenever the book is demonstrably behind (`fullyUpToDate`
+ * is false — market open, or a settled close / tonight's NAV still missing) the
+ * tap still `"poll"`s for new data. The per-minute / per-day budget in
+ * {@link loadQuotes} caps the actual spend and defers the overflow, so a forced
+ * pull can never burn the reserve in one tap. Only when the book is genuinely
+ * current ({@link App.fullyUpToDate}) is there nothing to chase, so the tap may
+ * honour the reserve and repaint the `"cache"`.
+ */
+export function lowCreditManualPlan(fullyUpToDate: boolean): LowCreditManualPlan {
+  return fullyUpToDate ? "cache" : "poll";
 }
 
 /**
@@ -1774,6 +1795,84 @@ export class App {
           ? `market open, first bar of the session is due (${orchestrator})`
           : `market open, last bar >30 min stale → bar due (${orchestrator})`,
     };
+  }
+
+  /**
+   * Seed the live quote cache from the just-applied blob so a price that arrived
+   * via the blob is graded for freshness — and repolled when the market state and
+   * its own age warrant — **exactly like a Twelve Data quote**. This is what lets
+   * the post-decrypt kickoff and the steady auto-refresh repoll the *right* subset
+   * of a mixed-freshness blob (some symbols newer than the device, some not),
+   * per symbol, rather than the whole book all-or-nothing.
+   *
+   * Each fetchable, non-money-market holding is reshaped into the same quote shape
+   * the freshness ledger ({@link buildPullFreshness} / {@link staleFetchSymbols} /
+   * {@link holdsSettledClose}) and {@link priceForHolding} already read, stamped at
+   * the price's real strike instant (the provider's `last_price_time`, else the
+   * value-date's 16:00 ET close) with its value-date and inferred market-state. The
+   * seed is **forward-only** ({@link primeQuotesFromExport}): a symbol is written
+   * only when its blob strike is strictly newer than the cached quote's instant, so
+   * a genuinely fresher live quote already in cache is never clobbered. Money-market
+   * and non-fetchable rows are left to their existing par/fallback display (they
+   * are never priced live), so the display surface for those rows is unchanged.
+   */
+  private seedQuotesFromBlob(): void {
+    const data = this.state.data;
+    if (!data) return;
+    const fetchable = new Set(buildFetchPlan(data, FETCHABLE_NAV_CLASSES).map((e) => e.symbol));
+    if (fetchable.size === 0) return;
+    const seeds: ExportQuoteSeed[] = [];
+    const seen = new Set<string>();
+    for (const holding of data.holdings) {
+      const symbol = holding.price_symbol;
+      if (!symbol || seen.has(symbol) || !fetchable.has(symbol)) continue;
+      if (holding.last_known_price_native === null) continue;
+      const currency = holding.native_currency || null;
+      if (currency === null) continue;
+      // The price's true strike instant: the provider's `regularMarketTime` when
+      // exported, else the value-date's official close (a settled daily figure).
+      // Without either we cannot date the price, so we skip it and leave the row
+      // to the existing missing-quote path rather than fake a freshness.
+      const strikeMs =
+        strikeTimeMs(holding.last_price_time) ??
+        (holding.last_price_date ? sessionCloseMs(holding.last_price_date) : null);
+      if (strikeMs === null) continue;
+      const isNav = holding.price_type !== "market";
+      // A market symbol struck inside its own session is a mid-session print, not
+      // the settled close — flag it open so `holdsSettledClose` still demands the
+      // post-close print (the "accept 21:59" near-close window aside). A NAV publish
+      // and a settled close are never "open".
+      const marketOpen = isNav ? false : this.strikeWithinSession(strikeMs);
+      seeds.push({
+        symbol,
+        price: holding.last_known_price_native,
+        previousClose: holding.previous_close_native ?? null,
+        currency,
+        strikeMs,
+        valueDate: holding.last_price_date ?? null,
+        marketOpen,
+      });
+      seen.add(symbol);
+    }
+    const primed = primeQuotesFromExport(seeds);
+    if (primed.length > 0) {
+      this.pollLog(
+        "blob",
+        `Seeded ${primed.length} blob price${primed.length === 1 ? "" : "s"} into the live quote cache — ` +
+          "graded for freshness/repolling exactly like a fetched quote.",
+      );
+    }
+  }
+
+  /**
+   * Whether a market strike instant falls inside its own exchange session
+   * `[09:30, 16:00)` ET — i.e. the price was struck mid-session (still chaseable to
+   * the close) rather than at/after the settled close. Used to seed a blob market
+   * quote's `marketOpen` flag so it is repolled like the equivalent live capture.
+   */
+  private strikeWithinSession(strikeMs: number): boolean {
+    const day = exchangeDate(new Date(strikeMs));
+    return strikeMs >= sessionOpenMs(day) && strikeMs < sessionCloseMs(day);
   }
 
   /**
@@ -3701,6 +3800,7 @@ export class App {
         const data = await decryptEnvelopeToJson<MobileExport>(cached.envelope, passphrase);
         this.state.passphrase = passphrase;
         this.state.data = data;
+        this.seedQuotesFromBlob();
         this.envelope = cached.envelope;
         this.envelopeAt = cached.at;
         this.metaVersion = cached.metaVersion;
@@ -3724,6 +3824,7 @@ export class App {
       const data = await decryptEnvelopeToJson<MobileExport>(envelope, passphrase);
       this.state.passphrase = passphrase;
       this.state.data = data;
+      this.seedQuotesFromBlob();
       this.envelope = envelope;
       this.metaVersion = null;
       this.persistEnvelope(envelope, { etag: result.etag, lastModified: result.lastModified });
@@ -4354,6 +4455,7 @@ export class App {
       if (session !== this.sessionId) return;
       this.envelope = envelope;
       this.state.data = data;
+      this.seedQuotesFromBlob();
       // Re-render the (possibly new) holdings from cache instantly; the running
       // price scheduler will fetch anything freshly added on its next tick. A
       // forced reset (the Settings hard reset) deliberately *skips* this cache-only
@@ -5794,16 +5896,29 @@ export class App {
     //   - fully settled / pre-market / weekend → re-pull *everything*. The user
     //     only taps refresh outside market hours when unsure the cache is right,
     //     so verify the whole book from scratch rather than trust it.
-    // Unless the daily free-tier budget is nearly spent (<10% left), where we
-    // fall back to the normal cache-respecting refresh so the reserve isn't
-    // burnt in one tap.
+    // Unless the daily free-tier budget is nearly spent (<10% left). Even then,
+    // a manual tap under *market conditions* (the book is demonstrably behind —
+    // market open, or a settled close / tonight's NAV still missing) must still
+    // poll for new data: serving the cache there would be wrong. The per-minute /
+    // per-day budget in {@link loadQuotes} caps the actual spend and defers the
+    // overflow, so a forced pull can never burn the reserve in one tap. We only
+    // honour the reserve and repaint the cache when the book is *fully up to
+    // date* ({@link fullyUpToDate}) — nothing new is fetchable, so there is
+    // genuinely nothing to chase.
     const canForce = this.canForceRefresh();
+    const forceAll = this.currentRefreshPhase() === "settled";
     if (!canForce) {
-      this.toast("Low on credits, showing recent prices.");
-      void this.runScheduledRefresh(this.sessionId, "manual", { force: false });
+      if (lowCreditManualPlan(this.fullyUpToDate()) === "cache") {
+        this.toast("Low on credits, showing recent prices.");
+        void this.runScheduledRefresh(this.sessionId, "manual", { force: false });
+        return;
+      }
+      // Behind under market conditions — poll anyway (budget-capped), never
+      // fall back on cache wrongfully.
+      this.toast("Low on credits — checking for new prices anyway…");
+      void this.runScheduledRefresh(this.sessionId, "manual", { force: true, forceAll });
       return;
     }
-    const forceAll = this.currentRefreshPhase() === "settled";
     void this.runScheduledRefresh(this.sessionId, "manual", { force: true, forceAll });
   }
 

@@ -63,6 +63,16 @@ export interface ExportHolding {
    */
   last_price_date?: string | null;
   /**
+   * ISO-8601 timestamp of *when* the exported `last_known_price_native` was last
+   * struck on the exchange — the provider's `regularMarketTime` (a market quote's
+   * intraday instant, or a fund's NAV publish time). Distinct from
+   * `last_price_date` (the value-date): it lets the UI stamp a precise "as of
+   * <time>" on a blob-priced row instead of only a date. Null/absent for rows the
+   * provider gives no market time for, money-market par rows, and exports
+   * generated before this field was added.
+   */
+  last_price_time?: string | null;
+  /**
    * The holding's prior published close in its native currency — the close one
    * trading day before `last_known_price_native`. Lets the web derive a today's
    * move (and rank the holding among the day's movers) from the export alone when

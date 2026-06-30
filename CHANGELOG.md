@@ -13,6 +13,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.1.0] — 2026-06-30
+
+### Added
+
+- **Blob prices now participate in the live freshness model — graded, and
+  repolled, exactly like a Twelve Data quote.** Previously a price that arrived via
+  the blob fed only the *display* fallback, never the live quote cache the freshness
+  orchestrator reads, so the post-decrypt login round and the auto-refresh could not
+  see how old each blob price actually was. Logging in just after a
+  *mixed-freshness* blob arrived (some symbols newer than the device, some staler)
+  therefore repolled nothing, even for the symbols that were genuinely behind. On
+  every blob apply (cached unlock, fresh download, background re-download) the web
+  now seeds each fetchable, non-money-market holding into the same quote cache
+  (`web/src/app.ts` `seedQuotesFromBlob` → `web/src/cache.ts`
+  `primeQuotesFromExport`), stamped at the price's real strike instant
+  (`last_price_time`, else the value-date's 16:00 ET close) with its value-date and
+  inferred market-state. The seed is **forward-only** — it never clobbers a fresher
+  live quote already in cache — so the freshness ledger (`staleFetchSymbols` /
+  `holdsSettledClose`) now grades each blob symbol **per symbol** against the latest
+  settled close, repolling the stale ones while a fresh one rests on its rolling
+  window, instead of the whole book all-or-nothing.
+
+### Fixed
+
+- **The blob now ships *when* each holding's price was struck, and the web reads
+  it.** The export already carried the holding's last price and its value-*date*,
+  but not the precise strike *time*. `mobile_export.py` now exports
+  `last_price_time` per holding — the price provider's `regularMarketTime`
+  (a market quote's intraday instant, or a fund's NAV publish time), sourced via
+  `prices_service.market_time_for(...)` and `null` for money-market par rows
+  (mirroring the desktop's `holding_freshness` rule). The web companion reads it
+  into a blob-priced row's `priceAsOf` (`web/src/compute.ts` `priceForHolding`),
+  so a fallback row stamps a precise `as of <time>` instead of only a date.
+  A timezone-less stamp is read as UTC so a naive desktop datetime can never
+  drift by the viewer's local offset, and a fallback price is still never graded
+  "live" (only a genuinely live quote can be), so the new strike time never
+  mislabels an exported value as a live mark.
+- **A manual refresh under market conditions no longer falls back on the cache
+  wrongfully.** When the daily free-tier reserve was nearly spent, a manual tap
+  always served the cache — even with the market open or a settled close / NAV
+  still missing. It now still polls for new data whenever the book is
+  demonstrably behind (`web/src/app.ts` `manualRefresh` via the new pure
+  `lowCreditManualPlan`), and only repaints the cache when the whole book is
+  genuinely up to date. The per-minute / per-day budget in `loadQuotes` caps the
+  actual spend and defers the overflow, so a forced pull can never burn the
+  reserve in one tap.
 ## [5.0.9] — 2026-06-30
 
 ### Fixed

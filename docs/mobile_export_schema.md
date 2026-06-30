@@ -57,6 +57,12 @@ Each row is sourced from `positions_service.compute_positions()`:
 - `last_known_price_native`: string decimal or `null`.
 - `last_price_date`: `YYYY-MM-DD` the `last_known_price_native` was struck, or
   `null`.
+- `last_price_time`: ISO-8601 timestamp of *when* `last_known_price_native` was
+  last struck on the exchange (the provider's `regularMarketTime`), or `null`.
+  Distinct from `last_price_date` (the value-date): it lets the web stamp a
+  precise "as of <time>" on a blob-priced row. `null` when the provider gives no
+  market time, for money-market par rows, and on exports made before this field
+  was added.
 - `previous_close_native`: string decimal of the prior published close (the close
   one trading day before `last_known_price_native`), or `null` when under two
   closes are cached. Lets the web derive a today's move from the export alone when
