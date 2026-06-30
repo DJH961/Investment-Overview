@@ -15,6 +15,22 @@
         "total_return": "0.10"
       },
       "name": "invalid_days"
+    },
+    {
+      "expected": "-0.5954464110148921",
+      "inputs": {
+        "days": 90,
+        "total_return": "-0.20"
+      },
+      "name": "loss_short_window"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "days": 30,
+        "total_return": "-1.50"
+      },
+      "name": "below_minus_one_invalid"
     }
   ],
   "cagr": [
@@ -44,6 +60,33 @@
         "start_value": "0"
       },
       "name": "invalid_zero_start"
+    },
+    {
+      "expected": "0.2133683347100201",
+      "inputs": {
+        "days": 180,
+        "end_value": "1100",
+        "start_value": "1000"
+      },
+      "name": "sub_year_gain"
+    },
+    {
+      "expected": "0.1488074310009178",
+      "inputs": {
+        "days": 3650,
+        "end_value": "1000000",
+        "start_value": "250000"
+      },
+      "name": "long_horizon_usd"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "days": 365,
+        "end_value": "-50",
+        "start_value": "1000"
+      },
+      "name": "negative_end_invalid"
     }
   ],
   "capital_gain": [
@@ -55,6 +98,222 @@
         "current_value": "1250"
       },
       "name": "ordinary"
+    },
+    {
+      "expected": "-650",
+      "inputs": {
+        "contributions": "5000",
+        "cumulative_dividends_cash": "150",
+        "current_value": "4200"
+      },
+      "name": "loss_with_dividends"
+    },
+    {
+      "expected": "242500.42",
+      "inputs": {
+        "contributions": "370000",
+        "cumulative_dividends_cash": "0",
+        "current_value": "612500.42"
+      },
+      "name": "large_usd_no_dividends"
+    }
+  ],
+  "project": [
+    {
+      "expected": [
+        {
+          "contributed": "1200",
+          "values_by_rate": {
+            "0.04": "11600.00",
+            "0.07": "11900.00",
+            "0.10": "12200.00"
+          },
+          "year": 2026
+        },
+        {
+          "contributed": "2400",
+          "values_by_rate": {
+            "0.04": "13264.0000",
+            "0.07": "13933.0000",
+            "0.10": "14620.0000"
+          },
+          "year": 2027
+        },
+        {
+          "contributed": "3600",
+          "values_by_rate": {
+            "0.04": "14994.560000",
+            "0.07": "16108.310000",
+            "0.10": "17282.000000"
+          },
+          "year": 2028
+        }
+      ],
+      "inputs": {
+        "annual_contribution_eur": "1200",
+        "base_year": 2025,
+        "scenarios": [
+          "0.04",
+          "0.07",
+          "0.10"
+        ],
+        "starting_value_eur": "10000",
+        "years": 3
+      },
+      "name": "ordinary"
+    },
+    {
+      "expected": [
+        {
+          "contributed": "2400",
+          "values_by_rate": {
+            "0.04": "2400.00",
+            "0.07": "2400.00",
+            "0.10": "2400.00"
+          },
+          "year": 2026
+        },
+        {
+          "contributed": "4800",
+          "values_by_rate": {
+            "0.04": "4896.0000",
+            "0.07": "4968.0000",
+            "0.10": "5040.0000"
+          },
+          "year": 2027
+        },
+        {
+          "contributed": "7200",
+          "values_by_rate": {
+            "0.04": "7491.840000",
+            "0.07": "7715.760000",
+            "0.10": "7944.000000"
+          },
+          "year": 2028
+        },
+        {
+          "contributed": "9600",
+          "values_by_rate": {
+            "0.04": "10191.51360000",
+            "0.07": "10655.86320000",
+            "0.10": "11138.40000000"
+          },
+          "year": 2029
+        },
+        {
+          "contributed": "12000",
+          "values_by_rate": {
+            "0.04": "12999.1741440000",
+            "0.07": "13801.7736240000",
+            "0.10": "14652.2400000000"
+          },
+          "year": 2030
+        }
+      ],
+      "inputs": {
+        "annual_contribution_eur": "2400",
+        "base_year": 2025,
+        "scenarios": [
+          "0.04",
+          "0.07",
+          "0.10"
+        ],
+        "starting_value_eur": "0",
+        "years": 5
+      },
+      "name": "zero_start"
+    },
+    {
+      "expected": [
+        {
+          "contributed": "0",
+          "values_by_rate": {
+            "0.04": "260000.00",
+            "0.07": "267500.00",
+            "0.10": "275000.00"
+          },
+          "year": 2026
+        },
+        {
+          "contributed": "0",
+          "values_by_rate": {
+            "0.04": "270400.0000",
+            "0.07": "286225.0000",
+            "0.10": "302500.0000"
+          },
+          "year": 2027
+        },
+        {
+          "contributed": "0",
+          "values_by_rate": {
+            "0.04": "281216.000000",
+            "0.07": "306260.750000",
+            "0.10": "332750.000000"
+          },
+          "year": 2028
+        },
+        {
+          "contributed": "0",
+          "values_by_rate": {
+            "0.04": "292464.64000000",
+            "0.07": "327699.00250000",
+            "0.10": "366025.00000000"
+          },
+          "year": 2029
+        }
+      ],
+      "inputs": {
+        "annual_contribution_eur": "0",
+        "base_year": 2025,
+        "scenarios": [
+          "0.04",
+          "0.07",
+          "0.10"
+        ],
+        "starting_value_eur": "250000",
+        "years": 4
+      },
+      "name": "no_contribution_usd"
+    },
+    {
+      "expected": [
+        {
+          "contributed": "100",
+          "values_by_rate": {
+            "0.04": "1140.00",
+            "0.07": "1170.00",
+            "0.10": "1200.00"
+          },
+          "year": 2026
+        }
+      ],
+      "inputs": {
+        "annual_contribution_eur": "100",
+        "base_year": 2025,
+        "scenarios": [
+          "0.04",
+          "0.07",
+          "0.10"
+        ],
+        "starting_value_eur": "1000",
+        "years": 1
+      },
+      "name": "single_year"
+    },
+    {
+      "expected": [],
+      "inputs": {
+        "annual_contribution_eur": "100",
+        "base_year": 2025,
+        "scenarios": [
+          "0.04",
+          "0.07",
+          "0.10"
+        ],
+        "starting_value_eur": "1000",
+        "years": 0
+      },
+      "name": "zero_years"
     }
   ],
   "schema_version": 1,
@@ -79,6 +338,22 @@
         "current_value": "1250"
       },
       "name": "zero_contributions"
+    },
+    {
+      "expected": "-0.25",
+      "inputs": {
+        "contributions": "1000",
+        "current_value": "750"
+      },
+      "name": "underwater"
+    },
+    {
+      "expected": "-1",
+      "inputs": {
+        "contributions": "1000",
+        "current_value": "0"
+      },
+      "name": "total_loss"
     }
   ],
   "total_growth_pct_compounded": [
@@ -97,6 +372,38 @@
         "years": "2.5"
       },
       "name": "none_xirr"
+    },
+    {
+      "expected": "-0.4879999999999999",
+      "inputs": {
+        "xirr_rate": "-0.20",
+        "years": "3"
+      },
+      "name": "negative_rate"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "xirr_rate": "-1.50",
+        "years": "2"
+      },
+      "name": "below_minus_one_invalid"
+    },
+    {
+      "expected": null,
+      "inputs": {
+        "xirr_rate": "0.08",
+        "years": "0"
+      },
+      "name": "zero_years"
+    },
+    {
+      "expected": "2.2869207876777238",
+      "inputs": {
+        "xirr_rate": "0.12",
+        "years": "10.5"
+      },
+      "name": "long_horizon"
     }
   ],
   "xirr": [
@@ -167,6 +474,64 @@
         "terminal_value": "1500"
       },
       "name": "leap_year_span"
+    },
+    {
+      "expected": "0.0565790749539818",
+      "inputs": {
+        "as_of": "2024-06-01",
+        "cashflows": [
+          {
+            "amount": "-20000",
+            "date": "2019-03-01"
+          },
+          {
+            "amount": "5000",
+            "date": "2020-09-15"
+          },
+          {
+            "amount": "-3000",
+            "date": "2022-01-10"
+          }
+        ],
+        "terminal_value": "24000"
+      },
+      "name": "with_withdrawal"
+    },
+    {
+      "expected": "0.08793650145059266",
+      "inputs": {
+        "as_of": "2025-01-02",
+        "cashflows": [
+          {
+            "amount": "-250000",
+            "date": "2018-01-02"
+          },
+          {
+            "amount": "-120000",
+            "date": "2021-07-01"
+          }
+        ],
+        "terminal_value": "612500"
+      },
+      "name": "large_usd_book"
+    },
+    {
+      "expected": "-0.16516521122543773",
+      "inputs": {
+        "as_of": "2024-01-01",
+        "cashflows": [
+          {
+            "amount": "-10000",
+            "date": "2021-01-01"
+          },
+          {
+            "amount": "-5000",
+            "date": "2021-07-01"
+          }
+        ],
+        "terminal_value": "9000"
+      },
+      "name": "net_loss"
     }
   ],
   "years_between": [
@@ -185,6 +550,22 @@
         "start": "2024-01-01"
       },
       "name": "same_day"
+    },
+    {
+      "expected": "0",
+      "inputs": {
+        "end": "2023-06-01",
+        "start": "2024-06-01"
+      },
+      "name": "reversed_range"
+    },
+    {
+      "expected": "4.208076659822039698836413415",
+      "inputs": {
+        "end": "2023-09-15",
+        "start": "2019-07-01"
+      },
+      "name": "leap_spanning"
     }
   ]
 }

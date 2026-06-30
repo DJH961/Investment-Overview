@@ -13,6 +13,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.16] — 2026-06-30
+
+### Added
+
+- **Expanded the golden desktop↔web math contract (v5.0 plan B6): the shared
+  parity-vector fixture now covers the projection annuity and far more return-
+  function edge cases (16 → 39 vectors).** `tools/gen_parity_vectors.py` is the
+  single source of truth that dumps canonical input→output vectors from the
+  authoritative Python domain functions; `tests/parity/vectors.json` is the
+  committed artefact (kept fresh by `tests/parity/test_vectors_fresh.py`) and
+  `web/test/returns.parity.test.ts` proves the TypeScript port reproduces it
+  within tolerance, so the phone can never silently drift from the desktop — the
+  divergence B6 warns about is now caught at PR time. New coverage:
+  - **Projection annuity.** The web `projectForward` (`web/src/phase4.ts`) now has
+    a row-by-row golden lock against the desktop `project`
+    (`ui/pages/_projection_query.py`) — starting value, cumulative contribution
+    and every scenario column per year — across ordinary, empty-start,
+    no-contribution (USD scale), single-year and zero-year horizons. This is the
+    calculator B6 explicitly names ("so the web calculator agrees with the
+    desktop one") and it was previously unguarded.
+  - **Return-function edge cases.** Concentrated on the highest-risk paths: the
+    `float ** float` annualisation legs (`cagr`, `annualize_return`,
+    `total_growth_pct_compounded`) where `Decimal.js` and Python could diverge on
+    `libm pow`; the real-valued-domain guards that must return `null`/`None`
+    identically (negative end value, base ≤ 0, non-positive horizon); genuine
+    loss / underwater / total-wipeout sign cases; an XIRR ledger with a mid-life
+    withdrawal; and USD-scale magnitudes (USD is the canonical backend currency)
+    to confirm no precision drift at realistic portfolio size.
+
+  No production code changed — this only widens the safety net under the shared
+  maths, the foundation the rest of the v5.0 B-workstream (and the O1 end-to-end
+  trust test) builds on.
+
 ## [4.21.15] — 2026-06-30
 
 ### Fixed
