@@ -7,9 +7,10 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v4.21.16 — active v4 series with split storage, cloud-aware paths,
-> optional SQLCipher, intraday refresh, snapshot/curve refinements, and the
-> encrypted live-web companion (see [`web/`](web/)).** The app remains a
+> **Status: v5.0.0 — split storage, cloud-aware paths, optional SQLCipher,
+> intraday refresh, snapshot/curve refinements, and the encrypted live-web
+> companion (encrypted publish + an in-browser dashboard with Overview /
+> Periods / Activity / Risk / Calculator tabs, see [`web/`](web/)).** The app remains a
 > local-first, single-user dashboard with onboarding, EUR/USD display switching,
 > CSV/XLSX imports, live overview/deposits/transactions/monthly/yearly/calculator
 > pages, a standalone projection page, and editable settings. It runs separate

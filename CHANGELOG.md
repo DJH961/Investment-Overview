@@ -13,10 +13,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.22.1] — 2026-06-30
+## [5.0.1] — 2026-06-30
 
 ### Fixed
 
+- **The live 1D/1W value graph now keeps the last complete curve on screen while
+  it reloads or waits for deferred bars — instead of blanking to a "Loading…"
+  box or briefly redrawing a partly-flat line.** On a same-window refresh (the
+  per-graph ↻ button, an auto-refresh repaint) the existing graph is held in
+  place rather than replaced by the loading placeholder, and a freshly-built
+  curve whose sleeve coverage is still incomplete (some holdings' bars are
+  budget-deferred on the free tier) no longer downgrades a complete graph — the
+  whole-day line persists until every holding's bars are in, then the complete
+  curve swaps in. A failed/empty rebuild likewise keeps the old graph rather than
+  showing an error box (`web/src/ui.ts`).
+- **While the graph is held in place during such a reload it now shows a clear
+  "refreshing" cue** — a subtle busy shimmer over the chart plus an
+  `aria-busy` flag — so it is obvious an update is in flight even though the old
+  curve is still visible, matching the refresh affordance the rest of the app
+  uses (`web/src/ui.ts`, `web/src/styles.css`).
 - **The per-graph "refresh bars" button now disappears on the long-range value
   graphs (1M/1Y/All) as intended.** The button is only meaningful for the live
   1D/1W windows — the static history slices have no bars to re-pull — and the
@@ -30,6 +45,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bars) and growth-rate headlines (1D from the previous-close reference, 1W from
   the first plotted point) were reviewed alongside this and confirmed correct.
 
+## [5.0.0] — 2026-06-30
+
+### Added
+
+- **The live-web companion gains an "Activity" (transactions) tab — the raw
+  ledger, now browsable on your phone.** A new fifth section sits between Risk
+  and Calculator in the tab bar and renders the export's transaction ledger as a
+  searchable, type-filterable, month-grouped list of buys, sells, dividends, and
+  cash movements. Each row shows the signed net cash flow in your currently
+  selected currency (EUR/USD) at *that trade's own* exchange rate, so the figures
+  reconcile with the desktop ledger rather than being re-valued at today's spot.
+  Auto-generated settlement sweeps are hidden, mirroring the desktop view
+  (`web/src/transactions.ts`, `web/src/ui.ts`, `web/src/types.ts`,
+  `web/src/compute.ts`).
+- **The Activity tab is opt-out.** An export may legitimately omit the ledger,
+  so the tab can be hidden from **Settings → Activity → Transactions tab**, and
+  it shows a clear "not included in this export" note when the ledger is absent
+  (`web/src/app.ts`, `web/src/ui.ts`). It is mobile-first like the rest of the
+  companion: a fixed bottom-nav entry within thumb reach on phones, reflowing to
+  the top tab strip on desktop, with the month header parked below the sticky
+  topbar (`web/src/styles.css`).
+
+### Changed
+
+- **Bumped to v5.0.0** to mark the Activity tab as the headline of a new major
+  line of the live-web companion. The desktop app, the `web/` companion
+  (`web/package.json`), and `uv.lock` move in lock-step as always, and the
+  READMEs' status headers now read v5.0.
 ## [4.22.0] — 2026-06-30
 
 ### Changed
