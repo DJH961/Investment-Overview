@@ -13,6 +13,89 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.22.0] — 2026-06-30
+
+### Changed
+
+- **Graph unification — the live 1D and 1W portfolio graphs now share one
+  intraday-window builder, killing the long-standing 1D-vs-1W divergence**
+  (`docs/graph-unification-plan.md`). For a long time the same recent period
+  looked smooth on 1D but spiky/sawtooth on 1W, settled days subtly reshaped
+  overnight, and the trailing tip ticked *up* on 1D while ticking *down* on 1W —
+  all because 1D and 1W were two different code paths (dense intraday bars vs. one
+  coarse daily close per day, then a second lower-resolution "blob" source merged
+  back in). This release begins the Main track (Group 1 — Foundation):
+  - The live **1W** curve is now drawn from the **same dense 5-minute intraday
+    bars** as 1D over the trailing-session window, instead of one daily close per
+    session — so the today-slice of 1W is *identical* to the 1D graph, not merely
+    similar. Cost is unchanged: Twelve Data bills one credit per symbol per request
+    regardless of bar count, so a dense 5-day week costs the same as a single day.
+  - The **web⇄blob market-sleeve merge** is **removed from the live path** (it was
+    the source of the sawtooth and the trailing-tip mismatch — it unioned web
+    5-minute points with blob 30-minute points whenever they agreed within
+    tolerance). The blob is kept only as a springboard / offline fallback, never a
+    live merge source. The 1W tail now uses the same close-cap as 1D.
+  - The 1W **FX leg rides the same intraday pipe** (5-minute EUR/USD), and the live
+    EUR/USD mark is now timed to the **quote's own reported price time** rather than
+    the moment we happened to poll — so the EUR and USD lines diverge at the right
+    instants instead of being mis-stamped to the pull clock.
+  - **Main track (Group 2 — Unify fetch & store):** the windowed 5-minute market
+    bars the 1W pull fetches are now persisted into the **shared per-day session
+    store** — the same `YYYY-MM-DD` caches the 1D graph writes — split by trading
+    day and clamped to each regular session, instead of living only in a parallel
+    weekly cache. The 1W body therefore reconstructs from the *identical* per-day
+    intraday bars as 1D (the today-slice of 1W equals the 1D graph by construction,
+    not merely similar), and a day either timeframe freshens enriches the other for
+    free. The store stays canonical **USD**; the EUR line remains a per-instant FX
+    re-mark on top, never a flat rescale.
+  - **Main track (Group 3 — Orchestrator):** the single data-pull brain
+    (`web/src/freshness.ts` + `web/src/data-orchestrator.ts`) is unified to match the
+    one-pipeline graph model. The separate 1D-session and 1W-week bar legs collapse
+    into **one window-sized `bars` leg** measured in trading sessions (the `dayBars` /
+    `weekBars` booleans survive only as derived projections of that window, so a 1W
+    pull is simply a wider 1D pull). The two stale tiers (`heavily-outdated` +
+    `minorly-outdated`) collapse into a single **`outdated`** verdict that pulls one
+    bars leg over the window of size needed (`relatively-fresh` / `fresh` stay the
+    quote-cadence tiers). The market-hours bar gate switches from the rigid `:00`
+    **clock-hour** cadence to a rolling **30-minute bar-staleness** promotion — the
+    first bar fires once the session has been open past its 30-minute warm-up (no
+    settled bar exists before that), then again whenever the last bar is over half an
+    hour old — and, on a scheduled (auto /
+    startup) round only, because each bar's newest point doubles as the quote, that
+    bar round now **subsumes the quote leg** instead of paying for both (a steady
+    ~5 quote rounds : 1 bar round cadence); manual taps never promote or suppress.
+    The old targeted week-bar backfill is absorbed by the windowed pull and kept only
+    as a small bounded safety net for freshly added holdings. No
+    user-visible behaviour changes; the brain just makes fewer, better-deduplicated
+    decisions and never decides 1D and 1W bars on two different clocks.
+  - **Web-UI track (O4 — split the manual controls):** the manual refresh is now
+    two distinct controls instead of one overloaded button. The **global Refresh
+    button is a pure *quote* round** — "the freshest live price on demand" — and no
+    longer re-pulls 1D/1W bars or triggers the 30-minute bar promotion (that stays
+    an auto/startup concern). Alongside it, a **per-graph "refresh bars" button sits
+    beside each live window**: a **1D** tap re-pulls just **today's session**, a
+    **1W** tap re-pulls the **full ~5-session week**, each scoped to exactly the
+    in-view timeframe so the cost is explicit (the tooltip says so) and a 1D redraw
+    stays cheap. The per-graph re-pull is **bars-only** — it feeds the headline via
+    the existing `primeQuotesFromGraphBars` pipeline, so it refreshes price as a
+    side effect without paying for a second quote round. The button only appears on
+    the re-pullable live 1D/1W windows; the static history slices (1M/1Y/All) have
+    nothing to re-fetch and show no button.
+  - **Python track (Group C8 — desktop parity at 5-minute density):** the desktop
+    app's two divergent graph builders ("1 Day" at 15-minute, "1 Week" at
+    30-minute) collapse into **one range-parameterized intraday builder at 5-minute
+    density** sharing a single per-session reconstruction core
+    (`services/intraday_snapshots_service.py` `_reconstruct_session_samples`;
+    `RECONSTRUCT_INTERVAL == WEEK_INTERVAL == "5m"`). `_overview_query.py` gains
+    `build_window_value_series` (`sessions <= 1` = Day window, `sessions > 1` = Week
+    window), and `build_intraday_value_series` / `build_week_value_series` become
+    thin wrappers over it — so, exactly as on the web side, the desktop today-slice
+    of 1W now equals the standalone 1D curve and Python graph density matches the
+    web companion. The blob export backbone (`live_graphs.py`, `GRID_DEFAULT="30m"`,
+    bounded by `MAX_BACKBONE_CELLS`) is deliberately left unchanged. The store stays
+    canonical **USD**; the EUR line remains a per-instant FX re-mark, never a flat
+    rescale.
+
 ## [4.21.16] — 2026-06-30
 
 ### Added

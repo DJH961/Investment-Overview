@@ -223,15 +223,7 @@ import {
 import { planPull, describePlan, deviceDaysMissing, type PullKind, type PullFreshness, type PullPlan } from "./data-orchestrator";
 import {
   aggregateMoneyMarketValue,
-  describeFlag,
-  describeMerge,
-  hasMarketSleeve,
-  mergeSleeveSeries,
-  parseMarketSeries,
   parseMoneyMarketValue,
-  pinMergedTipToWebTip,
-  rebaseSleeveToWholeBook,
-  type SleevePoint,
 } from "./market-sleeve";
 import type { Bar, CurvePoint } from "./timeseries";
 import type { MobileExport } from "./types";
@@ -872,9 +864,10 @@ export class App {
   /**
    * Epoch-ms the 1D/1W graph bars were last primed this session, or `null` if not
    * yet primed. The **sole 1D-bar authority** during market hours (Pillar 4): the
-   * clock-hour gate ({@link barClockHourDue}) keys off this so a bar is primed at
-   * most once per `:00`, instead of `primeStaleGraphPackages` firing every refresh
-   * round (the self-perpetuating storm Pillar 1 dissolved it to avoid).
+   * 30-min bar-staleness gate ({@link barStalenessPromotionDue}) keys off this so a
+   * bar is promoted once the last one is >30 min stale, instead of
+   * `primeStaleGraphPackages` firing every refresh round (the self-perpetuating
+   * storm Pillar 1 dissolved it to avoid).
    */
   private lastBarPrimeMs: number | null = null;
   /**
@@ -1123,9 +1116,9 @@ export class App {
     // C1 — route the warm-up's leg decision through the **single brain**. The
     // planPrefetch above named *which* symbols/providers are worth a credit; this
     // pre-decrypt {@link planPull} pass is the leg gate layered on top, so the
-    // warm-up obeys the very same freshness tiers + clock-hour bar gate + rolling
-    // quote / FX overlays as the post-decrypt kickoff and can never diverge from
-    // it. A suppressed leg drops its symbols here (they are picked up by the
+    // warm-up obeys the very same freshness tiers + 30-min bar-staleness gate +
+    // rolling quote / FX overlays as the post-decrypt kickoff and can never diverge
+    // from it. A suppressed leg drops its symbols here (they are picked up by the
     // kickoff/auto round if still due), so no credit is spent the brain didn't
     // approve. FX is gated by the warm-up's own interval-aware {@link warmPrefetchFx}
     // (same user interval as Overlay 3), so it is not re-gated here.
@@ -1134,12 +1127,13 @@ export class App {
     if (!warmupPlan.legs.quotes) prefetch.symbols = [];
     if (!warmupPlan.legs.nav) prefetch.navSymbols = [];
     if (!warmupPlan.legs.dayBars) prefetch.graphSessionSymbols = [];
-    // Item 4a — targeted settled-weekBar backfill. The blanket weekBars leg is only
-    // lit on the heavily-outdated tier, so in a market-open lighter tier this gate
-    // would otherwise discard the *specific* symbols missing a settled (already
-    // closed) weekBar — a freshly added holding, a one-session gap — until a heavy
-    // reset. Keep a small, capped slice of that precise stale set so the gap is
-    // primed now; the reservation budget downstream still binds the spend.
+    // Item 4a / O5 — targeted settled-bar backfill, now a bounded safety net. The
+    // unified windowed `bars` leg (the `outdated` tier) is the primary settled
+    // backfill, but the warm-up runs before that windowed pull, so keep a small,
+    // capped slice of the precise symbols missing a settled (already-closed) bar —
+    // a freshly added holding, a one-session gap — primed now (the whole set when
+    // the multi-session window leg is already on). The reservation budget
+    // downstream still binds the spend.
     prefetch.graphWeekSymbols = targetedWeekBackfill(
       warmupPlan.legs.weekBars,
       prefetch.graphWeekSymbols,
@@ -1542,7 +1536,7 @@ export class App {
    * the unencrypted symbol plan instead of the decrypted model. Lets the login
    * warm-up's {@link prefetchGraphBars} prime a quote from a bare native bar price
    * before unlock, so the freshness ledger is honest at the post-decrypt kickoff
-   * (no faked "market quote missing" → heavily-outdated full re-pull). A `null`
+   * (no faked "market quote missing" → `outdated` full re-pull). A `null`
    * entry (legacy plan, or a ticker whose holdings disagreed on currency) simply
    * falls back to post-decrypt priming for that symbol.
    */
@@ -1695,17 +1689,17 @@ export class App {
    * into the orchestrator's freshness decision (Pillar 1/4). The decision is no
    * longer re-implemented inline: it is delegated to the one pull orchestrator
    * ({@link planPull} in `data-orchestrator.ts`), so the bar gate is decided in
-   * exactly one place. The clock-hour bar gate is the *sole* 1D-bar authority
-   * during market hours, so this is what stops the prime self-perpetuating on
-   * every refresh round:
+   * exactly one place. The 30-min bar-staleness promotion is the *sole* 1D-bar
+   * authority during market hours, so this is what stops the prime self-perpetuating
+   * on every refresh round:
    *
    * - **reset** — always due (the from-scratch escape hatch re-pulls all bars).
    * - **force-all** — never due: "Force-fetch every price now" is a quotes-only
    *   pull (NAV mutual funds included) and leaves the curves to the Regenerate
    *   buttons.
-   * - **market open** — due only when the orchestrator's clock-hour overlay says a
-   *   bar is due: the first bar once ≥1 interval of session has elapsed, then at
-   *   most once per `:00`. Between gates, breadcrumbs carry the line.
+   * - **market open** — due only when the orchestrator's staleness overlay says a
+   *   bar is due: the first bar once the 30-min warm-up has elapsed, then whenever
+   *   the last bar is >30 min stale. Between promotions, breadcrumbs carry the line.
    * - **market closed** — due (the prime self-gates on staleness, so a loaded book
    *   pulls nothing; a stale close still backfills).
    */
@@ -1720,10 +1714,11 @@ export class App {
     // computed for its quote / NAV / FX legs (Pillar 1 — a single orchestrator
     // decision per round, so the bar gate and the leg gate can never disagree and
     // bars are never decided — or pulled — twice). During market hours the plan's
-    // clock-hour overlay is the sole 1D-bar authority (it turns the bar leg on at a
-    // new `:00` even when quotes are fresh, off otherwise). On reset / force-all the
-    // plan is a full re-pull. A closed-market round always hands off to the prime,
-    // which self-gates on bar-package staleness downstream (so a loaded book pulls
+    // staleness overlay is the sole 1D-bar authority (it promotes the bar leg once
+    // the last bar is >30 min stale even when quotes are fresh, off otherwise). On
+    // reset / force-all the plan is a full re-pull. A closed-market round always
+    // hands off to the prime, which self-gates on bar-package staleness downstream
+    // (so a loaded book pulls
     // nothing; a stale settled close still backfills).
     const orchestrator = `orchestrator: ${describePlan(plan)}`;
     if (kind === "reset") {
@@ -1745,6 +1740,19 @@ export class App {
         reason: `force-all → quotes only, graphs skipped (use the Regenerate buttons) (${orchestrator})`,
       };
     }
+    // Web-UI track O4(a): the global manual Refresh button is a pure *quote*
+    // round — "the freshest live price on demand" — and never re-pulls 1D/1W
+    // bars. The 30-min bar promotion stays an auto/startup concern; a manual tap
+    // leaves the curves to the dedicated per-graph refresh buttons (O4(b)), which
+    // own the in-view-window bar re-pull. (A `reset` still re-primes in full above;
+    // only a plain user tap is diverted here.)
+    if (kind === "manual") {
+      return {
+        due: false,
+        market,
+        reason: `manual → quotes only, graphs skipped (use the per-graph 1D/1W refresh buttons) (${orchestrator})`,
+      };
+    }
     if (market === "closed") {
       return { due: true, market, reason: `market closed → prime self-gates on staleness (${orchestrator})` };
     }
@@ -1752,8 +1760,8 @@ export class App {
     if (!due) {
       const reason =
         this.lastBarPrimeMs === null
-          ? `market open <1 bar-interval in (session +${Math.round(elapsedSessionMs(now) / 60000)}m) → no bar yet, breadcrumbs carry the line (${orchestrator})`
-          : `market open, within the same clock hour as the last bar → held (breadcrumbs carry the line) (${orchestrator})`;
+          ? `market open <30-min warm-up in (session +${Math.round(elapsedSessionMs(now) / 60000)}m) → no settled bar yet, breadcrumbs carry the line (${orchestrator})`
+          : `market open, last bar <30 min old → held (breadcrumbs carry the line) (${orchestrator})`;
       return { due: false, market, reason };
     }
     return {
@@ -1762,7 +1770,7 @@ export class App {
       reason:
         this.lastBarPrimeMs === null
           ? `market open, first bar of the session is due (${orchestrator})`
-          : `market open, a new clock hour → bar due (${orchestrator})`,
+          : `market open, last bar >30 min stale → bar due (${orchestrator})`,
     };
   }
 
@@ -1835,7 +1843,7 @@ export class App {
     // first-ever login (no saved plan, C2) has no currency yet, so an empty cache
     // there is the unknown-start state, not a 10-day gap. Inflating
     // `deviceDaysMissing` to 10 off that unknown cache is exactly the bug that
-    // faked "heavily-outdated" and triggered the full re-pull, so a missing market
+    // faked an `outdated` gap and triggered the full re-pull, so a missing market
     // quote only counts when its native currency is known.
     let oldestMarketAt: number | null = null;
     for (const entry of plan) {
@@ -1858,15 +1866,15 @@ export class App {
     const fxAgeMs = fxCached && fxCached.now !== null ? nowMs - fxCached.at : Number.POSITIVE_INFINITY;
     // Quote age: only market quotes drive the freshness tier. Deferred NAVs
     // (budget-limited, long TTL) must NOT inflate quoteAgeMs to Infinity — that
-    // would classify every auto-tick as "minorly-outdated" and defeat the
+    // would classify every auto-tick as `outdated` and defeat the
     // orchestrator's rolling-TTL suppression (Overlay 2). Fall back to the oldest
     // market quote when NAVs are the only missing entries.
     const quoteAgeMs = anyMarketMissing || oldestMarketAt === null
       ? (oldestQuoteAt === null ? Number.POSITIVE_INFINITY : nowMs - oldestQuoteAt)
       : nowMs - oldestMarketAt;
     const dataAgeMs = Math.max(quoteAgeMs, fxAgeMs);
-    // Market-side device gap, biased *up* when uncertain so the heavily-outdated
-    // tier (which simply restores today's full pass) can never under-pull.
+    // Market-side device gap, biased *up* when uncertain so the heavy-gap windowed
+    // re-pull (which simply restores today's full pass) can never under-pull.
     const marketOpen = isUsMarketOpen(now);
     const marketStale = this.staleFetchSymbols(marketOpen, now).some((s) => {
       const e = plan.find((p) => p.symbol === s);
@@ -1878,7 +1886,7 @@ export class App {
     // irrelevant. If the blob covered the gap the device is fresh; if it didn't,
     // deviceDaysMissing already reflects that. Passing blobDaysOld = deviceDaysMissing
     // removes the blob-metadata signal from the tier decision entirely, so the
-    // heavily-outdated / minorly-outdated boundaries key only on the device state.
+    // `outdated` / `relatively-fresh` boundaries key only on the device state.
     const blobDaysOld = deviceDaysMissing_;
     const navHeldForToday = !this.navStale(now);
     return { dataAgeMs, deviceDaysMissing: deviceDaysMissing_, blobDaysOld, quoteAgeMs, fxAgeMs, navHeldForToday, fxBarsAnchorMissing };
@@ -1973,7 +1981,7 @@ export class App {
    * market symbol in the *unencrypted* plan carries a native currency (C2). A
    * legacy plan (no currency) or a genuine first-ever login leaves this `false`,
    * so the warm-up's freshness ledger does not inflate an empty quote cache into a
-   * faked "heavily-outdated" gap.
+   * faked `outdated` gap.
    */
   private currencyKnownForPrefetch(plan: PlannedSymbol[]): boolean {
     return plan.every((e) => e.priceType !== "market" || e.nativeCurrency !== null);
@@ -2035,10 +2043,10 @@ export class App {
    * the pre-decrypt twin of {@link planRoundPull}. It routes the warm-up's
    * fetch decision through {@link planPull} (`kind: "start"`, `phase:
    * "pre-decrypt"`) so the warm-up and the post-decrypt kickoff share **one** code
-   * path: the same freshness tiers, the same clock-hour bar gate, the same rolling
-   * quote-TTL and FX-interval overlays. The symbol-level routing (which provider,
-   * which graph) still comes from {@link planPrefetch}; this plan is the leg gate
-   * layered on top, so the warm-up only fires a leg the single brain approves.
+   * path: the same freshness tiers, the same 30-min bar-staleness gate, the same
+   * rolling quote-TTL and FX-interval overlays. The symbol-level routing (which
+   * provider, which graph) still comes from {@link planPrefetch}; this plan is the
+   * leg gate layered on top, so the warm-up only fires a leg the single brain approves.
    */
   private planWarmupPull(
     plan: PlannedSymbol[],
@@ -2074,7 +2082,7 @@ export class App {
    * Self-gating: only the genuinely missing (stale) bars are pulled, so a graph
    * already fully loaded — e.g. a closed-market book in hand — fetches nothing.
    * Returns the number of symbol-series actually stored this prime (0 when the
-   * graphs were already loaded), so the caller can stamp the clock-hour gate only
+   * graphs were already loaded), so the caller can stamp the bar-staleness gate only
    * when a market-hours prime genuinely pulled bars.
    *
    * It is also the shared after-hours home of the incomplete-1D-FX-close backfill
@@ -6174,11 +6182,11 @@ export class App {
     }
     const roundPlan = this.planRoundPull(kind, opts, now, fxBarsAnchorMissing);
     this.pollLog("orchestrator", `Round decision (${kind}): ${describePlan(roundPlan)}`);
-    // During market hours the clock-hour bar gate ({@link graphPrimeDecision},
-    // reading this same plan) is the sole 1D-bar authority, so the prime runs at
-    // most once per `:00` instead of self-perpetuating each tick; a reset/force-all
-    // still primes in full, and a closed-market round still self-gates on staleness
-    // inside the prime.
+    // During market hours the 30-min bar-staleness gate ({@link graphPrimeDecision},
+    // reading this same plan) is the sole 1D-bar authority, so the prime runs once
+    // the last bar is >30 min stale instead of self-perpetuating each tick; a
+    // reset/force-all still primes in full, and a closed-market round still
+    // self-gates on staleness inside the prime.
     {
       const decision = this.graphPrimeDecision(kind, opts, roundPlan, now);
       this.pollLog("graph", `Graph-prime decision (${kind}): ${decision.reason}`);
@@ -6202,11 +6210,11 @@ export class App {
           releaseIfOwned();
           return;
         }
-        // Stamp the clock-hour gate only when a market-hours prime actually pulled
-        // bars, so the next bar is held until the next `:00` (breadcrumbs bridge).
+        // Stamp the bar-staleness gate only when a market-hours prime actually
+        // pulled bars, so the next bar is held until it is >30 min stale (breadcrumbs bridge).
         if (decision.market === "open" && typeof stored === "number" && stored > 0) {
           this.lastBarPrimeMs = Date.now();
-          this.pollLog("graph", `Graph-prime pulled ${stored} series; next 1D bar held until the next clock hour.`);
+          this.pollLog("graph", `Graph-prime pulled ${stored} series; next 1D bar held until 30 min stale.`);
         }
       }
       // Standalone currency-KPI FX-bar anchor pull for the mechanisms that did not
@@ -7391,11 +7399,16 @@ export class App {
       session: async (opts) => {
         const doSession = async () => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const forceFetch = opts?.forceFetch ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
         // Springboard off the exported session first — instant paint, no fetch —
-        // and only build live when the export is absent or too stale.
-        const sprung = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
+        // and only build live when the export is absent or too stale. A per-graph
+        // refresh tap (`forceFetch`) deliberately skips the springboard so the
+        // windowed fetcher actually re-pulls today's bars (Web-UI track O4(b)).
+        const sprung = forceFetch
+          ? null
+          : springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
         if (sprung) {
           this.pollLog("graph", "1D graph: reused the exported session (no live pull, 0 credits).");
           // Persist the sprung session's dense points as today's breadcrumb trail
@@ -7436,6 +7449,7 @@ export class App {
       },
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
+        const forceFetch = opts?.forceFetch ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
         // The current day's slice of the week must be the same dense 1D session the
@@ -7464,11 +7478,11 @@ export class App {
           todayCurve: todaySlice,
           onRepair: (m) => this.repairLog(m),
         });
-        if (sprung) {
+        // A per-graph refresh tap (`forceFetch`) skips the springboard reuse so the
+        // windowed fetcher re-pulls the whole week's bars (Web-UI track O4(b)).
+        if (sprung && !forceFetch) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
-          return this.harvestWeekCloses(
-            capWeekToSessionClose(this.enrichWeekWithBlobSleeve(sprung, exported, baseFx)),
-          );
+          return this.harvestWeekCloses(capWeekToSessionClose(sprung));
         }
         const spent = { credits: 0 };
         try {
@@ -7498,9 +7512,7 @@ export class App {
             this.pollLog("graph", "1W graph: reused stored week bars (no live pull, 0 credits).");
           }
           if (curve.points.length < 2) return null;
-          return this.harvestWeekCloses(
-            capWeekToSessionClose(this.enrichWeekWithBlobSleeve(curve.points, exported, baseFx)),
-          );
+          return this.harvestWeekCloses(capWeekToSessionClose(curve.points));
         } catch {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.", "warn");
           return null;
@@ -7557,115 +7569,6 @@ export class App {
       // Breadcrumbs are not a bar fetch — leave the refetch throttle's stamp alone.
       updatedAt: existing.updatedAt,
     });
-  }
-
-  /**
-   * WS7 — merge the web's reconstructed 1W curve with the blob's **v3 aggregate
-   * market-sleeve backbone** (Pillar 3). Both sides speak the same FX-free sleeve
-   * value over time, so they reconcile per grid slot: agreeing slots thicken the
-   * line, a slot that disagrees beyond τ keeps the desktop-authoritative blob and
-   * raises a **reconciliation flag** — surfaced verbatim in the polling log so the
-   * owner can deep-dive *why* the two apps diverge instead of seeing a silently
-   * averaged lie (the cross-app scenario this merge exists for).
-   *
-   * Degrades gracefully: a v1/v2 blob carries no `market_series`, so the web curve
-   * is returned unchanged. The whole-book base is **auto-calibrated** from a real
-   * web↔blob time overlap (so the constant cash + NAV base never has to be guessed
-   * or double-counted), and the merged curve is only rendered when it is strictly
-   * richer than the web curve and its live tip stays sane — otherwise the trusted
-   * web curve is kept. Either way the reconciliation is fully logged.
-   */
-  private enrichWeekWithBlobSleeve(
-    webCurve: CurvePoint[],
-    exported: MobileExport["live_graphs"] | undefined,
-    fallbackFx: Decimal | null,
-  ): CurvePoint[] {
-    if (!hasMarketSleeve(exported) || webCurve.length < 2) return webCurve;
-    const blobSleeve = parseMarketSeries(exported?.market_series);
-    if (blobSleeve.length < 2) return webCurve;
-
-    // Auto-calibrate the constant whole-book base (cash + NAV) from the closest
-    // web↔blob time overlap: base = webValue − blobSleeveValue at that instant. By
-    // reading the base off the actual rendered web curve we sidestep the
-    // NAV-in-sleeve vs NAV-in-base ambiguity entirely and align the two series.
-    const overlap = this.calibrateSleeveBase(webCurve, blobSleeve);
-    if (!overlap) {
-      recordReconciliation("1W reconciliation: no web↔blob time overlap to calibrate the base — kept the web curve", "info");
-      return webCurve;
-    }
-    const { baseUsd, baseEur } = overlap;
-    const webSleeve: SleevePoint[] = webCurve.map((p) => {
-      const valueNativeUsd = p.valueUsd.minus(baseUsd);
-      const valueNativeEur = p.valueEur.minus(baseEur);
-      // The sleeve's true per-instant FX (USD/EUR) is the ratio of the *sleeve-only*
-      // values — after the calibrated whole-book base is removed from both currencies.
-      // Using the whole-book ratio would fold the constant cash + NAV base into the
-      // rate and skew the EUR line wherever a web point survives the merge.
-      return {
-        t: p.t,
-        valueNativeUsd,
-        fxEurUsd: valueNativeEur.gt(0) ? valueNativeUsd.div(valueNativeEur) : fallbackFx,
-      };
-    });
-
-    const gridMs = exported?.grid === "15m" ? 15 * 60 * 1000 : 30 * 60 * 1000;
-    const merge = mergeSleeveSeries(webSleeve, blobSleeve, { gridMs });
-    // The merge is a reconciliation against already-loaded data (not a live pull),
-    // so it belongs in the data-loading log. The snapshot de-dup spells it out in
-    // full once and collapses identical reloads to a repeat count.
-    recordReconciliation(`1W reconciliation: ${describeMerge(merge)}`, "info");
-    for (const flag of merge.flags) {
-      recordReconciliation(`1W reconciliation: ${describeFlag(flag)}`, "info");
-    }
-
-    // Render the merged curve only when it is genuinely richer (more points) than
-    // the web curve — never coarsen the carefully-built week line (Pillar 3 + the
-    // WS8 regression guard). Reapply the calibrated base + per-instant FX.
-    if (merge.points.length <= webCurve.length) {
-      recordReconciliation("1W reconciliation: web curve already as dense — kept it (no coarsening)", "info");
-      return webCurve;
-    }
-    const merged = rebaseSleeveToWholeBook(merge.points, { baseUsd, baseEur }, fallbackFx);
-    // "Live tip stays sane": pin the merged curve's trailing edge to the web
-    // curve's trusted tail (the same dense bars+tip 1D ends on) so a blob sleeve
-    // sample — captured on the desktop's own coarse cadence and able to land just
-    // past the tip *or* in the gap before it — can never dent or overrun the final
-    // segment. Without this the richer merged curve draws a "final-minute" nosedive
-    // on 1W that 1D never shows: pinning only the very last point still left a
-    // stale blob sample as the *penultimate* point, a notch right before the tip
-    // (capWeekToSessionClose only trims past the *close*, blind to that pre-tip dip).
-    const pinned = pinMergedTipToWebTip(merged, webCurve);
-    recordReconciliation(
-      `1W reconciliation: rendered the richer merged curve (${pinned.length} points, was ${webCurve.length})`,
-      "info",
-    );
-    return pinned;
-  }
-
-  /**
-   * Calibrate the constant whole-book base from the nearest web↔blob time overlap
-   * (within one hour): `baseUsd = webValueUsd − blobSleeveUsd`, `baseEur` likewise
-   * with the blob's per-instant FX. Returns `null` when the two series never come
-   * within an hour of each other (no trustworthy calibration point).
-   */
-  private calibrateSleeveBase(
-    webCurve: CurvePoint[],
-    blobSleeve: SleevePoint[],
-  ): { baseUsd: Decimal; baseEur: Decimal } | null {
-    const MAX_GAP_MS = 60 * 60 * 1000;
-    let best: { web: CurvePoint; blob: SleevePoint; gap: number } | null = null;
-    for (const w of webCurve) {
-      for (const b of blobSleeve) {
-        const gap = Math.abs(w.t - b.t);
-        if (best === null || gap < best.gap) best = { web: w, blob: b, gap };
-      }
-    }
-    if (!best || best.gap > MAX_GAP_MS) return null;
-    const baseUsd = best.web.valueUsd.minus(best.blob.valueNativeUsd);
-    const fx = best.blob.fxEurUsd;
-    const blobSleeveEur = fx && fx.gt(0) ? best.blob.valueNativeUsd.div(fx) : best.blob.valueNativeUsd;
-    const baseEur = best.web.valueEur.minus(blobSleeveEur);
-    return { baseUsd, baseEur };
   }
 
   /**

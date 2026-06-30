@@ -863,9 +863,16 @@ export async function loadEurUsd(
       try {
         const reading: EurUsdQuote = await fetchEurUsd(apiKey, fetchImpl);
         if (reading.now !== null) {
-          const at = now();
-          writeCachedEurUsd(reading, at, storage ?? undefined);
-          return { now: reading.now, previousClose: reading.previousClose, source: "live", at, observedAt: at, cached: false, error: null };
+          // Plan C4: time the FX mark to the **quote's own reported price time**
+          // (`fetchEurUsd` already surfaces it via `reading.at`, from Twelve Data's
+          // `timestamp`/`last_quote_at`), not the local pull clock. Stamping at
+          // `now()` mis-times the rate to when we happened to poll rather than to
+          // the instant it represents; the graphs need the rate's true instant so
+          // the live FX tip lands at the right place. Fall back to `now()` only
+          // when the provider omits a timestamp. (Mirrors the Tiingo FX leg below.)
+          const observedAt = reading.at ?? now();
+          writeCachedEurUsd(reading, observedAt, storage ?? undefined);
+          return { now: reading.now, previousClose: reading.previousClose, source: "live", at: observedAt, observedAt, cached: false, error: null };
         }
       } catch (err) {
         // The call was rejected (over-quota 429, a 5xx, or a transport throw): the

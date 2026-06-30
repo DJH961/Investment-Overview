@@ -12,9 +12,10 @@ import { ONE_HOUR_MS } from "../src/freshness";
 const MIN = 60 * 1000;
 
 function ctx(over: Partial<PullContext> = {}): PullContext {
+  const nowMs = Date.UTC(2026, 5, 25, 18, 0, 0);
   return {
     kind: "auto",
-    nowMs: Date.UTC(2026, 5, 25, 18, 0, 0),
+    nowMs,
     market: "open",
     minutesSinceOpenMs: 4 * ONE_HOUR_MS,
     autoIntervalMs: 15 * MIN,
@@ -26,7 +27,10 @@ function ctx(over: Partial<PullContext> = {}): PullContext {
       navHeldForToday: true,
     },
     barGate: {
-      lastBarPullMs: null,
+      // A bar pulled 5 min ago: inside the 30-min staleness window, so the default
+      // scenario is NOT a bar round (tests that exercise the promotion set this
+      // explicitly). This isolates the quote / FX overlays from the bar gate.
+      lastBarPullMs: nowMs - 5 * MIN,
       sessionOpenMs: Date.UTC(2026, 5, 25, 13, 30, 0),
     },
     ...over,
@@ -36,7 +40,7 @@ function ctx(over: Partial<PullContext> = {}): PullContext {
 describe("planPull — reset", () => {
   it("pulls every leg regardless of freshness", () => {
     const plan = planPull(ctx({ kind: "reset", freshness: { dataAgeMs: 0, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 0, navHeldForToday: true } }));
-    expect(plan.tier).toBe("heavily-outdated");
+    expect(plan.tier).toBe("outdated");
     expect(plan.legs.weekBars && plan.legs.dayBars && plan.legs.quotes && plan.legs.nav && plan.legs.fx).toBe(true);
     expect(plan.legs.fxBars).toBe(true);
     expect(planPullsAnything(plan)).toBe(true);
@@ -65,24 +69,41 @@ describe("planPull — currency-KPI fxBars anchor overlay (Overlay 4)", () => {
   });
 });
 
-describe("planPull — bar clock-hour overlay (sole 1D-bar authority while open)", () => {
+describe("planPull — bar staleness overlay (sole 1D-bar authority while open, O3)", () => {
   const stale = { dataAgeMs: 2 * ONE_HOUR_MS, deviceDaysMissing: 0, blobDaysOld: 0, quoteAgeMs: 2 * ONE_HOUR_MS, navHeldForToday: true };
 
-  it("suppresses bars when no bar is due this hour, keeps quotes/FX", () => {
-    // last bar pulled 10 min ago ⇒ not due until the next :00 after +1h.
+  it("holds bars on a non-due scheduled round, keeps quotes/FX", () => {
+    // last bar pulled 10 min ago ⇒ inside the 30-min window ⇒ not due. An auto
+    // round (the outdated tier lit today's session bar) drops it; breadcrumbs carry
+    // the line, and the quotes/FX survive.
+    const now = Date.UTC(2026, 5, 25, 18, 10, 0);
+    const plan = planPull(ctx({ kind: "auto", nowMs: now, freshness: stale, barGate: { lastBarPullMs: now - 10 * MIN, sessionOpenMs: Date.UTC(2026, 5, 25, 13, 30, 0) } }));
+    expect(plan.legs.dayBars).toBe(false);
+    expect(plan.legs.weekBars).toBe(false);
+    expect(plan.legs.barsWindowSessions).toBe(0);
+    expect(plan.legs.quotes).toBe(true);
+    expect(plan.reason).toContain("30-min staleness");
+  });
+
+  it("promotes the bar AND suppresses quotes once due on a scheduled round (bar subsumes the quote)", () => {
+    // A bar older than 30 min on an auto round: the bar is promoted and the round's
+    // quotes are suppressed — one bar pass, not bars + ~25 quotes.
+    const open = Date.UTC(2026, 5, 25, 13, 30, 0);
+    const now = Date.UTC(2026, 5, 25, 18, 0, 0);
+    const plan = planPull(ctx({ kind: "auto", nowMs: now, freshness: stale, barGate: { lastBarPullMs: open, sessionOpenMs: open } }));
+    expect(plan.legs.dayBars).toBe(true);
+    expect(plan.legs.barsWindowSessions).toBe(1);
+    expect(plan.legs.quotes).toBe(false);
+    expect(plan.reason).toContain("quotes suppressed");
+  });
+
+  it("a manual tap never promotes a fresh bar (the global manual button is a quote round)", () => {
+    // Manual tap, bar 10 min old (not due): no promotion either way, and the
+    // outdated tier's session bar is dropped — the tap stays a pure quote round.
     const now = Date.UTC(2026, 5, 25, 18, 10, 0);
     const plan = planPull(ctx({ kind: "manual", nowMs: now, freshness: stale, barGate: { lastBarPullMs: now - 10 * MIN, sessionOpenMs: Date.UTC(2026, 5, 25, 13, 30, 0) } }));
     expect(plan.legs.dayBars).toBe(false);
-    expect(plan.legs.weekBars).toBe(false);
     expect(plan.legs.quotes).toBe(true);
-    expect(plan.reason).toContain("clock-hour gate");
-  });
-
-  it("lets bars through once due", () => {
-    const open = Date.UTC(2026, 5, 25, 13, 30, 0);
-    const now = Date.UTC(2026, 5, 25, 18, 0, 0);
-    const plan = planPull(ctx({ kind: "manual", nowMs: now, freshness: stale, barGate: { lastBarPullMs: open, sessionOpenMs: open } }));
-    expect(plan.legs.dayBars).toBe(true);
   });
 
   it("does not gate bars when the market is closed (missing close still backfills)", () => {
@@ -90,9 +111,9 @@ describe("planPull — bar clock-hour overlay (sole 1D-bar authority while open)
     expect(plan.legs.dayBars).toBe(true);
   });
 
-  it("turns the 1D bar ON when a clock hour is due even if the freshness tier is fresh (sole authority, both directions)", () => {
-    // Quotes/FX are inside one interval (fresh tier ⇒ no quote/FX leg), but a new
-    // clock hour is due and no bar has been pulled this session: the gate — not the
+  it("turns the 1D bar ON when stale even if the freshness tier is fresh (sole authority, both directions)", () => {
+    // Quotes/FX are inside one interval (fresh tier ⇒ no quote/FX leg), but no bar
+    // has been pulled this session and the warm-up has elapsed: the gate — not the
     // tier — owns the bar during market hours, so the 1D bar leg turns on. This is
     // the single-plan unification: one plan decides both legs and the bar gate.
     const open = Date.UTC(2026, 5, 25, 13, 30, 0);
@@ -105,18 +126,19 @@ describe("planPull — bar clock-hour overlay (sole 1D-bar authority while open)
     expect(plan.reason).toContain("1D bar due");
   });
 
-  it("never strips bars when heavily-outdated and no clock hour is due (history still backfills)", () => {
-    // A heavily-outdated round (both device + blob >1 day behind) in a non-:00
-    // window: the clock-hour gate is the 1D authority only and must NOT hold the
-    // backfill — both the 1D and 1W history legs survive so a stale manual/auto
-    // round still repairs the book.
+  it("never strips a heavy history window when no bar is due (history still backfills)", () => {
+    // A heavy-gap round (both device + blob >1 day behind) inside the 30-min
+    // window: the staleness gate is the 1D authority only and must NOT hold the
+    // multi-session history backfill — both the 1D and 1W history legs survive, and
+    // the heavy round keeps its quotes (no bar-subsumes-quote suppression).
     const open = Date.UTC(2026, 5, 25, 13, 30, 0);
     const now = Date.UTC(2026, 5, 25, 18, 10, 0);
     const veryStale = { dataAgeMs: 3 * 24 * ONE_HOUR_MS, deviceDaysMissing: 3, blobDaysOld: 3, quoteAgeMs: 3 * 24 * ONE_HOUR_MS, navHeldForToday: false };
     const plan = planPull(ctx({ kind: "auto", nowMs: now, freshness: veryStale, barGate: { lastBarPullMs: now - 10 * MIN, sessionOpenMs: open } }));
-    expect(plan.tier).toBe("heavily-outdated");
+    expect(plan.tier).toBe("outdated");
     expect(plan.legs.dayBars).toBe(true);
     expect(plan.legs.weekBars).toBe(true);
+    expect(plan.legs.quotes).toBe(true);
   });
 });
 

@@ -454,6 +454,79 @@ class TestBuildWeekValueSeries:
         assert [p.value for p in points][:2] == [Decimal("1000.00"), Decimal("1000.00")]
 
 
+class TestUnifiedWindowBuilder:
+    """C8 (``docs/graph-unification-plan.md``): one range-parameterized builder.
+
+    The Day curve is ``window(1 session)`` and the Week curve is
+    ``window(WEEK_SESSIONS)`` of the *same* builder, drawn from the *same* dense
+    intraday cache, so the 1-day slice of the week is identical to the standalone
+    Day curve — not merely similar.
+    """
+
+    def test_day_is_window_of_one_session(self, session: Session, monkeypatch) -> None:
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        _seed(session)
+        now = datetime(2024, 6, 3, 20, 0, tzinfo=UTC)
+        samples = [
+            (datetime(2024, 6, 3, 14, 0), Decimal("1000.00"), None),
+            (datetime(2024, 6, 3, 18, 0), Decimal("1100.00"), None),
+        ]
+        monkeypatch.setattr(iss, "day_series_with_fx", lambda *a, **k: list(samples))
+
+        via_wrapper = _overview_query.build_intraday_value_series(session, currency="EUR", now=now)
+        via_window = _overview_query.build_window_value_series(
+            session, currency="EUR", sessions=1, now=now
+        )
+        assert [(p.date, p.value) for p in via_window] == [(p.date, p.value) for p in via_wrapper]
+
+    def test_week_is_window_of_week_sessions(self, session: Session, monkeypatch) -> None:
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        _seed(session)
+        now = datetime(2024, 6, 3, 20, 0, tzinfo=UTC)
+        samples = [
+            (datetime(2024, 5, 31, 14, 0), Decimal("1000.00"), None),
+            (datetime(2024, 6, 3, 18, 0), Decimal("1100.00"), None),
+        ]
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
+
+        via_wrapper = _overview_query.build_week_value_series(session, currency="EUR", now=now)
+        via_window = _overview_query.build_window_value_series(
+            session, currency="EUR", sessions=iss.WEEK_SESSIONS, now=now
+        )
+        assert [(p.date, p.value) for p in via_window] == [(p.date, p.value) for p in via_wrapper]
+
+    def test_today_slice_of_week_equals_day(self, session: Session, monkeypatch) -> None:
+        """The today-slice of the 1W curve is the same points as the 1D curve.
+
+        With a single EUR holding (base 0, no NAV drift) the Day and Week builders
+        draw from the same today samples, so today's points coincide exactly.
+        """
+        from investment_dashboard.services import intraday_snapshots_service as iss
+        from investment_dashboard.ui.pages import _overview_query
+
+        _seed(session)
+        now = datetime(2024, 6, 3, 20, 0, tzinfo=UTC)
+        today = [
+            (datetime(2024, 6, 3, 14, 0), Decimal("1000.00"), None),
+            (datetime(2024, 6, 3, 18, 0), Decimal("1100.00"), None),
+        ]
+        # The week carries the same today samples plus an earlier session.
+        week = [(datetime(2024, 5, 31, 15, 0), Decimal("900.00"), None), *today]
+        monkeypatch.setattr(iss, "day_series_with_fx", lambda *a, **k: list(today))
+        monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(week))
+
+        day_points = _overview_query.build_intraday_value_series(session, currency="EUR", now=now)
+        week_points = _overview_query.build_week_value_series(session, currency="EUR", now=now)
+
+        day_by_time = {p.date: p.value for p in day_points}
+        week_today = {p.date: p.value for p in week_points if p.date in day_by_time}
+        assert week_today == day_by_time
+
+
 class TestPreviousSessionCloseValue:
     def test_returns_prior_trading_day_settled_value(self, session: Session) -> None:
         from datetime import datetime
