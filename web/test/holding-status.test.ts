@@ -205,10 +205,10 @@ describe("computeQueueEtas", () => {
   const ANCHOR = 1_000_000;
   const ROUND = 60_000;
 
-  it("places later queue positions in later rounds (the user's 13/#10 case)", () => {
-    // 13 symbols, capacity 8: the first 8 fetched, the rest deferred. The tenth
-    // overall (second deferred) waits for the current round to clear *and* the
-    // next — so ~2 rounds out, not a flat one.
+  it("places the first deferred symbol in the very next round (the user's 13/#10 case)", () => {
+    // 13 symbols, capacity 8: the first 8 fetched this (now-completed) round, the
+    // rest deferred. Those 8 are done, so the first deferred symbol rides the very
+    // next round (~1 min) and — since 5 ≤ capacity — so do all five.
     const fetched = Array.from({ length: 8 }, (_, i) => `F${i}`);
     const deferred = ["D9", "D10", "D11", "D12", "D13"]; // overall positions 9–13
     const etas = computeQueueEtas({
@@ -218,9 +218,23 @@ describe("computeQueueEtas", () => {
       anchorMs: ANCHOR,
       roundIntervalMs: ROUND,
     });
-    // Overall index 8 (D9) → round floor(8/8)+1 = 2; index 9 (D10) → round 2.
-    expect(etas.get("D9")).toBe(ANCHOR + 2 * ROUND);
-    expect(etas.get("D10")).toBe(ANCHOR + 2 * ROUND);
+    // Deferred index 0 (D9) → round floor(0/8)+1 = 1; index 1 (D10) → round 1.
+    expect(etas.get("D9")).toBe(ANCHOR + 1 * ROUND);
+    expect(etas.get("D10")).toBe(ANCHOR + 1 * ROUND);
+    expect(etas.get("D13")).toBe(ANCHOR + 1 * ROUND);
+  });
+
+  it("does not let the already-fetched count push deferred ETAs out a round", () => {
+    // Regression guard: a full current round (capacity fetched) must not bump the
+    // first deferred symbol from round 1 (~1 min) to round 2 (~2 min).
+    const etas = computeQueueEtas({
+      fetched: Array.from({ length: 8 }, (_, i) => `F${i}`),
+      deferred: ["D0"],
+      capacityPerRound: 8,
+      anchorMs: ANCHOR,
+      roundIntervalMs: ROUND,
+    });
+    expect(etas.get("D0")).toBe(ANCHOR + 1 * ROUND);
   });
 
   it("fans a deep queue across as many rounds as the capacity demands", () => {
