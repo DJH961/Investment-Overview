@@ -179,6 +179,59 @@ export function repairSessionNavCollapse(
   );
 }
 
+/**
+ * Heal a NAV-collapse nosedive confined to **today** (the trailing session) on a
+ * whole-book curve that may also carry earlier settled days — the gap the
+ * leading-run repairs structurally cannot reach.
+ *
+ * ## Why the leading-run repairs miss it
+ * {@link repairWeekNavCollapse} only lifts a *leading* run of collapsed session
+ * days; when the settled week is healthy and the collapse sits on the **last**
+ * day (today, valued without its NAV sleeve until the dense bars load), its
+ * leading scan finds the first day already healthy and bails. The single-session
+ * {@link repairSessionNavCollapse} *does* handle a leading-run-with-tip-recovery,
+ * but only over one session's points — on a 1W curve the healthy earlier days sit
+ * in front of today, so its own leading scan likewise sees a healthy open and
+ * leaves today's depressed body alone. {@link repairCurrencyDivergence} is no
+ * help either: a *both-currency* collapse preserves the USD/EUR ratio, so the
+ * ratio-based repair never fires. The nosedive then leaks onto the screen on any
+ * live-build / spliced-breadcrumb render (e.g. a per-graph reload) until a graph
+ * switch rebuilds today from real bars.
+ *
+ * ## The repair
+ * Split the curve at the last session day, run the proven single-session
+ * leading-run heal ({@link repairSessionNavCollapse}) on **today's points only**
+ * — today's own healthy tip (the live headline total, always carrying the real
+ * NAV sleeve) donates the lift — then stitch the untouched earlier days back on.
+ * A 1D curve (one session) is unchanged behaviour; a healthy curve, or one whose
+ * today-tip is itself low (a genuine drop), is returned as the same array so
+ * callers can cheaply detect a no-op. Pure and dependency-free, safe to run on
+ * every render as the final both-currency safety net.
+ */
+export function repairTodayNavCollapse(
+  points: CurvePoint[],
+  log?: (msg: string) => void,
+): CurvePoint[] {
+  if (points.length < 2) return points;
+  const lastDay = utcDayOf(points[points.length - 1].t);
+  // Index of the first point that belongs to the trailing (today's) session day.
+  let split = points.length;
+  while (split > 0 && utcDayOf(points[split - 1].t) === lastDay) split -= 1;
+  // A single-session curve (all of today) is already the session repair's domain;
+  // run it directly so 1D keeps its existing behaviour.
+  const earlier = points.slice(0, split);
+  const today = points.slice(split);
+  if (today.length < 2) return points;
+  // Relabel the single-session repair's own "1D NAV-collapse heal" note as a
+  // today-slice heal, since on a 1W curve it is today's trailing band that lifted.
+  const todayLog = log
+    ? (msg: string): void => log(msg.replace(/^1D NAV-collapse heal/, "today NAV-collapse heal"))
+    : undefined;
+  const healedToday = repairSessionNavCollapse(today, null, todayLog);
+  if (healedToday === today) return points; // no-op on a healthy / genuinely-low today
+  return [...earlier, ...healedToday];
+}
+
 /** One session day's worth of curve points, with its first/last (settling) values. */
 interface DayGroup {
   day: string;
