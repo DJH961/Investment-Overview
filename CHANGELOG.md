@@ -13,7 +13,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
-## [4.21.14] — 2026-06-30
+## [4.21.15] — 2026-06-30
+
+### Fixed
+
+- **The Overview currency box's "Currency effect" / "Investing power" panel now
+  agrees with the headline "Today" stat on a regular weekday after the close.**
+  While the US market is shut the card's "Today" rate stat is anchored to the
+  session **open** ("since last open"), but the money panel below it stayed
+  anchored to the settled **previous close** — so the two measured different
+  windows and could disagree in scale, and even in sign (the panel could read a
+  large positive currency effect while the headline showed a small move the other
+  way). Because the settled previous close sits ~at the session close, the frozen
+  "Market hours" split leg also collapsed to a near-zero prior-close→close residual
+  instead of the real last-session open→close move. The existing v4.16.2 fix
+  already re-anchored to the session open, but only for the frozen-weekend and
+  weekend-spill-over regimes; the everyday weekday post-close / pre-open case was
+  left out. The re-anchoring now covers **every market-closed session view**, so
+  the panel total matches the headline and the market-hours leg shows the genuine
+  session move. Mirrored in the desktop app (`overview.py`) and the web companion
+  (`ui.ts`).
+
+
 
 ### Fixed
 

@@ -81,11 +81,15 @@ class TestCurrencyPanelByDisplay:
         # … and never the old misleading "$0".
         assert "$0" not in html
         assert "priced in dollars" not in html
-        # With the default €100 regular amount: 100·(1.30−1.20) = +$10.00. The panel
-        # mirrors the EUR currency-effect visualisation exactly (no explanatory
-        # note), and keeps cents because the swing is two digits or less.
+        # The regular EUR amount buys more dollars now than at *yesterday's open* —
+        # the panel is re-anchored to the session open in the (plain weekday) closed
+        # regime so it agrees with the headline's "since last open" stat rather than
+        # the settled previous close. With the default €100 and the seeded open
+        # anchor of 1.00: 100·(1.30−1.00) = +$30.00. The panel mirrors the EUR
+        # currency-effect visualisation exactly (no explanatory note), keeping cents
+        # because the swing is two digits or less.
         assert "inv-fx-effect-net" in html
-        assert "+$10.00" in html
+        assert "+$30.00" in html
         assert "inv-fx-effect-note" not in html
         assert "now buys" not in html
         # The configured regular amount (default €100) and the dollars it buys at
@@ -148,6 +152,47 @@ class TestSplitOrdering:
         assert html.index("Market hours") < html.index("Overnight")
         assert ">live<" in html
         assert ">last<" in html
+
+
+class TestClosedWeekdayReanchorsToSessionOpen:
+    """On a regular weekday after the close the headline "Today" stat reads "since
+    last open", so the currency-effect panel total must be anchored to that same
+    session **open** — not the settled previous close — or the money figure and the
+    headline disagree in scale and even in sign (the disconnect this fixes). The
+    re-anchoring also makes the frozen "Market hours" leg the real last-session
+    open→close move rather than a near-zero prior-close→close residual.
+
+    Seed: open anchor 1.00, close anchor 1.25; metrics live 1.30, prev settle 1.20,
+    USD book $130,000. Anchored to the open the net is 130000/1.30 − 130000/1.00 =
+    −€30,000, split into overnight (close→now) 130000/1.30 − 130000/1.25 = −€4,000
+    and market hours (open→close) the −€26,000 remainder. Anchored to the settled
+    prev close it would instead read −€8,333.33 with a tiny −€4,333.33 market-hours
+    residual — the buggy figures, which must be absent.
+    """
+
+    def test_eur_effect_total_is_session_open_anchored(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        assert "\u2212\u20ac30,000.00" in html  # session-open anchored net
+        assert "8,333" not in html  # not the settled-prev-close anchor
+
+    def test_market_hours_leg_is_the_real_open_to_close_move(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
+        assert html is not None
+        assert "\u2212\u20ac26,000.00" in html  # genuine open→close market-hours move
+        assert "\u2212\u20ac4,000.00" in html  # live overnight (close→now) leg
+        assert "4,333" not in html  # not the near-zero prev-close→close residual
+
+    def test_investing_power_is_session_open_anchored(self, session: Session) -> None:
+        _seed_fx_samples(session)
+        html = _currency_box_html(session, _metrics(), display_ccy="USD", now=_CLOSED)
+        assert html is not None
+        # Default €100 · (1.30 − 1.00 open) = +$30.00, not the +$10.00 the settled
+        # prev-close (1.20) anchor would give.
+        assert "+$30.00" in html
+        assert "+$10.00" not in html
 
 
 # 2024-06-07 is a Friday. Seed that session so the weekend "frozen Friday" view
