@@ -7564,13 +7564,21 @@ export class App {
         const doSession = async () => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
         const forceFetch = opts?.forceFetch ?? false;
+        // After the user reloads this window, every later network-free re-select
+        // asks to skip the export springboard and rebuild from the freshly-pulled
+        // stored bars instead, so the reload sticks rather than snapping back to
+        // the cached export. We still keep the springboard as a *fallback* when
+        // the stored bars turn out too thin to draw (e.g. a cold new day).
+        const preferStored = opts?.preferStored ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
         // Springboard off the exported session first — instant paint, no fetch —
         // and only build live when the export is absent or too stale. A per-graph
         // refresh tap (`forceFetch`) deliberately skips the springboard so the
-        // windowed fetcher actually re-pulls today's bars (Web-UI track O4(b)).
-        const sprung = forceFetch
+        // windowed fetcher actually re-pulls today's bars (Web-UI track O4(b)); a
+        // post-reload `preferStored` re-select skips it too so the reconstructed
+        // (reloaded) curve wins over the cached export.
+        const sprung = forceFetch || preferStored
           ? null
           : springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
         if (forceFetch) {
@@ -7601,7 +7609,16 @@ export class App {
                 : "1D graph: reused stored session bars (no live pull, 0 credits).",
             );
           }
-          if (curve.points.length < 2) return null;
+          if (curve.points.length < 2) {
+            // `preferStored` skipped the springboard to make a reload stick, but
+            // the stored bars can't draw (e.g. a cold new session): fall back to
+            // the exported springboard so the graph never blanks.
+            if (preferStored) {
+              const fallback = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
+              if (fallback) return { points: fallback };
+            }
+            return null;
+          }
           // Only surface the coverage caption once the market has shut: a full day
           // is expected by then, so a flat-for-want-of-bars holding is genuinely
           // worth flagging (scenario C). While open — and especially warming up —
@@ -7622,6 +7639,9 @@ export class App {
       week: async (opts) => {
         const regenerateOnly = opts?.regenerateOnly ?? false;
         const forceFetch = opts?.forceFetch ?? false;
+        // See the 1D builder: after a reload, prefer the freshly-pulled stored
+        // bars over the cached exported week sleeve so the reload sticks.
+        const preferStored = opts?.preferStored ?? false;
         const frozenFx = await resolveFrozenFx();
         const liveTip = makeLiveTip(frozenFx);
         // The current day's slice of the week must be the same dense 1D session the
@@ -7657,7 +7677,7 @@ export class App {
         if (forceFetch) {
           this.pollLog("graph", "1W graph: reloading — re-pulling the week's bars on request.");
         }
-        if (sprung && !forceFetch) {
+        if (sprung && !forceFetch && !preferStored) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
           return this.harvestWeekCloses(capWeekToSessionClose(sprung));
         }
@@ -7693,7 +7713,15 @@ export class App {
                 : "1W graph: reused stored week bars (no live pull, 0 credits).",
             );
           }
-          if (curve.points.length < 2) return null;
+          if (curve.points.length < 2) {
+            // `preferStored` skipped the cached week-sleeve reuse to make a reload
+            // stick, but the stored bars can't draw: fall back to the springboard
+            // sleeve so the week graph never blanks.
+            if (preferStored && sprung) {
+              return this.harvestWeekCloses(capWeekToSessionClose(sprung));
+            }
+            return null;
+          }
           return this.harvestWeekCloses(capWeekToSessionClose(curve.points));
         } catch {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.", "warn");
