@@ -27,27 +27,62 @@ export const ONE_HOUR_MS = 60 * 60 * 1000;
  */
 export const MARKET_WARMUP_MS = 30 * 60 * 1000;
 
+/**
+ * O3 — the **staleness** boundary that replaces the old `:00` clock-hour bar gate:
+ * on a scheduled (auto / startup) round a market-open bar is promoted the moment
+ * the last real bar is older than this. With a 5-minute auto cadence this yields a
+ * steady ~5 quote rounds : 1 bar round rhythm (a bar fires, the next five ticks
+ * stay inside the 30-minute window, then the sixth promotes the next bar).
+ */
+export const BAR_STALENESS_MS = 30 * 60 * 1000;
+
+/**
+ * O1 — the depth ceiling of the unified window-sized bar leg, in trailing trading
+ * sessions. The 5-minute intraday probe reaches ~5 sessions, so a `bars` pull is a
+ * window of **at most** this many sessions; a heavier gap hands off to the daily
+ * long-range path unchanged. One credit is billed per symbol per request whatever
+ * the window length, so the length is just a number, never a separate concept.
+ */
+export const FULL_WEEK_SESSIONS = 5;
+
 /** Whether the regular US session is open or closed at the decision instant. */
 export type MarketPhase = "open" | "closed";
 
 /**
- * The graded tier the truth-table lands on. Ordered roughly most- to
- * least-stale; `"fresh"` means "fresher than one auto-interval — pull nothing".
+ * The graded tier the truth-table lands on. Ordered most- to least-stale.
+ *
+ * O2 — the two old stale tiers (`heavily-outdated` + `minorly-outdated`) are now a
+ * single **`outdated`** tier: their only real difference was bar *count*, which is
+ * now just the window length carried by the one bars leg ({@link PullLegs.barsWindowSessions}).
+ * `relatively-fresh` / `fresh` stay the quote-cadence tiers (no bar pull); `"fresh"`
+ * means "fresher than one auto-interval — pull nothing".
  */
-export type FreshnessTier =
-  | "heavily-outdated"
-  | "minorly-outdated"
-  | "relatively-fresh"
-  | "fresh";
+export type FreshnessTier = "outdated" | "relatively-fresh" | "fresh";
 
 /**
  * The legs a pull may run. Each is an independent yes/no; *which provider* serves
  * a `true` leg is decided downstream (Pillar 5), never here.
  */
 export interface PullLegs {
-  /** Full 1W (daily-close) series for every market symbol. */
+  /**
+   * O1 — the **unified window-sized bars leg**: how many trailing trading sessions
+   * of intraday bars to pull (0 = no bar pull, 1 = today's session only, up to
+   * {@link FULL_WEEK_SESSIONS} for the full trailing week). `weekBars` / `dayBars`
+   * are *projections* of this one number (see below), so the orchestrator reasons
+   * about a single "bar of the size needed" rather than two separate 1D/1W legs.
+   */
+  barsWindowSessions: number;
+  /**
+   * Projection of {@link barsWindowSessions} `> 1`: the window spans prior settled
+   * sessions, so the multi-session (1W) history backfill is on. Derived, never set
+   * independently — use {@link setBarWindow}.
+   */
   weekBars: boolean;
-  /** 1D (intraday) bar series. */
+  /**
+   * Projection of {@link barsWindowSessions} `>= 1`: today's session is in the
+   * window, so the 1D intraday bar pull is on. Derived, never set independently —
+   * use {@link setBarWindow}.
+   */
   dayBars: boolean;
   /** Live per-symbol quotes (rolling-TTL gated). */
   quotes: boolean;
@@ -64,14 +99,51 @@ export interface PullLegs {
   fxBars: boolean;
 }
 
-/** No-op leg set — the "nothing to pull" answer. */
-export function noLegs(): PullLegs {
-  return { weekBars: false, dayBars: false, quotes: false, nav: false, fx: false, fxBars: false };
+/**
+ * Normalise a requested bar-window length into the legal `[0, FULL_WEEK_SESSIONS]`
+ * range of whole sessions. Non-finite / negative requests collapse to 0 (no pull).
+ */
+export function barWindowSessions(sessions: number): number {
+  if (!Number.isFinite(sessions) || sessions <= 0) return 0;
+  return Math.min(Math.round(sessions), FULL_WEEK_SESSIONS);
 }
 
-/** Every leg on — the heavily-outdated / reset answer. */
+/**
+ * O1 — set the unified bars leg to a window length and keep the `dayBars` /
+ * `weekBars` projections in lock-step, so the two booleans can never disagree with
+ * the single window number the orchestrator actually decided.
+ */
+export function setBarWindow(legs: PullLegs, sessions: number): void {
+  const w = barWindowSessions(sessions);
+  legs.barsWindowSessions = w;
+  legs.dayBars = w >= 1;
+  legs.weekBars = w > 1;
+}
+
+/** No-op leg set — the "nothing to pull" answer. */
+export function noLegs(): PullLegs {
+  return {
+    barsWindowSessions: 0,
+    weekBars: false,
+    dayBars: false,
+    quotes: false,
+    nav: false,
+    fx: false,
+    fxBars: false,
+  };
+}
+
+/** Every leg on — the outdated-heavy-gap / reset answer (full trailing-week window). */
 export function allLegs(): PullLegs {
-  return { weekBars: true, dayBars: true, quotes: true, nav: true, fx: true, fxBars: true };
+  return {
+    barsWindowSessions: FULL_WEEK_SESSIONS,
+    weekBars: true,
+    dayBars: true,
+    quotes: true,
+    nav: true,
+    fx: true,
+    fxBars: true,
+  };
 }
 
 /** Whether a leg set asks for any network at all. */
@@ -116,10 +188,13 @@ export interface GradedPull {
  * `start` / `manual` / `reset` mechanisms (the steady `auto` cadence layers the
  * overlays in {@link applyPullGates}).
  *
+ * O2 — the two old stale tiers are merged into one **`outdated`** tier that pulls a
+ * single bars leg over the **window of size needed**, derived from the gap:
+ *
  * | Tier | Condition | Market | Pull |
  * |---|---|---|---|
- * | heavily-outdated | >1 day missing **and** best blob >1 day old | any | 1W + 1D, full |
- * | minorly-outdated | device **and** best blob ≤1 day old, but >1h | open ≥30m, or closed | 1D series only |
+ * | outdated | >1 day missing **and** best blob >1 day old | any | full window (≤5 sessions) + every leg |
+ * | ″ | device **and** best blob ≤1 day old, but >1h | open ≥30m, or closed | today's session window + quotes + FX |
  * | ″ | ″ | open <30m | quotes only (fill 1D from quote + breadcrumbs) |
  * | relatively-fresh | latest <1h but older than one interval | open | market data (quotes + FX) |
  * | ″ | ″ | closed, NAV missing | NAV + FX only |
@@ -129,32 +204,31 @@ export interface GradedPull {
  * It decides only *what* and *when*; provider routing is orthogonal (Pillar 5).
  */
 export function gradedPull(input: FreshnessInputs): GradedPull {
-  // Heavily outdated — we have been away long enough that both our own data and
-  // the best blob trail by more than a market day: pull everything.
+  // Heaviest gap — both our own data and the best blob trail by more than a market
+  // day: a full windowed re-pull of every leg (the old heavily-outdated answer,
+  // now expressed as the `outdated` tier at the full trailing-week window).
   if (input.deviceDaysMissing > 1 && input.blobDaysOld > 1) {
-    return { tier: "heavily-outdated", legs: allLegs() };
+    return { tier: "outdated", legs: allLegs() };
   }
 
   const olderThanHour = input.dataAgeMs > ONE_HOUR_MS;
   const olderThanInterval = input.dataAgeMs > input.autoIntervalMs;
   const everythingRecent = input.deviceDaysMissing <= 1 && input.blobDaysOld <= 1;
 
-  // Minorly outdated — both sides within a market day, but the latest point is
-  // over an hour stale: top up the 1D series (the 1W fills from it).
+  // Outdated (light) — both sides within a market day, but the latest point is over
+  // an hour stale: top up over today's session window (the 1W body reconstructs
+  // from the same per-day bars).
   if (everythingRecent && olderThanHour) {
     const legs = noLegs();
-    if (input.market === "open" && input.minutesSinceOpenMs < MARKET_WARMUP_MS) {
-      // Too early in the session for a settled bar: quotes only, the 1D curve
-      // accretes from the quote + breadcrumbs until the first bar is due.
-      legs.quotes = true;
-      legs.fx = true;
-      return { tier: "minorly-outdated", legs };
-    }
-    // Open ≥30 min, or closed: 1D series (bars + quotes), plus FX.
-    legs.dayBars = true;
     legs.quotes = true;
     legs.fx = true;
-    return { tier: "minorly-outdated", legs };
+    if (!(input.market === "open" && input.minutesSinceOpenMs < MARKET_WARMUP_MS)) {
+      // Open ≥30 min, or closed: a settled bar exists — pull today's session window
+      // (one session); too early in the session ⇒ quotes only, the curve accretes
+      // from the quote + breadcrumbs until the first bar is due.
+      setBarWindow(legs, 1);
+    }
+    return { tier: "outdated", legs };
   }
 
   // Relatively fresh — under an hour old, but older than one auto-interval, so a
@@ -165,7 +239,7 @@ export function gradedPull(input: FreshnessInputs): GradedPull {
     const legs = noLegs();
     if (input.market === "open") {
       // Live market data: quotes + FX (the bar leg, if any, is governed by the
-      // clock-hour overlay, not the table).
+      // staleness overlay, not the table).
       legs.quotes = true;
       legs.fx = true;
       return { tier: "relatively-fresh", legs };
@@ -191,24 +265,24 @@ export function gradedPull(input: FreshnessInputs): GradedPull {
 export const MAX_TARGETED_WEEK_BACKFILL = 4;
 
 /**
- * Targeted settled-weekBar backfill overlay (item 4a).
+ * Targeted settled-bar backfill overlay (item 4a) — **O5: absorbed, kept as a
+ * bounded safety net.**
  *
- * The blanket `weekBars` leg is only lit on the `heavily-outdated` tier
- * ({@link gradedPull}), so in the lighter market-open tiers a symbol missing a
- * *settled* (already-closed) weekBar — a freshly added holding, or a one-session
- * gap — would otherwise wait for a heavy reset or a closed-market round before it
- * is primed. (The steady auto rounds already backfill the precise stale set
- * whenever a clock-hour 1D-bar prime fires; this overlay closes the remaining
- * window — chiefly the login warm-up — where the leg gate would otherwise discard
- * the whole set.)
+ * The unified window-sized `bars` leg ({@link gradedPull}'s `outdated` tier) now
+ * pulls each symbol's missing settled days over the window of size needed, so the
+ * primary settled-backfill path is the windowed pull itself. This overlay survives
+ * only as a small, capped safety net for the narrow window — chiefly the login
+ * warm-up — where the leg gate would otherwise discard the precise set of symbols
+ * missing a *settled* (already-closed) bar (a freshly added holding, a one-session
+ * gap) before the windowed pull has run.
  *
  * Given the precise per-symbol settled-stale set (from
  * {@link ../week.weekStaleSymbols}, keyed on the *settled* cutoff so today's
  * not-yet-closed bar never counts), this returns the symbols worth a cheap
- * one-credit daily-bar backfill: the whole set when the leg is already on,
- * otherwise a small capped slice so the overlay stays genuinely *targeted*, never
- * a bulk pull. A daily bar bills one credit per symbol regardless of range, so a
- * handful of symbols is a negligible, bounded spend.
+ * one-credit daily-bar backfill: the whole set when the multi-session window leg is
+ * already on, otherwise a small capped slice so the overlay stays genuinely
+ * *targeted*, never a bulk pull. A daily bar bills one credit per symbol regardless
+ * of range, so a handful of symbols is a negligible, bounded spend.
  */
 export function targetedWeekBackfill(
   legWeekBars: boolean,
@@ -220,54 +294,52 @@ export function targetedWeekBackfill(
   return weekStale.slice(0, maxTargeted);
 }
 
-/** Inputs to {@link barClockHourDue}. */
+/** Inputs to {@link barStalenessPromotionDue}. */
 export interface BarGateInput {
   /** Decision instant, epoch ms. */
   nowMs: number;
   /**
-   * When this symbol's 1D bars were last pulled, epoch ms — or `null` if no bar
-   * has been pulled in this session yet (the first-bar case).
+   * When this symbol's intraday bars were last pulled, epoch ms — or `null` if no
+   * bar has been pulled in this session yet (the first-bar case).
    */
   lastBarPullMs: number | null;
   /** This session's 09:30 ET open, epoch ms. */
   sessionOpenMs: number;
-  /** Minimum session time before the *first* bar may be pulled (default 1h). */
+  /**
+   * Minimum session time before the *first* bar may be pulled (default
+   * {@link MARKET_WARMUP_MS} = 30 min, the "a settled bar now exists" boundary).
+   */
   firstBarAfterMs?: number;
 }
 
-/** Round an epoch-ms instant up to the next clock-hour (`:00`) boundary. */
-export function ceilToClockHour(ms: number): number {
-  return Math.ceil(ms / ONE_HOUR_MS) * ONE_HOUR_MS;
-}
-
 /**
- * The **sole** 1D-bar authority during market hours: a bar is pulled at most once
- * per clock hour per symbol, aligned to `:00` (which also matches Tiingo's hourly
- * reset and naturally dedupes across refreshes and devices).
+ * O3 — the **sole** 1D-bar authority during market hours, on scheduled
+ * (auto / startup) rounds: a bar is promoted the moment the last real bar is older
+ * than {@link BAR_STALENESS_MS} (30 min). This replaces the old `:00` clock-hour
+ * alignment with a plain staleness window, so the gate is a leg swap on the round
+ * that already fires (never an extra pull), and the promoted bar *subsumes* that
+ * round's quote rather than pulling ~25 quotes alongside it.
  *
- * - **First bar of the session** (`lastBarPullMs === null`): allowed only once at
- *   least one bar interval of trading has elapsed since the open, so a 09:30 open
- *   doesn't chase a 10:00 bar off five minutes of trading. This makes the
- *   "open <30 min ⇒ no bars" row fall out for free.
- * - **Subsequent bars**: after a pull at 15:30, the next is allowed at the next
- *   `:00` at or after one hour later — i.e. 17:00, not before. Breadcrumbs fill
- *   the line until then. (There is deliberately **no** mid-hour resume-backfill
- *   trigger; a mid-hour absence is bridged by breadcrumbs until the next `:00`.)
+ * - **First bar of the session** (`lastBarPullMs === null`): allowed only once
+ *   `firstBarAfterMs` of trading has elapsed since the open, so a 09:30 open
+ *   doesn't chase a bar off five minutes of trading. This makes the
+ *   "open <30 min ⇒ no settled bar yet" row fall out for free.
+ * - **Subsequent bars**: due once 30 min have elapsed since the last bar.
+ *   Breadcrumbs carry the line until then (no mid-window resume-backfill trigger).
  */
-export function barClockHourDue(input: BarGateInput): boolean {
+export function barStalenessPromotionDue(input: BarGateInput): boolean {
   if (input.lastBarPullMs === null) {
-    const firstAfter = input.firstBarAfterMs ?? ONE_HOUR_MS;
+    const firstAfter = input.firstBarAfterMs ?? MARKET_WARMUP_MS;
     return input.nowMs - input.sessionOpenMs >= firstAfter;
   }
-  const nextAllowed = ceilToClockHour(input.lastBarPullMs + ONE_HOUR_MS);
-  return input.nowMs >= nextAllowed;
+  return input.nowMs - input.lastBarPullMs >= BAR_STALENESS_MS;
 }
 
 /**
  * Rolling quote freshness: whether a quote is due given the last fetch instant.
  * The window is the **user-set auto-refresh interval** (`autoIntervalMs` from
  * config), so lowering the refresh rate immediately speeds up quote updates.
- * Independent of the clock-hour bar gate.
+ * Independent of the bar staleness gate.
  */
 export function quoteRefreshDue(
   lastQuoteMs: number,
