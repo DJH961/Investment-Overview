@@ -892,9 +892,10 @@ def test_build_holding_cards_flags_lagging_daily_move_as_stale(
     assert cards["VTI"].daily_is_stale is False
     assert cards["VFIAX"].daily_growth_as_of == yesterday
     assert cards["VFIAX"].daily_is_stale is True
-    # The lagging fund is forward-filled onto the freshest book date: its stale
-    # 100→101 NAV tick is dropped, leaving only FX. With flat FX, that is zero.
-    assert cards["VFIAX"].daily_move_eur == Decimal("0.00")
-    assert cards["VFIAX"].daily_move_usd == Decimal("0.00")
-    assert cards["VFIAX"].daily_growth_eur == Decimal("0")
-    assert cards["VFIAX"].daily_growth_usd == Decimal("0")
+    # The lagging fund keeps showing its own latest published move (its 100→101
+    # NAV tick over 20 shares = +$20, +1 %), greyed by the staleness flag rather
+    # than zeroed out, mirroring the web companion.
+    assert cards["VFIAX"].daily_move_eur == Decimal("16.00")
+    assert cards["VFIAX"].daily_move_usd == Decimal("20.00")
+    assert cards["VFIAX"].daily_growth_eur == Decimal("0.01")
+    assert cards["VFIAX"].daily_growth_usd == Decimal("0.01")
