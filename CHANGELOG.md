@@ -1461,7 +1461,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Per-row freshness chips and an honest "updating…" bucket** for the live web
   companion, completing the deferred-symbols freshness plan
-  (`docs/deferred_symbols_freshness_plan.md`). Each holding row now carries a
+  (`docs/history/deferred_symbols_freshness_plan.md`). Each holding row now carries a
   three-way freshness tier — a live dot + "live" while its own price was
   confirmed inside the refresh window during market hours, a quiet "recent", or
   the honest "as of <time>" once genuinely aged — driven by the new
@@ -2279,7 +2279,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   binary-search forward-fill (`_make_forward_fill`) so repricing many instants no
   longer re-sorts each symbol's bars per point. The web 1W graph drops its
   synthetic interior points (open/close only). See
-  `docs/weekly_chart_session_axis_plan.md`.
+  `docs/history/weekly_chart_session_axis_plan.md`.
 
 ## [4.2.0] — 2026-06-24
 

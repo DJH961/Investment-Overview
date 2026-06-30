@@ -1,5 +1,9 @@
 # Investment Overview — Setup Simplification Plan
 
+> 🗄️ **Archived — historical.** This setup-simplification work has shipped in the
+> `web/` companion. Kept for design context only; see `CHANGELOG.md` for the
+> authoritative history.
+
 _Authored 2026-06-23. Reference doc to compare the finished work against._
 
 Repo (working tree): `web/`
