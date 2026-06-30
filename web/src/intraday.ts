@@ -379,6 +379,17 @@ export interface SessionCurveOptions {
    */
   regenerateOnly?: boolean;
   /**
+   * **Force a live re-pull (the manual reload tap).** When `true` the build
+   * re-fetches *every* sleeve symbol's bars (and the FX track) from the providers
+   * regardless of what is already stored — even after the close, and even when the
+   * stored bars look complete — so a user-initiated reload genuinely re-pulls
+   * today's data and spends the credits it says it does, rather than silently
+   * reusing the cache and reporting "0 credits". It is the deliberate opposite of
+   * {@link regenerateOnly} (a network-free UI interaction); `regenerateOnly` wins
+   * when both are set. Defaults to `false`.
+   */
+  forceFetch?: boolean;
+  /**
    * Outage back-off for the after-close resolution (plan C4). Symbols whose
    * `${scope}:${symbol}` key is in an armed cooldown are skipped (no credit, no
    * attempt); a deferred-outage strikes it, a settle/reached-close clears it.
@@ -518,12 +529,18 @@ export async function loadOrBuildSessionCurve(
   const minRefetchMs = options.minRefetchMs ?? DEFAULT_OPEN_REFETCH_MS;
   const recentlyFetched =
     stored !== null && minRefetchMs > 0 && now.getTime() - stored.updatedAt < minRefetchMs;
+  // A manual reload tap forces a genuine re-pull of the whole sleeve (and FX),
+  // regardless of what is cached or how complete it looks — so "reloading" really
+  // reloads and the credits it spends are visible, never a silent 0-credit reuse.
+  // `regenerateOnly` (a network-free UI interaction) still wins when both are set.
+  const forceFetch = (options.forceFetch ?? false) && !(options.regenerateOnly ?? false);
   const needFetch =
     !(options.regenerateOnly ?? false) &&
     symbols.length > 0 &&
-    (marketOpen
-      ? whollyMissing.length > 0 || !recentlyFetched
-      : whollyMissing.length > 0 || fetchableShort.length > 0);
+    (forceFetch ||
+      (marketOpen
+        ? whollyMissing.length > 0 || !recentlyFetched
+        : whollyMissing.length > 0 || fetchableShort.length > 0));
 
   let fxAttempted = false;
   if (needFetch) {
@@ -541,9 +558,12 @@ export async function loadOrBuildSessionCurve(
         if (dayBars.length > 0) incomingBars[symbol] = dayBars;
       }
     };
-    if (marketOpen) {
-      // Open: refresh every symbol so the curve grows to the freshest bar (still 1
-      // credit each — bars are free).
+    if (marketOpen || forceFetch) {
+      // Open — or a forced manual reload at any hour: refresh every symbol so the
+      // curve is rebuilt from a genuine fresh pull (1 credit each — bars are free).
+      // A forced re-pull bypasses the after-close progress/settle/back-off gate on
+      // purpose: the user explicitly asked to reload, so we honour it with a real
+      // fetch of the whole sleeve rather than the cache-sparing escalation cadence.
       addDayBars(await fetchBars(symbols));
     } else {
       // Closed: backfill the wholly-missing gaps the normal way (the capacity
@@ -586,7 +606,7 @@ export async function loadOrBuildSessionCurve(
     // (the live tip uses the freshest rate). The **closed**-market FX track is
     // owned by the dedicated completeness step below, so it is *not* fetched here
     // — that is what stops a per-render after-close FX re-pull.
-    if (fetchFx && marketOpen) {
+    if (fetchFx && (marketOpen || forceFetch)) {
       fxAttempted = true;
       try {
         incomingFx = await fetchFx();

@@ -409,6 +409,55 @@ describe("loadOrBuildSessionCurve", () => {
     expect(result.points).toHaveLength(1);
   });
 
+  it("forceFetch genuinely re-pulls a closed-market day that already looks complete (reload = reload)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    // A complete day already on the device — the cache-sparing path would reuse it
+    // and spend nothing. A manual reload (forceFetch) must re-pull it anyway so a
+    // user-initiated "reload" actually reloads and attributes its provider credits.
+    await store.mergeSession("2026-06-23", {
+      bars: { VTI: [bar(Date.parse("2026-06-23T19:30:00Z"), "100")] },
+    });
+    // The fresh pull returns a later, fuller close — proving the re-pull is used.
+    const fetchBars = vi.fn(async () =>
+      new Map<string, Bar[]>([["VTI", [bar(Date.parse("2026-06-23T19:55:00Z"), "110")]]]),
+    );
+    const fetchFx = vi.fn(async () => [bar(Date.parse("2026-06-23T19:55:00Z"), "1.0")]);
+    const now = new Date("2026-06-23T22:00:00Z"); // 18:00 ET, after close
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      fetchFx,
+      now,
+      forceFetch: true,
+    });
+    // The whole sleeve is re-pulled (a real fetch, real credits), not reused.
+    expect(fetchBars).toHaveBeenCalledWith(["VTI"]);
+    // …and the FX track is refreshed in the same forced reload.
+    expect(fetchFx).toHaveBeenCalledOnce();
+    // The freshly pulled bar is now part of the stored session.
+    const stored = await store.loadSession("2026-06-23");
+    expect(stored?.bars.VTI?.some((b) => b.t === Date.parse("2026-06-23T19:55:00Z"))).toBe(true);
+  });
+
+  it("regenerateOnly wins over forceFetch — an interaction never fetches", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.mergeSession("2026-06-23", {
+      bars: { VTI: [bar(Date.parse("2026-06-23T19:30:00Z"), "100")] },
+    });
+    const fetchBars = vi.fn(async () => new Map<string, Bar[]>());
+    const now = new Date("2026-06-23T22:00:00Z");
+    await loadOrBuildSessionCurve({
+      anchor: singleEtfAnchor(),
+      store,
+      fetchBars,
+      now,
+      forceFetch: true,
+      regenerateOnly: true,
+    });
+    expect(fetchBars).not.toHaveBeenCalled();
+  });
+
   it("pins a reloaded closed-market curve to the settled headline tip at the close", async () => {
     // A reload after the close rebuilds from stored bars (the springboard is
     // skipped). If those bars reconstruct to a total that disagrees with the

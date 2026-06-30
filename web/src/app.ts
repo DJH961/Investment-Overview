@@ -7598,7 +7598,7 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveSessionCurve(
-            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly, onCloseResolve, formatInstant },
+            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly, forceFetch, onCloseResolve, formatInstant },
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
@@ -7712,6 +7712,7 @@ export class App {
               liveTip,
               onFreshBars,
               regenerateOnly,
+              forceFetch,
               // Item 7b: only genuine, NAV-fetchable moving funds are eligible for
               // the daily-NAV gap-fill; money-market / pinned-$1 funds are absent
               // from `lastNavSymbols`, so they stay flat and are never fetched.

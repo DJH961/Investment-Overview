@@ -17,6 +17,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A graph reload now actually reloads — it re-pulls today's bars and spends the
+  credits it reports.** The per-graph reload tap set `forceFetch`, but that only made
+  the build *skip the export springboard* — it never reached the bar-fetch decision,
+  so after the close (or any time the stored bars looked complete) the reload reused
+  the cache and logged "reload found no new session bars … 0 credits", attributing no
+  pull to Twelve Data or Tiingo. `forceFetch` now flows through to
+  `loadOrBuildSessionCurve` / `loadOrBuildWeekCurve` and forces a genuine re-pull of
+  the whole sleeve (and the FX track) regardless of what is cached — so a manual reload
+  fetches fresh provider data and its credits are visible. A network-free UI interaction
+  (`regenerateOnly`) still wins when both are set
+  (`web/src/intraday.ts`, `web/src/week.ts`, `web/src/app.ts`).
 - **1D graph reload drifting from the headline total and growth after the close.**
   Reloading the 1D window skips the export springboard and rebuilds the curve live
   from the device's stored session bars. After the market has closed that rebuild
