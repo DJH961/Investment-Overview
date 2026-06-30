@@ -68,6 +68,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     as a small bounded safety net for freshly added holdings. No
     user-visible behaviour changes; the brain just makes fewer, better-deduplicated
     decisions and never decides 1D and 1W bars on two different clocks.
+  - **Web-UI track (O4 — split the manual controls):** the manual refresh is now
+    two distinct controls instead of one overloaded button. The **global Refresh
+    button is a pure *quote* round** — "the freshest live price on demand" — and no
+    longer re-pulls 1D/1W bars or triggers the 30-minute bar promotion (that stays
+    an auto/startup concern). Alongside it, a **per-graph "refresh bars" button sits
+    beside each live window**: a **1D** tap re-pulls just **today's session**, a
+    **1W** tap re-pulls the **full ~5-session week**, each scoped to exactly the
+    in-view timeframe so the cost is explicit (the tooltip says so) and a 1D redraw
+    stays cheap. The per-graph re-pull is **bars-only** — it feeds the headline via
+    the existing `primeQuotesFromGraphBars` pipeline, so it refreshes price as a
+    side effect without paying for a second quote round. The button only appears on
+    the re-pullable live 1D/1W windows; the static history slices (1M/1Y/All) have
+    nothing to re-fetch and show no button.
+  - **Python track (Group C8 — desktop parity at 5-minute density):** the desktop
+    app's two divergent graph builders ("1 Day" at 15-minute, "1 Week" at
+    30-minute) collapse into **one range-parameterized intraday builder at 5-minute
+    density** sharing a single per-session reconstruction core
+    (`services/intraday_snapshots_service.py` `_reconstruct_session_samples`;
+    `RECONSTRUCT_INTERVAL == WEEK_INTERVAL == "5m"`). `_overview_query.py` gains
+    `build_window_value_series` (`sessions <= 1` = Day window, `sessions > 1` = Week
+    window), and `build_intraday_value_series` / `build_week_value_series` become
+    thin wrappers over it — so, exactly as on the web side, the desktop today-slice
+    of 1W now equals the standalone 1D curve and Python graph density matches the
+    web companion. The blob export backbone (`live_graphs.py`, `GRID_DEFAULT="30m"`,
+    bounded by `MAX_BACKBONE_CELLS`) is deliberately left unchanged. The store stays
+    canonical **USD**; the EUR line remains a per-instant FX re-mark, never a flat
+    rescale.
 
 ## [4.21.16] — 2026-06-30
 
