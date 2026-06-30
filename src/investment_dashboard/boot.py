@@ -923,20 +923,21 @@ def _refresh_intraday_week() -> None:
     renders straight away after a re-download instead of being fetched on first
     open.
 
-    The ``force`` re-fetch (which bypasses the per-session fetched-day markers
-    that survive a cache reset wiping the samples) is reserved for a *large* pull
-    (:func:`_is_large_pull`). On a routine reopen the cache-first path already
-    re-pulls any session that is uncovered *or* missing intraday points, so a
-    forced re-pull every time would needlessly re-download already-complete days.
-    Best-effort: a failure just leaves the lazy first-open path to rebuild it."""
+    Always ``force=True``: the once-per-anchor fetched-day markers live in
+    ``app_config`` and *survive a restart*, so a routine same-day reopen would
+    otherwise skip an earlier session that came up short (a hole), freezing it
+    until the next anchor session or a background tick. ``force`` only bypasses
+    those markers — it does **not** re-download already-*covered* days (the
+    coverage check still filters them out), so a complete week stays a cheap
+    no-op while a holey one self-heals on startup. Best-effort: a failure just
+    leaves the lazy first-open path to rebuild it."""
     try:
         from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
         from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
 
-        force = _is_large_pull()
         with ledger_session_scope() as session:
-            samples = intraday_snapshots_service.week_series_with_fx(session, force=force)
-        log.info("Intraday 1 Week sleeve warmed (%d sample(s), force=%s)", len(samples), force)
+            samples = intraday_snapshots_service.week_series_with_fx(session, force=True)
+        log.info("Intraday 1 Week sleeve warmed (%d sample(s), force=True)", len(samples))
     except Exception:
         log.warning("Intraday 1 Week refresh failed; continuing", exc_info=True)
 

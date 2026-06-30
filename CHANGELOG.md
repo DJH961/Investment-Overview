@@ -13,6 +13,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.0.4] — 2026-06-30
+
+### Fixed
+
+- **The Python Overview "Top gainer" / movers badge no longer overlaps the
+  holding name.** The pinned chip sat hard against the figures row's top edge
+  with an upward lift that pushed it onto the muted name line above it. It is now
+  nudged a hair lower (a small negative `margin-bottom`) so it clears that text,
+  while staying absolutely positioned (out of flow) so a long "Top % loser"
+  label still never wraps a card line (`src/investment_dashboard/ui/style.py`).
+- **The Python "Value over time" graph now fills to its full 5-minute density —
+  and refills internal holes — on a manual reload and on startup, not only from a
+  background tick.** The "1 Week" curve gated its network re-pulls behind a
+  once-per-anchor "fetched-day" marker that lives in `app_config` and *survives a
+  restart*, so a same-day reopen (or any page reload) skipped an earlier session
+  that came up short, freezing the gap as a flat straight line until the next
+  trading day or a background auto-refresh tick — which can't be relied on if the
+  app was closed or the live timer is degraded. The Week render now self-heals
+  before drawing, mirroring the Day range: `reconstruct_last_session` densifies
+  *today*'s slice (written to the shared 1-Day cache the week reads) and a forced
+  week pass re-pulls any earlier session still holding an internal hole, bypassing
+  the render guard. Startup warming (`boot._refresh_intraday_week`) now likewise
+  forces the week fill so a same-day restart fills holes instead of inheriting the
+  stale marker. Both paths stay cache-first and self-limiting — a fully-covered
+  week re-pulls nothing and touches no network — and `force` re-fetches only
+  *uncovered* days, never re-downloading already-complete ones
+  (`src/investment_dashboard/ui/pages/overview.py`, `src/investment_dashboard/boot.py`).
+
 ## [5.0.3] — 2026-06-30
 
 ### Fixed
