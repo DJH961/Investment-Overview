@@ -13,6 +13,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [4.21.16] — 2026-06-30
+
+### Fixed
+
+- **Documentation tidy-up: the `docs/` tree is now navigable and free of stray
+  artefacts.** Three ad-hoc data-`polling-log` `.txt` dumps that had been left in
+  `docs/` were removed (they are runtime debug output, not documentation), and
+  four completed/superseded plan documents — the deferred-symbols/freshness plan,
+  the weekly-chart session-axis plan, the pre-v3.0 audit follow-ups, and the
+  `web/` setup-simplification plan — were moved into `docs/history/` with the
+  standard "archived — historical" banner and indexed in
+  `docs/history/README.md`. Cross-references in `CHANGELOG.md` and
+  `docs/maintenance_audit.md` were repointed to the new paths. A new
+  `docs/README.md` index catalogues every remaining document by status (living
+  reference, implemented design record, or pending proposal), and the root
+  `README.md` status pill was refreshed to the current version and now links to
+  that index. No code-cited design docs were relocated, so existing in-source
+  `docs/…` citations stay valid.
+
 ## [4.21.15] — 2026-06-30
 
 ### Fixed
@@ -1428,7 +1447,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Per-row freshness chips and an honest "updating…" bucket** for the live web
   companion, completing the deferred-symbols freshness plan
-  (`docs/deferred_symbols_freshness_plan.md`). Each holding row now carries a
+  (`docs/history/deferred_symbols_freshness_plan.md`). Each holding row now carries a
   three-way freshness tier — a live dot + "live" while its own price was
   confirmed inside the refresh window during market hours, a quiet "recent", or
   the honest "as of <time>" once genuinely aged — driven by the new
@@ -2246,7 +2265,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   binary-search forward-fill (`_make_forward_fill`) so repricing many instants no
   longer re-sorts each symbol's bars per point. The web 1W graph drops its
   synthetic interior points (open/close only). See
-  `docs/weekly_chart_session_axis_plan.md`.
+  `docs/history/weekly_chart_session_axis_plan.md`.
 
 ## [4.2.0] — 2026-06-24
 

@@ -7,7 +7,7 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
-> **Status: v4.21.0 — active v4 series with split storage, cloud-aware paths,
+> **Status: v4.21.15 — active v4 series with split storage, cloud-aware paths,
 > optional SQLCipher, intraday refresh, snapshot/curve refinements, and the
 > encrypted live-web companion (see [`web/`](web/)).** The app remains a
 > local-first, single-user dashboard with onboarding, EUR/USD display switching,
@@ -62,7 +62,8 @@ from the host laptop and any device on the same Wi-Fi network.
 | CI | GitHub Actions |
 
 Full rationale in [`docs/architecture.md`](docs/architecture.md) and the
-`requirements_and_project_overview.md` spec.
+`requirements_and_project_overview.md` spec. For a map of every design note,
+plan, and audit, see the [`docs/` index](docs/README.md).
 
 ## Quickstart
 

@@ -1,5 +1,8 @@
 # Auto-Updates, Deferred Symbols & Freshness Labels — investigation + action plan
 
+> 🗄️ **Archived — historical.** The work in this plan has shipped. Kept for
+> design context only; see `CHANGELOG.md` for the authoritative history.
+
 **Status:** ✅ fully implemented. Investigation done; the "always cached"
 mislabel fix (§1.1) landed first, and the remaining backlog and original ideas
 (§2 per-row freshness chip, §3 deferred-queue freshness + threading, §4.1

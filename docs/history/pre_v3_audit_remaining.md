@@ -1,5 +1,9 @@
 # Pre-v3.0 Audit — Remaining Work
 
+> 🗄️ **Archived — historical.** This pre-v3.0 audit has been superseded by the
+> shipped v3.x/v4.x line and the active `docs/maintenance_audit.md` backlog. Kept
+> for design context only; see `CHANGELOG.md` for the authoritative history.
+
 This document tracks what the pre-v3.0 deep audit identified but that has **not
 yet been implemented**. It is the companion to the work already landed.
 
