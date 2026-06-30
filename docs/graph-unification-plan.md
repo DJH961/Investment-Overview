@@ -209,6 +209,96 @@ reconstruction, so Python graphs match web density and Python's own
 
 ---
 
+## Orchestrator adaptation — one window-sized bar leg
+
+The graph builder above (C1–C8) decides *how a graph is drawn*. This section is
+the matching change to the **data orchestrator** — *what bars get pulled when*.
+Because every bar is now just "intraday of length N", the orchestrator no longer
+needs separate 1D and 1W bar concepts; it pulls **one bar leg of the length
+needed**. Timing, cadence, reservation budget and back-off are **unchanged** —
+only the bar-leg selection changes.
+
+### Current state (verified against `main`)
+
+`data-orchestrator.ts:planPull` + `freshness.ts:gradedPull` carry **two** bar legs
+(`freshness.ts:49‑51`):
+
+- **`weekBars`** (1W, one daily close per session, all symbols) lights **only** on
+  the `heavily‑outdated` tier (`deviceDaysMissing > 1` AND `blobDaysOld > 1` →
+  `allLegs`, `freshness.ts:134`) or a `reset`. Otherwise the 1W graph never pulls
+  its own bars — it fills from the 1D session cache (`week.ts:674`) plus a tiny
+  `≤4‑symbol targetedWeekBackfill` (`freshness.ts:191‑221`).
+- **`dayBars`** (1D intraday): while the market is open, governed **solely** by the
+  clock‑hour `:00` gate (`data-orchestrator.ts:246‑261`, `barClockHourDue`) — at
+  most once per clock‑hour per symbol, first bar only >1h after open; between hours
+  `dayBars` is forced off and **breadcrumbs** carry the line. Via the tier table,
+  `dayBars` lights on `minorly‑outdated` (open ≥30 min, or closed).
+- **`quotes`** = rolling TTL on the user's auto‑interval (5 min) = the heartbeat
+  (`freshness.ts:272‑278`).
+- **Verified:** a bar pull already updates the displayed mark/headline —
+  `onFreshBars → primeQuotesFromGraphBars → primeQuotesFromBars`
+  (`app.ts:7344‑7347, 7791‑7809`), NAV‑guarded by `navSafeBarsForPriming`. **"A bar
+  subsumes the quote" is real today**, which is what makes a bar‑instead‑of‑quote
+  round safe for the headline.
+
+### O1 — Collapse the two bar legs into one window-sized `bars` leg
+`weekBars` + `dayBars` become a single `bars` leg carrying a **window length**
+(sessions / span). Per‑request flat billing (1 credit/symbol regardless of length)
+makes the length just a number, not a separate concept.
+
+### O2 — Collapse `heavily‑outdated` + `minorly‑outdated` into one `outdated` tier
+Their only real difference was bar **count**, which is now just window length. The
+merged `outdated` tier pulls `bars` over the **window of size needed** — length
+derived continuously from the stale span / `deviceDaysMissing` (30‑min gap → tiny
+fill; several days missing → up to the full ~5‑session window). A fresh‑login /
+heavily‑outdated pull is then **one windowed bar pass that serves both 1D and 1W**
+(no separate `weekBars` + `dayBars`). `relatively‑fresh` / `fresh` stay as the
+quote‑cadence tiers (no bar pull).
+
+### O3 — Replace the `:00` clock-hour gate with a 30-min staleness promotion
+The gate stops being a clock alignment and becomes a **leg swap on the round that
+already fires** (auto / manual / startup) — never an extra pull:
+
+```
+on a scheduled round:
+  if last real bar > 30 min old (or days missing):
+      leg   = BARS over window(gap)   # the bar subsumes the quote
+      quotes = SUPPRESSED             # do NOT also pull ~25 quotes
+  else:
+      leg   = QUOTES (heartbeat tip)
+  + FX / NAV overlays unchanged
+```
+
+Rationale: ~25 symbols × (bars + quotes) at 8/min ≈ 6–7 min/round; **bars
+INSTEAD‑OF quotes** keeps it to one ~3–4 min pass. Cadence while open becomes
+~**5 quote rounds : 1 bar round**. The bar round ingests only **completed** slots
+(excludes the in‑progress candle); the next 5‑min quote round restores the live
+tip.
+
+### O4 — Manual tap forces a bars round (still bars-instead-of-quotes)
+A manual tap forces a `bars` round regardless of staleness, relying on the
+**existing** `primeQuotesFromGraphBars` pipeline so the headline/quote display
+stays fresh from the bar's latest completed close — **best of both worlds**. Still
+never bars + quotes together.
+
+### O5 — `targetedWeekBackfill` absorbed
+The window‑sized pull already covers each symbol's missing settled days, so the
+`≤4‑symbol targetedWeekBackfill` is absorbed by O1/O2 → **retire**, or keep as a
+bounded safety net (leaning retire).
+
+### Net orchestrator brain
+```
+if bars stale (>30 min) or days missing -> BARS over window(needed), quotes OFF
+else                                     -> QUOTES heartbeat
+(+ FX / NAV overlays; manual forces a BARS round; reservation 8/min + breaker bind all)
+```
+
+**Explicitly unchanged:** the 5‑min quote heartbeat itself, FX/NAV overlays,
+manual‑relevance forcing, the reservation budget (8/min TD cap), and the 429
+breaker.
+
+---
+
 ## What stays (explicit)
 
 - **Breadcrumbs** — unchanged; still the live‑tail filler in both views
@@ -260,7 +350,11 @@ reconstruction, so Python graphs match web density and Python's own
 4. **C6** — unify the fetch into one windowed intraday fetcher + shared per‑day
    store; retire the `daily/1day` week cache.
 5. **C4** — FX leg → 5‑min; drop blob FX.
-6. **C8** — Python mirror at 5‑min.
+6. **O1–O5** — collapse the orchestrator's two bar legs into one window‑sized
+   `bars` leg; merge the two outdated tiers; swap the `:00` gate for the 30‑min
+   bars‑instead‑of‑quotes promotion; manual forces a bars round; absorb
+   `targetedWeekBackfill`.
+7. **C8** — Python mirror at 5‑min.
 
 > No code is to be written until this plan is explicitly approved for
 > implementation.
