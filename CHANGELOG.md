@@ -13,6 +13,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.1] — 2026-06-30
+
+### Fixed
+
+- **A graph reload now actually reloads — it re-pulls today's bars and spends the
+  credits it reports.** The per-graph reload tap set `forceFetch`, but that only made
+  the build *skip the export springboard* — it never reached the bar-fetch decision,
+  so after the close (or any time the stored bars looked complete) the reload reused
+  the cache and logged "reload found no new session bars … 0 credits", attributing no
+  pull to Twelve Data or Tiingo. `forceFetch` now flows through to
+  `loadOrBuildSessionCurve` / `loadOrBuildWeekCurve` and forces a genuine re-pull of
+  the whole sleeve (and the FX track) regardless of what is cached — so a manual reload
+  fetches fresh provider data and its credits are visible. A network-free UI interaction
+  (`regenerateOnly`) still wins when both are set
+  (`web/src/intraday.ts`, `web/src/week.ts`, `web/src/app.ts`).
+- **1D graph reload drifting from the headline total and growth after the close.**
+  Reloading the 1D window skips the export springboard and rebuilds the curve live
+  from the device's stored session bars. After the market has closed that rebuild
+  misrepresented the day in two ways, now both fixed so the graph reflects reality
+  rather than only landing on the right number:
+  - **The whole shape, not just the tip.** When the rebuild was *incomplete* — some
+    symbols still budget-deferred / short and carried flat at ratio 1 — its entire
+    body drew a real-looking-but-wrong trajectory (the "same number of bars, totally
+    different shape" signature). A closed-market reload that can't cover the sleeve now
+    falls back to the exported settled session, the genuine whole-book curve, instead of
+    drawing a partial body (`web/src/app.ts`).
+  - **Closing on the headline.** A *complete* closed-market reconstruction previously
+    ended on `base + Σ valueᵢ·ratio(lastBar)`, which drifts from the settled headline
+    when the last bar fell short of the 16:00 ET close — so the "% today" the line
+    measured disagreed with the headline growth (e.g. the graph reading `+0.24%` while
+    the headline read `+0.42%`). The reconstruction now pins the settled whole-book
+    headline at the session close, exactly as the open-market path pins the live
+    headline and as the export springboard closes by construction (`web/src/intraday.ts`).
+
 ## [5.2.0] — 2026-06-30
 
 ### Added

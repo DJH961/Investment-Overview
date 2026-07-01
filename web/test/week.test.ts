@@ -356,6 +356,52 @@ describe("loadOrBuildWeekCurve", () => {
     expect(instants).toContain(dayMs("2026-03-13"));
   });
 
+  it("forceFetch genuinely re-pulls the week even when the cache is already settled (reload = reload)", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    // A fully settled week already on the device (closes through Friday): the
+    // cache-sparing path would treat it as fresh and spend nothing. A manual reload
+    // (forceFetch) must re-pull the whole market sleeve anyway.
+    await s.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: {
+        VTI: [
+          bar(dayMs("2026-03-09"), "96"),
+          bar(dayMs("2026-03-10"), "97"),
+          bar(dayMs("2026-03-11"), "98"),
+          bar(dayMs("2026-03-12"), "99"),
+          bar(dayMs("2026-03-13"), "100"),
+        ],
+      },
+      fx: [],
+      updatedAt: 0,
+    });
+    const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>([["VTI", [bar(dayMs("2026-03-13"), "101")]]]));
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars,
+      now: SAT_CLOSED,
+      forceFetch: true,
+    });
+    expect(fetchDailyBars).toHaveBeenCalledWith(["VTI"]);
+  });
+
+  it("regenerateOnly wins over forceFetch for the week — an interaction never fetches", async () => {
+    const s = store();
+    const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
+    const fetchDailyBars = vi.fn(async () => new Map<string, Bar[]>());
+    await loadOrBuildWeekCurve({
+      anchor,
+      store: s,
+      fetchDailyBars,
+      now: SAT_CLOSED,
+      forceFetch: true,
+      regenerateOnly: true,
+    });
+    expect(fetchDailyBars).not.toHaveBeenCalled();
+  });
+
   it("splices today's cached 1D intraday bars into the week curve for finer detail", async () => {
     const s = store();
     const anchor = buildIntradayAnchor([holding()], d(0), d(0), d("0.9"));
