@@ -183,25 +183,21 @@ export function prefetchDebounceActive(
  * later, stamping stale work as fresh). Tied to the user's own setting so a long
  * configured cadence tolerates a proportionally longer round.
  */
-export const STALE_ROUND_INTERVAL_MULTIPLIER = 3;
+export const STALE_ROUND_INTERVAL_MULTIPLIER = 1;
 
 /**
- * Floor for {@link staleRoundAbortMs} so a very short auto-update interval still
- * gives an honestly-slow round (a big portfolio fanning out over the backup,
- * say) enough time to finish before it is judged hung.
+ * Floor for {@link staleRoundAbortMs} fallback when the interval is invalid/zero.
  */
 export const MIN_STALE_ROUND_ABORT_MS = 90_000;
 
 /**
  * How long an in-flight refresh round may run before it counts as hung — the
- * user's configured auto-update interval times {@link STALE_ROUND_INTERVAL_MULTIPLIER},
- * floored by {@link MIN_STALE_ROUND_ABORT_MS}. The scheduler ties its stale-round
- * abort to this so the watchdog scales with the setting rather than a magic
- * constant.
+ * user's configured auto-update interval times {@link STALE_ROUND_INTERVAL_MULTIPLIER}.
+ * An individual refresh round cannot be longer than one auto update period.
  */
 export function staleRoundAbortMs(intervalMs: number): number {
   const base = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 0;
-  return Math.max(MIN_STALE_ROUND_ABORT_MS, Math.round(base * STALE_ROUND_INTERVAL_MULTIPLIER));
+  return base > 0 ? base : MIN_STALE_ROUND_ABORT_MS;
 }
 
 /**

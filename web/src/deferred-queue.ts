@@ -226,4 +226,11 @@ export class DeferredQueue {
     }
     return { stillMissing, clearedBySatisfied, exhausted };
   }
+
+  /**
+   * Clear all symbols from the queue.
+   */
+  clearAll(): void {
+    this.queue.clear();
+  }
 }
