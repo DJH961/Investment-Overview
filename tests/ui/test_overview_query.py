@@ -99,6 +99,7 @@ def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, see
     """A live intraday EUR/USD overlay moves *today's* FX leg of daily growth
     while historical YTD figures (priced at past-date FX) stay put."""
     from unittest.mock import patch
+
     from investment_dashboard.services import fx_service, intraday_snapshots_service
     from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 
