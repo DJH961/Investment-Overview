@@ -283,6 +283,7 @@ export function makePriceBarFetcher(opts: {
    */
   backoff?: { memo: SeriesBackoff; scope: string; now?: () => number };
   cooldownMs?: number;
+  storage?: StorageLike | null;
 }): BarFetcher | null {
   const {
     apiKey,
@@ -315,7 +316,7 @@ export function makePriceBarFetcher(opts: {
     // legacy Tiingo-first failover dual pipe.
     const isNavFetcher = backoff?.scope.includes("nav") ?? false;
     combined = reservation
-      ? makeCapacitySplitBarFetcher(pipeA, pipeB, reservation, now, isNavFetcher, opts.cooldownMs)
+      ? makeCapacitySplitBarFetcher(pipeA, pipeB, reservation, now, isNavFetcher, opts.cooldownMs, opts.storage)
       : makeDualPipeBarFetcher(pipeB, pipeA);
   } else {
     combined = pipeB ?? pipeA;
@@ -382,6 +383,7 @@ export function makeCapacitySplitBarFetcher(
   now: () => number = () => Date.now(),
   isNavFetcher = false,
   cooldownMs = 3600000,
+  storage?: StorageLike | null,
 ): BarFetcher {
   return async (symbols) => {
     const uniq = uniqueSymbols(symbols);
@@ -391,7 +393,7 @@ export function makeCapacitySplitBarFetcher(
     const isWithin5hPostClose = elapsedSinceCloseMs < 5 * 60 * 60 * 1000;
 
     // Suppress symbols in the Tiingo noNewer cooldown
-    const noNewer = readTiingoNoNewer(reservation.storage ?? undefined);
+    const noNewer = readTiingoNoNewer(storage ?? null);
     const expected = latestSettledSessionDate(new Date(now()));
     const suppressed = (symbol: string): boolean => {
       const stamp = noNewer[symbol];
@@ -577,6 +579,7 @@ export interface LiveGraphProviders {
    */
   backoff?: SeriesBackoff;
   cooldownMs?: number;
+  storage?: StorageLike | null;
 }
 
 /**
@@ -745,6 +748,7 @@ export function buildLiveSessionCurve(
     now: providers.now,
     backoff: { memo: backoff, scope: "1D" },
     cooldownMs: providers.cooldownMs,
+    storage: providers.storage,
   });
   const fetchBars = priceFetcher ?? emptyBarFetcher;
   // FX is just the EUR/USD symbol on the very same pipe (see {@link makeFxFetcher}),
@@ -834,6 +838,7 @@ export function buildLiveWeekCurve(
     now: providers.now,
     backoff: { memo: backoff, scope: "1W" },
     cooldownMs: providers.cooldownMs,
+    storage: providers.storage,
   });
   const fetchDailyBars = priceFetcher ?? emptyBarFetcher;
   const fetchFx = makeFxFetcher(priceFetcher);
@@ -854,6 +859,7 @@ export function buildLiveWeekCurve(
         tiingoMeter,
         reservation: providers.reservation,
         now: providers.now,
+        storage: providers.storage,
       })
     : null;
   const fetchSecondaryDailyBars = secondaryPriceFetcher;
@@ -878,6 +884,7 @@ export function buildLiveWeekCurve(
     now: providers.now,
     backoff: { memo: backoff, scope: "1W-nav" },
     cooldownMs: providers.cooldownMs,
+    storage: providers.storage,
   });
   const fetchNavBars = wrapDailyNavFetcher(navDailyFetcher ?? emptyBarFetcher);
   return loadOrBuildWeekCurve({

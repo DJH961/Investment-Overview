@@ -89,6 +89,7 @@ import {
   writeSymbolPlan,
   readLastRefreshStartedAt,
   writeLastRefreshStartedAt,
+  type StorageLike,
 } from "./cache";
 import {
   DEFAULT_NAV_CACHE_TTL_MS,
@@ -1254,7 +1255,7 @@ export class App {
     // week line in one shot, and it is primed back as the (value-dated, settled)
     // headline NAV. The funds it primes are dropped from the quote leg below, so
     // the separate NAV quote is skipped — no duplicate spend, week correct in one.
-    const navBarsPrimed = await this.prefetchNavWeekBars(prefetch.navSymbols, config, now, planCurrency);
+    const navBarsPrimed = await this.prefetchNavWeekBars(prefetch.navSymbols, config, now, planCurrency, null);
     // Drop from the quote leg both the funds whose primed NAV tip is genuinely
     // current (`covered`) **and** every fund the bars pull just fetched this round
     // (`fetched`, plan B): a fund the bar source already hit must never be re-pulled
@@ -2518,6 +2519,7 @@ export class App {
     config: AppConfig,
     now: Date,
     currencyBySymbol: Map<string, string | null>,
+    storage: StorageLike | null = null,
   ): Promise<{ primed: string[]; covered: string[]; fetched: string[] }> {
     const none = { primed: [] as string[], covered: [] as string[], fetched: [] as string[] };
     if (navSymbols.length === 0) return none;
@@ -2529,7 +2531,7 @@ export class App {
     const weekStored = await store.loadSession(WEEK_STORE_KEY).catch(() => null);
     const stale = navBackfillStaleSymbols(weekStored, navSymbols, now);
     if (stale.length === 0) return none; // week already covers every settled NAV → pull nothing
-    const reservation = ledgerReservation();
+    const reservation = ledgerReservation(storage);
     const spent = { credits: 0 };
     const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
       range: "1W NAV warm-up",
@@ -2557,6 +2559,7 @@ export class App {
       interval: "1day",
       outputsize: 8,
       cooldownMs: config.updateMinutes * 60 * 1000,
+      storage,
     });
     if (!fetchBars) return none;
     // Collapse to one settling NAV per UTC day (day-start stamped) so the warmed
@@ -7610,6 +7613,7 @@ export class App {
       // overflow goes to Tiingo only up to *its* scarce budget, and nothing ever
       // fires over a cap or while a provider is frozen.
       reservation,
+      storage: null,
     };
     const exported = this.state.data?.live_graphs ?? undefined;
     const anchor = (frozenFx: Decimal | null): ReturnType<typeof buildModelAnchor> =>

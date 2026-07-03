@@ -455,7 +455,6 @@ export interface WeekCurveOptions {
    * to keep the MM portion flat (legacy behaviour). See {@link ReconstructInput.mmDaysUsd}.
    */
   mmDaysUsd?: { date: string; valueNativeUsd: Decimal }[];
-  forceFetch?: boolean;
 }
 
 /** A built 1W curve plus the window it covers. */

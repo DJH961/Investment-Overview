@@ -403,11 +403,11 @@ export interface SessionCurveOptions {
    * (default {@link PROBE_MIN_MS}). Between probes the symbol is held flat — no
    * fetch, no credit — which is what kills the per-render hammer (plan C4).
    */
+  probeMinMs?: number;
   /** One structured verdict event per resolved short symbol (plan C6). */
   onCloseResolve?: (event: CloseResolveLog) => void;
   /** Render a bar instant for the close-resolution log (defaults to raw ms). */
   formatInstant?: (t: number) => string;
-  forceFetch?: boolean;
 }
 
 /**

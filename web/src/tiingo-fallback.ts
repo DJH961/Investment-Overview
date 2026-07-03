@@ -28,7 +28,7 @@ import {
   type StorageLike,
   type TiingoState,
 } from "./cache";
-import { isUsMarketOpen, latestSettledSessionDate, isNavFallbackAllowed, sessionCloseMs } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
 import { PriceError, type FetchLike, type Quote } from "./prices";
 import { type QuoteLoadReport, FREE_TIER } from "./quotes";
 import { fetchTiingoQuotes } from "./tiingo";
