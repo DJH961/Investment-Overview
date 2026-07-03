@@ -4867,8 +4867,17 @@ export class App {
     const fetchNav = plan?.legs.nav ?? true;
     // Filter the symbol list to only the legs the orchestrator approved. This
     // ensures NAV-only rounds don't spend market credits and vice versa.
+    //
+    // Exception: symbols in `forceSymbols` are deferred-queue drains — explicit
+    // re-pulls the previous round couldn't fit in the budget. They must bypass
+    // the orchestrator's rolling-TTL leg gate (Overlay 2 / Overlay 3) even when
+    // the gate disabled the quotes or nav leg for this round because the *rest*
+    // of the portfolio is still fresh. Without this guard the burst round spends
+    // zero credits, the deferred queue is never cleared, and the scheduler falls
+    // back to the slow cadence — leaving the deferred items stale indefinitely.
     const symbolsToFetch = network
       ? symbols.filter((s) => {
+          if (forceSymbols.has(s)) return true; // deferred drain: always re-pull
           const isNav = this.lastNavSymbols.has(s);
           return isNav ? fetchNav : fetchQuotes;
         })
