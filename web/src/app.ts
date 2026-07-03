@@ -1126,6 +1126,27 @@ export class App {
     const navFetchSymbols = new Set(plan.filter((e) => e.priceType !== "market").map((e) => e.symbol));
     const marketOpen = isUsMarketOpen();
     const now = new Date();
+    // Prime the quote cache from the stored NAV week bars before checking prefetch targets
+    const storeForPrefetch = this.ensureTimeSeriesStore();
+    const prefetchWeekStored = await storeForPrefetch.loadSession(WEEK_STORE_KEY).catch(() => null);
+    if (prefetchWeekStored && prefetchWeekStored.bars) {
+      const currencyBySymbol = new Map<string, string | null>();
+      const navSymbols = new Set<string>();
+      for (const entry of plan) {
+        if (entry.priceType !== "market") {
+          navSymbols.add(entry.symbol);
+          currencyBySymbol.set(entry.symbol, null);
+        }
+      }
+      const { bars, navCovered } = navSafeBarsForPriming(
+        new Map(Object.entries(prefetchWeekStored.bars)),
+        navSymbols,
+        latestPublishedNavDate(now),
+      );
+      if (bars.size > 0) {
+        primeQuotesFromBars(bars, currencyBySymbol, Date.now(), undefined, navCovered);
+      }
+    }
     const targets = this.prefetchTargets(plan, now);
     // Graph staleness is read cache-only from the device's bar store (no decrypt),
     // and only matters when the live graphs are switched on. The market sleeve is
@@ -2502,6 +2523,7 @@ export class App {
       backoff: { memo: cacheSeriesBackoff(), scope: "bars:nav", now: () => Date.now() },
       interval: "1day",
       outputsize: 8,
+      cooldownMs: config.updateMinutes * 60 * 1000,
     });
     if (!fetchBars) return none;
     // Collapse to one settling NAV per UTC day (day-start stamped) so the warmed
@@ -2535,7 +2557,7 @@ export class App {
     // The funds this pull actually fetched a bar for this round (plan B). Even a
     // fund whose tip is at-or-behind the floor was just re-verified through the bar
     // source, so it must not be re-pulled by the quote leg moments later.
-    const fetched = Object.keys(incoming);
+    const fetched = [...navBars.keys()];
     // C — a confirming bar that was *not* primed (its tip is not strictly newer
     // than the cached quote) still proves the held NAV is the freshest obtainable
     // when the tip reaches the floor. Stamp those funds' observation time forward
@@ -2726,6 +2748,7 @@ export class App {
       forceAll: true,
       reserveCredits: STARTUP_TIINGO_RESERVE,
       sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
+      cooldownMs: config.updateMinutes * 60 * 1000,
     });
     // Arm the breaker when the warm-up's Tiingo rapid-fire is throttled.
     if (fallback.error?.status === 429) this.armTiingo429();
@@ -5034,6 +5057,7 @@ export class App {
         // ready the instant it opens.
         loginPriority: opts.loginPriority ?? false,
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
+        cooldownMs: config.updateMinutes * 60 * 1000,
       });
       if (session !== this.sessionId) return quoteLoad.report;
       // Arm the breaker when the Tiingo fallback itself is rate-limited.

@@ -445,6 +445,7 @@ export interface WeekCurveOptions {
    * to keep the MM portion flat (legacy behaviour). See {@link ReconstructInput.mmDaysUsd}.
    */
   mmDaysUsd?: { date: string; valueNativeUsd: Decimal }[];
+  forceFetch?: boolean;
 }
 
 /** A built 1W curve plus the window it covers. */
@@ -525,10 +526,11 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   // Freshness is judged on the *fetchable* (market) symbols only — NAV funds
   // never gate a network pull, so a fund still missing a NAV day cannot force a
   // re-pull storm of the market closes (item 5b coverage, item 7 range-split).
+  const forceFetch = (options.forceFetch ?? false) && !(options.regenerateOnly ?? false);
   const fresh =
     (options.regenerateOnly ?? false) ||
     symbols.length === 0 ||
-    (whollyMissing.length === 0 && fetchableBehind.length === 0);
+    (!forceFetch && whollyMissing.length === 0 && fetchableBehind.length === 0);
 
   let fxAttempted = false;
   if (!fresh) {
@@ -536,39 +538,47 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     const fetchedAll = new Map<string, Bar[]>();
     let incomingProbe: Record<string, StoredCloseProbe> | undefined;
     let probeClear: string[] | undefined;
-    // Wholly-missing symbols backfill the normal way (the capacity split's
-    // emptiness spill already escalates a never-seen symbol to the secondary).
-    if (whollyMissing.length > 0) {
-      const barsBySymbol = await fetchDailyBars(whollyMissing);
+    if (forceFetch && fetchSymbols.length > 0) {
+      const barsBySymbol = await fetchDailyBars(fetchSymbols);
       for (const [symbol, bars] of barsBySymbol) {
         fetchedAll.set(symbol, bars);
         if (bars.length > 0) incomingBars[symbol] = bars;
       }
-    }
-    // Behind-but-present symbols go through the progress → escalate → settle
-    // resolution at daily granularity (plan C5).
-    if (fetchableBehind.length > 0) {
-      const resolution = await resolveCloseCompleteness({
-        symbols: fetchableBehind,
-        storedBars: stored?.bars ?? {},
-        probes: stored?.closeProbe,
-        closeMs: settledCutoff,
-        tol: dailyTol,
-        completeTol: 0,
-        clampBars: (bars) => bars,
-        fetchPrimary: fetchDailyBars,
-        fetchSecondary: options.fetchSecondaryDailyBars ?? null,
-        now: nowMs,
-        backoff: closeBackoff,
-        backoffKey: closeKey,
-        log: options.onCloseResolve,
-        label: "1W",
-        formatInstant: options.formatInstant,
-      });
-      for (const [s, b] of resolution.fetched) fetchedAll.set(s, b);
-      for (const [s, b] of Object.entries(resolution.bars)) incomingBars[s] = b;
-      if (Object.keys(resolution.closeProbe).length > 0) incomingProbe = resolution.closeProbe;
-      if (resolution.closeProbeClear.length > 0) probeClear = resolution.closeProbeClear;
+    } else {
+      // Wholly-missing symbols backfill the normal way (the capacity split's
+      // emptiness spill already escalates a never-seen symbol to the secondary).
+      if (whollyMissing.length > 0) {
+        const barsBySymbol = await fetchDailyBars(whollyMissing);
+        for (const [symbol, bars] of barsBySymbol) {
+          fetchedAll.set(symbol, bars);
+          if (bars.length > 0) incomingBars[symbol] = bars;
+        }
+      }
+      // Behind-but-present symbols go through the progress → escalate → settle
+      // resolution at daily granularity (plan C5).
+      if (fetchableBehind.length > 0) {
+        const resolution = await resolveCloseCompleteness({
+          symbols: fetchableBehind,
+          storedBars: stored?.bars ?? {},
+          probes: stored?.closeProbe,
+          closeMs: settledCutoff,
+          tol: dailyTol,
+          completeTol: 0,
+          clampBars: (bars) => bars,
+          fetchPrimary: fetchDailyBars,
+          fetchSecondary: options.fetchSecondaryDailyBars ?? null,
+          now: nowMs,
+          backoff: closeBackoff,
+          backoffKey: closeKey,
+          log: options.onCloseResolve,
+          label: "1W",
+          formatInstant: options.formatInstant,
+        });
+        for (const [s, b] of resolution.fetched) fetchedAll.set(s, b);
+        for (const [s, b] of Object.entries(resolution.bars)) incomingBars[s] = b;
+        if (Object.keys(resolution.closeProbe).length > 0) incomingProbe = resolution.closeProbe;
+        if (resolution.closeProbeClear.length > 0) probeClear = resolution.closeProbeClear;
+      }
     }
     if (options.onFreshBars) options.onFreshBars(fetchedAll);
     let incomingFx: Bar[] | undefined;
@@ -610,7 +620,9 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   const navBackfillSymbols = options.navBackfillSymbols ?? [];
   const fetchNavBars = (options.regenerateOnly ?? false) ? null : options.fetchNavBars ?? null;
   if (fetchNavBars && navBackfillSymbols.length > 0) {
-    const staleNav = navBackfillStaleSymbols(stored, navBackfillSymbols, now, sessions);
+    const staleNav = forceFetch
+      ? navBackfillSymbols
+      : navBackfillStaleSymbols(stored, navBackfillSymbols, now, sessions);
     if (staleNav.length > 0) {
       if (options.onNavBackfill) options.onNavBackfill(staleNav);
       const navBars = await fetchNavBars(staleNav);

@@ -13,6 +13,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.2] — 2026-07-03
+
+### Fixed
+
+- **Graph reload (↻) button functionality restored.** Re-introduced the `forceFetch` parameter in the lower intraday and weekly builders (`loadOrBuildSessionCurve`, `loadOrBuildWeekCurve`) and the `App` coordination layer so manual reload requests bypass caching and force a fresh network pull.
+- **Eliminated duplicate NAV quote and daily bar calls after hours.** Under the post-close window, mutual fund NAVs are expected to return yesterday's NAV before the new one publishes. A fallback query to Tiingo is now skipped during the first 5 hours post-close if Twelve Data successfully returned yesterday's NAV. Tiingo is only queried as a fallback if Twelve Data has exhausted its credits.
+- **Suppressed subsequent Tiingo fallback queries for both quotes and daily bars.** Added cooldown checks based on the configured auto-update interval for both quotes and daily bars inside the capacity split bar fetcher. Once a Tiingo fallback is attempted, both legs are suppressed from hitting Tiingo again until the cooldown expires.
+- **Warmed-up NAV prefetch deduplicated.** The prefetch warm-up now primes the quote cache using stored week bars in IndexedDB first, and marks all NAVs successfully fetched via Twelve Data bars as fetched (even if unchanged), avoiding redundant quote queries in the same login turn.
+
 ## [5.2.1] — 2026-06-30
 
 ### Fixed

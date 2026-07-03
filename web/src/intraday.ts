@@ -392,11 +392,11 @@ export interface SessionCurveOptions {
    * (default {@link PROBE_MIN_MS}). Between probes the symbol is held flat — no
    * fetch, no credit — which is what kills the per-render hammer (plan C4).
    */
-  probeMinMs?: number;
   /** One structured verdict event per resolved short symbol (plan C6). */
   onCloseResolve?: (event: CloseResolveLog) => void;
   /** Render a bar instant for the close-resolution log (defaults to raw ms). */
   formatInstant?: (t: number) => string;
+  forceFetch?: boolean;
 }
 
 /**
@@ -432,6 +432,9 @@ export interface SessionCurve {
    * Symbols with no bars are carried flat (ratio 1), so `covered < total` means
    * the curve's *shape* reflects only part of the book — surfaced to the user as
    * an honest 1D coverage caption rather than a silently-flat line (scenario C).
+   *
+   * @type {SleeveCoverage}
+   * @memberof SessionCurve
    */
   coverage: SleeveCoverage;
 }
@@ -463,7 +466,7 @@ export async function loadOrBuildSessionCurve(
   const symbols = intradaySymbols(anchor);
   // The 1D window is exactly one regular session: [09:30 ET, 16:00 ET]. Both the
   // store-side bar filter and the render-side defensive clamp use these bounds so
-  // a barely-traded session never reaches back into the prior trading day.
+  // a barely-traded session never reaches reach into the prior trading day.
   const openMs = sessionOpenMs(day);
   const closeMs = sessionCloseMs(day);
 
@@ -518,12 +521,14 @@ export async function loadOrBuildSessionCurve(
   const minRefetchMs = options.minRefetchMs ?? DEFAULT_OPEN_REFETCH_MS;
   const recentlyFetched =
     stored !== null && minRefetchMs > 0 && now.getTime() - stored.updatedAt < minRefetchMs;
+  const forceFetch = (options.forceFetch ?? false) && !(options.regenerateOnly ?? false);
   const needFetch =
     !(options.regenerateOnly ?? false) &&
     symbols.length > 0 &&
-    (marketOpen
-      ? whollyMissing.length > 0 || !recentlyFetched
-      : whollyMissing.length > 0 || fetchableShort.length > 0);
+    (forceFetch ||
+      (marketOpen
+        ? whollyMissing.length > 0 || !recentlyFetched
+        : whollyMissing.length > 0 || fetchableShort.length > 0));
 
   let fxAttempted = false;
   if (needFetch) {
@@ -541,7 +546,7 @@ export async function loadOrBuildSessionCurve(
         if (dayBars.length > 0) incomingBars[symbol] = dayBars;
       }
     };
-    if (marketOpen) {
+    if (marketOpen || forceFetch) {
       // Open: refresh every symbol so the curve grows to the freshest bar (still 1
       // credit each — bars are free).
       addDayBars(await fetchBars(symbols));
@@ -586,7 +591,7 @@ export async function loadOrBuildSessionCurve(
     // (the live tip uses the freshest rate). The **closed**-market FX track is
     // owned by the dedicated completeness step below, so it is *not* fetched here
     // — that is what stops a per-render after-close FX re-pull.
-    if (fetchFx && marketOpen) {
+    if (fetchFx && (marketOpen || forceFetch)) {
       fxAttempted = true;
       try {
         incomingFx = await fetchFx();

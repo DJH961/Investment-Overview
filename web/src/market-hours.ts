@@ -610,3 +610,13 @@ export function elapsedSessionMs(now: Date = new Date()): number {
 export function sessionIsWarmingUp(now: Date = new Date()): boolean {
   return elapsedSessionMs(now) < INTRADAY_BAR_INTERVAL_MS;
 }
+
+/**
+ * Whether the mutual fund (NAV) fallback is allowed to be queried from Tiingo yet
+ * (at least 5 hours after the NYSE session close). NAVs do not strike immediately
+ * at the close, and querying the fallback early causes duplicate billing/redundant requests.
+ */
+export function isNavFallbackAllowed(now: Date = new Date()): boolean {
+  const closeMs = sessionCloseMs(latestSettledSessionDate(now));
+  return now.getTime() - closeMs >= 5 * 60 * 60 * 1000;
+}
