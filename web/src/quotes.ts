@@ -42,7 +42,7 @@ import {
   type Quote,
 } from "./prices";
 import type { Decimal } from "./decimal-config";
-import { isUsMarketOpen, latestSettledSessionDate, nextSessionCloseMs } from "./market-hours";
+import { isUsMarketOpen, latestPublishedNavDate, nextSessionCloseMs } from "./market-hours";
 import { fetchTiingoEurUsd } from "./tiingo";
 import { etMinutesOfDay } from "./tiingo-gate";
 import { onProviderLimitsChange } from "./provider-limits";
@@ -158,13 +158,15 @@ export interface NavRefreshOptions {
  *   - **market open**: rest. A NAV strikes only after the session closes, and we
  *     already hold the prior settled session's NAV, so there is nothing new to
  *     chase mid-session; and
- *   - **market closed**: if we already hold the latest *settled* session's NAV
- *     ({@link latestSettledSessionDate}) there is nothing newer until the next
- *     session closes, so rest; otherwise poll like a normal symbol (the short
+ *   - **market closed**: if we already hold the latest *published* session's NAV
+ *     ({@link latestPublishedNavDate}) there is nothing newer until the next NAV
+ *     publishes, so rest; otherwise poll like a normal symbol (the short
  *     window) until that NAV lands — however late, even past midnight, with no
  *     upper "catch-up" cap. The poll is the standard auto-update interval, so the
  *     fund refreshes on the same cadence as every other symbol rather than being
- *     chased on its own schedule.
+ *     chased on its own schedule. Using the *published* floor (not merely the
+ *     just-settled session) keeps a fund at rest through the post-close window in
+ *     which tonight's NAV cannot yet exist, so it is never re-pulled in duplicate.
  *
  * The **rest window is market-day based**, not a fixed number of hours: it
  * expires at the next session close ({@link nextSessionCloseMs}), the moment a
@@ -208,8 +210,13 @@ export function navCacheTtlMs(
   // Closed: poll until the just-settled session's NAV is in hand, then rest. While
   // behind it we use the short (standard auto-update interval) window, so the fund
   // is re-checked on the same cadence as every other symbol until its NAV lands.
+  // The floor is the latest *published* NAV ({@link latestPublishedNavDate}), not
+  // merely the latest settled session: right after the close tonight's NAV is still
+  // pending, so a fund holding the prior session's NAV is already as fresh as it
+  // can be and rests — it is not chased (and re-pulled in duplicate) before any
+  // provider could possibly have published the new one.
   const have = cached?.valueDate ?? null;
-  if (have && have >= latestSettledSessionDate(new Date(now))) return restWindow();
+  if (have && have >= latestPublishedNavDate(new Date(now))) return restWindow();
   return shortTtlMs;
 }
 

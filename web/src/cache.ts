@@ -207,6 +207,43 @@ export function primeQuotesFromBars(
 }
 
 /**
+ * Record a *confirming* NAV-source check: when a bars-first pull re-fetches a
+ * fund's NAV and finds nothing newer than what the cache already holds (so
+ * {@link primeQuotesFromBars} legitimately skipped it — the tip is not strictly
+ * newer), the cache still learns nothing about *when* we last verified the value.
+ * This stamps the observation time (`at`) forward to `now` for those funds so the
+ * freshness ledger reflects "we just checked, this is still the freshest NAV"
+ * rather than the stale instant of the original fetch.
+ *
+ * It is deliberately conservative: it only ever moves `at` **forward**, never
+ * touches the price / `priceTime` / `valueDate` (the value and its strike instant
+ * are unchanged — only our confidence in its currency is refreshed), and only
+ * stamps a symbol the cache already holds. Returns the symbols actually stamped.
+ *
+ * This is the within-login dedup backstop (plan C): it stops a confirming bars
+ * pull from leaving the quote leg believing the fund is still unverified and
+ * re-pulling the identical NAV moments later.
+ */
+export function markNavChecked(
+  symbols: Iterable<string>,
+  now: number,
+  storage: StorageLike | null = defaultStorage(),
+): string[] {
+  const file = readJson<QuoteCacheFile>(storage, QUOTE_KEY) ?? {};
+  const stamped: string[] = [];
+  for (const symbol of symbols) {
+    const existing = file[symbol];
+    if (!existing) continue;
+    // Only ever move the observation time forward — never rewind freshness.
+    if (typeof existing.at === "number" && existing.at >= now) continue;
+    file[symbol] = { ...existing, at: now };
+    stamped.push(symbol);
+  }
+  if (stamped.length > 0) writeJson(storage, QUOTE_KEY, file);
+  return stamped;
+}
+
+/**
  * One blob-priced holding reshaped into a quote-cache seed. Carries everything a
  * Twelve Data `/quote` would carry for the same symbol, so a primed blob price is
  * graded for freshness (and repolled) exactly like a fetched quote.

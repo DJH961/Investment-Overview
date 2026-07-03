@@ -41,10 +41,13 @@ import {
   DEFAULT_SERIES_BACKOFF_ATTEMPTS,
   type SeriesBackoffEntry,
   type StorageLike,
+  readTiingoNoNewer,
 } from "./cache";
 import {
   lastSessionDate,
   recentTradingSessions,
+  latestSettledSessionDate,
+  sessionCloseMs,
 } from "./market-hours";
 import {
   loadOrBuildSessionCurve,
@@ -279,6 +282,8 @@ export function makePriceBarFetcher(opts: {
    * attempt) and fall back to their flat quote value on the curve.
    */
   backoff?: { memo: SeriesBackoff; scope: string; now?: () => number };
+  cooldownMs?: number;
+  storage?: StorageLike | null;
 }): BarFetcher | null {
   const {
     apiKey,
@@ -309,8 +314,9 @@ export function makePriceBarFetcher(opts: {
     // With a reservation authority, fill Twelve Data first and spill the overflow
     // to Tiingo (item 8), both gated by the shared budgets; otherwise keep the
     // legacy Tiingo-first failover dual pipe.
+    const isNavFetcher = backoff?.scope.includes("nav") ?? false;
     combined = reservation
-      ? makeCapacitySplitBarFetcher(pipeA, pipeB, reservation, now)
+      ? makeCapacitySplitBarFetcher(pipeA, pipeB, reservation, now, isNavFetcher, opts.cooldownMs, opts.storage)
       : makeDualPipeBarFetcher(pipeB, pipeA);
   } else {
     combined = pipeB ?? pipeA;
@@ -375,10 +381,27 @@ export function makeCapacitySplitBarFetcher(
   tiingo: BarFetcher,
   reservation: Reservation,
   now: () => number = () => Date.now(),
+  isNavFetcher = false,
+  cooldownMs = 3600000,
+  storage?: StorageLike | null,
 ): BarFetcher {
   return async (symbols) => {
     const uniq = uniqueSymbols(symbols);
     if (uniq.length === 0) return new Map<string, Bar[]>();
+
+    const elapsedSinceCloseMs = now() - sessionCloseMs(latestSettledSessionDate(new Date(now())));
+    const isWithin5hPostClose = elapsedSinceCloseMs < 5 * 60 * 60 * 1000;
+
+    // Suppress symbols in the Tiingo noNewer cooldown
+    const noNewer = readTiingoNoNewer(storage ?? null);
+    const expected = latestSettledSessionDate(new Date(now()));
+    const suppressed = (symbol: string): boolean => {
+      const stamp = noNewer[symbol];
+      if (!stamp) return false;
+      if (stamp.expected !== expected) return false;
+      return now() - stamp.at < cooldownMs;
+    };
+
     // Atomic read-and-debit: Twelve Data first, up to its live minute/day budget.
     const tdGrant = reservation.reserve("twelvedata", uniq.length, now());
     const toTwelveData = uniq.slice(0, tdGrant);
@@ -386,8 +409,9 @@ export function makeCapacitySplitBarFetcher(
     // budget — the proactive cap the split never had (audit Flags 1, 5). What
     // neither provider can pay for this round is deferred (not dumped on Tiingo).
     const overflow = uniq.slice(tdGrant);
-    const tiGrant = reservation.reserve("tiingo", overflow.length, now());
-    const toTiingo = overflow.slice(0, tiGrant);
+    const toTiingoCandidates = overflow.filter((s) => !suppressed(s));
+    const tiGrant = reservation.reserve("tiingo", toTiingoCandidates.length, now());
+    const toTiingo = toTiingoCandidates.slice(0, tiGrant);
     const [a, b] = await Promise.all([
       fetchBarLeg(twelveData, toTwelveData),
       fetchBarLeg(tiingo, toTiingo),
@@ -395,8 +419,10 @@ export function makeCapacitySplitBarFetcher(
     let result = mergeBarMaps(a.bars, b.bars);
     // Spill any Twelve Data misses (failed/empty) to Tiingo — within Tiingo's
     // remaining budget — unless the overflow leg already covered them.
-    const spillCandidates = a.missing.filter((s) => !(result.get(s)?.length));
-    const spillGrant = reservation.reserve("tiingo", spillCandidates.length, now());
+    const spillCandidates = a.missing.filter((s) => !(result.get(s)?.length) && !suppressed(s));
+    const spillGrant = isNavFetcher && isWithin5hPostClose
+      ? 0
+      : reservation.reserve("tiingo", spillCandidates.length, now());
     const spill = spillCandidates.slice(0, spillGrant);
     if (spill.length > 0) {
       const spilled = await fetchBarLeg(tiingo, spill);
@@ -552,6 +578,8 @@ export interface LiveGraphProviders {
    * network and fall back to their flat quote value; quotes are never gated.
    */
   backoff?: SeriesBackoff;
+  cooldownMs?: number;
+  storage?: StorageLike | null;
 }
 
 /**
@@ -719,6 +747,8 @@ export function buildLiveSessionCurve(
     reservation: providers.reservation,
     now: providers.now,
     backoff: { memo: backoff, scope: "1D" },
+    cooldownMs: providers.cooldownMs,
+    storage: providers.storage,
   });
   const fetchBars = priceFetcher ?? emptyBarFetcher;
   // FX is just the EUR/USD symbol on the very same pipe (see {@link makeFxFetcher}),
@@ -807,6 +837,8 @@ export function buildLiveWeekCurve(
     reservation: providers.reservation,
     now: providers.now,
     backoff: { memo: backoff, scope: "1W" },
+    cooldownMs: providers.cooldownMs,
+    storage: providers.storage,
   });
   const fetchDailyBars = priceFetcher ?? emptyBarFetcher;
   const fetchFx = makeFxFetcher(priceFetcher);
@@ -827,6 +859,7 @@ export function buildLiveWeekCurve(
         tiingoMeter,
         reservation: providers.reservation,
         now: providers.now,
+        storage: providers.storage,
       })
     : null;
   const fetchSecondaryDailyBars = secondaryPriceFetcher;
@@ -850,6 +883,8 @@ export function buildLiveWeekCurve(
     reservation: providers.reservation,
     now: providers.now,
     backoff: { memo: backoff, scope: "1W-nav" },
+    cooldownMs: providers.cooldownMs,
+    storage: providers.storage,
   });
   const fetchNavBars = wrapDailyNavFetcher(navDailyFetcher ?? emptyBarFetcher);
   return loadOrBuildWeekCurve({

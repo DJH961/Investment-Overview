@@ -443,6 +443,9 @@ export interface SessionCurve {
    * Symbols with no bars are carried flat (ratio 1), so `covered < total` means
    * the curve's *shape* reflects only part of the book — surfaced to the user as
    * an honest 1D coverage caption rather than a silently-flat line (scenario C).
+   *
+   * @type {SleeveCoverage}
+   * @memberof SessionCurve
    */
   coverage: SleeveCoverage;
 }
@@ -474,7 +477,7 @@ export async function loadOrBuildSessionCurve(
   const symbols = intradaySymbols(anchor);
   // The 1D window is exactly one regular session: [09:30 ET, 16:00 ET]. Both the
   // store-side bar filter and the render-side defensive clamp use these bounds so
-  // a barely-traded session never reaches back into the prior trading day.
+  // a barely-traded session never reaches into the prior trading day.
   const openMs = sessionOpenMs(day);
   const closeMs = sessionCloseMs(day);
 

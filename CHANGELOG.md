@@ -13,6 +13,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.3] — 2026-07-03
+
+### Fixed
+
+- **Eliminated duplicate NAV quote and daily bar calls after hours.** Under the post-close window, mutual fund NAVs are expected to return yesterday's NAV before the new one publishes. A fallback query to Tiingo is now skipped during the first 5 hours post-close if Twelve Data successfully returned yesterday's NAV. Tiingo is only queried as a fallback if Twelve Data has exhausted its credits.
+- **Suppressed subsequent Tiingo fallback queries for both quotes and daily bars.** Added cooldown checks based on the configured auto-update interval for both quotes and daily bars inside the capacity split bar fetcher. Once a Tiingo fallback is attempted, both legs are suppressed from hitting Tiingo again until the cooldown expires.
+- **Warmed-up NAV prefetch deduplicated.** The prefetch warm-up now primes the quote cache using stored week bars in IndexedDB first, and marks all NAVs successfully fetched via Twelve Data bars as fetched (even if unchanged), avoiding redundant quote queries in the same login turn.
+
 ## [5.2.2] — 2026-07-03
 
 ### Fixed
@@ -30,6 +38,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A post-close login no longer double-pulls every NAV fund (bars *and* a
+  quote) for the same unchanged value in the same second.** After the 16:00 ET
+  close the latest *settled* session rolls to today, but a fund's NAV does not
+  strike until hours later, so each fund still held yesterday's (the freshest
+  NAV that actually exists). The warm-up graded every such fund "behind the
+  settled session," ran the bars-first NAV pull **and** the NAV quote leg for
+  it, and both hit the same providers (Twelve Data then the Tiingo rapid-fire
+  fallback) — ~10 credits to re-learn one fact. The freshness floor is now the
+  latest **publishable** NAV (`latestPublishedNavDate`): during the post-close,
+  pre-publish window (until ~18:30 ET) it holds at the prior settled session, so
+  a fund already holding that value **rests** instead of being chased
+  (`navCacheTtlMs`, `prefetchTargets`, `staleFetchSymbols`, `buildQuoteOptions`,
+  `navTipCoveredSymbols`). The bars-first pass additionally drops **every fund
+  it just fetched** from the quote leg in the same login (not only the ones it
+  could prime), so the two legs can never both fire for one fund, and records a
+  lightweight "just checked" stamp (`markNavChecked`) so a confirming bar leaves
+  an honest freshness trace. The next scheduled round re-checks anything left
+  behind on the normal cadence; reconciliation stays in **USD**.
+- **NAV daily bars now prefer Twelve Data as the primary provider.** The
+  bars-first NAV warm-up previously bailed out entirely when no Tiingo `/price`
+  proxy was configured, even though Twelve Data serves the same daily NAV bars;
+  it now runs whenever **either** pipe is available (Twelve Data first, Tiingo
+  as the overflow fallback), matching the provider order used everywhere else.
 - **A graph reload now actually reloads — it re-pulls today's bars and spends the
   credits it reports.** The per-graph reload tap set `forceFetch`, but that only made
   the build *skip the export springboard* — it never reached the bar-fetch decision,

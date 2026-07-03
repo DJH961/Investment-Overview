@@ -28,7 +28,7 @@ import {
   type StorageLike,
   type TiingoState,
 } from "./cache";
-import { isUsMarketOpen, latestSettledSessionDate } from "./market-hours";
+import { isUsMarketOpen, latestSettledSessionDate, sessionCloseMs } from "./market-hours";
 import { PriceError, type FetchLike, type Quote } from "./prices";
 import { type QuoteLoadReport, FREE_TIER } from "./quotes";
 import { fetchTiingoQuotes } from "./tiingo";
@@ -174,6 +174,7 @@ export interface TiingoFallbackOptions {
    * Tiingo budget (and its 429-breaker freeze) the graph/FX legs already respect.
    */
   reservation?: Reservation;
+  cooldownMs?: number;
 }
 
 /**
@@ -386,6 +387,7 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     reserveCredits = 0,
     loginPriority = false,
     reservation = ledgerReservation(storage ?? null),
+    cooldownMs,
   } = options;
 
   if (!proxyUrl) {
@@ -419,12 +421,13 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
   // (`forceAll`) and a user-driven cache-distrust Refresh (`manualForce`) bypass
   // this entirely — both mean the user explicitly asked to re-verify the book.
   const noNewer = forceAll || manualForce ? {} : readTiingoNoNewer(storage ?? undefined);
+  const fallbackCooldownMs = cooldownMs ?? TIINGO_NO_NEWER_COOLDOWN_MS;
   const suppressedByNoNewer = (symbol: string): boolean => {
     const stamp = noNewer[symbol];
     if (!stamp) return false;
     // A newer target than the one we recorded against lifts the suppression.
     if (stamp.expected !== expected) return false;
-    return now - stamp.at < TIINGO_NO_NEWER_COOLDOWN_MS;
+    return now - stamp.at < fallbackCooldownMs;
   };
 
   // Every budget check in this run honours the reserve, so the gate may use up to
@@ -471,8 +474,14 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     // hard refresh can't strand on "Updating…" waiting for a Tiingo fill that the
     // budget will never grant.
     const tiingoCreditsAvailable = readBudget(now, storage).remaining();
+    const elapsedSinceCloseMs = now - sessionCloseMs(latestSettledSessionDate(new Date(now)));
+    const isWithin5hPostClose = elapsedSinceCloseMs < 5 * 60 * 60 * 1000;
     for (const symbol of symbols) {
       if (suppressedByNoNewer(symbol)) continue;
+      const isNav = navSymbols.has(symbol);
+      if (isNav && isWithin5hPostClose) {
+        if (!deferredSet.has(symbol)) continue;
+      }
       const q = quotes.get(symbol);
       const held = q?.valueDate ?? null;
       const primaryFailed = primaryFellShort.has(symbol) || !q || q.price === null;

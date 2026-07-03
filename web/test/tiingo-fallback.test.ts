@@ -835,6 +835,115 @@ describe("runTiingoFallback", () => {
     expect(fallback.tiingoSymbols).toEqual(symbols);
     expect(tiingoCreditsSpentToday(readTiingoCreditLog(NOW, undefined, open), NOW)).toBe(40);
   });
+
+  it("respects the 5-hour cutoff post-close for NAV fallback: only allows fallback when deferred", async () => {
+    // 2026-06-23 is a Tuesday. Session close at 20:00 UTC (16:00 ET).
+    // Set time to 21:00 UTC (17:00 ET) -> 1 hour after close. (within 5h)
+    const within5hTime = Date.UTC(2026, 5, 23, 21, 0, 0);
+    const navSymbols = new Set(["FSKAX"]);
+
+    // Case A: Twelve Data failed on FSKAX. Since we are within 5h, fallback is NOT allowed.
+    const failedReport = {
+      fetched: [],
+      servedFresh: [],
+      deferred: [],
+      failed: ["FSKAX"],
+      error: null,
+      minuteRemaining: 0,
+      dayRemaining: 0,
+      apiCalls: 0,
+      creditsSpent: 0,
+    };
+    const outFailed = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols,
+      quotes: new Map(),
+      report: failedReport,
+      proxyUrl: PROXY,
+      now: within5hTime,
+      storage: memStorage(),
+      fetchImpl: stubFetch([iexRow("FSKAX", 150, "2026-06-23T20:00:00Z")]),
+    });
+    expect(outFailed.tiingoSymbols).toEqual([]);
+
+    // Case B: Twelve Data was deferred on FSKAX. Fallback IS allowed even within 5h.
+    const deferredReport = {
+      fetched: [],
+      servedFresh: [],
+      deferred: ["FSKAX"],
+      failed: [],
+      error: null,
+      minuteRemaining: 0,
+      dayRemaining: 0,
+      apiCalls: 0,
+      creditsSpent: 0,
+    };
+    const outDeferred = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols,
+      quotes: new Map(),
+      report: deferredReport,
+      proxyUrl: PROXY,
+      now: within5hTime,
+      storage: memStorage(),
+      fetchImpl: stubFetch([iexRow("FSKAX", 150, "2026-06-23T20:00:00Z")]),
+    });
+    expect(outDeferred.tiingoSymbols).toEqual(["FSKAX"]);
+
+    // Case C: Time is 26:00 UTC / 02:00 UTC next day (22:00 ET) -> 6 hours after close. (past 5h cutoff)
+    // Fallback IS allowed for failed Twelve Data too.
+    const past5hTime = Date.UTC(2026, 5, 24, 2, 0, 0);
+    const outPast = await runTiingoFallback({
+      symbols: ["FSKAX"],
+      navSymbols,
+      quotes: new Map(),
+      report: failedReport,
+      proxyUrl: PROXY,
+      now: past5hTime,
+      storage: memStorage(),
+      fetchImpl: stubFetch([iexRow("FSKAX", 150, "2026-06-23T20:00:00Z")]),
+    });
+    expect(outPast.tiingoSymbols).toEqual(["FSKAX"]);
+  });
+
+  it("respects custom cooldownMs overrides", async () => {
+    const storage = memStorage();
+    // Simulate a noNewer stamp written 10 minutes ago
+    const cooldownMs = 15 * 60 * 1000; // 15 min cooldown
+    const tenMinAgo = NOW - 10 * 60 * 1000;
+    const testExpected = EXPECTED;
+    storage.setItem("iv.web.tiingo_no_newer", JSON.stringify({
+      AAPL: { expected: testExpected, at: tenMinAgo },
+    }));
+
+    // With a 15-minute cooldown option: should be suppressed
+    const outSuppressed = await runTiingoFallback({
+      symbols: ["AAPL"],
+      navSymbols: new Set(),
+      quotes: new Map(),
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl: stubFetch([iexRow("AAPL", 200, `${EXPECTED}T20:00:00Z`)]),
+      cooldownMs,
+    });
+    expect(outSuppressed.tiingoSymbols).toEqual([]);
+
+    // With a 5-minute cooldown option: should NOT be suppressed (fetched)
+    const outFetched = await runTiingoFallback({
+      symbols: ["AAPL"],
+      navSymbols: new Set(),
+      quotes: new Map(),
+      report: emptyReport(["AAPL"]),
+      proxyUrl: PROXY,
+      now: NOW,
+      storage,
+      fetchImpl: stubFetch([iexRow("AAPL", 200, `${EXPECTED}T20:00:00Z`)]),
+      cooldownMs: 5 * 60 * 1000,
+    });
+    expect(outFetched.tiingoSymbols).toEqual(["AAPL"]);
+  });
 });
 
 describe("runTiingoFallback — budget enforcement via central readBudget", () => {

@@ -7,6 +7,7 @@ import {
   lastSessionDate,
   exchangeDate,
   latestSettledSessionDate,
+  latestPublishedNavDate,
   previousTradingSession,
   recentTradingSessions,
   sessionCloseMs,
@@ -140,6 +141,39 @@ describe("latestSettledSessionDate", () => {
     // The Monday after Juneteenth (Fri 2026-06-19) skips back over both the
     // weekend and the holiday to Thursday 2026-06-18.
     expect(latestSettledSessionDate(new Date("2026-06-22T13:00:00Z"))).toBe("2026-06-18");
+  });
+});
+
+describe("latestPublishedNavDate", () => {
+  // June is EDT (UTC-4): 16:00 ET close == 20:00 UTC; the 18:30 ET NAV-publish
+  // cutoff == 22:30 UTC. The published floor lags the settled session only inside
+  // the post-close, pre-cutoff window, when tonight's NAV has not struck yet.
+  it("holds at the prior session right after the close, before the publish cutoff", () => {
+    // Tue 2026-06-23 20:30 UTC == 16:30 ET — settled is today, but its NAV is still
+    // pending, so the freshest publishable NAV is Monday's.
+    expect(latestPublishedNavDate(new Date("2026-06-23T20:30:00Z"))).toBe("2026-06-22");
+    // 22:00 UTC == 18:00 ET, still before the 18:30 cutoff → prior session.
+    expect(latestPublishedNavDate(new Date("2026-06-23T22:00:00Z"))).toBe("2026-06-22");
+  });
+
+  it("advances to today once the publish cutoff has passed", () => {
+    // Tue 2026-06-23 22:30 UTC == 18:30 ET — cutoff reached, today's NAV is now the
+    // freshest publishable value.
+    expect(latestPublishedNavDate(new Date("2026-06-23T22:30:00Z"))).toBe("2026-06-23");
+    // Later the same evening stays on today.
+    expect(latestPublishedNavDate(new Date("2026-06-24T01:00:00Z"))).toBe("2026-06-23");
+  });
+
+  it("equals the settled session whenever today has not itself settled", () => {
+    // Pre-open and mid-session: settled is already the prior day, nothing pending.
+    expect(latestPublishedNavDate(new Date("2026-06-23T13:00:00Z"))).toBe("2026-06-22");
+    expect(latestPublishedNavDate(new Date("2026-06-23T14:00:00Z"))).toBe("2026-06-22");
+  });
+
+  it("equals the settled session across weekends (no pending NAV on a non-session day)", () => {
+    // Sat/Sun: settled is Friday and there is no current session whose NAV pends.
+    expect(latestPublishedNavDate(new Date("2026-06-27T23:00:00Z"))).toBe("2026-06-26");
+    expect(latestPublishedNavDate(new Date("2026-06-28T12:00:00Z"))).toBe("2026-06-26");
   });
 });
 
