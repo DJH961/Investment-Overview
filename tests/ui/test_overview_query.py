@@ -98,8 +98,16 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
 def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, seeded: None) -> None:
     """A live intraday EUR/USD overlay moves *today's* FX leg of daily growth
     while historical YTD figures (priced at past-date FX) stay put."""
-    from investment_dashboard.services import fx_service
+    from unittest.mock import patch
+    from investment_dashboard.services import fx_service, intraday_snapshots_service
     from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+
+    # Force today to be treated as a trading day to align the baseline session
+    orig_is_trading = intraday_snapshots_service._is_trading_day
+    def mock_is_trading(day):
+        if day == date.today():
+            return True
+        return orig_is_trading(day)
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
     yesterday = date.today() - timedelta(days=1)
@@ -109,16 +117,17 @@ def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, see
 
     fx_service.clear_live_spot()
     try:
-        base = compute_instrument_metrics(session, get_positions(session))[vti.id]
-        # Live spot: EUR/USD jumps from today's ECB 1.25 to 1.32 intraday.
-        fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=date.today())
-        live = compute_instrument_metrics(session, get_positions(session))[vti.id]
-        # The EUR daily growth moved with the live FX; USD (FX-neutral) did not.
-        assert live.daily_growth_eur != base.daily_growth_eur
-        assert live.daily_growth_usd == base.daily_growth_usd
-        # The YTD growth's start value is priced at the Jan FX (1.25), untouched
-        # by the live spot — only the current mark revalues.
-        assert live.ytd_growth_usd == base.ytd_growth_usd
+        with patch.object(intraday_snapshots_service, "_is_trading_day", mock_is_trading):
+            base = compute_instrument_metrics(session, get_positions(session))[vti.id]
+            # Live spot: EUR/USD jumps from today's ECB 1.25 to 1.32 intraday.
+            fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=date.today())
+            live = compute_instrument_metrics(session, get_positions(session))[vti.id]
+            # The EUR daily growth moved with the live FX; USD (FX-neutral) did not.
+            assert live.daily_growth_eur != base.daily_growth_eur
+            assert live.daily_growth_usd == base.daily_growth_usd
+            # The YTD growth's start value is priced at the Jan FX (1.25), untouched
+            # by the live spot — only the current mark revalues.
+            assert live.ytd_growth_usd == base.ytd_growth_usd
     finally:
         fx_service.clear_live_spot()
 
