@@ -227,9 +227,8 @@ describe("staleRoundAbortMs", () => {
     expect(staleRoundAbortMs(interval)).toBe(interval * STALE_ROUND_INTERVAL_MULTIPLIER);
   });
 
-  it("floors a short interval so a genuinely-slow round still finishes", () => {
-    // 5s × 3 = 15s, well under the floor.
-    expect(staleRoundAbortMs(5_000)).toBe(MIN_STALE_ROUND_ABORT_MS);
+  it("does not floor a short positive interval", () => {
+    expect(staleRoundAbortMs(5_000)).toBe(5_000);
   });
 
   it("floors a zero / non-finite interval", () => {
@@ -240,7 +239,7 @@ describe("staleRoundAbortMs", () => {
 
 describe("roundIsStale", () => {
   const now = 1_700_000_000_000;
-  const interval = 2 * 60 * 1000; // abort threshold = max(90s, 6 minutes) = 6 minutes
+  const interval = 2 * 60 * 1000; // abort threshold = 2 minutes
 
   it("is false when no round is in flight", () => {
     expect(roundIsStale(null, now, interval)).toBe(false);

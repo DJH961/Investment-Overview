@@ -13,6 +13,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.2] — 2026-07-03
+
+### Fixed
+
+- **Refresh round duration and session invalidation on log off / restart.** Ensures that
+  an individual refresh round cannot run longer than one auto-update period (the user-configured
+  interval). When the session is locked or logged off, any in-flight refresh round is immediately
+  aborted and the deferred queue is cleared to prevent leftover startup bursts from triggering on the
+  next login. Additionally, uses absolute time to track round starts via localStorage; if the app is
+  ended midway (with no timers running) and re-opened, any stale round is detected, logged as aborted,
+  and its deferred queue cleared to prevent unwanted startup bursts (`web/src/cache.ts`,
+  `web/src/deferred-queue.ts`, `web/src/refresh-policy.ts`, `web/src/app.ts`, `web/test/refresh-policy.test.ts`).
+
 ## [5.2.1] — 2026-06-30
 
 ### Fixed
