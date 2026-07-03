@@ -20,6 +20,13 @@ See `.github/copilot-instructions.md` for the same rule.
 
 - Always add a `CHANGELOG.md` entry that follows repository convention.
 - Treat smaller UI updates and patch-sized changes as **Fixed** bug-fix entries.
+- When making changes, bump the version number in lockstep in both `pyproject.toml` and `web/package.json`, then regenerate lockfiles (`uv lock` and `npm install` inside `web/`).
+- Before final handoff, verify frontend quality:
+  - Run typescript typecheck: `npm run typecheck` inside `web/`.
+  - Run all frontend tests: `npm run test` inside `web/`.
+- Before final handoff, verify python quality:
+  - Format python code: `uv run ruff format .`.
+  - Lint python code: `uv run ruff check . --fix`.
 - On completion, open/update the PR that contains the work.
 - At the very end, check whether the branch conflicts with `main` and resolve
   conflicts before final handoff.
