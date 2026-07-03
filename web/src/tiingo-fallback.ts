@@ -476,7 +476,6 @@ export async function runTiingoFallback(options: TiingoFallbackOptions): Promise
     const tiingoCreditsAvailable = readBudget(now, storage).remaining();
     const elapsedSinceCloseMs = now - sessionCloseMs(latestSettledSessionDate(new Date(now)));
     const isWithin5hPostClose = elapsedSinceCloseMs < 5 * 60 * 60 * 1000;
-    const deferredSet = new Set(report.deferred);
     for (const symbol of symbols) {
       if (suppressedByNoNewer(symbol)) continue;
       const isNav = navSymbols.has(symbol);
