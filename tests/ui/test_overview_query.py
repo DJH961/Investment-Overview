@@ -105,6 +105,7 @@ def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, see
 
     # Force today to be treated as a trading day to align the baseline session
     orig_is_trading = intraday_snapshots_service._is_trading_day
+
     def mock_is_trading(day):
         if day == date.today():
             return True
