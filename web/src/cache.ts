@@ -1233,3 +1233,34 @@ export function writeDeferredQueue(
   }
   writeJson(storage, DEFERRED_QUEUE_KEY, entries);
 }
+
+/**
+ * Read the absolute timestamp when the last refresh round started.
+ */
+export function readLastRefreshStartedAt(storage: StorageLike | null = defaultStorage()): number | null {
+  const stored = storage?.getItem("last-refresh-started-at");
+  if (!stored) return null;
+  const num = Number(stored);
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+/**
+ * Persist the absolute timestamp when the refresh round started, or clear it.
+ */
+export function writeLastRefreshStartedAt(at: number | null, storage: StorageLike | null = defaultStorage()): void {
+  if (!storage) return;
+  if (at === null) {
+    try {
+      storage.removeItem("last-refresh-started-at");
+    } catch {
+      /* best-effort */
+    }
+    return;
+  }
+  try {
+    storage.setItem("last-refresh-started-at", String(at));
+  } catch {
+    /* best-effort */
+  }
+}
+

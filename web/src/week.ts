@@ -422,6 +422,16 @@ export interface WeekCurveOptions {
    */
   regenerateOnly?: boolean;
   /**
+   * **Force a live re-pull (the manual reload tap).** When `true` the 1W build
+   * re-fetches *every* market-sleeve symbol's daily closes (and the FX track) from
+   * the providers regardless of what is cached or how settled it looks, so a
+   * user-initiated reload genuinely re-pulls the week's data and spends the credits
+   * it reports rather than silently reusing the cache at "0 credits". The deliberate
+   * opposite of {@link regenerateOnly}, which wins when both are set. Defaults to
+   * `false`. See {@link SessionCurveOptions.forceFetch}.
+   */
+  forceFetch?: boolean;
+  /**
    * The **secondary** provider leg (Tiingo daily) for the after-close escalation
    * (plan C5): when the primary stops advancing a behind market symbol toward the
    * settled close, the second source is asked **once** whether a later daily close
@@ -526,6 +536,9 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
   // Freshness is judged on the *fetchable* (market) symbols only — NAV funds
   // never gate a network pull, so a fund still missing a NAV day cannot force a
   // re-pull storm of the market closes (item 5b coverage, item 7 range-split).
+  // A manual reload tap forces a genuine re-pull of the whole market sleeve (and
+  // FX), regardless of how settled the cache looks — so "reloading" really reloads
+  // and spends visible credits. `regenerateOnly` still wins when both are set.
   const forceFetch = (options.forceFetch ?? false) && !(options.regenerateOnly ?? false);
   const fresh =
     (options.regenerateOnly ?? false) ||
@@ -538,6 +551,11 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     const fetchedAll = new Map<string, Bar[]>();
     let incomingProbe: Record<string, StoredCloseProbe> | undefined;
     let probeClear: string[] | undefined;
+    // Wholly-missing symbols backfill the normal way (the capacity split's
+    // emptiness spill already escalates a never-seen symbol to the secondary).
+    // A forced reload re-pulls the *whole* market sleeve at once instead — the
+    // user asked to reload, so every symbol's daily closes are fetched fresh
+    // rather than only the missing/behind ones on the cache-sparing cadence.
     if (forceFetch && fetchSymbols.length > 0) {
       const barsBySymbol = await fetchDailyBars(fetchSymbols);
       for (const [symbol, bars] of barsBySymbol) {

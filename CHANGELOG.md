@@ -13,14 +13,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.3] — 2026-07-03
+
+### Fixed
+
+- **Eliminated duplicate NAV quote and daily bar calls after hours.** Under the post-close window, mutual fund NAVs are expected to return yesterday's NAV before the new one publishes. A fallback query to Tiingo is now skipped during the first 5 hours post-close if Twelve Data successfully returned yesterday's NAV. Tiingo is only queried as a fallback if Twelve Data has exhausted its credits.
+- **Suppressed subsequent Tiingo fallback queries for both quotes and daily bars.** Added cooldown checks based on the configured auto-update interval for both quotes and daily bars inside the capacity split bar fetcher. Once a Tiingo fallback is attempted, both legs are suppressed from hitting Tiingo again until the cooldown expires.
+- **Warmed-up NAV prefetch deduplicated.** The prefetch warm-up now primes the quote cache using stored week bars in IndexedDB first, and marks all NAVs successfully fetched via Twelve Data bars as fetched (even if unchanged), avoiding redundant quote queries in the same login turn.
+
 ## [5.2.2] — 2026-07-03
 
 ### Fixed
 
-- **Graph reload (↻) button functionality restored.** Re-introduced the `forceFetch` parameter in the lower intraday and weekly builders (`loadOrBuildSessionCurve`, `loadOrBuildWeekCurve`) and the `App` coordination layer so manual reload requests bypass caching and force a fresh network pull.
-- **Eliminated duplicate NAV quote and daily bar calls after hours.** Under the post-close window, mutual fund NAVs are expected to return yesterday's NAV before the new one publishes. A fallback query to Tiingo is now skipped during the first 5 hours post-close if Twelve Data successfully returned yesterday's NAV. Tiingo is only queried as a fallback if Twelve Data has exhausted its credits.
-- **Suppressed subsequent Tiingo fallback queries for both quotes and daily bars.** Added cooldown checks based on the configured auto-update interval for both quotes and daily bars inside the capacity split bar fetcher. Once a Tiingo fallback is attempted, both legs are suppressed from hitting Tiingo again until the cooldown expires.
-- **Warmed-up NAV prefetch deduplicated.** The prefetch warm-up now primes the quote cache using stored week bars in IndexedDB first, and marks all NAVs successfully fetched via Twelve Data bars as fetched (even if unchanged), avoiding redundant quote queries in the same login turn.
+- **Refresh round duration and session invalidation on log off / restart.** Ensures that
+  an individual refresh round cannot run longer than one auto-update period (the user-configured
+  interval). When the session is locked or logged off, any in-flight refresh round is immediately
+  aborted and the deferred queue is cleared to prevent leftover startup bursts from triggering on the
+  next login. Additionally, uses absolute time to track round starts via localStorage; if the app is
+  ended midway (with no timers running) and re-opened, any stale round is detected, logged as aborted,
+  and its deferred queue cleared to prevent unwanted startup bursts (`web/src/cache.ts`,
+  `web/src/deferred-queue.ts`, `web/src/refresh-policy.ts`, `web/src/app.ts`, `web/test/refresh-policy.test.ts`).
 
 ## [5.2.1] — 2026-06-30
 
@@ -49,6 +61,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   proxy was configured, even though Twelve Data serves the same daily NAV bars;
   it now runs whenever **either** pipe is available (Twelve Data first, Tiingo
   as the overflow fallback), matching the provider order used everywhere else.
+- **A graph reload now actually reloads — it re-pulls today's bars and spends the
+  credits it reports.** The per-graph reload tap set `forceFetch`, but that only made
+  the build *skip the export springboard* — it never reached the bar-fetch decision,
+  so after the close (or any time the stored bars looked complete) the reload reused
+  the cache and logged "reload found no new session bars … 0 credits", attributing no
+  pull to Twelve Data or Tiingo. `forceFetch` now flows through to
+  `loadOrBuildSessionCurve` / `loadOrBuildWeekCurve` and forces a genuine re-pull of
+  the whole sleeve (and the FX track) regardless of what is cached — so a manual reload
+  fetches fresh provider data and its credits are visible. A network-free UI interaction
+  (`regenerateOnly`) still wins when both are set
+  (`web/src/intraday.ts`, `web/src/week.ts`, `web/src/app.ts`).
+- **1D graph reload drifting from the headline total and growth after the close.**
+  Reloading the 1D window skips the export springboard and rebuilds the curve live
+  from the device's stored session bars. After the market has closed that rebuild
+  misrepresented the day in two ways, now both fixed so the graph reflects reality
+  rather than only landing on the right number:
+  - **The whole shape, not just the tip.** When the rebuild was *incomplete* — some
+    symbols still budget-deferred / short and carried flat at ratio 1 — its entire
+    body drew a real-looking-but-wrong trajectory (the "same number of bars, totally
+    different shape" signature). A closed-market reload that can't cover the sleeve now
+    falls back to the exported settled session, the genuine whole-book curve, instead of
+    drawing a partial body (`web/src/app.ts`).
+  - **Closing on the headline.** A *complete* closed-market reconstruction previously
+    ended on `base + Σ valueᵢ·ratio(lastBar)`, which drifts from the settled headline
+    when the last bar fell short of the 16:00 ET close — so the "% today" the line
+    measured disagreed with the headline growth (e.g. the graph reading `+0.24%` while
+    the headline read `+0.42%`). The reconstruction now pins the settled whole-book
+    headline at the session close, exactly as the open-market path pins the live
+    headline and as the export springboard closes by construction (`web/src/intraday.ts`).
 
 ## [5.2.0] — 2026-06-30
 

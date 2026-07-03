@@ -379,6 +379,17 @@ export interface SessionCurveOptions {
    */
   regenerateOnly?: boolean;
   /**
+   * **Force a live re-pull (the manual reload tap).** When `true` the build
+   * re-fetches *every* sleeve symbol's bars (and the FX track) from the providers
+   * regardless of what is already stored — even after the close, and even when the
+   * stored bars look complete — so a user-initiated reload genuinely re-pulls
+   * today's data and spends the credits it says it does, rather than silently
+   * reusing the cache and reporting "0 credits". It is the deliberate opposite of
+   * {@link regenerateOnly} (a network-free UI interaction); `regenerateOnly` wins
+   * when both are set. Defaults to `false`.
+   */
+  forceFetch?: boolean;
+  /**
    * Outage back-off for the after-close resolution (plan C4). Symbols whose
    * `${scope}:${symbol}` key is in an armed cooldown are skipped (no credit, no
    * attempt); a deferred-outage strikes it, a settle/reached-close clears it.
@@ -521,6 +532,10 @@ export async function loadOrBuildSessionCurve(
   const minRefetchMs = options.minRefetchMs ?? DEFAULT_OPEN_REFETCH_MS;
   const recentlyFetched =
     stored !== null && minRefetchMs > 0 && now.getTime() - stored.updatedAt < minRefetchMs;
+  // A manual reload tap forces a genuine re-pull of the whole sleeve (and FX),
+  // regardless of what is cached or how complete it looks — so "reloading" really
+  // reloads and the credits it spends are visible, never a silent 0-credit reuse.
+  // `regenerateOnly` (a network-free UI interaction) still wins when both are set.
   const forceFetch = (options.forceFetch ?? false) && !(options.regenerateOnly ?? false);
   const needFetch =
     !(options.regenerateOnly ?? false) &&
@@ -547,8 +562,11 @@ export async function loadOrBuildSessionCurve(
       }
     };
     if (marketOpen || forceFetch) {
-      // Open: refresh every symbol so the curve grows to the freshest bar (still 1
-      // credit each — bars are free).
+      // Open — or a forced manual reload at any hour: refresh every symbol so the
+      // curve is rebuilt from a genuine fresh pull (1 credit each — bars are free).
+      // A forced re-pull bypasses the after-close progress/settle/back-off gate on
+      // purpose: the user explicitly asked to reload, so we honour it with a real
+      // fetch of the whole sleeve rather than the cache-sparing escalation cadence.
       addDayBars(await fetchBars(symbols));
     } else {
       // Closed: backfill the wholly-missing gaps the normal way (the capacity
@@ -721,6 +739,20 @@ export async function loadOrBuildSessionCurve(
       rebaseBreadcrumbs(stored?.tips ?? [], anchor.baseEur, anchor.baseUsd),
     );
     points = capAtClose(points, closeMs);
+    // Pin the settled whole-book total at the session close. The export
+    // springboard (the normal closed-market path) closes on this figure by
+    // construction, but a live **reconstruction** — taken when the user reloads
+    // the window (`preferStored`/`forceFetch` skip the springboard) — closes on
+    // `base + Σ valueᵢ·ratio(lastBar)` instead. When the stored bars are short of
+    // the close (a mid-session partial, a settled-but-short or budget-deferred
+    // symbol carried flat at ratio 1), that endpoint drifts from the headline, so
+    // the "% today" the line measures disagrees with the headline growth and the
+    // reloaded curve lands on the wrong total. Pinning the settled tip at the
+    // close anchors the reloaded curve to the same headline the springboard uses,
+    // exactly as `appendLiveTip` pins the live headline while the market is open.
+    if (options.liveTip) {
+      points = appendLiveTip(points, closeMs, options.liveTip);
+    }
   }
 
   return { day, points, marketOpen, coverage };

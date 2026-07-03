@@ -87,6 +87,8 @@ import {
   writeCachedEnvelope,
   writeLastPull,
   writeSymbolPlan,
+  readLastRefreshStartedAt,
+  writeLastRefreshStartedAt,
 } from "./cache";
 import {
   DEFAULT_NAV_CACHE_TTL_MS,
@@ -963,6 +965,7 @@ export class App {
     this.logVersionUpdate();
     this.state.config = await loadConfig();
     applyProviderLimits(this.state.config);
+    this.checkPreviousIncompleteRound();
     // Restore the long-term deferred work-queue: symbols left outstanding when the
     // app was last closed (e.g. parked through a price-service outage) are
     // re-attempted this session instead of being silently forgotten.
@@ -1681,6 +1684,36 @@ export class App {
       }
     } catch {
       /* restore is best-effort */
+    }
+  }
+
+  /**
+   * Check if a previous refresh round was incomplete when the app was closed.
+   * If it has been in flight longer than one auto-update period (the update interval),
+   * treat it as stale/aborted, log the abort, and clear the deferred queue to
+   * prevent startup bursts.
+   */
+  private checkPreviousIncompleteRound(): void {
+    const lastStarted = readLastRefreshStartedAt();
+    if (lastStarted === null) return;
+
+    const now = Date.now();
+    const intervalMs = this.upToDateWindowMs();
+    const age = now - lastStarted;
+
+    if (age >= staleRoundAbortMs(intervalMs)) {
+      const abortMs = staleRoundAbortMs(intervalMs);
+      const abortMinutes = abortMs / 60000;
+      const durationDesc = abortMinutes >= 1 ? `${Math.round(abortMinutes)} minutes` : `${Math.round(abortMs / 1000)} seconds`;
+      this.pollLog(
+        "refresh",
+        `Previous refresh round aborted — it had been in flight over ${durationDesc} (one auto-update period) ` +
+          "(app likely ended midway). Starting a fresh pull instead of completing stale work.",
+        "warn",
+      );
+      this.deferredQueue.clearAll();
+      this.persistDeferredQueue();
+      writeLastRefreshStartedAt(null);
     }
   }
 
@@ -4874,6 +4907,7 @@ export class App {
     let eurUsdObservedAt: number | null = null;
     if (network && fetchFx) {
       const fxLoad = await loadFxRates();
+      if (session !== this.sessionId) return null;
       fx = fxLoad.fx;
       fxReport = fxLoad;
       // Live EUR/USD (current + prior close) for an FX-aware today's move.
@@ -4894,6 +4928,7 @@ export class App {
         forexOpen,
         force: forexOpen && (opts.force ?? false),
       });
+      if (session !== this.sessionId) return null;
       eurUsdNow = eurUsd.now;
       eurUsdPrev = eurUsd.previousClose;
       eurUsdSource = eurUsd.source;
@@ -4936,6 +4971,7 @@ export class App {
         const recovered =
           readPrevSessionCloseFx(prevSessionDay) ??
           (await this.barsPrevSessionCloseFx(prevSessionDay));
+        if (session !== this.sessionId) return null;
         if (recovered !== null) {
           eurUsdPrev = recovered;
           recordPrevSessionCloseFx(prevSessionDay, recovered);
@@ -4961,7 +4997,7 @@ export class App {
 
     const quoteLoad = await quotePromise;
     // A superseded session (lock, or a newer unlock) must not paint over the UI.
-    if (session !== this.sessionId) return quoteLoad.report;
+    if (session !== this.sessionId) return null;
 
     // A *fatal* quote failure (a rejected / over-quota API key) is a config
     // problem the user must act on, so keep the explicit error screen with a
@@ -5059,7 +5095,7 @@ export class App {
         sizeForSymbol: (symbol) => sizes.get(symbol) ?? 0,
         cooldownMs: config.updateMinutes * 60 * 1000,
       });
-      if (session !== this.sessionId) return quoteLoad.report;
+      if (session !== this.sessionId) return null;
       // Arm the breaker when the Tiingo fallback itself is rate-limited.
       if (fallback.error?.status === 429) this.armTiingo429();
       this.lastTiingoSymbols = fallback.tiingoSymbols;
@@ -5112,7 +5148,7 @@ export class App {
           ...options,
           forceMarketFetch: true,
         });
-        if (session !== this.sessionId) return quoteLoad.report;
+        if (session !== this.sessionId) return null;
         // Arm the breaker when the reverse TD safety net is throttled.
         if (tdNet.report.error?.status === 429) this.armTwelveData429();
         const filledNow = this.absorbSafetyNet(quoteLoad, tdNet);
@@ -5257,9 +5293,11 @@ export class App {
       // only one that exists on a cold start / weekend when the app was never live
       // at 16:00 ET to capture a running close. Fall back to the live-captured
       // running close when no bars are on the device yet.
-      model.overview.fxRateEurUsdSessionClose = marketOpen
+      const closeFx = marketOpen
         ? null
         : (await this.barsSessionCloseFx(sessionDay)) ?? readSessionCloseFx(sessionDay);
+      if (session !== this.sessionId) return null;
+      model.overview.fxRateEurUsdSessionClose = closeFx;
       // The session's open rate, read from the same FX bars. While the session is
       // running it lets the currency-effect split carve out the live market-hours
       // slice and keep last night's overnight as the remainder (so it survives the
@@ -5270,8 +5308,9 @@ export class App {
       // at the market start), fall back to the first-seen live spot we captured
       // above so the split shows immediately and then self-corrects to the precise
       // bar-read open once it arrives.
-      model.overview.fxRateEurUsdSessionOpen =
-        (await this.barsSessionOpenFx(sessionDay)) ?? readSessionOpenFx(sessionDay);
+      const openFx = (await this.barsSessionOpenFx(sessionDay)) ?? readSessionOpenFx(sessionDay);
+      if (session !== this.sessionId) return null;
+      model.overview.fxRateEurUsdSessionOpen = openFx;
     }
     // Remember each fund's freshly-settled NAV as a daily bar in the 1W store, so
     // the week curve re-marks NAV funds from their real per-day drift at zero
@@ -5375,7 +5414,9 @@ export class App {
     // and preload the persisted daily history so the value chart can rebuild the
     // gap a stale blob leaves between its last point and today. Best-effort: a
     // store failure must never sink the paint, so it falls back to no backfill.
-    model.valueBackfill = await this.syncValueHistory(model).catch(() => []);
+    const backfill = await this.syncValueHistory(model).catch(() => []);
+    if (session !== this.sessionId) return null;
+    model.valueBackfill = backfill;
     // Update each holding's status signals from this round before the re-render:
     // freshly-pulled symbols flash "Updated ✓" (then settle to "Updated <time>"),
     // and budget-deferred symbols carry the calmer "Updating…" queued state into
@@ -6239,9 +6280,12 @@ export class App {
       // round is {@link roundIsStale stale}, abandon it (bump the generation so
       // its eventual continuation bails) and fall through to a fresh pull.
       if (!roundIsStale(this.refreshStartedAt, Date.now(), this.upToDateWindowMs())) return;
+      const abortMs = staleRoundAbortMs(this.upToDateWindowMs());
+      const abortMinutes = abortMs / 60000;
+      const durationDesc = abortMinutes >= 1 ? `${Math.round(abortMinutes)} minutes` : `${Math.round(abortMs / 1000)} seconds`;
       this.abortInFlightRound(
-        `it had been in flight over ${Math.round(staleRoundAbortMs(this.upToDateWindowMs()) / 60000)} minutes ` +
-          "(device likely slept mid-round). Starting a fresh pull instead of completing hour-old work.",
+        `it had been in flight over ${durationDesc} (one auto-update period) ` +
+          "(device likely slept mid-round). Starting a fresh pull instead of completing stale work.",
       );
     }
     // No *automatic* price pull once the book is fully up to date — the market is
@@ -6300,6 +6344,7 @@ export class App {
     this.refreshing = true;
     this.refreshingKind = kind;
     this.refreshStartedAt = Date.now();
+    writeLastRefreshStartedAt(this.refreshStartedAt);
     // Claim ownership of the shared refresh state for this round. Every await
     // below re-checks this (via {@link superseded}) so that if the device slept
     // and this round was abandoned/replaced while a fetch hung, its late-resolving
@@ -6313,6 +6358,7 @@ export class App {
       this.refreshing = false;
       this.refreshingKind = null;
       this.refreshStartedAt = null;
+      writeLastRefreshStartedAt(null);
     };
     // A fresh round clears any stale promotion request from a prior round; a tap
     // landing *during* this round will re-set it below.
@@ -6832,6 +6878,7 @@ export class App {
     this.refreshing = false;
     this.refreshingKind = null;
     this.refreshStartedAt = null;
+    writeLastRefreshStartedAt(null);
     this.setUpdating(false);
     return true;
   }
@@ -7660,7 +7707,7 @@ export class App {
         const spent = { credits: 0 };
         try {
           const curve = await buildLiveSessionCurve(
-            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly, onCloseResolve, formatInstant },
+            { anchor: anchor(frozenFx), store, liveTip, onFreshBars, regenerateOnly, forceFetch, onCloseResolve, formatInstant },
             loggingProviders("1D", spent),
           );
           if (spent.credits === 0) {
@@ -7686,6 +7733,28 @@ export class App {
           // worth flagging (scenario C). While open — and especially warming up —
           // partial coverage is normal and accrues tick-by-tick, so stay quiet.
           const coverage = curve.marketOpen ? undefined : curve.coverage;
+          // Reflect reality, don't just pin the tip. After the close the exported
+          // session IS the settled whole-book truth (complete by construction). A
+          // reload rebuilds live from stored bars to pick up any intraday detail the
+          // export lacks — but when that rebuild is *incomplete* (free-tier-deferred
+          // or short symbols carried flat at ratio 1) its whole BODY misrepresents the
+          // day, not just its endpoint. Anchoring the tip alone would leave a real-
+          // looking-but-wrong shape underneath. So when a closed-market reconstruction
+          // can't cover the sleeve, fall back to the exported springboard — the genuine
+          // settled curve — rather than draw a partial body. A *complete* reconstruction
+          // (every symbol has bars) is kept: it reflects reality and may be finer than
+          // the export.
+          const complete = !coverage || coverage.covered >= coverage.total;
+          if (!curve.marketOpen && !complete) {
+            const settled = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
+            if (settled) {
+              this.pollLog(
+                "graph",
+                "1D graph: reload incomplete (some prices not yet loaded) — showing the settled exported session so the shape stays true.",
+              );
+              return { points: settled };
+            }
+          }
           return { points: curve.points, coverage };
         } catch {
           this.pollLog("graph", "1D graph: live build failed — no curve drawn.", "warn");
@@ -7752,6 +7821,7 @@ export class App {
               liveTip,
               onFreshBars,
               regenerateOnly,
+              forceFetch,
               // Item 7b: only genuine, NAV-fetchable moving funds are eligible for
               // the daily-NAV gap-fill; money-market / pinned-$1 funds are absent
               // from `lastNavSymbols`, so they stay flat and are never fetched.
@@ -8307,6 +8377,9 @@ export class App {
     // can reason about the delta (the "good saving when logging off" half).
     void this.saveSessionStatus();
     // Invalidate any in-flight background work and tear down the auto-refresh.
+    this.abortInFlightRound("session locked");
+    this.deferredQueue.clearAll();
+    this.persistDeferredQueue();
     this.sessionId += 1;
     this.clearRefreshTimer();
     this.removeVisibilityRefresh();
