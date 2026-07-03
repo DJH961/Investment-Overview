@@ -13,6 +13,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.4] — 2026-07-03
+
+### Fixed
+
+- **Deferred symbols are no longer silently skipped by the orchestrator's rolling-TTL leg gate on burst rounds.** When a refresh round could not fit every symbol into the Twelve Data per-minute budget, the overflow was enqueued in the deferred work-queue and a burst round was scheduled for ~1 minute later. On that burst round the orchestrator's Overlay 2 rolling-TTL check (`quoteRefreshDue`) saw that the *rest* of the portfolio was still within the configured refresh interval and disabled `legs.quotes`. The `symbolsToFetch` filter in `refreshPrices` then honoured the disabled leg blindly — filtering out **all** market symbols, including the deferred ones passed as `forceSymbols`. The burst round spent zero credits, the deferred queue was never cleared, and the scheduler fell back to the slow cadence, leaving the deferred items stale indefinitely. The fix adds a single guard in the filter: any symbol present in `forceSymbols` (deferred-queue drains) is always included in `symbolsToFetch`, bypassing the orchestrator leg gate for that symbol only (`web/src/app.ts`).
+
 ## [5.2.3] — 2026-07-03
 
 ### Fixed
