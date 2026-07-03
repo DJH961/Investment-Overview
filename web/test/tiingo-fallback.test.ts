@@ -912,7 +912,7 @@ describe("runTiingoFallback", () => {
     const cooldownMs = 15 * 60 * 1000; // 15 min cooldown
     const tenMinAgo = NOW - 10 * 60 * 1000;
     const testExpected = EXPECTED;
-    storage.setItem("tiingo:noNewer", JSON.stringify({
+    storage.setItem("iv.web.tiingo_no_newer", JSON.stringify({
       AAPL: { expected: testExpected, at: tenMinAgo },
     }));
 
