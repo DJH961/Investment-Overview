@@ -477,7 +477,7 @@ export async function loadOrBuildSessionCurve(
   const symbols = intradaySymbols(anchor);
   // The 1D window is exactly one regular session: [09:30 ET, 16:00 ET]. Both the
   // store-side bar filter and the render-side defensive clamp use these bounds so
-  // a barely-traded session never reaches reach into the prior trading day.
+  // a barely-traded session never reaches into the prior trading day.
   const openMs = sessionOpenMs(day);
   const closeMs = sessionCloseMs(day);
 
