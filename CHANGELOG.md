@@ -13,6 +13,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.5] — 2026-07-05
+
+### Fixed
+
+- **Settings "Regenerate 1W graph" now fetches the same dense 5-min intraday bars as every normal and ↻-reload render.** Previously `prefetchGraphBars` used `param=daily / interval=1day` for the 1W leg regardless of whether it was a login warm-up or an explicit user-initiated regenerate. After the wipe-and-repull the dashboard reconstructed from coarse one-bar-per-day data, producing a stepped shape instead of the smooth intraday curve the user expects. The regenerate path now uses `param=intraday / interval=5min` (the same `WEEK_INTRADAY_INTERVAL` and `weekIntradayOutputsize` values `buildLiveWeekCurve` uses), so the post-regenerate repaint draws the same quality curve as a ↻ reload or a normal render. The login warm-up continues to use coarse daily bars to minimise startup credit spend (`web/src/app.ts`).
+
+- **NAV-collapse nosedive on the per-graph ↻ reload is now repaired.** `repairWeekNavCollapse` — the settled-day NAV-hole healer already applied on the springboard path — was never applied to the live-build path (`buildLiveWeekCurve` → `harvestWeekCloses`). Because the ↻ reload explicitly skips the springboard (`forceFetch=true`), a collapsed settled week was rendered as-is after every reload. The live-build result is now passed through `repairWeekNavCollapse` (with the live tip as the `healthyHint`) before display, bringing the live-build path to parity with the springboard path for the most common class of 1W defect (`web/src/app.ts`).
+
+- **Per-graph ↻ reload no longer blanks the 1W graph when the live build returns empty.** When a `forceFetch` reload failed (NAV backfill exhausted the budget, network error, etc.) and `buildLiveWeekCurve` returned fewer than two points, the week hook returned `null` and the chart displayed "Live data isn't available yet" instead of the known-good springboard curve. The existing springboard fallback (`if (preferStored && sprung)`) now also fires for `forceFetch`, so a failed reload falls back gracefully to the exported week sleeve (`web/src/app.ts`).
+
 ## [5.2.4] — 2026-07-03
 
 ### Fixed
