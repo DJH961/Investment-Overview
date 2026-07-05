@@ -15,4 +15,6 @@ spec.loader.exec_module(gen_parity_vectors)
 
 
 def test_parity_vectors_are_fresh() -> None:
-    assert Path(gen_parity_vectors.VECTORS_PATH).read_bytes() == gen_parity_vectors.render_vectors()
+    committed = Path(gen_parity_vectors.VECTORS_PATH).read_bytes().replace(b"\r\n", b"\n")
+    rendered = gen_parity_vectors.render_vectors().replace(b"\r\n", b"\n")
+    assert committed == rendered
