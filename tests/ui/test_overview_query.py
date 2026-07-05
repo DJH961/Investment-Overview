@@ -82,7 +82,9 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
     from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-    latest_price_date = intraday_snapshots_service.previous_trading_session(date.today() + timedelta(days=1))
+    latest_price_date = intraday_snapshots_service.previous_trading_session(
+        date.today() + timedelta(days=1)
+    )
     previous_price_date = intraday_snapshots_service.previous_trading_session(latest_price_date)
 
     # Clear any seeded closes for VTI to prevent newer prints (like date.today() on weekends)
@@ -90,15 +92,22 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
     session.execute(delete(PriceHistory).where(PriceHistory.instrument_id == vti.id))
 
     # Seed price closes for VTI on the baseline trading sessions
-    prices_repo.upsert_closes(session, vti.id, {
-        previous_price_date: Decimal("220.00"),
-        latest_price_date: Decimal("230.00"),
-    })
+    prices_repo.upsert_closes(
+        session,
+        vti.id,
+        {
+            previous_price_date: Decimal("220.00"),
+            latest_price_date: Decimal("230.00"),
+        },
+    )
     # Seed FX rates on the baseline trading sessions (shift 1.20 -> 1.25)
-    fx_repo.upsert_rates(session, {
-        previous_price_date: Decimal("1.20"),
-        latest_price_date: Decimal("1.25"),
-    })
+    fx_repo.upsert_rates(
+        session,
+        {
+            previous_price_date: Decimal("1.20"),
+            latest_price_date: Decimal("1.25"),
+        },
+    )
     session.flush()
 
     positions = get_positions(session)
