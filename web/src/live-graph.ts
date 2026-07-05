@@ -103,7 +103,7 @@ export function weekFxWindow(
 export const WEEK_INTRADAY_INTERVAL = "5min";
 
 /** Approximate count of 5-minute bars in one regular US session (09:30–16:00 ET). */
-const BARS_PER_SESSION = 78;
+export const BARS_PER_SESSION = 78;
 
 /**
  * Twelve Data `outputsize` for the windowed intraday 1W pull: enough 5-min bars to
@@ -132,6 +132,10 @@ export interface SpendRequest {
   symbols: string[];
   /** Worst-case credit cost of the request (1 per symbol). */
   n: number;
+  interval?: string;
+  startDate?: string;
+  endDate?: string;
+  outputsize?: number;
 }
 
 /**
@@ -188,18 +192,20 @@ export function recordingBarFetcher(
   inner: BarFetcher,
   meter: BackfillMeter,
   leg: SpendLeg = "bars",
+  extra?: { interval?: string; startDate?: string; endDate?: string; outputsize?: number },
 ): BarFetcher {
   return async (symbols) => {
     const uniq = uniqueSymbols(symbols);
     const n = uniq.length;
     if (n === 0) return new Map<string, Bar[]>();
-    meter.reserve({ leg, symbols: uniq, n });
+    const req = { leg, symbols: uniq, n, ...extra };
+    meter.reserve(req);
     try {
       const bars = await inner(uniq);
-      meter.settle({ leg, symbols: uniq, n, bars: totalBars(bars) });
+      meter.settle({ ...req, bars: totalBars(bars) });
       return bars;
     } catch (err) {
-      meter.refund({ leg, symbols: uniq, n, reason: describeError(err), status: errorStatus(err) });
+      meter.refund({ ...req, reason: describeError(err), status: errorStatus(err) });
       throw err;
     }
   };
@@ -304,11 +310,8 @@ export function makePriceBarFetcher(opts: {
   let pipeB = proxyUrl
     ? makeTiingoBarFetcher(proxyUrl, { param, startDate, endDate, fetchImpl })
     : null;
-  // Meter each pipe against its own source budget, so whichever one actually
-  // serves the bars is the one that books the credits (a fallback after a thrown
-  // primary records only the fallback's spend).
-  if (pipeA && twelveDataMeter) pipeA = recordingBarFetcher(pipeA, twelveDataMeter);
-  if (pipeB && tiingoMeter) pipeB = recordingBarFetcher(pipeB, tiingoMeter);
+  if (pipeA && twelveDataMeter) pipeA = recordingBarFetcher(pipeA, twelveDataMeter, "bars", { interval, startDate, endDate, outputsize });
+  if (pipeB && tiingoMeter) pipeB = recordingBarFetcher(pipeB, tiingoMeter, "bars", { interval: param, startDate, endDate });
   let combined: BarFetcher | null;
   if (pipeB && pipeA) {
     // With a reservation authority, fill Twelve Data first and spill the overflow
@@ -679,8 +682,14 @@ export function instrumentedGraphRecorders(
       spent.credits += req.n;
       onSuccess?.();
       const empty = req.bars === 0 ? " (empty — reached the provider, no bars)" : "";
+      const rangeStr = req.startDate && req.endDate
+        ? ` (${req.startDate} to ${req.endDate})`
+        : req.outputsize
+        ? ` (last ${req.outputsize} bars)`
+        : "";
+      const intervalStr = req.interval ? ` [${req.interval}]` : "";
       log(
-        `${range} graph: fetched ${req.leg} ${spendSubject(req)} via ${provider} — ` +
+        `${range} graph: fetched ${req.leg} ${spendSubject(req)}${rangeStr}${intervalStr} via ${provider} — ` +
           `${req.n} ${creditNoun}${plural(req.n)}${empty}.`,
       );
     },
@@ -690,8 +699,14 @@ export function instrumentedGraphRecorders(
       // breaker so this provider is frozen and no further attempt is wasted.
       const breaker = req.status === 429 ? " — circuit breaker armed" : "";
       if (req.status === 429) on429?.();
+      const rangeStr = req.startDate && req.endDate
+        ? ` (${req.startDate} to ${req.endDate})`
+        : req.outputsize
+        ? ` (last ${req.outputsize} bars)`
+        : "";
+      const intervalStr = req.interval ? ` [${req.interval}]` : "";
       log(
-        `${range} graph: ${req.leg} ${spendSubject(req)} via ${provider} not billed ` +
+        `${range} graph: ${req.leg} ${spendSubject(req)}${rangeStr}${intervalStr} via ${provider} not billed ` +
           `(${req.n} ${creditNoun}${plural(req.n)} refunded) — ${req.reason}${breaker}.`,
       );
     },
