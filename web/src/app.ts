@@ -148,6 +148,7 @@ import { clearConsumptionLog, formatConsumptionLog, readConsumptionLog, recordCo
 import { APP_VERSION } from "./version";
 import type { CloseResolveLog } from "./close-completeness";
 import {
+  BARS_PER_SESSION,
   buildLiveSessionCurve,
   buildLiveWeekCurve,
   cacheSeriesBackoff,
@@ -2304,7 +2305,14 @@ export class App {
       await this.prefetchSessionFx(config, now);
     }
     if (sessionSymbols.length === 0 && weekSymbols.length === 0) return 0;
-    const result = await this.prefetchGraphBars(sessionSymbols, weekSymbols, config, now, this.primingCurrencyMap());
+    const result = await this.prefetchGraphBars(
+      sessionSymbols,
+      weekSymbols,
+      config,
+      now,
+      this.primingCurrencyMap(),
+      "regenerate",
+    );
     return result.stored;
   }
 
@@ -2385,12 +2393,15 @@ export class App {
         onTwelveDataSuccess: () => recordTwelveDataSuccess(),
         onTiingo429: () => this.armTiingo429(),
       });
+      const sessions = settledSessionsSince(window.startDate, now) + (isUsMarketOpen(now) ? 1 : 0);
+      const computedOutputsize = label === "1D" ? BARS_PER_SESSION : weekIntradayOutputsize(Math.max(1, sessions));
       const fetchBars = makePriceBarFetcher({
         apiKey: config.apiKey,
         proxyUrl,
         param,
         startDate: window.startDate,
         endDate: window.endDate,
+        outputsize: computedOutputsize,
         tiingoMeter,
         twelveDataMeter,
         // One routing path (WS3) through the reservation authority: fill Twelve

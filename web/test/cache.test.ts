@@ -199,12 +199,21 @@ describe("primeQuotesFromBars", () => {
     expect(got.quote.marketOpen).toBe(false);
   });
 
-  it("C5: a non-NAV symbol keeps a null value-date (never mislabelled settled NAV)", () => {
+  it("C5: a non-NAV symbol stamps value-date and marketOpen derived from the bar time", () => {
     const s = memStorage();
-    const day = Date.parse("2026-06-19T00:00:00Z");
-    primeQuotesFromBars(new Map([["VTI", [bar(day, "300")]]]), new Map([["VTI", "USD"]]), 9_000_000, s);
-    const got = readCachedQuotes(s).get("VTI")!;
-    expect(got.quote.valueDate).toBeNull();
+    // 2026-06-18T14:00:00Z is 10:00 AM ET (market open)
+    const dayOpen = Date.parse("2026-06-18T14:00:00Z");
+    primeQuotesFromBars(new Map([["VTI", [bar(dayOpen, "300")]]]), new Map([["VTI", "USD"]]), 9_000_000, s);
+    const gotOpen = readCachedQuotes(s).get("VTI")!;
+    expect(gotOpen.quote.valueDate).toBe("2026-06-18");
+    expect(gotOpen.quote.marketOpen).toBe(true);
+
+    // 2026-06-18T21:00:00Z is 5:00 PM ET (market closed)
+    const dayClosed = Date.parse("2026-06-18T21:00:00Z");
+    primeQuotesFromBars(new Map([["VTI", [bar(dayClosed, "305")]]]), new Map([["VTI", "USD"]]), 9_500_000, s);
+    const gotClosed = readCachedQuotes(s).get("VTI")!;
+    expect(gotClosed.quote.valueDate).toBe("2026-06-18");
+    expect(gotClosed.quote.marketOpen).toBe(false);
   });
 
   it("persists a NAV value-date through the DEFAULT storage (no explicit storage arg)", () => {

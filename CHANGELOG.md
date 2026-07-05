@@ -13,6 +13,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.6] — 2026-07-06
+
+### Fixed
+
+- **Intraday-to-quote priming cache pipeline metadata integrity.** Fixed a bug in the quote-cache priming write-back where non-NAV (market) symbols retained stale `valueDate` and `marketOpen` properties (or defaulted to `null`) when seeded from freshly fetched intraday bars. This caused the adaptive caching logic to evaluate the primed quotes as stale immediately post-close, triggering redundant network fetches to Twelve Data and wasting API credits. The write-back now correctly stamps the bar's calendar day as `valueDate` (via `exchangeDayOf`) and evaluates `marketOpen` from the bar's observation timestamp (via `isUsMarketOpen`).
+
 ## [5.2.5] — 2026-07-05
 
 ### Fixed

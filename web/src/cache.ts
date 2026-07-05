@@ -18,7 +18,7 @@ import { Decimal } from "./decimal-config";
 import type { Envelope } from "./crypto";
 import type { FxRates, Quote } from "./prices";
 import type { Bar } from "./timeseries";
-import { lastSessionDate, sessionCloseMs } from "./market-hours";
+import { exchangeDayOf, isUsMarketOpen, lastSessionDate, sessionCloseMs } from "./market-hours";
 
 /** Subset of the Web Storage API we depend on (injectable for tests). */
 export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -197,8 +197,8 @@ export function primeQuotesFromBars(
       priceTime: latest.t,
       // C5: a NAV bar tip is a settled close — stamp its value-date (the bar day)
       // so it is accepted as the headline NAV, and mark it not-live.
-      valueDate: isNav ? new Date(latest.t).toISOString().slice(0, 10) : (existing?.valueDate ?? null),
-      marketOpen: isNav ? false : (existing?.marketOpen ?? null),
+      valueDate: isNav ? new Date(latest.t).toISOString().slice(0, 10) : exchangeDayOf(latest.t),
+      marketOpen: isNav ? false : isUsMarketOpen(new Date(latest.t)),
     };
     primed.push(symbol);
   }
