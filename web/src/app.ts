@@ -7750,8 +7750,10 @@ export class App {
           if (curve.points.length < 2) {
             // `preferStored` skipped the springboard to make a reload stick, but
             // the stored bars can't draw (e.g. a cold new session): fall back to
-            // the exported springboard so the graph never blanks.
-            if (preferStored) {
+            // the exported springboard so the graph never blanks. Also fall back
+            // when a `forceFetch` reload returns empty (budget exhausted, network
+            // error, etc.) so the user never sees a blank.
+            if (preferStored || forceFetch) {
               const fallback = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
               if (fallback) return { points: fallback };
             }
