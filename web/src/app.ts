@@ -156,8 +156,11 @@ import {
   makeFxFetcher,
   sessionFxWindow,
   weekFxWindow,
+  WEEK_INTRADAY_INTERVAL,
+  weekIntradayOutputsize,
   type LiveGraphProviders,
 } from "./live-graph";
+import { repairWeekNavCollapse } from "./week-repair";
 import {
   recordTwelveData429,
   recordTwelveDataSuccess,
@@ -2477,10 +2480,23 @@ export class App {
     };
 
     await pull(sessionSymbols, "intraday", sessionFxWindow(now), lastSessionDate(now), "1D");
-    await pull(weekSymbols, "daily", weekFxWindow(now), WEEK_STORE_KEY, "1W", {
-      interval: "1day",
-      outputsize: 8,
-    });
+    // The hard regenerate (Settings) uses the same dense 5-min intraday bars as
+    // every normal and ↻-reload render, so the repainted 1W curve is intraday-
+    // quality rather than a coarse one-bar-per-day stepped shape. The login
+    // warm-up (logKind === "warmup") keeps the cheaper coarse daily bars to
+    // minimise credit spend at startup — only the explicit user-initiated
+    // regenerate switches to the full intraday pull.
+    if (logKind === "regenerate") {
+      await pull(weekSymbols, "intraday", weekFxWindow(now), WEEK_STORE_KEY, "1W", {
+        interval: WEEK_INTRADAY_INTERVAL,
+        outputsize: weekIntradayOutputsize(DEFAULT_WEEK_SESSIONS),
+      });
+    } else {
+      await pull(weekSymbols, "daily", weekFxWindow(now), WEEK_STORE_KEY, "1W", {
+        interval: "1day",
+        outputsize: 8,
+      });
+    }
     return { stored, primed: [...primedSet], spent: totalSpent.credits };
   }
 
@@ -7734,8 +7750,10 @@ export class App {
           if (curve.points.length < 2) {
             // `preferStored` skipped the springboard to make a reload stick, but
             // the stored bars can't draw (e.g. a cold new session): fall back to
-            // the exported springboard so the graph never blanks.
-            if (preferStored) {
+            // the exported springboard so the graph never blanks. Also fall back
+            // when a `forceFetch` reload returns empty (budget exhausted, network
+            // error, etc.) so the user never sees a blank.
+            if (preferStored || forceFetch) {
               const fallback = springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
               if (fallback) return { points: fallback };
             }
@@ -7861,13 +7879,27 @@ export class App {
           if (curve.points.length < 2) {
             // `preferStored` skipped the cached week-sleeve reuse to make a reload
             // stick, but the stored bars can't draw: fall back to the springboard
-            // sleeve so the week graph never blanks.
-            if (preferStored && sprung) {
+            // sleeve so the week graph never blanks. Also fall back when a
+            // `forceFetch` reload returns empty (NAV backfill exhausted the budget,
+            // network error, etc.) so the user never sees a blank instead of a
+            // known-good curve.
+            if ((preferStored || forceFetch) && sprung) {
               return this.harvestWeekCloses(capWeekToSessionClose(sprung));
             }
             return null;
           }
-          return this.harvestWeekCloses(capWeekToSessionClose(curve.points));
+          // Apply the same NAV-collapse repair the springboard path already runs
+          // (springboard.ts → repairWeekNavCollapse). The live-build path previously
+          // skipped this, so a collapsed settled week produced by the per-graph ↻
+          // reload or the post-regenerate repaint was displayed as-is. Now every
+          // live-build result is healed before display — a no-op on healthy curves.
+          const capped = capWeekToSessionClose(curve.points);
+          const healed = repairWeekNavCollapse(
+            capped,
+            liveTip ? { eur: liveTip.valueEur, usd: liveTip.valueUsd } : null,
+            (m) => this.repairLog(m),
+          );
+          return this.harvestWeekCloses(healed);
         } catch {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.", "warn");
           return null;
