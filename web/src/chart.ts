@@ -547,15 +547,21 @@ export function buildLineChart(options: LineChartOptions): SVGSVGElement | null 
   // --- Series paths (drawn back-to-front so the primary sits on top) ------
   // A single continuous line + area fill per series. On the collapsed "1W" view
   // the dead time between sessions is already dropped (bands packed adjacent), so
-  // the curve connects directly across days — the separator rules above mark the
-  // change of day.
+  // the curve is disconnected across days (dates) rather than drawing lines between them.
   for (let s = series.length - 1; s >= 0; s -= 1) {
     const current = series[s];
-    const d = linePath(current.values, x, y);
+    const d = linePath(current.values, x, y, options.collapseSessions ? dates : undefined);
     if (d === "") continue;
     if (current.area) {
       const areaPath = svgEl("path");
-      areaPath.setAttribute("d", `${d} L${x(n - 1).toFixed(1)} ${(padT + plotH).toFixed(1)} L${x(0).toFixed(1)} ${(padT + plotH).toFixed(1)} Z`);
+      const areaD = areaPathD(
+        current.values,
+        x,
+        y,
+        padT + plotH,
+        options.collapseSessions ? dates : undefined,
+      );
+      areaPath.setAttribute("d", areaD);
       areaPath.setAttribute("class", `${current.className}-area`);
       svg.appendChild(areaPath);
     }
@@ -611,6 +617,7 @@ export function linePath(
   values: Array<Decimal | null>,
   x: (i: number) => number,
   y: (v: number) => number,
+  dates?: string[],
 ): string {
   let d = "";
   // Lift the pen at the start and after every gap (null), so a missing point
@@ -622,9 +629,75 @@ export function linePath(
       penUp = true;
       return;
     }
+    if (dates && i > 0 && dates[i - 1] && dates[i]) {
+      const prevDay = dates[i - 1].slice(0, 10);
+      const currDay = dates[i].slice(0, 10);
+      if (prevDay !== currDay) {
+        penUp = true;
+      }
+    }
     d += `${penUp ? "M" : "L"}${x(i).toFixed(1)} ${y(v.toNumber()).toFixed(1)} `;
     penUp = false;
   });
+  return d.trim();
+}
+
+/**
+ * Build the SVG path `d` for an area series, breaking it into separate closed
+ * polygons at every gap (null value) and day boundary (if dates are provided).
+ * Each segment is closed cleanly down to the baseline.
+ */
+export function areaPathD(
+  values: Array<Decimal | null>,
+  x: (i: number) => number,
+  y: (v: number) => number,
+  baselineY: number,
+  dates?: string[],
+): string {
+  const segments: Array<{ start: number; end: number }> = [];
+  let currentStart: number | null = null;
+  
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] === null) {
+      if (currentStart !== null) {
+        segments.push({ start: currentStart, end: i - 1 });
+        currentStart = null;
+      }
+      continue;
+    }
+    
+    if (currentStart === null) {
+      currentStart = i;
+    } else if (dates && i > 0 && dates[i - 1] && dates[i]) {
+      const prevDay = dates[i - 1].slice(0, 10);
+      const currDay = dates[i].slice(0, 10);
+      if (prevDay !== currDay) {
+        segments.push({ start: currentStart, end: i - 1 });
+        currentStart = i;
+      }
+    }
+  }
+  
+  if (currentStart !== null) {
+    segments.push({ start: currentStart, end: values.length - 1 });
+  }
+
+  let d = "";
+  for (const seg of segments) {
+    let segLine = "";
+    for (let i = seg.start; i <= seg.end; i++) {
+      const isStart = i === seg.start;
+      segLine += `${isStart ? "M" : "L"}${x(i).toFixed(1)} ${y(values[i]!.toNumber()).toFixed(1)} `;
+    }
+    segLine = segLine.trim();
+    if (segLine !== "") {
+      const xStart = x(seg.start).toFixed(1);
+      const xEnd = x(seg.end).toFixed(1);
+      const yBase = baselineY.toFixed(1);
+      d += `${segLine} L${xEnd} ${yBase} L${xStart} ${yBase} Z `;
+    }
+  }
+  
   return d.trim();
 }
 
