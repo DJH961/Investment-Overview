@@ -165,6 +165,15 @@ describe("polling-log", () => {
       expect(text).toContain("Pulling rounds: 1");
     });
 
+    it("labels a skipped login warm-up as its own no-pull round", () => {
+      const entries: PollLogEntry[] = [
+        { at: 1_000, category: "login", message: "Login warm-up skipped — book fully up to date. Heartbeat only.", level: "warn" },
+      ];
+      const text = formatPollLog(entries, { generatedAt: 0 });
+      expect(text).toContain("login warm-up — skipped");
+      expect(text).toContain("Pulling rounds: 1");
+    });
+
     it("opens a regenerate's own round so it is not absorbed into the prior refresh", () => {
       const base = Date.parse("2026-06-23T10:00:00");
       const entries: PollLogEntry[] = [
