@@ -256,6 +256,10 @@ function roundTrigger(entry: PollLogEntry): string | null {
   }
   if (entry.category === "login") {
     if (m.startsWith("Login warm-up started")) return "login warm-up (pre-fetch)";
+    if (m.startsWith("Login warm-up skipped")) {
+      const rest = m.slice("Login warm-up skipped —".length).replace(/\.\s*$/, "").trim();
+      return `login warm-up — skipped (${rest})`;
+    }
     if (m.startsWith("Session resumed")) return "page reload — session resumed";
     if (m.startsWith("Unlock detected")) return "unlock — session start";
   }

@@ -1126,6 +1126,7 @@ export class App {
       this.finishPrefetch({ quoteFetched: 0, quoteTotal: 0, hasPlan: false, fxLive: warmth.fxLive });
       return;
     }
+    this.pollLog("login", "Login warm-up started — warming cache in background.");
     // Market-aware plan: only fetch what is actually worth a credit right now —
     // stocks/ETFs while the market is open, the after-close (pre-NAV) mutual
     // funds and any outdated settled close while it is shut, nothing when the
@@ -1211,7 +1212,7 @@ export class App {
     // kickoff refresh that follows, so log it like any other pull (otherwise the
     // kickoff's "PRIMARY 0/min" looks unexplained in the polling log). Spell out
     // which branch of the routing fired and why, plus the prior-session delta.
-    this.pollLog("login", this.describePrefetchRoute(plan.length, marketOpen, prefetch, graphStale));
+    this.pollLog("login", this.describePrefetchRoute(plan.length, marketOpen, prefetch, graphStale, warmupPlan));
     // Currency first, always: the forex market trades longest and values the
     // whole book, so warm the FX cache before any ticker — FX simply goes first
     // in line, with no per-minute reserve held back from the quotes. The live
@@ -1382,6 +1383,7 @@ export class App {
       fxNeeds: { open: boolean; close: boolean; prev: boolean };
       weekGap: { cutoffMs: number; latestMs: number | null } | null;
     },
+    warmupPlan: PullPlan,
   ): string {
     const prior = readSessionStatus();
     const priorBit = prior
@@ -1389,8 +1391,10 @@ export class App {
         `closes ${prior.marketCovered ? "in hand" : "behind"}, NAVs ${prior.navCovered ? "in hand" : "behind"}.`
       : "";
     const graphBits: string[] = [];
-    if (graphStale.session.length > 0) graphBits.push(`1D bars ×${prefetch.graphSessionSymbols.length}`);
-    if (graphStale.week.length > 0) {
+    if (prefetch.graphSessionSymbols.length > 0) {
+      graphBits.push(`1D bars ×${prefetch.graphSessionSymbols.length}`);
+    }
+    if (prefetch.graphWeekSymbols.length > 0) {
       // Why: bars are present but end short of the settled cutoff (timestamp
       // coverage, not absence) — codeword + the shortfall so a re-pull of the same
       // bars that can never advance `t` is visible, not silent.
@@ -1407,13 +1411,13 @@ export class App {
     const graphClause = graphBits.length > 0 ? ` Graph backfill via Tiingo: ${graphBits.join(", ")}.` : "";
     const fxNeed = graphStale.fxNeeds;
     const fxWhy = [fxNeed.open && "open", fxNeed.close && "close", fxNeed.prev && "prevFx"].filter(Boolean).join("+");
-    const fxClause = fxWhy ? ` FX-bar anchor due: ${fxWhy}.` : "";
+    const fxClause = (warmupPlan.legs.fxBars && fxWhy) ? ` FX-bar anchor due: ${fxWhy}.` : "";
     const quoteClause =
       prefetch.symbols.length > 0
-        ? `${prefetch.symbols.length} quote(s) via ${prefetch.route === "tiingo" ? "Tiingo rapid-fire" : "Twelve Data"}`
+        ? `${prefetch.symbols.length} quote(s)`
         : "no market quotes";
     const navClause =
-      prefetch.navSymbols.length > 0 ? `, ${prefetch.navSymbols.length} NAV fund(s) via Twelve Data` : "";
+      prefetch.navSymbols.length > 0 ? `, ${prefetch.navSymbols.length} NAV fund(s)` : "";
     return (
       `Login warm-up route — market ${marketOpen ? "open" : "closed"} (plan of ${planSize}). ` +
       `${quoteClause}${navClause}.${graphClause}${fxClause}${priorBit}`
@@ -6350,8 +6354,10 @@ export class App {
       if (this.blobCheckDue()) void this.maybeRefreshBlob(session);
       this.scheduleNext(session, this.settledHeartbeatMs());
       this.pollLog(
-        "refresh",
-        "Auto tick skipped — book fully up to date (market closed, all closes + NAVs held). Heartbeat only.",
+        kind === "start" ? "login" : "refresh",
+        kind === "start"
+          ? "Login warm-up skipped — book fully up to date (market closed, all closes + NAVs held). Heartbeat only."
+          : "Auto tick skipped — book fully up to date (market closed, all closes + NAVs held). Heartbeat only.",
         "warn",
       );
       // Edge case: ordinary (non-force) deferrals parked from an earlier
@@ -7664,8 +7670,13 @@ export class App {
       });
     // Feed a graph's freshly fetched bars back into the holdings' quote cache so
     // a big load primes the rows instead of each re-buying the same price.
-    const onFreshBars = (bars: Map<string, Bar[]>): void =>
+    const onFreshBars = (bars: Map<string, Bar[]>): void => {
       this.primeQuotesFromGraphBars(bars, model);
+      if (bars.size > 0) {
+        this.lastDataPullAt = Date.now();
+        writeLastPull(this.lastDataPullAt);
+      }
+    };
 
     // Providers whose spend recorders also write each graph pull to the Settings
     // data-polling log (and tally a per-build credit counter), so the user can
@@ -7731,7 +7742,7 @@ export class App {
           ? null
           : springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
         if (forceFetch) {
-          this.pollLog("graph", "1D graph: reloading — re-pulling today's bars on request.");
+          this.pollLog("note", "Regenerate 1D graph (manual) — re-pulling today's bars on request.");
         }
         if (sprung) {
           this.pollLog("graph", "1D graph: reused the exported session (no live pull, 0 credits).");
@@ -7848,7 +7859,7 @@ export class App {
         // the user-initiated reload explicitly so it is never mistaken for a
         // background poll in the data-loading log.
         if (forceFetch) {
-          this.pollLog("graph", "1W graph: reloading — re-pulling the week's bars on request.");
+          this.pollLog("note", "Regenerate 1W graph (manual) — re-pulling the week's bars on request.");
         }
         if (sprung && !forceFetch && !preferStored) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
@@ -7915,6 +7926,9 @@ export class App {
           this.pollLog("graph", "1W graph: live build failed — no curve drawn.", "warn");
           return null;
         }
+      },
+      onPullComplete: () => {
+        void this.refreshPrices(this.sessionId, false);
       },
     };
   }
@@ -8114,7 +8128,11 @@ export class App {
       navSymbols,
       latestPublishedNavDate(new Date()),
     );
-    primeQuotesFromBars(bars, currencyBySymbol, Date.now(), undefined, navCovered);
+    const landedAt = Date.now();
+    const primed = primeQuotesFromBars(bars, currencyBySymbol, landedAt, undefined, navCovered);
+    for (const symbol of primed) {
+      this.holdingUpdatedAt.set(symbol, landedAt);
+    }
   }
 
   /**
