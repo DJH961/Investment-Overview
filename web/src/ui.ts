@@ -2583,10 +2583,12 @@ export interface LiveCurveChart {
  * cached export. The builder falls back to the springboard only when the stored
  * bars are too thin to draw, so a cold day never blanks the graph.
  */
-export type LiveCurveBuilder = (
+export type LiveCurveBuilder = ((
   range: LiveRange,
   opts?: { regenerateOnly?: boolean; forceFetch?: boolean; preferStored?: boolean },
-) => Promise<LiveCurveChart | null>;
+) => Promise<LiveCurveChart | null>) & {
+  onPullComplete?: () => void;
+};
 
 /**
  * The app shell's hooks for the live value chart: each lazily
@@ -2617,6 +2619,8 @@ export interface LiveGraphHooks {
   session: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean; preferStored?: boolean }) => Promise<LiveSessionResult | null>;
   /** Build the live 1W (daily-close) curve points, or null when unavailable. */
   week: (opts?: { regenerateOnly?: boolean; forceFetch?: boolean; preferStored?: boolean }) => Promise<CurvePoint[] | null>;
+  /** Fired when a live pull (and its redraw) successfully completes on demand. */
+  onPullComplete?: () => void;
 }
 
 /** One selectable preset: either a history slice or a live (fetched) curve. */
@@ -2975,6 +2979,9 @@ function chartWithTimeframe(
     const token = (activeToken += 1);
     try {
       await applyLive(option, token, false, true);
+      if (live && live.onPullComplete) {
+        live.onPullComplete();
+      }
     } finally {
       liveRefreshing = false;
       syncRefreshButton();
@@ -3626,16 +3633,21 @@ function renderValueChart(
   };
   const liveBuilder: LiveCurveBuilder | undefined =
     liveGraph
-      ? async (range, opts) => {
-          if (range === "1D") {
-            const built = await liveGraph.session(opts);
+      ? Object.assign(
+          async (range: LiveRange, opts?: { regenerateOnly?: boolean; forceFetch?: boolean; preferStored?: boolean }) => {
+            if (range === "1D") {
+              const built = await liveGraph.session(opts);
+              if (!built) return null;
+              return liveCurveToChart(built.points, prevClose, built.coverage);
+            }
+            const built = await liveGraph.week(opts);
             if (!built) return null;
-            return liveCurveToChart(built.points, prevClose, built.coverage);
+            return liveCurveToChart(built, null);
+          },
+          {
+            onPullComplete: liveGraph.onPullComplete,
           }
-          const built = await liveGraph.week(opts);
-          if (!built) return null;
-          return liveCurveToChart(built, null);
-        }
+        )
       : undefined;
 
   // The legend rows for the exported history; the chart wrapper owns rendering

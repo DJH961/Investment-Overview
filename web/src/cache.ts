@@ -185,7 +185,16 @@ export function primeQuotesFromBars(
     const existing = file[symbol];
     const knownInstant = existing ? (existing.priceTime ?? existing.at) : null;
     // Only ever move freshness forward — never overwrite a newer genuine quote.
-    if (knownInstant !== null && latest.t <= knownInstant) continue;
+    if (knownInstant !== null && latest.t <= knownInstant) {
+      if (latest.t === knownInstant && existing && (existing.at == null || now > existing.at)) {
+        file[symbol] = {
+          ...existing,
+          at: now,
+        };
+        primed.push(symbol);
+      }
+      continue;
+    }
     const currency = existing?.currency ?? currencyBySymbol.get(symbol) ?? null;
     if (currency === null) continue; // cannot denominate a bare native price safely
     const isNav = navValueDateSymbols.has(symbol);

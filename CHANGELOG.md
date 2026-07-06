@@ -13,6 +13,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.7] — 2026-07-06
+
+### Fixed
+
+- **Live graph reload and confirming data updates propagation.** Fixed a bug where clicking reload (↻) on the 1D/1W graph did not update the "last pulled" timestamp in the overview page footer and did not trigger a dashboard repaint or holdings success flash. Also fixed a bug where a pull that returned unchanged prices/timestamps (e.g. confirming existing price data) was skipped during graph priming and did not update the observation time (`at`) in the quote cache. The graph-bar priming pipeline now updates the observation time (`at`) even for confirming bar updates, and the graph reload trigger invokes a network-free dashboard repaint via a new `onPullComplete` callback to propagate the updated pull statistics, budget credits, and holding success flashes to the overview and table.
+
 ## [5.2.6] — 2026-07-06
 
 ### Fixed

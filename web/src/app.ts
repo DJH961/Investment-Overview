@@ -7664,8 +7664,13 @@ export class App {
       });
     // Feed a graph's freshly fetched bars back into the holdings' quote cache so
     // a big load primes the rows instead of each re-buying the same price.
-    const onFreshBars = (bars: Map<string, Bar[]>): void =>
+    const onFreshBars = (bars: Map<string, Bar[]>): void => {
       this.primeQuotesFromGraphBars(bars, model);
+      if (bars.size > 0) {
+        this.lastDataPullAt = Date.now();
+        writeLastPull(this.lastDataPullAt);
+      }
+    };
 
     // Providers whose spend recorders also write each graph pull to the Settings
     // data-polling log (and tally a per-build credit counter), so the user can
@@ -7916,6 +7921,9 @@ export class App {
           return null;
         }
       },
+      onPullComplete: () => {
+        void this.refreshPrices(this.sessionId, false);
+      },
     };
   }
 
@@ -8114,7 +8122,11 @@ export class App {
       navSymbols,
       latestPublishedNavDate(new Date()),
     );
-    primeQuotesFromBars(bars, currencyBySymbol, Date.now(), undefined, navCovered);
+    const landedAt = Date.now();
+    const primed = primeQuotesFromBars(bars, currencyBySymbol, landedAt, undefined, navCovered);
+    for (const symbol of primed) {
+      this.holdingUpdatedAt.set(symbol, landedAt);
+    }
   }
 
   /**
