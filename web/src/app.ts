@@ -1414,10 +1414,10 @@ export class App {
     const fxClause = (warmupPlan.legs.fxBars && fxWhy) ? ` FX-bar anchor due: ${fxWhy}.` : "";
     const quoteClause =
       prefetch.symbols.length > 0
-        ? `${prefetch.symbols.length} quote(s) via ${prefetch.route === "tiingo" ? "Tiingo rapid-fire" : "Twelve Data"}`
+        ? `${prefetch.symbols.length} quote(s)`
         : "no market quotes";
     const navClause =
-      prefetch.navSymbols.length > 0 ? `, ${prefetch.navSymbols.length} NAV fund(s) via Twelve Data` : "";
+      prefetch.navSymbols.length > 0 ? `, ${prefetch.navSymbols.length} NAV fund(s)` : "";
     return (
       `Login warm-up route — market ${marketOpen ? "open" : "closed"} (plan of ${planSize}). ` +
       `${quoteClause}${navClause}.${graphClause}${fxClause}${priorBit}`
@@ -7742,7 +7742,7 @@ export class App {
           ? null
           : springboardSessionCurve({ exported, liveTip, onRepair: (m) => this.repairLog(m) });
         if (forceFetch) {
-          this.pollLog("graph", "1D graph: reloading — re-pulling today's bars on request.");
+          this.pollLog("note", "Regenerate 1D graph (manual) — re-pulling today's bars on request.");
         }
         if (sprung) {
           this.pollLog("graph", "1D graph: reused the exported session (no live pull, 0 credits).");
@@ -7859,7 +7859,7 @@ export class App {
         // the user-initiated reload explicitly so it is never mistaken for a
         // background poll in the data-loading log.
         if (forceFetch) {
-          this.pollLog("graph", "1W graph: reloading — re-pulling the week's bars on request.");
+          this.pollLog("note", "Regenerate 1W graph (manual) — re-pulling the week's bars on request.");
         }
         if (sprung && !forceFetch && !preferStored) {
           this.pollLog("graph", "1W graph: reused the exported week sleeve (no live pull, 0 credits).");
