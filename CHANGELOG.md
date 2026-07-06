@@ -13,6 +13,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.8] — 2026-07-06
+
+### Fixed
+
+- **Optimized auto-lock warning and general popups for a mobile-first experience.** Restructured the auto-lock inactivity warning and the Twelve Data window countdown from bottom-pinned notifications to screen-filling, modal overlay cards (`.dialog-overlay` and `.dialog-card`). The new layout introduces a backdrop blur for focus, large clear icons, and stacked action buttons on mobile for finger-friendly tapping, which reflow to horizontal on wider screens. Enhanced the standard status toast (`.app-toast`) with a modern floating pill design, glassmorphism blur, and a pop animation. Added a smooth slide-down animation for the welcome back banner (`.app-toast.is-welcome`) and modernized the guided spotlight tour card (`.tour-card`) with custom radii, glassmorphism, and bold titles.
+- **Segmented 1W graph series by date boundary.** Updated the x-axis layout options on the collapsed "1W" graph to disconnect the value line and area path across date boundaries rather than bridging the overnight/weekend market-close gaps. The line path (`linePath`) treats day changes as pen-up breaks, and the area path (`areaPathD`) renders distinct closed polygons for each trading day segment, filling each down to the baseline.
+
 ## [5.2.7] — 2026-07-06
 
 ### Fixed

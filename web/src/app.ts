@@ -4308,29 +4308,40 @@ export class App {
     let remaining = Math.max(1, Math.ceil(leadMs / 1000));
     const message = (secs: number): string =>
       `Locking in ${secs} second${secs === 1 ? "" : "s"} due to inactivity`;
+    
+    const icon = h("div", { class: "dialog-card-icon" }, ["⏳"]);
+    
     const text = h(
-      "span",
-      { id: "auto-lock-warn-text", class: "auto-lock-warn-text", "aria-atomic": "true" },
+      "div",
+      { id: "auto-lock-warn-text", class: "dialog-card-text", "aria-atomic": "true" },
       [message(remaining)],
     );
     const stay = h("button", { class: "btn", type: "button" }, ["Stay unlocked"]);
     const dismiss = h(
       "button",
-      { class: "icon-btn ghost icon-only", type: "button", "aria-label": "Dismiss" },
-      ["×"],
+      { class: "btn ghost", type: "button" },
+      ["Dismiss"]
     );
-    const node = h(
+    
+    const card = h(
       "div",
       {
         id: "auto-lock-warning",
-        class: "app-toast is-autolock-warn",
+        class: "dialog-card is-autolock-warn",
         role: "alertdialog",
         "aria-label": "Auto-lock warning",
         "aria-labelledby": "auto-lock-warn-text",
         "aria-live": "assertive",
       },
-      [text, h("div", { class: "row auto-lock-warn-actions" }, [stay, dismiss])],
+      [
+        icon,
+        text,
+        h("div", { class: "dialog-card-actions" }, [stay, dismiss])
+      ]
     );
+
+    const overlay = h("div", { class: "dialog-overlay" }, [card]);
+
     stay.addEventListener("click", () => {
       // Extend: cancel the warning and re-arm the full window from now.
       this.dismissAutoLockWarning();
@@ -4338,8 +4349,8 @@ export class App {
       this.touchResume(Date.now());
     });
     dismiss.addEventListener("click", () => this.dismissAutoLockWarning());
-    document.body.append(node);
-    this.autoLockWarnEl = node;
+    document.body.append(overlay);
+    this.autoLockWarnEl = overlay;
     this.autoLockCountdownTimer = setInterval(() => {
       remaining -= 1;
       text.textContent = remaining > 0 ? message(remaining) : "Locking…";
@@ -4398,30 +4409,41 @@ export class App {
     let remaining = Math.max(1, Math.ceil(delayMs / 1000));
     const message = (secs: number): string =>
       `Waiting for a fresh Twelve Data window — starting ${subject} in ${secs} second${secs === 1 ? "" : "s"}…`;
+    
+    const icon = h("div", { class: "dialog-card-icon" }, ["⚡"]);
+    
     const text = h(
-      "span",
-      { id: "td-window-text", class: "auto-lock-warn-text", "aria-atomic": "true" },
+      "div",
+      { id: "td-window-text", class: "dialog-card-text", "aria-atomic": "true" },
       [message(remaining)],
     );
     const cancel = h("button", { class: "btn ghost", type: "button" }, ["Cancel"]);
-    const node = h(
+    
+    const card = h(
       "div",
       {
         id: "td-window-wait",
-        class: "app-toast is-autolock-warn",
+        class: "dialog-card is-autolock-warn is-countdown",
         role: "alertdialog",
         "aria-label": "Refresh scheduled",
         "aria-labelledby": "td-window-text",
         "aria-live": "polite",
       },
-      [text, h("div", { class: "row auto-lock-warn-actions" }, [cancel])],
+      [
+        icon,
+        text,
+        h("div", { class: "dialog-card-actions" }, [cancel])
+      ]
     );
+
+    const overlay = h("div", { class: "dialog-overlay" }, [card]);
+
     cancel.addEventListener("click", () => {
       this.dismissTwelveDataWindowCountdown();
       this.toast("Refresh cancelled.");
     });
-    document.body.append(node);
-    this.twelveDataWindowEl = node;
+    document.body.append(overlay);
+    this.twelveDataWindowEl = overlay;
     this.twelveDataWindowCountdownTimer = setInterval(() => {
       remaining -= 1;
       text.textContent = remaining > 0 ? message(remaining) : "Starting…";
