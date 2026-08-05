@@ -32,7 +32,7 @@ dependencies = [
     "python-dateutil>=2.9",
     "plotly>=5.22",
     "openpyxl>=3.1",
-    "cryptography>=48.0.1",
+    "cryptography>=50.0.0",
     # OS keychain access for the live-web companion secrets (mobile passphrase
     # and GitHub publish token) and the optional synced-tier passphrase. Kept in
     # core deps so the companion works out of the box; only the heavy SQLCipher
