@@ -58,6 +58,7 @@ import { reconstructSessionCurve, type Bar, type CurvePoint, type ReconHolding }
 import type { Decimal } from "./decimal-config";
 import { harvestDailyCloses, loadValueHistory, type DailyClose } from "./value-history";
 import type { TimeSeriesStore } from "./timeseries-store";
+import { WEEK_STORE_KEY } from "./week";
 
 /**
  * The furthest back the long-range reconstruction reaches: one year of calendar
@@ -244,6 +245,10 @@ export interface LongRangeOptions {
   now?: number;
   /** Per-day whole-book money-market value (USD) so the base steps per day. */
   mmDaysUsd?: { date: string; valueNativeUsd: Decimal }[];
+  /** Key under which 1W daily bars live (defaults to WEEK_STORE_KEY). */
+  weekStoreKey?: string;
+  /** Hook fired when daily bars/FX are freshly fetched, so the caller can seed 1W and quotes. */
+  onBarsFetched?: (bars: Map<string, Bar[]>, fx: Bar[]) => Promise<void> | void;
 }
 
 /** The outcome of a long-range build. */
@@ -267,8 +272,10 @@ export interface LongRangeResult {
  *      chart's 1Y horizon — {@link longRangeWindow});
  *   2. skips the network when the store already covers it and `force` is unset
  *      ({@link longRangeGapDays}) — the cost-minimal path;
- *   3. otherwise fetches each **market** holding's daily closes (+ daily FX) over
- *      the window, reconstructs the whole-book daily closes, and harvests them in.
+ *   3. otherwise checks if stored 1W daily bars already cover the gap without a fetch;
+ *   4. otherwise fetches each **market** holding's daily closes (+ daily FX) over
+ *      the window, seeds 1W via `onBarsFetched`, reconstructs the whole-book daily
+ *      closes, and harvests them in.
  *
  * NAV funds and cash ride flat in the anchor's constant base (the caller folds
  * them there), so the historical line re-prices the market sleeve genuinely while
@@ -305,20 +312,59 @@ export async function loadOrBuildLongRangeHistory(
     return { history: existing, fetched: false, gapDays, symbols: [] };
   }
 
-  let barsBySymbol: Map<string, Bar[]>;
-  try {
-    barsBySymbol = await fetchDailyBars(symbols);
-  } catch {
-    return { history: existing, fetched: false, gapDays, symbols: [] };
+  // Combine 1W and long-range: check whether the store's 1W daily-close session
+  // (or cached bars) already covers the gap days for every market symbol.
+  const weekStoreKey = options.weekStoreKey ?? WEEK_STORE_KEY;
+  let storedBarsCoverGap = false;
+  let barsBySymbol: Map<string, Bar[]> = new Map();
+  let fxBars: Bar[] = [];
+
+  if (!(options.force ?? false)) {
+    const weekStored = await store.loadSession(weekStoreKey).catch(() => null);
+    if (weekStored && weekStored.bars) {
+      let allCovered = true;
+      for (const s of symbols) {
+        const sBars = weekStored.bars[s] ?? [];
+        const coveredDays = new Set(sBars.map((b) => localDayOfInstant(b.t)));
+        if (gapDays.some((d) => !coveredDays.has(d))) {
+          allCovered = false;
+          break;
+        }
+      }
+      if (allCovered) {
+        storedBarsCoverGap = true;
+        for (const s of symbols) {
+          barsBySymbol.set(s, weekStored.bars[s] ?? []);
+        }
+        fxBars = weekStored.fx ?? [];
+      }
+    }
   }
 
-  let fxBars: Bar[] = [];
-  if (fetchFx) {
+  let actuallyFetched = false;
+  if (!storedBarsCoverGap) {
     try {
-      fxBars = await fetchFx();
+      barsBySymbol = await fetchDailyBars(symbols);
+      actuallyFetched = true;
     } catch {
-      // FX only refines the EUR pivot; a failure falls back to the settled baseFx.
-      fxBars = [];
+      return { history: existing, fetched: false, gapDays, symbols: [] };
+    }
+
+    if (fetchFx) {
+      try {
+        fxBars = await fetchFx();
+      } catch {
+        // FX only refines the EUR pivot; a failure falls back to the settled baseFx.
+        fxBars = [];
+      }
+    }
+
+    if (options.onBarsFetched) {
+      try {
+        await options.onBarsFetched(barsBySymbol, fxBars);
+      } catch {
+        /* best-effort */
+      }
     }
   }
 
@@ -336,5 +382,5 @@ export async function loadOrBuildLongRangeHistory(
     await harvestDailyCloses(store, inWindow, now);
   }
   const history = await loadValueHistory(store);
-  return { history, fetched: true, gapDays, symbols };
+  return { history, fetched: actuallyFetched, gapDays, symbols };
 }

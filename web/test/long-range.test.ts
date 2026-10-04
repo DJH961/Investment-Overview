@@ -18,6 +18,7 @@ import {
 import type { Bar } from "../src/timeseries";
 import { memoryBackend, TimeSeriesStore } from "../src/timeseries-store";
 import { loadValueHistory, recordDailyClose } from "../src/value-history";
+import { WEEK_STORE_KEY } from "../src/week";
 
 function holding(partial: Partial<IntradayHolding> & { priceSymbol: string }): IntradayHolding {
   return {
@@ -295,5 +296,83 @@ describe("loadOrBuildLongRangeHistory", () => {
     expect(result.history[0].valueUsd!.toString()).toBe("110");
     // EUR pivot re-marked from baseFx 1.1 to the day's 1.25: 90 * 1.1/1.25 = 79.2; + base 10.
     expect(result.history[0].valueEur.toString()).toBe("89.2");
+  });
+
+  it("reuses stored 1W-daily bars when they cover gapDays without network fetch (0 credits)", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    // Seed WEEK_STORE_KEY with daily bars covering the gap days (2024-03-04, 2024-03-05).
+    await store.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: {
+        AAA: [dailyBar("2024-03-04", "8"), dailyBar("2024-03-05", "9")],
+      },
+      fx: [],
+      tips: [],
+      updatedAt: Date.now(),
+    });
+    let fetched = false;
+    const result = await loadOrBuildLongRangeHistory({
+      ...base,
+      anchor: anchor([holding({ priceSymbol: "AAA" })]),
+      store,
+      fetchDailyBars: async () => {
+        fetched = true;
+        throw new Error("Should not be called");
+      },
+    });
+    expect(fetched).toBe(false);
+    expect(result.fetched).toBe(false);
+    expect(result.history.map((c) => c.date)).toEqual(["2024-03-04", "2024-03-05"]);
+    const stored = await loadValueHistory(store);
+    expect(stored.map((c) => c.date)).toEqual(["2024-03-04", "2024-03-05"]);
+  });
+
+  it("invokes onBarsFetched when a network fetch occurs to seed 1W and quotes", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    let seededBars: Map<string, Bar[]> | null = null;
+    let seededFx: Bar[] | null = null;
+    const result = await loadOrBuildLongRangeHistory({
+      ...base,
+      anchor: anchor([holding({ priceSymbol: "AAA" })]),
+      store,
+      fetchDailyBars: async () =>
+        new Map([["AAA", [dailyBar("2024-03-04", "8"), dailyBar("2024-03-05", "9")]]]),
+      fetchFx: async () => [dailyBar("2024-03-04", "1.1")],
+      onBarsFetched: (bars, fx) => {
+        seededBars = bars;
+        seededFx = fx;
+      },
+    });
+    expect(result.fetched).toBe(true);
+    expect(seededBars).not.toBeNull();
+    expect(seededBars!.get("AAA")).toHaveLength(2);
+    expect(seededFx).not.toBeNull();
+    expect(seededFx).toHaveLength(1);
+  });
+
+  it("bypasses stored bars when force is true", async () => {
+    const store = new TimeSeriesStore(memoryBackend());
+    await store.saveSession({
+      day: WEEK_STORE_KEY,
+      bars: {
+        AAA: [dailyBar("2024-03-04", "8"), dailyBar("2024-03-05", "9")],
+      },
+      fx: [],
+      tips: [],
+      updatedAt: Date.now(),
+    });
+    let fetched = false;
+    const result = await loadOrBuildLongRangeHistory({
+      ...base,
+      anchor: anchor([holding({ priceSymbol: "AAA" })]),
+      store,
+      force: true,
+      fetchDailyBars: async () => {
+        fetched = true;
+        return new Map([["AAA", [dailyBar("2024-03-04", "12"), dailyBar("2024-03-05", "14")]]]);
+      },
+    });
+    expect(fetched).toBe(true);
+    expect(result.fetched).toBe(true);
   });
 });

@@ -153,7 +153,7 @@ function barsFrom(bars: Bar[], fromMs: number): Bar[] {
  * day's live-tip breadcrumb trail or its FX track — it only thickens the day with
  * the bars this 1W pull paid for, which a later 1D build then reads back for free.
  */
-async function persistWindowBarsPerDay(
+export async function persistWindowBarsPerDay(
   store: TimeSeriesStore,
   barsBySymbol: Record<string, Bar[]>,
   window: string[],

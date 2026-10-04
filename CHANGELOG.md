@@ -13,6 +13,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.10] — 2026-10-04
+
+### Fixed
+
+- **Consolidated 1W and long-range history data fetching to prevent quota exhaustion on login.** Fixed an issue on the mobile web companion where logging in after a long period exhausted almost all hourly Tiingo credits (~36/40) and Twelve Data limits (8/min) due to sequential duplicate pulls for 1D, 1W, and long-range history across 12 stocks and 5 NAV funds. The login warm-up prefetch now defers multi-session daily bar pulls to post-unlock, pulling only live essentials pre-decrypt (EUR/USD spot, dense 1D session bars, and NAV fund bars: 18 requests total, split across Twelve Data and Tiingo). Post-unlock, `regenerateLongRangeHistory` queries a unified date window spanning from $\min(\text{long-range start}, \text{week start})$ through today. Because providers charge 1 credit per symbol regardless of date range, this unified pull fetches all needed daily closes in a single request per ticker, seeds the 1W daily cache (`WEEK_STORE_KEY`), primes quote rows and EUR/USD FX, and persists per-day sessions. Subsequent 1W curve generation reuses these cached bars at 0 additional network cost. When logging in on consecutive days, `loadOrBuildLongRangeHistory` checks stored 1W daily bars and reuses them directly without hitting the network when they already cover the gap.
+
 ## [5.2.9] — 2026-10-04
 
 ### Fixed
