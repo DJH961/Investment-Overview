@@ -34,6 +34,7 @@ from investment_dashboard.repositories import (
 )
 from investment_dashboard.services import (
     instrument_enrichment_service,
+    intraday_snapshots_service,
     snapshots_service,
     transaction_fx_service,
 )
@@ -196,9 +197,11 @@ def import_csv(
 
     # Any newly-inserted past-dated row invalidates every cached daily close on
     # or after the earliest one, so the affected window of /monthly, /yearly and
-    # the equity curve recomputes lazily against the imported history.
+    # the equity curve recomputes lazily against the imported history. It also
+    # clears the cached intraday 1D/1W curves so stale samples are wiped.
     if inserted_dates:
         snapshots_service.invalidate_for_trade_dates(session, inserted_dates)
+        intraday_snapshots_service.clear_week_samples(session)
 
     if fx_missing:
         log.info(

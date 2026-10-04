@@ -13,6 +13,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.2.9] — 2026-10-04
+
+### Fixed
+
+- **Manual graph reload options in desktop Settings and Overview charts.** Added explicit controls to reload 1D and 1W curves on desktop, matching mobile capabilities. In Settings under "Data refresh", added "Reload 1D graph", "Reload 1W graph", and "Reload all graphs" action buttons to clear cached intraday and multi-session week bars and reconstruct them from scratch. On the Overview value-over-time card, added a dedicated reload button (↻) directly beside the range selector to reload and redraw the active curve in-place with instant feedback.
+- **Automatic graph reload after importing transactions.** In the desktop transaction import modal (`/transactions`), inserting new CSV or XLSX transactions now automatically clears cached intraday and week sample curves and triggers a graph reload before publishing, ensuring that 1D, 1W, and snapshot curves immediately reflect newly imported positions.
+
 ## [5.2.8] — 2026-07-06
 
 ### Fixed

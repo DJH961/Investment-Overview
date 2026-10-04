@@ -8,7 +8,8 @@ from datetime import UTC, date, datetime, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
 from html import escape
 
-from nicegui import ui
+from nicegui import run, ui
+from sqlalchemy.orm import Session
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.domain import market_hours
@@ -22,6 +23,7 @@ from investment_dashboard.services import (
     investing_power_service,
     prices_service,
     refresh_status,
+    snapshots_service,
     timezone_service,
 )
 from investment_dashboard.services.daily_growth_view import (
@@ -71,6 +73,7 @@ from investment_dashboard.ui.pages._overview_query import (
     get_positions,
     holding_freshness,
     previous_session_close_value,
+    range_start_date,
     remember_overview_range,
     resolve_range_days,
 )
@@ -1943,6 +1946,127 @@ def _on_value_range_change(label: str) -> None:  # pragma: no cover - UI callbac
     ui.navigate.to(f"{PATH}?value_range={label}")
 
 
+def _perform_graph_reload(range_label: str) -> int | None:
+    """Reload the requested graph curve from scratch."""
+    with session_scope() as session:
+        if range_label == "Day":
+            return intraday_snapshots_service.reload_day_graph(session)
+        if range_label == "Week":
+            return intraday_snapshots_service.reload_week_graph(session)
+        today = date.today()
+        start = range_start_date(session, range_label, today) or today
+        snapshots_service.warm_range(session, start, today, force=True)
+        return None
+
+
+def _rebuild_plot_figure(
+    range_label: str,
+    *,
+    display_ccy: str,
+    secondary_ccy: str | None,
+    display_tz: tzinfo | None,
+    session: Session | None = None,
+) -> object | None:
+    """Rebuild the Plotly figure for the given range after a reload."""
+    if session is not None:
+        return _rebuild_plot_figure_with_session(
+            session,
+            range_label,
+            display_ccy=display_ccy,
+            secondary_ccy=secondary_ccy,
+            display_tz=display_tz,
+        )
+    with session_scope() as sess:
+        return _rebuild_plot_figure_with_session(
+            sess,
+            range_label,
+            display_ccy=display_ccy,
+            secondary_ccy=secondary_ccy,
+            display_tz=display_tz,
+        )
+
+
+def _rebuild_plot_figure_with_session(
+    session: Session,
+    range_label: str,
+    *,
+    display_ccy: str,
+    secondary_ccy: str | None,
+    display_tz: tzinfo | None,
+) -> object | None:
+    intraday = range_label == "Day"
+    week = range_label == "Week"
+    if intraday:
+        series = build_intraday_value_series(
+            session, currency=display_ccy, tz=display_tz, freeze_after_hours=True
+        )
+        sec = None
+        if secondary_ccy:
+            sec = build_intraday_value_series(
+                session, currency=secondary_ccy, tz=display_tz, freeze_after_hours=True
+            )
+            if not sec or len(sec) != (len(series) if series else 0):
+                sec = None
+        pc = previous_session_close_value(session, currency=display_ccy)
+        return (
+            _value_curve_figure(
+                series,
+                currency=display_ccy,
+                intraday=True,
+                prev_close=pc,
+                secondary=sec,
+                secondary_currency=secondary_ccy if sec else None,
+                tz=display_tz,
+            )
+            if series
+            else None
+        )
+    if week:
+        series = build_week_value_series(
+            session, currency=display_ccy, tz=display_tz, freeze_after_hours=True
+        )
+        sec = None
+        if secondary_ccy:
+            sec = build_week_value_series(
+                session, currency=secondary_ccy, tz=display_tz, freeze_after_hours=True
+            )
+            if not sec or len(sec) != (len(series) if series else 0):
+                sec = None
+        if not series:
+            series = build_value_series(session, currency=display_ccy, range_label=range_label)
+        return (
+            _value_curve_figure(
+                series,
+                currency=display_ccy,
+                intraday=False,
+                week=True,
+                secondary=sec,
+                secondary_currency=secondary_ccy if sec else None,
+                tz=display_tz,
+            )
+            if series
+            else None
+        )
+
+    series = build_value_series(session, currency=display_ccy, range_label=range_label)
+    sec = None
+    if secondary_ccy:
+        sec = build_value_series(session, currency=secondary_ccy, range_label=range_label)
+    return (
+        _value_curve_figure(
+            series,
+            currency=display_ccy,
+            intraday=False,
+            week=False,
+            secondary=sec,
+            secondary_currency=secondary_ccy if sec else None,
+            tz=display_tz,
+        )
+        if series
+        else None
+    )
+
+
 def _value_over_time_section(  # type: ignore[no-untyped-def]
     value_series,
     *,
@@ -1972,6 +2096,18 @@ def _value_over_time_section(  # type: ignore[no-untyped-def]
                 value=range_label,
                 on_change=lambda e: _on_value_range_change(str(e.value)),
             ).props("dense unelevated no-caps")
+            tooltip_text = (
+                "Reload 1D graph"
+                if intraday
+                else ("Reload 1W graph" if week else f"Reload {range_label} graph")
+            )
+            reload_btn = (
+                ui.button(icon="refresh")
+                .props("flat dense round size=sm color=primary")
+                .tooltip(tooltip_text)
+            )
+
+        plot = None
         if not value_series:
             empty_state(
                 "show_chart",
@@ -2003,6 +2139,46 @@ def _value_over_time_section(  # type: ignore[no-untyped-def]
                     prev_close=prev_close,
                     secondary_ccy=secondary_ccy,
                 )
+
+        async def _on_reload_clicked() -> None:
+            reload_btn.disable()
+            try:
+                msg = (
+                    "Reloading 1D graph…"
+                    if intraday
+                    else ("Reloading 1W graph…" if week else f"Reloading {range_label} graph…")
+                )
+                ui.notify(msg, type="info")
+                pts = await run.io_bound(_perform_graph_reload, range_label)
+                success_msg = (
+                    f"1D graph reloaded: {pts} point(s)"
+                    if intraday
+                    else (
+                        f"1W graph reloaded: {pts} sample(s)"
+                        if week
+                        else f"{range_label} graph reloaded"
+                    )
+                )
+                ui.notify(success_msg, type="positive")
+
+                if plot is not None:
+                    fig = _rebuild_plot_figure(
+                        range_label,
+                        display_ccy=display_ccy,
+                        secondary_ccy=secondary_ccy,
+                        display_tz=display_tz,
+                    )
+                    if fig is not None:
+                        plot.update_figure(fig)
+                else:
+                    ui.navigate.to(f"{PATH}?value_range={range_label}")
+            except Exception as exc:
+                log.exception("Graph reload failed")
+                ui.notify(f"Reload failed: {exc}", type="negative")
+            finally:
+                reload_btn.enable()
+
+        reload_btn.on_click(_on_reload_clicked)
 
 
 def _install_intraday_live_update(plot, *, display_ccy, tz, prev_close=None, secondary_ccy=None):  # type: ignore[no-untyped-def]  # pragma: no cover - UI timer
