@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import (
     accounts_repo,
+    app_config_repo,
     fx_repo,
     instruments_repo,
     intraday_repo,
@@ -1348,7 +1350,6 @@ class TestBackfillGraphs:
     ) -> None:
         import contextlib
         from collections.abc import Iterator
-        from typing import Any
 
         from investment_dashboard import db as db_module
 
@@ -1379,3 +1380,103 @@ class TestBackfillGraphs:
         # day is re-attempted every tick rather than frozen by the render guard.
         assert calls == {"reconstruct": True, "week_force": True}
         assert result is sentinel
+
+
+class TestReloadGraphs:
+    """Manual reload and cache clearing for the 1D and 1W curves."""
+
+    def test_clear_day_samples_wipes_session_and_marker(self, session: Session) -> None:
+        live_at = datetime(2024, 6, 3, 14, 0)
+        intraday_repo.insert_sample(session, live_at, Decimal("1000.00"))
+        iss._mark_reconstructed(session, date(2024, 6, 3))
+
+        deleted = iss.clear_day_samples(session, date(2024, 6, 3))
+        assert deleted == 1
+        assert intraday_repo.list_in_range(session, live_at, live_at) == []
+        assert app_config_repo.get(session, iss._RECONSTRUCTED_KEY) is None
+
+    def test_clear_week_samples_wipes_all_window_samples_and_markers(
+        self, session: Session
+    ) -> None:
+        t1 = datetime(2024, 6, 3, 14, 0)
+        t2 = datetime(2024, 6, 4, 14, 0)
+        intraday_repo.insert_sample(session, t1, Decimal("1000.00"))
+        intraday_repo.insert_sample(session, t2, Decimal("1100.00"))
+        iss._mark_reconstructed(session, date(2024, 6, 4))
+        iss._mark_week_day_fetched(session, date(2024, 6, 3), date(2024, 6, 4))
+
+        deleted = iss.clear_week_samples(session, now=datetime(2024, 6, 4, 16, 0, tzinfo=UTC))
+        assert deleted >= 2
+        assert intraday_repo.list_in_range(session, t1, t2) == []
+        assert app_config_repo.get(session, iss._RECONSTRUCTED_KEY) is None
+        assert not iss._week_day_fetched(session, date(2024, 6, 3), date(2024, 6, 4))
+
+    def test_reload_day_graph_clears_and_reconstructs(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        called: dict[str, object] = {}
+
+        def _fake_clear(sess: Session, **kw: Any) -> int:
+            called["clear"] = True
+            return 1
+
+        def _fake_reconstruct(sess: Session, **kw: Any) -> int:
+            called["reconstruct_force"] = kw.get("force")
+            return 42
+
+        monkeypatch.setattr(iss, "clear_day_samples", _fake_clear)
+        monkeypatch.setattr(iss, "reconstruct_last_session", _fake_reconstruct)
+
+        written = iss.reload_day_graph(session, now=_NOW)
+        assert written == 42
+        assert called == {"clear": True, "reconstruct_force": True}
+
+    def test_reload_week_graph_clears_and_reconstructs_both(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        called: dict[str, object] = {}
+
+        def _fake_clear(sess: Session, **kw: Any) -> int:
+            called["clear_week"] = True
+            return 2
+
+        def _fake_reconstruct(sess: Session, **kw: Any) -> int:
+            called["reconstruct_force"] = kw.get("force")
+            return 42
+
+        def _fake_week(sess: Session, **kw: Any) -> list[Any]:
+            called["week_force"] = kw.get("force")
+            return [1, 2, 3]
+
+        monkeypatch.setattr(iss, "clear_week_samples", _fake_clear)
+        monkeypatch.setattr(iss, "reconstruct_last_session", _fake_reconstruct)
+        monkeypatch.setattr(iss, "week_series_with_fx", _fake_week)
+
+        count = iss.reload_week_graph(session, now=_NOW)
+        assert count == 3
+        assert called == {"clear_week": True, "reconstruct_force": True, "week_force": True}
+
+    def test_reload_graphs_reloads_both_and_warms_snapshots(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        called: dict[str, object] = {}
+
+        def _fake_clear(sess: Session, **kw: Any) -> int:
+            called["clear_week"] = True
+            return 1
+
+        def _fake_reconstruct(sess: Session, **kw: Any) -> int:
+            called["reconstruct_force"] = kw.get("force")
+            return 10
+
+        def _fake_week(sess: Session, **kw: Any) -> list[Any]:
+            called["week_force"] = kw.get("force")
+            return [1, 2, 3, 4]
+
+        monkeypatch.setattr(iss, "clear_week_samples", _fake_clear)
+        monkeypatch.setattr(iss, "reconstruct_last_session", _fake_reconstruct)
+        monkeypatch.setattr(iss, "week_series_with_fx", _fake_week)
+
+        result = iss.reload_graphs(session, now=_NOW)
+        assert result == {"day": 10, "week": 4}
+        assert called == {"clear_week": True, "reconstruct_force": True, "week_force": True}

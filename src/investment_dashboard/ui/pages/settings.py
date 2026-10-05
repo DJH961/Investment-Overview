@@ -38,6 +38,7 @@ from investment_dashboard.services import (
     display_currency_service,
     fetch_report,
     instrument_enrichment_service,
+    intraday_snapshots_service,
     investing_power_service,
     logging_service,
     price_probe_service,
@@ -145,6 +146,57 @@ async def _refresh_prices_clicked(button: ui.button) -> None:  # pragma: no cove
         except Exception as exc:
             log.exception("Price refresh failed")
             ui.notify(f"Price refresh failed: {exc}", type="negative")
+
+
+async def _reload_day_graph_clicked(button: ui.button) -> None:  # pragma: no cover - UI
+    """Manual "Reload 1D graph": wipe stored intraday samples and re-pull today's session."""
+
+    def _work() -> int:
+        with session_scope() as session:
+            return intraday_snapshots_service.reload_day_graph(session)
+
+    async with _button_busy(button):
+        try:
+            total = await run.io_bound(_work)
+            ui.notify(f"1D graph reloaded: {total} point(s)", type="positive")
+        except Exception as exc:
+            log.exception("1D graph reload failed")
+            ui.notify(f"1D graph reload failed: {exc}", type="negative")
+
+
+async def _reload_week_graph_clicked(button: ui.button) -> None:  # pragma: no cover - UI
+    """Manual "Reload 1W graph": wipe stored week sleeve and re-pull all sessions."""
+
+    def _work() -> int:
+        with session_scope() as session:
+            return intraday_snapshots_service.reload_week_graph(session)
+
+    async with _button_busy(button):
+        try:
+            total = await run.io_bound(_work)
+            ui.notify(f"1W graph reloaded: {total} sample(s)", type="positive")
+        except Exception as exc:
+            log.exception("1W graph reload failed")
+            ui.notify(f"1W graph reload failed: {exc}", type="negative")
+
+
+async def _reload_all_graphs_clicked(button: ui.button) -> None:  # pragma: no cover - UI
+    """Manual "Reload all graphs": reload both 1D and 1W curves from scratch."""
+
+    def _work() -> dict[str, int]:
+        with session_scope() as session:
+            return intraday_snapshots_service.reload_graphs(session)
+
+    async with _button_busy(button):
+        try:
+            counts = await run.io_bound(_work)
+            ui.notify(
+                f"Graphs reloaded: {counts.get('day', 0)} 1D point(s), {counts.get('week', 0)} 1W sample(s)",
+                type="positive",
+            )
+        except Exception as exc:
+            log.exception("Graphs reload failed")
+            ui.notify(f"Graphs reload failed: {exc}", type="negative")
 
 
 async def _refresh_via_tiingo_clicked(button: ui.button) -> None:  # pragma: no cover - UI
@@ -1072,7 +1124,7 @@ def _confirm_seed() -> None:  # pragma: no cover - UI
 
 
 def _render_data_refresh() -> None:  # pragma: no cover - UI
-    with ui.row().classes("gap-md"):
+    with ui.row().classes("gap-md flex-wrap"):
         fx_btn = ui.button("Refresh FX rates", icon="currency_exchange").props(
             "flat color=primary no-caps"
         )
@@ -1081,6 +1133,18 @@ def _render_data_refresh() -> None:  # pragma: no cover - UI
             "flat color=primary no-caps"
         )
         prices_btn.on_click(lambda: _refresh_prices_clicked(prices_btn))
+        day_graph_btn = ui.button("Reload 1D graph", icon="show_chart").props(
+            "flat color=primary no-caps"
+        )
+        day_graph_btn.on_click(lambda: _reload_day_graph_clicked(day_graph_btn))
+        week_graph_btn = ui.button("Reload 1W graph", icon="auto_graph").props(
+            "flat color=primary no-caps"
+        )
+        week_graph_btn.on_click(lambda: _reload_week_graph_clicked(week_graph_btn))
+        all_graphs_btn = ui.button("Reload all graphs", icon="refresh").props(
+            "flat color=primary no-caps"
+        )
+        all_graphs_btn.on_click(lambda: _reload_all_graphs_clicked(all_graphs_btn))
         ui.button(
             "Recalculate FX-derived values",
             icon="calculate",

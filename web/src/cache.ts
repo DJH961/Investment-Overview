@@ -1030,6 +1030,27 @@ export function writeLastPrefetch(at: number, storage: StorageLike | null = defa
 
 const SYMBOL_PLAN_KEY = "iv.web.symbol_plan";
 const SESSION_STATUS_KEY = "iv.web.session_status";
+const LAST_EXPORT_DAY_KEY = "iv.web.last_export_day";
+
+/** Read the last known exported curve day (`YYYY-MM-DD`), or null. */
+export function readLastExportDay(storage: StorageLike | null = defaultStorage()): string | null {
+  const raw = storage?.getItem(LAST_EXPORT_DAY_KEY);
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+/** Persist the last known exported curve day (`YYYY-MM-DD`). */
+export function writeLastExportDay(day: string | null, storage: StorageLike | null = defaultStorage()): void {
+  if (!storage) return;
+  try {
+    if (day) {
+      storage.setItem(LAST_EXPORT_DAY_KEY, day);
+    } else {
+      storage.removeItem(LAST_EXPORT_DAY_KEY);
+    }
+  } catch {
+    /* best-effort */
+  }
+}
 
 /**
  * A single symbol the companion knows it will want to price, with just enough
@@ -1150,6 +1171,7 @@ export const CACHE_KEYS = {
   BLOB_KEY,
   SYMBOL_PLAN_KEY,
   SESSION_STATUS_KEY,
+  LAST_EXPORT_DAY_KEY,
 } as const;
 
 /**

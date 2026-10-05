@@ -102,7 +102,7 @@ def test_bundle_defaults_as_of_to_exchange_today_not_local(session, monkeypatch)
     # date and assert the default flows from ``exchange_today``.
     import investment_dashboard.ui.pages._analytics_query as aq
 
-    et_day = date(2026, 6, 26)
+    et_day = date.today() - timedelta(days=1)
     monkeypatch.setattr(aq.market_hours, "exchange_today", lambda *a, **k: et_day)
     bundle = build_bundle(session, currency="EUR", lookback_days=3)
     assert bundle.as_of == et_day

@@ -7,6 +7,7 @@ parsed/serialised by the caller.
 
 from __future__ import annotations
 
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import AppConfig
@@ -27,3 +28,20 @@ def set_value(session: Session, key: str, value: str | None) -> None:
     else:
         row.value = value
     session.flush()
+
+
+def delete_key(session: Session, key: str) -> bool:
+    """Delete a key from ``app_config``. Returns True if a row was deleted."""
+    row = session.get(AppConfig, key)
+    if row is not None:
+        session.delete(row)
+        session.flush()
+        return True
+    return False
+
+
+def delete_by_prefix(session: Session, prefix: str) -> int:
+    """Delete all keys starting with ``prefix``. Returns rows removed."""
+    result = session.execute(delete(AppConfig).where(AppConfig.key.startswith(prefix)))
+    session.flush()
+    return int(result.rowcount or 0)

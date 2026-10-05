@@ -1588,3 +1588,143 @@ def backfill_graphs(*, now: datetime | None = None) -> GraphCoverage:
     except Exception:  # pragma: no cover - defensive: backfill is best-effort
         log.warning("intraday graph backfill failed", exc_info=True)
         return GraphCoverage(day_below_target=False, week_days_below_target=())
+
+
+def clear_day_samples(
+    session: Session,
+    session_date: date | None = None,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Wipe cached 1D intraday samples and clear the done marker.
+
+    Returns the number of samples deleted.
+    """
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    session_date = session_date or last_session_date(now)
+    start = _session_start_utc(session_date)
+    end = _session_start_utc(session_date + timedelta(days=1))
+    with cache_write_session(session) as cache:
+        deleted = intraday_repo.delete_in_range(cache, start, end)
+    app_config_repo.delete_key(session, _RECONSTRUCTED_KEY)
+    return deleted
+
+
+def clear_week_samples(
+    session: Session,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Wipe cached 1W intraday samples and clear week & day done markers.
+
+    Returns the number of samples deleted.
+    """
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    with cache_write_session(session) as cache:
+        deleted = intraday_repo.delete_all(cache)
+    app_config_repo.delete_key(session, _RECONSTRUCTED_KEY)
+    app_config_repo.delete_by_prefix(session, _WEEK_FETCHED_PREFIX)
+    return deleted
+
+
+def reload_day_graph(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    fetcher: object | None = None,
+    fx_fetcher: object | None = None,
+    fx_fallback_fetcher: object | None = None,
+) -> int:
+    """Wipe stored 1D intraday bars and re-pull them from scratch.
+
+    Returns the number of points reconstructed into cache.
+    """
+    now = now or datetime.now(UTC)
+    clear_day_samples(session, now=now)
+    return reconstruct_last_session(
+        session,
+        now=now,
+        force=True,
+        fetcher=fetcher,
+        fx_fetcher=fx_fetcher,
+        fx_fallback_fetcher=fx_fallback_fetcher,
+    )
+
+
+def reload_week_graph(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    fetcher: object | None = None,
+    fx_fetcher: object | None = None,
+    fx_fallback_fetcher: object | None = None,
+    interval: str = WEEK_INTERVAL,
+) -> int:
+    """Wipe stored 1W intraday bars and re-pull them from scratch.
+
+    Rebuilds both the 1D session and the multi-session week sleeve.
+    Returns the total number of samples in the refreshed week curve.
+    """
+    now = now or datetime.now(UTC)
+    clear_week_samples(session, now=now)
+    reconstruct_last_session(
+        session,
+        now=now,
+        force=True,
+        fetcher=fetcher,
+        fx_fetcher=fx_fetcher,
+        fx_fallback_fetcher=fx_fallback_fetcher,
+    )
+    samples = week_series_with_fx(
+        session,
+        now=now,
+        force=True,
+        fetcher=fetcher,
+        fx_fetcher=fx_fetcher,
+        fx_fallback_fetcher=fx_fallback_fetcher,
+        interval=interval,
+    )
+    return len(samples)
+
+
+def reload_graphs(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    fetcher: object | None = None,
+    fx_fetcher: object | None = None,
+    fx_fallback_fetcher: object | None = None,
+) -> dict[str, int]:
+    """Reload all live graphs (1D and 1W) from scratch.
+
+    Used by manual triggers and automatically after importing new transactions.
+    """
+    from investment_dashboard.services import snapshots_service  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    clear_week_samples(session, now=now)
+    day_pts = reconstruct_last_session(
+        session,
+        now=now,
+        force=True,
+        fetcher=fetcher,
+        fx_fetcher=fx_fetcher,
+        fx_fallback_fetcher=fx_fallback_fetcher,
+    )
+    samples = week_series_with_fx(
+        session,
+        now=now,
+        force=True,
+        fetcher=fetcher,
+        fx_fetcher=fx_fetcher,
+        fx_fallback_fetcher=fx_fallback_fetcher,
+    )
+    try:
+        today = date.today()
+        snapshots_service.warm_range(session, today - timedelta(days=7), today, force=True)
+    except Exception:
+        log.warning("Snapshot warm in reload_graphs failed", exc_info=True)
+    return {"day": day_pts, "week": len(samples)}

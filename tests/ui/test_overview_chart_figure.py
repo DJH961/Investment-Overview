@@ -6,6 +6,8 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import plotly.graph_objects as go
+import pytest
+from sqlalchemy.orm import Session
 
 from investment_dashboard.ui.charts import padded_range
 from investment_dashboard.ui.pages._overview_query import ValueSeriesPoint
@@ -250,3 +252,67 @@ class TestIntradayDayLabel:
         ]
         fig = _value_curve_figure(pts, currency="EUR", intraday=True)
         assert "today" in fig.layout.title.text
+
+
+class TestGraphReloadHelpers:
+    def test_perform_graph_reload_dispatches_correctly(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from investment_dashboard.services import intraday_snapshots_service, snapshots_service
+        from investment_dashboard.ui.pages.overview import _perform_graph_reload
+
+        called: dict[str, bool] = {}
+
+        def _fake_reload_day(sess: Session) -> int:
+            called["day"] = True
+            return 10
+
+        def _fake_reload_week(sess: Session) -> int:
+            called["week"] = True
+            return 20
+
+        def _fake_warm_range(sess: Session, *args: object, **kw: object) -> int:
+            called["warm"] = True
+            return 5
+
+        monkeypatch.setattr(intraday_snapshots_service, "reload_day_graph", _fake_reload_day)
+        monkeypatch.setattr(intraday_snapshots_service, "reload_week_graph", _fake_reload_week)
+        monkeypatch.setattr(snapshots_service, "warm_range", _fake_warm_range)
+
+        assert _perform_graph_reload("Day") == 10
+        assert called.get("day") is True
+
+        assert _perform_graph_reload("Week") == 20
+        assert called.get("week") is True
+
+        assert _perform_graph_reload("Month") is None
+        assert called.get("warm") is True
+
+    def test_rebuild_plot_figure_runs_without_error(self, session: Session) -> None:
+        from investment_dashboard.ui.pages.overview import _rebuild_plot_figure
+
+        # On empty session, returns None (no series) or Figure without raising
+        _rebuild_plot_figure(
+            "Day", display_ccy="EUR", secondary_ccy="USD", display_tz=None, session=session
+        )
+        _rebuild_plot_figure(
+            "Week", display_ccy="EUR", secondary_ccy=None, display_tz=None, session=session
+        )
+
+    @pytest.mark.anyio
+    async def test_reload_graphs_after_import_calls_service(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from investment_dashboard.services import intraday_snapshots_service
+        from investment_dashboard.ui.pages.transactions import _reload_graphs_after_import
+
+        called = False
+
+        def _fake_reload(sess: Session) -> dict[str, int]:
+            nonlocal called
+            called = True
+            return {"day": 1, "week": 2}
+
+        monkeypatch.setattr(intraday_snapshots_service, "reload_graphs", _fake_reload)
+        await _reload_graphs_after_import()
+        assert called is True

@@ -84,6 +84,26 @@ class TestImportFidelity:
         assert snapshots_repo.get_snapshot(session, date(2024, 1, 10)) is None
         assert snapshots_repo.get_snapshot(session, date(2024, 6, 1)) is None
 
+    def test_import_clears_intraday_week_samples(
+        self, session: Session, usd_account: int, fx_seeded: None
+    ) -> None:
+        from datetime import datetime
+
+        from investment_dashboard.repositories import intraday_repo
+        from investment_dashboard.services import intraday_snapshots_service
+
+        sample_time = datetime(2024, 6, 3, 14, 0)
+        intraday_repo.insert_sample(session, sample_time, Decimal("1000.00"))
+        intraday_snapshots_service._mark_reconstructed(session, date(2024, 6, 3))
+        session.flush()
+
+        content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
+        result = import_csv(
+            session, broker=Broker.FIDELITY, account_id=usd_account, content=content
+        )
+        assert result.inserted == 6
+        assert intraday_repo.list_in_range(session, sample_time, sample_time) == []
+
     def test_reimport_dedupes(self, session: Session, usd_account: int, fx_seeded: None) -> None:
         content = (FIXTURE_DIR / "fidelity_sample.csv").read_text()
         import_csv(session, broker=Broker.FIDELITY, account_id=usd_account, content=content)

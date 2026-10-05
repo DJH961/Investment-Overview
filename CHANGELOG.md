@@ -13,6 +13,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
   released; entries must always carry a concrete version number and date.
 
+## [5.3.0] — 2026-10-05
+
+### Added
+
+- **Manual and automatic graph reload options on desktop.** Added explicit controls to reload 1D and 1W curves on desktop, matching mobile companion capabilities:
+  - In Settings under "Data refresh", added "Reload 1D graph", "Reload 1W graph", and "Reload all graphs" action buttons to clear cached intraday and multi-session week bars and reconstruct them from scratch.
+  - On the Overview value-over-time card, added a dedicated reload button (↻) directly beside the range selector to reload and redraw the active curve in-place with instant feedback.
+  - In the desktop transaction import modal (`/transactions`), inserting new CSV or XLSX transactions now automatically clears cached intraday and week sample curves and triggers a graph reload before publishing, ensuring that 1D, 1W, and snapshot curves immediately reflect newly imported positions.
+
+### Fixed
+
+- **Consolidated 1W and long-range history data fetching to prevent quota exhaustion on login.** Fixed an issue on the mobile web companion where logging in after an extended period exhausted almost all hourly Tiingo credits (~36/40) and Twelve Data limits (8/min) due to sequential duplicate pulls for 1D, 1W, and long-range history across 12 stocks and 5 NAV funds. The login warm-up prefetch now defers multi-session daily bar pulls to post-unlock, pulling only live essentials pre-decrypt (EUR/USD spot, dense 1D session bars, and NAV fund bars: 18 requests total, split across Twelve Data and Tiingo). Post-unlock, `regenerateLongRangeHistory` queries a unified date window spanning from $\min(\text{long-range start}, \text{week start})$ through today. Because providers charge 1 credit per symbol regardless of date range, this unified pull fetches all needed daily closes in a single request per ticker, seeds the 1W daily cache (`WEEK_STORE_KEY`), primes quote rows and EUR/USD FX. Subsequent 1W curve generation reuses these cached bars at 0 additional network cost. When logging in on consecutive days, `loadOrBuildLongRangeHistory` checks stored 1W daily bars and reuses them directly without hitting the network when they already cover the gap.
+- **1D curve starvation after a regenerate.** Fixed an issue in `prefetchGraphBars` where filtering out `sessionSymbols` present in `weekSymbols` during a regenerate caused 1D session bars to be skipped and left `lastSessionDate(now)` empty after a reset. The dense 5-min 1W intraday backfill now automatically slices and persists incoming bars and EUR/USD FX into each individual trading day's session store via `persistWindowBarsPerDay`, ensuring 1D and 1W share the same dense intraday bars.
+- **Removed invalid per-day session persistence of daily bars in long-range history.** Removed a dead call to `persistWindowBarsPerDay` in `regenerateLongRangeHistory` where daily bars (stamped at midnight 00:00 ET) were filtered against regular session market hours (09:30–16:00 ET), resulting in 100% of bars being dropped. Daily closes are now cleanly stored exclusively in `WEEK_STORE_KEY` and value history.
+- **Overview chart reload UI update robustness.** Fixed an issue where clicking the desktop Overview reload button (↻) left a stale chart in place if the plot figure rebuild returned `None`; the reload handler now cleanly falls back to navigating to the active range.
+
 ## [5.2.8] — 2026-07-06
 
 ### Fixed

@@ -70,3 +70,19 @@ def delete_before(session: Session, cutoff: datetime) -> int:
     """Delete samples captured strictly before ``cutoff``. Returns rows removed."""
     result = session.execute(delete(IntradayValue).where(IntradayValue.captured_at < cutoff))
     return int(result.rowcount or 0)
+
+
+def delete_in_range(session: Session, start: datetime, end: datetime) -> int:
+    """Delete samples with ``start <= captured_at <= end``. Returns rows removed."""
+    result = session.execute(
+        delete(IntradayValue)
+        .where(IntradayValue.captured_at >= start)
+        .where(IntradayValue.captured_at <= end)
+    )
+    return int(result.rowcount or 0)
+
+
+def delete_all(session: Session) -> int:
+    """Delete all intraday samples. Returns rows removed."""
+    result = session.execute(delete(IntradayValue))
+    return int(result.rowcount or 0)

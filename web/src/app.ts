@@ -89,6 +89,7 @@ import {
   writeSymbolPlan,
   readLastRefreshStartedAt,
   writeLastRefreshStartedAt,
+  writeLastExportDay,
   type StorageLike,
 } from "./cache";
 import {
@@ -118,7 +119,7 @@ import {
   DEFAULT_BURST_INTERVAL_MS,
 } from "./refresh-policy";
 import { classifyRefreshPhase, type RefreshPhase } from "./refresh-window";
-import { fxFreshness, targetedWeekBackfill, type FxFreshness } from "./freshness";
+import { fxFreshness, type FxFreshness } from "./freshness";
 import { isUsMarketOpen, isUsTradingDay, isUsMarketHoliday, isForexMarketOpen, isWeekendOvernight, latestSettledSessionDate, latestPublishedNavDate, lastSessionDate, previousTradingSession, recentTradingSessions, exchangeDate, LIVE_PRICE_MAX_STALENESS_MS, sessionIsWarmingUp, sessionOpenMs, sessionCloseMs, elapsedSessionMs, settledSessionsSince, INTRADAY_BAR_INTERVAL_MS } from "./market-hours";
 import {
   runTiingoFallback,
@@ -204,6 +205,7 @@ import {
   navBarsFromQuotes,
   navSafeBarsForPriming,
   navTipCoveredSymbols,
+  persistWindowBarsPerDay,
   weekStaleSymbols,
   weekCoverageGap,
   wrapDailyNavFetcher,
@@ -223,6 +225,7 @@ import {
   loadOrBuildLongRangeHistory,
   longRangeWindow,
   longRangeWindowCalendarDays,
+  type LongRangeWindow,
 } from "./long-range";
 import {
   checkDataCoverage,
@@ -1184,17 +1187,11 @@ export class App {
     if (!warmupPlan.legs.quotes) prefetch.symbols = [];
     if (!warmupPlan.legs.nav) prefetch.navSymbols = [];
     if (!warmupPlan.legs.dayBars) prefetch.graphSessionSymbols = [];
-    // Item 4a / O5 — targeted settled-bar backfill, now a bounded safety net. The
-    // unified windowed `bars` leg (the `outdated` tier) is the primary settled
-    // backfill, but the warm-up runs before that windowed pull, so keep a small,
-    // capped slice of the precise symbols missing a settled (already-closed) bar —
-    // a freshly added holding, a one-session gap — primed now (the whole set when
-    // the multi-session window leg is already on). The reservation budget
-    // downstream still binds the spend.
-    prefetch.graphWeekSymbols = targetedWeekBackfill(
-      warmupPlan.legs.weekBars,
-      prefetch.graphWeekSymbols,
-    );
+    // Multi-session 1W daily bar backfill is deferred to post-unlock (combined with
+    // long-range rebuild in syncValueHistory). This respects blob recency: pre-unlock
+    // cannot know if a newer blob exists on the server, avoiding premature multi-session
+    // network spend before unlock.
+    prefetch.graphWeekSymbols = [];
     const quoteTotal =
       prefetch.symbols.length +
       prefetch.navSymbols.length +
@@ -2474,6 +2471,15 @@ export class App {
         }
       }
       await store.mergeSession(storeKey, { bars: incoming, fx, closeProbe }, now.getTime());
+      if (label === "1W" && extra.interval === WEEK_INTRADAY_INTERVAL) {
+        await persistWindowBarsPerDay(
+          store,
+          incoming,
+          recentTradingSessions(DEFAULT_WEEK_SESSIONS, now),
+          now.getTime(),
+          fx,
+        ).catch(() => undefined);
+      }
       const count = Object.keys(incoming).length;
       stored += count;
       totalSpent.credits += spent.credits;
@@ -2494,7 +2500,11 @@ export class App {
       );
     };
 
-    await pull(sessionSymbols, "intraday", sessionFxWindow(now), lastSessionDate(now), "1D");
+    const effectiveSessionSymbols =
+      logKind === "regenerate" && weekSymbols.length > 0
+        ? sessionSymbols.filter((s) => !weekSymbols.includes(s))
+        : sessionSymbols;
+    await pull(effectiveSessionSymbols, "intraday", sessionFxWindow(now), lastSessionDate(now), "1D");
     // The hard regenerate (Settings) uses the same dense 5-min intraday bars as
     // every normal and ↻-reload render, so the repainted 1W curve is intraday-
     // quality rather than a coarse one-bar-per-day stepped shape. The login
@@ -8221,6 +8231,7 @@ export class App {
     // silently overwritten — invaluable when debugging "where did my history go?".
     this.logHistoryRevision(store, exportedCurve);
     const lastExport = exportedCurve.length > 0 ? exportedCurve[exportedCurve.length - 1].date : null;
+    writeLastExportDay(lastExport);
     const weekStart = recentTradingSessions(DEFAULT_WEEK_SESSIONS, now)[0] ?? o.asOf;
     if (lastExport !== null) {
       const afterExport = isoPlusDays(lastExport, 1);
@@ -8374,10 +8385,14 @@ export class App {
     if (window === null || !config.apiKey || proxyUrl === null || anchor.holdings.length === 0) {
       return loadValueHistory(store);
     }
-    // Size the Twelve Data outputsize to span the whole window (with slack) so a
+    const weekSessions = recentTradingSessions(DEFAULT_WEEK_SESSIONS, now);
+    const weekStart = weekSessions[0] ?? today;
+    const combinedStartDate = window.startDate < weekStart ? window.startDate : weekStart;
+    const combinedWindow: LongRangeWindow = { startDate: combinedStartDate, endDate: today };
+    // Size the Twelve Data outputsize to span the combined window (with slack) so a
     // worst-case year-long gap is delivered in one request per symbol; Tiingo's
     // daily leg uses the start/end dates directly. Capped at the provider max.
-    const outputsize = Math.min(5000, longRangeWindowCalendarDays(window) + 10);
+    const outputsize = Math.min(5000, longRangeWindowCalendarDays(combinedWindow) + 10);
     const reservation = ledgerReservation();
     const spent = { credits: 0 };
     const { tiingoMeter, twelveDataMeter } = instrumentedGraphRecorders({
@@ -8396,8 +8411,8 @@ export class App {
       apiKey: config.apiKey,
       proxyUrl,
       param: "daily",
-      startDate: window.startDate,
-      endDate: window.endDate,
+      startDate: combinedWindow.startDate,
+      endDate: combinedWindow.endDate,
       tiingoMeter,
       twelveDataMeter,
       reservation,
@@ -8417,15 +8432,41 @@ export class App {
       force,
       now: now.getTime(),
       mmDaysUsd: aggregateMoneyMarketValue(parseMoneyMarketValue(this.state.data?.live_graphs ?? undefined)),
+      weekStoreKey: WEEK_STORE_KEY,
+      onBarsFetched: async (barsBySymbol, fxBars) => {
+        // Seed the 1W daily cache with the freshly fetched daily bars & FX.
+        // This covers both 1W and long-range in one single network pull per symbol!
+        const incomingObj: Record<string, Bar[]> = {};
+        for (const [s, list] of barsBySymbol) {
+          if (list.length > 0) incomingObj[s] = list;
+        }
+        await store.mergeSession(
+          WEEK_STORE_KEY,
+          { bars: incomingObj, fx: fxBars.length > 0 ? fxBars : undefined },
+          now.getTime(),
+        );
+
+        // Prime quotes and FX so later legs don't duplicate credits.
+        this.primeQuotesFromGraphBars(barsBySymbol, model);
+        if (fxBars.length > 0) {
+          primeEurUsdFromFxBars(fxBars, undefined, now);
+        }
+      },
     }).catch(() => null);
     if (!result) return loadValueHistory(store);
     if (result.fetched) {
       this.pollLog(
         "graph",
         `Long-range history: rebuilt ${result.symbols.length} market series across the ` +
-          `${result.gapDays.length} missing day(s) of ${window.startDate}…${window.endDate}; ` +
+          `${result.gapDays.length} missing day(s) of ${combinedWindow.startDate}…${combinedWindow.endDate}; ` +
           `spent ${spent.credits} credit(s).`,
         spent.credits > 0 ? "good" : "info",
+      );
+    } else if (result.gapDays.length > 0) {
+      this.pollLog(
+        "graph",
+        `Long-range history: reused stored bars for ${result.gapDays.length} day(s); 0 credits spent.`,
+        "info",
       );
     } else if (force) {
       this.pollLog(

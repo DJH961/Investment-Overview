@@ -26,6 +26,7 @@ from investment_dashboard.repositories import (
 from investment_dashboard.services import (
     auto_publish,
     display_currency_service,
+    intraday_snapshots_service,
     manual_entry,
     snapshots_service,
     transaction_fx_service,
@@ -665,6 +666,55 @@ def _confirm_delete(txn_id: int, dlg: Any) -> None:  # pragma: no cover - UI
     )
 
 
+def _format_import_status(result: ImportResult) -> tuple[str, str]:
+    """Build the status message and notify type for an import result."""
+    msg = (
+        f"Inserted {result.inserted}, duplicates {result.duplicates}, "
+        f"sweeps dropped {result.sweeps_dropped}"
+    )
+    if result.errors:
+        preview = "; ".join(
+            f"line {e.line}: {e.message}" if e.line else e.message for e in result.errors[:5]
+        )
+        more = "" if len(result.errors) <= 5 else f" (+{len(result.errors) - 5} more)"
+        msg += f", skipped {len(result.errors)} row(s): {preview}{more}"
+    if result.warnings:
+        wpreview = "; ".join(
+            f"line {w.line}: {w.message}" if w.line else w.message for w in result.warnings[:5]
+        )
+        wmore = "" if len(result.warnings) <= 5 else f" (+{len(result.warnings) - 5} more)"
+        msg += f", {len(result.warnings)} warning(s): {wpreview}{wmore}"
+    if result.unresolved_symbols:
+        msg += (
+            f", unresolved symbol(s): {result.unresolved_symbols} "
+            "(delisted, a typo, or the data provider was offline)"
+        )
+    if result.fx_missing_dates:
+        msg += (
+            f", FX missing for {len(result.fx_missing_dates)} date(s) — "
+            "refresh FX rates then Settings → Recalculate FX-derived values"
+        )
+        return msg, "warning"
+    if result.errors or result.warnings or result.unresolved_symbols:
+        return msg, "warning"
+    return msg, "positive"
+
+
+async def _reload_graphs_after_import() -> None:
+    """Reload graphs (especially 1D and 1W) after new transactions are inserted."""
+
+    def _do_reload() -> None:
+        with session_scope() as session:
+            intraday_snapshots_service.reload_graphs(session)
+
+    try:
+        from nicegui import run  # noqa: PLC0415
+
+        await run.io_bound(_do_reload)
+    except Exception:
+        log.warning("Post-import graph reload failed", exc_info=True)
+
+
 def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pragma: no cover - UI
     # Upload-first flow: the file is stashed the moment it's picked, so the
     # account/broker can be chosen in any order and the import fires from an
@@ -740,44 +790,15 @@ def _open_import_modal(accounts: list[Account]) -> None:  # noqa: PLR0915  # pra
                 import_btn.enable()
                 return
             import_btn.enable()
-            status.text = (
-                f"Inserted {result.inserted}, duplicates {result.duplicates}, "
-                f"sweeps dropped {result.sweeps_dropped}"
-            )
-            # Rows the parser had to skip (unknown action, un-parseable or
-            # EU-locale cell) — surfaced so a single bad row no longer
-            # silently shrinks the import (audit D3/D5).
-            if result.errors:
-                preview = "; ".join(
-                    f"line {e.line}: {e.message}" if e.line else e.message
-                    for e in result.errors[:5]
-                )
-                more = "" if len(result.errors) <= 5 else f" (+{len(result.errors) - 5} more)"
-                status.text += f", skipped {len(result.errors)} row(s): {preview}{more}"
-            # Rows imported but worth eyeballing (audit D4).
-            if result.warnings:
-                wpreview = "; ".join(
-                    f"line {w.line}: {w.message}" if w.line else w.message
-                    for w in result.warnings[:5]
-                )
-                wmore = "" if len(result.warnings) <= 5 else f" (+{len(result.warnings) - 5} more)"
-                status.text += f", {len(result.warnings)} warning(s): {wpreview}{wmore}"
-            # Symbols the data provider couldn't resolve (audit D2).
-            if result.unresolved_symbols:
-                status.text += (
-                    f", unresolved symbol(s): {result.unresolved_symbols} "
-                    "(delisted, a typo, or the data provider was offline)"
-                )
-            if result.fx_missing_dates:
-                status.text += (
-                    f", FX missing for {len(result.fx_missing_dates)} date(s) — "
-                    "refresh FX rates then Settings → Recalculate FX-derived values"
-                )
-                ui.notify(status.text, type="warning")
-            elif result.errors or result.warnings or result.unresolved_symbols:
-                ui.notify(status.text, type="warning")
-            else:
-                ui.notify(status.text, type="positive")
+            status_text, notify_type = _format_import_status(result)
+            status.text = status_text
+            ui.notify(status_text, type=notify_type)
+
+            # Reload graphs (especially 1D and 1W intraday curves) so that
+            # market components and recent snapshots are recomputed with the newly
+            # imported positions and are immediately accurate.
+            if result.inserted > 0:
+                await _reload_graphs_after_import()
 
             # v3.0 §5.4: republish the live-web blob after a successful import.
             # Best-effort and gated by Settings → Live web companion; never
