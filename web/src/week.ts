@@ -158,8 +158,9 @@ export async function persistWindowBarsPerDay(
   barsBySymbol: Record<string, Bar[]>,
   window: string[],
   now: number,
+  fx?: Bar[],
 ): Promise<void> {
-  if (Object.keys(barsBySymbol).length === 0) return;
+  if (Object.keys(barsBySymbol).length === 0 && (!fx || fx.length === 0)) return;
   for (const day of window) {
     const openMs = sessionOpenMs(day);
     const closeMs = sessionCloseMs(day);
@@ -168,8 +169,16 @@ export async function persistWindowBarsPerDay(
       const dayBars = bars.filter((b) => b.t >= openMs && b.t <= closeMs);
       if (dayBars.length > 0) incoming[symbol] = dayBars;
     }
-    if (Object.keys(incoming).length > 0) {
-      await store.mergeSession(day, { bars: incoming }, now);
+    const dayFx = fx ? fx.filter((b) => b.t >= openMs && b.t <= closeMs) : undefined;
+    if (Object.keys(incoming).length > 0 || (dayFx && dayFx.length > 0)) {
+      await store.mergeSession(
+        day,
+        {
+          ...(Object.keys(incoming).length > 0 ? { bars: incoming } : {}),
+          ...(dayFx && dayFx.length > 0 ? { fx: dayFx } : {}),
+        },
+        now,
+      );
     }
   }
 }
@@ -624,7 +633,13 @@ export async function loadOrBuildWeekCurve(options: WeekCurveOptions): Promise<W
     // construction, not merely similar), and a day the 1W pull freshens enriches
     // the 1D session for free (and vice-versa). A bars-only merge preserves each
     // day's live-tip breadcrumb trail and FX.
-    await persistWindowBarsPerDay(store, incomingBars, window, now.getTime());
+    await persistWindowBarsPerDay(
+      store,
+      incomingBars,
+      window,
+      now.getTime(),
+      incomingFx,
+    );
   }
 
   // Item 7b — gap-fill the daily-NAV history of *moving* funds (mutual funds)

@@ -2161,6 +2161,7 @@ def _value_over_time_section(  # type: ignore[no-untyped-def]
                 )
                 ui.notify(success_msg, type="positive")
 
+                updated = False
                 if plot is not None:
                     fig = _rebuild_plot_figure(
                         range_label,
@@ -2170,7 +2171,8 @@ def _value_over_time_section(  # type: ignore[no-untyped-def]
                     )
                     if fig is not None:
                         plot.update_figure(fig)
-                else:
+                        updated = True
+                if not updated:
                     ui.navigate.to(f"{PATH}?value_range={range_label}")
             except Exception as exc:
                 log.exception("Graph reload failed")

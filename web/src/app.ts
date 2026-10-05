@@ -2471,6 +2471,15 @@ export class App {
         }
       }
       await store.mergeSession(storeKey, { bars: incoming, fx, closeProbe }, now.getTime());
+      if (label === "1W" && extra.interval === WEEK_INTRADAY_INTERVAL) {
+        await persistWindowBarsPerDay(
+          store,
+          incoming,
+          recentTradingSessions(DEFAULT_WEEK_SESSIONS, now),
+          now.getTime(),
+          fx,
+        ).catch(() => undefined);
+      }
       const count = Object.keys(incoming).length;
       stored += count;
       totalSpent.credits += spent.credits;
@@ -8436,9 +8445,6 @@ export class App {
           { bars: incomingObj, fx: fxBars.length > 0 ? fxBars : undefined },
           now.getTime(),
         );
-
-        // Also persist to per-day session stores if applicable.
-        await persistWindowBarsPerDay(store, incomingObj, weekSessions, now.getTime()).catch(() => undefined);
 
         // Prime quotes and FX so later legs don't duplicate credits.
         this.primeQuotesFromGraphBars(barsBySymbol, model);
