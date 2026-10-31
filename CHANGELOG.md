@@ -10,9 +10,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **1.0.0** — first release with a runnable UI: end-to-end flow from CSV
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
-- **Since v5.3.0:** changes collect under `## [Unreleased]` and are released in
-  batches. Cutting a release renames that section to `## [x.y.z] — YYYY-MM-DD`
-  and bumps the version (see `AGENTS.md` → Workflow).
+- **Release fast:** every feature or bug fix ships as its own dated release in the
+  same PR. `## [Unreleased]` is only short-lived storage for changes that don't
+  affect the running app (docs, CI, tests) and is folded into the next release
+  (see `AGENTS.md` → Workflow).
 
 ## [Unreleased]
 
@@ -27,6 +28,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `requirements_and_project_overview.md` moved to `docs/original_spec.md` (marked as historical reference); `docs/windows_install_troubleshooting.md` folded into a short troubleshooting section of `docs/legacy_v5.md`; `docs/architecture.md` trimmed to the current system and no longer duplicates the rules in `AGENTS.md`.
 - Code comments that cited the removed documents now point to `legacy/v5:docs/...` (comment-only; no behaviour change). Stale links removed from `SECURITY.md`, `web/README.md`, `web/proxy/README.md` and `docs/user_guide.md`.
 - `.gitignore` now ignores `.env.*` (except `.env.example`), `.vscode/*` (except `extensions.json`) and `logs/`.
+- **Release policy: release fast.** Every feature or bug fix now ships as its own release in the same PR; `[Unreleased]` is only short-lived storage for changes that don't affect the running app (`AGENTS.md`, `CONTRIBUTING.md`, v6 plan updated).
 
 ## [5.3.1] — 2026-10-31
 

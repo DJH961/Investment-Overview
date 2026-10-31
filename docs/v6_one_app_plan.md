@@ -30,7 +30,7 @@ The browser becomes a thin React UI that talks only to our own server, which has
 | Frontend | New **React 19 + TypeScript** + Vite app, SCSS + BEM + design tokens, reusing current design, charts and PWA |
 | Currency | **Store native, report in any currency** (§2) |
 | Git flow | PRs for features and risky work; direct push to `main` OK for small or urgent fixes; deploy only after CI passes |
-| Versioning | CHANGELOG entries under `[Unreleased]`; bump + tag only for real releases |
+| Versioning | Release fast: every feature/fix ships as its own release in the same PR; `[Unreleased]` only as short-lived storage for docs/CI-only changes |
 
 ---
 
