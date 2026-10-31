@@ -12,6 +12,8 @@ other doc.
 - **v6 (planned):** one hosted FastAPI backend + React frontend. The plan is
   [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md). Do not start a v6 phase
   until the owner has approved it; keep v5 working until cutover.
+- **Legacy:** branch `legacy/v5` / tag `v5.3.1` is frozen. Never commit to it or
+  backport to it; see [`docs/legacy_v5.md`](docs/legacy_v5.md).
 
 ## 💱 Currency rule
 
