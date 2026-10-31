@@ -162,6 +162,128 @@ anything.
   then `sudo reboot` if `/var/run/reboot-required` exists.
 - **Containers:** the app image is updated by the deploy workflow (v6 Phase 2).
 
+## Deploying v6
+
+After the one-time setup in "Secrets" below, every green commit on `main` deploys by
+itself: GitHub builds the image, pushes it to GHCR (GitHub's container registry), joins
+your Tailscale network, and runs on the server (in `~/investments`)
+`docker compose pull app && docker compose up -d app`. It then asks the app's
+`/api/health` for up to two minutes. If the app does not answer, the workflow puts the
+previous version back and the run turns red.
+
+- **Switch it on or off:** GitHub repo, **Settings -> Secrets and variables -> Actions
+  -> Variables**, `DEPLOY_ENABLED` = `true` (anything else, or missing, = nothing
+  deploys).
+- **Deploy by hand:** repo **Actions** tab -> **Deploy** -> **Run workflow**.
+- **What runs where:** the version in use is the line `APP_TAG=<git sha>` in
+  `~/investments/.env` on the server; the compose file reads it.
+- **Look at it:** `ssh daniel@hetzner-djh-v1 'cd ~/investments && docker compose ps && docker compose logs --tail 50 app'`
+
+## Rolling back
+
+Automatic: a failed health check restores the previous tag (see above).
+
+By hand, to any older version (every deployed commit stays in GHCR as
+`ghcr.io/djh961/investment-overview:<git sha>`; find the sha in the repo's commit list):
+
+```bash
+ssh daniel@hetzner-djh-v1
+cd ~/investments
+sed -i 's/^APP_TAG=.*/APP_TAG=<old git sha>/' .env
+docker compose pull app && docker compose up -d app
+```
+
+Then turn `DEPLOY_ENABLED` off (or the next green commit deploys over it) until the
+bad commit is fixed. A rollback never touches the data in the `app-data` volume; if a
+migration changed the database shape, restore the data instead (backups section,
+written separately).
+
+## Secrets
+
+Everything below is created by you (AGENTS.md: agents never handle secrets). Never
+paste any of it into chat, an issue or a file in the repo.
+
+**A. Tailscale OAuth client (lets GitHub reach the server)**
+
+1. Tailscale admin console -> **Access controls**: add `"tag:ci": ["autogroup:admin"]`
+   under `tagOwners`, and an `acls` rule allowing `tag:ci` to reach the server on
+   port 22. Save.
+2. **Settings -> OAuth clients -> Generate OAuth client**, scope **Auth Keys: write**,
+   tag `tag:ci`. Copy the client ID and secret.
+3. GitHub repo -> **Settings -> Secrets and variables -> Actions -> Secrets -> New
+   repository secret**: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`.
+
+**B. Deploy SSH key (GitHub logs in to the server with it)**
+
+1. On the laptop, PowerShell: `ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\inv_deploy -N '""'`
+   (a key without passphrase, used only for this).
+2. Add the public half on the server (owner types this on the server):
+   `ssh daniel@hetzner-djh-v1` then
+   `echo '<contents of inv_deploy.pub>' >> ~/.ssh/authorized_keys`.
+3. GitHub secret `DEPLOY_SSH_KEY` = the full contents of the private file `inv_deploy`
+   (including the `BEGIN`/`END` lines). Then delete the private file from the laptop.
+
+**C. Let the server pull the image from GHCR (owner types this on the server)**
+
+1. GitHub -> your avatar -> **Settings -> Developer settings -> Personal access tokens
+   -> Tokens (classic) -> Generate new token**, scope `read:packages` only.
+2. On the server: `docker login ghcr.io -u DJH961` and paste the token at the password
+   prompt (it is stored in `~/.docker/config.json` on the server).
+
+**D. App secrets (owner types these on the server)**
+
+Create `~/investments/app.env` (mode 600) from `backend/.env.example` with the session
+secret and the database passphrase. Generate a random value with
+`openssl rand -base64 32`. Keep the DB passphrase in your password manager as well:
+losing it means losing the data.
+
+**E. Switch deploys on:** variable `DEPLOY_ENABLED` = `true` (see "Deploying v6").
+
+| GitHub item | Kind |
+| --- | --- |
+| `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` | secrets |
+| `DEPLOY_ENABLED` | variable |
+
+## Uploading the ledger
+
+One-off (or repeated for a rehearsal): turns your v5 `ledger.sqlite` and
+`config.sqlite` into a single encrypted file for the server. Your v5 files are only
+read; the tool works on copies.
+
+1. **Close the v5 app**, then copy `ledger.sqlite` and `config.sqlite` from your
+   OneDrive folder into an empty folder, e.g. `C:\Temp\upload`. (Copies, so the app
+   cannot write to them while you work.)
+2. **Run the tool** (owner types the passphrase; it is the same value as the app's
+   `INV_DASHBOARD_DB_PASSPHRASE`; it is asked for with hidden input):
+
+   ```bash
+   cd backend
+   uv run inv-dashboard-upload-db --ledger C:/Temp/upload/ledger.sqlite --config C:/Temp/upload/config.sqlite --out C:/Temp/upload/app.sqlite
+   ```
+
+   It checks the files, brings them to the current schema, merges config into the
+   ledger, removes instruments and accounts with no transactions (it lists them;
+   `--no-prune` keeps everything), encrypts, reopens the result with the key and
+   compares the row counts. It prints the counts and the commands below.
+   If it says there is no SQLCipher driver (typical on Windows), run it inside the
+   container instead: copy the two files to the server first, then
+   `docker compose run --rm -v ~/upload:/in app inv-dashboard-upload-db --ledger /in/ledger.sqlite --config /in/config.sqlite --out /in/app.sqlite`
+   (owner types the passphrase there).
+3. **Copy to the server** from Git Bash:
+   `/c/Windows/System32/OpenSSH/scp.exe C:/Temp/upload/app.sqlite daniel@hetzner-djh-v1:/tmp/app.sqlite`
+4. **Put it in the data volume** (this replaces the server's database; the app is
+   stopped meanwhile). On the server:
+
+   ```bash
+   cd ~/investments
+   docker compose stop app
+   docker compose run --rm --no-deps -v /tmp/app.sqlite:/in/app.sqlite:ro --entrypoint sh app -c 'cp /in/app.sqlite /data/app.sqlite && rm -f /data/app.sqlite-wal /data/app.sqlite-shm'
+   rm /tmp/app.sqlite
+   docker compose up -d app
+   ```
+5. **Check:** open `https://investments.daniel-henke.de` and compare the totals with
+   the v5 app. Then delete `C:\Temp\upload` (it holds your ledger).
+
 ## Firewall note
 
 Docker-published ports bypass `ufw`. Only the Caddy container publishes ports
