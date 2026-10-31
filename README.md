@@ -7,6 +7,9 @@ return metrics — XIRR, TWR, CAGR, YTD variants, drawdown, Sharpe, Sortino —
 in both **USD** and **EUR**, and serves them over a NiceGUI web UI accessible
 from the host laptop and any device on the same Wi-Fi network.
 
+> **Final v5 / legacy:** v5.3.1 is the last v5 release and is frozen with no further
+> support. Rollback guide: [`docs/legacy_v5.md`](docs/legacy_v5.md).
+
 > **Status: v5.0.0 — split storage, cloud-aware paths, optional SQLCipher,
 > intraday refresh, snapshot/curve refinements, and the encrypted live-web
 > companion (encrypted publish + an in-browser dashboard with Overview /

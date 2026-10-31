@@ -1,6 +1,6 @@
 # v6.0 "One App": a hosted, single-backend Investment Overview
 
-> Status: **approved direction, pre-implementation** (2026-10-31). Phase 0 step 1 (rules rewrite) is in progress. The backend and frontend build waits until the approach is validated (Phase 0 spike).
+> Status: **approved direction, pre-implementation** (2026-10-31). Phase 0 step 1 (rules rewrite) is in progress. **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)). The backend and frontend build waits until the approach is validated (Phase 0 spike).
 
 ## Context
 
@@ -273,6 +273,7 @@ The import layer stays **broker-agnostic**. Parsers are plugins that emit `Parse
   - keep domain, services, adapters, repositories, storage and readmodels;
   - add `tests/api/` (TestClient + respx) and the parity-gate test;
   - drop `tests/ui`, `tests/installer` and the launcher tests.
+  - CI test: upgrade a v5 fixture DB to v6 head and downgrade back to 0014 losslessly.
 
 ### Phase 2: Deploy + data migration
 - Multi-stage `Dockerfile`: Node builds `web/` → Python 3.12-slim + uv serves API + static files.
@@ -300,7 +301,12 @@ The import layer stays **broker-agnostic**. Parsers are plugins that emit `Parse
 - **Tests:** Vitest + Testing Library, plus a Playwright smoke test (login → overview → import a fixture file).
 
 ### Phase 4: Cutover + cleanup
-- Run old and new in parallel for about a week and compare totals daily. Then delete the §4 list.
+- **Legacy freeze:** before any deletion, branch `legacy/v5` and tag `v5.3.1` from the final v5 release. Never commit to or backport to either. Documented in [`legacy_v5.md`](legacy_v5.md).
+- **Rollback commitments:**
+  - every v6 Alembic migration ships a working `downgrade()` back to v5's head revision (0014), tested in CI;
+  - `tools/export_v5_ledger.py` decrypts (SQLCipher) and downgrades a v6 DB into a v5-compatible `ledger.sqlite` / `config.sqlite`;
+  - the final pre-cutover v5 ledger is kept as a sealed (`blob_crypto`) backup.
+- Run old and new in parallel for about a week and compare totals daily. Then delete the §4 list **on `main` only**; `legacy/v5` keeps everything.
 - Disable GitHub Pages, the Worker, the `live-data` release and the Twelve Data key.
 - Archive the plaintext OneDrive ledger as a `blob_crypto`-sealed file, then delete the plaintext copies.
 - Rewrite `README.md`, `docs/architecture.md` and `CONTRIBUTING.md`. Release **6.0.0** (`pyproject.toml` + `web/package.json` + lockfiles).

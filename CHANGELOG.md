@@ -14,7 +14,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   batches. Cutting a release renames that section to `## [x.y.z] — YYYY-MM-DD`
   and bumps the version (see `AGENTS.md` → Workflow).
 
-## [Unreleased]
+## [5.3.1] — 2026-10-31
+
+> Final v5 release. Frozen as legacy (branch `legacy/v5`, tag `v5.3.1`), no further support. See [`docs/legacy_v5.md`](docs/legacy_v5.md).
+
+### Security
+
+- **All open Dependabot alerts fixed** by upgrading locked dependencies (`uv.lock`, `web/package-lock.json`):
+  - Python: aiohttp 3.14.5, anyio 4.14.2 / 4.15.1, certifi 2026.10.23, cryptography 50.0.2, filelock 3 → 4.2.6, mako 1.4.3, multidict 6 → 7.2.1, soupsieve 2 → 3.0.4, urllib3 2.8.0, virtualenv 21.3.3 → 21.15.2, yarl 1.24.2 → 1.25.1, plus distlib, packaging and python-discovery.
+  - Web: vite 8.0.16 → 8.3.5, vitest 4.1.9 → 4.1.12, postcss 8.5.32, @vitest/mocker 4.1.12, source-map-js 1.2.2 (`npm audit`: 0 vulnerabilities).
 
 ### Changed
 
@@ -27,6 +35,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Legacy v5 rollback guide** (`docs/legacy_v5.md`): how to restore the frozen v5.3.1 app and its data, and the v6 downgrade commitments. The v6 plan, `AGENTS.md` and READMEs link to it.
 - **v6.0 "One App" plan** (`docs/v6_one_app_plan.md`): one hosted backend on a Hetzner VPS, React frontend, server-side yfinance polling, the "store native, report in any currency" model with actual-EUR-sent conversion tracking, and a later OpenRouter assistant.
 
 ## [5.3.0] — 2026-10-05

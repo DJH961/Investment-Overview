@@ -11,6 +11,9 @@ the top-level [`CHANGELOG.md`](../CHANGELOG.md); the docs below capture the
 >
 > 🚀 **Next major version:** [`v6_one_app_plan.md`](v6_one_app_plan.md) — one
 > hosted backend replacing the desktop app and the web companion.
+>
+> 🗄️ **Legacy:** [`legacy_v5.md`](legacy_v5.md) — the frozen v5.3.1 release and how
+> to roll back to it.
 
 ## Start here
 
