@@ -1067,6 +1067,22 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
         _large_pull_state["override"] = None
 
 
+def run_server_boot_sequence() -> None:
+    """v6 server boot: the desktop-only steps are skipped.
+
+    No cloud/OneDrive layout detection (paths come from the environment), no
+    sidecar check, no keyring (the passphrase comes from the environment) and no
+    single-writer lock or read-only fallback. Network refreshes are left to the
+    scheduler so the server accepts traffic at once.
+    """
+    _apply_encryption()
+    _integrity_check_tiers()
+    _rolling_backup()
+    _run_migrations()
+    _apply_persisted_log_level()
+    _run_cache_janitor()
+
+
 def run_deferred_network_refresh(*, show_progress: bool = True) -> None:
     """Best-effort FX + price refresh meant to run *after* the server starts.
 
