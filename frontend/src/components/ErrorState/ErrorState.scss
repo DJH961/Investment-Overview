@@ -1,0 +1,30 @@
+.error-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-neg-soft);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+
+  &__icon {
+    flex-shrink: 0;
+    width: var(--icon-lg);
+    height: var(--icon-lg);
+    color: var(--color-neg);
+  }
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__message {
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+}

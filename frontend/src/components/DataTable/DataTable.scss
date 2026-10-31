@@ -1,0 +1,122 @@
+@use "../../styles/mixins" as m;
+
+.data-table {
+  overflow-x: auto;
+
+  &__table {
+    width: 100%;
+    font-size: var(--font-size-sm);
+  }
+
+  &__head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-surface);
+  }
+
+  &__th {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: var(--border-width) solid var(--color-border);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-align: left;
+    white-space: nowrap;
+
+    &--right {
+      text-align: right;
+    }
+  }
+
+  &__th--right &__sort {
+    flex-direction: row-reverse;
+  }
+
+  &__sort {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: inherit;
+    font: inherit;
+
+    &:hover {
+      color: var(--color-fg);
+    }
+  }
+
+  &__sort-icon {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+
+    &--idle {
+      opacity: 0.4;
+    }
+  }
+
+  &__row {
+    &:hover {
+      background: var(--color-surface-2);
+    }
+  }
+
+  &__td {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: var(--border-width) solid var(--color-border);
+    font-variant-numeric: tabular-nums;
+
+    &--right {
+      text-align: right;
+    }
+  }
+
+  &__empty {
+    padding: var(--space-7) var(--space-4);
+    color: var(--color-muted);
+    text-align: center;
+  }
+
+  // Phone: each row becomes a list item; the primary column is the title and
+  // other cells show "label ... value" pairs.
+  @include m.phone {
+    overflow-x: visible;
+
+    &__head {
+      @include m.visually-hidden;
+    }
+
+    &__table,
+    &__table tbody {
+      display: block;
+    }
+
+    &__row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-3) var(--space-4);
+      border-bottom: var(--border-width) solid var(--color-border);
+    }
+
+    &__td {
+      padding: 0;
+      border: 0;
+
+      &--primary {
+        grid-column: 1 / -1;
+        font-weight: var(--font-weight-semibold);
+      }
+
+      &[data-label]::before {
+        content: attr(data-label);
+        margin-right: var(--space-2);
+        color: var(--color-muted);
+        font-size: var(--font-size-xs);
+      }
+
+      &--right {
+        text-align: right;
+      }
+    }
+  }
+}

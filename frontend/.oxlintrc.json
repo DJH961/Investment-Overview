@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "jsx-a11y"],
+  "categories": { "correctness": "error" },
+  "rules": { "no-unused-vars": "warn" },
+  "ignorePatterns": ["dist", "node_modules", "src/lib/api-types.ts"]
+}

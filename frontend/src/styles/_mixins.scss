@@ -1,0 +1,58 @@
+// Breakpoints (see docs/v6_frontend_design.md): phone < 640, tablet 640-1023,
+// desktop >= 1024. SCSS cannot read CSS custom properties inside media queries,
+// so the numbers live here and in lib/useBreakpoint.ts.
+$bp-tablet: 640px;
+$bp-desktop: 1024px;
+
+@mixin phone {
+  @media (max-width: #{$bp-tablet - 1px}) {
+    @content;
+  }
+}
+
+@mixin tablet-up {
+  @media (min-width: $bp-tablet) {
+    @content;
+  }
+}
+
+@mixin tablet-only {
+  @media (min-width: $bp-tablet) and (max-width: #{$bp-desktop - 1px}) {
+    @content;
+  }
+}
+
+@mixin desktop {
+  @media (min-width: $bp-desktop) {
+    @content;
+  }
+}
+
+@mixin reduced-motion {
+  @media (prefers-reduced-motion: reduce) {
+    @content;
+  }
+}
+
+@mixin focus-ring {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

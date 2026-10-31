@@ -1,0 +1,11 @@
+.login-page {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: var(--space-4);
+
+  &__card {
+    width: 100%;
+    max-width: 420px;
+  }
+}

@@ -1,0 +1,12 @@
+.percent {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+
+  &--pos {
+    color: var(--color-pos);
+  }
+
+  &--neg {
+    color: var(--color-neg);
+  }
+}

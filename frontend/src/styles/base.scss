@@ -1,0 +1,50 @@
+@use "mixins" as m;
+
+html {
+  font-family: var(--font-sans);
+  font-size: 16px;
+}
+
+body {
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-base);
+  color: var(--color-fg);
+  background-color: var(--color-bg);
+  background-image: var(--color-bg-glow);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01";
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+:focus-visible {
+  @include m.focus-ring;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+// Utility classes shared across the app (BEM-exempt global helpers).
+.u-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.u-sr-only {
+  @include m.visually-hidden;
+}
+
+@include m.reduced-motion {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
