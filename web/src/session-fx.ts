@@ -295,8 +295,8 @@ export interface FxAnchorCompleteness {
  * anchors — the one choke point that decides, for the current market phase, which
  * of the four EUR→USD anchors (live spot, prior-session close, session open,
  * session close) the device is still missing and drives one consolidated backfill
- * (see `docs/fx_kpi_cold_start_regeneration_plan.md` §5 and
- * `docs/tiingo_fx_settled_spot_plan.md` §6).
+ * (see `legacy/v5:docs/fx_kpi_cold_start_regeneration_plan.md` §5 and
+ * `legacy/v5:docs/tiingo_fx_settled_spot_plan.md` §6).
  *
  * It replaces the scattered per-leg gates (the old open/close-only
  * {@link sessionFxAnchorMissing} plus the separately-handled prevFx baseline) with

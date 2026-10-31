@@ -1,7 +1,7 @@
 """AES-256-GCM envelope encryption for the v3.0 live-web companion blob.
 
 This is the public-repo-safe ciphertext format described in
-``docs/v3.0_live_web_companion_proposal.md`` §4. Unlike
+``legacy/v5:docs/v3.0_live_web_companion_proposal.md`` §4. Unlike
 :mod:`investment_dashboard.storage.encryption` (which keys the *SQLCipher*
 database files), this module encrypts a single in-memory JSON payload — the
 minimized mobile export — into an opaque envelope that is safe to publish on

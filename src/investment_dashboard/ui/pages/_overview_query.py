@@ -252,7 +252,7 @@ def build_window_value_series(
 ) -> list[ValueSeriesPoint]:
     """One range-parameterized intraday-window value series — the unified builder.
 
-    The Python parity for ``docs/graph-unification-plan.md`` C8: there is no
+    The Python parity for ``legacy/v5:docs/graph-unification-plan.md`` C8: there is no
     separate "1 Day" and "1 Week" code path, only **one intraday-window builder**
     parameterised by how many recent trading sessions it spans. ``sessions <= 1``
     is the within-day "Day" window; ``sessions > 1`` is the multi-session "Week"
@@ -403,7 +403,7 @@ def build_intraday_value_series(
     it.
 
     This is the **window(1 session)** case of the unified
-    :func:`build_window_value_series` (``docs/graph-unification-plan.md`` C8).
+    :func:`build_window_value_series` (``legacy/v5:docs/graph-unification-plan.md`` C8).
     """
     return build_window_value_series(
         session,
@@ -539,7 +539,7 @@ def build_week_value_series(
     The same dense intraday curve as the "Day" range, drawn over the last few
     trading sessions instead of one: each session lays down its full set of
     **5-minute** bars — the identical per-session reconstruction the Day curve uses
-    (``docs/graph-unification-plan.md`` C8) — so the week reads as a smooth,
+    (``legacy/v5:docs/graph-unification-plan.md`` C8) — so the week reads as a smooth,
     detailed curve and its 1-day slice is identical to the standalone Day curve,
     not merely similar.
 

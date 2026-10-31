@@ -1,6 +1,6 @@
 /**
  * Pillar 5 (WS6) — **provider fan-out under one authority**, as a pure planner
- * (`docs/centralized_data_pull_plan.md` §"Pillar 5 — Provider spilling").
+ * (`legacy/v5:docs/centralized_data_pull_plan.md` §"Pillar 5 — Provider spilling").
  *
  * Steady state, Twelve Data leads (≤8 symbols/request) and Tiingo takes genuine
  * overflow. For **login / manual** of a big sleeve, dripping 8/min over several

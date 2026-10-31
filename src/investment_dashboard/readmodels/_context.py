@@ -38,7 +38,7 @@ def build_context(session: Session, *, as_of: date | None = None) -> ReadModelCo
     ``as_of`` defaults to **today on the New-York exchange calendar**
     (:func:`market_hours.exchange_today`), not the publisher's local
     ``date.today()`` — the whole app derives every day boundary from one ET clock
-    (``docs/time_alignment_plan.md``), so the exported read-model (and its
+    (``legacy/v5:docs/time_alignment_plan.md``), so the exported read-model (and its
     ``analytics.curve`` daily closes) lands on the trading day the web companion
     buckets by rather than the desktop owner's local calendar.
     """

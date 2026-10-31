@@ -1,6 +1,6 @@
 /**
  * Regression pins for the NYSE exchange-time (ET) alignment
- * (`docs/time_alignment_plan.md`). These lock the day-boundary contract that
+ * (`legacy/v5:docs/time_alignment_plan.md`). These lock the day-boundary contract that
  * makes the web companion and the Python desktop agree on when a trading day
  * begins — so the overlay no longer reads a fake ~1% gap from two midnights.
  */

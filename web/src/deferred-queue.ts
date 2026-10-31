@@ -1,5 +1,5 @@
 /**
- * C9 — the **deferred work-queue** (`docs/single_brain_pull_plan.md` §"C9 — A
+ * C9 — the **deferred work-queue** (`legacy/v5:docs/single_brain_pull_plan.md` §"C9 — A
  * real work-queue for deferrals").
  *
  * When a pull cannot fit every symbol into the free-tier minute, the overflow is

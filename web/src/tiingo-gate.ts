@@ -3,7 +3,7 @@
  *
  * This is the browser mirror of the desktop `services/tiingo_fallback.py`: the
  * exact same smart-gate and NAV peer-confirmation + canary logic from
- * `docs/tiingo_fallback_plan.md`, ported to TypeScript. It answers the one hard
+ * `legacy/v5:docs/tiingo_fallback_plan.md`, ported to TypeScript. It answers the one hard
  * question — *when is it smart to spend a Tiingo call?* — as side-effect-free
  * functions over explicit inputs (persisted stamps/counters + the resolved
  * market calendar), so every gate and scenario is unit-testable in isolation.

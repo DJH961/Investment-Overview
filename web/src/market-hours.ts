@@ -580,7 +580,7 @@ export function isWeekendOvernight(now: Date = new Date()): boolean {
  * `resampleFreq=1hour`, Twelve Data falls back to a coarser series), so no
  * completed intraday bar can exist until a full bar interval of trading time has
  * elapsed since the open. Used to tell an *expected-empty* fresh session apart
- * from a genuinely *stale* one (market_open_token_burn_fix_plan.md WS1).
+ * from a genuinely *stale* one (legacy/v5:docs/market_open_token_burn_fix_plan.md WS1).
  */
 export const INTRADAY_BAR_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -604,7 +604,7 @@ export function elapsedSessionMs(now: Date = new Date()): number {
  * can exist yet. At the open this is true, so the absence of today's bars is
  * **expected**, not stale: no 1D backfill is queued for a window that has not
  * happened, and the curve accrues tick-by-tick from the live tip instead
- * (market_open_token_burn_fix_plan.md WS1). Any past session reads `false`
+ * (legacy/v5:docs/market_open_token_burn_fix_plan.md WS1). Any past session reads `false`
  * (its elapsed time is ≥ a day), so its genuinely-missing bars still backfill.
  */
 export function sessionIsWarmingUp(now: Date = new Date()): boolean {

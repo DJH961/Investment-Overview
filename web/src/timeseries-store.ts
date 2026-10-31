@@ -1,7 +1,7 @@
 /**
  * Persistent time-series store for the live-web companion's 1D/1W graphs.
  *
- * Why a new store (docs/v3.0_live_web_companion_proposal.md §10.1/§10.6): the
+ * Why a new store (legacy/v5:docs/v3.0_live_web_companion_proposal.md §10.1/§10.6): the
  * companion is opened far more often than the desktop app is run, so a fresh
  * export blob is usually *not* sitting there. The web build therefore fetches
  * its own intraday/daily history and must **persist** it, keyed by trading day,
@@ -56,7 +56,7 @@ export interface Breadcrumb extends CurvePoint {
  * Plain numbers/booleans only, so it (de)serialises straight through a
  * structured-clone round-trip with no Decimal handling. Keyed by symbol inside
  * {@link StoredSession.closeProbe}; the per-day session key naturally resets it
- * next trading session (docs/session_close_completeness_plan.md C1/P3).
+ * next trading session (legacy/v5:docs/session_close_completeness_plan.md C1/P3).
  */
 export interface StoredCloseProbe {
   /** Session-relative ms of the newest bar we have seen for this symbol. */
@@ -102,7 +102,7 @@ export interface StoredSession {
    * Per-symbol close-completeness probes (the after-close settle memory). Absent
    * on records written before probes existed (treated as "no probe yet"); the
    * per-day session key resets it next session. See {@link StoredCloseProbe} and
-   * docs/session_close_completeness_plan.md (C1).
+   * legacy/v5:docs/session_close_completeness_plan.md (C1).
    */
   closeProbe?: Record<string, StoredCloseProbe>;
   /** Epoch ms the session's *bars* were last fetched — for the refetch throttle. */

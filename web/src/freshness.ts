@@ -11,7 +11,7 @@
  * Everything here is side-effect-free and clock-injected, so the survival rules
  * of the pull loop are testable in isolation (`web/test/freshness.test.ts`).
  *
- * See `docs/centralized_data_pull_plan.md` §"Pillar 4 — Graded freshness
+ * See `legacy/v5:docs/centralized_data_pull_plan.md` §"Pillar 4 — Graded freshness
  * truth-table".
  */
 

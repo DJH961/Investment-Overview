@@ -455,7 +455,7 @@ export type TimeSeriesBar = Bar;
 /**
  * Fetch an intraday (or short-range daily) price **series** per symbol from
  * Twelve Data's `time_series` endpoint — the data layer for the live 1D/1W
- * graphs (docs/v3.0 §10.2).
+ * graphs (legacy/v5:docs/v3.0_live_web_companion_proposal.md §10.2).
  *
  * The crucial economics: `time_series` bills **1 credit per symbol per request,
  * regardless of how many bars come back** (the bar count is set by

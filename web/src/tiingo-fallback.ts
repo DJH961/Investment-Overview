@@ -6,7 +6,7 @@
  * ET-reset Tiingo budget + quick-refresh state, fetching via the `/price` Worker
  * proxy, and merging results back into the quote map.
  *
- * It engages for two situations (see `docs/tiingo_fallback_plan.md` §Web design):
+ * It engages for two situations (see `legacy/v5:docs/tiingo_fallback_plan.md` §Web design):
  *   (a) symbols Twelve Data left **missing/stale** (including the FSKAX-style
  *       upstream gap where the primary serves a too-old bar), and
  *   (b) the **over-quota / 429** case where the free-tier budget is spent.

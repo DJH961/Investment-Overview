@@ -2,7 +2,7 @@
  * Tiingo secondary-provider tap for the browser companion.
  *
  * Twelve Data is the web primary; Tiingo engages only as a smart, budgeted
- * fallback (see `docs/tiingo_fallback_plan.md` and `tiingo-gate.ts`). Tiingo's
+ * fallback (see `legacy/v5:docs/tiingo_fallback_plan.md` and `tiingo-gate.ts`). Tiingo's
  * API is not CORS-readable from a browser and its token must stay secret, so all
  * requests go through the `web/proxy/` Cloudflare Worker `/price` route, which
  * injects the `TIINGO_TOKEN` server-side. The browser stays Tiingo-keyless.

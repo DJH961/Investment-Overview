@@ -1,6 +1,6 @@
 /**
  * Live-graph orchestration — ties the Phase 2–4 curve builders together with the
- * **batched** price backfill (docs/v3.0_live_web_companion_proposal.md §10.8).
+ * **batched** price backfill (legacy/v5:docs/v3.0_live_web_companion_proposal.md §10.8).
  *
  * The 1D ({@link loadOrBuildSessionCurve}) and 1W ({@link loadOrBuildWeekCurve})
  * builders each take an injected `fetchBars`/`fetchDailyBars` (native price bars)
@@ -140,7 +140,7 @@ export interface SpendRequest {
 
 /**
  * Two-phase credit meter for a live-graph backfill leg
- * (`docs/tiingo_polling_storm_cleanup_plan.md` items 1–3). Every dispatch
+ * (`legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md` items 1–3). Every dispatch
  * **reserves** its worst-case cost up-front so concurrent/subsequent calls see
  * the budget already committed and pace themselves; the result is then
  * **settled** (the provider billed it — keep the reservation, log what we
@@ -453,7 +453,7 @@ export function makeFxFetcher(
 
 /**
  * A persisted, timestamp-based **time-series backoff** shared by the price-bar
- * and FX-history fetchers (`docs/tiingo_polling_storm_cleanup_plan.md` item 4).
+ * and FX-history fetchers (`legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md` item 4).
  * It tracks, per `key` (a price symbol or an FX leg), how many consecutive
  * attempts have failed and — once that count crosses the threshold — when the
  * cooldown armed, so a *genuinely dead* series stops being re-pulled on every
@@ -631,7 +631,7 @@ export interface GraphRecorderOptions {
   /** Shared counter: total credits this build actually pulled (0 ⇒ all reused). */
   spent: { credits: number };
   /**
-   * Two-tier-brake hooks (market_open_token_burn_fix_plan.md WS4/WS5). The meter
+   * Two-tier-brake hooks (legacy/v5:docs/market_open_token_burn_fix_plan.md WS4/WS5). The meter
    * is the chokepoint that observes each provider's billed/not-billed outcome, so
    * it is where the per-provider 429 circuit breaker is tripped and cleared:
    *  - `onTwelveData429` — a Twelve Data over-quota reject (freeze TD).

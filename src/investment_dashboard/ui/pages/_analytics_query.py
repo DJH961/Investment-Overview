@@ -313,7 +313,7 @@ def build_bundle(
     # Default the as-of (and therefore the equity curve's last day stamp) to the
     # New-York exchange date, not the publisher's local `date.today()`: a daily
     # close must be filed under its NYSE trading day so the exported curve sits on
-    # the same ET grid the web companion buckets by (`docs/time_alignment_plan.md`).
+    # the same ET grid the web companion buckets by (`legacy/v5:docs/time_alignment_plan.md`).
     as_of = as_of or market_hours.exchange_today()
     start = as_of - timedelta(days=lookback_days)
 

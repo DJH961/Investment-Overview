@@ -1,6 +1,6 @@
 /**
  * Pillar 2 (WS5) — the **two-step login handshake**, as a pure reconcile-diff
- * (`docs/centralized_data_pull_plan.md` §"Pillar 2 — Never stale on login").
+ * (`legacy/v5:docs/centralized_data_pull_plan.md` §"Pillar 2 — Never stale on login").
  *
  * Login is two steps that cooperate through the freshness ledger so they are
  * **additive, never redundant**:

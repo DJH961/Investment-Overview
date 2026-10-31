@@ -1,4 +1,4 @@
-"""Public-readiness guard (proposal §7.5).
+"""Public-readiness guard.
 
 This repository is **public**, so every tracked file is world-readable. The
 §7.5 checklist is otherwise a manual ritual; this test turns the "no secrets or

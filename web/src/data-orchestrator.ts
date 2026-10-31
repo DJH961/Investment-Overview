@@ -15,7 +15,7 @@
  * fetched — without opening another file. {@link describePlan} renders that same
  * answer into the polling log so the decision is never "undiscoverable".
  *
- * See `docs/centralized_data_pull_plan.md` §"Pillar 1 — The single orchestrator".
+ * See `legacy/v5:docs/centralized_data_pull_plan.md` §"Pillar 1 — The single orchestrator".
  */
 
 import {

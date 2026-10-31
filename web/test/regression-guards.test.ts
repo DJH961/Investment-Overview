@@ -18,7 +18,7 @@ import { describePlan, planPull, type PullContext } from "../src/data-orchestrat
 import { ONE_HOUR_MS } from "../src/freshness";
 
 /**
- * WS8 — the part-2 regression guards (`docs/centralized_data_pull_plan.md`
+ * WS8 — the part-2 regression guards (`legacy/v5:docs/centralized_data_pull_plan.md`
  * §"Workstreams" item 8 / §"Verification"). These lock the three invariants the
  * centralized pull must never regress on, expressed against the pure decision
  * modules they live in:

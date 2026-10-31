@@ -455,7 +455,7 @@ class TestBuildWeekValueSeries:
 
 
 class TestUnifiedWindowBuilder:
-    """C8 (``docs/graph-unification-plan.md``): one range-parameterized builder.
+    """C8 (``legacy/v5:docs/graph-unification-plan.md``): one range-parameterized builder.
 
     The Day curve is ``window(1 session)`` and the Week curve is
     ``window(WEEK_SESSIONS)`` of the *same* builder, drawn from the *same* dense

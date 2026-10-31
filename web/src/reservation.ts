@@ -1,6 +1,6 @@
 /**
  * The **single reservation authority** for every metered provider request —
- * `docs/provider_rate_limit_audit.md` Recommendation 4.
+ * `legacy/v5:docs/provider_rate_limit_audit.md` Recommendation 4.
  *
  * Before this module each call site re-implemented its own budget check (and
  * several graph legs omitted it entirely — audit Flags 1–3, 5), and even the

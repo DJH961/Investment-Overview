@@ -1,6 +1,6 @@
 /**
  * Live **1 Week** curve orchestration for the web companion
- * (docs/v3.0_live_web_companion_proposal.md §10.8, Phase 4).
+ * (legacy/v5:docs/v3.0_live_web_companion_proposal.md §10.8, Phase 4).
  *
  * The 1W curve is **self-built from dense 5-minute intraday bars** over the
  * trailing-session window — the *same* bar type and the very same anchored maths
@@ -191,7 +191,7 @@ export async function persistWindowBarsPerDay(
  * otherwise it is the window's last day. Exposed so the refresh-layer dedup test
  * ({@link App.prefetchGraphStaleness}) can apply the *same* coverage test the
  * build uses, instead of a looser presence check that misfires on stale-but-
- * present stores (`docs/tiingo_polling_storm_cleanup_plan.md` item 5b).
+ * present stores (`legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md` item 5b).
  */
 export function weekCoverageCutoffMs(now: Date = new Date(), sessions = DEFAULT_WEEK_SESSIONS): number {
   const window = recentTradingSessions(sessions, now);
