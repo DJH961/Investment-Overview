@@ -15,17 +15,17 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.readmodels.queries.overview_query import (
+    InstrumentMetrics,
+    allocation_treemap,
+    compute_instrument_metrics,
+)
 from investment_dashboard.services import prices_service
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
 )
 from investment_dashboard.services.positions_service import Position, compute_positions
-from investment_dashboard.ui.pages._overview_query import (
-    InstrumentMetrics,
-    allocation_treemap,
-    compute_instrument_metrics,
-)
 
 ZERO = Decimal(0)
 

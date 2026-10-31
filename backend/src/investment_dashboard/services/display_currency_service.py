@@ -29,7 +29,7 @@ from investment_dashboard.services import fx_service
 #: :func:`convert_from_eur` how to look up the rate, ensuring
 #: :mod:`fx_service` backfills the EUR→quote series at boot
 #: (see ``boot._refresh_fx``), extending the currency-symbol map in
-#: :mod:`investment_dashboard.ui.money_format`, and broadening the
+#: :mod:`investment_dashboard.readmodels.money_format`, and broadening the
 #: secondary-column picker in the monthly/yearly tables.
 SUPPORTED_CURRENCIES: tuple[str, ...] = ("EUR", "USD")
 DEFAULT_CURRENCY = "EUR"

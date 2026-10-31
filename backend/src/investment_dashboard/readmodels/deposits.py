@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
-from investment_dashboard.ui.pages._deposits_query import (
+from investment_dashboard.readmodels.queries.deposits_query import (
     DepositRecord,
     DepositSummary,
     compute_summary,

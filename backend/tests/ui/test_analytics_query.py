@@ -1,4 +1,4 @@
-"""Tests for ``investment_dashboard.ui.pages._analytics_query``."""
+"""Tests for ``investment_dashboard.readmodels.queries.analytics_query``."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ from investment_dashboard.models import (
     Transaction,
     TransactionKind,
 )
+from investment_dashboard.readmodels.queries.analytics_query import build_bundle
 from investment_dashboard.repositories import app_config_repo, snapshots_repo
 from investment_dashboard.services import benchmark_service
-from investment_dashboard.ui.pages._analytics_query import build_bundle
 
 
 @pytest.fixture(autouse=True)
@@ -100,7 +100,7 @@ def test_bundle_defaults_as_of_to_exchange_today_not_local(session, monkeypatch)
     # The exported curve must be stamped on the NYSE exchange date (one ET clock,
     # schema 2), never the publisher's local ``date.today()``. Pin a divergent ET
     # date and assert the default flows from ``exchange_today``.
-    import investment_dashboard.ui.pages._analytics_query as aq
+    import investment_dashboard.readmodels.queries.analytics_query as aq
 
     et_day = date.today() - timedelta(days=1)
     monkeypatch.setattr(aq.market_hours, "exchange_today", lambda *a, **k: et_day)
@@ -133,7 +133,7 @@ def test_curve_bounds_cold_cache_recompute(session) -> None:  # type: ignore[no-
     thousands of portfolio valuations on the request thread and the tab hung,
     never finishing its first paint.
     """
-    from investment_dashboard.ui.pages._analytics_query import CURVE_RECOMPUTE_TAIL_DAYS
+    from investment_dashboard.readmodels.queries.analytics_query import CURVE_RECOMPUTE_TAIL_DAYS
 
     as_of = date.today()
     bundle = build_bundle(session, currency="EUR", lookback_days=400, as_of=as_of)

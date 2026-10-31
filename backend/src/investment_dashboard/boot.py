@@ -129,7 +129,7 @@ def _earliest_needed_date() -> date:
 
     For a populated ledger this is the date of the earliest transaction
     (so per-trade-date FX lookups in
-    :mod:`investment_dashboard.ui.pages._period_query` find a rate
+    :mod:`investment_dashboard.readmodels.queries.period_query` find a rate
     instead of falling back to the EUR ledger value, which silently
     collapses USD growth onto EUR growth — the v2.3 bug). For an empty
     ledger we keep the legacy 14-day window so first-boot doesn't fan

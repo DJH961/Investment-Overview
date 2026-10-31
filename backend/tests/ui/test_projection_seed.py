@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
+from investment_dashboard.readmodels.queries.projection_model import FALLBACK_EXPECTED_RATE
 from investment_dashboard.repositories import accounts_repo
-from investment_dashboard.ui.pages._projection_model import FALLBACK_EXPECTED_RATE
 from investment_dashboard.ui.pages._projection_view import build_seed
 
 

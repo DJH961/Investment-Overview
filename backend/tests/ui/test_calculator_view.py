@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from investment_dashboard.ui.pages._calculator_query import (
+from investment_dashboard.readmodels.queries.calculator_query import (
     CalcCategory,
     CalcData,
     CalcInstrument,

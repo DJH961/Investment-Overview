@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from investment_dashboard.ui.pages._overview_query import (
+from investment_dashboard.readmodels.queries.overview_query import (
     HoldingCard,
     build_movers,
 )

@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from investment_dashboard.ui.pages._period_query import _modified_dietz
-from investment_dashboard.ui.pages._projection_query import (
+from investment_dashboard.readmodels.queries.period_query import _modified_dietz
+from investment_dashboard.readmodels.queries.projection_query import (
     project_monthly,
     to_monthly_table_rows,
 )

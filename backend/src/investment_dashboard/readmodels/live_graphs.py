@@ -99,17 +99,17 @@ from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
 from investment_dashboard.readmodels._context import ReadModelContext
 from investment_dashboard.readmodels._serialize import dec, iso
+from investment_dashboard.readmodels.queries.overview_query import (
+    ValueSeriesPoint,
+    build_intraday_value_series,
+    build_week_value_series,
+)
 from investment_dashboard.repositories import app_config_repo, transactions_repo
 from investment_dashboard.services import (
     fx_service,
     intraday_snapshots_service,
     positions_service,
     prices_service,
-)
-from investment_dashboard.ui.pages._overview_query import (
-    ValueSeriesPoint,
-    build_intraday_value_series,
-    build_week_value_series,
 )
 
 #: Cap on the 1D session's exported points (≈ a 5-min trading session's density).

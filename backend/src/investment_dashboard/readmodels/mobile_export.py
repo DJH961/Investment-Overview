@@ -32,6 +32,7 @@ from investment_dashboard.models import Transaction
 from investment_dashboard.readmodels import analytics, deposits, live_graphs, periods, transactions
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso, now_utc_iso
+from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 from investment_dashboard.repositories import (
     accounts_repo,
     allocations_repo,
@@ -46,7 +47,6 @@ from investment_dashboard.services import (
     prices_service,
 )
 from investment_dashboard.services.positions_service import Position
-from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 
 SCHEMA_VERSION = 2
 

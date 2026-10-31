@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
+from investment_dashboard.readmodels.queries.period_query import aggregate, to_table_rows
 from investment_dashboard.repositories import accounts_repo, fx_repo, snapshots_repo
-from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
 
 
 def _seed_two_jan_deposits(session: Session) -> None:

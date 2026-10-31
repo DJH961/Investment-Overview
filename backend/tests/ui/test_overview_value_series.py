@@ -8,18 +8,18 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
-from investment_dashboard.repositories import (
-    accounts_repo,
-    fx_repo,
-    instruments_repo,
-    prices_repo,
-)
-from investment_dashboard.ui.pages._overview_query import (
+from investment_dashboard.readmodels.queries.overview_query import (
     MULTI_CCY_RANGES,
     VALUE_RANGES,
     build_value_series,
     range_start_date,
     resolve_range_days,
+)
+from investment_dashboard.repositories import (
+    accounts_repo,
+    fx_repo,
+    instruments_repo,
+    prices_repo,
 )
 
 
@@ -157,8 +157,8 @@ class TestBuildValueSeries:
 class TestBuildWeekValueSeries:
     def test_composes_base_plus_market(self, session: Session, monkeypatch) -> None:
         """The week curve reapplies the cash + NAV base to each intraday sample."""
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         _seed(session)  # one €1,000 EUR holding ⇒ base 0, market €1,000
 
@@ -177,8 +177,8 @@ class TestBuildWeekValueSeries:
         assert [p.value for p in points[:2]] == [Decimal("1000.00"), Decimal("1100.00")]
 
     def test_empty_samples_returns_no_points(self, session: Session, monkeypatch) -> None:
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         _seed(session)
         monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: [])
@@ -216,8 +216,8 @@ class TestBuildWeekValueSeries:
 
     def test_drifting_nav_fund_slopes_across_week(self, session: Session, monkeypatch) -> None:
         """A mutual fund whose NAV moved across the week contributes a *sloped* track."""
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         iid = self._seed_fund(session, symbol="GROWTHX", asset_class="mutual_fund")
         # NAV published 100 on Jun 3, 110 on Jun 5 (forward-filled to today).
@@ -242,8 +242,8 @@ class TestBuildWeekValueSeries:
 
     def test_money_market_fund_stays_flat(self, session: Session, monkeypatch) -> None:
         """A money-market fund rides flat in the base — it never slopes."""
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         iid = self._seed_fund(
             session, symbol="MMFUND", asset_class="mutual_fund", name="Acme Money Market Fund"
@@ -273,8 +273,8 @@ class TestBuildWeekValueSeries:
         *known* NAV rather than collapse to zero (which nose-dived the 1W start to
         roughly the value of the stocks *without* their funds).
         """
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         iid = self._seed_fund(session, symbol="GROWTHX", asset_class="mutual_fund")
         # Only Wednesday's NAV is cached; Monday has *no* close on or before it.
@@ -305,8 +305,8 @@ class TestBuildWeekValueSeries:
         *native* USD value, so for every session the USD line equals the FX-free
         native USD (shares × that day's NAV) exactly, whatever the FX lookup says.
         """
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         acct = accounts_repo.create_account(
             session,
@@ -372,8 +372,8 @@ class TestBuildWeekValueSeries:
         close-bar pull retroactively restores the genuine per-day slope with no
         speculative fetching.
         """
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         iid = self._seed_fund(session, symbol="GROWTHX", asset_class="mutual_fund")
         prices_repo.upsert_closes(session, iid, {date(2024, 6, 5): Decimal("110.00")})
@@ -403,8 +403,8 @@ class TestBuildWeekValueSeries:
         The other half of the gap (a NAV close exists but no per-day EUR/USD rate)
         also zeroed ``current_value_eur``; it must carry flat too.
         """
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         acct = accounts_repo.create_account(
             session,
@@ -464,8 +464,8 @@ class TestUnifiedWindowBuilder:
     """
 
     def test_day_is_window_of_one_session(self, session: Session, monkeypatch) -> None:
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         _seed(session)
         now = datetime(2024, 6, 3, 20, 0, tzinfo=UTC)
@@ -482,8 +482,8 @@ class TestUnifiedWindowBuilder:
         assert [(p.date, p.value) for p in via_window] == [(p.date, p.value) for p in via_wrapper]
 
     def test_week_is_window_of_week_sessions(self, session: Session, monkeypatch) -> None:
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         _seed(session)
         now = datetime(2024, 6, 3, 20, 0, tzinfo=UTC)
@@ -505,8 +505,8 @@ class TestUnifiedWindowBuilder:
         With a single EUR holding (base 0, no NAV drift) the Day and Week builders
         draw from the same today samples, so today's points coincide exactly.
         """
+        from investment_dashboard.readmodels.queries import overview_query as _overview_query
         from investment_dashboard.services import intraday_snapshots_service as iss
-        from investment_dashboard.ui.pages import _overview_query
 
         _seed(session)
         now = datetime(2024, 6, 3, 20, 0, tzinfo=UTC)
@@ -531,7 +531,9 @@ class TestPreviousSessionCloseValue:
     def test_returns_prior_trading_day_settled_value(self, session: Session) -> None:
         from datetime import datetime
 
-        from investment_dashboard.ui.pages._overview_query import previous_session_close_value
+        from investment_dashboard.readmodels.queries.overview_query import (
+            previous_session_close_value,
+        )
 
         _seed(session)
         # A Wednesday: the "Day" session is 2024-06-05, so the reference is the
@@ -543,7 +545,9 @@ class TestPreviousSessionCloseValue:
     def test_returns_none_for_empty_ledger(self, session: Session) -> None:
         from datetime import datetime
 
-        from investment_dashboard.ui.pages._overview_query import previous_session_close_value
+        from investment_dashboard.readmodels.queries.overview_query import (
+            previous_session_close_value,
+        )
 
         now = datetime(2024, 6, 5, 18, 0)
         assert previous_session_close_value(session, currency="EUR", now=now) is None
@@ -558,27 +562,27 @@ class TestMarketAwareRange:
     NEXT_OPEN = datetime(2024, 6, 4, 14, 0, tzinfo=UTC)
 
     def test_market_open_fresh_session_defaults_to_day(self, session: Session) -> None:
+        from investment_dashboard.readmodels.queries.overview_query import effective_overview_range
         from investment_dashboard.services import chart_prefs_service
-        from investment_dashboard.ui.pages._overview_query import effective_overview_range
 
         # Even with a standard "Year" pref, an open (untouched) session opens on Day.
         chart_prefs_service.set_pref(session, "overview_value_range", "Year")
         assert effective_overview_range(session, now=self.OPEN) == "Day"
 
     def test_market_closed_uses_standard_selection(self, session: Session) -> None:
+        from investment_dashboard.readmodels.queries.overview_query import effective_overview_range
         from investment_dashboard.services import chart_prefs_service
-        from investment_dashboard.ui.pages._overview_query import effective_overview_range
 
         chart_prefs_service.set_pref(session, "overview_value_range", "Month")
         assert effective_overview_range(session, now=self.CLOSED) == "Month"
 
     def test_market_closed_default_when_unset(self, session: Session) -> None:
-        from investment_dashboard.ui.pages._overview_query import effective_overview_range
+        from investment_dashboard.readmodels.queries.overview_query import effective_overview_range
 
         assert effective_overview_range(session, now=self.CLOSED) == "Year"
 
     def test_mid_session_change_is_remembered_for_that_session(self, session: Session) -> None:
-        from investment_dashboard.ui.pages._overview_query import (
+        from investment_dashboard.readmodels.queries.overview_query import (
             effective_overview_range,
             remember_overview_range,
         )
@@ -590,7 +594,7 @@ class TestMarketAwareRange:
         assert effective_overview_range(session, now=self.NEXT_OPEN) == "Day"
 
     def test_mid_session_change_does_not_touch_standard(self, session: Session) -> None:
-        from investment_dashboard.ui.pages._overview_query import (
+        from investment_dashboard.readmodels.queries.overview_query import (
             effective_overview_range,
             remember_overview_range,
         )
@@ -600,7 +604,7 @@ class TestMarketAwareRange:
         assert effective_overview_range(session, now=self.CLOSED) == "Year"
 
     def test_change_while_closed_updates_standard(self, session: Session) -> None:
-        from investment_dashboard.ui.pages._overview_query import (
+        from investment_dashboard.readmodels.queries.overview_query import (
             effective_overview_range,
             remember_overview_range,
         )

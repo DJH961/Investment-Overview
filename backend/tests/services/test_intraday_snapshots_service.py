@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
+from investment_dashboard.readmodels.queries.overview_query import build_intraday_value_series
 from investment_dashboard.repositories import (
     accounts_repo,
     app_config_repo,
@@ -19,7 +20,6 @@ from investment_dashboard.repositories import (
     prices_repo,
 )
 from investment_dashboard.services import intraday_snapshots_service as iss
-from investment_dashboard.ui.pages._overview_query import build_intraday_value_series
 
 # A fixed Monday session so weekday/weekend logic is deterministic.
 _SESSION_DAY = date(2024, 6, 3)
@@ -1276,7 +1276,7 @@ class TestWeekSeries:
     def test_build_week_value_series_empty_for_empty_portfolio(self, session: Session) -> None:
         # With nothing to price intraday there is nothing to cache or fetch, so
         # the series is empty and the page falls back to the daily snapshots.
-        from investment_dashboard.ui.pages._overview_query import build_week_value_series
+        from investment_dashboard.readmodels.queries.overview_query import build_week_value_series
 
         assert build_week_value_series(session, currency="EUR", now=_NOW) == []
 

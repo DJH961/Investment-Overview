@@ -1,7 +1,7 @@
 """Calculator read-model — forward projection scenarios (yearly + monthly).
 
 Wraps the shared projection helpers in
-:mod:`investment_dashboard.ui.pages._projection_query`.
+:mod:`investment_dashboard.readmodels.queries.projection_query`.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
-from investment_dashboard.ui.pages._projection_query import (
+from investment_dashboard.readmodels.queries.projection_query import (
     DEFAULT_SCENARIOS,
     MonthlyProjectionRow,
     ProjectionRow,

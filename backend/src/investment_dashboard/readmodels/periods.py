@@ -1,6 +1,6 @@
 """Monthly / yearly period read-models — cashflow buckets + growth.
 
-Both wrap the shared :func:`investment_dashboard.ui.pages._period_query.aggregate`
+Both wrap the shared :func:`investment_dashboard.readmodels.queries.period_query.aggregate`
 so the figures match the NiceGUI monthly/yearly tables exactly.
 """
 
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
-from investment_dashboard.ui.pages._period_query import PeriodRow, aggregate
+from investment_dashboard.readmodels.queries.period_query import PeriodRow, aggregate
 
 
 def _row_dict(r: PeriodRow) -> dict[str, Any]:

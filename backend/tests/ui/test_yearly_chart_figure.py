@@ -7,8 +7,8 @@ from decimal import Decimal
 
 import plotly.graph_objects as go
 
+from investment_dashboard.readmodels.queries.overview_query import ValueSeriesPoint
 from investment_dashboard.ui.charts import padded_range
-from investment_dashboard.ui.pages._overview_query import ValueSeriesPoint
 from investment_dashboard.ui.pages.yearly import _figure
 from investment_dashboard.ui.theme import register_plotly_template
 

@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from investment_dashboard.ui.pages._projection_model import (
+from investment_dashboard.readmodels.queries.projection_model import (
     FALLBACK_EXPECTED_RATE,
     SCENARIO_EXPECTED,
     SCENARIO_OPTIMISTIC,

@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
-from investment_dashboard.repositories import accounts_repo
-from investment_dashboard.ui.pages._projection_query import (
+from investment_dashboard.readmodels.queries.projection_query import (
     DEFAULT_SCENARIOS,
     project,
     project_from_session,
 )
+from investment_dashboard.repositories import accounts_repo
 
 
 def test_project_zero_years_returns_empty() -> None:

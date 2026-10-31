@@ -1,6 +1,6 @@
 """Analytics read-model — equity curve, risk metrics, and attribution.
 
-Wraps the shared :func:`investment_dashboard.ui.pages._analytics_query.build_bundle`.
+Wraps the shared :func:`investment_dashboard.readmodels.queries.analytics_query.build_bundle`.
 Every figure that can't be computed (sparse history, no benchmark cache,
 no risk-free rate) is serialized as ``null``.
 """
@@ -14,14 +14,14 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain.attribution import AttributionRow
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec
-from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import benchmark_service
-from investment_dashboard.ui.pages._analytics_query import (
+from investment_dashboard.readmodels.queries.analytics_query import (
     AnalyticsBundle,
     EquityCurvePoint,
     build_bundle,
     build_curve,
 )
+from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.services import benchmark_service
 
 
 def _curve_point(p: EquityCurvePoint, usd: EquityCurvePoint | None = None) -> dict[str, Any]:

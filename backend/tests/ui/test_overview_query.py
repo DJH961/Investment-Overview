@@ -10,17 +10,17 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
+from investment_dashboard.readmodels.queries.overview_query import (
+    allocation_treemap,
+    get_positions,
+    position_rows,
+)
 from investment_dashboard.repositories import (
     accounts_repo,
     fx_repo,
     instrument_overrides_repo,
     instruments_repo,
     prices_repo,
-)
-from investment_dashboard.ui.pages._overview_query import (
-    allocation_treemap,
-    get_positions,
-    position_rows,
 )
 
 
@@ -78,8 +78,8 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
     from sqlalchemy import delete
 
     from investment_dashboard.models import PriceHistory
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
     from investment_dashboard.services import intraday_snapshots_service
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
     latest_price_date = intraday_snapshots_service.previous_trading_session(
@@ -126,8 +126,8 @@ def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, see
     while historical YTD figures (priced at past-date FX) stay put."""
     from unittest.mock import patch
 
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
     from investment_dashboard.services import fx_service, intraday_snapshots_service
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
 
     # Force today to be treated as a trading day to align the baseline session
     orig_is_trading = intraday_snapshots_service._is_trading_day
@@ -165,7 +165,7 @@ def test_money_market_daily_growth_is_blank(session: Session) -> None:
     single-day growth is blank (``None`` → em dash), not a misleading 0."""
     from investment_dashboard.models import Transaction
     from investment_dashboard.models.transaction import TransactionSource
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         compute_instrument_metrics,
         get_positions,
     )
@@ -207,7 +207,7 @@ def test_money_market_reinvested_dividends_count_as_gain(session: Session) -> No
     by inflating the cost basis (user report: "growth should not be 0")."""
     from investment_dashboard.models import Transaction
     from investment_dashboard.models.transaction import TransactionSource
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         compute_instrument_metrics,
         get_positions,
     )
@@ -268,7 +268,7 @@ def test_money_market_dividends_only_growth_xirr_non_negative(session: Session) 
     (the web bug was a negative USD from an FX-negative fallback)."""
     from investment_dashboard.models import Transaction
     from investment_dashboard.models.transaction import TransactionSource
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         compute_instrument_metrics,
         get_positions,
     )
@@ -322,7 +322,7 @@ def test_money_market_dividends_only_growth_xirr_non_negative(session: Session) 
 
 
 def test_positions_table_has_growth_pct(session: Session, seeded: None) -> None:
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
     positions = get_positions(session)
     metrics = compute_instrument_metrics(session, positions)
@@ -351,7 +351,7 @@ def test_treemap_handles_no_positions(session: Session) -> None:
 def test_instrument_metrics_xirr_and_dividend_inclusive_growth(
     session: Session, seeded: None
 ) -> None:
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
     positions = get_positions(session)
     metrics = compute_instrument_metrics(session, positions)
@@ -374,7 +374,7 @@ def test_instrument_metrics_xirr_and_dividend_inclusive_growth(
 
 
 def test_position_rows_enriched_with_metrics(session: Session, seeded: None) -> None:
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
     positions = get_positions(session)
     metrics = compute_instrument_metrics(session, positions)
@@ -403,7 +403,7 @@ def test_position_rows_default_no_price_data_warning(session: Session, seeded: N
 
 
 def test_market_verdict_beating_and_trailing(session: Session, seeded: None) -> None:
-    from investment_dashboard.ui.pages._overview_query import compute_market_verdict
+    from investment_dashboard.readmodels.queries.overview_query import compute_market_verdict
 
     # Fund the simulated benchmark with a real external contribution, and give
     # VT a +10 % move over the window (flat EUR→USD so EUR price == USD close).
@@ -458,7 +458,7 @@ def test_market_verdict_beating_and_trailing(session: Session, seeded: None) -> 
 
 
 def test_market_verdict_none_without_benchmark_history(session: Session, seeded: None) -> None:
-    from investment_dashboard.ui.pages._overview_query import compute_market_verdict
+    from investment_dashboard.readmodels.queries.overview_query import compute_market_verdict
 
     verdict = compute_market_verdict(session, portfolio_xirr=Decimal("0.10"), years=Decimal("1"))
     assert verdict.beating is None
@@ -468,7 +468,7 @@ def test_market_verdict_none_without_benchmark_history(session: Session, seeded:
 def test_partial_sale_uses_average_cost_growth(session: Session) -> None:
     """A partial sale must release a proportional slice of the cost basis in
     both wallets, otherwise growth is massively deflated (v2.9.6 fix)."""
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
     acct = accounts_repo.create_account(
         session,
@@ -531,7 +531,7 @@ def test_multi_flow_growth_is_compounded_not_simple_ratio(session: Session) -> N
     With multiple cashflows the two formulas genuinely diverge (for a single
     contribution they coincide), so the row must not fall back to gain/cost.
     """
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
     acct = accounts_repo.create_account(
         session,
@@ -589,7 +589,7 @@ def test_multi_flow_growth_is_compounded_not_simple_ratio(session: Session) -> N
 
 
 def test_position_rows_carry_portfolio_weight(session: Session, seeded: None) -> None:
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
     positions = get_positions(session)
     metrics = compute_instrument_metrics(session, positions)
@@ -605,7 +605,7 @@ def test_position_rows_carry_portfolio_weight(session: Session, seeded: None) ->
 
 
 def test_position_rows_as_of_date_from_freshness(session: Session, seeded: None) -> None:
-    from investment_dashboard.ui.pages._overview_query import holding_freshness
+    from investment_dashboard.readmodels.queries.overview_query import holding_freshness
 
     positions = get_positions(session)
     fresh = holding_freshness(session, positions)
@@ -623,7 +623,7 @@ def test_position_rows_as_of_dash_without_freshness(session: Session, seeded: No
 
 
 def test_build_holding_cards_weight_and_sort(session: Session, seeded: None) -> None:
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         build_holding_cards,
         compute_instrument_metrics,
         holding_freshness,
@@ -644,7 +644,7 @@ def test_build_holding_cards_weight_and_sort(session: Session, seeded: None) -> 
 
 
 def test_holding_freshness_marks_money_market(session: Session) -> None:
-    from investment_dashboard.ui.pages._overview_query import holding_freshness
+    from investment_dashboard.readmodels.queries.overview_query import holding_freshness
 
     acct = accounts_repo.create_account(
         session,
@@ -676,7 +676,7 @@ def test_holding_freshness_marks_money_market(session: Session) -> None:
 
 
 def test_fmt_asof_live_when_market_open() -> None:
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         HoldingFreshness,
         _fmt_asof,
     )
@@ -694,7 +694,7 @@ def test_fmt_asof_live_when_market_open() -> None:
 def test_fmt_asof_stale_feed_reads_today_not_live() -> None:
     from datetime import UTC
 
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         HoldingFreshness,
         _fmt_asof,
     )
@@ -715,7 +715,7 @@ def test_fmt_asof_stale_feed_reads_today_not_live() -> None:
 def test_fmt_asof_fresh_feed_reads_live() -> None:
     from datetime import UTC
 
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         HoldingFreshness,
         _fmt_asof,
     )
@@ -732,7 +732,7 @@ def test_fmt_asof_fresh_feed_reads_live() -> None:
 
 
 def test_fmt_asof_today_when_market_closed() -> None:
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         HoldingFreshness,
         _fmt_asof,
     )
@@ -748,7 +748,7 @@ def test_fmt_asof_today_when_market_closed() -> None:
 
 
 def test_fmt_asof_today_when_market_closed_even_if_pulled_today() -> None:
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         HoldingFreshness,
         _fmt_asof,
     )
@@ -766,7 +766,7 @@ def test_fmt_asof_today_when_market_closed_even_if_pulled_today() -> None:
 
 
 def test_fmt_asof_date_for_older_price() -> None:
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         HoldingFreshness,
         _fmt_asof,
     )
@@ -782,7 +782,7 @@ def test_fmt_asof_date_for_older_price() -> None:
 
 
 def test_fmt_asof_money_market_keeps_par() -> None:
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         HoldingFreshness,
         _fmt_asof,
     )
@@ -796,7 +796,7 @@ def test_fmt_asof_money_market_keeps_par() -> None:
 def test_instrument_mtd_growth_per_currency(session: Session) -> None:
     """MTD growth compares the current value to the start-of-month value
     (no flows this month), mirroring the YTD calculation but month-scoped."""
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
     today = date.today()
     month_start = date(today.year, today.month, 1)
@@ -844,7 +844,7 @@ def test_instrument_mtd_growth_per_currency(session: Session) -> None:
 
 
 def test_position_rows_carry_mtd(session: Session, seeded: None) -> None:
-    from investment_dashboard.ui.pages._overview_query import compute_instrument_metrics
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
     positions = get_positions(session)
     metrics = compute_instrument_metrics(session, positions)
@@ -858,7 +858,7 @@ def test_build_holding_cards_flags_lagging_daily_move_as_stale(
     """When some holdings have repriced today but a fund still sits on
     yesterday's NAV, the laggard's daily move is flagged stale so the UI can
     grey it out while the fresh holdings show today's move normally."""
-    from investment_dashboard.ui.pages._overview_query import (
+    from investment_dashboard.readmodels.queries.overview_query import (
         build_holding_cards,
         compute_instrument_metrics,
         get_positions,

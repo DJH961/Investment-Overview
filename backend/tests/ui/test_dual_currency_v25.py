@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from investment_dashboard.ui.money_format import dual_money, dual_pct, fmt_pct
+from investment_dashboard.readmodels.money_format import dual_money, dual_pct, fmt_pct
 
 
 def test_dual_money_usd_primary() -> None:

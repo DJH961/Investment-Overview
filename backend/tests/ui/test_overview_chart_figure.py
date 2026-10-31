@@ -9,8 +9,8 @@ import plotly.graph_objects as go
 import pytest
 from sqlalchemy.orm import Session
 
+from investment_dashboard.readmodels.queries.overview_query import ValueSeriesPoint
 from investment_dashboard.ui.charts import padded_range
-from investment_dashboard.ui.pages._overview_query import ValueSeriesPoint
 from investment_dashboard.ui.pages.overview import _value_curve_figure, _week_xaxis_range
 from investment_dashboard.ui.theme import register_plotly_template
 

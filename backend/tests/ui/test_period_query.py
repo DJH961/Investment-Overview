@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
+from investment_dashboard.readmodels.queries.period_query import aggregate, to_table_rows
 from investment_dashboard.repositories import accounts_repo
-from investment_dashboard.ui.pages._period_query import aggregate, to_table_rows
 
 
 def _seed(session: Session) -> None:
@@ -185,7 +185,7 @@ def test_to_table_rows_emits_numeric_companions_for_one_currency_columns(
 
 def test_money_and_pct_columns_bind_to_display_currency() -> None:
     """The column builders target the selected currency's numeric field."""
-    from investment_dashboard.ui.pages._period_query import money_column, pct_column
+    from investment_dashboard.readmodels.queries.period_query import money_column, pct_column
 
     mc = money_column("Closing value", "closing_value", "USD")
     assert mc["field"] == "closing_value_usd_num"

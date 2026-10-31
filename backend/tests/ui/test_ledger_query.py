@@ -9,12 +9,12 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
-from investment_dashboard.repositories import accounts_repo, instruments_repo
-from investment_dashboard.ui.pages._ledger_query import (
+from investment_dashboard.readmodels.queries.ledger_query import (
     LedgerFilters,
     list_ledger_rows,
     summarize_ledger,
 )
+from investment_dashboard.repositories import accounts_repo, instruments_repo
 
 
 def _seed(session: Session) -> None:
