@@ -40,14 +40,14 @@ UI contract: [`v6_frontend_design.md`](v6_frontend_design.md).
 ## Waves
 
 ### W0 — restructure + frontend base (parallel)
-- [ ] T0a `git mv` src/tests/migrations/tools/pyproject/uv.lock/alembic.ini → `backend/`; fix CI, launchers, installer, pre-commit, path-reading tests, AGENTS/CONTRIBUTING commands
-- [ ] T0b move `ui/pages/_*_query.py` into `readmodels/queries/` with re-export shims (no nicegui imports)
+- [x] T0a `git mv` src/tests/migrations/tools/pyproject/uv.lock/alembic.ini → `backend/`; fix CI, launchers, installer, pre-commit, path-reading tests, AGENTS/CONTRIBUTING commands
+- [x] T0b move `ui/pages/_*_query.py` into `readmodels/queries/` with re-export shims (no nicegui imports)
 - [ ] F1 `frontend/` tooling, all deps, tokens/SCSS, AppShell (sidebar/rail/tab bar), primitive kit, lib (api, format, prefs, queries), placeholder routes
 
 ### C1 — backend contracts (orchestrator)
-- [ ] deps in `pyproject.toml` (argon2-cffi, webauthn, sse-starlette or plain StreamingResponse, python-multipart)
-- [ ] `config.py` v6 settings
-- [ ] `api/app.py` factory (lifespan, routers, static/SPA, security headers), `api/deps.py`, `api/schemas/common.py`, router stubs, model stubs, migration ids, `tests/api/conftest.py`, OpenAPI export script
+- [x] deps in `pyproject.toml` (argon2-cffi, webauthn, sse-starlette or plain StreamingResponse, python-multipart)
+- [x] `config.py` v6 settings
+- [x] `api/app.py` factory (lifespan, routers, static/SPA, security headers), `api/deps.py`, `api/schemas/common.py`, router stubs, model stubs, migration ids, `tests/api/conftest.py`, OpenAPI export script
 
 ### W1 — backend slices + deploy + frontend widgets (parallel, ≤ 7 workers)
 - [ ] B1 reads A: overview, holdings, allocations (GET), graphs/{range} + schemas + tests
@@ -83,3 +83,5 @@ UI contract: [`v6_frontend_design.md`](v6_frontend_design.md).
 ## Log
 - 2026-10-31 branch created, tracker written; W0 started.
 - 2026-11-01 plan refined into 18 narrow tasks; F1 scope narrowed.
+- 2026-11-01 T0a/T0b done (8f0219c, 924c599). C1 contracts done (c65374e): v5 API → `api/legacy_v5.py`, token check → `api/token_auth.py`. Migration ids: B5 `d2a6b4c8e1f0` (down `c1f5a3b9e2d4`), B4 `e3b7c5d9f2a1` (down `d2a6b4c8e1f0`).
+- W3 todo: installer tarball fallback needs `#subdirectory=backend`; verify `release.yml` `python -m build backend`.
