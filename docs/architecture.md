@@ -1,49 +1,38 @@
 # Architecture
 
-A one-page distillation of the full spec
-(`requirements_and_project_overview.md`). When the two disagree, the spec
-wins; PRs welcome to keep this doc honest.
+How the current (v5.3.1) system is put together. The rules that govern the code
+(layering, cache-tier access, currency) live in [`../AGENTS.md`](../AGENTS.md); the
+original requirements are in [`original_spec.md`](original_spec.md); the hosted v6
+rewrite is in [`v6_one_app_plan.md`](v6_one_app_plan.md).
 
 ## Goal
 
 A local-first, single-user investment dashboard whose ground truth is a
-**transaction ledger**, with rich return metrics in **USD and EUR**,
-accessible from any device on the user's Wi-Fi.
+**transaction ledger**, with rich return metrics in **USD and EUR**, reachable from
+any device on the user's LAN. A read-only, encrypted web companion (`web/`) gives a
+phone view from a published snapshot.
 
 ## Layered structure
 
 ```
-ui/         NiceGUI pages, components, copy.    Thin: input → service → render.
+ui/         NiceGUI pages, components, copy.    Thin: input -> service -> render.
+api/        Read-only FastAPI JSON API.         Opt-in; serves readmodels.
 services/   Use-case orchestration.             Composes domain + adapters + repos.
+readmodels/ UI-agnostic JSON shapes.            Shared by the API, export and publish.
 repositories/   DB access.                      Only place that imports ORM models.
-adapters/   External I/O.                       yfinance, Frankfurter, broker CSVs.
+adapters/   External I/O.                       Market data, FX, broker files; return dataclasses.
 domain/     Pure math.                          XIRR, TWR, CAGR, allocation, risk.
 models/     SQLAlchemy ORM.                     Schema definition only.
+storage/    Paths, cloud detection, encryption, sidecar guard, locks, backups.
 ```
 
-### Hard rules
+Notes beyond the rules in `AGENTS.md`:
 
-- **`domain/` is pure.** No `Session`, no `httpx`, no `yfinance`, no
-  filesystem. Mypy runs in `--strict` mode here precisely to enforce this.
-- **Adapters return dataclasses**, never ORM rows. This keeps DB concerns
-  out of network code.
-- **Repositories return ORM rows or domain dataclasses**, never raw dicts.
-  Callers should be able to rename a column without grepping the codebase.
-- **Services own transactions.** A use-case is one logical commit. UI never
-  starts a transaction directly.
-- **UI prefers services, but may read repositories directly.** Read-heavy
-  pages (`ui/pages/_overview_query.py`, `transactions.py`, `settings.py`,
-  `calculator.py`, …) import ledger-tier repositories such as
-  `transactions_repo` / `instruments_repo` for straightforward queries.
-  Mutations and any multi-step use-case still go through a service so the
-  commit boundary stays in one place.
-- **Cache-tier reads/writes go through their service, never a raw repo on the
-  caller's session.** Prices, FX history, and snapshots live in the *cache*
-  tier (see "Storage tiers" below). Call `prices_service`, `fx_service`, or
-  `snapshots_service` — they route to the cache engine. Calling
-  `prices_repo` / `fx_repo` / `snapshots_repo` directly with a ledger/config
-  session silently returns empty results under a split-DB layout. This is the
-  exact bug class that zeroed closing values in v2.9.4.
+- `domain/` is checked with `mypy --strict`, which is what keeps it pure.
+- Services own transactions: a use-case is one logical commit.
+- Read-heavy UI pages (`ui/pages/_overview_query.py`, `transactions.py`,
+  `settings.py`, `calculator.py`, ...) may query ledger-tier repositories directly;
+  mutations and multi-step use-cases go through a service.
 
 ## Storage tiers (split-DB layout)
 
@@ -94,9 +83,10 @@ Two physical layouts exist behind the same ORM:
 - **All money is `Numeric(18, 6)`**; shares are `Numeric(18, 8)`; FX rates
   are `Numeric(12, 8)`. SQLAlchemy hands back `decimal.Decimal`; no float
   drift downstream.
-- **FX rate is stamped at transaction time** (`fx_rate_to_eur` + cached
-  `net_eur`) so historical EUR returns reflect the rate that actually
-  applied — not today's rate.
+- **v5 FX storage:** transactions still carry frozen `fx_rate_to_eur` / `net_eur`
+  / `net_usd` legs so EUR returns use each cashflow's own date rate. This is the
+  v5 transition state; see the currency rule in `AGENTS.md` and plan section 2 for
+  the v6 migration.
 - **`UNIQUE(account_id, external_id)`** on transactions is the dedup guard.
   CSV importers compute a SHA-256 over the raw row fields as `external_id`.
 
@@ -115,19 +105,16 @@ on demand. Failures are non-fatal — stale prices/FX still render, with a
 
 ## Why these choices
 
-- **NiceGUI** over Streamlit: event-driven; no full-rerun model; binds
-  to `0.0.0.0` trivially; built-in Quasar/Tailwind components.
+- **NiceGUI**: event-driven (no full-rerun model), binds to `0.0.0.0` trivially.
 - **SQLite + WAL**: single user, one file to back up, real transactions.
-- **Alembic with `render_as_batch=True`**: SQLite can't `ALTER COLUMN`,
-  but Alembic's batch ops rebuild the table transparently.
-- **`auto_adjust=False` in yfinance**: dividends are tracked in our ledger;
+- **Alembic with `render_as_batch=True`**: SQLite can't `ALTER COLUMN`; batch ops
+  rebuild the table transparently.
+- **`auto_adjust=False` in yfinance**: dividends are tracked in the ledger;
   auto-adjusted closes would double-count them.
-- **mypy strict on `domain/` only**: the financial math is where bugs
-  matter most. Adapters and UI move fast; domain code should not.
+- **mypy strict on `domain/` only**: the financial maths is where bugs matter most.
 
-## Accessibility note
+## Accessibility
 
-The user is red-green colorblind (deuteranopia/protanopia category). The UI
-**never uses red/green as the only signal** for gain/loss. We use the
-Wong (2011) palette: blue `#0072B2` for gain, orange `#E69F00` for loss,
+The owner is red-green colorblind. The UI never uses red/green as the only gain/loss
+signal: it uses the Wong (2011) palette (blue `#0072B2` gain, orange `#E69F00` loss)
 plus directional arrows.

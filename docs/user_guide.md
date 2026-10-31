@@ -202,10 +202,10 @@ is uploaded unless you place the files in a cloud-sync folder yourself.
 
 **Can I use the app on my phone?**
 Yes, on the same Wi-Fi: open `http://<laptop-LAN-IP>:8080` in your phone's
-browser. See the README for the optional read-only JSON API and snapshot export
-used by the mobile companion.
+browser. The optional read-only JSON API and snapshot export are configured through
+`INV_DASHBOARD_*` settings (see `.env.example`).
 
 ---
 
 For installation, configuration and developer details, see the
-[README](../README.md) and [`docs/architecture.md`](architecture.md).
+[README](../README.md) and [`architecture.md`](architecture.md).

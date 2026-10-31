@@ -14,6 +14,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   batches. Cutting a release renames that section to `## [x.y.z] — YYYY-MM-DD`
   and bumps the version (see `AGENTS.md` → Workflow).
 
+## [Unreleased]
+
+### Removed
+
+- **Stale documentation** cleared out ahead of v6 (all of it remains on branch `legacy/v5` / tag `v5.3.1` and in git history): the implemented plans, audits and proposals under `docs/` (`tiingo_*`, `time_alignment_plan`, `graph-unification-plan`, `centralized_data_*`, `single_brain_pull_plan`, `session_close_completeness_plan`, `market_open_token_burn_fix_plan`, `fx_kpi_cold_start_regeneration_plan`, `python_desktop_parity_plan`, `provider_rate_limit_audit`, `maintenance_audit`, `spreadsheet_parity_comparison`, `mobile_android_app_proposal`, `mobile_export_schema`, `v3.0_live_web_companion_proposal`) and the whole `docs/history/` archive.
+- `.vscode/settings.json` is no longer tracked (personal editor settings; the local file is untouched).
+
+### Changed
+
+- `README.md` rewritten for new readers (what it is, status, quick start, layout, links); `docs/README.md` is now a short index of the remaining documents.
+- `requirements_and_project_overview.md` moved to `docs/original_spec.md` (marked as historical reference); `docs/windows_install_troubleshooting.md` folded into a short troubleshooting section of `docs/legacy_v5.md`; `docs/architecture.md` trimmed to the current system and no longer duplicates the rules in `AGENTS.md`.
+- Code comments that cited the removed documents now point to `legacy/v5:docs/...` (comment-only; no behaviour change). Stale links removed from `SECURITY.md`, `web/README.md`, `web/proxy/README.md` and `docs/user_guide.md`.
+- `.gitignore` now ignores `.env.*` (except `.env.example`), `.vscode/*` (except `extensions.json`) and `logs/`.
+
 ## [5.3.1] — 2026-10-31
 
 > Final v5 release. Frozen as legacy (branch `legacy/v5`, tag `v5.3.1`), no further support. See [`docs/legacy_v5.md`](docs/legacy_v5.md).

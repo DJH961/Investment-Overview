@@ -124,14 +124,13 @@ release. The design assumption is deliberately blunt:
 ## This repository is public
 
 **This repository is now public.** Making a repository public exposes its entire
-**git history**, not just the current files, so the pre‑flip scrub in
-`docs/v3.0_live_web_companion_proposal.md` §7 was completed before visibility was
+**git history**, not just the current files, so a full history scrub was completed before visibility was
 flipped. The same hygiene must be **maintained** going forward:
 
 - Real financial exports stay out of the tree **and** out of history — only the
   anonymized synthetic fixtures under `docs/Comparison Files/` are tracked. The
   real exports were purged from history (and the stale `refs/pull/<N>/head` refs
-  resolved) before going public — see §7.1.
+  resolved) before going public.
 - `.gitignore` blocks real data files, `.env`, and build artefacts so they can't
   be re‑added.
 - No secrets in code, history, or workflows; PAT + passphrase keyring‑only.

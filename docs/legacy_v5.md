@@ -52,6 +52,28 @@ to v5 without carrying that data over would lose it. v6 commits to this:
 - The final pre-cutover v5 ledger is also kept as a sealed (encrypted) backup, as
   a last resort.
 
+## Troubleshooting: installed but nothing opens (Windows)
+
+The shortcuts and the portable `.cmd` start the app with the windowless
+`pythonw.exe`, which discards all console output, so a crash (port 8080 already in
+use, missing dependency, firewall block) looks like "nothing happened". Every
+launch therefore writes a `launcher.log` with the environment and any traceback:
+
+- Installed app: `%LOCALAPPDATA%\InvestmentDashboard\launcher.log`
+- Portable bundle: next to `Run-InvestmentDashboard.cmd`
+- From a source checkout: next to `run_dashboard.py`
+
+Steps, in order:
+
+1. Read `launcher.log` (set `INV_DASHBOARD_LAUNCHER_DEBUG=1` for more detail).
+2. Run the launcher with the console interpreter to see errors live, e.g.
+   `"%LOCALAPPDATA%\InvestmentDashboard\python\python.exe" "%LOCALAPPDATA%\InvestmentDashboard\launcher.py"`
+   (portable: `.\python\python.exe .\portable_launcher.py`).
+3. Check the port: `netstat -ano | findstr :8080`. If taken, set
+   `INV_DASHBOARD_PORT=8099` and retry.
+4. Open `http://localhost:8080` manually; the app may be running with only the
+   browser tab missing.
+
 ## Security note
 
 Frozen dependencies will age and collect known vulnerabilities. Use legacy v5 only

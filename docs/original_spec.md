@@ -1,4 +1,6 @@
-# Investment Dashboard — Requirements and Project Overview
+# Investment Dashboard — Original Specification
+
+> **Historical reference.** This is the original (v1) requirements document the project was built from. Where it disagrees with the code, [`AGENTS.md`](../AGENTS.md) or [`architecture.md`](architecture.md), those win. It stays because the FX-aware EUR-return definition (§6) is still the source of the currency rule.
 
 A single-user, locally-hosted, Python-based investment tracking dashboard that unifies brokerage positions at Vanguard and Fidelity with a German savings account (Direct Savings (Tagesgeld)), exposes a rich set of return metrics (XIRR, TWR, CAGR, etc.) in both USD and EUR, and allows every operation through a web UI accessible from the host laptop as well as any device on the same Wi-Fi network.
 
@@ -698,7 +700,7 @@ investment-dashboard/
 ├── pyproject.toml
 ├── uv.lock
 ├── README.md
-├── requirements_and_project_overview.md     ← this document
+├── docs/original_spec.md                     ← this document
 ├── alembic.ini
 ├── migrations/
 │   └── versions/

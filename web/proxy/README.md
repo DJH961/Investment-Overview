@@ -107,7 +107,7 @@ must stay secret, so the same Worker proxies it on a dedicated `…/price` route
 - `GET …/price?intraday=AAPL&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` → Tiingo
   **IEX intraday bars** (`/iex/<ticker>/prices`) at a **fixed** `resampleFreq=1hour`
   (one ticker per request), used to build the web companion's live **1D curve**
-  (proposal §10). The frequency is pinned server-side — the caller only chooses
+  (v3.0 design notes, branch `legacy/v5`). The frequency is pinned server-side — the caller only chooses
   the ticker and the date window, both charset-validated. The 1W curve reuses the
   `?daily=` branch above for its daily closes. Both run on Tiingo's own budget so
   the bulk history fetch never steals the live price's Twelve Data slots.
