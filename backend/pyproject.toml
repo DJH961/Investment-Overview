@@ -37,6 +37,10 @@ dependencies = [
     # core deps so the companion works out of the box; only the heavy SQLCipher
     # driver below stays optional.
     "keyring>=24.0",
+    # v6 hosted server: password hashing, passkeys, multipart uploads.
+    "argon2-cffi>=23.1",
+    "webauthn>=2.2",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +53,7 @@ dev = [
     "mypy>=1.10",
     "pre-commit>=3.7",
     "types-python-dateutil",
+    "import-linter>=2.1",
 ]
 encrypted = [
     # SQLCipher Python binding for optional encryption-at-rest of the synced
@@ -60,7 +65,9 @@ encrypted = [
 
 [project.scripts]
 investment-dashboard = "investment_dashboard.main:run"
-inv-dashboard-api = "investment_dashboard.api.app:run"
+inv-dashboard-api = "investment_dashboard.api.legacy_v5:run_legacy"
+inv-dashboard-server = "investment_dashboard.api.app:run"
+inv-dashboard-set-password = "investment_dashboard.tools.set_password:main"
 inv-dashboard-export-snapshot = "investment_dashboard.tools.export_snapshot:main"
 inv-dashboard-split-db = "investment_dashboard.tools.split_db:main"
 inv-dashboard-repair-sidecar = "investment_dashboard.tools.repair_sidecar:main"

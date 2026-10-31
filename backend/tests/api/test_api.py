@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from investment_dashboard.api.app import create_app
+from investment_dashboard.api.legacy_v5 import create_legacy_app
 from investment_dashboard.config import get_settings
 from investment_dashboard.models import ALL_METADATAS
 
@@ -57,12 +57,12 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
         finally:
             s.close()
 
-    # The route handlers call ``session_scope`` imported into api.app.
-    monkeypatch.setattr("investment_dashboard.api.app.session_scope", _fake_scope)
+    # The route handlers call ``session_scope`` imported into api.legacy_v5.
+    monkeypatch.setattr("investment_dashboard.api.legacy_v5.session_scope", _fake_scope)
     # A fresh settings object per test so token toggling is isolated.
     get_settings.cache_clear()
     try:
-        with TestClient(create_app()) as c:
+        with TestClient(create_legacy_app()) as c:
             yield c
     finally:
         get_settings.cache_clear()

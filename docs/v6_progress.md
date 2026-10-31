@@ -6,6 +6,7 @@ Tick boxes and append to the log as steps land; commit this file with each step.
 
 The plan ([`v6_one_app_plan.md`](v6_one_app_plan.md)) is the direction; this file is
 the execution order, which deliberately differs from the plan's phase numbering.
+UI contract: [`v6_frontend_design.md`](v6_frontend_design.md).
 
 ## Deviations from the plan (decided 2026-10-31)
 
@@ -22,36 +23,63 @@ the execution order, which deliberately differs from the plan's phase numbering.
 - Phase 2 deploy files are written in parallel with the API (no server access
   needed). Restore drill, secrets, GHCR/Actions secrets and the real-ledger upload
   are owner steps.
+- Env vars keep the `INV_DASHBOARD_` prefix (`INV_DASHBOARD_DB_PASSPHRASE` is the
+  plan's `DB_KEY`).
+
+## Working rules for every task
+
+- Each task has an exact **OWN** list; touching anything else is a bug.
+- Dependencies (`pyproject.toml`, `frontend/package.json`) are added only by the
+  orchestrator (C1) or F1; later workers may not add deps.
+- Shared contracts (app factory, deps, schemas base, model stubs, migration ids,
+  `tests/api/conftest.py`) are written by the orchestrator; workers fill stubs.
+- Every task ends green on its own targeted tests and commits only its files.
+- Wave gate (orchestrator): ownership check via `git diff --stat`, targeted
+  suites, ruff/mypy/typecheck, push. No next wave on red.
 
 ## Waves
 
-### W0 — restructure + frontend foundation (parallel)
-- [ ] T0 `git mv` src/tests/migrations/pyproject/uv.lock/alembic.ini → `backend/`; fix CI, launchers, installer, tools, pre-commit, path-reading tests; move `ui/pages/_*_query.py` logic into `readmodels/queries/` with re-export shims
-- [ ] T1 `frontend/` foundation: Vite + React 19 + TS, oxlint, tokens/SCSS, responsive app shell, component kit, Chart component, login page, PWA, Vitest
+### W0 — restructure + frontend base (parallel)
+- [ ] T0a `git mv` src/tests/migrations/tools/pyproject/uv.lock/alembic.ini → `backend/`; fix CI, launchers, installer, pre-commit, path-reading tests, AGENTS/CONTRIBUTING commands
+- [ ] T0b move `ui/pages/_*_query.py` into `readmodels/queries/` with re-export shims (no nicegui imports)
+- [ ] F1 `frontend/` tooling, all deps, tokens/SCSS, AppShell (sidebar/rail/tab bar), primitive kit, lib (api, format, prefs, queries), placeholder routes
 
-### C1 — contracts (orchestrator)
-- [ ] `config.py` v6 settings, `api/app.py` factory skeleton, `api/deps.py`, router stubs, migration revision ids
+### C1 — backend contracts (orchestrator)
+- [ ] deps in `pyproject.toml` (argon2-cffi, webauthn, sse-starlette or plain StreamingResponse, python-multipart)
+- [ ] `config.py` v6 settings
+- [ ] `api/app.py` factory (lifespan, routers, static/SPA, security headers), `api/deps.py`, `api/schemas/common.py`, router stubs, model stubs, migration ids, `tests/api/conftest.py`, OpenAPI export script
 
-### W1 — backend features + deploy (parallel)
-- [ ] T2 read/write/import/ops routers + Pydantic schemas + SPA static serving + `tests/api/` + OpenAPI export
-- [ ] T3 auth: argon2 password, passkeys (webauthn), sessions cookie, rate limit, idle timeout, bearer token kept, `set-password` CLI
-- [ ] T4 currency: `domain/fx_pool.py` (hypothesis), `fx_conversions` model/migration/repo/service/router, deposit matching + diagnostics
-- [ ] T5 scheduler (lifespan) + SSE live bus + `/api/stream`
-- [ ] T6 deploy: multi-stage Dockerfile, compose (app+Caddy+Litestream), Caddyfile, deploy workflow, `upload_db.py`, `.env.example`, runbook
+### W1 — backend slices + deploy + frontend widgets (parallel, ≤ 7 workers)
+- [ ] B1 reads A: overview, holdings, allocations (GET), graphs/{range} + schemas + tests
+- [ ] B2 reads B: periods, analytics, deposits, transactions (GET), diagnostics, calculator + schemas + tests
+- [ ] B3 writes: manual transactions CRUD, allocations PUT, settings GET/PUT, imports upload→preview→confirm, refresh, backup + tests
+- [ ] B4 auth: argon2 password, sessions (cookie, idle timeout), login rate limit, passkeys, bearer token kept, `set-password` CLI + tests
+- [ ] B5 currency: `domain/fx_pool.py` + hypothesis/golden tests, then `fx_conversions` model/migration/repo/service/router + deposit matching + tests
+- [ ] B6 live: scheduler (lifespan task), live bus, `/api/stream` SSE + tests
+- [ ] D1 deploy: multi-stage Dockerfile, `deploy/docker-compose.yml`, `Caddyfile`, `litestream.yml`, `backend/.env.example`
+- [ ] D2 ops: `.github/workflows/deploy.yml` (build → GHCR → SSH pull; disabled until secrets exist), `backend/tools/upload_db.py` + tests, RUNBOOK sections
+- [ ] F2 Chart (port `web/src/chart.ts`) + AllocationBar/Treemap + Sparkline + tests
+- [ ] F3 Login + passkeys + Styleguide page + PWA/service worker + `lib/live.ts`
 
-### W2 — frontend pages (parallel)
-- [ ] OpenAPI → `frontend/src/lib/api-types.ts`
-- [ ] T7 read pages: Overview, Holdings, Periods, Activity, Risk, Calculator, live SSE
-- [ ] T8 write pages: Import, Transactions, Currency conversions, Allocations, Settings (passkeys, backup), Diagnostics, Onboarding
+### W1 gate — security review
+- [ ] one `reviewer` over B4 + app factory (auth, cookies, rate limit, headers)
+
+### W2 — frontend pages on generated types (parallel)
+- [ ] G0 orchestrator: export `openapi.json`, `npm run gen:api`, write `lib/queries.ts` hooks for every endpoint
+- [ ] P1 Overview (KPIs, currency-effect split, chart, allocation, movers) + Holdings
+- [ ] P2 Periods + Activity + Risk + Projection/Calculator
+- [ ] P3 Transactions (list + add/edit) + Import (upload → preview → confirm)
+- [ ] P4 Currency conversions + Allocations/rebalance + Settings (incl. passkeys, backup) + Diagnostics + Onboarding
 
 ### W3 — integration
-- [ ] full gate green, CI frontend job, Playwright smoke, CHANGELOG, plan status line, PR
+- [ ] full gate green, CI `frontend` job, Playwright smoke (login → overview → import), CHANGELOG, plan status line, PR
 
 ## Owner-input items (not done by agents)
-- yfinance spike (Mon 2026-11-02) — still to run.
+- yfinance spike (Mon 2026-11-02): still to run.
 - Parity gate on the real ledger → then the snapshot/intraday storage migration.
-- Set `DB_KEY`, `SESSION_SECRET`, `TIINGO_TOKEN`, `B2_*` on the server; GHCR + Actions secrets.
+- Set secrets on the server; GHCR + Actions secrets; enable the deploy workflow.
 - Run `upload_db.py` with the real ledger; restore drill; first deploy.
 
 ## Log
-- 2026-10-31 branch created, tracker written.
+- 2026-10-31 branch created, tracker written; W0 started.
+- 2026-11-01 plan refined into 18 narrow tasks; F1 scope narrowed.

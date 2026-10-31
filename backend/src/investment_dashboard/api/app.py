@@ -1,95 +1,162 @@
-"""Headless JSON API exposing the shared read-models.
+"""The v6 server: FastAPI app factory.
 
-Read-only by design (the mobile companion only *views* data). Every
-endpoint reuses the exact same :mod:`investment_dashboard.readmodels`
-builders the snapshot/export path uses, so the API and the cloud-synced
-file can never drift from each other — or from the NiceGUI web app, which
-shares the underlying ``domain``/``services`` compute.
+Every resource has its own router module in this package exposing a module
+level ``router: APIRouter``. :data:`ROUTER_MODULES` lists them; each is
+mounted under ``/api``. Routers other than ``health`` and ``auth`` are guarded
+by :func:`investment_dashboard.api.deps.require_auth`.
 
-Two ways to run it:
-
-* mounted on the existing NiceGUI server via :func:`mount_api` (enabled
-  with ``INV_DASHBOARD_API_ENABLED=true``); or
-* standalone via :func:`create_app` and the ``inv-dashboard-api`` script.
+When ``settings.frontend_dist`` is set, the built React app is served at ``/``
+with an SPA fallback (any non-``/api`` path returns ``index.html``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+import importlib
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from investment_dashboard import __version__, readmodels
-from investment_dashboard.api.auth import require_token
-from investment_dashboard.db import session_scope
-from investment_dashboard.readmodels import SCHEMA_VERSION
+from investment_dashboard import __version__
+from investment_dashboard.api.deps import require_auth
+from investment_dashboard.config import get_settings
 
 API_PREFIX = "/api"
 
+#: Router modules mounted without the auth guard (they guard per-route).
+PUBLIC_ROUTER_MODULES: tuple[str, ...] = ("health", "auth")
 
-def _section(builder: Callable[..., dict[str, Any]]) -> Callable[[], dict[str, Any]]:
-    """Wrap a read-model builder in a session-scoped endpoint handler."""
+#: Router modules mounted behind :func:`require_auth`.
+GUARDED_ROUTER_MODULES: tuple[str, ...] = (
+    # B1 reads A
+    "overview",
+    "holdings",
+    "allocations",
+    "graphs",
+    # B2 reads B
+    "periods",
+    "analytics",
+    "deposits",
+    "diagnostics",
+    "calculator",
+    # B3 writes
+    "transactions",
+    "imports",
+    "settings",
+    "ops",
+    # B5 currency
+    "fx_conversions",
+    # B6 live
+    "stream",
+)
 
-    def handler() -> dict[str, Any]:
-        with session_scope() as session:
-            return builder(session)
+_SECURITY_HEADERS = {
+    "X-Robots-Tag": "noindex, nofollow",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Content-Security-Policy": (
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
+        "base-uri 'self'; form-action 'self'"
+    ),
+}
 
-    return handler
 
-
-def create_router() -> APIRouter:
-    """Build the ``/api`` router. All routes are GET and read-only."""
-    router = APIRouter(prefix=API_PREFIX, tags=["read-models"])
-
-    # Unauthenticated liveness/version probe — safe to expose so a client
-    # can discover the schema version before sending a token.
-    @router.get("/health")
-    def health() -> dict[str, Any]:
-        return {
-            "status": "ok",
-            "app_version": __version__,
-            "schema_version": SCHEMA_VERSION,
-        }
-
-    guarded = APIRouter(dependencies=[Depends(require_token)])
-    guarded.add_api_route("/snapshot", _section(readmodels.build_snapshot), methods=["GET"])
-    guarded.add_api_route("/overview", _section(readmodels.overview.build), methods=["GET"])
-    guarded.add_api_route("/deposits", _section(readmodels.deposits.build), methods=["GET"])
-    guarded.add_api_route("/transactions", _section(readmodels.transactions.build), methods=["GET"])
-    guarded.add_api_route("/monthly", _section(readmodels.periods.build_monthly), methods=["GET"])
-    guarded.add_api_route("/yearly", _section(readmodels.periods.build_yearly), methods=["GET"])
-    guarded.add_api_route("/analytics", _section(readmodels.analytics.build), methods=["GET"])
-    guarded.add_api_route("/calculator", _section(readmodels.calculator.build), methods=["GET"])
-    router.include_router(guarded)
+def _load_router(name: str) -> APIRouter:
+    module = importlib.import_module(f"investment_dashboard.api.{name}")
+    router = getattr(module, "router")  # noqa: B009 - explicit contract attribute
+    if not isinstance(router, APIRouter):  # pragma: no cover - contract guard
+        raise TypeError(f"api.{name}.router must be an APIRouter")
     return router
 
 
-def mount_api(app: FastAPI) -> None:
-    """Attach the ``/api`` router to an existing FastAPI app (e.g. NiceGUI's)."""
-    app.include_router(create_router())
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    from investment_dashboard.services import server_runtime  # noqa: PLC0415
+
+    await server_runtime.startup(app)
+    try:
+        yield
+    finally:
+        await server_runtime.shutdown(app)
 
 
-def create_app() -> FastAPI:
-    """Create a standalone FastAPI app serving only the JSON API."""
+def _mount_frontend(app: FastAPI, dist: Path) -> None:
+    index = dist / "index.html"
+    assets = dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa(full_path: str) -> Response:
+        if full_path.startswith("api/") or full_path == "api":
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        candidate = (dist / full_path).resolve()
+        if full_path and candidate.is_file() and dist.resolve() in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(index)
+
+
+def create_app(*, lifespan: bool = True) -> FastAPI:
+    """Build the v6 app. ``lifespan=False`` skips boot/scheduler (tests, OpenAPI export)."""
+    settings = get_settings()
     app = FastAPI(
-        title="Investment Dashboard API",
+        title="Investment Overview",
         version=__version__,
-        summary="Read-only JSON read-models for the mobile companion app.",
+        summary="v6 API: the server owns data, prices and all maths.",
+        lifespan=_lifespan if lifespan else None,
     )
-    mount_api(app)
+
+    @app.middleware("http")
+    async def security_headers(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        response = await call_next(request)
+        for key, value in _SECURITY_HEADERS.items():
+            response.headers.setdefault(key, value)
+        if request.url.path.startswith(API_PREFIX):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+    if settings.dev_cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.dev_cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    for name in PUBLIC_ROUTER_MODULES:
+        app.include_router(_load_router(name), prefix=API_PREFIX)
+    for name in GUARDED_ROUTER_MODULES:
+        app.include_router(
+            _load_router(name), prefix=API_PREFIX, dependencies=[Depends(require_auth)]
+        )
+
+    if settings.frontend_dist is not None and (settings.frontend_dist / "index.html").is_file():
+        _mount_frontend(app, settings.frontend_dist)
     return app
 
 
 def run() -> None:  # pragma: no cover - thin uvicorn launcher
-    """Entry point for the ``inv-dashboard-api`` script."""
+    """Entry point for the ``inv-dashboard-server`` script."""
     import uvicorn  # noqa: PLC0415
 
-    from investment_dashboard.boot import run_boot_sequence  # noqa: PLC0415
-    from investment_dashboard.config import get_settings  # noqa: PLC0415
     from investment_dashboard.logging import configure_logging  # noqa: PLC0415
 
     configure_logging()
-    run_boot_sequence()
     settings = get_settings()
-    uvicorn.run(create_app(), host=settings.host, port=settings.port)
+    uvicorn.run(
+        create_app(),
+        host=settings.host,
+        port=settings.port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )

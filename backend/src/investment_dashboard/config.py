@@ -130,6 +130,32 @@ class Settings(BaseSettings):
     #: persisted ``auto_shutdown_on_tab_close`` app-config key wins when set.
     shutdown_on_tab_close: bool = False
 
+    # --- v6 hosted server ------------------------------------------------
+    #: ``True`` on the hosted v6 server: skips desktop-only boot steps (cloud
+    #: folder detection, keyring, single-writer lock prompts).
+    server_mode: bool = False
+    #: Secret for signing session cookies. Required when ``server_mode`` is on.
+    session_secret: str | None = None
+    #: A session ends after this many idle minutes ...
+    session_idle_minutes: int = 30
+    #: ... and at the latest after this many days.
+    session_max_age_days: int = 30
+    #: ``Secure`` cookie flag; only switch off for plain-http local dev.
+    cookie_secure: bool = True
+    #: Failed password/passkey logins allowed per client IP per minute.
+    login_rate_limit_per_minute: int = 5
+    #: WebAuthn relying party: the bare host name (no scheme/port).
+    webauthn_rp_id: str = "localhost"
+    webauthn_rp_name: str = "Investment Overview"
+    #: Exact browser origin passkeys are bound to.
+    webauthn_origin: str = "http://localhost:5173"
+    #: Built React app (``frontend/dist``); served at ``/`` when set.
+    frontend_dist: Path | None = None
+    #: Run the market-hours poller / intraday sampler / EOD jobs in-process.
+    scheduler_enabled: bool = False
+    #: Dev-only CORS origins (production is same-origin: leave empty).
+    dev_cors_origins: list[str] = Field(default_factory=list)
+
     @field_validator("log_level")
     @classmethod
     def _upper(cls, v: str) -> str:

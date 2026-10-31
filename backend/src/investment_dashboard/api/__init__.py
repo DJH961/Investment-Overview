@@ -1,18 +1,7 @@
-"""Headless JSON API for the mobile companion app.
+"""HTTP API.
 
-See :mod:`investment_dashboard.api.app` for the routes. The API is
-read-only and reuses :mod:`investment_dashboard.readmodels`, so it shares
-all business logic with the NiceGUI web app.
+* :mod:`investment_dashboard.api.app` — the v6 server (``create_app``): one
+  router module per resource, all mounted under ``/api``.
+* :mod:`investment_dashboard.api.legacy_v5` — the v5 read-only API mounted on
+  the NiceGUI app; deleted at cutover.
 """
-
-from __future__ import annotations
-
-from investment_dashboard.api.app import (
-    API_PREFIX,
-    create_app,
-    create_router,
-    mount_api,
-    run,
-)
-
-__all__ = ["API_PREFIX", "create_app", "create_router", "mount_api", "run"]

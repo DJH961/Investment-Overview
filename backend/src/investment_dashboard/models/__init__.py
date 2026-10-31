@@ -9,6 +9,8 @@ tuple is the canonical way to enumerate every tier's ``MetaData`` for
 
 from __future__ import annotations
 
+from investment_dashboard.models import auth as auth  # v6 auth tables (B4)
+from investment_dashboard.models import fx_conversion as fx_conversion  # v6 (B5)
 from investment_dashboard.models.account import Account
 from investment_dashboard.models.app_config import AppConfig
 from investment_dashboard.models.base import (
