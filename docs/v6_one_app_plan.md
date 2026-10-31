@@ -1,6 +1,6 @@
 # v6.0 "One App": a hosted, single-backend Investment Overview
 
-> Status: **approved direction, pre-implementation** (2026-10-31). Phase 0 step 1 (rules rewrite) is in progress. **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)). The backend and frontend build waits until the approach is validated (Phase 0 spike).
+> Status: **approved direction, pre-implementation** (2026-10-31). Phase 0 steps 1–2 are done (rules rewrite; server provisioned and hardened, see [`../deploy/RUNBOOK.md`](../deploy/RUNBOOK.md)); the one-day yfinance polling test is next. **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)). The backend and frontend build waits until the approach is validated (Phase 0 spike).
 
 ## Context
 
@@ -21,8 +21,8 @@ The browser becomes a thin React UI that talks only to our own server, which has
 
 | Topic | Decision |
 |---|---|
-| Hosting | **Hetzner Cloud VPS (CX22, Ubuntu 24.04, EU)**: Docker Compose + Caddy, admin over Tailscale |
-| Domain | **Own domain via Cloudflare Registrar** (at-cost, about $10–11/yr for `.com`) with Cloudflare DNS; Let's Encrypt HTTPS via Caddy |
+| Hosting | **Hetzner Cloud VPS** (x86, 1 vCPU / 1 GB + 2 GB swap, Ubuntu 26.04 LTS, EU; rescale to a bigger plan if memory gets tight): Docker Compose + Caddy, admin over Tailscale |
+| Domain | **`investments.daniel-henke.de`** (domain at Porkbun, Porkbun DNS); the main domain stays free for other uses. Let's Encrypt HTTPS via Caddy |
 | Architecture | **Strong server, weak client.** The server owns data, prices, all maths and secrets; the client renders. |
 | Repo layout | `backend/` + `frontend/` + `deploy/` + `docs/` (§4a, adapted from the starter-project convention) |
 | Auth | App login: password (argon2) + **passkeys** (WebAuthn), httpOnly session cookie |
@@ -117,7 +117,7 @@ The real ledger is all USD, but you think in EUR, and your euros reach the broke
 
    A broken box is rebuilt in about 15 minutes.
 2. **No public SSH:** admin over **Tailscale** only. `ufw` allows only 80/443.
-3. **Automatic updates:** `unattended-upgrades` for the OS. GitHub Actions builds the image to GHCR on green `main`, and the server pulls it over Tailscale SSH.
+3. **Automatic updates:** `unattended-upgrades` for the OS. GitHub Actions builds the image to GHCR on green `main`, and the server pulls it over SSH on the tailnet.
 4. **Encrypted data + off-box backups:**
    - SQLCipher on the ledger;
    - Litestream continuous replication to **Backblaze B2** (10 GB free, no card needed);
@@ -125,17 +125,10 @@ The real ledger is all USD, but you think in EUR, and your euros reach the broke
    - a "Download backup" button in Settings.
 5. **`deploy/RUNBOOK.md`:** deploy, roll back (previous image tag), restore, rotate secrets, read logs. Phase 2 includes a **restore drill**.
 
-**Domain: reliable at the best price.**
-- **Cloudflare Registrar:**
-  - Sells domains at wholesale cost, with no markup and no renewal price jumps.
-  - WHOIS privacy and DNSSEC are free.
-  - DNS runs on Cloudflare's anycast network, one of the most reliable DNS services in existence, at no extra cost.
-  - A `.com` is about $10–11/yr. Use a subdomain such as `portfolio.<yourdomain>.com`, so the root stays free for anything else.
-- **Free subdomain services** (DuckDNS etc.) were rejected: they have had outages, and passkeys are bound to the domain, so a domain you own is the stable foundation.
-- **DNS setup:**
-  - Start with records in "DNS only" (grey cloud) mode, so Caddy gets Let's Encrypt certificates directly with fewest moving parts.
-  - Cloudflare's proxy (orange cloud: hides the server IP, absorbs attacks) can be switched on later without changes to the app.
-- **Alternative:** if you'd rather have a `.de`, Cloudflare doesn't sell it. Register at INWX (about €5–10/yr, German registrar) and still point DNS at Cloudflare for free.
+**Domain:**
+- `daniel-henke.de` is registered at **Porkbun** (WHOIS privacy and DNS included). The app lives on its own subdomain, **`investments.daniel-henke.de`**, so the main domain stays free for anything else and the app is a fully separate origin (its own cookies and passkeys).
+- One `A` record points the subdomain at the server's IPv4. Caddy fetches and renews the Let's Encrypt certificate itself.
+- The subdomain name is visible in public certificate logs; that is accepted. Protection comes from the login, passkeys and rate limiting, and the app sends `X-Robots-Tag: noindex`.
 
 **yfinance from a datacentre IP:**
 - Load is tiny (one batched call per minute in market hours). It is validated in Phase 0 over a full trading day.
@@ -316,7 +309,7 @@ The import layer stays **broker-agnostic**. Parsers are plugins that emit `Parse
 - Read-only tools mapping 1:1 to read-models: `get_overview`, `get_holdings`, `get_period_returns`, `get_transactions`, `get_allocation_drift`, `simulate_rebalance`.
 - A model picker in Settings, defaulting to zero-data-retention providers, with a clear notice that portfolio data leaves the server.
 
-**Running cost:** about €4.5/mo (Hetzner) + about $10–11/yr (domain), so roughly **€5.5/mo all-in**. Tailscale, Cloudflare DNS and B2 are free at our size.
+**Running cost:** about €4.5/mo (Hetzner) + about $10–11/yr (domain), so roughly **€5.5/mo all-in**. Tailscale, Porkbun DNS and B2 are free at our size.
 
 ---
 
@@ -327,7 +320,7 @@ The import layer stays **broker-agnostic**. Parsers are plugins that emit `Parse
 **Before the server spike (Phase 0 step 2), about 30–45 minutes:**
 1. **Hetzner Cloud:** sign up at console.hetzner.cloud, verify ID/payment, and create a project. Don't create a server yet; I'll give you exact clicks.
 2. **Tailscale:** sign up (free) and install it on your laptop and phone.
-3. **Domain:** create a Cloudflare account, then Domain Registration → register a domain (about $10–11/yr for `.com`). Leave DNS records empty; we add them when the server exists.
+3. **Domain:** done: `daniel-henke.de` at Porkbun, with an `A` record for `investments`.
 4. **Backblaze B2:** sign up (free 10 GB) and create a private bucket. Keys are created later, straight into the server's secrets.
 5. **SSH key on your laptop**: run `ssh-keygen -t ed25519` if you don't have one, so you can paste the *public* key into Hetzner.
 6. Check that `gh auth status` shows you're logged in (for PRs and GHCR).

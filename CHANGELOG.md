@@ -17,6 +17,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **v6 server, provisioned and hardened (no app change).** `deploy/bootstrap.sh` turns a fresh Ubuntu LTS server into a hardened Docker host in three safe steps (base setup and admin user; root and password login off; SSH only over Tailscale). Also: automatic security updates with a 04:30 UTC reboot, `ufw`, swap, Docker and Tailscale. `deploy/RUNBOOK.md` documents the server, everyday access, rebuild and updates. `.gitattributes` keeps shell scripts LF. Phase 0 checks: HTTPS placeholder at `investments.daniel-henke.de` with a Let's Encrypt certificate, a one-shot yfinance request from the server works, and a bucket-scoped Backblaze B2 key can write, read and delete backups. The v6 plan now records the Porkbun subdomain and the actual server size.
+
 ### Removed
 
 - **Stale documentation** cleared out ahead of v6 (all of it remains on branch `legacy/v5` / tag `v5.3.1` and in git history): the implemented plans, audits and proposals under `docs/` (`tiingo_*`, `time_alignment_plan`, `graph-unification-plan`, `centralized_data_*`, `single_brain_pull_plan`, `session_close_completeness_plan`, `market_open_token_burn_fix_plan`, `fx_kpi_cold_start_regeneration_plan`, `python_desktop_parity_plan`, `provider_rate_limit_audit`, `maintenance_audit`, `spreadsheet_parity_comparison`, `mobile_android_app_proposal`, `mobile_export_schema`, `v3.0_live_web_companion_proposal`) and the whole `docs/history/` archive.
