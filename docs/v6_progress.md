@@ -58,7 +58,7 @@ UI contract: [`v6_frontend_design.md`](v6_frontend_design.md).
 - [ ] B6 live: scheduler (lifespan task), live bus, `/api/stream` SSE + tests
 - [ ] D1 deploy: multi-stage Dockerfile, `deploy/docker-compose.yml`, `Caddyfile`, `litestream.yml`, `backend/.env.example`
 - [ ] D2 ops: `.github/workflows/deploy.yml` (build → GHCR → SSH pull; disabled until secrets exist), `backend/tools/upload_db.py` + tests, RUNBOOK sections
-- [ ] F2 Chart (port `web/src/chart.ts`) + AllocationBar/Treemap + Sparkline + tests
+- [x] F2 Chart (port `web/src/chart.ts`) + AllocationBar/Treemap + Sparkline + tests
 - [x] F3 Login + passkeys + Styleguide page + PWA/service worker + `lib/live.ts`
 
 ### W1 gate — security review
@@ -87,3 +87,4 @@ UI contract: [`v6_frontend_design.md`](v6_frontend_design.md).
 - W3 todo: installer tarball fallback needs `#subdirectory=backend`; verify `release.yml` `python -m build backend`.
 - 2026-11-01 F1 done (b0565ac); kit reference appended to v6_frontend_design.md.
 - 2026-11-01 F3 done (9b0075c + lib fix). `RequireAuth` exported from pages/Login, not yet wired into App.tsx (G0). frontend_pages scoping written.
+- 2026-11-01 F2 done (2e38ca5). Chart takes numbers (callers parse decimal strings); no 1D session shading yet → P1.
