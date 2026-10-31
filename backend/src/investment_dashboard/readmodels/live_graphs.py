@@ -89,7 +89,7 @@ older or data-less exports.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -102,7 +102,9 @@ from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
     ValueSeriesPoint,
     build_intraday_value_series,
+    build_value_series,
     build_week_value_series,
+    previous_session_close_value,
 )
 from investment_dashboard.repositories import app_config_repo, transactions_repo
 from investment_dashboard.services import (
@@ -500,3 +502,106 @@ def _downsample(points: list[dict[str, Any]], max_points: int) -> list[dict[str,
         return points
     idx = sorted({round(i * (n - 1) / (max_points - 1)) for i in range(max_points)})
     return [points[i] for i in idx]
+
+
+# -- v6 API: GET /api/graphs/{range} -------------------------------------------
+
+#: Range keys the API accepts, mapped to (daily range label | None, lookback days).
+GRAPH_RANGES: dict[str, tuple[str | None, int | None]] = {
+    "1d": (None, None),
+    "1w": ("Week", None),
+    "1m": ("Month", None),
+    "3m": (None, 91),
+    "6m": (None, 182),
+    "ytd": ("YTD", None),
+    "1y": ("Year", None),
+    "all": ("All", None),
+}
+
+
+def _series_points(points: list[ValueSeriesPoint]) -> list[dict[str, str | None]]:
+    """``{t, v}`` pairs; intraday points carry a full UTC timestamp, daily a date."""
+    return [{"t": _point_time(p.date), "v": dec(p.value)} for p in points]
+
+
+def _point_time(at: date) -> str:
+    """Intraday instants as explicit-UTC ISO-8601 (naive stamps are UTC); dates as dates."""
+    if isinstance(at, datetime):
+        return (at if at.tzinfo is not None else at.replace(tzinfo=UTC)).isoformat()
+    return at.isoformat()
+
+
+def _graph_points(
+    session: Session, *, range_key: str, ccy: str, now: datetime
+) -> tuple[list[ValueSeriesPoint], Decimal | None, bool]:
+    """``(points, previous_close_reference, intraday)`` for one currency."""
+    label, days = GRAPH_RANGES[range_key]
+    today = market_hours.exchange_today(now)
+    if range_key == "1d":
+        points = build_intraday_value_series(
+            session, currency=ccy, tz=UTC, now=now, freeze_after_hours=True
+        )
+        reference = previous_session_close_value(session, currency=ccy, now=now) if points else None
+        return points, reference, True
+    if range_key == "1w":
+        points = build_week_value_series(
+            session, currency=ccy, tz=UTC, now=now, freeze_after_hours=True
+        )
+        if points:
+            return points, None, True
+    if days is not None:
+        return (
+            build_value_series(
+                session,
+                currency=ccy,
+                as_of=today,
+                start=today - timedelta(days=days),
+            ),
+            None,
+            False,
+        )
+    return (
+        build_value_series(
+            session,
+            currency=ccy,
+            range_label=label,
+            as_of=today,
+            recompute_tail_days=7 if range_key in ("all", "1y") else None,
+        ),
+        None,
+        False,
+    )
+
+
+def build_graph(
+    session: Session,
+    *,
+    range_key: str,
+    ccy: str,
+    compare: bool = False,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """The ``GET /api/graphs/{range}`` payload.
+
+    Each currency line is built independently (USD intraday is FX-free; EUR uses
+    the per-instant stored rate) - one is never rescaled from the other. With
+    ``compare`` the other currency's line is returned as ``secondary``, dropped
+    when its point count differs (as the NiceGUI page does).
+    """
+    now = now or datetime.now(UTC)
+    points, reference, intraday = _graph_points(session, range_key=range_key, ccy=ccy, now=now)
+    secondary: dict[str, Any] | None = None
+    if compare:
+        other = "USD" if ccy == "EUR" else "EUR"
+        other_points, _ref, _intra = _graph_points(session, range_key=range_key, ccy=other, now=now)
+        if other_points and len(other_points) == len(points):
+            secondary = {"ccy": other, "points": _series_points(other_points)}
+    return {
+        "ccy": ccy,
+        "range": range_key,
+        "as_of": market_hours.exchange_today(now).isoformat(),
+        "intraday": intraday,
+        "points": _series_points(points),
+        "reference": dec(reference),
+        "secondary": secondary,
+    }

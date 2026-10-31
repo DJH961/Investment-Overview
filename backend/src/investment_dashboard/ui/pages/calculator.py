@@ -25,8 +25,18 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.domain.allocation import (
     RebalancePlan,
     RebalanceRow,
-    expand_category_weights,
-    plan_rebalance,
+)
+from investment_dashboard.readmodels.rebalance import (
+    RebalanceInputError,
+    compute_plan,
+    expand_category_targets,
+    held_unticked_extras,
+)
+from investment_dashboard.readmodels.rebalance import (
+    round_to_100 as _round_to_100,
+)
+from investment_dashboard.readmodels.rebalance import (
+    scale_to_100 as _scale_to_100,
 )
 from investment_dashboard.repositories import allocations_repo
 from investment_dashboard.services import chart_prefs_service
@@ -87,26 +97,6 @@ def _decimal_or_zero(value: object) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return ZERO
-
-
-def _round_to_100(weights: dict[int, Decimal]) -> dict[int, Decimal]:
-    """Round weights to one decimal and absorb the residual into the largest."""
-    rounded = {i: w.quantize(TENTH) for i, w in weights.items() if w > ZERO}
-    if not rounded:
-        return {}
-    residual = HUNDRED - sum(rounded.values(), start=ZERO)
-    if residual != ZERO:
-        biggest = max(rounded, key=lambda i: rounded[i])
-        rounded[biggest] += residual
-    return rounded
-
-
-def _scale_to_100(weights: dict[int, Decimal]) -> dict[int, Decimal]:
-    """Normalise positive weights so they sum to exactly 100."""
-    total = sum((w for w in weights.values() if w > ZERO), start=ZERO)
-    if total <= ZERO:
-        return {}
-    return {i: w * HUNDRED / total for i, w in weights.items() if w > ZERO}
 
 
 def _bar(current_pct: Decimal, target_pct: Decimal, added_from: Decimal | None = None) -> str:
@@ -638,38 +628,18 @@ class _CalculatorView:  # pragma: no cover - UI wiring
             for name, v in self.cat_targets.items()
             if _decimal_or_zero(v) > ZERO
         }
-        if not cat_weights:
-            ui.notify("Set at least one category target", type="warning")
-            return None
         current_values = {i.instrument_id: i.current_value_eur for i in self.data.instruments}
-        weights: dict[int, Decimal] = {}
-        for name, weight in cat_weights.items():
-            # Split the category's % across only the funds the user actually
-            # invests in (the ticked ones). Funds left un-ticked don't get a
-            # slice — the invested funds "pick up the slack" and absorb the whole
-            # category target between them. The un-ticked funds simply keep their
-            # current holding, whose share of the portfolio is left to dilute as
-            # more cash flows into the funds the user does buy. (Previously the
-            # category % was split across *all* members, which wrongly raised the
-            # target of funds the user never tops up.)
-            members = self.cat_members.get(name, [])
-            if not members:
-                continue
-            selected = [mid for mid in members if mid in self.cat_selected.get(name, set())]
-            if not selected:
-                ui.notify(
-                    f"Tick at least one fund to invest in for “{name}”, or set its target to 0.",
-                    type="warning",
-                )
-                return None
-            expanded = expand_category_weights(
-                {name: weight},
-                {name: selected},
-                current_values,
-                split=self.cat_split.get(name, "value"),
+        try:
+            weights = expand_category_targets(
+                cat_weights,
+                cat_members=self.cat_members,
+                cat_selected=self.cat_selected,
+                cat_split=self.cat_split,
+                current_values=current_values,
             )
-            for mid, w in expanded.items():
-                weights[mid] = weights.get(mid, ZERO) + w
+        except RebalanceInputError as exc:
+            ui.notify(str(exc), type="warning")
+            return None
         return weights, set()
 
     def _compute(self) -> None:
@@ -694,22 +664,16 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         # In buy-only "by category" mode, credit funds the user holds but left
         # un-ticked toward their category's funding (see _held_unticked_extras).
         extra_no_buy, category_of = self._held_unticked_extras(target_pct, current_values)
-        no_buy_ids = set(no_buy) | extra_no_buy
-        current_prices = {
-            mid: self.by_id[mid].price_eur
-            for mid in target_pct
-            if mid in self.by_id and self.by_id[mid].price_eur is not None
-        }
         try:
-            plan = plan_rebalance(
-                cash_eur,
+            plan = compute_plan(
+                self.data,
                 target_pct,
-                {mid: current_values.get(mid, ZERO) for mid in target_pct},
-                current_prices,  # type: ignore[arg-type]
-                allow_fractional_shares=bool(self.fractional.value),
-                allow_sell=self.allow_sell,
-                no_buy_ids=no_buy_ids & set(target_pct),
+                cash_eur=cash_eur,
+                no_buy=no_buy,
+                extra_no_buy=extra_no_buy,
                 category_of=category_of,
+                allow_fractional=bool(self.fractional.value),
+                allow_sell=self.allow_sell,
             )
         except ValueError as exc:
             ui.notify(f"Cannot rebalance: {exc}", type="negative")
@@ -721,37 +685,17 @@ class _CalculatorView:  # pragma: no cover - UI wiring
         target_pct: dict[int, Decimal],
         current_values: Mapping[int, Decimal],
     ) -> tuple[set[int], dict[int, str] | None]:
-        """Fold funds the user holds but left un-ticked into a buy-only category
-        plan, so an already well-funded category — counting those held funds —
-        asks for no fresh cash even when the ticked fund alone looks
-        under-weight.
-
-        The held, un-ticked members of every *targeted* category are added to
-        ``target_pct`` (mutated in place) as 0 %-target rows, returned in the
-        ``no_buy`` set so they are never bought, and a ``{id: category}`` map is
-        returned so :func:`plan_rebalance` measures each category's shortfall as
-        a whole. Returns ``(set(), None)`` outside buy-only category mode, which
-        leaves the legacy per-fund behaviour untouched.
-        """
-        if self.mode != "category" or self.allow_sell:
-            return set(), None
-        no_buy_ids: set[int] = set()
-        for name, weight in self.cat_targets.items():
-            if _decimal_or_zero(weight) <= ZERO:
-                continue
-            selected = self.cat_selected.get(name, set())
-            for mid in self.cat_members.get(name, []):
-                if mid in selected or mid in target_pct:
-                    continue
-                if current_values.get(mid, ZERO) <= ZERO:
-                    continue
-                target_pct.setdefault(mid, ZERO)
-                no_buy_ids.add(mid)
-        category_of = {
-            mid: (self.by_id[mid].category if mid in self.by_id else UNCATEGORIZED)
-            for mid in target_pct
-        }
-        return no_buy_ids, category_of
+        """See :func:`investment_dashboard.readmodels.rebalance.held_unticked_extras`."""
+        return held_unticked_extras(
+            target_pct,
+            current_values,
+            category_mode=self.mode == "category",
+            allow_sell=self.allow_sell,
+            cat_targets={n: _decimal_or_zero(w) for n, w in self.cat_targets.items()},
+            cat_selected=self.cat_selected,
+            cat_members=self.cat_members,
+            category_by_id={mid: c.category for mid, c in self.by_id.items()},
+        )
 
     # -- result ------------------------------------------------------------
     def _render_result(

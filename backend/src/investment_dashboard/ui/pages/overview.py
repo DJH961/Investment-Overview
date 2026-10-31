@@ -15,7 +15,13 @@ from investment_dashboard.db import session_scope
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.market_hours import is_us_market_open
 from investment_dashboard.domain.returns import years_between
-from investment_dashboard.domain.session_fx import fx_buying_power_split, fx_effect_split
+from investment_dashboard.readmodels.fx_effect import (
+    compute_eur_fx_effect,
+    compute_investing_power,
+)
+from investment_dashboard.readmodels.fx_effect import (
+    fx_box_regime as _fx_box_regime,
+)
 from investment_dashboard.services import (
     display_currency_service,
     fx_service,
@@ -246,70 +252,6 @@ def _fx_box_pct_value(pct: Decimal | None) -> str:
     return f'<span class="inv-fx-box-stat-value {_fx_sign_class(pct)}">{sign}{abs(pct):.2f}%</span>'
 
 
-@dataclass(frozen=True)
-class _FxBoxRegime:
-    """The currency box's market-state regime, derived purely from ``now``.
-
-    Mirrors the web companion's ``FxBoxRegime`` so the two clients tell exactly the
-    same story across the forex weekend boundary. The regimes, in precedence order:
-
-    * **forex_frozen** — the spot-FX weekend close (Fri ≥17:00 ET, all Saturday,
-      Sun <17:00 ET). The rate is frozen at Friday's close, so the box shows the
-      *whole Friday session view*, frozen exactly as it looked at 17:01 ET (the full
-      session move, the "Since close" stat, the two-leg split), badged "Market
-      closed". This is a ``session_view``.
-    * **market_open** — the live US session; the regular live view (a session_view).
-    * **weekend_overnight** — forex has reopened (Sun ≥17:00 ET) but no US session
-      has opened since: Sunday evening through Monday's 09:30 open. The spot-FX
-      weekend close is just a *pause*, so Friday's session stays the previous
-      session: the box keeps the full two-leg split (Friday's market-hours leg + the
-      live overnight drift since its close), re-anchored to Friday's open exactly
-      like the frozen weekend. A ``session_view``.
-    * **holiday** — a US market holiday that is *not* an FX holiday (e.g. 4th of
-      July): forex trades but the US session is shut, so a single overnight number,
-      kept under its "Market holiday" wording.
-    * otherwise a **regular weekday post-close / pre-open** (a session_view).
-
-    ``single_overnight`` (holiday only, with forex open and US shut) marks the lone
-    one-number, no-split regime; ``session_view`` (its complement) marks the
-    three-stat, two-leg-split regimes.
-    """
-
-    market_open: bool
-    forex_open: bool
-    holiday: bool
-    forex_frozen: bool
-    weekend_overnight: bool
-    single_overnight: bool
-    session_view: bool
-
-
-def _fx_box_regime(now: datetime) -> _FxBoxRegime:
-    """Compute the :class:`_FxBoxRegime` for ``now`` (see its docstring)."""
-    market_open = is_us_market_open(now)
-    forex_open = market_hours.is_forex_market_open(now)
-    holiday = market_hours.is_us_market_holiday_at(now)
-    forex_frozen = not forex_open
-    last_session = intraday_snapshots_service.last_session_date(now)
-    weekend_overnight = (
-        forex_open
-        and not market_open
-        and not holiday
-        and market_hours.regular_session_open(last_session) < market_hours.last_forex_reopen(now)
-    )
-    single_overnight = forex_open and not market_open and holiday
-    session_view = not single_overnight
-    return _FxBoxRegime(
-        market_open=market_open,
-        forex_open=forex_open,
-        holiday=holiday,
-        forex_frozen=forex_frozen,
-        weekend_overnight=weekend_overnight,
-        single_overnight=single_overnight,
-        session_view=session_view,
-    )
-
-
 def _format_forex_reopen(reopen_at: datetime, now: datetime, *, tz: tzinfo | None = None) -> str:
     """The "reopens …" caption for the frozen weekend rate.
 
@@ -367,42 +309,6 @@ def _effect_since_phrase(now: datetime, *, tz: tzinfo | None = None) -> str:
     if regime.weekend_overnight:
         return f"since {last_session.strftime('%A')}"
     return "since yesterday"
-
-
-def _prior_fx(
-    session,  # type: ignore[no-untyped-def]
-    metrics: PortfolioMetrics,
-    now: datetime,
-) -> Decimal | None:
-    """The prior-session EUR/USD anchor for the "since yesterday" panels.
-
-    Mirrors the web companion's ``fxEffectPriorFx``: prefer the FX provider's settled
-    previous close; when that is missing — a closed-market / frozen-FX round where it
-    is left ``None`` — fall back to the session close, the same prior-close anchor the
-    box's "Since close" stat already reads, so the panels survive instead of vanishing
-    while the box still shows a real rate move. ``None`` only when neither is known.
-    """
-    prev = metrics.daily_growth_fx_eur_usd_prev
-    if prev is not None and prev > 0:
-        return prev
-    close = intraday_snapshots_service.session_close_fx(session, now=now)
-    if close is not None and close > 0:
-        return close
-    return None
-
-
-def _eur_effect_from_anchor(
-    usd: Decimal | None, live_fx: Decimal | None, anchor_fx: Decimal | None
-) -> Decimal | None:
-    """Re-mark the book's EUR FX swing from ``anchor_fx`` to the live spot.
-
-    ``usd · (1/live_fx − 1/anchor_fx)`` — the same basis the split legs use. Mirrors
-    the web companion's ``eurEffectFromAnchor``: ``None`` when any input is missing so
-    the caller keeps its existing basis rather than fabricating a zero.
-    """
-    if anchor_fx is None or anchor_fx <= 0 or live_fx is None or live_fx <= 0 or usd is None:
-        return None
-    return usd / live_fx - usd / anchor_fx
 
 
 def _fx_diverge_row(
@@ -511,27 +417,13 @@ def _fx_effect_html(
     there is no fresh session to split, so one full-width bar carries the whole swing
     under the "Market holiday" label.
     """
-    regime = _fx_box_regime(now)
-    market_open = regime.market_open
-    usd = metrics.total_value_usd
-
-    # The euro currency effect, anchored to the settled previous close, then
-    # re-anchored on every market-closed session view so it agrees with the headline.
-    net_eur = Decimal(0)
-    if prev_fx is not None and prev_fx > 0 and usd is not None and live_fx > 0:
-        net_eur = usd / live_fx - usd / prev_fx
-    if regime.session_view and not market_open:
-        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
-        reanchored = _eur_effect_from_anchor(usd, live_fx, open_fx)
-        if reanchored is not None:
-            net_eur = reanchored
-    if net_eur == 0 and (prev_fx is None or prev_fx <= 0):
-        reanchored = _eur_effect_from_anchor(usd, live_fx, _prior_fx(session, metrics, now))
-        if reanchored is not None:
-            net_eur = reanchored
-    # No euro swing at all today ⇒ nothing worth a panel (the rate line still shows).
-    if net_eur == 0:
+    computed = compute_eur_fx_effect(session, metrics, live_fx=live_fx, prev_fx=prev_fx, now=now)
+    # No euro swing at all today => nothing worth a panel (the rate line still shows).
+    if computed is None:
         return ""
+    regime = computed.regime
+    market_open = regime.market_open
+    net_eur = computed.net_eur
 
     since = _effect_since_phrase(now, tz=tz)
     title = f"Currency effect {since}"
@@ -557,28 +449,9 @@ def _fx_effect_html(
             f"{head.format(value=value)}{body}</div>"
         )
 
-    if market_open:
-        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
-        split = fx_effect_split(
-            market_open=True,
-            total_value_usd=usd,
-            live_fx=live_fx,
-            session_close_fx=None,
-            session_open_fx=open_fx,
-            today_fx_move_eur=net_eur,
-        )
-    else:
-        close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-        split = fx_effect_split(
-            market_open=False,
-            total_value_usd=usd,
-            live_fx=live_fx,
-            session_close_fx=close_fx,
-            today_fx_move_eur=net_eur,
-        )
     body = _fx_diverge_bar(
-        split.market_hours_eur,
-        split.overnight_eur,
+        computed.market_hours_eur,
+        computed.overnight_eur,
         market_open=market_open,
         fmt=_fx_signed_eur,
         forex_live=regime.forex_open,
@@ -624,22 +497,14 @@ def _investing_power_html(
     cents are kept whenever the effect amount is two digits or less (``|net_usd| <
     100``); above that it renders in whole dollars like the EUR panel.
     """
-    regime = _fx_box_regime(now)
+    computed_ip = compute_investing_power(
+        session, metrics, amount_eur=amount_eur, live_fx=live_fx, now=now
+    )
+    if computed_ip is None:
+        return ""
+    regime = computed_ip.regime
     market_open = regime.market_open
-
-    # Prior-close anchor: the settled previous close, else the session close, then
-    # re-anchored (mirroring the EUR panel) on every market-closed session view so
-    # the headline agrees with the box.
-    prev_fx = _prior_fx(session, metrics, now)
-    if regime.session_view and not market_open:
-        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
-        if open_fx is not None and open_fx > 0:
-            prev_fx = open_fx
-    if prev_fx is None or live_fx <= 0 or prev_fx <= 0:
-        return ""
-    net_usd = amount_eur * (live_fx - prev_fx)
-    if net_usd == 0:
-        return ""
+    net_usd = computed_ip.net_usd
 
     # Whole dollars to mirror the EUR panel, but keep cents while the swing is two
     # digits or less so the (typically small) figure doesn't round away to "$0".
@@ -686,28 +551,9 @@ def _investing_power_html(
             f"{head.format(value=value)}{body}{amount_caption}</div>"
         )
 
-    if market_open:
-        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
-        split = fx_buying_power_split(
-            market_open=True,
-            amount_eur=amount_eur,
-            live_fx=live_fx,
-            prev_fx=prev_fx,
-            session_close_fx=None,
-            session_open_fx=open_fx,
-        )
-    else:
-        close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-        split = fx_buying_power_split(
-            market_open=False,
-            amount_eur=amount_eur,
-            live_fx=live_fx,
-            prev_fx=prev_fx,
-            session_close_fx=close_fx,
-        )
     body = _fx_diverge_bar(
-        split.market_hours_usd,
-        split.overnight_usd,
+        computed_ip.market_hours_usd,
+        computed_ip.overnight_usd,
         market_open=market_open,
         fmt=_fmt,
         forex_live=regime.forex_open,

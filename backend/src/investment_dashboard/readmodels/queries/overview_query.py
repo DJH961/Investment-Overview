@@ -14,6 +14,7 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.market_hours import (
+    exchange_today,
     feed_is_fresh,
     is_trading_day,
     is_us_market_open,
@@ -195,8 +196,12 @@ def build_value_series(
     range_label: str | None = None,
     as_of: date | None = None,
     recompute_tail_days: int | None = None,
+    start: date | None = None,
 ) -> list[ValueSeriesPoint]:
     """Daily portfolio-value series for the selected range, in ``currency``.
+
+    ``start`` overrides the range-derived start date (used by the v6 API for its
+    3M / 6M ranges).
 
     Uses the read-through snapshot cache, so historical days are O(1) and —
     now that historical valuations price with the as-of close (v2.8 item 1) —
@@ -211,8 +216,9 @@ def build_value_series(
     whole daily curve synchronously — which used to block the event loop long
     enough to trip NiceGUI's reconnect window and "crash" the app.
     """
-    end = as_of or date.today()
-    start = range_start_date(session, range_label, end)
+    end = as_of or exchange_today()
+    if start is None:
+        start = range_start_date(session, range_label, end)
     if start is None:
         return []
 
@@ -288,7 +294,7 @@ def build_window_value_series(
 
     rate: Decimal | None = None
     if currency != "EUR":
-        rate = fx_service.get_rate_eur_to_quote(session, date.today(), quote=currency)
+        rate = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote=currency)
 
     multi_session = sessions > 1
     nav_now = ZERO
@@ -328,7 +334,7 @@ def build_window_value_series(
         # ``live_fallback`` (today's live NAV value + spot EUR/USD) is a last-resort
         # stand-in for a window day whose NAV/FX hasn't been cached yet, re-derived
         # each render so a later good close/FX pull patches the gap.
-        nav_fx_today = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
+        nav_fx_today = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote="USD")
         nav_by_date = intraday_snapshots_service.week_nav_drift_with_fx(
             session, now=now, live_fallback=(nav_now, nav_fx_today)
         )
@@ -501,7 +507,7 @@ def _freeze_eur_live_tip(
     """
     if currency.upper() != "EUR" or not points:
         return points
-    live_fx = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
+    live_fx = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote="USD")
     close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
     # When no intraday sample captured the close (app not open at 16:00 ET, a cold
     # start, or over a weekend), freeze to the prior settled session's rate — a
