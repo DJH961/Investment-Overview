@@ -1,9 +1,8 @@
 """Live 1D / 1W graph **springboard** export for the v3.0 browser companion.
 
-💵 CURRENCY: USD is the PRIMARY/canonical currency across the backend. ~100% of
-holdings and 100% of market funds are USD-denominated. EUR is a frontend display
-preset only (default toggle). ``value_native`` is native USD; the EUR pivot is a
-display convenience, never the base currency. Never treat EUR as primary.
+💱 CURRENCY (rule in ``AGENTS.md``): ``value_native`` is the FX-free native-USD
+sleeve value; the EUR line is derived with the per-instant rate stored beside each
+sample. Never reconcile or merge these curves in EUR.
 
 The desktop already captures (and reconstructs) the within-day intraday "1 Day"
 curve and the multi-day "1 Week" sleeve

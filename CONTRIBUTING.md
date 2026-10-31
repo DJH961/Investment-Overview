@@ -1,7 +1,9 @@
 # Contributing
 
 This is a single-author private project, but future-me deserves clean
-ground rules.
+ground rules. **The rules themselves live in [`AGENTS.md`](AGENTS.md)** (currency,
+architecture, git flow, changelog, releases, quality gate); this file covers dev
+setup and the how-to.
 
 ## Dev setup
 
@@ -15,51 +17,25 @@ uv run pre-commit install
 
 ## Workflow
 
-1. For this personal project, pushing directly to `main` is OK after the
-    local quality gate passes. Use a descriptive kebab-case branch when a
-    change benefits from review, experimentation or a safer staging area.
-2. Make changes; keep commits scoped and meaningful.
-3. Run the full local quality gate before pushing:
+1. Features and risky changes: a descriptive kebab-case branch and a PR.
+   Small or urgent fixes may go straight to `main` once the gate passes.
+2. Make changes; keep commits scoped and meaningful. Add a CHANGELOG entry
+   under `## [Unreleased]`.
+3. Run the full local quality gate (listed in [`AGENTS.md`](AGENTS.md#workflow))
+   before pushing. In short:
 
    ```powershell
-   uv run ruff check .
-   uv run ruff format --check .
+   uv run ruff format .
+   uv run ruff check . --fix
    uv run mypy src/investment_dashboard/domain
    uv run pytest
+   cd web; npm run typecheck; npm run test
    ```
 
 4. CI runs the same gate on push and PR. Don't leave `main` red.
 
-## Layering rules (enforced by convention, not tooling — yet)
-
-- `domain/` contains pure functions. **No** DB session, **no** HTTP, **no**
-  `yfinance`, **no** filesystem I/O. Mypy runs in strict mode here.
-- `adapters/` wraps every external thing. Each module returns plain
-  dataclasses, never ORM rows.
-- `repositories/` is the only layer that imports ORM models. Returns ORM
-  rows or domain dataclasses; never raw `dict`s.
-- `services/` orchestrates use-cases by composing the layers above.
-- `ui/` reads input, renders the result, and calls a service for any mutation
-  or multi-step use-case. It may also read ledger-tier repositories directly
-  for simple queries (e.g. `transactions_repo`, `instruments_repo`).
-- **Cache-tier data (prices, FX, snapshots) is read/written only through its
-  service** (`prices_service`, `fx_service`, `snapshots_service`), which routes
-  to the cache engine via `db.cache_read_session` / `cache_write_session`.
-  Never call `prices_repo` / `fx_repo` / `snapshots_repo` directly on a ledger
-  session — it silently returns empty under a split-DB layout. See
-  "Storage tiers" in [`docs/architecture.md`](docs/architecture.md).
-- **Currency rule:** backend computation/storage/reconciliation are USD-native.
-  EUR is derived presentation (`usd ÷ fx`) and must not become a backend source
-  of truth.
-
-## Tests
-
-- New code in `domain/` is property-tested where the math admits it
-  (`hypothesis`), plus a handful of golden-value tests against Excel-known
-  answers.
-- Adapters are unit-tested with mocked HTTP (`respx`) or monkey-patched
-  downloaders. Live-API smoke tests are marked `@pytest.mark.network` and
-  skipped by default; run with `pytest --run-network`.
+Layering, the cache-tier rule, the currency rule and test expectations are in
+[`AGENTS.md`](AGENTS.md).
 
 ## Migrations
 
