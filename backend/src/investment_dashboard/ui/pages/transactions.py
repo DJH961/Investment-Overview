@@ -12,12 +12,10 @@ from sqlalchemy import select
 
 from investment_dashboard.db import session_scope
 from investment_dashboard.domain.money_market import (
-    MANUAL_SETTLEMENT_DESCRIPTION_PREFIX,
     is_settlement_external_id,
-    settlement_external_id_for,
 )
 from investment_dashboard.models import Account, Transaction
-from investment_dashboard.models.transaction import TransactionKind, TransactionSource
+from investment_dashboard.models.transaction import TransactionKind
 from investment_dashboard.repositories import (
     instrument_overrides_repo,
     instruments_repo,
@@ -28,8 +26,7 @@ from investment_dashboard.services import (
     display_currency_service,
     intraday_snapshots_service,
     manual_entry,
-    snapshots_service,
-    transaction_fx_service,
+    transaction_edit_service,
 )
 from investment_dashboard.services.importer_service import Broker, ImportResult, import_csv
 from investment_dashboard.services.instrument_enrichment_service import (
@@ -366,7 +363,7 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
 
         kind_sel.on_value_change(_revalidate)
 
-        def _save() -> None:  # noqa: PLR0915, PLR0912 - one cohesive save handler
+        def _save() -> None:
             if account_sel.value is None:
                 ui.notify("Pick an account", type="warning")
                 return
@@ -381,104 +378,31 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
                 return
 
             kind = kind_sel.value
-            q_mag = _decimal_or_none(qty_in.value or "")
-            p_mag = _decimal_or_none(price_in.value or "")
-            t_mag = _decimal_or_none(total_in.value or "")
-            fee_mag = _decimal_or_none(fees_in.value or "")
-
-            quantity: Decimal | None = None
-            price_native: Decimal | None = None
-            gross_native: Decimal | None = None
-            if kind in manual_entry.TRADE_KINDS:
-                figs = manual_entry.reconcile_trade(q_mag, p_mag, t_mag)
-                if figs.error:
-                    hint.text = figs.error
-                    ui.notify(figs.error, type="negative")
-                    return
-                gross = figs.total
-                fee = abs(fee_mag) if fee_mag is not None else Decimal(0)
-                # A buy/reinvest costs gross + fees; a sale nets gross - fees.
-                if kind == TransactionKind.SELL.value:
-                    net_mag = (gross or Decimal(0)) - fee
-                else:
-                    net_mag = (gross or Decimal(0)) + fee
-                net_native = manual_entry.signed_net(kind, net_mag)
-                quantity = manual_entry.signed_quantity(kind, figs.quantity)
-                price_native = abs(figs.price) if figs.price is not None else None
-                gross_native = gross
-            else:
-                # Cash-only kind: the "Total" field is the cash amount.
-                net_native = manual_entry.signed_net(kind, t_mag)
-
-            account = next((a for a in accounts if a.id == account_sel.value), None)
-            native_ccy = account.native_currency if account else "EUR"
-            with session_scope() as session:
-                instrument_id: int | None = None
-                sym = (symbol_in.value or "").strip().upper()
-                if sym:
-                    instr = instruments_repo.get_or_create(session, symbol=sym)
-                    instrument_id = instr.id
-                # Freeze EUR + USD legs at the trade-date rate, like the importer.
-                legs = transaction_fx_service.compute_legs(
-                    session, native_currency=native_ccy, net_native=net_native, on=txn_date
-                )
-                fields = {
-                    "account_id": account_sel.value,
-                    "date": txn_date,
-                    "kind": kind,
-                    "instrument_id": instrument_id,
-                    "quantity": quantity,
-                    "price_native": price_native,
-                    "gross_native": gross_native,
-                    "fees_native": abs(fee_mag) if fee_mag is not None else None,
-                    "net_native": net_native,
-                    "fx_rate_to_eur": legs.fx_rate_to_eur,
-                    "net_eur": legs.net_eur,
-                    "net_usd": legs.net_usd,
-                    "description": (desc_in.value or "").strip() or None,
-                }
-                if is_edit:
-                    updated = transactions_repo.update_transaction(
-                        session, existing["id"], **fields
-                    )
-                    # Keep the paired (often hidden) settlement leg in lock-step
-                    # with the cash it mirrors, so editing a transaction can't
-                    # silently diverge the money-market balance. Works for
-                    # existing imported rows (linked via ``:vmfxx``) and legacy
-                    # manual auto-legs alike (see ``_resync_settlement_leg``).
-                    if updated is not None:
-                        _resync_settlement_leg(
-                            session,
-                            parent=updated,
-                            old_account_id=existing["account_id"],
-                            old_external_id=existing.get("external_id"),
-                            old_date=existing["date"],
-                            old_net_native=existing["net_native"],
-                            native_ccy=native_ccy,
-                        )
-                    ui.notify("Updated", type="positive")
-                else:
-                    txn = Transaction(source=TransactionSource.MANUAL, **fields)
-                    inserted = transactions_repo.insert_transaction(session, txn)
-                    if inserted is not None:
-                        _maybe_money_market_leg(
-                            session,
-                            enabled=bool(route_mm.value) if route_mm is not None else False,
-                            parent=inserted,
-                            kind=kind,
-                            net_native=net_native,
-                            native_ccy=native_ccy,
-                            txn_date=txn_date,
-                        )
-                    ui.notify("Saved", type="positive")
-                # A past-dated add/edit invalidates the cached daily closes from
-                # the earliest affected date on, so /monthly, /yearly and the
-                # equity curve recompute that window lazily (edits cover both the
-                # old and new trade date in case the date moved).
-                affected = {txn_date}
-                if is_edit:
-                    affected.add(existing["date"])
-                snapshots_service.invalidate_for_trade_dates(session, affected)
+            data = transaction_edit_service.TransactionInput(
+                account_id=account_sel.value,
+                date=txn_date,
+                kind=kind,
+                symbol=(symbol_in.value or "").strip(),
+                quantity=_decimal_or_none(qty_in.value or ""),
+                price=_decimal_or_none(price_in.value or ""),
+                total=_decimal_or_none(total_in.value or ""),
+                fees=_decimal_or_none(fees_in.value or ""),
+                description=desc_in.value,
+                route_money_market=bool(route_mm.value) if route_mm is not None else False,
+            )
+            try:
+                with session_scope() as session:
+                    if is_edit:
+                        result = transaction_edit_service.update(session, existing["id"], data)
+                    else:
+                        result = transaction_edit_service.create(session, data)
+            except transaction_edit_service.TransactionEditError as exc:
+                hint.text = str(exc)
+                ui.notify(str(exc), type="negative")
+                return
+            if transaction_edit_service.NO_MONEY_MARKET_WARNING in result.warnings:
+                ui.notify(transaction_edit_service.NO_MONEY_MARKET_WARNING, type="info")
+            ui.notify("Updated" if is_edit else "Saved", type="positive")
             # v3.0 §5.4: a manual ledger edit republishes the live-web blob, but
             # debounced — a burst of edits coalesces into one upload ~2 min after
             # the last change (gated by Settings → Live web companion).
@@ -498,7 +422,7 @@ def _open_txn_modal(  # noqa: PLR0915  # pragma: no cover - UI
     dlg.open()
 
 
-def _maybe_money_market_leg(  # pragma: no cover - UI
+def _maybe_money_market_leg(
     session: Any,
     *,
     enabled: bool,
@@ -508,80 +432,19 @@ def _maybe_money_market_leg(  # pragma: no cover - UI
     native_ccy: str,
     txn_date: date,
 ) -> None:
-    """Auto-create the paired money-market settlement leg for a cash move.
-
-    The leg is linked to ``parent`` via the ``:vmfxx`` external-id convention so
-    a later edit/delete of the parent can find and keep it in sync (and so the
-    ledger view hides it by default, like the importer's sweeps).
-    """
-    if not enabled:
-        return
-    leg = manual_entry.money_market_leg(kind, net_native)
-    if leg is None:
-        return
-    mm_instrument = transactions_repo.find_account_money_market_instrument(
-        session, parent.account_id
-    )
-    if mm_instrument is None:
-        ui.notify(
-            "No money-market fund on this account yet — logged the cash move only.",
-            type="info",
+    """Thin wrapper kept for callers/tests: delegates to the edit service."""
+    if enabled:
+        transaction_edit_service.maybe_money_market_leg(
+            session,
+            parent=parent,
+            kind=kind,
+            net_native=net_native,
+            native_ccy=native_ccy,
+            txn_date=txn_date,
         )
-        return
-    # Give the parent a stable external_id (if it has none) so the leg can be
-    # linked to it; manual rows otherwise carry no external_id.
-    if parent.external_id is None:
-        parent.external_id = f"manual:{parent.id}"
-        session.flush()
-    leg_legs = transaction_fx_service.compute_legs(
-        session, native_currency=native_ccy, net_native=leg.net_native, on=txn_date
-    )
-    mm_txn = Transaction(
-        account_id=parent.account_id,
-        date=txn_date,
-        kind=leg.kind,
-        instrument_id=mm_instrument.id,
-        quantity=leg.quantity,
-        price_native=leg.price,
-        net_native=leg.net_native,
-        fx_rate_to_eur=leg_legs.fx_rate_to_eur,
-        net_eur=leg_legs.net_eur,
-        net_usd=leg_legs.net_usd,
-        description=(f"{MANUAL_SETTLEMENT_DESCRIPTION_PREFIX} · {mm_instrument.symbol}"),
-        external_id=settlement_external_id_for(parent.external_id),
-        source=TransactionSource.MANUAL,
-    )
-    transactions_repo.insert_transaction(session, mm_txn)
 
 
-def _find_existing_settlement_leg(  # pragma: no cover - UI
-    session: Any,
-    *,
-    account_id: int,
-    external_id: str | None,
-    on: date,
-    net_native: Decimal | None,
-) -> Transaction | None:
-    """Locate the settlement leg paired to a parent, new or legacy.
-
-    First tries the ``:vmfxx`` external-id link (imported rows and post-v3.2.0
-    manual rows); falls back to matching a legacy manual auto-leg by its
-    description marker, account, date and opposite ``net_native`` so editing or
-    deleting *existing* entries keeps working.
-    """
-    leg = transactions_repo.find_settlement_leg(
-        session, account_id=account_id, parent_external_id=external_id
-    )
-    if leg is not None:
-        return leg
-    if net_native is None:
-        return None
-    return transactions_repo.find_legacy_settlement_leg(
-        session, account_id=account_id, on=on, parent_net_native=net_native
-    )
-
-
-def _resync_settlement_leg(  # pragma: no cover - UI
+def _resync_settlement_leg(
     session: Any,
     *,
     parent: Transaction,
@@ -591,67 +454,22 @@ def _resync_settlement_leg(  # pragma: no cover - UI
     old_net_native: Decimal | None,
     native_ccy: str,
 ) -> None:
-    """Re-derive the parent's settlement leg after an edit, or drop it.
-
-    Found via the *pre-edit* identity (the leg still carries the old date /
-    account / net until we touch it). If the edited parent no longer moves cash
-    the leg is deleted; otherwise its date, account, kind, quantity and frozen
-    FX legs are recomputed so the settlement balance never drifts.
-    """
-    leg = _find_existing_settlement_leg(
+    """Thin wrapper kept for callers/tests: delegates to the edit service."""
+    transaction_edit_service.resync_settlement_leg(
         session,
-        account_id=old_account_id,
-        external_id=old_external_id,
-        on=date.fromisoformat(old_date),
-        net_native=old_net_native,
+        parent=parent,
+        old_account_id=old_account_id,
+        old_external_id=old_external_id,
+        old_date=date.fromisoformat(old_date),
+        old_net_native=old_net_native,
+        native_ccy=native_ccy,
     )
-    if leg is None or leg.id == parent.id:
-        return
-    values = manual_entry.settlement_leg_values(parent.net_native)
-    if values is None:
-        # The edit turned a cash move into something with no net flow (or zero):
-        # the paired leg no longer has anything to settle, so remove it.
-        session.delete(leg)
-        session.flush()
-        return
-    leg_legs = transaction_fx_service.compute_legs(
-        session, native_currency=native_ccy, net_native=values.net_native, on=parent.date
-    )
-    leg.account_id = parent.account_id
-    leg.date = parent.date
-    leg.kind = values.kind
-    leg.quantity = values.quantity
-    leg.price_native = values.price
-    leg.net_native = values.net_native
-    leg.fx_rate_to_eur = leg_legs.fx_rate_to_eur
-    leg.net_eur = leg_legs.net_eur
-    leg.net_usd = leg_legs.net_usd
-    session.flush()
 
 
 def _confirm_delete(txn_id: int, dlg: Any) -> None:  # pragma: no cover - UI
     def _delete() -> None:
         with session_scope() as session:
-            parent = transactions_repo.get_transaction(session, txn_id)
-            if parent is not None:
-                # Remove the paired settlement leg too, so deleting a cash move
-                # doesn't strand a now-orphaned (often hidden) money-market row.
-                leg = _find_existing_settlement_leg(
-                    session,
-                    account_id=parent.account_id,
-                    external_id=parent.external_id,
-                    on=parent.date,
-                    net_native=parent.net_native,
-                )
-                if leg is not None and leg.id != parent.id:
-                    session.delete(leg)
-                    session.flush()
-            parent_date = parent.date if parent is not None else None
-            transactions_repo.delete_transaction(session, txn_id)
-            # Deleting a past-dated row changes every roll-up from its trade
-            # date on, so drop the now-stale cached daily closes.
-            if parent_date is not None:
-                snapshots_service.invalidate_for_trade_dates(session, [parent_date])
+            transaction_edit_service.delete(session, txn_id)
         ui.notify("Deleted", type="positive")
         # Republish (debounced) after a manual deletion, like add/edit above.
         auto_publish.schedule_publish_after_edit()

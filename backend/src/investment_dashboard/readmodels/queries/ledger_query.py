@@ -13,11 +13,14 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain.currency import dual_currency_amounts
-from investment_dashboard.domain.money_market import SETTLEMENT_EXTERNAL_ID_SUFFIX
+from investment_dashboard.domain.money_market import (
+    SETTLEMENT_EXTERNAL_ID_SUFFIX,
+    is_settlement_external_id,
+)
 from investment_dashboard.models import Account, Instrument, Transaction
 from investment_dashboard.readmodels.money_format import currency_symbol, fmt_shares
 from investment_dashboard.services import fx_service
@@ -34,6 +37,8 @@ class LedgerFilters:
     start: date | None = None
     end: date | None = None
     hide_settlement_sweeps: bool = True
+    #: Case-insensitive substring over symbol, account label, kind and description.
+    text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,16 @@ class LedgerRecord:
     net_eur: Decimal | None
     net_usd: Decimal | None
     source: str | None
+    # Extra fields for the edit form / v6 API (defaults keep older callers valid).
+    account_id: int | None = None
+    instrument_id: int | None = None
+    settlement_date: date | None = None
+    description: str | None = None
+    external_id: str | None = None
+    #: ``True`` for an auto-generated settlement-sweep leg (``:vmfxx``).
+    is_settlement_leg: bool = False
+    #: ``True`` when a frozen EUR/USD leg is NULL on the stored row (FX gap).
+    fx_incomplete: bool = False
 
 
 def _fmt_money(value: Decimal | None, currency: str, places: int = 2) -> str:
@@ -85,6 +100,16 @@ def _build_ledger_stmt(filters: LedgerFilters | None):  # type: ignore[no-untype
         stmt = stmt.where(Transaction.date <= f.end)
     if f.instrument_symbol:
         stmt = stmt.join(Transaction.instrument).where(Instrument.symbol == f.instrument_symbol)
+    if f.text and f.text.strip():
+        needle = f"%{f.text.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Transaction.kind.ilike(needle),
+                Transaction.description.ilike(needle),
+                Transaction.instrument.has(Instrument.symbol.ilike(needle)),
+                Transaction.account.has(Account.account_label.ilike(needle)),
+            )
+        )
     if f.hide_settlement_sweeps:
         # Auto-generated settlement legs carry an external_id suffixed
         # ``:vmfxx`` (SETTLEMENT_EXTERNAL_ID_SUFFIX). They keep the settlement
@@ -107,6 +132,8 @@ def list_ledger_records(
     filters: LedgerFilters | None = None,
     *,
     fx_rate: Decimal | None = None,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[LedgerRecord]:
     """Return raw ledger records in newest-first order.
 
@@ -116,9 +143,35 @@ def list_ledger_records(
     rather than today's spot. ``fx_rate`` (current EUR→USD) is only used as a
     fallback when a row predates the available FX history.
     """
-    txns = session.scalars(_build_ledger_stmt(filters)).all()
+    stmt = _build_ledger_stmt(filters)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    if offset:
+        stmt = stmt.offset(offset)
+    txns = session.scalars(stmt).unique().all()
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate) for t in txns]
+
+
+def count_ledger_records(session: Session, filters: LedgerFilters | None = None) -> int:
+    """Number of ledger rows matching ``filters`` (ignores paging)."""
+    stmt = _build_ledger_stmt(filters).order_by(None)
+    return int(session.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+
+
+def get_ledger_record(
+    session: Session, txn_id: int, *, fx_rate: Decimal | None = None
+) -> LedgerRecord | None:
+    """Return one ledger record by id (settlement legs included), or ``None``."""
+    txn = session.scalars(
+        select(Transaction)
+        .options(joinedload(Transaction.account), joinedload(Transaction.instrument))
+        .where(Transaction.id == txn_id)
+    ).first()
+    if txn is None:
+        return None
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+    return _to_record(txn, eur_to_usd=eur_to_usd, fallback_rate=fx_rate)
 
 
 def list_ledger_rows(
@@ -257,6 +310,13 @@ def _to_record(
         net_eur=net_eur,
         net_usd=net_usd,
         source=t.source,
+        account_id=t.account_id,
+        instrument_id=t.instrument_id,
+        settlement_date=t.settlement_date,
+        description=t.description,
+        external_id=t.external_id,
+        is_settlement_leg=is_settlement_external_id(t.external_id),
+        fx_incomplete=t.net_eur is None or t.net_usd is None,
     )
 
 
