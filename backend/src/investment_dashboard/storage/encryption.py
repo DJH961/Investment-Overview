@@ -249,6 +249,22 @@ def connect_sqlite(db_path: Path, config: EncryptionConfig | None = None) -> Any
     return sqlite3.connect(str(db_path))
 
 
+def verify_database_key(db_path: Path, config: EncryptionConfig) -> bool:
+    """Return ``True`` if ``db_path`` opens and reads with ``config``'s key.
+
+    A wrong or missing key makes the first real read fail ("file is not a
+    database"); that is reported as ``False`` rather than raised.
+    """
+    conn = connect_sqlite(db_path, config)
+    try:
+        conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+    except Exception:
+        return False
+    finally:
+        conn.close()
+    return True
+
+
 def resolve_encryption(
     *,
     encrypt_synced_tiers: bool,

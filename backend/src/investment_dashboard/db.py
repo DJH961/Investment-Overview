@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from investment_dashboard.config import get_settings
@@ -89,8 +90,14 @@ def make_engine(
         url = settings.db_url
     encryption = _engine_state["encryption"] if encryption_config is None else encryption_config
     engine_url = to_sqlcipher_url(url, encryption)
+    target: str | URL = engine_url
+    if encryption.enabled and encryption.passphrase and engine_url.startswith("sqlite+pysqlcipher"):
+        # SQLAlchemy's pysqlcipher dialect issues ``PRAGMA key`` from the URL
+        # password on every connect (and would otherwise key with ""). The URL
+        # object hides the password when rendered, so it does not reach logs.
+        target = make_url(engine_url).set(password=encryption.passphrase)
     engine = create_engine(
-        engine_url,
+        target,
         future=True,
         echo=False,
         connect_args={"check_same_thread": False} if "sqlite" in engine_url else {},

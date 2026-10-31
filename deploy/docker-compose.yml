@@ -1,0 +1,62 @@
+# v6 stack: app + Caddy. On the server this lives in /opt/investments together
+# with the Caddyfile (see deploy/RUNBOOK.md). Secrets are NOT in this file or in
+# the repo: they live in the env file on the server only (mode 600).
+#
+#   cp .env.example .env      # compose-level vars (APP_TAG, APP_ENV_FILE)
+#   docker compose up -d
+#
+# Local build instead of pulling the image:  docker compose up -d --build
+
+services:
+  app:
+    image: ghcr.io/djh961/investment-overview:${APP_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    # Real settings and secrets (see backend/.env.example); server path example:
+    # /home/daniel/app.env, created by the owner, chmod 600.
+    env_file: ${APP_ENV_FILE:-/home/daniel/app.env}
+    volumes:
+      - app-data:/data
+    # No published ports: only Caddy reaches the app, over the internal network.
+    expose:
+      - "8000"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2.11
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+    mem_limit: 128m
+    networks:
+      - internal
+
+  # backup: pending decision (see docs/v6_progress.md)
+  # No backup service yet. Add it here once the owner has chosen the approach;
+  # it must read the app-data volume and write to the off-site bucket.
+
+volumes:
+  app-data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:

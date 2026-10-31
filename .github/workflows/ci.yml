@@ -66,3 +66,48 @@ jobs:
       - name: Build
         working-directory: web
         run: npm run build
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t inv-app:ci .
+
+      - name: Smoke test /api/health
+        run: |
+          docker run -d --name inv-smoke -p 8000:8000 \
+            -e INV_DASHBOARD_DB_PASSPHRASE="$(openssl rand -hex 16)" \
+            -e INV_DASHBOARD_SESSION_SECRET="$(openssl rand -hex 32)" \
+            -e INV_DASHBOARD_COOKIE_SECURE=false \
+            inv-app:ci
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8000/api/health; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then docker logs inv-smoke; exit 1; fi
+          docker rm -f inv-smoke
+
+      - name: SQLCipher check (encrypt, reopen, fail without key)
+        run: |
+          docker run --rm --entrypoint python inv-app:ci -c '
+          import sqlcipher3, tempfile, os
+          p = os.path.join(tempfile.mkdtemp(), "t.sqlite")
+          c = sqlcipher3.connect(p)
+          c.execute("PRAGMA key = '"'"'throwaway-key'"'"'")
+          c.execute("CREATE TABLE t (x INTEGER)")
+          c.execute("INSERT INTO t VALUES (1)")
+          c.commit(); c.close()
+          assert not open(p, "rb").read().startswith(b"SQLite format 3")
+          c = sqlcipher3.connect(p)
+          c.execute("PRAGMA key = '"'"'throwaway-key'"'"'")
+          assert c.execute("SELECT x FROM t").fetchone() == (1,)
+          c.close()
+          c = sqlcipher3.connect(p)
+          try:
+              c.execute("SELECT x FROM t")
+              raise SystemExit("opened without key")
+          except sqlcipher3.DatabaseError:
+              print("ok: encrypted, needs key")
+          '

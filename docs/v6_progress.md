@@ -53,11 +53,11 @@ UI contract: [`v6_frontend_design.md`](v6_frontend_design.md).
 - [ ] B1 reads A: overview, holdings, allocations (GET), graphs/{range} + schemas + tests
 - [ ] B2 reads B: periods, analytics, deposits, transactions (GET), diagnostics, calculator + schemas + tests
 - [ ] B3 writes: manual transactions CRUD, allocations PUT, settings GET/PUT, imports upload→preview→confirm, refresh, backup + tests
-- [ ] B4 auth: argon2 password, sessions (cookie, idle timeout), login rate limit, passkeys, bearer token kept, `set-password` CLI + tests
-- [ ] B5 currency: `domain/fx_pool.py` + hypothesis/golden tests, then `fx_conversions` model/migration/repo/service/router + deposit matching + tests
+- [x] B4 auth: argon2 password, sessions (cookie, idle timeout), login rate limit, passkeys, bearer token kept, `set-password` CLI + tests
+- [x] B5 currency (B5a): `domain/fx_pool.py` + hypothesis/golden tests, then `fx_conversions` model/migration/repo/service/router + deposit matching + tests
 - [ ] B6 live: scheduler (lifespan task), live bus, `/api/stream` SSE + tests
 - [ ] D1 deploy: multi-stage Dockerfile, `deploy/docker-compose.yml`, `Caddyfile`, `litestream.yml`, `backend/.env.example`
-- [ ] D2 ops: `.github/workflows/deploy.yml` (build → GHCR → SSH pull; disabled until secrets exist), `backend/tools/upload_db.py` + tests, RUNBOOK sections
+- [x] D2 ops: `.github/workflows/deploy.yml` (build → GHCR → SSH pull; disabled until secrets exist), `backend/tools/upload_db.py` + tests, RUNBOOK sections
 - [x] F2 Chart (port `web/src/chart.ts`) + AllocationBar/Treemap + Sparkline + tests
 - [x] F3 Login + passkeys + Styleguide page + PWA/service worker + `lib/live.ts`
 
@@ -110,3 +110,5 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - 2026-11-01 F1 done (b0565ac); kit reference appended to v6_frontend_design.md.
 - 2026-11-01 F3 done (9b0075c + lib fix). `RequireAuth` exported from pages/Login, not yet wired into App.tsx (G0). frontend_pages scoping written.
 - 2026-11-01 F2 done (2e38ca5). Chart takes numbers (callers parse decimal strings); no 1D session shading yet → P1.
+- 2026-11-01 B5a done (0e2e458; golden: D1 €3600, D2 €7240, D3 €9178.18), B4 done (07fba91), D2 done (08bc208). Alembic chain 0014→0015→0016 up/down OK. Security review running.
+- Integration todo after D1: deploy.yml assumes `backend/Dockerfile` + port 8080 → align to root `Dockerfile` + 8000; add `name: CI` to ci.yml. Owner: TS_OAUTH_CLIENT_ID/SECRET, DEPLOY_SSH_KEY secrets, DEPLOY_ENABLED var, ghcr login on server.

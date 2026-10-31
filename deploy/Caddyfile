@@ -1,0 +1,26 @@
+# Public entry point. Caddy gets and renews the TLS certificate by itself.
+# Used by deploy/docker-compose.yml (mounted read-only at /etc/caddy/Caddyfile).
+investments.daniel-henke.de {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+
+	# Largest legitimate upload is a broker import (<= 20 MB).
+	request_body {
+		max_size 20MB
+	}
+
+	# flush_interval -1: stream responses immediately (Server-Sent Events).
+	reverse_proxy app:8000 {
+		flush_interval -1
+	}
+}
