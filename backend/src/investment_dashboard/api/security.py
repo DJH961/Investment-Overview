@@ -46,14 +46,17 @@ def check_origin(request: Request, settings: Settings) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Cross-origin request rejected.")
 
 
-def _token_ok(request: Request, settings: Settings) -> bool:
+def _presented_token(request: Request) -> str | None:
+    return _extract_token(request.headers.get("authorization"), request.headers.get("x-api-token"))
+
+
+def client_key(request: Request) -> str:
+    return auth_service.client_key(request.client.host if request.client else None)
+
+
+def _token_ok(presented: str, settings: Settings) -> bool:
     configured = settings.api_token
     if not configured:
-        return False
-    presented = _extract_token(
-        request.headers.get("authorization"), request.headers.get("x-api-token")
-    )
-    if presented is None:
         return False
     return secrets.compare_digest(presented.encode("utf-8"), configured.encode("utf-8"))
 
@@ -64,15 +67,30 @@ def _session_lookup(token: str, settings: Settings) -> str | None:
 
 
 async def resolve_principal(request: Request) -> Principal | None:
-    """The caller's principal, or ``None`` (only side effect: sliding the session)."""
+    """The caller's principal, or ``None`` (only side effect: sliding the session).
+
+    A session is tried first. A presented API token that does not match counts
+    as a failed attempt against the per-IP limiter (429 once exceeded).
+    """
     settings = get_settings()
-    if _token_ok(request, settings):
-        return Principal(kind="token")
     token = request.cookies.get(cookie_name(settings))
     if token:
         sid = await run_in_threadpool(_session_lookup, token, settings)
         if sid is not None:
             return Principal(kind="session", session_id=sid)
+    presented = _presented_token(request)
+    if presented is not None:
+        key = client_key(request)
+        wait = auth_service.rate_limiter.retry_after(key, settings.login_rate_limit_per_minute)
+        if wait is not None:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed attempts; try again later.",
+                headers={"Retry-After": str(wait)},
+            )
+        if _token_ok(presented, settings):
+            return Principal(kind="token")
+        auth_service.rate_limiter.record_failure(key)
     return None
 
 

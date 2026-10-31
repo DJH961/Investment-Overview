@@ -13,7 +13,8 @@ class LoginBody(ApiModel):
 
 class MeResponse(ApiModel):
     authenticated: bool
-    passkeys: int
+    #: Only reported to authenticated callers; ``None`` otherwise.
+    passkeys: int | None = None
 
 
 class PasskeyOut(ApiModel):

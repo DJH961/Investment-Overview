@@ -26,7 +26,7 @@ from investment_dashboard.services import auth_service as svc
 
 PASSWORD = "correct horse battery"
 ORIGIN = "http://localhost:5173"
-TOKEN = "s3cret-token-value"
+TOKEN = "s3cret-token-value-0123456789-abcdefghij"
 T0 = datetime(2026, 1, 1, 12, 0, 0)
 CRED = {"id": "Y3JlZC0x", "rawId": "Y3JlZC0x", "type": "public-key", "response": {}}
 
@@ -52,9 +52,11 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
 @pytest.fixture(autouse=True)
 def _reset_state() -> Iterator[None]:
     svc.rate_limiter.reset()
+    svc.options_limiter.reset()
     svc.challenges.reset()
     yield
     svc.rate_limiter.reset()
+    svc.options_limiter.reset()
     svc.challenges.reset()
 
 
@@ -93,7 +95,7 @@ def test_login_without_password_is_503(client: TestClient) -> None:
     r = _login(client)
     assert r.status_code == 503
     assert "inv-dashboard-set-password" in r.json()["detail"]
-    assert client.get("/api/auth/me").json() == {"authenticated": False, "passkeys": 0}
+    assert client.get("/api/auth/me").json() == {"authenticated": False, "passkeys": None}
 
 
 def test_login_ok_sets_cookie_and_guards(client: TestClient, with_password: None) -> None:
@@ -268,10 +270,11 @@ def test_passkey_register_list_login_delete(
     opts, verify = _register(client)
     body = opts.json()
     assert body["rp"]["id"] == "localhost"
-    assert body["authenticatorSelection"]["userVerification"] == "preferred"
+    assert body["authenticatorSelection"]["userVerification"] == "required"
     assert verify.status_code == 204
     assert seen["expected_origin"] == ORIGIN and seen["expected_rp_id"] == "localhost"
     assert isinstance(seen["expected_challenge"], bytes)
+    assert seen["require_user_verification"] is True
 
     listing = client.get("/api/auth/passkeys").json()
     assert len(listing) == 1 and listing[0]["name"] == "Laptop"
@@ -285,8 +288,11 @@ def test_passkey_register_list_login_delete(
     anon = _other(client, Origin=ORIGIN)
     lo = anon.post("/api/auth/passkey/login/options")
     assert lo.status_code == 200 and "challenge" in lo.json()
+    assert lo.json()["userVerification"] == "required"
+    assert anon.get("/api/auth/me").json() == {"authenticated": False, "passkeys": None}
 
     def fake_auth(**kw: Any) -> Any:
+        assert kw["require_user_verification"] is True
         return SimpleNamespace(new_sign_count=7)
 
     monkeypatch.setattr(svc, "verify_authentication_response", fake_auth)
@@ -329,6 +335,7 @@ def test_passkey_login_failures(
     anon.post("/api/auth/passkey/login/options")
     clock.advance(seconds=svc.CHALLENGE_TTL_SECONDS + 1)
     svc.rate_limiter.reset()
+    svc.options_limiter.reset()
     assert anon.post("/api/auth/passkey/login/verify", json=CRED).status_code == 401
     assert anon.get("/api/_guarded").status_code == 401
 
@@ -338,6 +345,59 @@ def test_passkey_login_rate_limited(client: TestClient) -> None:
     for _ in range(get_settings().login_rate_limit_per_minute):
         assert anon.post("/api/auth/passkey/login/verify", json=CRED).status_code == 401
     assert anon.post("/api/auth/passkey/login/verify", json=CRED).status_code == 429
+
+
+def test_passkey_login_options_rate_limited(client: TestClient) -> None:
+    anon = _other(client, Origin=ORIGIN)
+    limit = max(get_settings().login_rate_limit_per_minute * 6, 30)
+    for _ in range(limit):
+        assert anon.post("/api/auth/passkey/login/options").status_code == 200
+    r = anon.post("/api/auth/passkey/login/options")
+    assert r.status_code == 429 and int(r.headers["Retry-After"]) >= 1
+
+
+def test_global_cap_does_not_lock_out_session_owner(
+    client: TestClient, with_password: None
+) -> None:
+    _login(client)
+    for i in range(200):  # exhaust the global failure budget from many IPs
+        svc.rate_limiter.record_failure(f"ip{i}")
+    assert (
+        _other(client, Origin=ORIGIN)
+        .post("/api/auth/login", json={"password": PASSWORD})
+        .status_code
+        == 429
+    )
+    assert _login(client).status_code == 204  # valid session cookie bypasses the global cap
+
+
+def test_bearer_failures_are_rate_limited(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("INV_DASHBOARD_API_TOKEN", TOKEN)
+    get_settings.cache_clear()
+    bare = _other(client)
+    bad = {"Authorization": "Bearer wrong"}
+    for _ in range(get_settings().login_rate_limit_per_minute):
+        assert bare.get("/api/_guarded", headers=bad).status_code == 401
+    assert bare.get("/api/_guarded", headers=bad).status_code == 429
+    assert bare.get("/api/_guarded", headers={"X-API-Token": TOKEN}).status_code == 429
+
+
+def test_me_hides_passkey_count_when_anonymous(client: TestClient, with_password: None) -> None:
+    assert client.get("/api/auth/me").json()["passkeys"] is None
+    _login(client)
+    assert client.get("/api/auth/me").json() == {"authenticated": True, "passkeys": 0}
+
+
+def test_short_api_token_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import ValidationError
+
+    from investment_dashboard.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(api_token="too-short")
+    assert Settings(api_token=TOKEN).api_token == TOKEN
 
 
 # ------------------------------------------------------------------ migration

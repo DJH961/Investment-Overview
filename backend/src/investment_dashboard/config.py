@@ -134,8 +134,6 @@ class Settings(BaseSettings):
     #: ``True`` on the hosted v6 server: skips desktop-only boot steps (cloud
     #: folder detection, keyring, single-writer lock prompts).
     server_mode: bool = False
-    #: Secret for signing session cookies. Required when ``server_mode`` is on.
-    session_secret: str | None = None
     #: A session ends after this many idle minutes ...
     session_idle_minutes: int = 30
     #: ... and at the latest after this many days.
@@ -155,6 +153,13 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = False
     #: Dev-only CORS origins (production is same-origin: leave empty).
     dev_cors_origins: list[str] = Field(default_factory=list)
+
+    @field_validator("api_token")
+    @classmethod
+    def _api_token_strength(cls, v: str | None) -> str | None:
+        if v is not None and len(v) < 32:
+            raise ValueError("api_token must be at least 32 characters")
+        return v
 
     @field_validator("log_level")
     @classmethod

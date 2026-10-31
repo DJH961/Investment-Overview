@@ -35,6 +35,7 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
     c = Clock()
     monkeypatch.setattr(svc, "_clock", c)
     svc.rate_limiter.reset()
+    svc.options_limiter.reset()
     svc.challenges.reset()
     return c
 
@@ -114,10 +115,40 @@ def test_rate_limiter_window_and_global(clock: Clock) -> None:
     assert rl.retry_after("b", 3) is None
     clock.advance(seconds=61)
     assert rl.retry_after("a", 3) is None
-    # global cap = max(4*limit, 20)
-    for i in range(20):
+    # global cap = max(10*limit, 50); a valid session may bypass it
+    for i in range(50):
         rl.record_failure(f"ip{i}")
     assert rl.retry_after("fresh", 3) is not None
+    assert rl.retry_after("fresh", 3, bypass_global=True) is None
+
+
+def test_rate_limiter_sweeps_stale_keys(clock: Clock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(svc, "MAX_RATE_KEYS", 5)
+    rl = svc.RateLimiter()
+    for i in range(10):
+        rl.record_failure(f"ip{i}")
+    clock.advance(seconds=61)
+    rl.record_failure("new")
+    assert list(rl._per_key) == ["new"]
+
+
+def test_client_key_groups_ipv6_by_64() -> None:
+    assert svc.client_key("203.0.113.9") == "203.0.113.9"
+    assert svc.client_key("2001:db8:1:2:aaaa::1") == svc.client_key("2001:db8:1:2:bbbb::2")
+    assert svc.client_key("2001:db8:1:2::1") != svc.client_key("2001:db8:1:3::1")
+    assert svc.client_key("::ffff:203.0.113.9") == "203.0.113.9"
+    assert svc.client_key(None) == "unknown"
+
+
+def test_challenge_store_capped_and_purged(clock: Clock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(svc, "MAX_CHALLENGES", 3)
+    keys = [svc.challenges.put("login", bytes([i])) for i in range(5)]
+    assert len(svc.challenges._items) == 3
+    assert svc.challenges.pop(keys[0], "login") is None  # oldest evicted
+    assert svc.challenges.pop(keys[4], "login") == (bytes([4]), None)
+    clock.advance(seconds=svc.CHALLENGE_TTL_SECONDS + 1)
+    svc.challenges.put("login", b"x")
+    assert len(svc.challenges._items) == 1
 
 
 def test_challenges_single_use_and_ttl(clock: Clock) -> None:

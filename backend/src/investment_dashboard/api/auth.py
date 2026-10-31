@@ -71,12 +71,26 @@ def _clear_cookie(response: Response, settings: Settings, name: str) -> None:
 
 
 def _client_key(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    return security.client_key(request)
 
 
-def _check_rate(request: Request, settings: Settings) -> None:
-    wait = auth_service.rate_limiter.retry_after(
-        _client_key(request), settings.login_rate_limit_per_minute
+def _check_rate(
+    request: Request,
+    settings: Settings,
+    db: Session,
+    limiter: auth_service.RateLimiter | None = None,
+    limit: int | None = None,
+) -> None:
+    """429 when over the limit; a caller holding a valid session skips the global cap."""
+    limiter = limiter or auth_service.rate_limiter
+    token = request.cookies.get(security.cookie_name(settings))
+    has_session = (
+        bool(token) and auth_service.validate_session(db, settings, token or "") is not None
+    )
+    wait = limiter.retry_after(
+        _client_key(request),
+        limit if limit is not None else settings.login_rate_limit_per_minute,
+        bypass_global=has_session,
     )
     if wait is not None:
         raise HTTPException(
@@ -117,7 +131,7 @@ def login(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="password not set: run inv-dashboard-set-password",
         )
-    _check_rate(request, settings)
+    _check_rate(request, settings, db)
     if not auth_service.verify_password(db, body.password):
         auth_service.rate_limiter.record_failure(_client_key(request))
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.")
@@ -139,14 +153,22 @@ def logout(request: Request, db: ConfigSessionDep, settings: SettingsDep) -> Res
 @router.get("/me", response_model=MeResponse)
 async def me(request: Request, db: ConfigSessionDep) -> MeResponse:
     principal = await security.resolve_principal(request)
-    return MeResponse(authenticated=principal is not None, passkeys=auth_service.passkey_count(db))
+    if principal is None:
+        return MeResponse(authenticated=False)
+    return MeResponse(authenticated=True, passkeys=auth_service.passkey_count(db))
 
 
 # ------------------------------------------------------------------ passkey login (public)
 
 
 @router.post("/passkey/login/options", dependencies=[OriginGuard])
-def passkey_login_options(settings: SettingsDep) -> Response:
+def passkey_login_options(
+    request: Request, db: ConfigSessionDep, settings: SettingsDep
+) -> Response:
+    # Every request counts (options are unauthenticated and allocate a challenge).
+    limit = max(settings.login_rate_limit_per_minute * 6, 30)
+    _check_rate(request, settings, db, auth_service.options_limiter, limit)
+    auth_service.options_limiter.record_failure(_client_key(request))
     options_json, key = auth_service.authentication_options(settings)
     response = Response(content=options_json, media_type="application/json")
     _set_cookie(
@@ -170,7 +192,7 @@ def passkey_login_verify(
     settings: SettingsDep,
     credential: Annotated[dict[str, Any], Body()],
 ) -> Response:
-    _check_rate(request, settings)
+    _check_rate(request, settings, db)
     cname = _challenge_cookie_name(settings)
     try:
         auth_service.authenticate_passkey(db, settings, request.cookies.get(cname), credential)

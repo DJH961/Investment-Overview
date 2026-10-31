@@ -31,7 +31,6 @@ def api_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     for tier in ("LEDGER", "CONFIG", "CACHE"):
         monkeypatch.delenv(f"INV_DASHBOARD_{tier}_PATH", raising=False)
     monkeypatch.setenv("INV_DASHBOARD_SERVER_MODE", "true")
-    monkeypatch.setenv("INV_DASHBOARD_SESSION_SECRET", "test-session-secret-0123456789abcdef")
     monkeypatch.setenv("INV_DASHBOARD_COOKIE_SECURE", "false")
     monkeypatch.delenv("INV_DASHBOARD_API_TOKEN", raising=False)
     get_settings.cache_clear()

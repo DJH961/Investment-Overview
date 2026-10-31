@@ -8,10 +8,11 @@ replacing :data:`_clock`.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import secrets
 import threading
-from collections import deque
+from collections import OrderedDict, deque
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -40,6 +41,8 @@ from investment_dashboard.models.auth import AuthCredential, AuthPasskey, AuthSe
 
 MIN_PASSWORD_LENGTH = 12
 CHALLENGE_TTL_SECONDS = 300
+MAX_CHALLENGES = 1000
+MAX_RATE_KEYS = 10_000
 _TOUCH_INTERVAL = timedelta(seconds=60)
 _PASSKEY_USER_ID = b"investment-overview-owner"
 
@@ -149,13 +152,34 @@ def delete_session(session: Session, token: str) -> None:
 # --------------------------------------------------------------------------- rate limit
 
 
-class RateLimiter:
-    """In-memory sliding window of *failed* attempts per key plus a global cap."""
+def client_key(host: str | None) -> str:
+    """Rate-limit key for a client address; IPv6 clients are grouped by /64."""
+    if not host:
+        return "unknown"
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return host[:64]
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr.ipv4_mapped is not None:
+            return str(addr.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False).network_address) + "/64"
+    return str(addr)
 
-    def __init__(self) -> None:
+
+class RateLimiter:
+    """In-memory sliding window of events per key plus an optional global cap.
+
+    ``global_factor`` scales the global cap (``max(limit * factor, global_min)``);
+    ``None`` disables it.
+    """
+
+    def __init__(self, global_factor: int | None = 10, global_min: int = 50) -> None:
         self._lock = threading.Lock()
         self._per_key: dict[str, deque[float]] = {}
         self._global: deque[float] = deque()
+        self._global_factor = global_factor
+        self._global_min = global_min
 
     def reset(self) -> None:
         with self._lock:
@@ -167,43 +191,63 @@ class RateLimiter:
         while q and q[0] <= cutoff:
             q.popleft()
 
-    def retry_after(self, key: str, limit: int) -> int | None:
-        """Seconds to wait if ``key`` (or everyone) is over the limit, else ``None``."""
+    def _sweep(self, cutoff: float) -> None:
+        for k in list(self._per_key):
+            q = self._per_key[k]
+            self._prune(q, cutoff)
+            if not q:
+                del self._per_key[k]
+
+    def retry_after(self, key: str, limit: int, *, bypass_global: bool = False) -> int | None:
+        """Seconds to wait if ``key`` (or, unless bypassed, everyone) is over the limit."""
         limit = max(1, limit)
-        global_limit = max(limit * 4, 20)
         t = _ts()
         with self._lock:
-            self._prune(self._global, t - 60)
+            windows: list[tuple[deque[float], int]] = []
             q = self._per_key.get(key)
             if q is not None:
                 self._prune(q, t - 60)
                 if not q:
                     del self._per_key[key]
-                    q = None
-            for window, cap in ((q, limit), (self._global, global_limit)):
-                if window is not None and len(window) >= cap:
+                else:
+                    windows.append((q, limit))
+            if self._global_factor is not None and not bypass_global:
+                self._prune(self._global, t - 60)
+                windows.append((self._global, max(limit * self._global_factor, self._global_min)))
+            for window, cap in windows:
+                if len(window) >= cap:
                     return max(1, int(window[0] + 60 - t) + 1)
         return None
 
     def record_failure(self, key: str) -> None:
         t = _ts()
         with self._lock:
+            if len(self._per_key) > MAX_RATE_KEYS:
+                self._sweep(t - 60)
             self._per_key.setdefault(key, deque()).append(t)
-            self._global.append(t)
+            if self._global_factor is not None:
+                self._global.append(t)
+                self._prune(self._global, t - 60)
 
 
 rate_limiter = RateLimiter()
+#: Counts every passkey-login-options request (not just failures); no global cap.
+options_limiter = RateLimiter(global_factor=None)
 
 
 # --------------------------------------------------------------------------- passkeys
 
 
 class ChallengeStore:
-    """Single-use, short-lived WebAuthn challenges keyed by a random id."""
+    """Single-use, short-lived WebAuthn challenges keyed by a random id.
+
+    Insertion order equals expiry order (constant TTL), so purging is a pop
+    from the front; the store is capped at :data:`MAX_CHALLENGES` entries.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._items: dict[str, tuple[bytes, str, str | None, float]] = {}
+        self._items: OrderedDict[str, tuple[bytes, str, str | None, float]] = OrderedDict()
 
     def reset(self) -> None:
         with self._lock:
@@ -213,8 +257,13 @@ class ChallengeStore:
         key = secrets.token_urlsafe(24)
         t = _ts()
         with self._lock:
-            for k in [k for k, v in self._items.items() if v[3] <= t]:
-                del self._items[k]
+            while self._items:
+                oldest = next(iter(self._items.values()))
+                if oldest[3] > t:
+                    break
+                self._items.popitem(last=False)
+            while len(self._items) >= MAX_CHALLENGES:
+                self._items.popitem(last=False)
             self._items[key] = (challenge, purpose, extra, t + CHALLENGE_TTL_SECONDS)
         return key
 
@@ -253,7 +302,7 @@ def registration_options(session: Session, settings: Settings, name: str | None)
         exclude_credentials=existing,
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.PREFERRED,
-            user_verification=UserVerificationRequirement.PREFERRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
         ),
     )
     key = challenges.put("register", options.challenge, name)
@@ -278,7 +327,7 @@ def register_passkey(
             expected_challenge=challenge,
             expected_rp_id=settings.webauthn_rp_id,
             expected_origin=settings.webauthn_origin,
-            require_user_verification=False,
+            require_user_verification=True,
         )
     except Exception as exc:
         raise PasskeyError("Passkey registration failed.") from exc
@@ -304,7 +353,7 @@ def register_passkey(
 def authentication_options(settings: Settings) -> tuple[str, str]:
     options = generate_authentication_options(
         rp_id=settings.webauthn_rp_id,
-        user_verification=UserVerificationRequirement.PREFERRED,
+        user_verification=UserVerificationRequirement.REQUIRED,
     )
     key = challenges.put("login", options.challenge)
     return options_to_json(options), key
@@ -334,7 +383,7 @@ def authenticate_passkey(
             expected_origin=settings.webauthn_origin,
             credential_public_key=row.public_key,
             credential_current_sign_count=row.sign_count,
-            require_user_verification=False,
+            require_user_verification=True,
         )
     except Exception as exc:
         raise PasskeyError("Passkey login failed.") from exc
