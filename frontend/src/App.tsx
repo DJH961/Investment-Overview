@@ -17,6 +17,7 @@ import { Periods } from "./pages/Periods";
 import { Projection } from "./pages/Projection";
 import { Risk } from "./pages/Risk";
 import { Settings } from "./pages/Settings";
+import { Styleguide } from "./pages/Styleguide";
 import { Transactions } from "./pages/Transactions";
 
 export function App() {
@@ -44,6 +45,7 @@ export function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/help" element={<Help />} />
         <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/_styleguide" element={<Styleguide />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
