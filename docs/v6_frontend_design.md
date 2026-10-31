@@ -94,3 +94,40 @@ NotFound.
 `POST /api/auth/passkey/register/options` · `POST /api/auth/passkey/register/verify`
 · `GET /api/auth/passkeys` · `DELETE /api/auth/passkeys/{id}`.
 Use `@simplewebauthn/browser` on the client.
+
+## Kit reference (as built in F1, commit b0565ac)
+
+Icons: use `lucide-react` directly (no Icon wrapper). TypeScript is pinned to ~5.9
+(openapi-typescript compatibility). Nav items live in `lib/nav.ts`; top-bar page
+titles derive from it.
+
+Shell hooks: `useShellStatus(status, label, onRefresh, refreshing)` (`lib/shell.tsx`)
+publishes a page's freshness + refresh action to the top bar · `usePrefs()` →
+currency/theme · `useToast().toast({title, description, tone})` · endpoint hook
+pattern documented in `lib/queries.ts` (`useAuthMe` exists). Shortcuts: `g`+letter,
+`/` focuses `[data-search]`, `?` help.
+
+| Component | Props |
+| --- | --- |
+| Button | variant primary/secondary/ghost/danger, size sm/md/lg, loading, leftIcon, fullWidth |
+| IconButton | label (required), icon, size, active |
+| Card | title, subtitle, actions, flush |
+| KpiTile | label, value, delta, hint, sparkline, loading |
+| DeltaBadge | value, format percent/money, currency |
+| Money | amount, currency, signed, colored, compact, digits |
+| Percent | ratio (fraction), signed, colored, digits |
+| SegmentedControl<T> | options[{value,label}], value, onChange, ariaLabel, size |
+| Input | invalid, leftIcon, native input props |
+| Select | options, value, onValueChange, placeholder, id, ariaLabel, invalid |
+| Field | label, hint, error; children nodes or fn({id, aria-describedby, invalid}) |
+| Dialog | open, onOpenChange, title, description, footer, children |
+| Sheet | open, onOpenChange, title, children |
+| Menu | trigger, items[{label, icon, onSelect, danger, separatorBefore}], heading, align |
+| Tooltip | content, side, one child |
+| Toast | ToastProvider, useToast |
+| Skeleton | width, height, circle |
+| EmptyState | icon, title, description, action |
+| ErrorState | title, message, onRetry |
+| Freshness | status live/closed/stale/loading, label |
+| PageHeader | title, subtitle, actions |
+| DataTable<Row> | columns[{key, header, cell, sortValue, align, primary}], rows, rowKey, caption, defaultSort, loading, emptyMessage (list rows on phone) |
