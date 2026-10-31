@@ -14,6 +14,40 @@ other doc.
   until the owner has approved it; keep v5 working until cutover.
 - **Legacy:** branch `legacy/v5` / tag `v5.3.1` is frozen. Never commit to it or
   backport to it; see [`docs/legacy_v5.md`](docs/legacy_v5.md).
+- **Where v6 stands:** the plan's status line (top of `docs/v6_one_app_plan.md`) is
+  the source of truth; keep it current when a phase step finishes.
+
+## Stack at a glance
+
+| | Now (v5, this code) | Target (v6, see plan §4 / §4a) |
+| --- | --- | --- |
+| Backend | Python 3.12, NiceGUI on FastAPI/uvicorn, SQLAlchemy 2 + Alembic, SQLite (ledger / config / cache tiers), pandas/numpy/scipy, yfinance + Frankfurter (+ Tiingo fallback), `uv` | Same Python core as a FastAPI API server in `backend/`, SQLCipher, server-side scheduler, SSE |
+| Frontend | `web/`: Vite + vanilla TypeScript PWA on GitHub Pages, reads an encrypted blob | `frontend/`: React 19 + TS + Vite, SCSS/BEM tokens, TanStack Query |
+| Hosting | Owner's laptop (LAN) + GitHub Pages + Cloudflare Worker | One Docker Compose stack (app + Caddy + Litestream) on the Hetzner server |
+| Docs | [`docs/architecture.md`](docs/architecture.md) | [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md), [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) |
+
+## Infrastructure and server access
+
+- **The server** (Hetzner Cloud, Ubuntu LTS, Docker) is described in
+  [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) and configured only by
+  [`deploy/bootstrap.sh`](deploy/bootstrap.sh). Change the script and runbook
+  together; never make undocumented manual changes on the server.
+- **Access:** `ssh daniel@hetzner-djh-v1` over Tailscale only (public SSH is closed).
+  From Git Bash on the owner's Windows laptop, call
+  `/c/Windows/System32/OpenSSH/ssh.exe` (and `scp.exe`): only the Windows OpenSSH
+  client can reach the Windows ssh-agent that holds the passphrase-protected key.
+- **Only touch the server when the owner asks**, and say what each command changes.
+- **The repo is public:** never commit IP addresses, hostnames beyond those in the
+  runbook, ticker lists, account data or secrets. Secrets live only on the server
+  (for example `~/b2.env`, mode 600) and are typed in by the owner, never through chat.
+
+## Working with the owner
+
+- Single owner who writes code but is not a sysadmin. Explain infrastructure and security
+  steps in plain language, one concrete step at a time, with the exact clicks or
+  commands.
+- The owner does anything involving accounts, logins or secrets; agents prepare,
+  check and explain.
 
 ## 💱 Currency rule
 
@@ -97,7 +131,12 @@ Adapted from the owner's starter-project convention (see plan §4a):
   changes with no effect on the running app (docs, CI, tests, refactors) or to
   batch a short series of related PRs. Fold it into the next release; no entry
   should sit there longer than a few days, and **a bug fix never waits there**.
-- **Quality gate** before handoff (CI runs the same):
+- **Quality gate** before handoff (CI runs the same). The full local `pytest`
+  run takes about 2 hours on the owner's laptop (CI: about 2 minutes), so run the
+  targeted tests for what you touched locally and let CI run the full suite. Known
+  laptop-only failures (they read the real keyring and Dropbox/OneDrive folders):
+  `tests/storage/test_cloud_and_paths.py` cloud-detection tests and
+  `tests/services/test_publish_service.py::test_publish_now_requires_repo_passphrase_token`.
   - `uv run ruff format .`
   - `uv run ruff check . --fix`
   - `uv run mypy src/investment_dashboard/domain`
