@@ -19,6 +19,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Agent context and full rebuild guide.**
+  - `AGENTS.md` gains a stack-at-a-glance table (v5 now vs v6 target), rules for infrastructure and server access (Tailscale only, Windows OpenSSH for the agent, nothing private in this public repo), notes on working with the owner, and the known laptop-only test failures.
+  - `deploy/RUNBOOK.md` now covers a normal restart and a complete step-by-step rebuild: host-key reset, console password, Tailscale re-join, new B2 key, the HTTPS placeholder, and final checks.
+
 - **v6 server, provisioned and hardened (no app change).** `deploy/bootstrap.sh` turns a fresh Ubuntu LTS server into a hardened Docker host in three safe steps (base setup and admin user; root and password login off; SSH only over Tailscale). Also: automatic security updates with a 04:30 UTC reboot, `ufw`, swap, Docker and Tailscale. `deploy/RUNBOOK.md` documents the server, everyday access, rebuild and updates. `.gitattributes` keeps shell scripts LF. Phase 0 checks: HTTPS placeholder at `investments.daniel-henke.de` with a Let's Encrypt certificate, a one-shot yfinance request from the server works, and a bucket-scoped Backblaze B2 key can write, read and delete backups. The v6 plan now records the Porkbun subdomain and the actual server size.
 
 ### Removed
