@@ -70,6 +70,14 @@ imports with staging, settings, ops; B4 auth; B5a fx_pool + conversions (not yet
 wired into XIRR); B6 runtime/scheduler/SSE. D1/D2 wait for the backup decision
 (Litestream likely can't replicate SQLCipher files).
 
+### D3 — backups + restore (after W1; owner decision 2026-11-01: option A)
+SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher files).
+- [ ] `services/backup_service.py`: consistent snapshot (SQLite backup API) → `blob_crypto`-sealed file in `/data/backups/`; triggered by the scheduler within ~2 min after any ledger/config write (dirty flag via SQLAlchemy commit hook) + nightly; keep N hourly/daily/monthly locally
+- [ ] compose sidecar `backup` (rclone) syncs `/data/backups` → B2 (append-only; B2 lifecycle keeps old versions)
+- [ ] `inv-dashboard-restore`: fetch latest (or a chosen) snapshot, unseal, verify integrity + row counts, swap into `/data/app.sqlite` atomically with the old file kept aside; a one-command runbook path for "server gone" and "bad import"
+- [ ] CI restore test: seal → restore → identical row counts/checksums; runbook "Restore" section + drill checklist
+- [ ] Settings "Download backup" uses the same sealed snapshot
+
 ### W1 gate — security review
 - [ ] one `reviewer` over B4 + app factory (auth, cookies, rate limit, headers)
 
