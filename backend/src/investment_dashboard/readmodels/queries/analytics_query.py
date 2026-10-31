@@ -27,6 +27,7 @@ from investment_dashboard.domain.attribution import (
     InstrumentReturn,
     attribute_portfolio_return,
 )
+from investment_dashboard.domain.currency import dual_currency_amounts
 from investment_dashboard.domain.returns import (
     Cashflow,
     DailyValuation,
@@ -49,10 +50,11 @@ from investment_dashboard.domain.risk_extras import (
     skewness,
     ulcer_index,
 )
-from investment_dashboard.models import TransactionKind
+from investment_dashboard.models import Transaction, TransactionKind
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
     benchmark_service,
+    fx_service,
     metrics_service,
     positions_service,
     risk_free_service,
@@ -121,6 +123,27 @@ def _daily_returns(values: list[Decimal]) -> list[Decimal]:
     return out
 
 
+def _contribution_amount(t: Transaction, *, usd: bool, eur_to_usd: dict[date, Decimal]) -> Decimal:
+    """One external cashflow in the reporting currency, at its own date's rate.
+
+    EUR: the frozen ``net_eur`` leg (else ``net_native``). USD: the frozen
+    ``net_usd`` leg, or the native amount for a USD account, or the EUR leg
+    converted at the transaction-date rate; ``0`` when no USD figure can be
+    derived (excluded rather than poisoned with a wrong-currency amount).
+    """
+    if not usd:
+        return t.net_eur if t.net_eur is not None else (t.net_native or ZERO)
+    _eur, amount = dual_currency_amounts(
+        native_currency=t.account.native_currency if t.account else "EUR",
+        net_native=t.net_native,
+        net_eur=t.net_eur,
+        on=t.date,
+        eur_to_usd=eur_to_usd,
+        net_usd=t.net_usd,
+    )
+    return amount if amount is not None else ZERO
+
+
 def _build_curve(
     session: Session,
     *,
@@ -151,10 +174,12 @@ def _build_curve(
     # plain deposit. See metrics_service.EXTERNAL_FLOW_KINDS.
     txns = list(transactions_repo.list_transactions(session, end=end))
     contribs_by_date: dict[date, Decimal] = {}
+    use_usd = currency.upper() == "USD"
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD") if use_usd else {}
     for t in txns:
         if t.kind not in metrics_service.EXTERNAL_FLOW_KINDS:
             continue
-        amt = t.net_eur if t.net_eur is not None else (t.net_native or ZERO)
+        amt = _contribution_amount(t, usd=use_usd, eur_to_usd=eur_to_usd)
         contribs_by_date[t.date] = contribs_by_date.get(t.date, ZERO) + amt
 
     # The benchmark overlay source: prefer the funded simulation (already in the
@@ -399,7 +424,9 @@ def build_bundle(
         curve=curve,
         cagr=cagr_val,
         twr=twr_val,
-        xirr=portfolio_metrics.xirr,
+        # Each currency's XIRR is built from its own cashflow stream; never
+        # report the EUR figure as the USD one.
+        xirr=portfolio_metrics.xirr_usd if currency.upper() == "USD" else portfolio_metrics.xirr,
         volatility=vol,
         sharpe=sharpe,
         sortino=sortino,
