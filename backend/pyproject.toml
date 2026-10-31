@@ -60,7 +60,9 @@ encrypted = [
     # ledger/config tiers. ``pysqlcipher3`` is the primary; ``sqlcipher3-binary``
     # is the documented fallback when the upstream wheel isn't available on the
     # user's platform. (``keyring`` lives in the core dependencies now.)
-    "pysqlcipher3>=1.2 ; sys_platform != 'win32'",
+    "pysqlcipher3>=1.2 ; sys_platform != 'win32' and sys_platform != 'linux'",
+    # v6 server (Linux image): prebuilt wheel bundling SQLCipher.
+    "sqlcipher3-binary>=0.5 ; sys_platform == 'linux'",
 ]
 
 [project.scripts]
@@ -68,6 +70,7 @@ investment-dashboard = "investment_dashboard.main:run"
 inv-dashboard-api = "investment_dashboard.api.legacy_v5:run_legacy"
 inv-dashboard-server = "investment_dashboard.api.app:run"
 inv-dashboard-set-password = "investment_dashboard.tools.set_password:main"
+inv-dashboard-upload-db = "investment_dashboard.tools.upload_db:main"
 inv-dashboard-export-snapshot = "investment_dashboard.tools.export_snapshot:main"
 inv-dashboard-split-db = "investment_dashboard.tools.split_db:main"
 inv-dashboard-repair-sidecar = "investment_dashboard.tools.repair_sidecar:main"
