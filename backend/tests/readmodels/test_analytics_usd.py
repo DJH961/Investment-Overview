@@ -85,7 +85,8 @@ def test_eur_figures_unchanged(seeded) -> None:  # type: ignore[no-untyped-def]
 def test_usd_xirr_differs_from_eur_when_fx_moves(seeded) -> None:  # type: ignore[no-untyped-def]
     eur = build_bundle(seeded, currency="EUR", lookback_days=2, as_of=D2)
     usd = build_bundle(seeded, currency="USD", lookback_days=2, as_of=D2)
-    assert eur.metrics.xirr is not None and usd.metrics.xirr_usd is not None
+    assert eur.metrics.xirr is not None
+    assert usd.metrics.xirr_usd is not None
     assert eur.xirr == eur.metrics.xirr
     assert usd.xirr == usd.metrics.xirr_usd
     assert usd.xirr != eur.xirr

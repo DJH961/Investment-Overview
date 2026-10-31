@@ -13,7 +13,7 @@ spot rate.
 
 Responsibilities:
 
-* :func:`build_seed` — a thin DB read capturing both starting values, the
+* :func:`build_seed` (in :mod:`readmodels.projection`) — a thin DB read capturing both starting values, the
   average historical contribution, and **both** per-currency XIRRs.
 * :func:`render` — the live NiceGUI widget: assumption controls, a Plotly
   outcome cone, single-currency KPI tiles (the user's chosen display
@@ -27,29 +27,31 @@ inputs, runs the two simulations, and draws.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from nicegui import ui
 
+from investment_dashboard.readmodels.projection import (
+    ProjectionSeed,
+    build_params,
+    build_seed,
+)
 from investment_dashboard.ui.components import section
 from investment_dashboard.ui.components.kpi_card import kpi_card
 from investment_dashboard.ui.money_format import fmt_money, fmt_pct
-from investment_dashboard.ui.pages._period_query import aggregate
 from investment_dashboard.ui.pages._projection_model import (
     SCENARIO_EXPECTED,
     SCENARIO_OPTIMISTIC,
     SCENARIO_PESSIMISTIC,
     ProjectionParams,
     ProjectionResult,
-    band_rates,
-    default_expected_rate,
     required_contribution,
     simulate,
     time_to_target,
 )
 from investment_dashboard.ui.theme import GAIN_COLOR
+
+__all__ = ["ProjectionSeed", "build_seed", "render"]
 
 ZERO = Decimal(0)
 ONE = Decimal(1)
@@ -59,84 +61,6 @@ _SCENARIO_LABEL = {
     SCENARIO_EXPECTED: "Expected",
     SCENARIO_OPTIMISTIC: "Optimistic",
 }
-
-
-@dataclass(frozen=True)
-class ProjectionSeed:
-    """Starting point + per-currency defaults for the projection controls."""
-
-    monthly: bool
-    primary: str  # "EUR" or "USD" — display-currency ordering only
-    starting_eur: Decimal
-    starting_usd: Decimal
-    avg_contribution_eur: Decimal
-    avg_contribution_usd: Decimal
-    expected_rate_eur: Decimal  # annual, sanitised
-    expected_rate_usd: Decimal  # annual, sanitised
-    usd_per_eur: Decimal  # current EUR→USD spot, for contribution/target conversion
-    xirr_available: bool
-    today: date
-
-    @property
-    def periods_per_year(self) -> int:
-        return 12 if self.monthly else 1
-
-
-def _avg_contribution(rows) -> Decimal:  # type: ignore[no-untyped-def]
-    """Mean of historical positive contributions (withdrawal-only periods ignored)."""
-    contribs = [r.contributions for r in rows if r.contributions > 0]
-    if not contribs:
-        return ZERO
-    return sum(contribs, start=ZERO) / Decimal(len(contribs))
-
-
-def build_seed(
-    session,  # type: ignore[no-untyped-def]
-    *,
-    monthly: bool,
-    primary: str,
-    today: date | None = None,
-) -> ProjectionSeed:
-    """Read live portfolio state and derive both-currency projection inputs."""
-    from investment_dashboard.services import (  # noqa: PLC0415
-        display_currency_service,
-        metrics_service,
-    )
-
-    today = today or date.today()
-    metrics = metrics_service.compute_portfolio_metrics(session, as_of=today)
-
-    rows = aggregate(session, monthly=monthly, with_closing_value=False, today=today)
-    avg_eur = _avg_contribution(rows)
-
-    # EUR→USD spot. Prefer the live FX rate; fall back to the ratio implied
-    # by the dual-currency portfolio value; finally 1.0 so the page renders.
-    rate = display_currency_service.current_rate(session, quote="USD")
-    if (
-        (rate is None or rate == 0)
-        and metrics.total_value_usd is not None
-        and metrics.total_value_eur > 0
-    ):
-        rate = metrics.total_value_usd / metrics.total_value_eur
-    usd_per_eur = rate if rate and rate > 0 else ONE
-
-    return ProjectionSeed(
-        monthly=monthly,
-        primary=primary.upper(),
-        starting_eur=metrics.total_value_eur,
-        starting_usd=(
-            metrics.total_value_usd
-            if metrics.total_value_usd is not None
-            else metrics.total_value_eur * usd_per_eur
-        ),
-        avg_contribution_eur=avg_eur,
-        avg_contribution_usd=avg_eur * usd_per_eur,
-        expected_rate_eur=default_expected_rate(metrics.xirr),
-        expected_rate_usd=default_expected_rate(metrics.xirr_usd),
-        usd_per_eur=usd_per_eur,
-        xirr_available=metrics.xirr is not None or metrics.xirr_usd is not None,
-        today=today,
-    )
 
 
 def _num(value) -> Decimal:  # type: ignore[no-untyped-def]
@@ -266,57 +190,18 @@ def _params(
 ) -> tuple[ProjectionParams, ProjectionParams, Decimal, bool]:
     """Build the EUR + USD simulation params from live control values.
 
-    The user edits a single expected return (in the primary currency); the
-    secondary currency's expected return is offset by the **historical
-    spread** between the two XIRRs, preserving the realistic, FX-driven gap
-    as the user explores scenarios.
+    Delegates to :func:`readmodels.projection.build_params` (shared with the API).
     """
-    primary = seed.primary
-    expected_primary = _num(controls["expected"].value) / Decimal(100)
-    spread = seed.expected_rate_usd - seed.expected_rate_eur  # usd minus eur
-    if primary == "EUR":
-        expected_eur = expected_primary
-        expected_usd = expected_primary + spread
-    else:
-        expected_usd = expected_primary
-        expected_eur = expected_primary - spread
-
-    band = _num(controls["band"].value) / Decimal(100)
-    stepup = _num(controls["stepup"].value) / Decimal(100)
-    inflation = _num(controls["inflation"].value) / Decimal(100)
-    horizon = max(int(_num(controls["horizon"].value)), 0)
-    real = bool(controls["real"].value)
-
-    contrib_primary = _num(controls["contribution"].value)
-    if primary == "EUR":
-        contrib_eur = contrib_primary
-        contrib_usd = contrib_primary * seed.usd_per_eur
-    else:
-        contrib_usd = contrib_primary
-        contrib_eur = contrib_primary / seed.usd_per_eur if seed.usd_per_eur else contrib_primary
-
-    target_primary = _num(controls["target"].value)
-
-    common = {
-        "periods": horizon,
-        "periods_per_year": seed.periods_per_year,
-        "annual_contribution_growth": stepup,
-        "inflation_rate": inflation,
-        "start": seed.today,
-    }
-    params_eur = ProjectionParams(
-        starting_value=seed.starting_eur,
-        base_contribution=contrib_eur,
-        annual_rates=band_rates(expected_eur, band),
-        **common,  # type: ignore[arg-type]
+    params_eur, params_usd = build_params(
+        seed,
+        expected_primary=_num(controls["expected"].value) / Decimal(100),
+        band=_num(controls["band"].value) / Decimal(100),
+        stepup=_num(controls["stepup"].value) / Decimal(100),
+        inflation=_num(controls["inflation"].value) / Decimal(100),
+        horizon=int(_num(controls["horizon"].value)),
+        contrib_primary=_num(controls["contribution"].value),
     )
-    params_usd = ProjectionParams(
-        starting_value=seed.starting_usd,
-        base_contribution=contrib_usd,
-        annual_rates=band_rates(expected_usd, band),
-        **common,  # type: ignore[arg-type]
-    )
-    return params_eur, params_usd, target_primary, real
+    return params_eur, params_usd, _num(controls["target"].value), bool(controls["real"].value)
 
 
 def _series(point, scenario: str, *, real: bool) -> Decimal:  # type: ignore[no-untyped-def]

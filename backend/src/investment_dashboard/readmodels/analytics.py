@@ -205,3 +205,41 @@ def build(
             result["curve"] = _merge_usd_curve(full_curve, full_curve_usd)
             result["curve_start"] = inception.isoformat()
     return result
+
+
+def build_for_ccy(
+    session: Session,
+    *,
+    ccy: str,
+    context: ReadModelContext | None = None,
+    lookback_days: int = 365,
+    full_curve: bool = False,
+) -> dict[str, Any]:
+    """Analytics bundle for ONE reporting currency (``EUR``/``USD``).
+
+    Every figure comes from that currency's own series: the equity curve, the
+    contributions overlay (``net_usd`` legs for USD), TWR, XIRR and the risk
+    metrics. Nothing is converted between currencies. Attribution is only
+    computed on EUR marks, so it is ``[]`` for USD (``attribution_currency`` is
+    ``null`` then) rather than a mislabelled EUR table.
+    """
+    ccy = ccy.upper()
+    ctx = context or build_context(session)
+    bundle = build_bundle(session, currency=ccy, lookback_days=lookback_days, as_of=ctx.as_of)
+    result = _bundle_dict(bundle)
+    result["ccy"] = ccy
+    result["curve_start"] = bundle.start.isoformat()
+    result["benchmark_is_funded"] = bundle.benchmark_is_funded
+    if ccy != "EUR":
+        result["attribution"] = []
+    result["attribution_currency"] = "EUR" if ccy == "EUR" else None
+    if full_curve:
+        inception = transactions_repo.earliest_transaction_date(session)
+        if inception is not None and inception < bundle.start:
+            closes = benchmark_service.get_series(session, start=inception, end=ctx.as_of).closes
+            curve = build_curve(
+                session, start=inception, end=ctx.as_of, currency=ccy, benchmark_closes=closes
+            )
+            result["curve"] = [_curve_point(p) for p in curve]
+            result["curve_start"] = inception.isoformat()
+    return result

@@ -62,3 +62,69 @@ def build_monthly(session: Session, *, context: ReadModelContext | None = None) 
 def build_yearly(session: Session, *, context: ReadModelContext | None = None) -> dict[str, Any]:
     """Return the JSON-serializable yearly read-model."""
     return _build(session, monthly=False, context=context)
+
+
+def _flat_row(r: PeriodRow, *, ccy: str, current_label: str) -> dict[str, Any]:
+    """One period flattened into the requested reporting currency.
+
+    EUR reads the base fields; USD reads the per-trade-date ``*_display`` /
+    ``*_usd`` fields built from the USD legs. A figure that does not exist in
+    ``ccy`` (no FX history) is ``None`` -- never a scaled EUR number.
+    """
+    if ccy == "USD":
+        closing = r.closing_value_display if r.display_currency == "USD" else None
+        if closing is None:
+            closing = r.closing_value_usd
+        return {
+            "label": r.label,
+            "is_current": r.label == current_label,
+            "contributions": dec(r.contributions_display),
+            "dividends": dec(r.dividends_display),
+            "interest": dec(r.interest_display),
+            "net_flow": dec(r.net_flow_display),
+            "opening_value": dec(r.opening_value_display),
+            "closing_value": dec(closing),
+            "growth_pct": dec(r.growth_pct_display),
+            "total_growth_compounded": dec(r.total_growth_compounded_usd),
+            "period_growth_xirr": dec(r.yearly_growth_usd),
+        }
+    return {
+        "label": r.label,
+        "is_current": r.label == current_label,
+        "contributions": dec(r.contributions),
+        "dividends": dec(r.dividends),
+        "interest": dec(r.interest),
+        "net_flow": dec(r.net_flow),
+        "opening_value": dec(r.opening_value_eur),
+        "closing_value": dec(r.closing_value_eur),
+        "growth_pct": dec(r.growth_pct),
+        "total_growth_compounded": dec(r.total_growth_compounded_eur),
+        "period_growth_xirr": dec(r.yearly_growth_eur),
+    }
+
+
+def build_for_ccy(
+    session: Session,
+    *,
+    monthly: bool,
+    ccy: str,
+    context: ReadModelContext | None = None,
+    fill_gaps: bool = False,
+) -> dict[str, Any]:
+    """Periods in one reporting currency (``EUR``/``USD``), oldest first."""
+    ccy = ccy.upper()
+    ctx = context or build_context(session)
+    rows = aggregate(
+        session,
+        monthly=monthly,
+        today=ctx.as_of,
+        display_currency=ccy,
+        fill_gaps=fill_gaps,
+    )
+    current = f"{ctx.as_of:%Y-%m}" if monthly else f"{ctx.as_of:%Y}"
+    return {
+        "ccy": ccy,
+        "as_of": ctx.as_of.isoformat(),
+        "granularity": "month" if monthly else "year",
+        "rows": [_flat_row(r, ccy=ccy, current_label=current) for r in rows],
+    }
