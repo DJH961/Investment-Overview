@@ -1,0 +1,13 @@
+{
+  "name": "Investment Overview",
+  "short_name": "Investments",
+  "description": "Your portfolio, live.",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0e14",
+  "theme_color": "#4f46e5",
+  "categories": ["finance", "productivity"],
+  "icons": [{ "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any maskable" }]
+}
