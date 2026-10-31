@@ -17,7 +17,7 @@ describe("APP_VERSION", () => {
   it("stays in lock-step with the main app version in pyproject.toml", () => {
     // The web companion's version must always match the desktop/main app's
     // version exactly, so the version chip on the site is meaningful.
-    const pyproject = readText("../../pyproject.toml");
+    const pyproject = readText("../../backend/pyproject.toml");
     const match = pyproject.match(/^version = "([^"]+)"/m);
     expect(match, "could not find version in pyproject.toml").not.toBeNull();
     expect(APP_VERSION).toBe(match![1]);

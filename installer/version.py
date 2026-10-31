@@ -97,7 +97,7 @@ def tarball_url(tag: str) -> str:
 
     Used as a fallback when the release does not carry a built wheel asset.
     ``pip install <url>`` works directly against this URL because the repo
-    ships a valid ``pyproject.toml`` at its root.
+    ships a valid ``pyproject.toml`` (in ``backend/``).
     """
     return f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.tar.gz"
 

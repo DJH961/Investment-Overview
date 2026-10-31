@@ -576,7 +576,7 @@ npm run build      # production build -> web/dist
 ### Parity suite
 
 `test/returns.parity.test.ts` replays the committed
-[`tests/parity/vectors.json`](../tests/parity/vectors.json) (generated from the
+[`tests/parity/vectors.json`](../backend/tests/parity/vectors.json) (generated from the
 Python source by `tools/gen_parity_vectors.py`) to guarantee the browser maths
 matches the desktop. `test/crypto.test.ts` decrypts a committed golden envelope
 produced by the Python crypto, proving the two implementations interoperate.

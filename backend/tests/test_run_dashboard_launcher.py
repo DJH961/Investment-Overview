@@ -9,7 +9,7 @@ from types import ModuleType
 
 
 def _load_launcher_module() -> ModuleType:
-    path = Path(__file__).resolve().parents[1] / "run_dashboard.py"
+    path = Path(__file__).resolve().parents[2] / "run_dashboard.py"
     spec = importlib.util.spec_from_file_location("run_dashboard", path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load {path}")

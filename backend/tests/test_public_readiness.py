@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Suffixes that mark a committed ``.env.*`` as a safe, secret-free template.
 _ENV_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")

@@ -15,7 +15,7 @@ from investment_dashboard.adapters.vanguard.xlsx_parser import (
     parse_vanguard_xlsx,
 )
 
-FIXTURE = Path(__file__).parents[3] / "docs" / "Comparison Files" / "Vanguard Full History.xlsx"
+FIXTURE = Path(__file__).parents[4] / "docs" / "Comparison Files" / "Vanguard Full History.xlsx"
 
 
 def _build_xlsx(rows: list[tuple[object, ...]]) -> bytes:

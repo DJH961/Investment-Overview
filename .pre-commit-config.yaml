@@ -23,5 +23,5 @@ repos:
     rev: v1.10.1
     hooks:
       - id: mypy
-        files: ^src/investment_dashboard/domain/
+        files: ^backend/src/investment_dashboard/domain/
         additional_dependencies: []

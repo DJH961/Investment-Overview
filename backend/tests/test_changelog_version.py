@@ -15,11 +15,11 @@ import re
 import tomllib
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _pyproject_version() -> str:
-    data = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    data = tomllib.loads((_REPO_ROOT / "backend" / "pyproject.toml").read_text(encoding="utf-8"))
     version = data["project"]["version"]
     assert isinstance(version, str)
     assert version

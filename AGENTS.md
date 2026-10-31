@@ -96,8 +96,9 @@ What this means in practice:
 
 Adapted from the owner's starter-project convention (see plan §4a):
 
-- Top level: `backend/`, `frontend/`, `deploy/`, `docs/`. The move from `src/` and
-  `web/` happens in one `git mv` commit at the start of v6 Phase 1.
+- Top level: `backend/`, `frontend/`, `deploy/`, `docs/`. The Python project already
+  lives in `backend/` (run `uv` and `pytest` from there); `web/` moves to `frontend/`
+  at the start of v6 Phase 1.
 - Backend: one router module per resource in `api/`, mounted under `/api`;
   settings via pydantic-settings (`config.py`, cached `get_settings()`).
 - Frontend: TypeScript; `components/<Name>/` and `pages/<Name>/` each hold
@@ -124,7 +125,7 @@ Adapted from the owner's starter-project convention (see plan §4a):
 - **Release fast — default is one release per change.** Any change that alters
   what the app does (feature or bug fix) is released **in the same PR/push**: a
   patch bump for fixes, a minor bump for features, under a dated
-  `## [x.y.z] — YYYY-MM-DD` heading. Bump `pyproject.toml` and `web/package.json`
+  `## [x.y.z] — YYYY-MM-DD` heading. Bump `backend/pyproject.toml` and `web/package.json`
   in lockstep and regenerate lockfiles (`uv lock`, and `npm install` inside
   `web/`). Pushing the bump to `main` tags the release.
 - **`[Unreleased]` is temporary storage, not the default.** Use it only for
@@ -137,6 +138,7 @@ Adapted from the owner's starter-project convention (see plan §4a):
   laptop-only failures (they read the real keyring and Dropbox/OneDrive folders):
   `tests/storage/test_cloud_and_paths.py` cloud-detection tests and
   `tests/services/test_publish_service.py::test_publish_now_requires_repo_passphrase_token`.
+  - From `backend/`:
   - `uv run ruff format .`
   - `uv run ruff check . --fix`
   - `uv run mypy src/investment_dashboard/domain`
