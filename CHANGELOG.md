@@ -10,8 +10,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **1.0.0** — first release with a runnable UI: end-to-end flow from CSV
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
-- **Never use an `[Unreleased]` section.** Every PR that merges to `main` is
-  released; entries must always carry a concrete version number and date.
+- **Since v5.3.0:** changes collect under `## [Unreleased]` and are released in
+  batches. Cutting a release renames that section to `## [x.y.z] — YYYY-MM-DD`
+  and bumps the version (see `AGENTS.md` → Workflow).
+
+## [Unreleased]
+
+### Changed
+
+- **Project rules consolidated and corrected ahead of v6.** `AGENTS.md` is now the single source of truth; `.github/copilot-instructions.md` and the new `CLAUDE.md` point to it, and `CONTRIBUTING.md` keeps only setup and how-to.
+  - The currency rule now matches the code: amounts are stored in native currency, cashflows convert at their own date's rate and valuations at the valuation moment's rate, and EUR returns stay FX-aware. The old "everything is USD, EUR is `usd / fx`" wording was wrong for returns.
+  - One quality gate everywhere (ruff format + check, mypy on `domain/`, pytest, web typecheck + tests).
+  - Flexible git flow: PRs for features and risky work, direct pushes to `main` for small or urgent fixes.
+  - Releases are now batched under `[Unreleased]` instead of bumping the version on every change.
+  - v6 structure and styling conventions added (backend/frontend split, BEM + design tokens).
+
+### Added
+
+- **v6.0 "One App" plan** (`docs/v6_one_app_plan.md`): one hosted backend on a Hetzner VPS, React frontend, server-side yfinance polling, the "store native, report in any currency" model with actual-EUR-sent conversion tracking, and a later OpenRouter assistant.
 
 ## [5.3.0] — 2026-10-05
 

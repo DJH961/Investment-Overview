@@ -5,9 +5,12 @@ Investment Dashboard. The authoritative record of *what shipped when* is always
 the top-level [`CHANGELOG.md`](../CHANGELOG.md); the docs below capture the
 **why** and the **how**.
 
-> 💵 **Currency model:** USD is the canonical backend currency (computation,
-> storage, reconciliation, exports are USD-native). EUR is a presentation-layer
-> display toggle derived as `usd ÷ fx` — never a source of truth.
+> 💱 **Currency model:** amounts are stored in their native currency; cashflows
+> convert at their own date's rate, valuations at the valuation moment's rate, so
+> EUR returns are FX-aware. Full rule in [`../AGENTS.md`](../AGENTS.md).
+>
+> 🚀 **Next major version:** [`v6_one_app_plan.md`](v6_one_app_plan.md) — one
+> hosted backend replacing the desktop app and the web companion.
 
 ## Start here
 

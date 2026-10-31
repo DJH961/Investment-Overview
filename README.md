@@ -35,9 +35,10 @@ from the host laptop and any device on the same Wi-Fi network.
   guards against stray `-wal`/`-shm` sidecars and takes rolling backups.
 - **FX-aware** — every USD cashflow stored with the EUR rate of its trade
   date, so EUR returns reflect when the money actually moved.
-- **Currency model is explicit** — backend computation/storage/reconciliation are
-  USD-native; EUR is derived presentation (`usd ÷ fx`) and a frontend display
-  toggle.
+- **Currency model is explicit** — amounts are stored in their native currency;
+  cashflows convert at their own date's rate and valuations at the moment's rate,
+  so EUR returns are FX-aware (rule in [`AGENTS.md`](AGENTS.md)). EUR/USD is a
+  display toggle, default EUR.
 - **Modern colorblind-safe UI** with light/dark chrome and a Settings →
   Storage panel showing each tier path/source.
 - **Private deployment**, single-user, $0 hosting. Runs on `0.0.0.0:8080` and is

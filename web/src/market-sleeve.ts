@@ -3,9 +3,8 @@
  * backbone (`docs/centralized_data_pull_plan.md` §"Pillar 3 — 1D fills 1W, and
  * web⇄blob merge"; the matching desktop export is `live_graphs.py` schema_v3).
  *
- * 💵 CURRENCY: USD is the PRIMARY/canonical currency (backend). ~100% of holdings
- * and 100% of market funds are USD. EUR is a frontend display preset only. This
- * merge reconciles in **native USD** — never EUR. Do not "fix" it to EUR.
+ * 💱 CURRENCY (rule in `AGENTS.md`): the sleeve is an FX-free native-USD value;
+ * this merge reconciles in **native USD** — never EUR. Do not "fix" it to EUR.
  *
  * The desktop now ships, per the owner's decision, **not** per-symbol bars but
  * its own aggregate representation: the value of the intraday-priced sleeve over

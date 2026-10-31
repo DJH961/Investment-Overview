@@ -1,8 +1,7 @@
 # Time-Alignment Plan — One Clock: NYSE Exchange Time
 
-> **💵 USD is the primary/canonical backend currency. EUR is frontend display only.**
-> This document is about *time*, not money, but the same rule applies: dollars are
-> the source of truth, euros are a display reskin.
+> This document is about *time*, not money. For the currency rule see
+> [`../AGENTS.md`](../AGENTS.md).
 
 ## For everyone (non-technical overview)
 
