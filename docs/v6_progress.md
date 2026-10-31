@@ -61,8 +61,22 @@ UI contract: [`v6_frontend_design.md`](v6_frontend_design.md).
 - [x] F2 Chart (port `web/src/chart.ts`) + AllocationBar/Treemap + Sparkline + tests
 - [x] F3 Login + passkeys + Styleguide page + PWA/service worker + `lib/live.ts`
 
+W1 as dispatched (2026-11-01; supersedes the lines above): B1 = overview, holdings,
+allocations GET+PUT+rebalance, graphs (+ extract FX-effect and rebalance maths out of
+`ui/pages`); B2 = periods, analytics, deposits, diagnostics, calculator (+ extract
+projection; **fix analytics USD bug**: USD bundle used `net_eur` + EUR XIRR);
+B3 = transactions list/CRUD (+ extract edit logic from `ui/pages/transactions.py`),
+imports with staging, settings, ops; B4 auth; B5a fx_pool + conversions (not yet
+wired into XIRR); B6 runtime/scheduler/SSE. D1/D2 wait for the backup decision
+(Litestream likely can't replicate SQLCipher files).
+
 ### W1 gate — security review
 - [ ] one `reviewer` over B4 + app factory (auth, cookies, rate limit, headers)
+
+### W1.5 — backend unification (owner request 2026-11-01)
+- [ ] audit → `docs/v6_scoping/backend_unification.md` (duplicate currency logic, `date.today()` vs ET clock, Decimal/float, layering, tiers, duplicate helpers, naming)
+- [ ] B5b one canonical EUR/USD cashflow builder with the FX-pool override map, used by metrics, periods, deposits, analytics, benchmark
+- [ ] U-tasks from the audit (non-overlapping OWN lists, ≤ 4 per wave)
 
 ### W2 — frontend pages on generated types (parallel)
 - [ ] G0 orchestrator: export `openapi.json`, `npm run gen:api`, write `lib/queries.ts` hooks for every endpoint
