@@ -1,6 +1,6 @@
 name: Deploy Pages
 
-# Builds and publishes the static web companion (docs/v3.0 proposal §4) to
+# Builds and publishes the static web companion (legacy/v5:docs/v3.0_live_web_companion_proposal.md §4) to
 # GitHub Pages. It compiles the Vite/TypeScript front-end in `web/` and uploads
 # the `web/dist` build output.
 #

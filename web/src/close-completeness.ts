@@ -1,6 +1,6 @@
 /**
  * Multi-provider **session-close completeness** resolution shared by the live 1D
- * and 1W graphs (docs/session_close_completeness_plan.md, C3–C7).
+ * and 1W graphs (legacy/v5:docs/session_close_completeness_plan.md, C3–C7).
  *
  * The reframing this module implements: stop asking *"is this bar near the
  * closing bell?"* and start asking *"have we got the best close anyone can give

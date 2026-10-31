@@ -37,7 +37,7 @@ Two complementary sources feed the samples:
   reconstruction** at the same 5-minute density: a day whose cached points don't
   *span* the open→close is re-pulled to lay down that day's full set of 5-minute
   bars, so the 1-day slice of the week is identical to the standalone 1D curve
-  (``docs/graph-unification-plan.md`` C8).
+  (``legacy/v5:docs/graph-unification-plan.md`` C8).
 
 :func:`day_series_market_eur` returns the current session's merged market
 components; :func:`build_intraday_value_series` (in the Overview query layer)
@@ -108,7 +108,7 @@ _MARKET_OPEN = time(9, 30)
 MIN_CAPTURE_GAP_SECONDS = 20
 
 #: Bar width used to reconstruct a missed session. **5-minute density** to match
-#: the web companion (``docs/graph-unification-plan.md`` C8: "if web is 5-min,
+#: the web companion (``legacy/v5:docs/graph-unification-plan.md`` C8: "if web is 5-min,
 #: Python is 5-min"), so the desktop's 1D / 1W curves and the web's are the same
 #: graph at the same resolution. yfinance bills nothing per request, so the denser
 #: grid is free on the desktop's unmetered primary.
@@ -184,7 +184,7 @@ WEEK_SESSIONS = 5
 
 #: Bar width used to source the "Week" curve's intraday path. **5-minute density**
 #: to match the "1 Day" curve (:data:`RECONSTRUCT_INTERVAL`) and the web companion
-#: (``docs/graph-unification-plan.md`` C8), so the 1-day slice of the week is the
+#: (``legacy/v5:docs/graph-unification-plan.md`` C8), so the 1-day slice of the week is the
 #: same dense per-session reconstruction as the standalone 1D curve — identical,
 #: not merely similar. Every sourced bar is kept (no token/credit limit on the
 #: desktop feed), so a full session yields ~78 genuine 5-minute marks.
@@ -1018,7 +1018,7 @@ def _reconstruct_session_samples(
     (:func:`_reconstruct_session`) and "1 Week" (:func:`_build_week_day_samples`)
     paths, so both lay down the identical dense 5-minute curve for a session and
     the 1-day slice of the week equals the standalone 1D curve by construction
-    (``docs/graph-unification-plan.md`` C8).
+    (``legacy/v5:docs/graph-unification-plan.md`` C8).
 
     Records the intraday-priced (market) component only — the cash + NAV base is
     reapplied at render time, keeping reconstruction on the same basis as the live
@@ -1232,7 +1232,7 @@ def week_series_with_fx(
     sell mid-week is reflected), keeping *every* sourced 5-minute bar (~78/day)
     so the curve carries each day's full intraday shape — the same dense
     per-session reconstruction the standalone 1D curve uses, so the 1-day slice of
-    the week is identical to it (``docs/graph-unification-plan.md`` C8).
+    the week is identical to it (``legacy/v5:docs/graph-unification-plan.md`` C8).
 
     **Cache-first.** The rolling-week intraday cache (live "1 Day" captures plus
     previously-fetched/reconstructed earlier days — all on the identical EUR
@@ -1269,7 +1269,7 @@ def week_series_with_fx(
     # over weekends/holidays. So the week window — `sessions[0]` (oldest, the
     # prev-close/start anchor) through `sessions[-1]` (the live anchor) — is
     # already on the one ET clock the export and web companion share
-    # (`docs/time_alignment_plan.md`); do not regress it to a local-date picker.
+    # (`legacy/v5:docs/time_alignment_plan.md`); do not regress it to a local-date picker.
     sessions = recent_trading_sessions(now)
     if not sessions:
         return []

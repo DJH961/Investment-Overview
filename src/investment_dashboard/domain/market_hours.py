@@ -276,7 +276,7 @@ def exchange_today(now: datetime | None = None) -> date:
     Stamping the export on this date keeps the blob's ``analytics.curve`` on the
     same ET day grid the web companion buckets by (``web/src/compute.ts``
     ``todayIso`` / ``exchangeDate``), so the two never split a close across two
-    days (``docs/time_alignment_plan.md``).
+    days (``legacy/v5:docs/time_alignment_plan.md``).
 
     ``now`` defaults to the current instant (UTC). It may be naive (interpreted as
     exchange time already) or timezone-aware (converted to exchange time first).

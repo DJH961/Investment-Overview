@@ -1,6 +1,6 @@
 """Best-effort auto-publish triggers for the v3.0 live-web companion.
 
-Implements the auto-publish half of ``docs/v3.0_live_web_companion_proposal.md``
+Implements the auto-publish half of ``legacy/v5:docs/v3.0_live_web_companion_proposal.md``
 §5.4 (decision §8.2): the encrypted snapshot is (re)published **after every
 successful import** and **on graceful app close**, in addition to the manual
 "Publish now" button. Each trigger is individually toggleable and the whole

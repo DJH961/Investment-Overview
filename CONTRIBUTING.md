@@ -19,8 +19,8 @@ uv run pre-commit install
 
 1. Features and risky changes: a descriptive kebab-case branch and a PR.
    Small or urgent fixes may go straight to `main` once the gate passes.
-2. Make changes; keep commits scoped and meaningful. Add a CHANGELOG entry
-   under `## [Unreleased]`.
+2. Make changes; keep commits scoped and meaningful. Add a CHANGELOG entry; features
+   and fixes are released in the same PR (see the release rule in `AGENTS.md`).
 3. Run the full local quality gate (listed in [`AGENTS.md`](AGENTS.md#workflow))
    before pushing. In short:
 

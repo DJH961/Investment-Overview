@@ -1,6 +1,6 @@
 /**
  * Per-provider **429 circuit breaker** — the second tier of the two-tier brake
- * from `market_open_token_burn_fix_plan.md` (WS4) and the cross-device budget
+ * from `legacy/v5:docs/market_open_token_burn_fix_plan.md` (WS4) and the cross-device budget
  * integrity it enforces (WS5).
  *
  * Our internal credit ledger ({@link ../cache.readCreditLog}) is an *optimistic

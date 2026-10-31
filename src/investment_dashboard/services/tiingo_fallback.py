@@ -2,7 +2,7 @@
 
 This module answers the only hard question in the fallback: **when is it smart to
 spend a Tiingo call?** It encodes the four gates and the NAV peer-confirmation +
-canary logic from ``docs/tiingo_fallback_plan.md`` as pure functions over explicit
+canary logic from ``legacy/v5:docs/tiingo_fallback_plan.md`` as pure functions over explicit
 inputs (the persisted timestamps/counters and the already-resolved market
 calendar). Keeping it side-effect-free makes every gate and scenario unit-testable
 in isolation; the wiring layer (``prices_service``) reads/writes the database and
@@ -229,7 +229,7 @@ def choose_canary(
 ) -> str | None:
     """Pick the single fund to probe when there's no free peer NAV evidence.
 
-    Per ``docs/tiingo_fallback_plan.md``: probe the fund *most likely to have
+    Per ``legacy/v5:docs/tiingo_fallback_plan.md``: probe the fund *most likely to have
     published by now*. We prefer **learned evidence** over guesswork:
 
     1. **Habit-driven** — among funds with an observed publish history, take the

@@ -1,6 +1,6 @@
 """Export → encrypt → publish orchestration for the v3.0 live-web companion.
 
-Implements ``docs/v3.0_live_web_companion_proposal.md`` §5.2. The flow is:
+Implements ``legacy/v5:docs/v3.0_live_web_companion_proposal.md`` §5.2. The flow is:
 
 1. **export** — :func:`build_mobile_export` assembles the minimized payload
    (reusing the existing positions/metrics/read-model compute — no new
@@ -65,7 +65,7 @@ META_ASSET_NAME = "portfolio.meta.json"
 #: **1 → 2 (ET curve semantics).** Schema ``1`` blobs stamped ``analytics.curve``
 #: daily closes on the publisher's *local* calendar (``date.today()``); schema
 #: ``2`` stamps them on the **New-York exchange date** (one ET clock —
-#: ``domain.market_hours.exchange_today``, ``docs/time_alignment_plan.md``). This
+#: ``domain.market_hours.exchange_today``, ``legacy/v5:docs/time_alignment_plan.md``). This
 #: is the contract marker the web companion gates on to read legacy-local vs ET
 #: blobs correctly throughout the staggered desktop rollout — never a calendar
 #: date. Bump deliberately whenever the blob's day-boundary semantics change.

@@ -20,7 +20,7 @@
  * (re-recording today overwrites today) via {@link TimeSeriesStore.mergeSession}.
  *
  * **Why 00:00 ET, not UTC or viewer-local?** The whole app now buckets days on the
- * New-York exchange calendar (`time_alignment_plan.md`). A live tip recorded under
+ * New-York exchange calendar (`legacy/v5:docs/time_alignment_plan.md`). A live tip recorded under
  * {@link OverviewView.asOf} ({@link todayIso}, ET) and the same day harvested from
  * the 1W curve (web bars stamped at the ET trading-day start) therefore share one
  * key. The blob's `analytics.curve` carries a bare date string — ET-stamped once

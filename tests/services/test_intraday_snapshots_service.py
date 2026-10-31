@@ -1023,7 +1023,7 @@ class TestWeekSeries:
     _DAY_BARS = _WEEK_DAY_BARS
 
     def test_day_and_week_share_one_5min_density(self) -> None:
-        # C8 (docs/graph-unification-plan.md): the 1D and 1W paths reconstruct at
+        # C8 (legacy/v5:docs/graph-unification-plan.md): the 1D and 1W paths reconstruct at
         # the *same* 5-minute density, so the 1-day slice of the week is identical
         # to the standalone 1D curve.
         assert iss.RECONSTRUCT_INTERVAL == "5m"

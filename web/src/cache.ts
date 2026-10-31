@@ -617,7 +617,7 @@ export function recordCredits(
 /**
  * Refund `n` credits previously {@link recordCredits reserved} but not actually
  * billed by the provider (the *settle* half of the two-phase reserve/settle
- * accounting — see `docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as
+ * accounting — see `legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as
  * a negative spend so the running totals ({@link creditsSpentWithin},
  * {@link creditsSpentToday}) net it back out; concurrent dispatches still saw the
  * worst-case reservation while the call was in flight, so they paced themselves.
@@ -762,7 +762,7 @@ export function recordTiingoCredits(
  * Refund `n` Tiingo credits previously {@link recordTiingoCredits reserved} but
  * not actually forwarded to Tiingo by the Worker (e.g. a Worker-side `400`/`429`/
  * `502`/`503` reject that never reached Tiingo's meter — see the two-phase
- * accounting in `docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as a
+ * accounting in `legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md` item 1). Booked as a
  * negative spend so the running total nets it back out. This is what stops the
  * FX-storm failure mode leaving a phantom charge on the ledger.
  *
@@ -822,7 +822,7 @@ export interface SeriesBackoffEntry {
 /**
  * Read the backoff state for a time-series `key` (a price symbol like
  * `"1W:AAPL"` or an FX leg like `"fx:1W:1day"`), or null when untracked. Backs
- * the per-symbol negative-result memo (`docs/tiingo_polling_storm_cleanup_plan.md`
+ * the per-symbol negative-result memo (`legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md`
  * item 4): a symbol that keeps failing is suppressed from the network so a
  * graph-switch storm cannot re-arm the refill gate on every render — while
  * quotes are never gated, so the headline price still updates.

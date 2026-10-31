@@ -1,7 +1,9 @@
 # web/ — Live Web Companion (static front-end)
 
-This directory holds the **public**, read-only GitHub Pages front-end described
-in [`docs/v3.0_live_web_companion_proposal.md`](../docs/v3.0_live_web_companion_proposal.md).
+This directory holds the **public**, read-only GitHub Pages front-end. It is frozen with
+v5.3.1 and is superseded by the hosted v6 frontend (see
+[`docs/v6_one_app_plan.md`](../docs/v6_one_app_plan.md)); the original design notes
+are on branch `legacy/v5`.
 
 ## Design priority: mobile first
 
@@ -39,7 +41,7 @@ Concretely, that means:
   long enough for are shown) that re-slice the already-loaded points in place,
   on phone and desktop alike.
 - The gain/loss colours stay the colourblind-safe **blue ↔ orange** pair (never
-  red/green) — see proposal §7.3.
+  red/green).
 - The headline value, return horizons and KPIs lead; **asset-class allocation is
   intentionally de-emphasised** into a collapsed panel below the holdings (a
   fixed, lopsided allocation does not need to be front-and-centre).
@@ -123,7 +125,7 @@ Concretely, that means:
 analytics work, with live **1D / 1W** value graphs now **on by default**: the
 Overview value chart leads with the live 1D and 1W curves, reconstructed
 from intraday/daily bars cached on the device (IndexedDB `TimeSeriesStore`) — see
-`docs/v3.0_live_web_companion_proposal.md` §10.8. The default range strip is
+the v3.0 design notes on branch `legacy/v5`. The default range strip is
 `1D · 1W · 1M · 1Y · All`; the longer `3M / 6M` history slices are an opt-in
 (Settings → Graphs → "Extra ranges", **off by default** for a cleaner look). Two touches keep the live curves
 cheap on a long watch: the 1D curve **leaves breadcrumbs** — each time the live tip

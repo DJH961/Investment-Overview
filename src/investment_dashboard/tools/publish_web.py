@@ -1,7 +1,7 @@
 """``publish-web`` CLI — encrypt + publish the live-web companion blob.
 
 Mirror of ``inv-dashboard-export-snapshot`` for the v3.0 live-web companion
-(``docs/v3.0_live_web_companion_proposal.md`` §5.7). It builds the minimized
+(``legacy/v5:docs/v3.0_live_web_companion_proposal.md`` §5.7). It builds the minimized
 mobile export, seals it into an AES-256-GCM envelope under the mobile
 passphrase, and overwrites the single ``portfolio.enc`` asset on the configured
 GitHub release.

@@ -618,7 +618,7 @@ describe("loadOrBuildSessionCurve", () => {
   });
 
   it("does not resume-repull a stale-but-present session (clock-hour gate is the sole 1D authority)", async () => {
-    // Resume-backfill is deleted (docs/centralized_data_pull_plan.md): a re-login
+    // Resume-backfill is deleted (legacy/v5:docs/centralized_data_pull_plan.md): a re-login
     // or long absence whose freshest point has aged well past the old 10-minute
     // window must NOT force a second, hour-conflicting bar pull while the session's
     // bars are already on the device. Breadcrumbs bridge the gap until the next

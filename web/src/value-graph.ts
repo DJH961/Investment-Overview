@@ -1,6 +1,6 @@
 /**
  * Glue between the dashboard's computed model and the live 1D/1W curve builders
- * (docs/v3.0_live_web_companion_proposal.md §10.8). These are the **pure** pieces
+ * (legacy/v5:docs/v3.0_live_web_companion_proposal.md §10.8). These are the **pure** pieces
  * that turn the already-computed {@link HoldingView}s into an
  * {@link IntradayAnchor}, and a built {@link CurvePoint} series into chart-ready
  * columns — both DOM-free, IndexedDB-free, and live-API-free so they unit-test in

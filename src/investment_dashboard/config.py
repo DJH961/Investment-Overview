@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     #: set via ``INV_DASHBOARD_TIINGO_TOKEN`` for CI/test only. Never committed.
     tiingo_token: str | None = None
 
-    # --- v3.0 live-web companion publishing (docs/v3.0 proposal §5.5) -------
+    # --- v3.0 live-web companion publishing (legacy/v5:docs/v3.0_live_web_companion_proposal.md §5.5) -------
     # All additive and off by default: a vanilla install never publishes.
     #: Master toggle. When ``False`` (default) no publishing happens, and the
     #: auto-publish triggers stay dormant.

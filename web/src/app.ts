@@ -631,7 +631,7 @@ export class App {
   /**
    * Meta-sidecar **schema** of the best-available blob (`portfolio.meta.json`
    * `schema`, `publish_service.py` `_META_SCHEMA`). The legacy/ET cutover gate
-   * (`time_alignment_plan.md`): `<= 1` ⇒ the desktop stamped `analytics.curve`
+   * (`legacy/v5:docs/time_alignment_plan.md`): `<= 1` ⇒ the desktop stamped `analytics.curve`
    * dates the legacy (publisher-local) way; `>= 2` ⇒ those dates are ET. The
    * desktop now publishes `2` (ET-stamped); `<= 1` is a not-yet-updated desktop
    * during the staggered ~3-week rollout. The web runs on ET internally regardless
@@ -1531,7 +1531,7 @@ export class App {
     const today = await store.loadSession(day).catch(() => null);
     const marketClosed = !isUsMarketOpen(now);
     const close = sessionCloseMs(day);
-    // Expected-empty ≠ stale (market_open_token_burn_fix_plan.md WS1): a fresh,
+    // Expected-empty ≠ stale (legacy/v5:docs/market_open_token_burn_fix_plan.md WS1): a fresh,
     // just-opened session has no completed intraday bar yet, so the absence of
     // today's bars is *expected*. Queueing a 1D backfill for a window that has
     // not elapsed is the market-open burn — skip it and let the curve accrue
@@ -1555,7 +1555,7 @@ export class App {
     // Match the 1W build's coverage test, not a looser presence check: a
     // stale-but-present store (only pre-settlement bars) must read *stale* here,
     // else priming is skipped and the dashboard build re-pulls it via Tiingo
-    // moments later (docs/tiingo_polling_storm_cleanup_plan.md item 5b).
+    // moments later (legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md item 5b).
     const week = weekStaleSymbols(weekStored, marketSymbols, now);
     // The single phase-aware completeness predicate the orchestrator's `fxBars`
     // leg keys on (item 6): the session open/close EUR→USD the hero currency KPI's
@@ -6493,7 +6493,7 @@ export class App {
     // Smart Tiingo gate — run on **any** network round, not just one explicitly
     // flagged Tiingo-leaning: any force/auto refresh can quietly fall back to
     // Tiingo for the symbols Twelve Data defers, so the dedup must fire whenever a
-    // round *might* lean on Tiingo (docs/tiingo_polling_storm_cleanup_plan.md item
+    // round *might* lean on Tiingo (legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md item
     // 5a). Pull any *stale* 1D/1W graph package first — each bar's newest point
     // doubles as the quote, so priming the holdings' quote cache from those bars
     // makes the quote pull below skip them, so Tiingo is never spent on both the
@@ -7253,7 +7253,7 @@ export class App {
    * On boot, note in the polling log whenever the running app version differs
    * from the one this device last recorded — so a reader of a downloaded log can
    * see which build produced a given window, and spot the exact tick a new
-   * deploy took effect (docs/tiingo_polling_storm_cleanup_plan.md item 6).
+   * deploy took effect (legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md item 6).
    * Best-effort: a missing/blocked localStorage simply skips the note.
    */
   private logVersionUpdate(): void {
@@ -7694,7 +7694,7 @@ export class App {
       buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, { graphFx: frozenFx });
     // The 1W anchor folds NAV funds into the sleeve (re-marked from their daily
     // NAV bars) rather than the flat base, so the week's NAV drift shows on the
-    // curve for a NAV-heavy book (docs/tiingo_polling_storm_cleanup_plan.md item 7).
+    // curve for a NAV-heavy book (legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md item 7).
     const weekAnchor = (frozenFx: Decimal | null): ReturnType<typeof buildModelAnchor> =>
       buildModelAnchor(model.holdings, cashEur, cashUsd, baseFx, {
         navInSleeve: true,

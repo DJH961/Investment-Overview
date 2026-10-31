@@ -15,7 +15,7 @@ web companion can **springboard** off them: paint the curve instantly from the
 export and only fetch live bars to *extend the tip*, falling back to a full live
 rebuild when the export is absent or too stale (see ``web/src/springboard.ts``).
 
-Schema-v3 enrichment (``docs/centralized_data_export_plan.md``)
+Schema-v3 enrichment (``legacy/v5:docs/centralized_data_export_plan.md``)
 --------------------------------------------------------------
 Alongside the legacy whole-book ``day`` / ``week`` curves (kept for backward
 compatibility — older readers ignore everything else), the section now ships a

@@ -1,6 +1,6 @@
 /**
  * TypeScript shape of the minimized mobile export contract
- * (`docs/mobile_export_schema.md`, schema_version 2). All decimal values arrive
+ * (`legacy/v5:docs/mobile_export_schema.md`, schema_version 2). All decimal values arrive
  * as strings and are parsed with decimal.js where arithmetic is needed.
  */
 
@@ -417,7 +417,7 @@ export interface ExportLiveGraphSeries {
 }
 
 /**
- * The schema-v3 **aggregate market-sleeve backbone** (`docs/mobile_export_schema.md`):
+ * The schema-v3 **aggregate market-sleeve backbone** (`legacy/v5:docs/mobile_export_schema.md`):
  * the value of the intraday-priced sleeve only (cash + NAV deliberately excluded)
  * across the whole 1W window, in compact columnar form so it stays a few KB
  * regardless of symbol count. The three arrays are index-aligned and share one

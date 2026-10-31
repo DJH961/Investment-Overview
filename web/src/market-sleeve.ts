@@ -1,6 +1,6 @@
 /**
  * Pillar 3 (WS7) — the **web⇄blob 1W merge** for the schema-v3 market-sleeve
- * backbone (`docs/centralized_data_pull_plan.md` §"Pillar 3 — 1D fills 1W, and
+ * backbone (`legacy/v5:docs/centralized_data_pull_plan.md` §"Pillar 3 — 1D fills 1W, and
  * web⇄blob merge"; the matching desktop export is `live_graphs.py` schema_v3).
  *
  * 💱 CURRENCY (rule in `AGENTS.md`): the sleeve is an FX-free native-USD value;

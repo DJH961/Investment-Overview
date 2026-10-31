@@ -2,7 +2,7 @@
  * Anchored intraday/short-range curve reconstruction for the live-web companion.
  *
  * This is the **first** building block of the self-driving 1D/1W graphs
- * (docs/v3.0_live_web_companion_proposal.md §10.6). It is a direct port of the
+ * (legacy/v5:docs/v3.0_live_web_companion_proposal.md §10.6). It is a direct port of the
  * desktop maths in `intraday_snapshots_service._reconstruct_session`, kept as a
  * set of pure functions so it can be unit-tested without any network, DOM, or
  * IndexedDB.

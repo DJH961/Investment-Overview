@@ -29,7 +29,7 @@ _PROVIDER = "yfinance"
 #: small number of times with backoff before surfacing a ``YFinanceError``.
 #: Boosted (4 attempts / 0.75 s base + jitter) so a transient blip is absorbed
 #: in-call and never needlessly escalates to the Tiingo secondary fallback —
-#: see ``docs/tiingo_fallback_plan.md`` ("Retry-before-escalate").
+#: see ``legacy/v5:docs/tiingo_fallback_plan.md`` ("Retry-before-escalate").
 _DOWNLOAD_ATTEMPTS = 4
 #: Base backoff for the download retry; jitter de-correlates concurrent retries.
 _DOWNLOAD_BACKOFF_SECONDS = 0.75

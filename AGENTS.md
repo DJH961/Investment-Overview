@@ -85,13 +85,18 @@ Adapted from the owner's starter-project convention (see plan §4a):
 - **Git flow:** features and risky changes go through a PR. Small or urgent fixes
   may be pushed straight to `main` once the quality gate passes. `main` must stay
   green (in v6 every green `main` commit deploys).
-- **Changelog:** every change adds an entry under `## [Unreleased]` in
-  `CHANGELOG.md` (Keep a Changelog sections; small UI updates and patch-sized
-  changes go under **Fixed**).
-- **Releases:** bump the version only when cutting a release — rename
-  `[Unreleased]` to `## [x.y.z] — YYYY-MM-DD`, bump `pyproject.toml` and
-  `web/package.json` in lockstep, and regenerate lockfiles (`uv lock`, and
-  `npm install` inside `web/`). Pushing the bump to `main` tags the release.
+- **Changelog:** every change adds a `CHANGELOG.md` entry (Keep a Changelog
+  sections; small UI updates and patch-sized changes go under **Fixed**).
+- **Release fast — default is one release per change.** Any change that alters
+  what the app does (feature or bug fix) is released **in the same PR/push**: a
+  patch bump for fixes, a minor bump for features, under a dated
+  `## [x.y.z] — YYYY-MM-DD` heading. Bump `pyproject.toml` and `web/package.json`
+  in lockstep and regenerate lockfiles (`uv lock`, and `npm install` inside
+  `web/`). Pushing the bump to `main` tags the release.
+- **`[Unreleased]` is temporary storage, not the default.** Use it only for
+  changes with no effect on the running app (docs, CI, tests, refactors) or to
+  batch a short series of related PRs. Fold it into the next release; no entry
+  should sit there longer than a few days, and **a bug fix never waits there**.
 - **Quality gate** before handoff (CI runs the same):
   - `uv run ruff format .`
   - `uv run ruff check . --fix`

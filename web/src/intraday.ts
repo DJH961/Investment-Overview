@@ -1,6 +1,6 @@
 /**
  * Live **1 Day** intraday curve orchestration for the web companion
- * (docs/v3.0_live_web_companion_proposal.md §10.8, Phase 2).
+ * (legacy/v5:docs/v3.0_live_web_companion_proposal.md §10.8, Phase 2).
  *
  * This is the browser-direct baseline that ships a working 1D graph entirely on
  * the existing provider (Twelve Data `time_series`), independent of the
@@ -126,7 +126,7 @@ export interface AnchorHoldingInput {
  * price + share count *also* join the sleeve (tagged `priceType: "nav"`) so the
  * week curve re-marks them from their accumulated daily-NAV bars instead of
  * pinning them flat — the week's NAV drift is material for a NAV-heavy book
- * (`docs/tiingo_polling_storm_cleanup_plan.md` item 7). The 1D path leaves them
+ * (`legacy/v5:docs/tiingo_polling_storm_cleanup_plan.md` item 7). The 1D path leaves them
  * flat in the base (NAV strikes once a day, so there is no intraday NAV curve).
  */
 export function buildIntradayAnchor(

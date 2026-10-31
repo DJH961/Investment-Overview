@@ -1,6 +1,6 @@
 /**
  * **Pipe B** — the Tiingo intraday-bar backfill for the live 1D/1W graph
- * (docs/v3.0_live_web_companion_proposal.md §10.8, Phase 3).
+ * (legacy/v5:docs/v3.0_live_web_companion_proposal.md §10.8, Phase 3).
  *
  * Phase 2 ships a working 1D entirely on Twelve Data's `time_series`
  * (browser-direct, `prices.fetchTimeSeries`). Phase 3 adds a *second* backfill

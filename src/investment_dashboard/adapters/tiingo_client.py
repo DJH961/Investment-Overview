@@ -1,7 +1,7 @@
 """Tiingo market-data adapter — the desktop *secondary* provider.
 
 yfinance is the desktop primary; Tiingo engages only as a smart, budgeted
-fallback (see ``docs/tiingo_fallback_plan.md``). This module is a thin,
+fallback (see ``legacy/v5:docs/tiingo_fallback_plan.md``). This module is a thin,
 pure adapter — it knows nothing about *when* to call Tiingo (the smart gates,
 budget, and stale-since logic live in the price service); it only knows *how*.
 

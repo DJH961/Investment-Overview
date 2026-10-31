@@ -30,7 +30,7 @@ The browser becomes a thin React UI that talks only to our own server, which has
 | Frontend | New **React 19 + TypeScript** + Vite app, SCSS + BEM + design tokens, reusing current design, charts and PWA |
 | Currency | **Store native, report in any currency** (§2) |
 | Git flow | PRs for features and risky work; direct push to `main` OK for small or urgent fixes; deploy only after CI passes |
-| Versioning | CHANGELOG entries under `[Unreleased]`; bump + tag only for real releases |
+| Versioning | Release fast: every feature/fix ships as its own release in the same PR; `[Unreleased]` only as short-lived storage for docs/CI-only changes |
 
 ---
 
@@ -41,7 +41,7 @@ Done in Phase 0, so every later agent works from correct rules.
 **What I found:**
 - **The USD rule is wrong.** It says storage and computation are "native USD" and EUR is `usd / fx`. In reality:
   - transactions store native + frozen EUR + frozen USD legs (`domain/currency.py:61`);
-  - EUR returns are FX-aware, using per-cashflow date rates (`requirements_and_project_overview.md:473`);
+  - EUR returns are FX-aware, using per-cashflow date rates (`original_spec.md:474`);
   - snapshots and intraday values are stored in EUR (`models/position_snapshot.py`, `models/intraday_value.py`).
 
   Following the rule literally would break the EUR returns. This is the likely cause of the repeated agent mistakes.
