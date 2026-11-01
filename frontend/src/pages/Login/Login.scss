@@ -64,17 +64,19 @@
   }
 
   &__password {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
+    position: relative;
 
-    > :first-child {
-      flex: 1;
+    .login-page__input .input__control {
+      padding-inline-end: var(--space-8);
     }
   }
 
   &__toggle {
-    flex: none;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--space-1);
+    margin-block: auto;
+    height: fit-content;
   }
 
   &__error {

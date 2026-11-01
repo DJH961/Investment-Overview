@@ -6,24 +6,25 @@ import { Card } from "../../components/Card";
 import { DataTable, type Column } from "../../components/DataTable";
 import { ErrorState } from "../../components/ErrorState";
 import { Field } from "../../components/Field";
-import { Input } from "../../components/Input";
 import { PageHeader } from "../../components/PageHeader";
 import { Select, type SelectOption } from "../../components/Select";
 import { useToast } from "../../components/Toast";
 import {
   useConfirmImport,
   useDiscardImport,
-  useTransactions,
   useUploadImport,
   type ImportConfirmResult,
   type ImportPreview,
 } from "../../lib/queries/ledger";
+import { useAccounts, useImportBrokers } from "../../lib/queries/accounts";
 import { useShellStatus } from "../../lib/shell";
+import { AccountEditor } from "../Settings/AccountsCard";
 import "./Import.scss";
 
 type PreviewRow = ImportPreview["rows"][number];
 
 const AUTO = "auto";
+const NEW_ACCOUNT = "__new__";
 const dash = (v: string | null | undefined) => (v === null || v === undefined || v === "" ? "—" : v);
 
 const columns: Column<PreviewRow>[] = [
@@ -49,7 +50,7 @@ export function Import() {
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [broker, setBroker] = useState("");
+  const [broker, setBroker] = useState(AUTO);
   const [account, setAccount] = useState(AUTO);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -59,17 +60,23 @@ export function Import() {
   const upload = useUploadImport();
   const confirm = useConfirmImport();
   const discard = useDiscardImport();
-  const probe = useTransactions({ limit: 200, offset: 0, hide_sweeps: false });
+  const accountList = useAccounts();
+  const brokerList = useImportBrokers();
 
   useShellStatus("closed", "Import", undefined, upload.isPending || confirm.isPending);
 
-  const accounts = useMemo<SelectOption[]>(() => {
-    const seen = new Map<number, string>();
-    for (const r of probe.data?.rows ?? []) {
-      if (r.account_id != null) seen.set(r.account_id, r.account);
-    }
-    return [{ value: AUTO, label: "Detect from file" }, ...[...seen].map(([id, name]) => ({ value: String(id), label: name }))];
-  }, [probe.data]);
+  const accounts = useMemo<SelectOption[]>(
+    () => [
+      { value: AUTO, label: "Detect from file" },
+      ...(accountList.data ?? []).map((a) => ({ value: String(a.id), label: `${a.account_label} (${a.native_currency})` })),
+      { value: NEW_ACCOUNT, label: "Create account..." },
+    ],
+    [accountList.data],
+  );
+  const brokers = useMemo<SelectOption[]>(
+    () => [{ value: AUTO, label: "Detect from file" }, ...(brokerList.data ?? []).map((b) => ({ value: b.id, label: b.label }))],
+    [brokerList.data],
+  );
 
   const pick = (f: File | undefined) => {
     if (f) setFile(f);
@@ -86,8 +93,8 @@ export function Import() {
     upload.mutate(
       {
         file,
-        broker: broker.trim() || undefined,
-        accountId: account === AUTO ? undefined : Number(account),
+        broker: broker === AUTO ? undefined : broker,
+        accountId: account === AUTO || account === NEW_ACCOUNT ? undefined : Number(account),
         onProgress: setProgress,
       },
       { onSuccess: setPreview },
@@ -163,31 +170,24 @@ export function Import() {
               />
             </div>
             <div className="import-page__fields">
-              <Field label="Broker" hint="Optional - detected from the file when empty.">
-                {(c) => <Input id={c.id} aria-describedby={c["aria-describedby"]} value={broker} onChange={(e) => setBroker(e.target.value)} />}
+              <Field label="Broker" hint="Detected from the file when left on auto.">
+                {(c) => <Select id={c.id} options={brokers} value={broker} onValueChange={setBroker} />}
               </Field>
               <Field label="Account">
-                {(c) =>
-                  accounts.length > 1 ? (
-                    <Select id={c.id} options={accounts} value={account} onValueChange={setAccount} />
-                  ) : (
-                    <Input
-                      id={c.id}
-                      inputMode="numeric"
-                      placeholder="Account id (optional)"
-                      value={account === AUTO ? "" : account}
-                      onChange={(e) => setAccount(e.target.value.trim() || AUTO)}
-                    />
-                  )
-                }
+                {(c) => <Select id={c.id} options={accounts} value={account} onValueChange={setAccount} />}
               </Field>
             </div>
+            {account === NEW_ACCOUNT && (
+              <AccountEditor
+                onDone={(saved) => setAccount(saved ? String(saved.id) : AUTO)}
+              />
+            )}
             {upload.isPending && <progress className="import-page__progress" max={1} value={progress} aria-label="Upload progress" />}
             {upload.isError && (
               <ErrorState title="Could not read that file" message={upload.error.message} onRetry={startUpload} />
             )}
             <div className="import-page__actions">
-              <Button variant="primary" disabled={!file} loading={upload.isPending} onClick={startUpload}>
+              <Button variant="primary" disabled={!file || account === NEW_ACCOUNT} loading={upload.isPending} onClick={startUpload}>
                 Import
               </Button>
             </div>

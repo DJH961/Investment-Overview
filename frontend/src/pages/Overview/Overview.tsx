@@ -132,7 +132,7 @@ export function Overview() {
       (allocations.data?.current_by_asset_class ?? []).map((b) => ({
         id: b.label,
         label: b.label,
-        actual: (toNum(b.pct) ?? 0) / 100,
+        actual: toNum(b.pct) ?? 0,
       })),
     [allocations.data],
   );
@@ -188,11 +188,16 @@ export function Overview() {
           hint={k?.daily_growth_as_of ? `as of ${formatDate(k.daily_growth_as_of)}` : undefined}
         />
         <KpiTile
-          label="Total return"
+          label="Capital gain (excl. dividends)"
           loading={loading}
           value={<Money amount={toNum(k?.capital_gain)} currency={currency} signed colored />}
-          delta={<DeltaBadge value={toNum(k?.total_growth_compounded)} />}
           hint={k?.total_invested ? `of ${formatMoney(toNum(k.total_invested), currency, { compact: true })} invested` : undefined}
+        />
+        <KpiTile
+          label="Total return (incl. dividends)"
+          loading={loading}
+          value={<Money amount={toNum(k?.total_return)} currency={currency} signed colored />}
+          delta={<DeltaBadge value={toNum(k?.total_growth_compounded)} />}
         />
         <KpiTile
           label="XIRR"
@@ -291,8 +296,8 @@ export function Overview() {
             <Skeleton height="6rem" />
           ) : (
             <div className="overview-page__movers-grid">
-              <MoverList title="Winners" movers={data?.movers.winners ?? []} ccy={currency} />
-              <MoverList title="Losers" movers={data?.movers.losers ?? []} ccy={currency} />
+              <MoverList title="Winners today" movers={data?.movers.winners ?? []} ccy={currency} />
+              <MoverList title="Losers today" movers={data?.movers.losers ?? []} ccy={currency} />
             </div>
           )}
         </Card>

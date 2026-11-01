@@ -26,7 +26,7 @@ const holdings: HoldingsDto = {
       price_data_warning: false,
     },
   ],
-  summary: { gainers: 1, losers: 0 },
+  summary: { in_profit: 1, in_loss: 0, gainers: 1, losers: 0 },
 };
 
 vi.mock("../../lib/queries/portfolio", async (orig) => ({

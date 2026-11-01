@@ -91,9 +91,21 @@ function MobileRow({ row, ccy }: { row: HoldingRowDto; ccy: string }) {
             </dd>
           </div>
           <div>
-            <dt>P/L</dt>
+            <dt>Capital gain</dt>
             <dd>
               <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored />
+            </dd>
+          </div>
+          <div>
+            <dt>Dividends</dt>
+            <dd>
+              <Money amount={toNum(row.dividends)} currency={ccy} />
+            </dd>
+          </div>
+          <div>
+            <dt>Total return (incl. dividends)</dt>
+            <dd>
+              <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
             </dd>
           </div>
           <div>
@@ -110,7 +122,7 @@ function MobileRow({ row, ccy }: { row: HoldingRowDto; ccy: string }) {
           </div>
           <div>
             <dt>Weight</dt>
-            <dd>{formatPercent((toNum(row.weight_pct) ?? Number.NaN) / 100, { digits: 1 })}</dd>
+            <dd>{formatPercent(toNum(row.weight_pct), { digits: 1 })}</dd>
           </div>
           <div>
             <dt>Expense</dt>
@@ -223,10 +235,24 @@ export function Holdings() {
       },
       {
         key: "gain",
-        header: "P/L",
+        header: "Capital gain",
         align: "right",
         sortValue: (r) => toNum(r.capital_gain),
         cell: (r) => <Money amount={toNum(r.capital_gain)} currency={currency} signed colored />,
+      },
+      {
+        key: "divs",
+        header: "Dividends",
+        align: "right",
+        sortValue: (r) => toNum(r.dividends),
+        cell: (r) => <Money amount={toNum(r.dividends)} currency={currency} />,
+      },
+      {
+        key: "totret",
+        header: "Total return",
+        align: "right",
+        sortValue: (r) => toNum(r.total_return),
+        cell: (r) => <Money amount={toNum(r.total_return)} currency={currency} signed colored />,
       },
       {
         key: "xirr",
@@ -268,7 +294,7 @@ export function Holdings() {
         header: "Weight",
         align: "right",
         sortValue: (r) => toNum(r.weight_pct),
-        cell: (r) => formatPercent((toNum(r.weight_pct) ?? Number.NaN) / 100, { digits: 1 }),
+        cell: (r) => formatPercent(toNum(r.weight_pct), { digits: 1 }),
       },
     ],
     [currency],
@@ -314,13 +340,25 @@ export function Holdings() {
               </dd>
             </div>
             <div>
-              <dt>Capital gain</dt>
+              <dt>Capital gain (excl. dividends)</dt>
               <dd>
                 <Money amount={toNum(data.total_capital_gain)} currency={currency} signed colored />
               </dd>
             </div>
             <div>
-              <dt>Up / down</dt>
+              <dt>Total return (incl. dividends)</dt>
+              <dd>
+                <Money amount={toNum(data.total_return)} currency={currency} signed colored />
+              </dd>
+            </div>
+            <div>
+              <dt>In profit / in loss</dt>
+              <dd>
+                {s?.in_profit} / {s?.in_loss}
+              </dd>
+            </div>
+            <div>
+              <dt>Up / down today</dt>
               <dd>
                 {s?.gainers} / {s?.losers}
               </dd>
@@ -341,7 +379,7 @@ export function Holdings() {
               <dt>Most concentrated</dt>
               <dd>
                 {s?.most_concentrated_symbol ?? "–"}{" "}
-                {formatPercent((toNum(s?.most_concentrated_weight_pct) ?? Number.NaN) / 100, { digits: 1 })}
+                {formatPercent(toNum(s?.most_concentrated_weight_pct), { digits: 1 })}
               </dd>
             </div>
           </dl>

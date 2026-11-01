@@ -13,7 +13,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../lib/api";
-import { formatNumber } from "../../lib/format";
+import { formatNumber, formatPercent } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import {
   useAllocations,
@@ -47,7 +47,7 @@ function Editor({ data }: { data: AllocationsData }) {
   const [rows, setRows] = useState<EditorRow[]>(() =>
     data.drift.map((d) => {
       const item = target?.items.find((i) => i.instrument_id === d.instrument_id);
-      return { instrumentId: d.instrument_id, label: d.label, weight: item?.weight_pct ?? "0", noBuy: item?.no_buy ?? false };
+      return { instrumentId: d.instrument_id, label: d.label, weight: item ? String(Number(item.weight_pct) * 100) : "0", noBuy: item?.no_buy ?? false };
     }),
   );
   const total = totalWeight(rows);
@@ -64,7 +64,7 @@ function Editor({ data }: { data: AllocationsData }) {
         allow_sell: target?.allow_sell ?? false,
         items: rows
           .filter((r) => Number(r.weight) > 0)
-          .map((r) => ({ instrument_id: r.instrumentId, weight_pct: r.weight, no_buy: r.noBuy })),
+          .map((r) => ({ instrument_id: r.instrumentId, weight_pct: String(Number(r.weight) / 100), no_buy: r.noBuy })),
       },
       {
         onSuccess: () => toast({ title: "Target saved", tone: "success" }),
@@ -122,7 +122,7 @@ function Rebalance({ ccy, targetId }: { ccy: "EUR" | "USD"; targetId?: number })
 
   const columns: Column<PlanRow>[] = [
     { key: "symbol", header: "Fund", primary: true, cell: (r) => r.symbol, sortValue: (r) => r.symbol },
-    { key: "target", header: "Target", align: "right", cell: (r) => `${formatNumber(Number(r.target_pct), 1)} %` },
+    { key: "target", header: "Target", align: "right", cell: (r) => formatPercent(Number(r.target_pct), { digits: 1 }) },
     {
       key: "value",
       header: "Current value",
@@ -187,21 +187,24 @@ export function Allocations() {
   const { currency } = usePrefs();
   const q = useAllocations(currency);
 
+  const hasDrift = (q.data?.drift.length ?? 0) > 0;
   const slices = useMemo(
     () =>
-      (q.data?.drift ?? []).map((d: DriftRow) => ({
-        id: d.key,
-        label: d.label,
-        actual: Number(d.current_pct) / 100,
-        target: Number(d.target_pct) / 100,
-      })),
-    [q.data],
+      hasDrift
+        ? (q.data?.drift ?? []).map((d: DriftRow) => ({
+            id: d.key,
+            label: d.label,
+            actual: Number(d.current_pct),
+            target: Number(d.target_pct),
+          }))
+        : (q.data?.current_by_asset_class ?? []).map((b) => ({ id: b.label, label: b.label, actual: Number(b.pct) })),
+    [q.data, hasDrift],
   );
 
   const driftColumns: Column<DriftRow>[] = [
     { key: "label", header: "Fund", primary: true, cell: (r) => r.label, sortValue: (r) => r.label },
-    { key: "cur", header: "Current", align: "right", cell: (r) => `${formatNumber(Number(r.current_pct), 1)} %` },
-    { key: "tgt", header: "Target", align: "right", cell: (r) => `${formatNumber(Number(r.target_pct), 1)} %` },
+    { key: "cur", header: "Current", align: "right", cell: (r) => formatPercent(Number(r.current_pct), { digits: 1 }) },
+    { key: "tgt", header: "Target", align: "right", cell: (r) => formatPercent(Number(r.target_pct), { digits: 1 }) },
     {
       key: "drift",
       header: "Drift",
@@ -224,7 +227,7 @@ export function Allocations() {
         <ErrorState onRetry={() => void q.refetch()} />
       ) : q.isPending ? (
         <Skeleton height="260px" />
-      ) : q.data.drift.length === 0 ? (
+      ) : q.data.drift.length === 0 && q.data.current_by_asset_class.length === 0 ? (
         <EmptyState
           icon={<PieChart aria-hidden />}
           title="No positions yet"
@@ -232,19 +235,30 @@ export function Allocations() {
         />
       ) : (
         <>
-          <Card title="Current vs target" subtitle="Drift: positive means over-allocated, negative under-allocated.">
+          <Card
+            title={hasDrift ? "Current vs target" : "Current allocation"}
+            subtitle={
+              hasDrift
+                ? "Drift: positive means over-allocated, negative under-allocated."
+                : "No target set yet. Share of portfolio value by asset class."
+            }
+          >
             <AllocationBar slices={slices} ariaLabel="Current allocation with target markers" />
-            <DataTable
-              caption="Allocation drift"
-              columns={driftColumns}
-              rows={q.data.drift}
-              rowKey={(r) => r.key}
-            />
+            {hasDrift && (
+              <DataTable
+                caption="Allocation drift"
+                columns={driftColumns}
+                rows={q.data.drift}
+                rowKey={(r) => r.key}
+              />
+            )}
           </Card>
-          <div className="allocations__split">
-            <Editor key={q.data.active_target_id ?? "none"} data={q.data} />
-            <Rebalance ccy={currency} targetId={q.data.active_target_id ?? undefined} />
-          </div>
+          {hasDrift && (
+            <div className="allocations__split">
+              <Editor key={q.data.active_target_id ?? "none"} data={q.data} />
+              <Rebalance ccy={currency} targetId={q.data.active_target_id ?? undefined} />
+            </div>
+          )}
         </>
       )}
     </div>

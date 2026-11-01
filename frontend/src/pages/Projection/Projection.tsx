@@ -47,16 +47,23 @@ function opt(v: string): string | null {
   return v.trim() === "" ? null : v.trim();
 }
 
+/** Form shows percent; the API takes fractions (7 -> "0.07"). */
+function frac(v: string | null): string | null {
+  if (v === null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? String(parseFloat((n / 100).toFixed(8))) : v;
+}
+
 export function toRequest(f: Form): ProjectionRequest {
   const horizon = opt(f.horizon);
   return {
     monthly: f.monthly,
     real: f.real,
-    expected_return_pct: opt(f.expected),
+    expected_return_pct: frac(opt(f.expected)),
     band_pp: opt(f.band) ?? "3",
     contribution: opt(f.contribution),
-    step_up_pct: opt(f.stepUp) ?? "0",
-    inflation_pct: opt(f.inflation) ?? "2",
+    step_up_pct: frac(opt(f.stepUp)) ?? "0",
+    inflation_pct: frac(opt(f.inflation)) ?? "0.02",
     target: opt(f.target) ?? "0",
     horizon: horizon === null ? null : Number(horizon),
   };

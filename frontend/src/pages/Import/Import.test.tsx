@@ -61,6 +61,8 @@ describe("Import", () => {
             }),
             { status: 200 },
           );
+        if (String(_url).includes("/api/accounts") || String(_url).includes("/brokers"))
+          return new Response("[]", { status: 200 });
         return new Response(JSON.stringify({ rows: [], total: 0, limit: 200, offset: 0, summary: {} }), { status: 200 });
       }),
     );

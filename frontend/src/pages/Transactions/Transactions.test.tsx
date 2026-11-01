@@ -47,7 +47,14 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("Transactions", () => {
   it("lists rows and sends decimal strings on create", async () => {
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).startsWith("/api/accounts"))
+        return new Response(
+          JSON.stringify([
+            { id: 1, account_label: "Brokerage", account_type: "brokerage", active: true, broker: "fidelity", native_currency: "USD", transaction_count: 1 },
+          ]),
+          { status: 200 },
+        );
       if (init?.method === "POST") return new Response(JSON.stringify({ transaction: row }), { status: 201 });
       return new Response(JSON.stringify(page), { status: 200 });
     });

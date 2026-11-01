@@ -25,6 +25,7 @@ import {
 import { useShellStatus } from "../../lib/shell";
 import { useIsPhone } from "../../lib/useMediaQuery";
 import { KIND_OPTIONS, TransactionForm } from "./TransactionForm";
+import { useAccounts } from "../../lib/queries/accounts";
 import "./Transactions.scss";
 
 const PAGE_SIZE = 50;
@@ -65,16 +66,11 @@ export function Transactions() {
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
   });
-  // The API has no accounts endpoint yet, so account options come from the ledger itself.
-  const probe = useTransactions({ limit: 200, offset: 0, hide_sweeps: false });
-
-  const accounts = useMemo<SelectOption[]>(() => {
-    const seen = new Map<number, string>();
-    for (const r of probe.data?.rows ?? []) {
-      if (r.account_id != null) seen.set(r.account_id, r.account);
-    }
-    return [...seen].map(([id, name]) => ({ value: String(id), label: name }));
-  }, [probe.data]);
+  const accountList = useAccounts();
+  const accounts = useMemo<SelectOption[]>(
+    () => (accountList.data ?? []).map((a) => ({ value: String(a.id), label: a.account_label })),
+    [accountList.data],
+  );
 
   const create = useCreateTransaction();
   const update = useUpdateTransaction();

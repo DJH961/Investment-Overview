@@ -18,6 +18,7 @@ import { deletePasskey, invalidateAuth, listPasskeys, logout, registerPasskey } 
 import { formatDate } from "../../lib/format";
 import { usePrefs, type ThemeChoice } from "../../lib/prefs";
 import { BACKUP_URL, useSettings, useUpdateSettings, type SettingsPatch } from "../../lib/queries/manage";
+import { AccountsCard } from "./AccountsCard";
 import "./Settings.scss";
 
 const THEME_TO_SERVER: Record<ThemeChoice, NonNullable<SettingsPatch["theme"]>> = {
@@ -214,6 +215,8 @@ export function Settings() {
               ))}
             </div>
           </Card>
+
+          <AccountsCard />
 
           <PasskeysCard />
 

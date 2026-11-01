@@ -103,6 +103,7 @@ export function Login() {
               <div className="login-page__password">
                 <Input
                   {...control}
+                  className="login-page__input"
                   type={show ? "text" : "password"}
                   name="password"
                   autoComplete="current-password webauthn"

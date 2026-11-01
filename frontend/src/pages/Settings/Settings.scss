@@ -67,3 +67,14 @@
     text-decoration: none;
   }
 }
+
+.settings__account-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.settings__error {
+  color: var(--color-neg);
+  font-size: var(--font-size-sm);
+}
