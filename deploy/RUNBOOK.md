@@ -349,7 +349,24 @@ phone, before the server is involved. Your v5 files are only read.
 
 ## Rollback to v5
 
-(The orchestrator fills this section in.)
+Use this only if v6 has to be abandoned. It turns the server's database back into the
+two files the v5.3.1 desktop app reads. Anything that exists only in v6 (FX conversion
+batches, passkeys, the login password) is not carried over.
+
+1. On the server: `cd /opt/investments && docker compose stop app`, then make a spare
+   copy of the database first (see "Backups").
+2. Export (asks for the DB passphrase; never changes `app.sqlite`):
+   `docker compose run --rm --no-deps -v /tmp/v5-export:/out --entrypoint inv-dashboard-export-v5 app --db /data/app.sqlite --out /out`
+3. From Git Bash on the laptop:
+   `/c/Windows/System32/OpenSSH/scp.exe -r daniel@hetzner-djh-v1:/tmp/v5-export .`
+   then on the server `rm -r /tmp/v5-export`.
+4. Close the v5 desktop app. In `OneDrive\inv-dashboard\`, rename the current
+   `ledger.sqlite` and `config.sqlite` to `*.bak`.
+5. Copy `ledger.sqlite` and `config.sqlite` from the export into that folder.
+6. Start v5 (installer or `git checkout legacy/v5`, see `docs/legacy_v5.md`). It
+   rebuilds prices and FX itself on the first refresh. Read
+   `docs/legacy_v5_known_bugs.md` on that branch for the numbers v5 gets wrong.
+7. Leave the server stopped, or `docker compose up -d app` to go back to v6.
 
 ## Side-by-side week
 
