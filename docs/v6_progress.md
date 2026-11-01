@@ -76,7 +76,7 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - [x] compose sidecar `backup` (rclone) syncs `/data/backups` → B2 (append-only; B2 lifecycle keeps old versions)
 - [x] `inv-dashboard-restore`: fetch latest (or a chosen) snapshot, unseal, verify integrity + row counts, swap into `/data/app.sqlite` atomically with the old file kept aside; a one-command runbook path for "server gone" and "bad import"
 - [x] CI restore test: seal → restore → identical row counts/checksums; runbook "Restore" section + drill checklist
-- [ ] Settings "Download backup" uses the same sealed snapshot
+- [x] Settings "Download backup" uses the same sealed snapshot (`GET /api/backup` defaults to `kind=sealed`)
 
 ### W1 gate — security review
 - [x] one `reviewer` over B4 + app factory (auth, cookies, rate limit, headers)
@@ -84,7 +84,7 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 ### W1.5 — backend unification (owner request 2026-11-01)
 - [x] audit → `docs/v6_scoping/backend_unification.md` (duplicate currency logic, `date.today()` vs ET clock, Decimal/float, layering, tiers, duplicate helpers, naming)
 - [x] B5b one canonical EUR/USD cashflow builder with the FX-pool override map, used by metrics, periods, deposits, analytics, benchmark
-- [ ] U-tasks from the audit (non-overlapping OWN lists, ≤ 4 per wave)
+- [ ] U-tasks from the audit: R0, R1, R2, R3 done; R5 done for `*_pct` units (X2), rest of R5 open; R4, R6, R7 open (see the 2026-11-01 audit in the log)
 
 ### W2 — frontend pages on generated types (parallel)
 - [x] G0 orchestrator: export `openapi.json`, `npm run gen:api`, write `lib/queries.ts` hooks for every endpoint
@@ -123,3 +123,4 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - W3 bugs from manual run: "Rate move today +37.74%" (pct units); Allocations shows "No positions yet" with positions; Holdings capital gain −€669 vs Overview total return +€379, "Up/down 0/1", Best VTI +71% vs list −2.13% (semantics mismatch); login eye icon outside input; NO accounts API (fresh install can't import) → add GET/POST/PUT /api/accounts + Settings UI + import account picker; tests/models/test_schema.py table list needs v6 tables.
 - 2026-11-01 X1 (025ea41), X2 (6704641, a6d8163), X3a (730b371), X3b (601f3f9) done. Final local gate green (ruff, mypy, 1896 backend tests earlier, 54 frontend tests, build, Playwright 3/3). PR opened.
 - Remaining (not agent work or later): yfinance spike; parity gate + snapshot native-currency migration; R4 layering/tier cleanup, R6 single ledger walk, R7 cutover deletion; owner secrets/server setup; restore drill; CI e2e/image jobs first real run.
+- 2026-11-01 completion audit. Open, not started: R4 layering/tiers (5 services/readmodels still run ORM selects; allocations PUT replaces the row id), rest of R5 (float display helpers, `_eur/_usd` naming, errors module), R6 single ledger walk (multi-account `compute_instrument_metrics`; benchmark/treemap/attribution EUR-only gaps), R7 cutover deletion; SSE heartbeat re-auth slides the idle timeout; onboarding-state endpoint; Holdings group-by + row drawer; Chart reference-line prop; `date.today()` left in 3 adapter fetch-window ends (harmless). Fixed in this audit: CodeQL stack-trace exposure (hosted support bundle drops the raw log), weekend-dependent API seed.

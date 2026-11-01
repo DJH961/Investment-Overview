@@ -24,7 +24,7 @@ other doc.
 | --- | --- | --- |
 | Backend | Python 3.12, NiceGUI on FastAPI/uvicorn, SQLAlchemy 2 + Alembic, SQLite (ledger / config / cache tiers), pandas/numpy/scipy, yfinance + Frankfurter (+ Tiingo fallback), `uv` | Same Python core as a FastAPI API server in `backend/`, SQLCipher, server-side scheduler, SSE |
 | Frontend | `web/`: Vite + vanilla TypeScript PWA on GitHub Pages, reads an encrypted blob | `frontend/`: React 19 + TS + Vite, SCSS/BEM tokens, TanStack Query |
-| Hosting | Owner's laptop (LAN) + GitHub Pages + Cloudflare Worker | One Docker Compose stack (app + Caddy + Litestream) on the Hetzner server |
+| Hosting | Owner's laptop (LAN) + GitHub Pages + Cloudflare Worker | One Docker Compose stack (app + Caddy + rclone backup sidecar; sealed SQLCipher snapshots, no Litestream) on the Hetzner server |
 | Docs | [`docs/architecture.md`](docs/architecture.md) | [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md), [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) |
 
 ## Infrastructure and server access
