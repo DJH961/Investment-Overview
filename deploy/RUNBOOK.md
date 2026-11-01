@@ -611,6 +611,24 @@ damaged: try the previous snapshot.
 - [ ] Try `./restore.sh --at <older file>`, and confirm a wrong passphrase is refused.
 - [ ] Note the date of the drill here or in your own log.
 
+**Quick drill on the live server (live database untouched):** fetch from B2 into a
+scratch folder, restore there, compare, delete it.
+
+```bash
+cd /opt/investments
+docker compose run --rm --no-deps --entrypoint rclone backup copy b2:Investment-Overview/snapshots /data/drill/backups --include "snapshot-*.sealed.json" --cache-dir /tmp/rclone
+docker compose exec app inv-dashboard-restore --dir /data/drill/backups --latest --db /data/drill/app.sqlite --yes
+docker compose exec app rm -rf /data/drill
+```
+
+**Drill log**
+
+- 2026-11-01: quick drill. Newest sealed snapshot fetched from B2, restored into a
+  scratch file: still SQLCipher-encrypted, row counts of all 18 tables equal to the
+  live database, a wrong backup passphrase refused ("decryption failed"). Not yet
+  done: the full "server gone" drill with passphrases taken only from the password
+  manager.
+
 ## Firewall note
 
 Docker-published ports bypass `ufw`. Only the Caddy container publishes ports
