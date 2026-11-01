@@ -20,7 +20,7 @@ from investment_dashboard.api.legacy_v5 import create_legacy_app
 from investment_dashboard.config import get_settings
 from investment_dashboard.models import ALL_METADATAS
 
-_TOKEN = "test-token-value"
+_TOKEN = "test-token-value-0123456789abcdef-xyz"
 
 
 @pytest.fixture

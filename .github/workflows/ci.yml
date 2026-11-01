@@ -81,7 +81,6 @@ jobs:
         run: |
           docker run -d --name inv-smoke -p 8000:8000 \
             -e INV_DASHBOARD_DB_PASSPHRASE="$(openssl rand -hex 16)" \
-            -e INV_DASHBOARD_SESSION_SECRET="$(openssl rand -hex 32)" \
             -e INV_DASHBOARD_COOKIE_SECURE=false \
             inv-app:ci
           for i in $(seq 1 40); do

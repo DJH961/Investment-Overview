@@ -9,7 +9,7 @@ import { Diagnostics } from "./pages/Diagnostics";
 import { Help } from "./pages/Help";
 import { Holdings } from "./pages/Holdings";
 import { Import } from "./pages/Import";
-import { Login } from "./pages/Login";
+import { Login, RequireAuth } from "./pages/Login";
 import { NotFound } from "./pages/NotFound";
 import { Onboarding } from "./pages/Onboarding";
 import { Overview } from "./pages/Overview";
@@ -29,6 +29,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route element={<RequireAuth />}>
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/overview" replace />} />
         <Route path="/overview" element={<Overview />} />
@@ -47,6 +48,7 @@ export function App() {
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/_styleguide" element={<Styleguide />} />
         <Route path="*" element={<NotFound />} />
+      </Route>
       </Route>
     </Routes>
   );

@@ -40,7 +40,6 @@ def jobs(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, int]]:
 def _settings(monkeypatch: pytest.MonkeyPatch, *, server: bool, sched: bool) -> None:
     monkeypatch.setenv("INV_DASHBOARD_SERVER_MODE", str(server).lower())
     monkeypatch.setenv("INV_DASHBOARD_SCHEDULER_ENABLED", str(sched).lower())
-    monkeypatch.setenv("INV_DASHBOARD_SESSION_SECRET", "test-session-secret-0123456789abcdef")
     get_settings.cache_clear()
 
 
