@@ -63,7 +63,10 @@ rmode="$(stat -c '%a' rclone.conf)"
 if grep -q '<application key' rclone.conf; then
   fail "rclone.conf still contains the example placeholders."
 fi
-ok "rclone.conf present, mode 600"
+# The backup container runs as the app user (uid 10001) and must be able to read it.
+rowner="$(stat -c '%u' rclone.conf)"
+[ "$rowner" = "10001" ] || fail "rclone.conf is owned by uid $rowner; the backup container (uid 10001) cannot read it. Run: sudo chown 10001:10001 rclone.conf"
+ok "rclone.conf present, mode 600, readable by the backup container"
 
 [ -f docker-compose.yml ] || fail "docker-compose.yml not found here."
 [ -f Caddyfile ] || fail "Caddyfile not found here."

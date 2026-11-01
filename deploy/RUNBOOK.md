@@ -333,7 +333,8 @@ A-E are in the "Secrets" section further down.
    the backup passphrase, `INV_DASHBOARD_WEBAUTHN_RP_ID` and
    `INV_DASHBOARD_WEBAUTHN_ORIGIN`. Leave the optional token lines commented out.
 3. **Backups, on the server:** copy `rclone.conf.example` to
-   `/opt/investments/rclone.conf`, fill in the B2 key, `chmod 600` it (see "Backups").
+   `/opt/investments/rclone.conf`, fill in the B2 key, `chmod 600` it and
+   `sudo chown 10001:10001` it (the backup container runs as uid 10001; see "Backups").
 4. **Get the deploy files onto the server** (no git checkout there). From Git Bash in
    the repo folder:
 
@@ -517,7 +518,9 @@ are just part of the same file.
 
 1. Copy `deploy/rclone.conf.example` to
    `/opt/investments/rclone.conf`, fill in the B2 *application key ID* and *key* (bucket
-   `Investment-Overview` only), then `chmod 600 /opt/investments/rclone.conf`.
+   `Investment-Overview` only), then `chmod 600 /opt/investments/rclone.conf` and
+   `sudo chown 10001:10001 /opt/investments/rclone.conf` (the backup container runs as
+   uid 10001 and cannot read a file only `daniel` owns).
 2. In `app.env` add `INV_DASHBOARD_BACKUP_PASSPHRASE=<long random value>` (for example
    `openssl rand -base64 32`). If you leave it out, the database passphrase is used.
 3. **Store offline (password manager, plus a printout if you like):** the database

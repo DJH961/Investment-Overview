@@ -39,6 +39,7 @@ COPY --from=frontend /build/dist /app/frontend
 
 ENV PATH="/app/backend/.venv/bin:$PATH" \
     INV_DASHBOARD_SERVER_MODE=true \
+    INV_DASHBOARD_SCHEDULER_ENABLED=true \
     INV_DASHBOARD_ENCRYPT_SYNCED_TIERS=true \
     INV_DASHBOARD_FRONTEND_DIST=/app/frontend \
     INV_DASHBOARD_DB_PATH=/data/app.sqlite \
