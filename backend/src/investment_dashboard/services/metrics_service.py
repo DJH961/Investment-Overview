@@ -40,7 +40,6 @@ from investment_dashboard.models import Transaction, TransactionKind
 from investment_dashboard.repositories import (
     accounts_repo,
     instrument_overrides_repo,
-    snapshots_repo,
     transactions_repo,
 )
 from investment_dashboard.services import (
@@ -48,6 +47,7 @@ from investment_dashboard.services import (
     fx_service,
     intraday_snapshots_service,
     positions_service,
+    snapshots_service,
 )
 from investment_dashboard.services.instrument_enrichment_service import effective_instrument
 
@@ -820,9 +820,10 @@ def _best_effort_ytd_start_value(
 
     horizon = min(as_of, year_start + _td(days=31))
 
-    for snap in snapshots_repo.list_in_range(session, year_start, horizon):
-        if snap.total_value_eur > ZERO:
-            return snap.total_value_eur
+    stored = snapshots_service.stored_snapshots_in_range(session, year_start, horizon)
+    for day in sorted(stored):
+        if stored[day] > ZERO:
+            return stored[day]
 
     cursor = year_start
     while cursor <= horizon:

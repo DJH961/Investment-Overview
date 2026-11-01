@@ -11,20 +11,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import kinds
 from investment_dashboard.domain.currency import dual_currency_amounts
 from investment_dashboard.domain.money_market import (
-    SETTLEMENT_EXTERNAL_ID_SUFFIX,
     is_settlement_external_id,
 )
-from investment_dashboard.models import Account, Instrument, Transaction
 from investment_dashboard.readmodels.money_format import currency_symbol, fmt_shares
+from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_service
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Account, Instrument, Transaction
 
 
 @dataclass(frozen=True)
@@ -82,50 +83,18 @@ def _fmt_money(value: Decimal | None, currency: str, places: int = 2) -> str:
     return f"{currency_symbol(currency)}{value.quantize(quant):,}"
 
 
-def _build_ledger_stmt(filters: LedgerFilters | None):  # type: ignore[no-untyped-def]
+def _filter_kwargs(filters: LedgerFilters | None) -> dict[str, Any]:
     f = filters or LedgerFilters()
-    stmt = (
-        select(Transaction)
-        .options(joinedload(Transaction.account), joinedload(Transaction.instrument))
-        .order_by(Transaction.date.desc(), Transaction.id.desc())
-    )
-    if f.account_id is not None:
-        stmt = stmt.where(Transaction.account_id == f.account_id)
-    if f.kind:
-        stmt = stmt.where(Transaction.kind == f.kind)
-    if f.source:
-        stmt = stmt.where(Transaction.source == f.source)
-    if f.start is not None:
-        stmt = stmt.where(Transaction.date >= f.start)
-    if f.end is not None:
-        stmt = stmt.where(Transaction.date <= f.end)
-    if f.instrument_symbol:
-        stmt = stmt.join(Transaction.instrument).where(Instrument.symbol == f.instrument_symbol)
-    if f.text and f.text.strip():
-        needle = f"%{f.text.strip()}%"
-        stmt = stmt.where(
-            or_(
-                Transaction.kind.ilike(needle),
-                Transaction.description.ilike(needle),
-                Transaction.instrument.has(Instrument.symbol.ilike(needle)),
-                Transaction.account.has(Account.account_label.ilike(needle)),
-            )
-        )
-    if f.hide_settlement_sweeps:
-        # Auto-generated settlement legs carry an external_id suffixed
-        # ``:vmfxx`` (SETTLEMENT_EXTERNAL_ID_SUFFIX). They keep the settlement
-        # balance accurate for valuation but pair one row to every cash
-        # movement, which floods the ledger view — hide them here by default
-        # while leaving them in the ledger so positions_service still values
-        # the fund correctly. Rows with no external_id (plain manual entries)
-        # must stay visible.
-        stmt = stmt.where(
-            or_(
-                Transaction.external_id.is_(None),
-                Transaction.external_id.notlike(f"%{SETTLEMENT_EXTERNAL_ID_SUFFIX}"),
-            )
-        )
-    return stmt
+    return {
+        "account_id": f.account_id,
+        "instrument_symbol": f.instrument_symbol,
+        "kind": f.kind,
+        "source": f.source,
+        "start": f.start,
+        "end": f.end,
+        "text": f.text,
+        "hide_settlement_sweeps": f.hide_settlement_sweeps,
+    }
 
 
 def list_ledger_records(
@@ -144,31 +113,23 @@ def list_ledger_records(
     rather than today's spot. ``fx_rate`` (current EUR→USD) is only used as a
     fallback when a row predates the available FX history.
     """
-    stmt = _build_ledger_stmt(filters)
-    if limit is not None:
-        stmt = stmt.limit(limit)
-    if offset:
-        stmt = stmt.offset(offset)
-    txns = session.scalars(stmt).unique().all()
+    txns = transactions_repo.list_ledger(
+        session, **_filter_kwargs(filters), limit=limit, offset=offset
+    )
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate) for t in txns]
 
 
 def count_ledger_records(session: Session, filters: LedgerFilters | None = None) -> int:
     """Number of ledger rows matching ``filters`` (ignores paging)."""
-    stmt = _build_ledger_stmt(filters).order_by(None)
-    return int(session.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+    return transactions_repo.count_ledger(session, **_filter_kwargs(filters))
 
 
 def get_ledger_record(
     session: Session, txn_id: int, *, fx_rate: Decimal | None = None
 ) -> LedgerRecord | None:
     """Return one ledger record by id (settlement legs included), or ``None``."""
-    txn = session.scalars(
-        select(Transaction)
-        .options(joinedload(Transaction.account), joinedload(Transaction.instrument))
-        .where(Transaction.id == txn_id)
-    ).first()
+    txn = transactions_repo.get_with_relations(session, txn_id)
     if txn is None:
         return None
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")

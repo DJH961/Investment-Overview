@@ -7,16 +7,17 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain.money_market import (
     MANUAL_SETTLEMENT_DESCRIPTION_PREFIX,
+    SETTLEMENT_EXTERNAL_ID_SUFFIX,
     is_money_market,
     settlement_external_id_for,
 )
-from investment_dashboard.models import Instrument, Transaction
+from investment_dashboard.models import Account, Instrument, Transaction
 
 
 def find_account_money_market_instrument(session: Session, account_id: int) -> Instrument | None:
@@ -118,6 +119,149 @@ def list_transactions(
         stmt = stmt.where(and_(*conds))
     stmt = stmt.order_by(Transaction.date, Transaction.id)
     return session.scalars(stmt).all()
+
+
+def list_by_kinds_with_account(
+    session: Session,
+    kinds: Sequence[str],
+    *,
+    account_id: int | None = None,
+    newest_first: bool = False,
+) -> Sequence[Transaction]:
+    """Transactions of the given ``kinds`` with ``account`` eagerly loaded."""
+    stmt = (
+        select(Transaction)
+        .options(joinedload(Transaction.account))
+        .where(Transaction.kind.in_(list(kinds)))
+    )
+    if account_id is not None:
+        stmt = stmt.where(Transaction.account_id == account_id)
+    if newest_first:
+        stmt = stmt.order_by(Transaction.date.desc(), Transaction.id.desc())
+    return session.scalars(stmt).all()
+
+
+def list_all_with_account(session: Session) -> Sequence[Transaction]:
+    """Every transaction with ``account`` eagerly loaded (unordered)."""
+    return session.scalars(select(Transaction).options(joinedload(Transaction.account))).all()
+
+
+def _ledger_stmt(
+    *,
+    account_id: int | None,
+    instrument_symbol: str | None,
+    kind: str | None,
+    source: str | None,
+    start: date | None,
+    end: date | None,
+    text: str | None,
+    hide_settlement_sweeps: bool,
+) -> Any:
+    stmt = (
+        select(Transaction)
+        .options(joinedload(Transaction.account), joinedload(Transaction.instrument))
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+    )
+    if account_id is not None:
+        stmt = stmt.where(Transaction.account_id == account_id)
+    if kind:
+        stmt = stmt.where(Transaction.kind == kind)
+    if source:
+        stmt = stmt.where(Transaction.source == source)
+    if start is not None:
+        stmt = stmt.where(Transaction.date >= start)
+    if end is not None:
+        stmt = stmt.where(Transaction.date <= end)
+    if instrument_symbol:
+        stmt = stmt.join(Transaction.instrument).where(Instrument.symbol == instrument_symbol)
+    if text and text.strip():
+        needle = f"%{text.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Transaction.kind.ilike(needle),
+                Transaction.description.ilike(needle),
+                Transaction.instrument.has(Instrument.symbol.ilike(needle)),
+                Transaction.account.has(Account.account_label.ilike(needle)),
+            )
+        )
+    if hide_settlement_sweeps:
+        # Auto-generated settlement legs carry an external_id suffixed
+        # ``:vmfxx``; they keep the settlement balance accurate but pair one row
+        # to every cash movement. Rows with no external_id stay visible.
+        stmt = stmt.where(
+            or_(
+                Transaction.external_id.is_(None),
+                Transaction.external_id.notlike(f"%{SETTLEMENT_EXTERNAL_ID_SUFFIX}"),
+            )
+        )
+    return stmt
+
+
+def list_ledger(
+    session: Session,
+    *,
+    account_id: int | None = None,
+    instrument_symbol: str | None = None,
+    kind: str | None = None,
+    source: str | None = None,
+    start: date | None = None,
+    end: date | None = None,
+    text: str | None = None,
+    hide_settlement_sweeps: bool = True,
+    limit: int | None = None,
+    offset: int = 0,
+) -> Sequence[Transaction]:
+    """Filtered ledger page (account + instrument eagerly loaded), newest first."""
+    stmt = _ledger_stmt(
+        account_id=account_id,
+        instrument_symbol=instrument_symbol,
+        kind=kind,
+        source=source,
+        start=start,
+        end=end,
+        text=text,
+        hide_settlement_sweeps=hide_settlement_sweeps,
+    )
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    if offset:
+        stmt = stmt.offset(offset)
+    return session.scalars(stmt).unique().all()
+
+
+def count_ledger(
+    session: Session,
+    *,
+    account_id: int | None = None,
+    instrument_symbol: str | None = None,
+    kind: str | None = None,
+    source: str | None = None,
+    start: date | None = None,
+    end: date | None = None,
+    text: str | None = None,
+    hide_settlement_sweeps: bool = True,
+) -> int:
+    """Number of ledger rows matching the filters (ignores paging)."""
+    stmt = _ledger_stmt(
+        account_id=account_id,
+        instrument_symbol=instrument_symbol,
+        kind=kind,
+        source=source,
+        start=start,
+        end=end,
+        text=text,
+        hide_settlement_sweeps=hide_settlement_sweeps,
+    ).order_by(None)
+    return int(session.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+
+
+def get_with_relations(session: Session, txn_id: int) -> Transaction | None:
+    """One transaction with account + instrument eagerly loaded."""
+    return session.scalars(
+        select(Transaction)
+        .options(joinedload(Transaction.account), joinedload(Transaction.instrument))
+        .where(Transaction.id == txn_id)
+    ).first()
 
 
 def list_transactions_missing_legs(session: Session) -> Sequence[Transaction]:

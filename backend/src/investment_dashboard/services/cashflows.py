@@ -28,13 +28,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import kinds
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import Cashflow
-from investment_dashboard.models import Transaction
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
 

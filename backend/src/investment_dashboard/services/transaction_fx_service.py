@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain.currency import split_native_to_dual_legs
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.models import Transaction
-from investment_dashboard.repositories import fx_repo, transactions_repo
+from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_service
 
 log = logging.getLogger(__name__)
@@ -217,7 +217,7 @@ def ensure_fx_coverage(
     # ``session`` in single-file mode).
     with cache_write_session(session) as cache:
         for _ in range(max(1, max_attempts)):
-            rates = fx_repo.get_rates(cache, base="EUR", quote="USD")
+            rates = fx_service.get_rates(cache, base="EUR", quote="USD")
             if any(d <= earliest_needed for d in rates):
                 return True
             try:
@@ -226,5 +226,5 @@ def ensure_fx_coverage(
                 )
             except Exception:  # pragma: no cover - defensive; refresh logs already
                 log.warning("FX coverage refresh attempt failed; retrying", exc_info=True)
-        rates = fx_repo.get_rates(cache, base="EUR", quote="USD")
+        rates = fx_service.get_rates(cache, base="EUR", quote="USD")
         return any(d <= earliest_needed for d in rates)

@@ -184,3 +184,75 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+
+[tool.importlinter]
+root_package = "investment_dashboard"
+include_external_packages = true
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Layering: ui/api -> services/readmodels -> repositories/adapters -> domain"
+type = "layers"
+layers = [
+    "investment_dashboard.ui : investment_dashboard.api",
+    "investment_dashboard.services : investment_dashboard.readmodels",
+    "investment_dashboard.repositories : investment_dashboard.adapters",
+    "investment_dashboard.domain",
+]
+# Known upward imports, tracked as debt (audit R4 section 14); remove as they are fixed.
+ignore_imports = [
+    "investment_dashboard.adapters._retry -> investment_dashboard.services.pull_log",
+    "investment_dashboard.adapters.yfinance_client -> investment_dashboard.services.provider_status",
+    "investment_dashboard.adapters.tiingo_client -> investment_dashboard.services.provider_status",
+    "investment_dashboard.repositories.tiingo_state_repo -> investment_dashboard.services.tiingo_fallback",
+    "investment_dashboard.boot -> investment_dashboard.ui.theme",
+]
+
+[[tool.importlinter.contracts]]
+name = "domain is pure (no I/O libraries, no ORM)"
+type = "forbidden"
+source_modules = ["investment_dashboard.domain"]
+forbidden_modules = [
+    "sqlalchemy",
+    "httpx",
+    "requests",
+    "yfinance",
+    "investment_dashboard.models",
+    "investment_dashboard.db",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Only repositories import ORM models"
+type = "forbidden"
+source_modules = [
+    "investment_dashboard.services",
+    "investment_dashboard.readmodels",
+    "investment_dashboard.api",
+]
+forbidden_modules = ["investment_dashboard.models"]
+# Remaining ORM imports in services/readmodels/api (audit R4 5.1): enums and row types.
+# Shrink this list by moving types to TYPE_CHECKING / domain.kinds.
+ignore_imports = [
+    "investment_dashboard.api.accounts -> investment_dashboard.models",
+    "investment_dashboard.api.auth -> investment_dashboard.models.auth",
+    "investment_dashboard.api.fx_conversions -> investment_dashboard.models.fx_conversion",
+    "investment_dashboard.api.schemas.transactions -> investment_dashboard.models.transaction",
+    "investment_dashboard.readmodels.mobile_export -> investment_dashboard.models",
+    "investment_dashboard.readmodels.queries.analytics_query -> investment_dashboard.models",
+    "investment_dashboard.readmodels.queries.overview_query -> investment_dashboard.models",
+    "investment_dashboard.services.auth_service -> investment_dashboard.models.auth",
+    "investment_dashboard.services.benchmark_service -> investment_dashboard.models",
+    "investment_dashboard.services.fx_conversion_service -> investment_dashboard.models.fx_conversion",
+    "investment_dashboard.services.importer_service -> investment_dashboard.models",
+    "investment_dashboard.services.manual_entry -> investment_dashboard.models.transaction",
+    "investment_dashboard.services.metrics_service -> investment_dashboard.models",
+    "investment_dashboard.services.onboarding_service -> investment_dashboard.models",
+    "investment_dashboard.services.positions_service -> investment_dashboard.models",
+    "investment_dashboard.services.prices_service -> investment_dashboard.models",
+    "investment_dashboard.services.tiingo_fallback_wiring -> investment_dashboard.models",
+    "investment_dashboard.services.transaction_edit_service -> investment_dashboard.models",
+    "investment_dashboard.services.transaction_edit_service -> investment_dashboard.models.transaction",
+    "investment_dashboard.services.transaction_fx_service -> investment_dashboard.models",
+]
+allow_indirect_imports = true

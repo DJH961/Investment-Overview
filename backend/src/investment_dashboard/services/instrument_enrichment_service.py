@@ -29,7 +29,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -37,8 +37,10 @@ from investment_dashboard.adapters.yfinance_client import (
     InstrumentInfo,
     fetch_instrument_info,
 )
-from investment_dashboard.models import Instrument, InstrumentOverride
 from investment_dashboard.repositories import instruments_repo
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Instrument, InstrumentOverride
 
 log = logging.getLogger(__name__)
 
@@ -187,7 +189,7 @@ def enrich_instrument(
     Synthetic asset classes (``cash`` / ``savings``) are never
     enriched — they have no yfinance ticker.
     """
-    instr = session.get(Instrument, instrument_id)
+    instr = instruments_repo.get_instrument(session, instrument_id)
     if instr is None:
         raise ValueError(f"Instrument {instrument_id} not found")
     if instr.asset_class in {"cash", "savings"}:
