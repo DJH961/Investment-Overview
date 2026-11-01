@@ -1894,6 +1894,78 @@
         "title": "Health",
         "type": "object"
       },
+      "HistoryPoint": {
+        "properties": {
+          "t": {
+            "description": "Date (ISO), one close per trading day",
+            "title": "T",
+            "type": "string"
+          },
+          "v": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "V"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "HistoryPoint",
+        "type": "object"
+      },
+      "HoldingHistoryResponse": {
+        "description": "Daily closes of one instrument in its native currency (never converted).",
+        "properties": {
+          "ccy": {
+            "description": "The instrument's native currency, for display",
+            "title": "Ccy",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "range": {
+            "enum": [
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "range",
+          "ccy",
+          "points"
+        ],
+        "title": "HoldingHistoryResponse",
+        "type": "object"
+      },
       "HoldingRow": {
         "properties": {
           "account": {
@@ -7060,6 +7132,66 @@
           }
         },
         "summary": "Get Holdings",
+        "tags": [
+          "holdings"
+        ]
+      }
+    },
+    "/api/holdings/{instrument_id}/history": {
+      "get": {
+        "operationId": "get_holding_history_api_holdings__instrument_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "1y",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "ytd",
+                "1y",
+                "all"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldingHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Holding History",
         "tags": [
           "holdings"
         ]

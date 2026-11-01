@@ -14,7 +14,7 @@ import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
 import { formatDate, formatMoney, formatNumber, formatPercent, formatTime } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
-import { type HoldingRowDto, toNum, useHoldings } from "../../lib/queries/portfolio";
+import { type HistoryRange, type HoldingRowDto, toNum, useHoldingHistory, useHoldings } from "../../lib/queries/portfolio";
 import { useShellStatus } from "../../lib/shell";
 import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import "./Holdings.scss";
@@ -203,30 +203,28 @@ function Subtotals({ group, ccy }: { group: HoldingGroup; ccy: string }) {
   );
 }
 
-const DAY_MS = 86_400_000;
+const HISTORY_RANGES: HistoryRange[] = ["1m", "3m", "6m", "ytd", "1y", "all"];
 
-/** Last two closes (previous close derived from today's move) against the average purchase price. */
+/** Daily closes (native currency) with the average purchase price as a cost-basis line. */
 function HoldingDrawerChart({ row }: { row: HoldingRowDto }) {
-  const price = toNum(row.price_native);
-  const move = toNum(row.today_pct);
+  const [range, setRange] = useState<HistoryRange>("1y");
+  const history = useHoldingHistory(row.instrument_id, range);
   const avg = toNum(row.avg_price_native);
-  const at = row.price_as_of ? Date.parse(row.price_as_of) : Number.NaN;
-  const points =
-    price !== null && Number.isFinite(at)
-      ? [
-          ...(move !== null && move > -1 ? [{ t: at - DAY_MS, v: price / (1 + move) }] : []),
-          { t: at, v: price },
-        ]
-      : [];
+  const ccy = history.data?.ccy ?? row.native_currency;
+  const points = (history.data?.points ?? []).map((p) => ({ t: p.t, v: toNum(p.v) }));
   return (
     <Chart
       series={[{ id: row.symbol, label: row.symbol, points, tone: "primary" }]}
       referenceLine={avg !== null ? { value: avg, label: "Cost basis" } : undefined}
-      valueFormat={(v) => formatMoney(v, row.native_currency)}
+      range={range}
+      ranges={HISTORY_RANGES}
+      onRangeChange={(r) => setRange(r as HistoryRange)}
+      loading={history.isPending}
+      valueFormat={(v) => formatMoney(v, ccy)}
       timeFormat={(t) => formatDate(new Date(t).toISOString().slice(0, 10), "short")}
-      height={180}
+      height={200}
       ariaLabel={`${row.symbol} price against cost basis`}
-      emptyMessage="No price yet."
+      emptyMessage={history.isError ? "Could not load the price history." : "No price history yet."}
     />
   );
 }

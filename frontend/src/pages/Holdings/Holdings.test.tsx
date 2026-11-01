@@ -35,6 +35,21 @@ const holdings: HoldingsDto = {
 
 vi.mock("../../lib/queries/portfolio", async (orig) => ({
   ...(await orig<typeof import("../../lib/queries/portfolio")>()),
+  useHoldingHistory: () => ({
+    data: {
+      instrument_id: 1,
+      symbol: "VWCE",
+      range: "1y",
+      ccy: "EUR",
+      points: [
+        { t: "2026-10-28", v: "90" },
+        { t: "2026-10-29", v: "95" },
+        { t: "2026-10-30", v: "100" },
+      ],
+    },
+    isPending: false,
+    isError: false,
+  }),
   useHoldings: () => ({ data: holdings, isPending: false, isError: false, isFetching: false, refetch: vi.fn() }),
 }));
 vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));

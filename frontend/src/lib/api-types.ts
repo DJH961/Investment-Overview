@@ -438,6 +438,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/holdings/{instrument_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Holding History */
+        get: operations["get_holding_history_api_holdings__instrument_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports": {
         parameters: {
             query?: never;
@@ -1264,6 +1281,38 @@ export interface components {
             app_version: string;
             /** Status */
             status: string;
+        };
+        /** HistoryPoint */
+        HistoryPoint: {
+            /**
+             * T
+             * @description Date (ISO), one close per trading day
+             */
+            t: string;
+            /** V */
+            v?: string | null;
+        };
+        /**
+         * HoldingHistoryResponse
+         * @description Daily closes of one instrument in its native currency (never converted).
+         */
+        HoldingHistoryResponse: {
+            /**
+             * Ccy
+             * @description The instrument's native currency, for display
+             */
+            ccy: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Points */
+            points: components["schemas"]["HistoryPoint"][];
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            /** Symbol */
+            symbol: string;
         };
         /** HoldingRow */
         HoldingRow: {
@@ -3370,6 +3419,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HoldingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_holding_history_api_holdings__instrument_id__history_get: {
+        parameters: {
+            query?: {
+                range?: "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            };
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingHistoryResponse"];
                 };
             };
             /** @description Validation Error */

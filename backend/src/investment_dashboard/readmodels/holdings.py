@@ -9,12 +9,13 @@ instrument's native currency. A USD leg that does not exist is ``None``.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import market_hours
 from investment_dashboard.readmodels._context import build_context
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
@@ -24,6 +25,7 @@ from investment_dashboard.readmodels.queries.overview_query import (
     compute_instrument_metrics,
     holding_freshness,
 )
+from investment_dashboard.repositories import instruments_repo
 from investment_dashboard.services import prices_service
 from investment_dashboard.services.positions_service import Position, compute_positions
 
@@ -204,3 +206,40 @@ def _sum(values: list[Decimal | None]) -> Decimal | None:
     if any(v is None for v in values):
         return None
     return sum((v for v in values if v is not None), start=ZERO)
+
+
+#: Upper bound on daily closes read for one chart (about 24 years of trading days).
+_HISTORY_MAX_POINTS = 6000
+
+
+def _history_start(range_key: str, today: date) -> date | None:
+    if range_key == "all":
+        return None
+    if range_key == "ytd":
+        return date(today.year, 1, 1)
+    days = {"1m": 31, "3m": 92, "6m": 183, "1y": 366}[range_key]
+    return today - timedelta(days=days)
+
+
+def build_history(session: Session, instrument_id: int, *, range_key: str) -> dict[str, Any] | None:
+    """Daily closes of one instrument in its NATIVE currency, or ``None`` for an unknown id.
+
+    No conversion happens here (currency rule): ``ccy`` is the instrument's
+    native currency, to label the axis. Read through ``prices_service`` only.
+    """
+    instrument = instruments_repo.get_instrument(session, instrument_id)
+    if instrument is None:
+        return None
+    today = market_hours.exchange_today()
+    pairs = prices_service.recent_closes_by_instrument(
+        session, [instrument_id], on_or_before=today, limit=_HISTORY_MAX_POINTS
+    ).get(instrument_id, [])
+    start = _history_start(range_key, today)
+    points = sorted((d, c) for d, c in pairs if start is None or d >= start)
+    return {
+        "instrument_id": instrument_id,
+        "symbol": instrument.symbol,
+        "range": range_key,
+        "ccy": instrument.native_currency,
+        "points": [{"t": d.isoformat(), "v": dec(c)} for d, c in points],
+    }

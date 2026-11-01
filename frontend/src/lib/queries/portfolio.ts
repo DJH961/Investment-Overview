@@ -8,6 +8,8 @@ export type HoldingsDto = components["schemas"]["HoldingsResponse"];
 export type HoldingRowDto = components["schemas"]["HoldingRow"];
 export type GraphDto = components["schemas"]["GraphResponse"];
 export type AllocationsDto = components["schemas"]["AllocationsResponse"];
+export type HoldingHistoryDto = components["schemas"]["HoldingHistoryResponse"];
+export type HistoryRange = HoldingHistoryDto["range"];
 export type GraphRange = GraphDto["range"];
 
 export const GRAPH_RANGES: GraphRange[] = ["1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all"];
@@ -30,6 +32,16 @@ export function useHoldings(ccy: ReportingCurrency) {
   return useQuery({
     queryKey: ["holdings", ccy],
     queryFn: ({ signal }) => api<HoldingsDto>(`/api/holdings?ccy=${ccy}`, { signal }),
+  });
+}
+
+/** Daily closes of one instrument in its native currency (drawer chart). */
+export function useHoldingHistory(instrumentId: number | null, range: HistoryRange) {
+  return useQuery({
+    queryKey: ["holdings", "history", instrumentId, range],
+    enabled: instrumentId !== null,
+    queryFn: ({ signal }) =>
+      api<HoldingHistoryDto>(`/api/holdings/${instrumentId}/history?range=${range}`, { signal }),
   });
 }
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from investment_dashboard.api.deps import Ccy
@@ -91,3 +93,21 @@ class HoldingsResponse(ApiModel):
     )
     holdings: list[HoldingRow]
     summary: HoldingsSummary
+
+
+HistoryRange = Literal["1m", "3m", "6m", "ytd", "1y", "all"]
+
+
+class HistoryPoint(ApiModel):
+    t: str = Field(description="Date (ISO), one close per trading day")
+    v: DecStr | None = None
+
+
+class HoldingHistoryResponse(ApiModel):
+    """Daily closes of one instrument in its native currency (never converted)."""
+
+    instrument_id: int
+    symbol: str
+    range: HistoryRange
+    ccy: str = Field(description="The instrument's native currency, for display")
+    points: list[HistoryPoint]
