@@ -19,6 +19,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Phone access to Claude on the server (no app change).** `deploy/bootstrap.sh` installs an always-on `claude-remote` user service for `dev` (`claude remote-control` in its own tmux, restarted after crashes and reboots) and no longer overwrites `dev`'s SSH keys on re-run, so a phone key survives. The runbook covers switching the service on and setting up SSH from the phone.
+
 - **v6 "One App" (Phases 1 and 3, most of Phase 2; not deployed yet).** Execution log in `docs/v6_progress.md`.
   - Repo restructure: the Python project now lives in `backend/`; the new React app in `frontend/` (the v5 web companion stays in `web/` until cutover).
   - FastAPI server (`inv-dashboard-server`, `api/app.py`): one router per resource under `/api` (overview, holdings, allocations + rebalance, graphs, periods, analytics, deposits, diagnostics, calculator, transactions CRUD, imports with preview/confirm, settings, refresh, backup, accounts, FX conversions, SSE `/api/stream`), Pydantic response models, committed `backend/openapi.json` and generated frontend types, security headers, SPA serving.
