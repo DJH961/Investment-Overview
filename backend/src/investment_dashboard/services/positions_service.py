@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends, kinds, market_hours
 from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
 from investment_dashboard.models import (
     Account,
@@ -125,7 +126,7 @@ def compute_positions(  # noqa: PLR0912, PLR0915
     a superset (loaded for a later ``as_of``) yields exactly the same rows the
     scoped query would.
     """
-    as_of = as_of or date.today()
+    as_of = as_of or exchange_today()
     is_historical = as_of < market_hours.exchange_today()
     if transactions is None:
         txns: Sequence[Transaction] = transactions_repo.list_transactions(session, end=as_of)
@@ -341,7 +342,7 @@ def compute_cash_balance(
     Direct savings account, and for showing uninvested cash on the
     brokerage accounts.
     """
-    as_of = as_of or date.today()
+    as_of = as_of or exchange_today()
     txns = transactions_repo.list_transactions(session, account_id=account_id, end=as_of)
     total = ZERO
     for t in txns:
@@ -362,7 +363,7 @@ def total_portfolio_value(
     same ``as_of`` date (avoids a redundant :func:`compute_positions` pass when
     a caller has already built it).
     """
-    as_of = as_of or date.today()
+    as_of = as_of or exchange_today()
     if positions is None:
         positions = compute_positions(session, as_of=as_of)
     total_eur = sum((p.current_value_eur for p in positions), start=ZERO)

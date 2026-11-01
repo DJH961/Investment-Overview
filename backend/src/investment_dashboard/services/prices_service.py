@@ -17,6 +17,7 @@ from investment_dashboard.adapters.yfinance_client import (
 )
 from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import (
+    exchange_today,
     is_us_market_open,
     latest_settled_session_date,
 )
@@ -161,7 +162,7 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
     settled session's published NAV.
     """
     cache = cache_session if cache_session is not None else session
-    today = today or date.today()
+    today = today or exchange_today()
     now = now or datetime.now(UTC).replace(tzinfo=None)
     now_utc = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
     market_open = is_us_market_open(now_utc)
@@ -276,7 +277,7 @@ def refresh_splits(
     ``{symbol: rows_written}``.
     """
     cache = cache_session if cache_session is not None else session
-    today = today or date.today()
+    today = today or exchange_today()
     result: dict[str, int] = {}
     if earliest_needed >= today + timedelta(days=1):
         return result
@@ -646,7 +647,7 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
     the live dashboard remains responsive.
     """
     cache = cache_session if cache_session is not None else session
-    today = today or date.today()
+    today = today or exchange_today()
     now = now or datetime.now(UTC).replace(tzinfo=None)
 
     round_ = pull_log.current()
@@ -840,7 +841,7 @@ def refresh_via_tiingo(
     when no token is set so the UI can prompt the user to add one in Settings.
     """
     cache = cache_session if cache_session is not None else session
-    today = today or date.today()
+    today = today or exchange_today()
     now = now or datetime.now(UTC).replace(tzinfo=None)
     token = _resolve_tiingo_token()
     if not token:

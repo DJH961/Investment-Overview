@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
 from investment_dashboard.readmodels.queries.overview_query import (
@@ -37,13 +38,13 @@ def seeded(session: Session) -> None:
     bnd = instruments_repo.get_or_create(session, symbol="BND", asset_class="etf")
     instrument_overrides_repo.set_category(session, vti.id, "US Stocks")
     instrument_overrides_repo.set_category(session, bnd.id, "US Bonds")
-    prices_repo.upsert_closes(session, vti.id, {date.today(): Decimal("230.00")})
-    prices_repo.upsert_closes(session, bnd.id, {date.today(): Decimal("75.00")})
+    prices_repo.upsert_closes(session, vti.id, {exchange_today(): Decimal("230.00")})
+    prices_repo.upsert_closes(session, bnd.id, {exchange_today(): Decimal("75.00")})
     # A flat EUR→USD = 1.25 on both the trade date and today, so EUR figures
     # are exactly the USD ones / 1.25 and the growth fractions match.
     fx_repo.upsert_rates(
         session,
-        {date(2024, 1, 5): Decimal("1.25"), date.today(): Decimal("1.25")},
+        {date(2024, 1, 5): Decimal("1.25"), exchange_today(): Decimal("1.25")},
     )
     session.add_all(
         [
@@ -83,11 +84,11 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
     latest_price_date = intraday_snapshots_service.previous_trading_session(
-        date.today() + timedelta(days=1)
+        exchange_today() + timedelta(days=1)
     )
     previous_price_date = intraday_snapshots_service.previous_trading_session(latest_price_date)
 
-    # Clear any seeded closes for VTI to prevent newer prints (like date.today() on weekends)
+    # Clear any seeded closes for VTI to prevent newer prints (like exchange_today() on weekends)
     # from shifting our target baseline sessions out of the latest 2 closes.
     session.execute(delete(PriceHistory).where(PriceHistory.instrument_id == vti.id))
 
@@ -133,12 +134,12 @@ def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, see
     orig_is_trading = intraday_snapshots_service._is_trading_day
 
     def mock_is_trading(day):
-        if day == date.today():
+        if day == exchange_today():
             return True
         return orig_is_trading(day)
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = exchange_today() - timedelta(days=1)
     prices_repo.upsert_closes(session, vti.id, {yesterday: Decimal("220.00")})
     fx_repo.upsert_rates(session, {yesterday: Decimal("1.20")})
     session.flush()
@@ -148,7 +149,7 @@ def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, see
         with patch.object(intraday_snapshots_service, "_is_trading_day", mock_is_trading):
             base = compute_instrument_metrics(session, get_positions(session))[vti.id]
             # Live spot: EUR/USD jumps from today's ECB 1.25 to 1.32 intraday.
-            fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=date.today())
+            fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=exchange_today())
             live = compute_instrument_metrics(session, get_positions(session))[vti.id]
             # The EUR daily growth moved with the live FX; USD (FX-neutral) did not.
             assert live.daily_growth_eur != base.daily_growth_eur
@@ -430,11 +431,11 @@ def test_market_verdict_beating_and_trailing(session: Session, seeded: None) -> 
     prices_repo.upsert_closes(
         session,
         vt.id,
-        {date(2024, 1, 5): Decimal("100.00"), date.today(): Decimal("110.00")},
+        {date(2024, 1, 5): Decimal("100.00"), exchange_today(): Decimal("110.00")},
     )
     fx_repo.upsert_rates(
         session,
-        {date(2024, 1, 5): Decimal("1.00"), date.today(): Decimal("1.00")},
+        {date(2024, 1, 5): Decimal("1.00"), exchange_today(): Decimal("1.00")},
     )
     session.flush()
 
@@ -443,7 +444,7 @@ def test_market_verdict_beating_and_trailing(session: Session, seeded: None) -> 
     # In production ``years`` is the real horizon (first contribution → as_of),
     # which equals the benchmark simulation horizon, so the benchmark's
     # compounded growth collapses back to its 1000 → 1100 total return.
-    years = years_between(date(2024, 1, 5), date.today())
+    years = years_between(date(2024, 1, 5), exchange_today())
     # Portfolio XIRR well above the benchmark's ⇒ beating.
     beating = compute_market_verdict(session, portfolio_xirr=Decimal("5.0"), years=years)
     assert beating.benchmark_symbol == "VT"
@@ -478,10 +479,10 @@ def test_partial_sale_uses_average_cost_growth(session: Session) -> None:
         account_type="brokerage",
     )
     acme = instruments_repo.get_or_create(session, symbol="ACME", asset_class="etf")
-    prices_repo.upsert_closes(session, acme.id, {date.today(): Decimal("150.00")})
+    prices_repo.upsert_closes(session, acme.id, {exchange_today(): Decimal("150.00")})
     fx_repo.upsert_rates(
         session,
-        {date(2024, 1, 5): Decimal("1.25"), date.today(): Decimal("1.25")},
+        {date(2024, 1, 5): Decimal("1.25"), exchange_today(): Decimal("1.25")},
     )
     session.add_all(
         [
@@ -541,13 +542,13 @@ def test_multi_flow_growth_is_compounded_not_simple_ratio(session: Session) -> N
         account_type="brokerage",
     )
     acme = instruments_repo.get_or_create(session, symbol="ACME", asset_class="etf")
-    prices_repo.upsert_closes(session, acme.id, {date.today(): Decimal("150.00")})
+    prices_repo.upsert_closes(session, acme.id, {exchange_today(): Decimal("150.00")})
     fx_repo.upsert_rates(
         session,
         {
             date(2024, 1, 5): Decimal("1.10"),
             date(2025, 1, 6): Decimal("1.10"),
-            date.today(): Decimal("1.10"),
+            exchange_today(): Decimal("1.10"),
         },
     )
     session.add_all(
@@ -639,7 +640,7 @@ def test_build_holding_cards_weight_and_sort(session: Session, seeded: None) -> 
     total_weight = sum((c.weight for c in cards if c.weight is not None), Decimal(0))
     assert abs(total_weight - Decimal(1)) < Decimal("0.0000001")
     # Freshness is carried through onto the card (today's print date).
-    assert cards[0].price_as_of == date.today()
+    assert cards[0].price_as_of == exchange_today()
     assert cards[0].is_money_market is False
 
 
@@ -798,7 +799,7 @@ def test_instrument_mtd_growth_per_currency(session: Session) -> None:
     (no flows this month), mirroring the YTD calculation but month-scoped."""
     from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 
-    today = date.today()
+    today = exchange_today()
     month_start = date(today.year, today.month, 1)
     if today == month_start:
         import pytest
@@ -872,7 +873,7 @@ def test_build_holding_cards_flags_lagging_daily_move_as_stale(
         native_currency="USD",
         account_type="brokerage",
     )
-    today = date.today()
+    today = exchange_today()
     yesterday = today - timedelta(days=1)
     two_days_ago = today - timedelta(days=2)
 

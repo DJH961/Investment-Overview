@@ -11,6 +11,7 @@ import sqlalchemy as sa
 
 from investment_dashboard import boot
 from investment_dashboard.boot import run_boot_sequence
+from investment_dashboard.domain.market_hours import exchange_today
 
 
 def _release_held_writer_lock() -> None:
@@ -367,7 +368,7 @@ def test_warm_snapshots_populates_cache_for_seeded_ledger(
     snapshot row for the period so the first ``/overview`` render reads cached
     values instead of rebuilding the curve day by day.
     """
-    from datetime import date, timedelta
+    from datetime import timedelta
     from decimal import Decimal
 
     from investment_dashboard import boot
@@ -382,7 +383,7 @@ def test_warm_snapshots_populates_cache_for_seeded_ledger(
     dispose_engines()
     try:
         run_boot_sequence(skip_network=True)
-        recent = date.today() - timedelta(days=3)
+        recent = exchange_today() - timedelta(days=3)
         with ledger_session_scope() as session:
             acct = accounts_repo.create_account(
                 session,
@@ -407,7 +408,7 @@ def test_warm_snapshots_populates_cache_for_seeded_ledger(
 
         with ledger_session_scope() as session:
             assert snapshots_repo.get_snapshot(session, recent) is not None
-            assert snapshots_repo.get_snapshot(session, date.today()) is not None
+            assert snapshots_repo.get_snapshot(session, exchange_today()) is not None
     finally:
         dispose_engines()
         get_settings.cache_clear()

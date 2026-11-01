@@ -27,6 +27,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.models import Account, Transaction
 from investment_dashboard.services import cashflows, fx_service
 
@@ -198,7 +199,7 @@ def compute_summary(
     ``EUR_total × today_spot`` and never USD/EUR mirrored at parity, which is
     what made the cards drift as USD/EUR moved.
     """
-    today = today or date.today()
+    today = today or exchange_today()
     year_start = date(today.year, 1, 1)
     month_start = date(today.year, today.month, 1)
 

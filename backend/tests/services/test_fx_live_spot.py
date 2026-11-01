@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters.yfinance_client import PriceRecord
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import fx_repo
 from investment_dashboard.services import fx_service
 
@@ -37,19 +38,19 @@ def _clear_live_spot() -> object:
 
 
 def test_get_rates_overlays_live_spot_for_today_only(session: Session) -> None:
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = exchange_today() - timedelta(days=1)
     fx_repo.upsert_rates(
         session,
-        {yesterday: Decimal("1.10"), date.today(): Decimal("1.11")},
+        {yesterday: Decimal("1.10"), exchange_today(): Decimal("1.11")},
         base="EUR",
         quote="USD",
     )
     session.flush()
 
-    fx_service.set_live_spot("USD", Decimal("1.1500"), observed_on=date.today())
+    fx_service.set_live_spot("USD", Decimal("1.1500"), observed_on=exchange_today())
     rates = fx_service.get_rates(session, base="EUR", quote="USD")
     # Today's mark reflects the live spot; yesterday's ECB mark is untouched.
-    assert rates[date.today()] == Decimal("1.1500")
+    assert rates[exchange_today()] == Decimal("1.1500")
     assert rates[yesterday] == Decimal("1.10")
 
 
@@ -57,32 +58,32 @@ def test_live_spot_does_not_alter_historical_lookups(session: Session) -> None:
     past = date(2024, 1, 5)
     fx_repo.upsert_rates(
         session,
-        {past: Decimal("1.20"), date.today(): Decimal("1.11")},
+        {past: Decimal("1.20"), exchange_today(): Decimal("1.11")},
         base="EUR",
         quote="USD",
     )
     session.flush()
 
-    fx_service.set_live_spot("USD", Decimal("1.30"), observed_on=date.today())
+    fx_service.set_live_spot("USD", Decimal("1.30"), observed_on=exchange_today())
     # A past-date lookup forward-fills from stored history, never the live spot.
     assert fx_service.get_rate_eur_to_quote(session, past) == Decimal("1.20")
-    assert fx_service.get_rate_eur_to_quote(session, date.today()) == Decimal("1.30")
+    assert fx_service.get_rate_eur_to_quote(session, exchange_today()) == Decimal("1.30")
 
 
 def test_refresh_live_spot_stores_a_today_dated_reading() -> None:
     def fake_fetch() -> PriceRecord:
-        return PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.0825"))
+        return PriceRecord(symbol="EURUSD=X", date=exchange_today(), close=Decimal("1.0825"))
 
     rate = fx_service.refresh_live_spot(now=FOREX_OPEN, fetcher=fake_fetch)
     assert rate == Decimal("1.0825")
     spot = fx_service.get_live_spot("USD")
     assert spot is not None
     assert spot.rate == Decimal("1.0825")
-    assert spot.observed_on == date.today()
+    assert spot.observed_on == exchange_today()
 
 
 def test_refresh_live_spot_ignores_a_stale_reading() -> None:
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = exchange_today() - timedelta(days=1)
 
     def fake_fetch() -> PriceRecord:
         return PriceRecord(symbol="EURUSD=X", date=yesterday, close=Decimal("1.07"))
@@ -111,7 +112,7 @@ def test_refresh_live_spot_only_sources_usd() -> None:
     def fake_fetch() -> PriceRecord:
         nonlocal called
         called = True
-        return PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.08"))
+        return PriceRecord(symbol="EURUSD=X", date=exchange_today(), close=Decimal("1.08"))
 
     assert fx_service.refresh_live_spot(now=FOREX_OPEN, quote="DKK", fetcher=fake_fetch) is None
     assert called is False
@@ -124,12 +125,12 @@ def test_refresh_live_spot_skips_fetch_when_forex_closed() -> None:
     def fake_yf() -> PriceRecord:
         nonlocal yf_called
         yf_called = True
-        return PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.08"))
+        return PriceRecord(symbol="EURUSD=X", date=exchange_today(), close=Decimal("1.08"))
 
     def fake_tiingo() -> object:
         nonlocal tiingo_called
         tiingo_called = True
-        return _tiingo_fx("1.08", date.today())
+        return _tiingo_fx("1.08", exchange_today())
 
     # Over the weekend the spot-FX market is shut: no provider is polled and no
     # projection is stored as a live mark.
@@ -148,13 +149,13 @@ def test_refresh_live_spot_skips_fetch_when_forex_closed() -> None:
 
 def test_refresh_live_spot_keeps_prior_spot_when_forex_closes() -> None:
     # A genuine in-session spot was captured while the market traded …
-    fx_service.set_live_spot("USD", Decimal("1.0900"), observed_on=date.today())
+    fx_service.set_live_spot("USD", Decimal("1.0900"), observed_on=exchange_today())
     # … and a later weekend tick must not overwrite or clear it with a projection.
     assert (
         fx_service.refresh_live_spot(
             now=FOREX_CLOSED,
             fetcher=lambda: PriceRecord(
-                symbol="EURUSD=X", date=date.today(), close=Decimal("9.99")
+                symbol="EURUSD=X", date=exchange_today(), close=Decimal("9.99")
             ),
         )
         is None
@@ -187,7 +188,7 @@ def test_refresh_live_spot_skips_tiingo_when_forex_market_closed() -> None:
     def tiingo() -> object:
         nonlocal called
         called = True
-        return _tiingo_fx("1.1382", date.today())
+        return _tiingo_fx("1.1382", exchange_today())
 
     rate = fx_service.refresh_live_spot(
         fetcher=lambda: None,
@@ -201,7 +202,7 @@ def test_refresh_live_spot_skips_tiingo_when_forex_market_closed() -> None:
 
 
 def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = exchange_today() - timedelta(days=1)
 
     def stale_yf() -> PriceRecord:
         return PriceRecord(symbol="EURUSD=X", date=yesterday, close=Decimal("1.07"))
@@ -209,7 +210,7 @@ def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
     rate = fx_service.refresh_live_spot(
         now=FOREX_OPEN,
         fetcher=stale_yf,
-        tiingo_fetcher=lambda: _tiingo_fx("1.1382", date.today()),
+        tiingo_fetcher=lambda: _tiingo_fx("1.1382", exchange_today()),
         tiingo_token="tok",
         charge_budget=lambda: True,
     )
@@ -217,7 +218,7 @@ def test_refresh_live_spot_falls_back_to_tiingo_when_yfinance_stale() -> None:
     spot = fx_service.get_live_spot("USD")
     assert spot is not None
     assert spot.rate == Decimal("1.1382")
-    assert spot.observed_on == date.today()
+    assert spot.observed_on == exchange_today()
 
 
 def test_refresh_live_spot_prefers_yfinance_over_tiingo() -> None:
@@ -226,11 +227,13 @@ def test_refresh_live_spot_prefers_yfinance_over_tiingo() -> None:
     def tiingo() -> object:
         nonlocal tiingo_called
         tiingo_called = True
-        return _tiingo_fx("9.99", date.today())
+        return _tiingo_fx("9.99", exchange_today())
 
     rate = fx_service.refresh_live_spot(
         now=FOREX_OPEN,
-        fetcher=lambda: PriceRecord(symbol="EURUSD=X", date=date.today(), close=Decimal("1.08")),
+        fetcher=lambda: PriceRecord(
+            symbol="EURUSD=X", date=exchange_today(), close=Decimal("1.08")
+        ),
         tiingo_fetcher=tiingo,
         tiingo_token="tok",
         charge_budget=lambda: True,
@@ -245,7 +248,7 @@ def test_refresh_live_spot_skips_tiingo_without_token() -> None:
     def tiingo() -> object:
         nonlocal called
         called = True
-        return _tiingo_fx("1.13", date.today())
+        return _tiingo_fx("1.13", exchange_today())
 
     rate = fx_service.refresh_live_spot(
         now=FOREX_OPEN,
@@ -264,7 +267,7 @@ def test_refresh_live_spot_skips_tiingo_when_budget_exhausted() -> None:
     def tiingo() -> object:
         nonlocal called
         called = True
-        return _tiingo_fx("1.13", date.today())
+        return _tiingo_fx("1.13", exchange_today())
 
     rate = fx_service.refresh_live_spot(
         now=FOREX_OPEN,
@@ -278,7 +281,7 @@ def test_refresh_live_spot_skips_tiingo_when_budget_exhausted() -> None:
 
 
 def test_refresh_live_spot_rejects_stale_tiingo_reading() -> None:
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = exchange_today() - timedelta(days=1)
     rate = fx_service.refresh_live_spot(
         now=FOREX_OPEN,
         fetcher=lambda: None,
@@ -310,10 +313,10 @@ class TestEurQuoteAsOf:
     desktop can stamp an honest "as of …" / "EOD FX" provenance label."""
 
     def test_none_when_no_rate_at_all(self, session: Session) -> None:
-        assert fx_service.eur_quote_as_of(session, today=date.today()) is None
+        assert fx_service.eur_quote_as_of(session, today=exchange_today()) is None
 
     def test_live_spot_reports_live_as_of_today(self, session: Session) -> None:
-        today = date.today()
+        today = exchange_today()
         fx_repo.upsert_rates(
             session, {today - timedelta(days=1): Decimal("1.10")}, base="EUR", quote="USD"
         )
@@ -330,7 +333,7 @@ class TestEurQuoteAsOf:
         assert info.observed_at == observed
 
     def test_set_live_spot_defaults_observed_at_to_now(self, session: Session) -> None:
-        today = date.today()
+        today = exchange_today()
         before = datetime.now(UTC)
         fx_service.set_live_spot("USD", Decimal("1.15"), observed_on=today)
         spot = fx_service.get_live_spot("USD")
@@ -339,7 +342,7 @@ class TestEurQuoteAsOf:
         assert spot.observed_at >= before
 
     def test_eod_reports_latest_settled_date(self, session: Session) -> None:
-        today = date.today()
+        today = exchange_today()
         friday = today - timedelta(days=3)
         fx_repo.upsert_rates(session, {friday: Decimal("1.08")}, base="EUR", quote="USD")
         session.flush()
@@ -352,7 +355,7 @@ class TestEurQuoteAsOf:
         assert info.as_of == friday
 
     def test_stale_live_spot_falls_back_to_eod(self, session: Session) -> None:
-        today = date.today()
+        today = exchange_today()
         yesterday = today - timedelta(days=1)
         fx_repo.upsert_rates(session, {yesterday: Decimal("1.09")}, base="EUR", quote="USD")
         session.flush()

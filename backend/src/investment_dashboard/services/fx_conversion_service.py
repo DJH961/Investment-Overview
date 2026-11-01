@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import fx_pool
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.models.fx_conversion import FxConversion
 from investment_dashboard.repositories import fx_conversion_repository as repo
 from investment_dashboard.services import fx_service
@@ -36,7 +37,7 @@ def _validate(
         raise ValueError("eur_sent and usd_received must be positive")
     if fees_eur is not None and fees_eur < 0:
         raise ValueError("fees_eur must not be negative")
-    if on > date.today():
+    if on > exchange_today():
         raise ValueError("date must not be in the future")
 
 

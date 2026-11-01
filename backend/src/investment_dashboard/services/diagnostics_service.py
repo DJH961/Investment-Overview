@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.instruments import SYNTHETIC_ASSET_CLASSES
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
 from investment_dashboard.services import (
     positions_service,
@@ -181,7 +182,7 @@ def _check_prices(session: Session) -> list[HealthItem]:
     # ignores holidays); mutual funds get extra leeway because their NAV publishes
     # only once a day and routinely lands a day late.
     price_dates = prices_service.latest_price_dates_for(session, have_price_ids)
-    today = date.today()
+    today = exchange_today()
     general_cutoff = market_hours.trading_days_before(today, _STALE_GRACE_TRADING_DAYS)
     mutual_fund_cutoff = market_hours.trading_days_before(
         today, _MUTUAL_FUND_STALE_GRACE_TRADING_DAYS

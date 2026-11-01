@@ -232,7 +232,7 @@ def _market_series(
     if len(samples) < 2:
         return None
     fallback_rate = fx_service.get_rate_eur_to_quote(
-        session, (now or datetime.now(UTC)).date(), quote="USD"
+        session, market_hours.exchange_today(now or datetime.now(UTC)), quote="USD"
     )
     capped = _cap_backbone(samples, MAX_BACKBONE_CELLS)
     times: list[str] = []

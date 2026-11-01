@@ -77,6 +77,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import (
+    exchange_today,
     is_us_market_holiday,
     is_us_market_open,
     regular_session_close,
@@ -627,7 +628,7 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
             value_eur = market_value_eur(positions)
             # The EUR value above is at today's spot; record that same spot so the
             # USD view of this point is the FX-free price-only figure.
-            fx_eur_usd = fx_service.get_rate_eur_to_quote(session, date.today(), quote="USD")
+            fx_eur_usd = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote="USD")
             with cache_write_session(session) as cache:
                 last = intraday_repo.latest(cache)
                 if (
@@ -1724,7 +1725,7 @@ def reload_graphs(
         fx_fallback_fetcher=fx_fallback_fetcher,
     )
     try:
-        today = date.today()
+        today = exchange_today()
         snapshots_service.warm_range(session, today - timedelta(days=7), today, force=True)
     except Exception:
         log.warning("Snapshot warm in reload_graphs failed", exc_info=True)

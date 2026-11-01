@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import date, timedelta
+from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import app_config_repo
 
 log = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         with ledger_session_scope() as ledger, cache_session_scope() as cache:
             if force:
                 refreshed = refresh_prices(
-                    ledger, cache, earliest_needed=date.today() - timedelta(days=30)
+                    ledger, cache, earliest_needed=exchange_today() - timedelta(days=30)
                 )
             else:
                 refreshed = refresh_due_prices(ledger, cache)

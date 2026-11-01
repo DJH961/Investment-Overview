@@ -7,6 +7,7 @@ from decimal import Decimal
 
 import pytest
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.models import (
     Account,
     Instrument,
@@ -98,11 +99,11 @@ def test_bundle_populates_curve_and_kpis(populated_session) -> None:  # type: ig
 
 def test_bundle_defaults_as_of_to_exchange_today_not_local(session, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     # The exported curve must be stamped on the NYSE exchange date (one ET clock,
-    # schema 2), never the publisher's local ``date.today()``. Pin a divergent ET
+    # schema 2), never the publisher's local ``exchange_today()``. Pin a divergent ET
     # date and assert the default flows from ``exchange_today``.
     import investment_dashboard.readmodels.queries.analytics_query as aq
 
-    et_day = date.today() - timedelta(days=1)
+    et_day = exchange_today() - timedelta(days=1)
     monkeypatch.setattr(aq.market_hours, "exchange_today", lambda *a, **k: et_day)
     bundle = build_bundle(session, currency="EUR", lookback_days=3)
     assert bundle.as_of == et_day
@@ -114,7 +115,7 @@ def test_bundle_safe_on_empty_db(session) -> None:  # type: ignore[no-untyped-de
     # ``as_of`` is the live "today" (as on the page), so the bounded equity-curve
     # recompute still renders a gap-free recent window straight from a cold cache
     # without crashing — it just values every day at zero.
-    as_of = date.today()
+    as_of = exchange_today()
     bundle = build_bundle(session, currency="EUR", lookback_days=7, as_of=as_of)
     assert bundle.cagr is None
     assert bundle.sharpe is None
@@ -135,7 +136,7 @@ def test_curve_bounds_cold_cache_recompute(session) -> None:  # type: ignore[no-
     """
     from investment_dashboard.readmodels.queries.analytics_query import CURVE_RECOMPUTE_TAIL_DAYS
 
-    as_of = date.today()
+    as_of = exchange_today()
     bundle = build_bundle(session, currency="EUR", lookback_days=400, as_of=as_of)
     # Far fewer points than the 401-day window: only the bounded trailing tail.
     assert 0 < len(bundle.curve) <= CURVE_RECOMPUTE_TAIL_DAYS + 1

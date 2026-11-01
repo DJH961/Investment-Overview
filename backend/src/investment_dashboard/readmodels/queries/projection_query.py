@@ -18,6 +18,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels.queries.period_query import PeriodRow, aggregate
 
 ZERO = Decimal(0)
@@ -115,7 +116,7 @@ def project(
         if r <= Decimal("-1"):
             raise ValueError(f"scenario rate {r} would zero out the portfolio")
 
-    base_year = start_year if start_year is not None else date.today().year
+    base_year = start_year if start_year is not None else exchange_today().year
     values = {r: starting_value_eur for r in scenarios}
     cumulative_contrib = ZERO
     out: list[ProjectionRow] = []
@@ -159,7 +160,7 @@ def project_monthly(
         if r <= Decimal("-1"):
             raise ValueError(f"scenario rate {r} would zero out the portfolio")
 
-    start = start or date.today()
+    start = start or exchange_today()
     monthly_rates = {r: _monthly_rate(r) for r in scenarios}
     values = {r: starting_value_eur for r in scenarios}
     cumulative_contrib = ZERO
@@ -193,7 +194,7 @@ def project_from_session(
     """Pull live portfolio state and contribution history, then project."""
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
-    today = today or date.today()
+    today = today or exchange_today()
     starting = positions_service.total_portfolio_value(session, as_of=today)
     yearly = aggregate(session, monthly=False, with_closing_value=False, today=today)
     return project(
@@ -215,7 +216,7 @@ def project_monthly_from_session(
     """Pull current portfolio + average historical monthly contribution, then project."""
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
-    today = today or date.today()
+    today = today or exchange_today()
     starting = positions_service.total_portfolio_value(session, as_of=today)
     monthly_rows = aggregate(session, monthly=True, with_closing_value=False, today=today)
     return project_monthly(

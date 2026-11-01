@@ -22,6 +22,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import snapshots_repo
 
 
@@ -29,7 +30,7 @@ def get_or_compute(session: Session, snapshot_date: date, *, force: bool = False
     """Return the EUR portfolio value on ``snapshot_date``.
 
     If a stored snapshot exists for any historical date, return it.
-    For ``date.today()`` the value is always recomputed live (today's
+    For ``exchange_today()`` the value is always recomputed live (today's
     prices are still moving) and the row is upserted in place.
 
     Pass ``force=True`` to ignore any cached historical value and recompute
@@ -51,7 +52,7 @@ def get_or_compute(session: Session, snapshot_date: date, *, force: bool = False
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
-    today = date.today()
+    today = exchange_today()
     if snapshot_date < today and not force:
         with cache_read_session(session) as cache:
             existing = snapshots_repo.get_snapshot(cache, snapshot_date)
@@ -111,7 +112,7 @@ def get_or_compute_many(
     wanted = sorted({d for d in dates})
     if not wanted:
         return {}
-    today = date.today()
+    today = exchange_today()
     historical = [d for d in wanted if d < today]
     stored: dict[date, Decimal] = {}
     if historical:
@@ -162,7 +163,7 @@ def series_in_currency(
     behaviour for callers that need a gap-free series.
     """
     currency = currency.upper()
-    today = date.today()
+    today = exchange_today()
     if end < start:
         return []
 
@@ -235,7 +236,7 @@ def warm_range(session: Session, start: date, end: date, *, force: bool = False)
     """
     if end < start:
         return 0
-    today = date.today()
+    today = exchange_today()
     # One bulk read of the window instead of a per-day cache round-trip.
     stored = stored_snapshots_in_range(session, start, end)
     warmed = 0
@@ -277,7 +278,7 @@ def invalidate_for_trade_dates(
     layouts. Returns the number of snapshots dropped (``0`` if nothing was in
     the past, e.g. a brand-new same-day entry).
     """
-    today = today or date.today()
+    today = today or exchange_today()
     past = [d for d in dates if d < today]
     if not past:
         return 0

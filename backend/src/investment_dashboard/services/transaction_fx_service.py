@@ -34,6 +34,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.currency import split_native_to_dual_legs
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import fx_repo, transactions_repo
 from investment_dashboard.services import fx_service
@@ -207,7 +208,7 @@ def ensure_fx_coverage(
     react to a ``False`` result, and the boot/Settings backfill will retry on
     the next run regardless.
     """
-    today = today or date.today()
+    today = today or exchange_today()
     from investment_dashboard.db import cache_write_session  # noqa: PLC0415
 
     # FX history is cache-tier data. Read coverage *and* write any refreshed

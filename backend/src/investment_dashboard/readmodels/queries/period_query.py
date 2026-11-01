@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from investment_dashboard.domain import dividends, kinds
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import (
     Cashflow,
     total_growth_pct_compounded,
@@ -412,7 +413,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
     # prerequisite for one-year-per-page pagination. We also always extend the
     # grid up to the *current* month so the in-progress month is shown with its
     # live month-to-date growth, even when it has no transactions yet.
-    today = today or date.today()
+    today = today or exchange_today()
     if fill_gaps and monthly and buckets:
         labels_sorted = sorted(buckets)
         current_label = _period_key(today, monthly=True)

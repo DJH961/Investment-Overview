@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
+from investment_dashboard.domain.market_hours import exchange_today
+
 ZERO = Decimal(0)
 ONE = Decimal(1)
 
@@ -193,7 +195,7 @@ def simulate(params: ProjectionParams) -> ProjectionResult:
     if params.periods_per_year < 1:
         raise ValueError("periods_per_year must be >= 1")
 
-    start = params.start or date.today()
+    start = params.start or exchange_today()
     per_period = {
         name: _per_period_rate(rate, params.periods_per_year)
         for name, rate in params.annual_rates.items()

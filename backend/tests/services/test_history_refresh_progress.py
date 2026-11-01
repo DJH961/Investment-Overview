@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from investment_dashboard import boot
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.services import refresh_status
 
 #: The stage helpers the deferred refresh runs, in order. Patched to no-ops (that
@@ -224,7 +225,7 @@ def test_warm_snapshots_routine_reopen_only_forces_recent_tail(
 
     monkeypatch.setattr("investment_dashboard.db.ledger_session_scope", _fake_scope)
     # A fixed, populated floor so the window is deterministic.
-    floor = date.today() - timedelta(days=40)
+    floor = exchange_today() - timedelta(days=40)
     monkeypatch.setattr(boot, "_earliest_needed_date", lambda: floor)
 
     calls: list[tuple[date, date, bool]] = []
@@ -236,7 +237,7 @@ def test_warm_snapshots_routine_reopen_only_forces_recent_tail(
     # Routine reopen: fill missing older days unforced, force only the recent tail.
     monkeypatch.setattr(boot, "_is_large_pull", lambda: False)
     boot._warm_snapshots()
-    today = date.today()
+    today = exchange_today()
     recent_floor = today - timedelta(days=boot._WARM_FORCE_RECENT_DAYS)
     assert calls == [
         (floor, recent_floor - timedelta(days=1), False),

@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from investment_dashboard.config import get_settings
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.ui.theme import register_plotly_template
 
 log = logging.getLogger(__name__)
@@ -121,7 +122,7 @@ def _history_is_stale(*, threshold_days: int = _HISTORICAL_PROGRESS_STALE_DAYS) 
     except Exception:  # pragma: no cover - defensive: never block on the probe
         log.debug("history staleness probe failed; assuming fresh", exc_info=True)
         return False
-    return (date.today() - newest).days > threshold_days
+    return (exchange_today() - newest).days > threshold_days
 
 
 def _earliest_needed_date() -> date:
@@ -145,7 +146,7 @@ def _earliest_needed_date() -> date:
             earliest = earliest_transaction_date(session)
     except Exception:  # pragma: no cover - defensive
         earliest = None
-    fallback = date.today() - timedelta(days=_BOOT_BACKFILL_DAYS)
+    fallback = exchange_today() - timedelta(days=_BOOT_BACKFILL_DAYS)
     if earliest is None:
         return fallback
     return min(earliest, fallback)
@@ -310,7 +311,7 @@ def _integrity_check_due(marker: Path | None, *, today: date | None = None) -> b
     """
     if marker is None:
         return True
-    today = today or date.today()
+    today = today or exchange_today()
     try:
         return marker.read_text(encoding="utf-8").strip() != today.isoformat()
     except OSError:
@@ -321,7 +322,7 @@ def _record_integrity_check(marker: Path | None, *, today: date | None = None) -
     """Stamp the marker so the integrity check is skipped until tomorrow."""
     if marker is None:
         return
-    today = today or date.today()
+    today = today or exchange_today()
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(today.isoformat(), encoding="utf-8")
@@ -996,7 +997,7 @@ def _warm_snapshots() -> None:
         from investment_dashboard.services.snapshots_service import warm_range  # noqa: PLC0415
 
         start = _earliest_needed_date()
-        today = date.today()
+        today = exchange_today()
         large = _is_large_pull()
         with ledger_session_scope() as session:
             if large:

@@ -713,7 +713,7 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
     YTD growth and single-day (daily) growth are each computed twice, once per
     wallet, mirroring the portfolio-level KPIs.
     """
-    as_of = as_of or date.today()
+    as_of = as_of or exchange_today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
@@ -1141,7 +1141,7 @@ def compute_market_verdict(
     # avoids any chance of an import cycle at module load.
     from investment_dashboard.services import benchmark_service  # noqa: PLC0415
 
-    as_of = as_of or date.today()
+    as_of = as_of or exchange_today()
     symbol = benchmark_service.get_symbol(session)
 
     benchmark_xirr = benchmark_service.simulate_benchmark_xirr(session, as_of=as_of)
@@ -1336,7 +1336,7 @@ def _fmt_asof(
         return "par"
     if freshness.price_as_of is None:
         return "—"
-    today = today or date.today()
+    today = today or exchange_today()
     if freshness.price_as_of == today:
         if freshness.market_open and feed_is_fresh(freshness.updated_at, now):
             return "LIVE"

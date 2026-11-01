@@ -27,6 +27,7 @@ from investment_dashboard.adapters.frankfurter_client import (
 )
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import fx_repo
 
 log = logging.getLogger(__name__)
@@ -161,7 +162,7 @@ def refresh_live_spot(
     # projection, not a live print, so it must not overlay as today's live mark.
     if not market_hours.is_forex_market_open(now):
         return None
-    today = today or date.today()
+    today = today or exchange_today()
     if fetcher is None:
         from investment_dashboard.adapters.yfinance_client import (  # noqa: PLC0415
             fetch_eur_usd_spot,
@@ -425,7 +426,7 @@ def refresh_fx_history(
     Network errors are logged and counted as zero rows for that quote —
     the app continues to function with stale rates.
     """
-    today = today or date.today()
+    today = today or exchange_today()
     if quote is not None and quotes is not None:
         raise ValueError("pass either 'quote' or 'quotes', not both")
     if quote is not None:
@@ -672,7 +673,7 @@ def get_rates(
     # any value forward-filled to an earlier date.
     if base == "EUR":
         live = _LIVE_SPOT.get(quote.upper())
-        if live is not None and live.observed_on == date.today():
+        if live is not None and live.observed_on == exchange_today():
             rates = {**rates, live.observed_on: live.rate}
     return rates
 
@@ -741,7 +742,7 @@ def eur_quote_as_of(
     Returns ``None`` only when no rate is available at all (an empty history with
     no live overlay), so the caller can simply omit the stamp.
     """
-    today = today or date.today()
+    today = today or exchange_today()
     if base == "EUR":
         live = _LIVE_SPOT.get(quote.upper())
         if live is not None and live.observed_on == today:

@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters import yfinance_client
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import Cashflow, xirr
 from investment_dashboard.models import Instrument, Transaction
 from investment_dashboard.repositories import (
@@ -113,7 +114,7 @@ def refresh_history(
     rather than crashing the request.
     """
     symbol = get_symbol(session)
-    end = end or (date.today() + timedelta(days=1))
+    end = end or (exchange_today() + timedelta(days=1))
     if end <= start:
         return 0
     instrument = _ensure_benchmark_instrument(session, symbol)
@@ -231,7 +232,7 @@ def simulate_benchmark_xirr(
     contributions to simulate.
     """
     ccy = currency.upper()
-    as_of = as_of or date.today()
+    as_of = as_of or exchange_today()
     txns = _funding_txns(session, as_of)
     if not txns:
         return None

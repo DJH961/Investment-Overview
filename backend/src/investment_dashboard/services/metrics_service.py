@@ -27,6 +27,7 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import (
     Cashflow,
     capital_gain,
@@ -180,7 +181,7 @@ def build_instrument_cashflows(
     as_of: date | None = None,
 ) -> tuple[dict[int, list[Cashflow]], dict[int, list[Cashflow]]]:
     """Per-instrument EUR and USD cashflow streams for holding-level XIRR."""
-    as_of = as_of or date.today()
+    as_of = as_of or exchange_today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
@@ -284,7 +285,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     as_of: date | None = None,
     eur_overrides: Mapping[int, Decimal] | None = None,
 ) -> PortfolioMetrics:
-    as_of = as_of or date.today()
+    as_of = as_of or exchange_today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
     # FX-pool effective EUR cost of USD deposits (empty without conversions).
     ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)

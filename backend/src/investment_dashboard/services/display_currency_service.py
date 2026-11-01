@@ -18,6 +18,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import app_config_repo
 from investment_dashboard.services import fx_service
 
@@ -80,7 +81,7 @@ def convert_from_eur(
     target = target.upper()
     if target == "EUR":
         return amount_eur
-    rate = fx_service.get_rate_eur_to_quote(session, as_of or date.today(), quote=target)
+    rate = fx_service.get_rate_eur_to_quote(session, as_of or exchange_today(), quote=target)
     if rate is None or rate == 0:
         return None
     return amount_eur * rate
@@ -93,4 +94,4 @@ def current_rate(
     as_of: date | None = None,
 ) -> Decimal | None:
     """Latest EUR→quote rate (forward-filled). ``None`` if FX history empty."""
-    return fx_service.get_rate_eur_to_quote(session, as_of or date.today(), quote=quote)
+    return fx_service.get_rate_eur_to_quote(session, as_of or exchange_today(), quote=quote)
