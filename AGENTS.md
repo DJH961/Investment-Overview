@@ -148,6 +148,27 @@ Adapted from the owner's starter-project convention (see plan §4a):
   - `uv run lint-imports` (layering contracts)
   - `uv run pytest`
   - `npm run typecheck` and `npm run test` inside `web/`
+- **Keep in step with every feature** (check each one when you add or change behaviour):
+  - **Activity logs** (`activity_log.py`, `api/activity.py`, RUNBOOK "Activity logs"):
+    every new server action (endpoint that writes or takes data off the server,
+    scheduled job, provider call, CLI tool run on the server) must leave a line in the
+    right subject file: add the route to `subject_for`/`_LABELS`, the module logger to
+    `SUBJECTS`, or log via `activity("<subject>")`. Add a subject only when none fits,
+    and document it in the RUNBOOK table. Never log passwords, request bodies, cookies
+    or tokens. Retention stays 90 days.
+  - **API contract:** after changing an endpoint, regenerate `backend/openapi.json`
+    and `frontend/src/lib/api-types.ts` (CI fails on drift).
+  - **Schema:** every model change gets an Alembic migration **with a working
+    downgrade**; until cutover `inv-dashboard-export-v5` (downgrade to `0014`) must
+    still run, so add new v6-only data to its "dropped" note.
+  - **Money maths:** property/golden tests, and until cutover a parity run against v5
+    on a ledger copy (`tools/parity_check.py`).
+  - **Settings / env vars:** document in `backend/.env.example`; if the server needs
+    it, also in the RUNBOOK `app.env` section, `first_install.sh` checks, or the
+    Dockerfile `ENV` block.
+  - **Server boot, encryption, scheduler, backups:** cover them in the CI `image` job
+    (it runs on a real SQLCipher database); Windows tests cannot see these failures.
+  - **Frontend:** no inline scripts (CSP), tokens and BEM only.
 - Commits use conventional prefixes (`feat:`, `fix:`, `docs:`, `refactor:`,
   `test:`, `chore:`), subject ≤ 72 chars.
 - On completion, open/update the PR that contains the work; at the very end, check
