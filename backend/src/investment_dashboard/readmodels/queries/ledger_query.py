@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
+from investment_dashboard.domain import kinds
 from investment_dashboard.domain.currency import dual_currency_amounts
 from investment_dashboard.domain.money_market import (
     SETTLEMENT_EXTERNAL_ID_SUFFIX,
@@ -215,9 +216,9 @@ def summarize_ledger(
     """Aggregate KPI figures for the (optionally filtered) ledger."""
     records = list_ledger_records(session, filters, fx_rate=fx_rate)
     count = len(records)
-    buy_count = sum(1 for r in records if r.kind == "buy")
-    sell_count = sum(1 for r in records if r.kind == "sell")
-    trades = [r for r in records if r.kind in ("buy", "sell")]
+    buy_count = sum(1 for r in records if r.kind == kinds.BUY)
+    sell_count = sum(1 for r in records if r.kind == kinds.SELL)
+    trades = [r for r in records if r.kind in (kinds.BUY, kinds.SELL)]
     eur_amounts = [abs(r.net_eur) for r in trades if r.net_eur is not None]
     usd_amounts = [abs(r.net_usd) for r in trades if r.net_usd is not None]
     avg_eur = (sum(eur_amounts, Decimal(0)) / len(eur_amounts)) if eur_amounts else Decimal(0)
@@ -246,7 +247,7 @@ def _reinvested_dividend_value(t: Transaction) -> Decimal | None:
     reinvestments, whose ``net_native`` is the genuine non-zero cash used), so
     only this par-value case is special-cased.
     """
-    if t.kind != "dividend_reinvest":
+    if t.kind != kinds.DIVIDEND_REINVEST:
         return None
     if t.net_native not in (None, Decimal(0)):
         return None

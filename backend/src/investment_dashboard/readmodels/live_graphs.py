@@ -96,7 +96,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
-from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
+from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.money_market import MONEY_MARKET_NAV
 from investment_dashboard.readmodels._context import ReadModelContext
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
@@ -380,9 +381,7 @@ def _money_market_value_native(
     if not window:
         return {}
     mm_ids = {
-        p.instrument.id
-        for p in positions
-        if is_money_market(p.instrument.symbol, name=p.instrument.name)
+        p.instrument.id for p in positions if is_money_market_effective(p.instrument, p.effective)
     }
     if not mm_ids:
         return {}

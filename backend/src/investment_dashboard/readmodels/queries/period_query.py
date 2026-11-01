@@ -32,7 +32,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from investment_dashboard.domain import dividends
+from investment_dashboard.domain import dividends, kinds
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import (
     Cashflow,
@@ -365,7 +365,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
             if build_display
             else None
         )
-        if t.kind in ("dividend_cash", "dividend_reinvest"):
+        if t.kind in kinds.DIVIDEND_KINDS:
             # Dividend *income* (spec §6.1): reinvested distributions counted
             # at their reinvested value plus un-reinvested cash, so the column
             # matches the spreadsheet (which records reinvested amounts, incl.
@@ -388,7 +388,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
         if amt is not None:
             # ``None`` ⇒ unconvertible non-EUR row with no FX history — leave it
             # out of the bucket rather than counting a wrong-magnitude figure.
-            if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
+            if t.kind in cashflows.EXTERNAL_FLOW_KINDS:
                 b["contrib"] += amt
                 flows_by_date_eur[t.date] = flows_by_date_eur.get(t.date, ZERO) + amt
             elif t.kind == "interest":
@@ -398,7 +398,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
                 t, normalised_display_ccy, eur_to_usd=eur_to_usd, eur_overrides=ov
             )
             if amt_disp is not None:
-                if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
+                if t.kind in cashflows.EXTERNAL_FLOW_KINDS:
                     db["contrib"] += amt_disp
                     flows_by_date_display[t.date] = (
                         flows_by_date_display.get(t.date, ZERO) + amt_disp

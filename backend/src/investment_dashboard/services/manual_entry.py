@@ -19,39 +19,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import cast
 
+from investment_dashboard.domain import kinds
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV
 from investment_dashboard.models.transaction import TransactionKind
 
-#: Kinds whose booked cash flow is **into** the account (positive net).
-NET_POSITIVE_KINDS: frozenset[str] = frozenset(
-    {
-        TransactionKind.SELL.value,
-        TransactionKind.DEPOSIT.value,
-        TransactionKind.DIVIDEND_CASH.value,
-        TransactionKind.INTEREST.value,
-        TransactionKind.TRANSFER_IN.value,
-    }
-)
-
-#: Kinds whose booked cash flow is **out of** the account (negative net).
-NET_NEGATIVE_KINDS: frozenset[str] = frozenset(
-    {
-        TransactionKind.BUY.value,
-        TransactionKind.WITHDRAWAL.value,
-        TransactionKind.FEE.value,
-        TransactionKind.TRANSFER_OUT.value,
-        TransactionKind.DIVIDEND_REINVEST.value,
-    }
-)
-
-#: Trade kinds for which ``quantity × price`` should reconcile with ``total``.
-TRADE_KINDS: frozenset[str] = frozenset(
-    {
-        TransactionKind.BUY.value,
-        TransactionKind.SELL.value,
-        TransactionKind.DIVIDEND_REINVEST.value,
-    }
-)
+NET_POSITIVE_KINDS = kinds.NET_POSITIVE_KINDS
+NET_NEGATIVE_KINDS = kinds.NET_NEGATIVE_KINDS
+TRADE_KINDS = kinds.TRADE_KINDS
 
 #: Relative slack allowed between ``quantity × price`` and ``total`` before the
 #: form complains — brokers round price to a few decimals (matches the
@@ -60,14 +34,7 @@ RECONCILE_TOLERANCE = Decimal("0.01")
 
 #: Cash-movement kinds that should automatically fill / deplete the account's
 #: money-market settlement fund (so the user logs the transfer once, not twice).
-MONEY_MARKET_TRIGGER_KINDS: frozenset[str] = frozenset(
-    {
-        TransactionKind.DEPOSIT.value,
-        TransactionKind.WITHDRAWAL.value,
-        TransactionKind.TRANSFER_IN.value,
-        TransactionKind.TRANSFER_OUT.value,
-    }
-)
+MONEY_MARKET_TRIGGER_KINDS = kinds.EXTERNAL_FLOW_KINDS
 
 
 def net_sign(kind: str) -> int:

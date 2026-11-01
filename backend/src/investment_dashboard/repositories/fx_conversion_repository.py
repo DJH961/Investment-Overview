@@ -10,11 +10,12 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import kinds
 from investment_dashboard.models import Account, Transaction
 from investment_dashboard.models.fx_conversion import FxConversion
 
-#: External-contribution kinds (mirrors ``metrics_service._CONTRIBUTION_KINDS``).
-CONTRIBUTION_KINDS = ("deposit", "transfer_in")
+#: External-contribution kinds (canonical set lives in ``domain.kinds``).
+CONTRIBUTION_KINDS = tuple(sorted(kinds.CONTRIBUTION_KINDS))
 
 
 @dataclass(frozen=True)

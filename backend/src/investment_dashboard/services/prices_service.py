@@ -15,6 +15,7 @@ from investment_dashboard.adapters.yfinance_client import (
     fetch_market_times,
     fetch_splits,
 )
+from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import (
     is_us_market_open,
     latest_settled_session_date,
@@ -60,11 +61,11 @@ REFRESH_TTL_SECONDS: dict[str, int] = {
 }
 _DEFAULT_TTL_SECONDS = 24 * 60 * 60
 # Asset classes that do not have a yfinance ticker.
-_SYNTHETIC_ASSET_CLASSES = frozenset({"cash", "savings"})
+_SYNTHETIC_ASSET_CLASSES = SYNTHETIC_ASSET_CLASSES
 # Asset classes priced off a once-a-day NAV (published after the close) rather
 # than an intraday exchange quote. Mirrors the Tiingo fallback wiring's NAV set
 # and the browser companion's fetchable-NAV classes.
-_NAV_ASSET_CLASSES = frozenset({"mutual_fund"})
+_NAV_ASSET_CLASSES = NAV_ASSET_CLASSES
 
 
 def _force_refresh_window(

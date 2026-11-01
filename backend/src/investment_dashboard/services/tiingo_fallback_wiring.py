@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters import tiingo_client
 from investment_dashboard.adapters._retry import RateLimitedError
+from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import is_us_market_holiday
 from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import price_cache_repo, prices_repo
@@ -37,7 +38,7 @@ from investment_dashboard.services.tiingo_fallback_runner import (
 log = logging.getLogger(__name__)
 
 #: Asset classes priced off a once-a-day NAV rather than a live market quote.
-_NAV_ASSET_CLASSES = frozenset({"mutual_fund"})
+_NAV_ASSET_CLASSES = NAV_ASSET_CLASSES
 #: Exchange close (Eastern) after which the day's session has settled.
 _CLOSE_ET = time(16, 0)
 #: How far back to ask Tiingo's daily endpoint so the expected session is covered

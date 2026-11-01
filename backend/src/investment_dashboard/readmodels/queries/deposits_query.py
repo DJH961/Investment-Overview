@@ -30,12 +30,7 @@ from sqlalchemy.orm import Session, joinedload
 from investment_dashboard.models import Account, Transaction
 from investment_dashboard.services import cashflows, fx_service
 
-_DEPOSIT_KINDS: tuple[str, ...] = (
-    "deposit",
-    "withdrawal",
-    "transfer_in",
-    "transfer_out",
-)
+_DEPOSIT_KINDS = tuple(sorted(cashflows.EXTERNAL_FLOW_KINDS))
 
 ZERO = Decimal(0)
 
@@ -217,11 +212,7 @@ def compute_summary(
     ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
 
     total_native = sum(
-        (
-            t.net_native or ZERO
-            for t in txns
-            if t.kind in ("deposit", "transfer_in", "withdrawal", "transfer_out")
-        ),
+        (t.net_native or ZERO for t in txns if t.kind in cashflows.EXTERNAL_FLOW_KINDS),
         ZERO,
     )
 

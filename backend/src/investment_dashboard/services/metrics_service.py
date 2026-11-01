@@ -26,7 +26,7 @@ from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
 )
-from investment_dashboard.domain.money_market import is_money_market
+from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.returns import (
     Cashflow,
     capital_gain,
@@ -38,6 +38,7 @@ from investment_dashboard.domain.returns import (
 from investment_dashboard.models import Transaction, TransactionKind
 from investment_dashboard.repositories import (
     accounts_repo,
+    instrument_overrides_repo,
     snapshots_repo,
     transactions_repo,
 )
@@ -47,6 +48,7 @@ from investment_dashboard.services import (
     intraday_snapshots_service,
     positions_service,
 )
+from investment_dashboard.services.instrument_enrichment_service import effective_instrument
 
 ZERO = Decimal(0)
 
@@ -223,12 +225,17 @@ def build_retained_cash_account_ids(
         for account in accounts_repo.list_accounts(session)
         if account.account_type in _RETAINED_CASH_ACCOUNT_TYPES
     }
+    overrides = instrument_overrides_repo.get_override_map(
+        session, {t.instrument.id for t in transactions if t.instrument is not None}
+    )
     retained |= {
         t.account_id
         for t in transactions
         if t.account_id is not None
         and t.instrument is not None
-        and is_money_market(t.instrument.symbol, name=t.instrument.name)
+        and is_money_market_effective(
+            t.instrument, effective_instrument(t.instrument, overrides.get(t.instrument.id))
+        )
     }
     return retained
 

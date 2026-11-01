@@ -31,26 +31,17 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import kinds
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import Cashflow
-from investment_dashboard.models import Transaction, TransactionKind
+from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
 
-# Kinds that move *external* cash (the user's bank <-> portfolio).
-# ``transfer_in`` / ``transfer_out`` model inter-account or in-kind moves: a
-# transfer between two *tracked* accounts records both legs, so counting
-# ``transfer_in`` as a contribution and ``transfer_out`` as a withdrawal nets to
-# zero at the portfolio level, while a move that crosses the tracked boundary
-# (only one leg exists) is correctly treated as an external flow.
-CONTRIBUTION_KINDS = frozenset({TransactionKind.DEPOSIT.value, TransactionKind.TRANSFER_IN.value})
-WITHDRAWAL_KINDS = frozenset({TransactionKind.WITHDRAWAL.value, TransactionKind.TRANSFER_OUT.value})
-#: Contributions + withdrawals: the moves that change the cumulative baseline.
-EXTERNAL_FLOW_KINDS = CONTRIBUTION_KINDS | WITHDRAWAL_KINDS
-#: Kinds that receive cash not represented in the current portfolio value.
-DISTRIBUTION_KINDS = frozenset(
-    {TransactionKind.DIVIDEND_CASH.value, TransactionKind.INTEREST.value}
-)
+CONTRIBUTION_KINDS = kinds.CONTRIBUTION_KINDS
+WITHDRAWAL_KINDS = kinds.WITHDRAWAL_KINDS
+EXTERNAL_FLOW_KINDS = kinds.EXTERNAL_FLOW_KINDS
+DISTRIBUTION_KINDS = kinds.DISTRIBUTION_KINDS
 
 Rates = Mapping[date, Decimal]
 

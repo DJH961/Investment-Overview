@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
+from investment_dashboard.domain.instruments import SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
 from investment_dashboard.services import (
     positions_service,
@@ -125,8 +126,7 @@ def _active_instruments(session: Session) -> list[Instrument]:
     return [
         instr
         for instr in instruments_repo.list_instruments(session)
-        if instr.asset_class not in prices_service._SYNTHETIC_ASSET_CLASSES
-        and instr.id not in inactive
+        if instr.asset_class not in SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
     ]
 
 

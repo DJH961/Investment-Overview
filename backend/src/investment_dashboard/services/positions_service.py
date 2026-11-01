@@ -13,7 +13,8 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import market_hours
+from investment_dashboard.domain import dividends, kinds, market_hours
+from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
 from investment_dashboard.models import (
     Account,
@@ -41,14 +42,7 @@ _MIN_HELD_SHARES = Decimal("0.0000001")
 
 #: Share-count kinds that move the running holding total (a cash dividend does
 #: not). Used when projecting share counts forward to a later split date.
-_SHARE_MOVING_KINDS = frozenset(
-    {
-        TransactionKind.BUY.value,
-        TransactionKind.SELL.value,
-        TransactionKind.DIVIDEND_REINVEST.value,
-        TransactionKind.SPLIT.value,
-    }
-)
+_SHARE_MOVING_KINDS = kinds.SHARE_MOVING_KINDS
 
 
 def _split_factor_after(shares_at_as_of: Decimal, future_txns: Iterable[Transaction]) -> Decimal:
@@ -145,11 +139,7 @@ def compute_positions(  # noqa: PLR0912, PLR0915
     # the capital gain (spec §6.1, returns.capital_gain). Track which
     # (account, instrument, date) keys carry a reinvestment so the matching
     # cash leg can be skipped.
-    reinvest_keys: set[tuple[int, int | None, date]] = {
-        (t.account_id, t.instrument_id, t.date)
-        for t in txns
-        if t.kind == TransactionKind.DIVIDEND_REINVEST.value
-    }
+    reinvest_keys = dividends.reinvest_keys(list(txns))
 
     accounts_by_id = {a.id: a for a in accounts_repo.list_accounts(session)}
     instruments_by_id = {i.id: i for i in instruments_repo.list_instruments(session)}
@@ -165,11 +155,7 @@ def compute_positions(  # noqa: PLR0912, PLR0915
     mm_instrument_ids = {
         iid
         for iid, instr in instruments_by_id.items()
-        if is_money_market(
-            instr.symbol,
-            asset_class=(eff := effective_instrument(instr, overrides.get(iid))).asset_class,
-            name=eff.name,
-        )
+        if is_money_market_effective(instr, effective_instrument(instr, overrides.get(iid)))
     }
 
     # Aggregate by (account_id, instrument_id).

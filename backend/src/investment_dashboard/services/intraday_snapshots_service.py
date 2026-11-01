@@ -75,6 +75,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import (
     is_us_market_holiday,
     is_us_market_open,
@@ -211,7 +212,7 @@ _MIN_SHARES = Decimal("0.0000001")
 #: the stored samples, so it can't distort or spike the intraday curve. Money
 #: market funds share the broad ``mutual_fund`` class (see
 #: :mod:`investment_dashboard.domain.money_market`), so this one set covers them.
-_NAV_ASSET_CLASSES = frozenset({"mutual_fund", "cash", "savings"})
+_NAV_ASSET_CLASSES = NAV_ASSET_CLASSES | SYNTHETIC_ASSET_CLASSES
 
 #: Serialises reconstruction so two tabs opening at once don't double-fetch.
 _reconstruct_lock = threading.Lock()

@@ -9,10 +9,12 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import dividends
 from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
 )
+from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.market_hours import (
     exchange_today,
     feed_is_fresh,
@@ -733,23 +735,13 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
     # Cash-dividend legs that were immediately reinvested must not be counted
     # as income (already captured as cost basis + shares via the reinvest
     # leg), otherwise growth double-counts them.
-    reinvest_keys: set[tuple[int | None, date]] = {
-        (t.instrument_id, t.date) for t in txns if t.kind == TransactionKind.DIVIDEND_REINVEST.value
-    }
+    reinvest_keys = dividends.reinvest_keys(list(txns))
     # Money-market funds price at par ($1), so their reinvested dividends are the
     # actual return rather than a cost. Excluding those reinvest legs from the
     # cost basis (mirroring positions_service) lets their gain/growth reflect the
     # earned dividends instead of collapsing to zero.
     mm_iids: set[int] = {
-        p.instrument.id
-        for p in positions
-        if is_money_market(
-            p.instrument.symbol,
-            asset_class=(
-                p.effective.asset_class if p.effective is not None else p.instrument.asset_class
-            ),
-            name=(p.effective.name if p.effective is not None else p.instrument.name),
-        )
+        p.instrument.id for p in positions if is_money_market_effective(p.instrument, p.effective)
     }
     for t in txns:
         iid = t.instrument_id
@@ -795,7 +787,7 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         elif kind == TransactionKind.SPLIT.value:
             shares_held[iid] = shares_held.get(iid, ZERO) + qty
         elif kind == TransactionKind.DIVIDEND_CASH.value:
-            if (iid, t.date) not in reinvest_keys:
+            if (t.account_id, iid, t.date) not in reinvest_keys:
                 div_eur[iid] = div_eur.get(iid, ZERO) + eur
                 div_usd[iid] = div_usd.get(iid, ZERO) + usd
         if t.date >= year_start and kind in {
