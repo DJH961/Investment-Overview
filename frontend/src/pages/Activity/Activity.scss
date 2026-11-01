@@ -1,3 +1,14 @@
 .activity-page {
   display: block;
+
+  &__stack {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  &__kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: var(--space-3);
+  }
 }
