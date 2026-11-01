@@ -13,6 +13,7 @@ repository is public: no IP addresses or secrets go in here.
 | Hetzner firewall | inbound TCP 80 and 443 from anywhere; nothing else |
 | Tailnet name | `hetzner-djh-v1` (key expiry disabled; its IP is in the Tailscale admin) |
 | Admin user | `daniel`: SSH key only, passwordless sudo, in the `docker` group, plus a console-only password in your password manager |
+| Workspace user | `dev`: same SSH key, **no** sudo, **not** in the `docker` group; runs Claude Code, projects in `~/projects` |
 | App address | `https://investments.daniel-henke.de` (Porkbun `A` record → public IPv4) |
 | Off-site backups | Backblaze B2 bucket `Investment-Overview`, endpoint `s3.eu-central-003.backblazeb2.com`; bucket-scoped key in `~/b2.env` on the server |
 | App directory | `/opt/investments` (owned by `daniel`) |
@@ -38,6 +39,49 @@ key's passphrase. The agent remembers it across reboots.
 independent of SSH, Tailscale and the firewall. Log in there as `daniel` with the
 console password from your password manager. That password only works on the
 console: SSH password login is off.
+
+## Claude Code on the server
+
+Claude Code runs as the `dev` user, never as `daniel`. `dev` has no sudo and no
+Docker access, so a Claude session there cannot touch the app stack, the database,
+`~/b2.env` or anything else in `daniel`'s home (which is `750`). It can only work on
+the projects in `/home/dev/projects`. `bootstrap.sh` creates the user and installs
+Claude Code (Anthropic's native installer, which keeps itself updated).
+
+**One-time login (you do this, it is your account):**
+
+```bash
+ssh dev@hetzner-djh-v1
+claude
+```
+
+Claude prints a link; open it on the laptop, sign in, paste the code back. Then clone
+what you want to work on, e.g.
+`git clone https://github.com/DJH961/Investment-Overview ~/projects/Investment-Overview`.
+To push from the server, run `gh auth login` there (or add a GitHub deploy key for
+that repository); keep that login scoped to what you need.
+
+**Three ways in:**
+
+1. **Desktop app (Code tab):** add an SSH connection to `dev@hetzner-djh-v1`, then
+   start a session on it and pick a folder under `~/projects`. Needs Tailscale on
+   the laptop and the key in the Windows SSH agent (see "Everyday access").
+2. **Phone or browser:** start a session that stays up when the laptop is off:
+
+   ```bash
+   ssh dev@hetzner-djh-v1
+   tmux new -A -s claude
+   cd ~/projects/Investment-Overview && claude remote-control
+   ```
+
+   Leave tmux with `Ctrl+B`, then `D`. Open the session from the Claude app or
+   claude.ai/code. `tmux attach -t claude` brings it back.
+3. **Plain terminal:** `ssh dev@hetzner-djh-v1`, `tmux new -A -s claude`, `claude`.
+
+**Limits:** the server has 1 GB RAM. Claude Code itself is light, but running a
+project's full test suite or builds there competes with the live app; prefer CI for
+heavy work. Remove access at any time with `sudo deluser --remove-home dev` (as
+`daniel`), or skip the user on a rebuild with `DEV_USER= bash bootstrap.sh`.
 
 ## Restart
 

@@ -13,6 +13,7 @@
 set -euo pipefail
 
 ADMIN_USER="${ADMIN_USER:-daniel}"
+DEV_USER="${DEV_USER-dev}"   # set DEV_USER= (empty) to skip the Claude Code workspace user
 SWAP_SIZE="${SWAP_SIZE:-2G}"
 LOCK_ROOT="${LOCK_ROOT:-0}"
 CLOSE_PUBLIC_SSH="${CLOSE_PUBLIC_SSH:-0}"
@@ -25,7 +26,7 @@ export DEBIAN_FRONTEND=noninteractive
 log "System packages"
 apt-get update -qq
 apt-get -y -qq upgrade
-apt-get -y -qq install ca-certificates curl gnupg ufw unattended-upgrades jq
+apt-get -y -qq install ca-certificates curl gnupg ufw unattended-upgrades jq git tmux
 
 log "Automatic security updates (reboot at 04:30 UTC when a kernel update needs it)"
 cat >/etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
@@ -96,6 +97,25 @@ usermod -aG docker "$ADMIN_USER"
 log "Tailscale (joining the tailnet is a separate, interactive step: sudo tailscale up)"
 command -v tailscale &>/dev/null || curl -fsSL https://tailscale.com/install.sh | sh
 
+if [[ -n "$DEV_USER" ]]; then
+  log "Workspace user '${DEV_USER}' for Claude Code (same SSH key, no sudo, no docker)"
+  # Claude Code works here, never as the admin user: sudo or the docker group would
+  # let it reach the app stack, its data and the secrets in the admin's home.
+  if ! id "$DEV_USER" &>/dev/null; then
+    adduser --disabled-password --gecos "" "$DEV_USER" >/dev/null
+  fi
+  for group in sudo docker; do
+    if id -nG "$DEV_USER" | grep -qw "$group"; then gpasswd -d "$DEV_USER" "$group" >/dev/null; fi
+  done
+  rm -f "/etc/sudoers.d/90-$DEV_USER"
+  chmod 750 "/home/$ADMIN_USER"
+  install -d -m 700 -o "$DEV_USER" -g "$DEV_USER" "/home/$DEV_USER/.ssh" "/home/$DEV_USER/projects"
+  install -m 600 -o "$DEV_USER" -g "$DEV_USER" "/home/$ADMIN_USER/.ssh/authorized_keys" "/home/$DEV_USER/.ssh/authorized_keys"
+  # Native installer: no Node needed; keeps itself up to date. Login is a separate,
+  # interactive step (run `claude` as this user and open the printed link).
+  sudo -u "$DEV_USER" -H bash -c '[[ -x ~/.local/bin/claude ]] || curl -fsSL https://claude.ai/install.sh | bash'
+fi
+
 log "Firewall (ufw): deny all incoming except web + SSH"
 # Note: Docker-published ports bypass ufw. Only Caddy publishes ports (80/443), which
 # are meant to be public anyway; app containers never publish ports.
@@ -132,4 +152,5 @@ log "Done"
 printf 'docker:    %s\n' "$(docker --version)"
 printf 'compose:   %s\n' "$(docker compose version 2>/dev/null || echo missing)"
 printf 'tailscale: %s\n' "$(tailscale version | head -1)"
+[[ -z "$DEV_USER" ]] || printf 'claude:    %s\n' "$(sudo -u "$DEV_USER" -H bash -c '~/.local/bin/claude --version' 2>/dev/null || echo missing)"
 ufw status | sed 's/^/ufw:       /' | head -12
