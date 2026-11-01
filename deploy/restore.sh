@@ -8,7 +8,7 @@
 #   ./restore.sh --yes           do not ask for confirmation
 #
 # Run it on the server, inside the folder that holds docker-compose.yml
-# (normally ~/investments). What it does, in plain words:
+# (normally /opt/investments). What it does, in plain words:
 #   1. Pulls the snapshot files from Backblaze B2 into the app's backup folder
 #      (uses the "backup" rclone service; files already present are skipped).
 #   2. Stops the app so nothing writes to the database during the swap.

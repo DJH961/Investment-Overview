@@ -141,3 +141,18 @@ def test_encrypted_roundtrip(v5: tuple[Path, Path], tmp_path: Path) -> None:
     res = upload_db.prepare_upload(ledger=ledger, config=config, out=out, passphrase="s3cret-pass")
     assert res.encrypted
     assert not out.read_bytes().startswith(b"SQLite format 3")
+
+
+def test_local_only_summary_has_no_server_commands(
+    v5: tuple[Path, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger, config = v5
+    res = upload_db.prepare_upload(
+        ledger=ledger, config=config, out=tmp_path / "app.sqlite", encrypt=False
+    )
+    upload_db._print_summary(res, local_only=True)
+    out = capsys.readouterr().out
+    assert "inv-dashboard-server" in out
+    assert "scp" not in out.lower()
+    upload_db._print_summary(res)
+    assert "scp" in capsys.readouterr().out.lower()

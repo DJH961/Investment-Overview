@@ -1,4 +1,4 @@
-# Copy to ~/investments/rclone.conf on the server (chmod 600). NEVER commit the real file.
+# Copy to /opt/investments/rclone.conf on the server (chmod 600). NEVER commit the real file.
 # Use a Backblaze B2 *application key* limited to the Investment-Overview bucket
 # (read + write + list; it does not need "delete files").
 # keyID goes in `account`, the key itself in `key`; both are typed in by the owner.

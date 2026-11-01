@@ -2,7 +2,8 @@ name: Deploy
 
 # Build the v6 image, push it to GHCR, then pull it on the Hetzner server over
 # Tailscale. INERT until the owner sets the repository variable
-# DEPLOY_ENABLED=true (see deploy/RUNBOOK.md, "Secrets").
+# DEPLOY_ENABLED=true (see deploy/RUNBOOK.md, "Secrets"). Everything lives in
+# /opt/investments on the server (compose file, .env, app.env, rclone.conf).
 
 on:
   workflow_run:
@@ -82,6 +83,14 @@ jobs:
           chmod 600 ~/.ssh/id_deploy
           ssh-keyscan -H "$SERVER" >> ~/.ssh/known_hosts
 
+      - name: Copy the deploy files to the server
+        # The server never needs a git checkout: compose file, Caddyfile and the
+        # helper scripts are pushed here, from the commit being deployed.
+        run: |
+          scp -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
+            deploy/docker-compose.yml deploy/Caddyfile deploy/restore.sh deploy/first_install.sh \
+            "$SERVER_USER@$SERVER:/opt/investments/"
+
       - name: Deploy on the server
         env:
           NEW_TAG: ${{ steps.tag.outputs.sha }}
@@ -90,7 +99,8 @@ jobs:
             "$SERVER_USER@$SERVER" bash -s -- "$NEW_TAG" <<'REMOTE'
           set -euo pipefail
           NEW_TAG="$1"
-          cd ~/investments
+          cd /opt/investments
+          chmod 755 restore.sh first_install.sh
           touch .env
           PREV_TAG="$(sed -n 's/^APP_TAG=//p' .env | tail -n 1)"
           PREV_TAG="${PREV_TAG:-latest}"
@@ -115,6 +125,8 @@ jobs:
           docker compose up -d app
           if healthy; then
             echo "Deployed $NEW_TAG (previous: $PREV_TAG)"
+            # Pick up a changed Caddyfile (no-op when caddy is not running yet).
+            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
             docker image prune -f >/dev/null
             exit 0
           fi
