@@ -57,8 +57,8 @@ script does the heavy lifting; the steps below are the parts only you can do.
 
 **Before you start**
 
-- Once the v6 app is running: make sure the latest B2 backup is recent (procedure
-  added in v6 Phase 2). Today the server holds no data, so nothing can be lost.
+- Once the v6 app is running: make sure the latest B2 snapshot is recent (see
+  "Backups"), then restore with the "server gone" recipe under "Restore". Today the server holds no data, so nothing can be lost.
 - Have ready: your password manager, the laptop with this repo, Hetzner, Tailscale,
   Porkbun and Backblaze logins.
 
@@ -195,8 +195,8 @@ docker compose pull app && docker compose up -d app
 
 Then turn `DEPLOY_ENABLED` off (or the next green commit deploys over it) until the
 bad commit is fixed. A rollback never touches the data in the `app-data` volume; if a
-migration changed the database shape, restore the data instead (backups section,
-written separately).
+migration changed the database shape, restore the data instead (see
+"Restore" below).
 
 ## Secrets
 
@@ -283,6 +283,95 @@ read; the tool works on copies.
    ```
 5. **Check:** open `https://investments.daniel-henke.de` and compare the totals with
    the v5 app. Then delete `C:\Temp\upload` (it holds your ledger).
+
+## Backups
+
+What is backed up: the whole database (`/data/app.sqlite`, including passkeys and
+settings; it is SQLCipher-encrypted already). Prices and FX are re-downloadable and
+are just part of the same file.
+
+- **Sealed snapshots.** The app takes a consistent copy of the running database about a
+  minute after any change, and at least once a night, and seals it (AES-256-GCM) into
+  `/data/backups/snapshot-YYYYMMDD-HHMMSS.sealed.json`. Kept: the newest of each of the
+  last 24 hours, 14 days and 12 months.
+- **Off-site.** The `backup` container copies `/data/backups` to the B2 bucket
+  (`b2:Investment-Overview/snapshots`) every 5 minutes. It only adds files (never
+  deletes or overwrites), so a compromised server cannot erase history. In Backblaze set
+  the bucket lifecycle to **Keep all versions** (and delete old ones only if you want to
+  save space).
+- **Download from the app:** Settings -> Download backup (the same sealed file,
+  `GET /api/backup?kind=sealed`).
+
+**One-time setup (you do this on the server)**
+
+1. Copy `deploy/rclone.conf.example` to
+   `~/investments/rclone.conf`, fill in the B2 *application key ID* and *key* (bucket
+   `Investment-Overview` only), then `chmod 600 ~/investments/rclone.conf`.
+2. In `app.env` add `INV_DASHBOARD_BACKUP_PASSPHRASE=<long random value>` (for example
+   `openssl rand -base64 32`). If you leave it out, the database passphrase is used.
+3. **Store offline (password manager, plus a printout if you like):** the database
+   passphrase `INV_DASHBOARD_DB_PASSPHRASE`, the backup passphrase, and the B2
+   application key. A restore needs both passphrases; without them the backups are
+   unreadable by design.
+4. `docker compose up -d` and check after a few minutes:
+   `docker compose logs backup | tail` shows no errors, and the file appears in the
+   bucket.
+
+## Restore
+
+The command is `inv-dashboard-restore`. It lists snapshots, unseals the one you pick,
+checks the SQLite integrity and the row counts recorded when it was sealed, and only
+then swaps it in atomically. The database it replaces is kept next to it as
+`app.sqlite.before-restore-<time>` (nothing is deleted). If anything fails it says so
+and leaves the live database untouched.
+
+Always stop the app first so nothing writes during the swap.
+
+**Server gone (new server, empty volume)**
+
+1. Rebuild the server (see "Rebuild from scratch"), put `app.env` (with both
+   passphrases) and `rclone.conf` into `~/investments`, and start the stack once:
+   `docker compose up -d`, then `docker compose stop app`.
+2. Fetch the snapshots from B2 and restore the newest:
+
+   ```bash
+   cd ~/investments
+   docker compose run --rm --entrypoint rclone backup copy b2:Investment-Overview/snapshots /data/backups
+   docker compose run --rm app inv-dashboard-restore --latest
+   docker compose up -d app
+   ```
+
+3. Open the site and compare the totals with a recent screenshot or the v5 app.
+
+**Bad import or a mistake you want to undo (server is fine)**
+
+```bash
+cd ~/investments
+docker compose stop app
+docker compose run --rm app inv-dashboard-restore --list      # pick a time before the mistake
+docker compose run --rm app inv-dashboard-restore --snapshot snapshot-20261101-120000.sealed.json
+docker compose up -d app
+```
+
+(`inv-dashboard-restore` without options lists the snapshots and asks which one; add
+`--yes` to skip the confirmation.) Anything entered after that snapshot is lost; the
+state just before the restore is still in `app.sqlite.before-restore-<time>` if you
+need to look at it.
+
+**If the restore refuses:** "wrong passphrase / tampered" means the backup passphrase
+differs from the one the snapshot was sealed with; "database cannot be read" means the
+database passphrase is wrong; "row counts differ" or "integrity" means that file is
+damaged: try the previous snapshot.
+
+**Drill checklist (do this once before relying on it, then every few months)**
+
+- [ ] `docker compose logs backup | tail` clean; newest object in B2 is minutes old.
+- [ ] On a scratch machine or a second compose project: fresh volume, `app.env` and
+      `rclone.conf` only from your password manager.
+- [ ] Fetch from B2, `inv-dashboard-restore --list`, then `--latest`.
+- [ ] App starts, login works (passkey or password), totals match the live site.
+- [ ] Try `--snapshot` with an older file, and confirm a wrong passphrase is refused.
+- [ ] Note the date of the drill here or in your own log.
 
 ## Firewall note
 

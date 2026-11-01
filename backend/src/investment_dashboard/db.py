@@ -19,6 +19,7 @@ ledger-tier session.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -297,6 +298,60 @@ def cache_write_session(fallback: Session) -> Iterator[Session]:
         return
     with cache_session_scope() as s:
         yield s
+
+
+# --- Backup dirty flag -------------------------------------------------
+# The backup job (services/backup_service) snapshots shortly after any
+# ledger/config write. Cache-tier tables churn on every price tick, so they
+# are ignored; the nightly snapshot covers anything the hook cannot see.
+
+_CACHE_TABLES = frozenset(
+    {
+        "fx_history",
+        "intraday_value",
+        "position_snapshots",
+        "price_cache_metadata",
+        "price_history",
+        "price_split",
+        "auth_sessions",
+    }
+)
+_dirty_state: dict[str, float | None] = {"since": None}
+
+
+def mark_dirty() -> None:
+    """Record that durable data changed (keeps the earliest unflushed time)."""
+    if _dirty_state["since"] is None:
+        _dirty_state["since"] = time.time()
+
+
+def dirty_since() -> float | None:
+    """Epoch seconds of the first unbacked-up write, or ``None``."""
+    return _dirty_state["since"]
+
+
+def clear_dirty() -> None:
+    _dirty_state["since"] = None
+
+
+@event.listens_for(Session, "after_flush")
+def _track_durable_writes(session: Session, _ctx: Any) -> None:
+    for obj in (*session.new, *session.dirty, *session.deleted):
+        table = getattr(obj, "__table__", None)
+        if table is not None and table.name not in _CACHE_TABLES:
+            session.info["backup_dirty"] = True
+            return
+
+
+@event.listens_for(Session, "after_commit")
+def _mark_dirty_on_commit(session: Session) -> None:
+    if session.info.pop("backup_dirty", False):
+        mark_dirty()
+
+
+@event.listens_for(Session, "after_rollback")
+def _forget_on_rollback(session: Session) -> None:
+    session.info.pop("backup_dirty", None)
 
 
 def dispose_engines() -> None:

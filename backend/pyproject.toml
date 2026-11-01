@@ -75,6 +75,7 @@ inv-dashboard-export-snapshot = "investment_dashboard.tools.export_snapshot:main
 inv-dashboard-split-db = "investment_dashboard.tools.split_db:main"
 inv-dashboard-repair-sidecar = "investment_dashboard.tools.repair_sidecar:main"
 inv-dashboard-backup = "investment_dashboard.tools.backup:main"
+inv-dashboard-restore = "investment_dashboard.tools.restore_db:main"
 inv-dashboard-publish-web = "investment_dashboard.tools.publish_web:main"
 
 [build-system]

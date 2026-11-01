@@ -2,8 +2,10 @@
 
 * ``POST /refresh`` starts the existing refresh on a daemon thread (single
   flight: a second request while one runs gets 409) and returns 202.
-* ``GET /backup`` streams a consistent SQLite snapshot (online backup API, safe
-  while writing) with credential rows and secret-looking config keys removed.
+* ``GET /backup?kind=sealed`` streams the same sealed snapshot the scheduler writes
+  (full database incl. passkeys, AES-GCM sealed; restore with
+  ``inv-dashboard-restore``). ``kind=db`` (default until the frontend moves over)
+  streams a plain, secret-scrubbed SQLite copy.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from starlette.background import BackgroundTask
 from investment_dashboard.api.schemas.ops import RefreshStatus
 from investment_dashboard.config import get_settings
 from investment_dashboard.db import get_active_encryption
-from investment_dashboard.services import auto_refresh, refresh_status
+from investment_dashboard.services import auto_refresh, backup_service, refresh_status
 from investment_dashboard.storage.encryption import connect_sqlite
 from investment_dashboard.storage.integrity import backup_database
 
@@ -105,15 +107,43 @@ def _scrub_secrets(copy: Path) -> None:
         conn.execute("VACUUM")
 
 
+def _sealed_backup() -> FileResponse:
+    tmp = Path(tempfile.mkdtemp(prefix="inv-backup-"))
+    try:
+        dest = backup_service.create_snapshot(directory=tmp, retain=False)
+    except backup_service.SnapshotError as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except FileNotFoundError as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Database file not found") from exc
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    log.info("Sealed backup downloaded (%s)", dest.name)
+    return FileResponse(
+        dest,
+        media_type="application/json",
+        filename=dest.name,
+        background=BackgroundTask(shutil.rmtree, tmp, ignore_errors=True),
+    )
+
+
 @router.get("/backup", response_class=FileResponse)
 def download_backup(
-    kind: str = Query("db", pattern="^db$", description="Only the database snapshot today."),
+    kind: str = Query(
+        "db",
+        pattern="^(db|sealed)$",
+        description="'sealed': encrypted full snapshot; 'db': plain scrubbed copy.",
+    ),
 ) -> FileResponse:
     settings = get_settings()
     if settings.is_split_db:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Backup needs the single-file database layout"
         )
+    if kind == "sealed":
+        return _sealed_backup()
     src = settings.db_path
     tmp = Path(tempfile.mkdtemp(prefix="inv-backup-"))
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")

@@ -49,9 +49,40 @@ services:
     networks:
       - internal
 
-  # backup: pending decision (see docs/v6_progress.md)
-  # No backup service yet. Add it here once the owner has chosen the approach;
-  # it must read the app-data volume and write to the off-site bucket.
+  # Off-site copy of the sealed snapshots the app writes to /data/backups.
+  # rclone only ever COPIES (never deletes, never overwrites: --immutable), so a
+  # hacked server cannot erase history; B2 lifecycle rules keep old versions.
+  # Needs ~/investments/rclone.conf (see deploy/rclone.conf.example, mode 600).
+  # Pull snapshots back on a new server: see RUNBOOK.md, section Restore.
+  backup:
+    image: rclone/rclone:1.68
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          rclone copy /data/backups "${BACKUP_REMOTE:-b2:Investment-Overview/snapshots}"             --immutable --cache-dir /tmp/rclone --log-level NOTICE || echo "backup sync failed"
+          sleep 300
+        done
+    # Same user as the app, so restored files stay readable/writable for it.
+    user: "10001:10001"
+    environment:
+      RCLONE_CONFIG: /config/rclone.conf
+    volumes:
+      - app-data:/data
+      - ./rclone.conf:/config/rclone.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    networks:
+      - internal
 
 volumes:
   app-data:

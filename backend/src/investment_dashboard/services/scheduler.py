@@ -32,6 +32,8 @@ log = logging.getLogger(__name__)
 
 POLL_SECONDS = 5.0
 FX_INTERVAL = timedelta(minutes=30)
+#: Minimum gap between backup attempts (also the retry delay after a failure).
+BACKUP_RETRY = timedelta(minutes=1)
 
 #: A job returns an extra payload merged into the published event (or ``None``).
 Job = Callable[[], dict[str, Any] | None]
@@ -95,6 +97,18 @@ def default_eod_job() -> dict[str, Any] | None:
     return None
 
 
+def default_backup_job() -> dict[str, Any] | None:
+    from investment_dashboard.services import backup_service  # noqa: PLC0415
+
+    return backup_service.run_scheduled()
+
+
+def default_backup_due(now: datetime) -> bool:
+    from investment_dashboard.services import backup_service  # noqa: PLC0415
+
+    return backup_service.is_due(now)
+
+
 def default_interval() -> int:
     from investment_dashboard.db import config_session_scope  # noqa: PLC0415
     from investment_dashboard.services import auto_refresh  # noqa: PLC0415
@@ -108,6 +122,9 @@ class Jobs:
     tick: Job = default_tick_job
     fx: Job = default_fx_job
     eod: Job = default_eod_job
+    #: Sealed database snapshot (independent of market state, no live event).
+    backup: Job = default_backup_job
+    backup_due: Callable[[datetime], bool] = default_backup_due
     interval_seconds: Callable[[], int] = default_interval
 
 
@@ -116,6 +133,7 @@ class State:
     last_tick: datetime | None = None
     last_fx: datetime | None = None
     last_eod_session: date | None = None
+    last_backup: datetime | None = None
     running: set[str] = field(default_factory=set)
 
 
@@ -139,7 +157,18 @@ class Scheduler:
     # -- decisions ---------------------------------------------------------
 
     def due(self, now: datetime, interval_seconds: int = 60) -> list[str]:
-        """Names of the jobs that should run at ``now`` (pure, no I/O)."""
+        """Names of the jobs that should run at ``now``."""
+        names = self._due_market(now, interval_seconds)
+        st = self.state
+        if st.last_backup is None or now - st.last_backup >= BACKUP_RETRY:
+            try:
+                if self.jobs.backup_due(now):
+                    names.append("backup")
+            except Exception:
+                log.warning("backup due-check failed", exc_info=True)
+        return names
+
+    def _due_market(self, now: datetime, interval_seconds: int) -> list[str]:
         st = self.state
         if market_hours.is_us_market_open(now):
             if st.last_tick is None or now - st.last_tick >= timedelta(seconds=interval_seconds):
@@ -177,7 +206,9 @@ class Scheduler:
             elif name == "eod":
                 st.last_eod_session = market_hours.latest_settled_session_date(now)
                 st.last_fx = now
-            if failed:
+            elif name == "backup":
+                st.last_backup = now
+            if failed or name == "backup":
                 return
             etype = {"tick": "tick", "fx": "fx", "eod": "refresh"}[name]
             event: live_bus.Event = {
