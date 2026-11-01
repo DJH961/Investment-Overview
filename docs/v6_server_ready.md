@@ -10,7 +10,7 @@ and add a log line as steps land. Earlier history: [`v6_progress.md`](v6_progres
 
 ## Status
 
-- [ ] Wave A: parity tool, rollback kit, deploy kit, missing plan pieces
+- [x] Wave A: parity tool, rollback kit, deploy kit, missing plan pieces
 - [x] Parity baseline on a copy of the real ledger (owner reviews the differences)
 - [ ] Wave B: currency storage switch, Holdings polish
 - [ ] Wave C: layering and naming cleanup
@@ -231,3 +231,4 @@ Same as the baseline. The only allowed differences are the ones explained earlie
 ## Log
 - 2026-11-01 plan written; branch created.
 - 2026-11-01 A1+A2 done (c37f774). Parity baseline (as of 2026-10-30, `main` vs v5.3.1, 18 instruments, 43 months): 2 differences, both the known v5 Analytics-USD bug (USD analytics XIRR and TWR); everything else identical. B1 part 1 (cashflows, migration 0017 `f4c8d6e0a3b2`) in 1e48559; writers/readers in progress.
+- 2026-11-01 A3 (cf89dfc) + A4 (216a955) done; runbook rollback filled (c6b2f21). B1 done (952193f): parity main vs branch 0 differences. Running: core C1, app B2. Gate todo: CHANGELOG entries, ruff SIM102 in parity_check.py, stray ruff reformat of untracked files.
