@@ -63,7 +63,17 @@ if ! id "$ADMIN_USER" &>/dev/null; then
 fi
 usermod -aG sudo "$ADMIN_USER"
 install -d -m 700 -o "$ADMIN_USER" -g "$ADMIN_USER" "/home/$ADMIN_USER/.ssh"
-install -m 600 -o "$ADMIN_USER" -g "$ADMIN_USER" /root/.ssh/authorized_keys "/home/$ADMIN_USER/.ssh/authorized_keys"
+# Add root's keys but keep any added later (the GitHub deploy key): a re-run must
+# not lock the Deploy workflow out.
+admin_keys="/home/$ADMIN_USER/.ssh/authorized_keys"
+[[ -f "$admin_keys" ]] || install -m 600 -o "$ADMIN_USER" -g "$ADMIN_USER" /dev/null "$admin_keys"
+if [[ -f /root/.ssh/authorized_keys ]]; then
+  while IFS= read -r key; do
+    [[ -z "$key" ]] || grep -qxF -- "$key" "$admin_keys" || printf '%s\n' "$key" >>"$admin_keys"
+  done </root/.ssh/authorized_keys
+fi
+chown "$ADMIN_USER:$ADMIN_USER" "$admin_keys"
+chmod 600 "$admin_keys"
 echo "$ADMIN_USER ALL=(ALL) NOPASSWD:ALL" >"/etc/sudoers.d/90-$ADMIN_USER"
 chmod 440 "/etc/sudoers.d/90-$ADMIN_USER"
 visudo -cq

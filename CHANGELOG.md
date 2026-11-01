@@ -52,6 +52,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The server could not start with an encrypted (SQLCipher) database: the startup migration opened the file without its key. Migrations now run through the app's keyed connection; CI restarts the image on an existing encrypted database.
 - `inv-dashboard-set-password` failed on an encrypted database with "file is not a database": it ran without the app's boot, which loads the SQLCipher key. It now loads the key itself; the CI image test sets a password on the encrypted database.
+- Re-running `bootstrap.sh` overwrote the admin user's `authorized_keys` with root's, deleting the GitHub deploy key so every Deploy failed with "Permission denied (publickey)". It now adds root's keys and keeps the others.
 - The server image never started the scheduler, so there were no daily price/FX refreshes and no sealed backups. The image now sets `INV_DASHBOARD_SCHEDULER_ENABLED=true`, and CI checks it.
 - Off-site backups failed with "permission denied": the backup container (uid 10001) could not read `rclone.conf` owned by the login user. `first_install.sh` now checks the owner, and the RUNBOOK says to `chown 10001:10001` it.
 - The theme pre-paint script was blocked by the server's Content-Security-Policy (inline script); it is now a file (`theme-init.js`).
