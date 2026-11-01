@@ -25,7 +25,7 @@ from investment_dashboard.repositories import (
     instruments_repo,
     transactions_repo,
 )
-from investment_dashboard.services import fx_service, prices_service
+from investment_dashboard.services import fx_service, ledger_walk, prices_service
 from investment_dashboard.services.instrument_enrichment_service import (
     EffectiveInstrument,
     effective_instrument,
@@ -158,48 +158,16 @@ def compute_positions(  # noqa: PLR0912, PLR0915
         if is_money_market_effective(instr, effective_instrument(instr, overrides.get(iid)))
     }
 
-    # Aggregate by (account_id, instrument_id).
-    holdings: dict[tuple[int, int | None], dict[str, Decimal]] = {}
-    for t in txns:
-        key = (t.account_id, t.instrument_id)
-        agg = holdings.setdefault(
-            key,
-            {"shares": ZERO, "cost_basis": ZERO, "dividends_cash": ZERO},
-        )
-        kind = t.kind
-        qty = t.quantity or ZERO
-        net = t.net_native or ZERO
-        if kind == TransactionKind.BUY.value:
-            agg["shares"] += qty
-            agg["cost_basis"] += -net  # buy net is negative ⇒ cost positive
-        elif kind == TransactionKind.SELL.value:
-            # Average-cost method: a partial sale releases a proportional
-            # slice of the cost basis, otherwise the remaining shares keep
-            # the *full* original basis and growth is massively deflated
-            # (spec §6.5). ``qty`` is already negative for sells.
-            shares_before = agg["shares"]
-            if shares_before > ZERO:
-                avg_cost = agg["cost_basis"] / shares_before
-                # qty negative ⇒ this subtracts the sold shares' basis.
-                agg["cost_basis"] += avg_cost * qty
-                agg["cost_basis"] = max(agg["cost_basis"], ZERO)
-            agg["shares"] += qty
-        elif kind == TransactionKind.DIVIDEND_REINVEST.value:
-            agg["shares"] += qty
-            # Reinvested dividends raise the cost basis by the reinvestment
-            # value (spec §6.1) — except for money-market funds, whose NAV is
-            # pinned at par so the reinvested dividend *is* the return. Folding
-            # it into their cost basis would cancel cost against value and zero
-            # out the gain/growth; leaving it out surfaces the earned dividends.
-            if t.price_native is not None and t.instrument_id not in mm_instrument_ids:
-                agg["cost_basis"] += qty * t.price_native
-        elif kind == TransactionKind.DIVIDEND_CASH.value:
-            # Skip the cash leg of a reinvested dividend (already captured by
-            # the paired DIVIDEND_REINVEST as new shares + cost basis).
-            if (t.account_id, t.instrument_id, t.date) not in reinvest_keys:
-                agg["dividends_cash"] += net
-        elif kind == TransactionKind.SPLIT.value:
-            agg["shares"] += qty
+    # One pass over the ledger: a lot per (account_id, instrument_id).
+    lots = ledger_walk.walk(txns, reinvest_keys=reinvest_keys, money_market_ids=mm_instrument_ids)
+    holdings: dict[tuple[int, int | None], dict[str, Decimal]] = {
+        key: {
+            "shares": lot.shares,
+            "cost_basis": lot.cost_native,
+            "dividends_cash": lot.dividends_cash_native,
+        }
+        for key, lot in lots.items()
+    }
 
     accounts_by_id = {a.id: a for a in accounts_repo.list_accounts(session)}
 
