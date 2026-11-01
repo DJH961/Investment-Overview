@@ -4,6 +4,42 @@
  */
 
 export interface paths {
+    "/api/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Accounts */
+        get: operations["list_accounts_api_accounts_get"];
+        put?: never;
+        /** Create Account */
+        post: operations["create_account_api_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Account */
+        put: operations["update_account_api_accounts__account_id__put"];
+        post?: never;
+        /** Delete Account */
+        delete: operations["delete_account_api_accounts__account_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/allocations": {
         parameters: {
             query?: never;
@@ -419,6 +455,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/brokers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Import Brokers
+         * @description Importer plugins the server can parse (the frontend builds its picker from this).
+         */
+        get: operations["list_import_brokers_api_imports_brokers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/{import_id}": {
         parameters: {
             query?: never;
@@ -447,6 +503,23 @@ export interface paths {
         put?: never;
         /** Confirm Import */
         post: operations["confirm_import_api_imports__import_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/instruments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Instruments */
+        get: operations["list_instruments_api_instruments_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -614,6 +687,37 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountIn */
+        AccountIn: {
+            /** Account Label */
+            account_label: string;
+            /** Account Type */
+            account_type?: ("brokerage" | "savings" | "cash") | null;
+            /**
+             * Broker
+             * @enum {string}
+             */
+            broker: "vanguard" | "fidelity" | "savings_bank";
+            /** Native Currency */
+            native_currency: string;
+        };
+        /** AccountOut */
+        AccountOut: {
+            /** Account Label */
+            account_label: string;
+            /** Account Type */
+            account_type: string | null;
+            /** Active */
+            active: boolean;
+            /** Broker */
+            broker: string;
+            /** Id */
+            id: number;
+            /** Native Currency */
+            native_currency: string;
+            /** Transaction Count */
+            transaction_count: number;
+        };
         /** AllocationsResponse */
         AllocationsResponse: {
             /** Active Target Id */
@@ -652,7 +756,10 @@ export interface components {
             benchmark_symbol: string;
             /** Beta */
             beta: string | null;
-            /** Cagr */
+            /**
+             * Cagr
+             * @description fraction, 0.01 = 1%
+             */
             cagr: string | null;
             /** Calmar */
             calmar: string | null;
@@ -667,13 +774,22 @@ export interface components {
             curve: components["schemas"]["CurvePointOut"][];
             /** Curve Start */
             curve_start: string;
-            /** Cvar 95 */
+            /**
+             * Cvar 95
+             * @description fraction, 0.01 = 1%
+             */
             cvar_95: string | null;
             /** Kurtosis */
             kurtosis: string | null;
-            /** Max Drawdown */
+            /**
+             * Max Drawdown
+             * @description fraction, 0.01 = 1%
+             */
             max_drawdown: string | null;
-            /** Risk Free Rate */
+            /**
+             * Risk Free Rate
+             * @description fraction, 0.01 = 1%
+             */
             risk_free_rate: string | null;
             /** Risk Free Symbol */
             risk_free_symbol: string;
@@ -685,15 +801,27 @@ export interface components {
             sortino: string | null;
             /** Start */
             start: string;
-            /** Twr */
+            /**
+             * Twr
+             * @description fraction, 0.01 = 1%
+             */
             twr: string | null;
             /** Ulcer */
             ulcer: string | null;
-            /** Var 95 */
+            /**
+             * Var 95
+             * @description fraction, 0.01 = 1%
+             */
             var_95: string | null;
-            /** Volatility */
+            /**
+             * Volatility
+             * @description fraction, 0.01 = 1%
+             */
             volatility: string | null;
-            /** Xirr */
+            /**
+             * Xirr
+             * @description fraction, 0.01 = 1%
+             */
             xirr: string | null;
         };
         /** AttributionOut */
@@ -706,7 +834,10 @@ export interface components {
             instrument_id: number;
             /** Net Contribution */
             net_contribution: string | null;
-            /** Pct Of Total Return */
+            /**
+             * Pct Of Total Return
+             * @description Share of total return (fraction, 0.01 = 1%)
+             */
             pct_of_total_return: string | null;
             /** Start Value */
             start_value: string | null;
@@ -726,14 +857,20 @@ export interface components {
         Bucket: {
             /** Label */
             label: string;
-            /** Pct */
+            /**
+             * Pct
+             * @description Share of total value (fraction, 0.01 = 1%)
+             */
             pct: string;
             /** Value */
             value?: string | null;
         };
         /** CalcCategoryOut */
         CalcCategoryOut: {
-            /** Current Pct */
+            /**
+             * Current Pct
+             * @description Share of total value (fraction, 0.01 = 1%)
+             */
             current_pct: string | null;
             /** Current Value */
             current_value: string | null;
@@ -746,7 +883,10 @@ export interface components {
         CalcInstrumentOut: {
             /** Category */
             category: string;
-            /** Current Pct */
+            /**
+             * Current Pct
+             * @description Share of total value (fraction, 0.01 = 1%)
+             */
             current_pct: string | null;
             /** Current Value */
             current_value: string | null;
@@ -807,7 +947,10 @@ export interface components {
             current_rate?: string | null;
             /** Fx Pnl Eur */
             fx_pnl_eur?: string | null;
-            /** Rate Change Pct */
+            /**
+             * Rate Change Pct
+             * @description Current rate vs average invest rate (fraction, 0.01 = 1%)
+             */
             rate_change_pct?: string | null;
             /** Repatriation Value Eur */
             repatriation_value_eur?: string | null;
@@ -818,7 +961,10 @@ export interface components {
             investing_power_usd?: components["schemas"]["InvestingPower"] | null;
             /** Prev */
             prev?: string | null;
-            /** Rate Move Pct */
+            /**
+             * Rate Move Pct
+             * @description EUR/USD move vs previous close (fraction, 0.01 = 1%)
+             */
             rate_move_pct?: string | null;
             regime: components["schemas"]["FxRegime"];
             /** Reopen At */
@@ -868,7 +1014,10 @@ export interface components {
         DepositRowOut: {
             /** Account */
             account: string;
-            /** Amount */
+            /**
+             * Amount
+             * @description Amount in the requested ccy at the transaction date; null when underivable
+             */
             amount: string | null;
             /** Amount Native */
             amount_native: string;
@@ -938,13 +1087,19 @@ export interface components {
             asset_class: string;
             /** Category */
             category: string;
-            /** Current Pct */
+            /**
+             * Current Pct
+             * @description Current weight (fraction, 0.01 = 1%)
+             */
             current_pct: string;
             /** Current Value */
             current_value?: string | null;
             /** Delta Value */
             delta_value?: string | null;
-            /** Drift Pp */
+            /**
+             * Drift Pp
+             * @description current - target in percentage points (1.5 = 1.5 pp); positive = over
+             */
             drift_pp: string;
             /** Instrument Id */
             instrument_id: number;
@@ -952,7 +1107,10 @@ export interface components {
             key: string;
             /** Label */
             label: string;
-            /** Target Pct */
+            /**
+             * Target Pct
+             * @description Target weight (fraction, 0.01 = 1%)
+             */
             target_pct: string;
         };
         /** FxConversionIn */
@@ -1076,7 +1234,10 @@ export interface components {
             asset_class: string;
             /** Avg Price Native */
             avg_price_native?: string | null;
-            /** Capital Gain */
+            /**
+             * Capital Gain
+             * @description value - cost_basis (unrealised, excludes dividends)
+             */
             capital_gain?: string | null;
             /** Category */
             category: string;
@@ -1086,7 +1247,15 @@ export interface components {
             daily_growth_as_of?: string | null;
             /** Daily Is Stale */
             daily_is_stale: boolean;
-            /** Expense Ratio */
+            /**
+             * Dividends
+             * @description Cash dividends received
+             */
+            dividends?: string | null;
+            /**
+             * Expense Ratio
+             * @description Annual fee (fraction, 0.01 = 1%)
+             */
             expense_ratio?: string | null;
             /** Instrument Id */
             instrument_id: number;
@@ -1094,7 +1263,10 @@ export interface components {
             is_money_market: boolean;
             /** Market Open */
             market_open: boolean;
-            /** Mtd Growth */
+            /**
+             * Mtd Growth
+             * @description Month to date (fraction, 0.01 = 1%)
+             */
             mtd_growth?: string | null;
             /** Name */
             name: string;
@@ -1114,21 +1286,41 @@ export interface components {
             symbol: string;
             /** Today Move */
             today_move?: string | null;
-            /** Today Pct */
+            /**
+             * Today Pct
+             * @description Latest daily move (fraction, 0.01 = 1%)
+             */
             today_pct?: string | null;
-            /** Total Growth */
+            /**
+             * Total Growth
+             * @description Compounded return since first purchase (fraction, 0.01 = 1%)
+             */
             total_growth?: string | null;
+            /**
+             * Total Return
+             * @description capital_gain + dividends (same basis as the overview)
+             */
+            total_return?: string | null;
             /** Updated At */
             updated_at?: string | null;
             /** Value */
             value?: string | null;
             /** Value Warning */
             value_warning: boolean;
-            /** Weight Pct */
+            /**
+             * Weight Pct
+             * @description Share of portfolio value (fraction, 0.01 = 1%)
+             */
             weight_pct?: string | null;
-            /** Xirr */
+            /**
+             * Xirr
+             * @description Annualised return (fraction, 0.01 = 1%)
+             */
             xirr?: string | null;
-            /** Ytd Growth */
+            /**
+             * Ytd Growth
+             * @description Year to date (fraction, 0.01 = 1%)
+             */
             ytd_growth?: string | null;
         };
         /** HoldingsResponse */
@@ -1145,29 +1337,84 @@ export interface components {
             /** Holdings */
             holdings: components["schemas"]["HoldingRow"][];
             summary: components["schemas"]["HoldingsSummary"];
-            /** Total Capital Gain */
+            /**
+             * Total Capital Gain
+             * @description Sum of value - cost_basis over holdings
+             */
             total_capital_gain?: string | null;
+            /**
+             * Total Cost Basis
+             * @description Sum of cost bases
+             */
+            total_cost_basis?: string | null;
+            /**
+             * Total Dividends
+             * @description Sum of dividends
+             */
+            total_dividends?: string | null;
+            /**
+             * Total Return
+             * @description total_capital_gain + total_dividends. Differs from the overview total_return by cash not invested in positions and gains realised on closed positions.
+             */
+            total_return?: string | null;
             /** Total Value */
             total_value?: string | null;
         };
         /** HoldingsSummary */
         HoldingsSummary: {
-            /** Best Growth */
+            /**
+             * Best Growth
+             * @description total_growth of the best holding (fraction, 0.01 = 1%)
+             */
             best_growth?: string | null;
             /** Best Symbol */
             best_symbol?: string | null;
-            /** Gainers */
+            /**
+             * Gainers
+             * @description Holdings up today (daily money move > 0)
+             */
             gainers: number;
-            /** Losers */
+            /**
+             * In Loss
+             * @description Holdings with capital_gain < 0 (total, not today)
+             */
+            in_loss: number;
+            /**
+             * In Profit
+             * @description Holdings with capital_gain > 0 (total, not today)
+             */
+            in_profit: number;
+            /**
+             * Losers
+             * @description Holdings down today (daily money move < 0)
+             */
             losers: number;
             /** Most Concentrated Symbol */
             most_concentrated_symbol?: string | null;
-            /** Most Concentrated Weight Pct */
+            /**
+             * Most Concentrated Weight Pct
+             * @description Largest weight (fraction, 0.01 = 1%)
+             */
             most_concentrated_weight_pct?: string | null;
-            /** Worst Growth */
+            /**
+             * Worst Growth
+             * @description total_growth of the worst holding (fraction, 0.01 = 1%)
+             */
             worst_growth?: string | null;
             /** Worst Symbol */
             worst_symbol?: string | null;
+        };
+        /**
+         * ImportBroker
+         * @description One available importer plugin.
+         */
+        ImportBroker: {
+            /** File Types */
+            file_types: string[];
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
         };
         /** ImportConfirmResult */
         ImportConfirmResult: {
@@ -1276,6 +1523,19 @@ export interface components {
             /** Symbol */
             symbol?: string | null;
         };
+        /** InstrumentOut */
+        InstrumentOut: {
+            /** Asset Class */
+            asset_class: string;
+            /** Id */
+            id: number;
+            /** Name */
+            name: string | null;
+            /** Native Currency */
+            native_currency: string;
+            /** Symbol */
+            symbol: string;
+        };
         /** InvestingPower */
         InvestingPower: {
             /** Amount Eur */
@@ -1296,11 +1556,17 @@ export interface components {
         MarketVerdict: {
             /** Beating */
             beating?: boolean | null;
-            /** Benchmark Return */
+            /**
+             * Benchmark Return
+             * @description Benchmark compounded return (fraction, 0.01 = 1%)
+             */
             benchmark_return?: string | null;
             /** Benchmark Symbol */
             benchmark_symbol: string;
-            /** Portfolio Return */
+            /**
+             * Portfolio Return
+             * @description Portfolio compounded return (fraction, 0.01 = 1%)
+             */
             portfolio_return?: string | null;
         };
         /** MeResponse */
@@ -1316,7 +1582,10 @@ export interface components {
             move?: string | null;
             /** Name */
             name: string;
-            /** Pct */
+            /**
+             * Pct
+             * @description Move vs previous close in the reporting currency (fraction, 0.01 = 1%)
+             */
             pct?: string | null;
             /** Reason */
             reason: string;
@@ -1351,37 +1620,72 @@ export interface components {
         OverviewKpis: {
             /** Annual Expense Cost */
             annual_expense_cost?: string | null;
-            /** Capital Gain */
+            /**
+             * Capital Gain
+             * @description total_value - total_invested (excludes dividends)
+             */
             capital_gain?: string | null;
             /** Daily Growth As Of */
             daily_growth_as_of?: string | null;
-            /** Daily Growth Pct */
+            /**
+             * Daily Growth Pct
+             * @description Latest daily move (fraction, 0.01 = 1%)
+             */
             daily_growth_pct?: string | null;
             /** Daily Move */
             daily_move?: string | null;
             /** Dividend Income */
             dividend_income?: string | null;
-            /** Dividend Yield Pct */
+            /**
+             * Dividend Yield Pct
+             * @description Dividend yield on income to date (fraction, 0.01 = 1%)
+             */
             dividend_yield_pct?: string | null;
-            /** Dividend Yield Ttm Pct */
+            /**
+             * Dividend Yield Ttm Pct
+             * @description Trailing-12-month dividend yield (fraction, 0.01 = 1%)
+             */
             dividend_yield_ttm_pct?: string | null;
             /** Dividends Ttm */
             dividends_ttm?: string | null;
-            /** Mtd Growth */
+            /**
+             * Mtd Growth
+             * @description Month-to-date growth (fraction, 0.01 = 1%)
+             */
             mtd_growth?: string | null;
-            /** Total Growth Compounded */
+            /**
+             * Total Growth Compounded
+             * @description (1 + XIRR)^years - 1 (fraction, 0.01 = 1%)
+             */
             total_growth_compounded?: string | null;
             /** Total Invested */
             total_invested?: string | null;
+            /**
+             * Total Return
+             * @description capital_gain + realized cash dividends
+             */
+            total_return?: string | null;
             /** Total Value */
             total_value?: string | null;
-            /** Weighted Expense Ratio */
+            /**
+             * Weighted Expense Ratio
+             * @description Weighted expense ratio (fraction, 0.01 = 1%)
+             */
             weighted_expense_ratio?: string | null;
-            /** Xirr */
+            /**
+             * Xirr
+             * @description Money-weighted annualised return (fraction, 0.01 = 1%)
+             */
             xirr?: string | null;
-            /** Ytd Growth */
+            /**
+             * Ytd Growth
+             * @description Year-to-date growth (fraction, 0.01 = 1%)
+             */
             ytd_growth?: string | null;
-            /** Ytd Xirr */
+            /**
+             * Ytd Xirr
+             * @description Year-to-date XIRR (fraction, 0.01 = 1%)
+             */
             ytd_xirr?: string | null;
         };
         /** OverviewResponse */
@@ -1443,7 +1747,10 @@ export interface components {
             contributions: string | null;
             /** Dividends */
             dividends: string | null;
-            /** Growth Pct */
+            /**
+             * Growth Pct
+             * @description Period growth (fraction, 0.01 = 1%)
+             */
             growth_pct: string | null;
             /** Interest */
             interest: string | null;
@@ -1455,9 +1762,15 @@ export interface components {
             net_flow: string | null;
             /** Opening Value */
             opening_value: string | null;
-            /** Period Growth Xirr */
+            /**
+             * Period Growth Xirr
+             * @description Period XIRR (fraction, 0.01 = 1%)
+             */
             period_growth_xirr: string | null;
-            /** Total Growth Compounded */
+            /**
+             * Total Growth Compounded
+             * @description Cumulative compounded growth (fraction, 0.01 = 1%)
+             */
             total_growth_compounded: string | null;
         };
         /** PeriodsOut */
@@ -1492,7 +1805,10 @@ export interface components {
             no_buy: boolean;
             /** Symbol */
             symbol: string;
-            /** Target Pct */
+            /**
+             * Target Pct
+             * @description Target weight (fraction, 0.01 = 1%)
+             */
             target_pct: string;
         };
         /** PoolOut */
@@ -1618,7 +1934,8 @@ export interface components {
         };
         /**
          * ProjectionRequest
-         * @description What-if assumptions. Percent inputs are percent (``7`` = 7 %); ``None`` = use the default.
+         * @description What-if assumptions. ``*_pct`` inputs are fractions (``0.07`` = 7 %); ``band_pp`` is percentage points
+         *     (``3`` = 3 pp); ``None`` = use the default.
          */
         ProjectionRequest: {
             /**
@@ -1634,7 +1951,7 @@ export interface components {
             horizon?: number | null;
             /**
              * Inflation Pct
-             * @default 2
+             * @default 0.02
              */
             inflation_pct: number | string;
             /**
@@ -1767,11 +2084,20 @@ export interface components {
          * @description Investment return (USD wallet) vs currency effect; independent, never converted.
          */
         ReturnSplit: {
-            /** Currency Effect Pp */
+            /**
+             * Currency Effect Pp
+             * @description EUR return minus USD return, in percentage points
+             */
             currency_effect_pp?: string | null;
-            /** Investment Return */
+            /**
+             * Investment Return
+             * @description Investment return in the USD wallet (fraction, 0.01 = 1%)
+             */
             investment_return?: string | null;
-            /** Total Return Eur */
+            /**
+             * Total Return Eur
+             * @description Compounded EUR return (fraction, 0.01 = 1%)
+             */
             total_return_eur?: string | null;
         };
         /** SeedOut */
@@ -1896,7 +2222,7 @@ export interface components {
         };
         /**
          * TargetIn
-         * @description Create (no ``id``) or replace (with ``id``) a saved target; weights are normalised to 100.
+         * @description Create (no ``id``) or replace (with ``id``) a saved target; weights are normalised.
          */
         TargetIn: {
             /**
@@ -1929,7 +2255,10 @@ export interface components {
             no_buy: boolean;
             /** Symbol */
             symbol: string;
-            /** Weight Pct */
+            /**
+             * Weight Pct
+             * @description Target weight (fraction, 0.01 = 1%)
+             */
             weight_pct: string;
         };
         /** TargetItemIn */
@@ -1941,7 +2270,10 @@ export interface components {
              * @default false
              */
             no_buy: boolean;
-            /** Weight Pct */
+            /**
+             * Weight Pct
+             * @description Relative weight; all weights are normalised (fractions or percent both work)
+             */
             weight_pct: string;
         };
         /** TargetOut */
@@ -2105,6 +2437,123 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_accounts_api_accounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"][];
+                };
+            };
+        };
+    };
+    create_account_api_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_account_api_accounts__account_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_account_api_accounts__account_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_allocations_api_allocations_get: {
         parameters: {
             query?: {
@@ -2482,7 +2931,7 @@ export interface operations {
     download_backup_api_backup_get: {
         parameters: {
             query?: {
-                /** @description Only the database snapshot today. */
+                /** @description 'sealed': encrypted full snapshot; 'db': plain scrubbed copy. */
                 kind?: string;
             };
             header?: never;
@@ -2908,6 +3357,26 @@ export interface operations {
             };
         };
     };
+    list_import_brokers_api_imports_brokers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportBroker"][];
+                };
+            };
+        };
+    };
     discard_import_api_imports__import_id__delete: {
         parameters: {
             query?: never;
@@ -2966,6 +3435,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_instruments_api_instruments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentOut"][];
                 };
             };
         };
