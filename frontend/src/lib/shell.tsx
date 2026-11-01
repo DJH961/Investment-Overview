@@ -36,7 +36,9 @@ export function useShellStatus(status: FreshnessStatus, label: string, onRefresh
   const { setShell } = useShell();
   // Keep the latest handler in a ref so inline callbacks don't retrigger the effect.
   const refreshRef = useRef(onRefresh);
-  refreshRef.current = onRefresh;
+  useEffect(() => {
+    refreshRef.current = onRefresh;
+  });
   const hasRefresh = onRefresh !== undefined;
   useEffect(() => {
     setShell({
