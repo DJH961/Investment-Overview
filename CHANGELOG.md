@@ -34,6 +34,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **v6 server, provisioned and hardened (no app change).** `deploy/bootstrap.sh` turns a fresh Ubuntu LTS server into a hardened Docker host in three safe steps (base setup and admin user; root and password login off; SSH only over Tailscale). Also: automatic security updates with a 04:30 UTC reboot, `ufw`, swap, Docker and Tailscale. `deploy/RUNBOOK.md` documents the server, everyday access, rebuild and updates. `.gitattributes` keeps shell scripts LF. Phase 0 checks: HTTPS placeholder at `investments.daniel-henke.de` with a Let's Encrypt certificate, a one-shot yfinance request from the server works, and a bucket-scoped Backblaze B2 key can write, read and delete backups. The v6 plan now records the Porkbun subdomain and the actual server size.
 
+- **Claude Code on the server (no app change).** `deploy/bootstrap.sh` creates a locked-down `dev` workspace user (same SSH key, no sudo, no Docker, admin home set to `750`) and installs Claude Code there; `deploy/RUNBOOK.md` explains the one-time login and three ways in: desktop app over SSH, phone/browser via `claude remote-control` in tmux, or plain SSH.
+
 ### Fixed
 
 - The hosted support-bundle download no longer includes the raw server log (it can hold stack traces); read it on the server with `docker compose logs app`.
