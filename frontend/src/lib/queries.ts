@@ -20,7 +20,16 @@ export const persister = createSyncStoragePersister({
   key: "iv.query-cache",
 });
 
-export const persistOptions = { persister, maxAge: DAY };
+// Persist report data for instant/offline opens, but never auth state: a
+// restored `authenticated: false` would bounce a logged-in user to /login.
+export const persistOptions = {
+  persister,
+  maxAge: DAY,
+  dehydrateOptions: {
+    shouldDehydrateQuery: (query: { queryKey: readonly unknown[]; state: { status: string } }) =>
+      query.state.status === "success" && query.queryKey[0] !== "auth",
+  },
+};
 
 /*
  * Pattern for endpoint hooks (one per endpoint; keys include `ccy` for anything

@@ -58,5 +58,8 @@ export function safeNext(search: string): string {
 }
 
 export function invalidateAuth(queryClient: QueryClient): Promise<void> {
-  return queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+  // Drop (not just invalidate) the cached answer: RequireAuth would otherwise
+  // read the stale `authenticated: false` and bounce straight back to /login.
+  queryClient.removeQueries({ queryKey: ["auth", "me"] });
+  return Promise.resolve();
 }
