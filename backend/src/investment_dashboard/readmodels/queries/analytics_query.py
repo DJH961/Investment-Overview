@@ -27,6 +27,7 @@ from investment_dashboard.domain.attribution import (
     InstrumentReturn,
     attribute_portfolio_return,
 )
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.returns import (
     Cashflow,
     DailyValuation,
@@ -49,7 +50,6 @@ from investment_dashboard.domain.risk_extras import (
     skewness,
     ulcer_index,
 )
-from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
     benchmark_service,

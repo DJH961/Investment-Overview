@@ -121,6 +121,17 @@ def list_transactions(
     return session.scalars(stmt).all()
 
 
+def new_transaction(**fields: Any) -> Transaction:
+    """Build (not persist) a :class:`Transaction` row from keyword fields."""
+    return Transaction(**fields)
+
+
+def count_for_account(session: Session, account_id: int) -> int:
+    """Number of transactions booked on ``account_id``."""
+    stmt = select(func.count()).select_from(Transaction).where(Transaction.account_id == account_id)
+    return int(session.scalar(stmt) or 0)
+
+
 def list_by_kinds_with_account(
     session: Session,
     kinds: Sequence[str],

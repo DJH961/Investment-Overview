@@ -20,7 +20,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 #: Selectable clock formats. ``"auto"`` defers to the system locale.
 SUPPORTED_FORMATS: tuple[str, ...] = ("auto", "12h", "24h")
@@ -42,7 +42,7 @@ _PATTERNS: dict[str, str] = {
 
 def get_clock_format(session: Session) -> str:
     """Return the persisted clock format, defaulting to ``"auto"``."""
-    raw = app_config_repo.get(session, _CONFIG_KEY)
+    raw = app_config_service.get(session, _CONFIG_KEY)
     if raw is None:
         return DEFAULT_FORMAT
     candidate = raw.strip().lower()
@@ -62,7 +62,7 @@ def set_clock_format(session: Session, value: str) -> str:
         raise ValueError(
             f"Unsupported clock format {value!r}; expected one of {SUPPORTED_FORMATS}",
         )
-    app_config_repo.set_value(session, _CONFIG_KEY, candidate)
+    app_config_service.set_value(session, _CONFIG_KEY, candidate)
     return candidate
 
 

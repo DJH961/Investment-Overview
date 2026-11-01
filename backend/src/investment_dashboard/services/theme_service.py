@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 SUPPORTED_THEMES: tuple[str, ...] = ("auto", "light", "dark")
 DEFAULT_THEME = "auto"
@@ -42,7 +42,7 @@ def _from_token(token: str) -> bool | None:
 
 def get_theme(session: Session) -> bool | None:
     """Return the persisted dark-mode value (``None``/``False``/``True``)."""
-    raw = app_config_repo.get(session, _CONFIG_KEY)
+    raw = app_config_service.get(session, _CONFIG_KEY)
     if raw is None:
         return _from_token(DEFAULT_THEME)
     candidate = raw.strip().lower()
@@ -56,5 +56,5 @@ def set_theme(session: Session, value: bool | None) -> bool | None:
     token = _to_token(value)
     if token not in SUPPORTED_THEMES:  # pragma: no cover - defensive
         raise ValueError(f"Unsupported theme {value!r}")
-    app_config_repo.set_value(session, _CONFIG_KEY, token)
+    app_config_service.set_value(session, _CONFIG_KEY, token)
     return _from_token(token)

@@ -45,7 +45,7 @@ def _record_status(status: str, message: str) -> None:
     the function avoids that and the lookup cost is negligible compared to a
     network round-trip.
     """
-    from investment_dashboard.services.provider_status import record  # noqa: PLC0415
+    from investment_dashboard.adapters.provider_status import record  # noqa: PLC0415
 
     record(_PROVIDER, status, message)  # type: ignore[arg-type]  # str→Literal narrowing
 

@@ -8,7 +8,7 @@ from decimal import Decimal
 from pydantic import ConfigDict, Field
 
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
-from investment_dashboard.models.transaction import TransactionKind
+from investment_dashboard.domain.kinds import TransactionKind
 
 
 class TransactionOut(ApiModel):

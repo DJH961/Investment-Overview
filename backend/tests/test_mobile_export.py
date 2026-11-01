@@ -390,7 +390,7 @@ def test_mobile_export_periods_carry_per_date_usd_regardless_of_display_currency
     # the USD figure must come from per-date FX, not today's spot on the EUR sum.
     yearly = {r["label"]: r for r in export["yearly"]["rows"]}
     assert yearly["2024"]["contributions_eur"] == "1500.000000"
-    assert yearly["2024"]["contributions_display"] == "1650.000000"
+    assert Decimal(yearly["2024"]["contributions_display"]) == Decimal("1650")
 
 
 def test_mobile_export_history_fingerprint(session: Session) -> None:

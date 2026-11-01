@@ -20,7 +20,7 @@ import hashlib
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -28,7 +28,6 @@ from investment_dashboard import __version__
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.domain.returns import Cashflow
-from investment_dashboard.models import Transaction
 from investment_dashboard.readmodels import analytics, deposits, live_graphs, periods, transactions
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso, now_utc_iso
@@ -48,6 +47,9 @@ from investment_dashboard.services import (
     prices_service,
 )
 from investment_dashboard.services.positions_service import Position
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
 
 SCHEMA_VERSION = 2
 

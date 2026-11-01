@@ -15,6 +15,7 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.market_hours import (
     exchange_today,
     feed_is_fresh,
@@ -29,7 +30,6 @@ from investment_dashboard.domain.returns import (
     years_between,
 )
 from investment_dashboard.domain.session_fx import graph_anchor_fx
-from investment_dashboard.models import TransactionKind
 from investment_dashboard.readmodels.money_format import currency_symbol, fmt_shares
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (

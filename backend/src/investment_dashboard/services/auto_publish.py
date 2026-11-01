@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from investment_dashboard.db import session_scope
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 if TYPE_CHECKING:
     from investment_dashboard.services.publish_service import PublishResult
@@ -105,12 +105,12 @@ def _read_config(trigger: str) -> _TriggerConfig | None:
     if key is None:
         raise ValueError(f"unknown auto-publish trigger: {trigger!r}")
     with session_scope() as session:
-        if not _truthy(app_config_repo.get(session, ENABLED_KEY), default=False):
+        if not _truthy(app_config_service.get(session, ENABLED_KEY), default=False):
             return None
-        if not _truthy(app_config_repo.get(session, key), default=True):
+        if not _truthy(app_config_service.get(session, key), default=True):
             return None
-        repo = app_config_repo.get(session, REPO_KEY)
-        include = _truthy(app_config_repo.get(session, INCLUDE_TX_KEY), default=False)
+        repo = app_config_service.get(session, REPO_KEY)
+        include = _truthy(app_config_service.get(session, INCLUDE_TX_KEY), default=False)
     return _TriggerConfig(repo=repo, include_transactions=include)
 
 
@@ -151,7 +151,9 @@ def run_trigger(trigger: str) -> PublishOutcome:
 
     try:
         with session_scope() as session:
-            app_config_repo.set_value(session, LAST_PUBLISHED_KEY, result.published_at.isoformat())
+            app_config_service.set_value(
+                session, LAST_PUBLISHED_KEY, result.published_at.isoformat()
+            )
     except Exception:  # pragma: no cover - timestamp is cosmetic
         log.exception("auto-publish: published but failed to record the timestamp")
 

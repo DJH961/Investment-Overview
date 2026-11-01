@@ -84,7 +84,8 @@ from investment_dashboard.domain.market_hours import (
     regular_session_close,
 )
 from investment_dashboard.domain.money_market import is_money_market
-from investment_dashboard.repositories import app_config_repo, intraday_repo
+from investment_dashboard.repositories import intraday_repo
+from investment_dashboard.services import app_config_service
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1064,7 +1065,7 @@ def _covered_by_live(live_times: list[datetime], at: datetime) -> bool:
 
 
 def _already_reconstructed(session: Session, session_date: date) -> bool:
-    return app_config_repo.get(session, _RECONSTRUCTED_KEY) == session_date.isoformat()
+    return app_config_service.get(session, _RECONSTRUCTED_KEY) == session_date.isoformat()
 
 
 def _session_is_covered(session: Session, session_date: date, now: datetime) -> bool:
@@ -1127,7 +1128,7 @@ def _max_gap_seconds(times: list[datetime]) -> float:
 
 
 def _mark_reconstructed(session: Session, session_date: date) -> None:
-    app_config_repo.set_value(session, _RECONSTRUCTED_KEY, session_date.isoformat())
+    app_config_service.set_value(session, _RECONSTRUCTED_KEY, session_date.isoformat())
 
 
 def recent_trading_sessions(
@@ -1485,13 +1486,13 @@ def _fetch_and_persist_week_days(
 def _week_day_fetched(session: Session, day: date, anchor: date) -> bool:
     """Whether ``day``'s week-curve bars were already fetched this anchor session."""
     return (
-        app_config_repo.get(session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}")
+        app_config_service.get(session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}")
         == anchor.isoformat()
     )
 
 
 def _mark_week_day_fetched(session: Session, day: date, anchor: date) -> None:
-    app_config_repo.set_value(
+    app_config_service.set_value(
         session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}", anchor.isoformat()
     )
 
@@ -1628,7 +1629,7 @@ def clear_day_samples(
     end = _session_start_utc(session_date + timedelta(days=1))
     with cache_write_session(session) as cache:
         deleted = intraday_repo.delete_in_range(cache, start, end)
-    app_config_repo.delete_key(session, _RECONSTRUCTED_KEY)
+    app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
     return deleted
 
 
@@ -1645,8 +1646,8 @@ def clear_week_samples(
 
     with cache_write_session(session) as cache:
         deleted = intraday_repo.delete_all(cache)
-    app_config_repo.delete_key(session, _RECONSTRUCTED_KEY)
-    app_config_repo.delete_by_prefix(session, _WEEK_FETCHED_PREFIX)
+    app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
+    app_config_service.delete_by_prefix(session, _WEEK_FETCHED_PREFIX)
     return deleted
 
 

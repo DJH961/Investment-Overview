@@ -18,7 +18,7 @@ from collections.abc import Iterable
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 #: Namespace so chart prefs are easy to spot in ``app_config`` and never collide
 #: with other single-user settings.
@@ -37,7 +37,7 @@ def get_pref(
     When ``allowed`` is given, a stored value outside that set falls back to
     ``default`` — keeps the UI honest if the option list ever changes.
     """
-    raw = app_config_repo.get(session, _PREFIX + key)
+    raw = app_config_service.get(session, _PREFIX + key)
     if raw is None:
         return default
     value = raw.strip()
@@ -48,4 +48,4 @@ def get_pref(
 
 def set_pref(session: Session, key: str, value: str) -> None:
     """Persist ``value`` as the selection for ``key``."""
-    app_config_repo.set_value(session, _PREFIX + key, value.strip())
+    app_config_service.set_value(session, _PREFIX + key, value.strip())

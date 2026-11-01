@@ -6,6 +6,7 @@ import logging
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -21,7 +22,6 @@ from investment_dashboard.domain.market_hours import (
     is_us_market_open,
     latest_settled_session_date,
 )
-from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import (
     instrument_overrides_repo,
     instruments_repo,
@@ -30,6 +30,9 @@ from investment_dashboard.repositories import (
     splits_repo,
 )
 from investment_dashboard.services import fetch_report, pull_log
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Instrument
 
 log = logging.getLogger(__name__)
 
@@ -355,6 +358,24 @@ def latest_close(session: Session, instrument_id: int) -> Decimal | None:
 
     with cache_read_session(session) as cache:
         return prices_repo.latest_close(cache, instrument_id)
+
+
+def closes_for_instrument(session: Session, instrument_id: int) -> dict[date, Decimal]:
+    """Every stored close for ``instrument_id`` (cache tier)."""
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return prices_repo.get_closes_for_instrument(cache, instrument_id)
+
+
+def store_closes(
+    session: Session, instrument_id: int, closes: dict[date, Decimal], *, source: str
+) -> int:
+    """Upsert ``closes`` for ``instrument_id`` into the cache tier; returns rows written."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    with cache_write_session(session) as cache:
+        return prices_repo.upsert_closes(cache, instrument_id, closes, source=source)
 
 
 def close_as_of(session: Session, instrument_id: int, as_of: date) -> Decimal | None:

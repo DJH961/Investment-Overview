@@ -30,14 +30,17 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.currency import split_native_to_dual_legs
 from investment_dashboard.domain.market_hours import exchange_today
-from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import fx_service
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
 
 log = logging.getLogger(__name__)
 

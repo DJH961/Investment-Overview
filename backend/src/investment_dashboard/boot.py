@@ -33,7 +33,6 @@ from typing import Any
 
 from investment_dashboard.config import get_settings
 from investment_dashboard.domain.market_hours import exchange_today
-from investment_dashboard.ui.theme import register_plotly_template
 
 log = logging.getLogger(__name__)
 
@@ -1043,7 +1042,6 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
     _rolling_backup()
     _run_migrations()
     _apply_persisted_log_level()
-    register_plotly_template()
     _run_cache_janitor()
     if skip_network:
         log.info("skip_network=True — not refreshing FX or prices")

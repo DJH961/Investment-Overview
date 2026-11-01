@@ -35,7 +35,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters import yfinance_client
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ def _parse_datetime(raw: str | None) -> datetime | None:
 
 
 def get_symbol(session: Session) -> str:
-    stored = app_config_repo.get(session, KEY_SYMBOL)
+    stored = app_config_service.get(session, KEY_SYMBOL)
     if stored is None:
         return DEFAULT_SYMBOL
     return stored
@@ -91,22 +91,22 @@ def set_symbol(session: Session, symbol: str) -> str:
     cleaned = symbol.strip()
     if not cleaned:
         raise ValueError("symbol must be non-empty")
-    app_config_repo.set_value(session, KEY_SYMBOL, cleaned)
+    app_config_service.set_value(session, KEY_SYMBOL, cleaned)
     return cleaned
 
 
 def set_manual_rate(session: Session, rate: Decimal | None) -> None:
     """Pin or clear the manual override. ``None`` reverts to the fetched rate."""
     if rate is None:
-        app_config_repo.set_value(session, KEY_MANUAL, None)
+        app_config_service.set_value(session, KEY_MANUAL, None)
         return
     if rate < 0 or rate > 1:
         raise ValueError(f"rate must be a decimal fraction in [0, 1], got {rate}")
-    app_config_repo.set_value(session, KEY_MANUAL, str(rate))
+    app_config_service.set_value(session, KEY_MANUAL, str(rate))
 
 
 def _stored_snapshot(session: Session) -> RiskFreeSnapshot:
-    manual = _parse_decimal(app_config_repo.get(session, KEY_MANUAL))
+    manual = _parse_decimal(app_config_service.get(session, KEY_MANUAL))
     if manual is not None:
         return RiskFreeSnapshot(
             rate=manual,
@@ -115,8 +115,8 @@ def _stored_snapshot(session: Session) -> RiskFreeSnapshot:
             is_manual=True,
         )
     return RiskFreeSnapshot(
-        rate=_parse_decimal(app_config_repo.get(session, KEY_VALUE)),
-        fetched_at=_parse_datetime(app_config_repo.get(session, KEY_FETCHED_AT)),
+        rate=_parse_decimal(app_config_service.get(session, KEY_VALUE)),
+        fetched_at=_parse_datetime(app_config_service.get(session, KEY_FETCHED_AT)),
         symbol=get_symbol(session),
         is_manual=False,
     )
@@ -167,8 +167,8 @@ def refresh(
         )
         return snapshot
     stamp = (now or datetime.now(UTC)).isoformat()
-    app_config_repo.set_value(session, KEY_VALUE, str(rate))
-    app_config_repo.set_value(session, KEY_FETCHED_AT, stamp)
+    app_config_service.set_value(session, KEY_VALUE, str(rate))
+    app_config_service.set_value(session, KEY_FETCHED_AT, stamp)
     return RiskFreeSnapshot(
         rate=rate,
         fetched_at=datetime.fromisoformat(stamp),

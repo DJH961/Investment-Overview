@@ -11,15 +11,18 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import fx_pool
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.market_hours import exchange_today
-from investment_dashboard.models.fx_conversion import FxConversion
 from investment_dashboard.repositories import fx_conversion_repository as repo
 from investment_dashboard.services import fx_service
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import FxConversion
 
 
 @dataclass(frozen=True)

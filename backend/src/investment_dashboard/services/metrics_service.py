@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import (
     Cashflow,
@@ -36,7 +38,6 @@ from investment_dashboard.domain.returns import (
     xirr,
     years_between,
 )
-from investment_dashboard.models import Transaction, TransactionKind
 from investment_dashboard.repositories import (
     accounts_repo,
     instrument_overrides_repo,
@@ -50,6 +51,9 @@ from investment_dashboard.services import (
     snapshots_service,
 )
 from investment_dashboard.services.instrument_enrichment_service import effective_instrument
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
 

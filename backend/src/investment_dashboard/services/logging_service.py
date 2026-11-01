@@ -23,7 +23,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def get_log_level(session: Session) -> str:
     Falls back to :data:`~investment_dashboard.config.Settings.log_level` (the
     environment / first-run default) when nothing has been chosen in the UI yet.
     """
-    persisted = _normalise(app_config_repo.get(session, _CONFIG_KEY))
+    persisted = _normalise(app_config_service.get(session, _CONFIG_KEY))
     if persisted is not None:
         return persisted
     from investment_dashboard.config import get_settings  # noqa: PLC0415
@@ -78,7 +78,7 @@ def set_log_level(session: Session, level: str) -> str:
     normalised = _normalise(level)
     if normalised is None:
         raise ValueError(f"Unknown log level {level!r}")
-    app_config_repo.set_value(session, _CONFIG_KEY, normalised)
+    app_config_service.set_value(session, _CONFIG_KEY, normalised)
     _apply(normalised)
     log.info("log level set to %s", normalised)
     return normalised
@@ -101,7 +101,7 @@ def apply_persisted_log_level() -> None:
         from investment_dashboard.db import config_session_scope  # noqa: PLC0415
 
         with config_session_scope() as session:
-            persisted = _normalise(app_config_repo.get(session, _CONFIG_KEY))
+            persisted = _normalise(app_config_service.get(session, _CONFIG_KEY))
         if persisted is not None:
             _apply(persisted)
             log.info("applied persisted log level: %s", persisted)

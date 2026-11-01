@@ -127,7 +127,7 @@ def _record_backoff(
     outside a pull it falls back to a plain warning so non-pull callers still log.
     """
     try:
-        from investment_dashboard.services import pull_log  # noqa: PLC0415
+        from investment_dashboard.adapters import pull_log  # noqa: PLC0415
 
         round_ = pull_log.current()
     except Exception:  # pragma: no cover - logging must never crash the caller

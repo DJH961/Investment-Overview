@@ -10,19 +10,15 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends, kinds, market_hours
 from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
-from investment_dashboard.models import (
-    Account,
-    Instrument,
-    Transaction,
-    TransactionKind,
-)
 from investment_dashboard.repositories import (
     accounts_repo,
     instrument_overrides_repo,
@@ -34,6 +30,9 @@ from investment_dashboard.services.instrument_enrichment_service import (
     EffectiveInstrument,
     effective_instrument,
 )
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Account, Instrument, Transaction
 
 ZERO = Decimal(0)
 #: Below this residual share count a holding is treated as fully closed, so a

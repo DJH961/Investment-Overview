@@ -23,10 +23,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.models import Account
 from investment_dashboard.repositories import (
     accounts_repo,
     instrument_overrides_repo,
@@ -36,6 +36,9 @@ from investment_dashboard.services.ticker_validation_service import (
     TickerValidation,
     validate_ticker,
 )
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Account
 
 
 @dataclass(frozen=True)

@@ -360,3 +360,35 @@ def dispose_engines() -> None:
         eng.dispose()
     _engines_by_url.clear()
     _factories_by_url.clear()
+
+
+@contextmanager
+def config_read_session(fallback: Session) -> Iterator[Session]:
+    """Yield a session that can *read* config-tier data (``app_config`` etc.).
+
+    Mirror of :func:`cache_read_session` for the config tier: the caller's
+    ``fallback`` is reused in single-file mode; in split-DB mode a short-lived
+    config-tier session is opened (read-only, never committed).
+    """
+    if not get_settings().is_split_db:
+        yield fallback
+        return
+    s = get_config_session_factory()()
+    try:
+        yield s
+    finally:
+        s.close()
+
+
+@contextmanager
+def config_write_session(fallback: Session) -> Iterator[Session]:
+    """Yield a session that can *write* config-tier data.
+
+    Single-file mode reuses (and leaves uncommitted) the caller's ``fallback``;
+    split-DB mode opens a dedicated config-tier transaction and commits it.
+    """
+    if not get_settings().is_split_db:
+        yield fallback
+        return
+    with config_session_scope() as s:
+        yield s

@@ -25,7 +25,7 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.market_hours import exchange_today
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def clamp_interval_seconds(value: int) -> int:
 
 def get_interval_seconds(session: Session) -> int:
     """Return the persisted auto-update interval, defaulting + clamped."""
-    raw = app_config_repo.get(session, _INTERVAL_KEY)
+    raw = app_config_service.get(session, _INTERVAL_KEY)
     if raw is None:
         return DEFAULT_INTERVAL_SECONDS
     try:
@@ -67,7 +67,7 @@ def get_interval_seconds(session: Session) -> int:
 def set_interval_seconds(session: Session, value: int) -> int:
     """Persist a new auto-update interval (clamped). Returns the stored value."""
     clamped = clamp_interval_seconds(int(value))
-    app_config_repo.set_value(session, _INTERVAL_KEY, str(clamped))
+    app_config_service.set_value(session, _INTERVAL_KEY, str(clamped))
     return clamped
 
 

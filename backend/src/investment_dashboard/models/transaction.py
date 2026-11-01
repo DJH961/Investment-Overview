@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -24,42 +23,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from investment_dashboard.domain.kinds import TransactionKind, TransactionSource
 from investment_dashboard.models.base import LedgerBase as Base
 
 if TYPE_CHECKING:
     from investment_dashboard.models.account import Account
     from investment_dashboard.models.instrument import Instrument
-
-
-class TransactionKind(StrEnum):
-    """Enumerated kinds — see spec §4.1."""
-
-    BUY = "buy"
-    SELL = "sell"
-    DIVIDEND_CASH = "dividend_cash"
-    DIVIDEND_REINVEST = "dividend_reinvest"
-    DEPOSIT = "deposit"
-    WITHDRAWAL = "withdrawal"
-    INTEREST = "interest"
-    FEE = "fee"
-    # ``transfer_in`` / ``transfer_out`` are external-cash-flow kinds for moving
-    # money between accounts (or in/out of the portfolio) without a buy/sell.
-    # They are offered in the manual-add form (``_kinds()``) and counted as a
-    # contribution / withdrawal everywhere external flows matter (metrics_service,
-    # benchmark_service, _deposits_query, _period_query). CSV importers don't emit
-    # them directly — broker "transfer in/out" rows normalise to deposit/withdrawal
-    # in the per-broker action maps — but the kinds are first-class for manual use.
-    TRANSFER_IN = "transfer_in"
-    TRANSFER_OUT = "transfer_out"
-    SPLIT = "split"
-
-
-class TransactionSource(StrEnum):
-    IMPORT_VANGUARD_CSV = "import_vanguard_csv"
-    IMPORT_VANGUARD_XLSX = "import_vanguard_xlsx"
-    IMPORT_FIDELITY_CSV = "import_fidelity_csv"
-    MANUAL = "manual"
-    MIGRATION = "migration"
 
 
 _KIND_VALUES = ",".join(f"'{k.value}'" for k in TransactionKind)
