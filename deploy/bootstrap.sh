@@ -110,10 +110,44 @@ if [[ -n "$DEV_USER" ]]; then
   rm -f "/etc/sudoers.d/90-$DEV_USER"
   chmod 750 "/home/$ADMIN_USER"
   install -d -m 700 -o "$DEV_USER" -g "$DEV_USER" "/home/$DEV_USER/.ssh" "/home/$DEV_USER/projects"
-  install -m 600 -o "$DEV_USER" -g "$DEV_USER" "/home/$ADMIN_USER/.ssh/authorized_keys" "/home/$DEV_USER/.ssh/authorized_keys"
+  # Add the admin's keys but keep any added for this user only (e.g. a phone key).
+  dev_keys="/home/$DEV_USER/.ssh/authorized_keys"
+  [[ -f "$dev_keys" ]] || install -m 600 -o "$DEV_USER" -g "$DEV_USER" /dev/null "$dev_keys"
+  while IFS= read -r key; do
+    [[ -z "$key" ]] || grep -qxF -- "$key" "$dev_keys" || printf '%s\n' "$key" >>"$dev_keys"
+  done <"/home/$ADMIN_USER/.ssh/authorized_keys"
+  chown "$DEV_USER:$DEV_USER" "$dev_keys"
+  chmod 600 "$dev_keys"
   # Native installer: no Node needed; keeps itself up to date. Login is a separate,
   # interactive step (run `claude` as this user and open the printed link).
   sudo -u "$DEV_USER" -H bash -c '[[ -x ~/.local/bin/claude ]] || curl -fsSL https://claude.ai/install.sh | bash'
+
+  log "Always-on Claude remote control for '${DEV_USER}' (switched on after the first login)"
+  # A user service, so it starts at boot without a login and dev can manage it
+  # without sudo. It runs inside its own tmux socket, so `claude` gets a terminal and
+  # you can attach to watch it; tmux exits with Claude, and systemd starts it again.
+  loginctl enable-linger "$DEV_USER"
+  unit_dir="/home/$DEV_USER/.config/systemd/user"
+  install -d -o "$DEV_USER" -g "$DEV_USER" "/home/$DEV_USER/.config" "/home/$DEV_USER/.config/systemd" "$unit_dir"
+  cat >"$unit_dir/claude-remote.service" <<'EOF'
+[Unit]
+Description=Claude Code remote control (open it from the Claude app)
+
+[Service]
+Type=forking
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CLAUDE_RC_DIR=%h/projects
+# Optional override, e.g. CLAUDE_RC_DIR=/home/dev/projects/Investment-Overview
+EnvironmentFile=-%h/.config/claude-remote.env
+ExecStart=/usr/bin/tmux -L claude-rc new-session -d -s claude-rc -c ${CLAUDE_RC_DIR} %h/.local/bin/claude remote-control
+ExecStop=/usr/bin/tmux -L claude-rc kill-server
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+EOF
+  chown "$DEV_USER:$DEV_USER" "$unit_dir/claude-remote.service"
 fi
 
 log "Firewall (ufw): deny all incoming except web + SSH"

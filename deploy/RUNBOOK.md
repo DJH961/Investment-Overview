@@ -66,17 +66,44 @@ that repository); keep that login scoped to what you need.
 1. **Desktop app (Code tab):** add an SSH connection to `dev@hetzner-djh-v1`, then
    start a session on it and pick a folder under `~/projects`. Needs Tailscale on
    the laptop and the key in the Windows SSH agent (see "Everyday access").
-2. **Phone or browser:** start a session that stays up when the laptop is off:
+2. **Phone or browser (always on):** `bootstrap.sh` installs a service that keeps
+   `claude remote-control` running, also after reboots and crashes, so the server
+   always shows up in the Claude app (**Code**) and on claude.ai/code. Switch it on
+   once, after the login above:
 
    ```bash
    ssh dev@hetzner-djh-v1
-   tmux new -A -s claude
-   cd ~/projects/Investment-Overview && claude remote-control
+   systemctl --user enable --now claude-remote
+   tmux -L claude-rc attach
    ```
 
-   Leave tmux with `Ctrl+B`, then `D`. Open the session from the Claude app or
-   claude.ai/code. `tmux attach -t claude` brings it back.
-3. **Plain terminal:** `ssh dev@hetzner-djh-v1`, `tmux new -A -s claude`, `claude`.
+   The last line shows the running Claude. The first time, answer any question it
+   asks, check it says remote control is on, then leave with `Ctrl+B`, then `D`
+   (never `Ctrl+C`: that stops it, and the service restarts it after 30 seconds).
+   - It starts in `~/projects`. To start in one project instead:
+     `echo 'CLAUDE_RC_DIR=/home/dev/projects/Investment-Overview' > ~/.config/claude-remote.env`
+     then `systemctl --user restart claude-remote`.
+   - Status and logs: `systemctl --user status claude-remote`,
+     `journalctl --user -u claude-remote -n 50`. Off: `systemctl --user disable --now claude-remote`.
+3. **Plain terminal (laptop or phone):** `ssh dev@hetzner-djh-v1`, `tmux new -A -s claude`, `claude`.
+
+**SSH from the phone** (only needed to fix or change things; everyday use is the
+Claude app):
+
+1. Install the Tailscale app on the phone, sign in with the same account, switch it on.
+2. Install an SSH app (Termius works on iPhone and Android). Generate a key **on the
+   phone** (Termius: **Keychain → + → Generate Key → ED25519**, with a passphrase);
+   don't copy the laptop key there. Copy its **public** key (one line,
+   `ssh-ed25519 …`).
+3. From the laptop, add it for `dev` only:
+   `ssh dev@hetzner-djh-v1` then
+   `echo 'ssh-ed25519 AAAA… phone' >> ~/.ssh/authorized_keys`.
+   `bootstrap.sh` keeps such extra keys when it re-runs; after a rebuild from
+   scratch, add it again.
+4. In the SSH app, add host `hetzner-djh-v1`, user `dev`, with that key.
+
+Lost the phone? Delete its line from `/home/dev/.ssh/authorized_keys` (from the laptop),
+and remove the phone in the Tailscale admin.
 
 **Limits:** the server has 1 GB RAM. Claude Code itself is light, but running a
 project's full test suite or builds there competes with the live app; prefer CI for
