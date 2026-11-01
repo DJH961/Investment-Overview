@@ -23,7 +23,7 @@ def test_buckets_match_the_overview_treemap(session: Session) -> None:
     assert buckets.keys() == treemap.keys()
     for label, value in treemap.items():
         assert buckets[label] == pytest.approx(value, rel=D("1e-9"))
-    assert sum(D(b["pct"]) for b in body["current_by_category"]) == pytest.approx(D(100))
+    assert sum(D(b["pct"]) for b in body["current_by_category"]) == pytest.approx(D(1))
 
 
 def test_usd_values_are_spot_conversions_pct_is_not(session: Session) -> None:
@@ -46,7 +46,7 @@ def test_save_target_normalises_and_flags_no_buy(session: Session) -> None:
         items=[(ids["VTI"], D("1"), False), (ids["BND"], D("3"), True)],
     )
     weights = {i["symbol"]: D(i["weight_pct"]) for i in saved["items"]}
-    assert weights == {"VTI": D("25.0"), "BND": D("75.0")}
+    assert weights == {"VTI": D("0.25"), "BND": D("0.75")}
     assert saved["allow_sell"] is True
     assert saved["display_currency"] == "USD"
     assert {i["symbol"]: i["no_buy"] for i in saved["items"]} == {"VTI": False, "BND": True}

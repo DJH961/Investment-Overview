@@ -161,7 +161,7 @@ def _currency_block(
     regime = fx_effect.fx_box_regime(now)
     rate_move: Decimal | None = None
     if live_fx is not None and prev_fx is not None and prev_fx > 0:
-        rate_move = (live_fx - prev_fx) / prev_fx * 100
+        rate_move = (live_fx - prev_fx) / prev_fx  # fraction (0.0037 = 0.37 %)
     today: dict[str, Any] = {
         "spot": dec(live_fx),
         "prev": dec(prev_fx),
@@ -254,11 +254,12 @@ def build_overview(
     )
     movers = build_movers(cards, ccy)
 
-    # Benchmark simulation is EUR-only today: a USD portfolio return must not be
-    # compared with a EUR benchmark return, so the USD verdict figures are null.
+    # Both sides of the verdict are computed in the reporting currency (the
+    # benchmark simulation supports EUR and USD), never converted across.
     verdict = compute_market_verdict(
         session,
-        portfolio_xirr=metrics.xirr,
+        portfolio_xirr=pick(metrics.xirr, metrics.xirr_usd, ccy),
+        currency=ccy,
         years=(
             years_between(metrics.first_cashflow_date, metrics.as_of)
             if metrics.first_cashflow_date
@@ -272,12 +273,24 @@ def build_overview(
         rate = ctx.fx_rate_eur_usd
         expense_cost = expense_cost * rate if rate is not None else None
 
+    # Total return = value + realized cash dividends - net contributions (the
+    # ledger identity in ``domain.returns.capital_gain``); capital gain is the
+    # same without dividends: value - net contributions.
+    total_return = pick(metrics.capital_gain_eur, metrics.capital_gain_usd, ccy)
+    total_value = pick(metrics.total_value_eur, metrics.total_value_usd, ccy)
+    invested = pick(metrics.total_contributions_eur, metrics.total_contributions_usd, ccy)
+    capital_gain: Decimal | None = None
+    if total_return is not None and total_value is not None and invested is not None:
+        dividends_realized = total_return - total_value + invested
+        capital_gain = total_return - dividends_realized
+
     kpis = {
         "total_value": dec(pick(metrics.total_value_eur, metrics.total_value_usd, ccy)),
         "total_invested": dec(
             pick(metrics.total_contributions_eur, metrics.total_contributions_usd, ccy)
         ),
-        "capital_gain": dec(pick(metrics.capital_gain_eur, metrics.capital_gain_usd, ccy)),
+        "capital_gain": dec(capital_gain),
+        "total_return": dec(total_return),
         "dividend_income": dec(
             pick(metrics.total_dividends_cash_eur, metrics.total_dividends_cash_usd, ccy)
         ),
@@ -310,9 +323,9 @@ def build_overview(
         "currency": _currency_block(session, metrics, now=now),
         "market_verdict": {
             "benchmark_symbol": verdict.benchmark_symbol,
-            "portfolio_return": None if usd else dec(verdict.portfolio_return),
-            "benchmark_return": None if usd else dec(verdict.benchmark_return),
-            "beating": None if usd else verdict.beating,
+            "portfolio_return": dec(verdict.portfolio_return),
+            "benchmark_return": dec(verdict.benchmark_return),
+            "beating": verdict.beating,
         },
         "movers": {
             "basis_date": iso(movers.basis_date),

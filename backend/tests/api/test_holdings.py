@@ -42,9 +42,9 @@ def test_rows_are_per_instrument_not_per_account(api_client: TestClient, seeded:
     assert vti["category"] == "US Stocks"
     assert Decimal(rows["BND"]["value"]) == 1400
     assert Decimal(body["total_value"]) == 5150
-    assert Decimal(vti["weight_pct"]) == pytest.approx(Decimal(3750) / 5150 * 100)
+    assert Decimal(vti["weight_pct"]) == pytest.approx(Decimal(3750) / 5150)
     weights = sum(Decimal(r["weight_pct"]) for r in rows.values())
-    assert weights == pytest.approx(Decimal(100))
+    assert weights == pytest.approx(Decimal(1))
 
 
 def test_ccy_switch(api_client: TestClient, seeded: None) -> None:
@@ -80,3 +80,40 @@ def test_bad_ccy_is_422(api_client: TestClient) -> None:
 def test_empty_ledger(api_client: TestClient, api_db: object) -> None:
     body = api_client.get("/api/holdings").json()
     assert body["holdings"] == []
+
+
+@pytest.mark.parametrize("ccy", ["EUR", "USD"])
+def test_holdings_and_overview_agree(api_client: TestClient, seeded: None, ccy: str) -> None:
+    """Same ledger, same definitions: the two screens reconcile exactly."""
+    hold = api_client.get(f"/api/holdings?ccy={ccy}").json()
+    over = api_client.get(f"/api/overview?ccy={ccy}").json()["kpis"]
+    approx = pytest.approx
+    tol = Decimal("0.01")
+    assert Decimal(hold["total_value"]) == approx(Decimal(over["total_value"]), abs=tol)
+    # capital gain = value - cost basis; total return = capital gain + dividends.
+    assert Decimal(hold["total_capital_gain"]) == approx(
+        Decimal(hold["total_value"]) - Decimal(hold["total_cost_basis"]), abs=tol
+    )
+    assert Decimal(hold["total_return"]) == approx(
+        Decimal(hold["total_capital_gain"]) + Decimal(hold["total_dividends"]), abs=tol
+    )
+    assert Decimal(over["total_return"]) == approx(
+        Decimal(over["capital_gain"]) + Decimal(over["dividend_income"]), abs=tol
+    )
+    # Overview measures against all net contributions; holdings against position
+    # cost bases. The gap is exactly the contributed cash not held in positions
+    # (fixture: 5050 deposited, 4550 invested, no sales or dividends).
+    uninvested = Decimal(over["total_invested"]) - Decimal(hold["total_cost_basis"])
+    assert Decimal(over["capital_gain"]) == approx(
+        Decimal(hold["total_capital_gain"]) - uninvested, abs=tol
+    )
+    # Per-row consistency and today/total split.
+    for row in hold["holdings"]:
+        assert Decimal(row["capital_gain"]) == approx(
+            Decimal(row["value"]) - Decimal(row["cost_basis"]), abs=tol
+        )
+    summary = hold["summary"]
+    assert summary["in_profit"] + summary["in_loss"] <= len(hold["holdings"])
+    best = max(hold["holdings"], key=lambda r: Decimal(r["total_growth"]))
+    assert summary["best_symbol"] == best["symbol"]
+    assert Decimal(summary["best_growth"]) == Decimal(best["total_growth"])

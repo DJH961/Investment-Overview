@@ -1,6 +1,6 @@
 """Allocations read-model: current mix, saved targets, drift, and saving a target.
 
-💱 CURRENCY (rule in ``AGENTS.md``): percentages are ratios of same-instant
+💱 CURRENCY (rule in ``AGENTS.md``): ratios are fractions (0.01 = 1 %) of same-instant
 values (currency-neutral). A USD *value* is the EUR value times the EUR->USD
 spot - a single-instant conversion; it is ``None`` when no spot exists.
 """
@@ -49,7 +49,7 @@ def serialize_targets(session: Session) -> list[dict[str, Any]]:
             {
                 "instrument_id": item.instrument_id,
                 "symbol": instruments[item.instrument_id].symbol,
-                "weight_pct": dec(item.weight_pct),
+                "weight_pct": dec(item.weight_pct / HUNDRED),  # stored as percent -> fraction
                 "no_buy": bool(item.no_buy),
             }
             for item in alloc.items
@@ -112,7 +112,7 @@ def _buckets(
         {
             "label": k,
             "value": dec(_val(v, ccy, fx)),
-            "pct": dec(v * HUNDRED / total if total > ZERO else ZERO),
+            "pct": dec(v / total if total > ZERO else ZERO),
         }
         for k, v in rows
     ]
@@ -132,7 +132,7 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
     if active is not None:
         symbols = {i.id: i.symbol for i in instruments_repo.list_instruments(session)}
         target_pct = {
-            item["instrument_id"]: Decimal(item["weight_pct"]) for item in active["items"]
+            item["instrument_id"]: Decimal(item["weight_pct"]) * HUNDRED for item in active["items"]
         }
         ids = set(aggs) | set(target_pct)
         values = {i: aggs[i].value_eur if i in aggs else ZERO for i in ids}
@@ -151,8 +151,8 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
                     "label": agg.symbol if agg else symbols.get(iid, str(iid)),
                     "category": agg.category if agg else UNCATEGORIZED,
                     "asset_class": agg.asset_class if agg else UNCATEGORIZED,
-                    "current_pct": dec(cur),
-                    "target_pct": dec(tgt),
+                    "current_pct": dec(cur / HUNDRED),
+                    "target_pct": dec(tgt / HUNDRED),
                     "drift_pp": dec(cur - tgt),
                     "current_value": dec(_val(values[iid], ccy, fx)),
                     "delta_value": dec(_val(target_value_eur - values[iid], ccy, fx)),
@@ -184,7 +184,8 @@ def save_target(
 ) -> dict[str, Any]:
     """Create or replace a saved target (weights normalised to 100).
 
-    ``items`` are ``(instrument_id, weight_pct, no_buy)``. With ``target_id`` the
+    ``items`` are ``(instrument_id, weight, no_buy)``; weights are relative and
+    normalised, so the input unit (fraction or percent) does not matter. With ``target_id`` the
     existing allocation is replaced (it gets a fresh id: ``allocations_repo`` has
     no update). Raises :class:`AllocationInputError` / :class:`AllocationConflictError`.
     """

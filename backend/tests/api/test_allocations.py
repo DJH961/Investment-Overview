@@ -47,7 +47,7 @@ def test_current_mix_without_target(api_client: TestClient, ids: dict[str, int])
     by_cat = {b["label"]: b for b in body["current_by_category"]}
     assert Decimal(by_cat["US Stocks"]["value"]) == 3750
     assert Decimal(by_cat["Bonds"]["value"]) == 1400
-    assert Decimal(by_cat["US Stocks"]["pct"]) == pytest.approx(Decimal(3750) / 5150 * 100)
+    assert Decimal(by_cat["US Stocks"]["pct"]) == pytest.approx(Decimal(3750) / 5150)
     eur = api_client.get("/api/allocations?ccy=EUR").json()
     # A value converts at the instant's rate; a percentage does not change.
     assert Decimal(eur["total_value"]) == pytest.approx(
@@ -63,13 +63,13 @@ def test_put_then_get_drift(api_client: TestClient, ids: dict[str, int]) -> None
     assert target["active"] is True
     assert target["name"] == "60/40"
     assert {i["symbol"]: Decimal(i["weight_pct"]) for i in target["items"]} == {
-        "VTI": Decimal("60.0"),
-        "BND": Decimal("40.0"),
+        "VTI": Decimal("0.6"),
+        "BND": Decimal("0.4"),
     }
     body = api_client.get("/api/allocations?ccy=USD").json()
     assert body["active_target_id"] == target["id"]
     drift = {r["label"]: r for r in body["drift"]}
-    assert Decimal(drift["VTI"]["current_pct"]) == pytest.approx(Decimal(3750) / 5150 * 100)
+    assert Decimal(drift["VTI"]["current_pct"]) == pytest.approx(Decimal(3750) / 5150)
     assert Decimal(drift["VTI"]["drift_pp"]) == pytest.approx(
         Decimal(3750) / 5150 * 100 - 60, rel=Decimal("1e-9")
     )
@@ -92,7 +92,7 @@ def test_put_normalises_replaces_and_validates(api_client: TestClient, ids: dict
         ),
     ).json()
     weights = {i["symbol"]: Decimal(i["weight_pct"]) for i in first["items"]}
-    assert weights == {"VTI": Decimal("75.0"), "BND": Decimal("25.0")}
+    assert weights == {"VTI": Decimal("0.75"), "BND": Decimal("0.25")}
     assert next(i for i in first["items"] if i["symbol"] == "BND")["no_buy"] is True
 
     replaced = api_client.put(

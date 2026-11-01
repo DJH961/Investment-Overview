@@ -1126,11 +1126,13 @@ def compute_market_verdict(
     portfolio_xirr: Decimal | None,
     years: Decimal | None,
     as_of: date | None = None,
+    currency: str = "EUR",
 ) -> MarketVerdict:
     """Compare the portfolio XIRR to the same contributions invested in the
     benchmark index, on an apples-to-apples XIRR basis.
 
-    ``portfolio_xirr`` / ``years`` come from the portfolio metrics (EUR basis).
+    ``portfolio_xirr`` / ``years`` come from the portfolio metrics, with
+    ``portfolio_xirr`` in the same ``currency`` as the benchmark simulation.
     The benchmark XIRR is simulated by routing the portfolio's external
     contribution cashflows into the index (see
     :func:`benchmark_service.simulate_benchmark_xirr`). Both XIRRs are converted
@@ -1144,7 +1146,9 @@ def compute_market_verdict(
     as_of = as_of or exchange_today()
     symbol = benchmark_service.get_symbol(session)
 
-    benchmark_xirr = benchmark_service.simulate_benchmark_xirr(session, as_of=as_of)
+    benchmark_xirr = benchmark_service.simulate_benchmark_xirr(
+        session, as_of=as_of, currency=currency
+    )
 
     portfolio_return: Decimal | None = None
     benchmark_return: Decimal | None = None

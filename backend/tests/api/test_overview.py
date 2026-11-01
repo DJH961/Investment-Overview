@@ -66,9 +66,9 @@ def test_usd_switch_selects_usd_legs(api_client: TestClient, seeded: None) -> No
     # Returns are computed per currency, never converted: they differ.
     assert usd["kpis"]["xirr"] != eur["kpis"]["xirr"]
     assert usd["kpis"]["total_growth_compounded"] != eur["kpis"]["total_growth_compounded"]
-    # The benchmark simulation is EUR-only: no USD verdict figures are invented.
-    assert usd["market_verdict"]["portfolio_return"] is None
-    assert usd["market_verdict"]["beating"] is None
+    # The verdict is computed in the reporting currency (USD benchmark XIRR).
+    assert usd["market_verdict"]["portfolio_return"] is not None
+    assert usd["market_verdict"]["portfolio_return"] == usd["kpis"]["total_growth_compounded"]
 
 
 def test_currency_effect_split(api_client: TestClient, seeded: None) -> None:
@@ -94,3 +94,12 @@ def test_empty_ledger_still_answers(api_client: TestClient, api_db: object) -> N
     r = api_client.get("/api/overview")
     assert r.status_code == 200
     assert r.json()["position_count"] == 0
+
+
+def test_rate_move_is_a_fraction(api_client: TestClient, seeded: None) -> None:
+    today = api_client.get("/api/overview").json()["currency"]["today"]
+    if today["spot"] is None or today["prev"] is None:
+        return
+    expected = (D(today["spot"]) - D(today["prev"])) / D(today["prev"])
+    assert D(today["rate_move_pct"]) == pytest.approx(expected, abs=D("1e-12"))
+    assert abs(D(today["rate_move_pct"])) < D("0.2")  # a fraction, not percent

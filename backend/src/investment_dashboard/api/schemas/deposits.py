@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from investment_dashboard.api.schemas.common import ApiModel, Ccy, DecStr
 
 
@@ -19,7 +21,9 @@ class DepositRowOut(ApiModel):
     kind: str
     amount_native: DecStr
     currency: str
-    amount: DecStr | None
+    amount: DecStr | None = Field(
+        description="Amount in the requested ccy at the transaction date; null when underivable"
+    )
     description: str
     #: Reserved for the FIFO match fields (filled by the currency-conversion work).
     effective_rate: DecStr | None = None

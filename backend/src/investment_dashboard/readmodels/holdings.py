@@ -63,6 +63,24 @@ def pick(eur: Decimal | None, usd: Decimal | None, ccy: str) -> Decimal | None:
     return usd if ccy == "USD" else eur
 
 
+def _gain_split(
+    card: HoldingCard, ccy: str
+) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+    """``(capital_gain, dividends, total_return)`` for one holding in ``ccy``.
+
+    The card's gain already includes cash dividends (``value + dividends -
+    cost``): that is the *total return*. Capital gain is ``value - cost basis``;
+    dividends are the remainder.
+    """
+    total_return = pick(card.capital_gain_eur, card.capital_gain_usd, ccy)
+    value = pick(card.value_eur, card.value_usd, ccy)
+    cost = pick(card.cost_basis_eur, card.cost_basis_usd, ccy)
+    if total_return is None or value is None or cost is None:
+        return None, None, total_return
+    capital_gain = value - cost
+    return capital_gain, total_return - capital_gain, total_return
+
+
 def holding_row(
     card: HoldingCard,
     position: Position,
@@ -72,6 +90,7 @@ def holding_row(
     eff = position.effective
     asset_class = (eff.asset_class if eff is not None else position.instrument.asset_class) or ""
     value = pick(card.value_eur, card.value_usd, ccy)
+    gain, dividends, total_return = _gain_split(card, ccy)
     return {
         "instrument_id": card.instrument_id,
         "symbol": card.symbol,
@@ -91,7 +110,9 @@ def holding_row(
         "expense_ratio": dec(card.expense_ratio),
         "cost_basis": dec(pick(card.cost_basis_eur, card.cost_basis_usd, ccy)),
         "value": dec(value),
-        "capital_gain": dec(pick(card.capital_gain_eur, card.capital_gain_usd, ccy)),
+        "capital_gain": dec(gain),
+        "dividends": dec(dividends),
+        "total_return": dec(total_return),
         "xirr": dec(pick(card.xirr_eur, card.xirr_usd, ccy)),
         "total_growth": dec(pick(card.total_growth_eur, card.total_growth_usd, ccy)),
         "ytd_growth": dec(pick(card.ytd_growth_eur, card.ytd_growth_usd, ccy)),
@@ -106,7 +127,7 @@ def holding_row(
         "today_move": dec(pick(card.daily_move_eur, card.daily_move_usd, ccy)),
         "daily_growth_as_of": iso(card.daily_growth_as_of),
         "daily_is_stale": card.daily_is_stale,
-        "weight_pct": dec(card.weight * 100 if card.weight is not None else None),
+        "weight_pct": dec(card.weight),
         "value_warning": card.value_warning,
         "price_data_warning": card.price_data_warning,
     }
@@ -123,6 +144,9 @@ def _summary(rows: list[dict[str, Any]], cards: list[HoldingCard], ccy: str) -> 
     largest = max(cards, key=lambda c: c.weight or ZERO, default=None)
     gainers = sum(1 for c in cards if (c.daily_move_eur or ZERO) > ZERO)
     losers = sum(1 for c in cards if (c.daily_move_eur or ZERO) < ZERO)
+    splits = [_gain_split(c, ccy)[0] for c in cards]
+    in_profit = sum(1 for g in splits if g is not None and g > ZERO)
+    in_loss = sum(1 for g in splits if g is not None and g < ZERO)
     return {
         "best_symbol": best[0].symbol if best else None,
         "best_growth": dec(best[1]) if best else None,
@@ -130,10 +154,12 @@ def _summary(rows: list[dict[str, Any]], cards: list[HoldingCard], ccy: str) -> 
         "worst_growth": dec(worst[1]) if worst else None,
         "most_concentrated_symbol": largest.symbol if largest and largest.weight else None,
         "most_concentrated_weight_pct": dec(
-            largest.weight * 100 if largest and largest.weight is not None else None
+            largest.weight if largest and largest.weight is not None else None
         ),
         "gainers": gainers,
         "losers": losers,
+        "in_profit": in_profit,
+        "in_loss": in_loss,
     }
 
 
@@ -154,13 +180,20 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
         holding_row(c, by_id[c.instrument_id], metrics.get(c.instrument_id), ccy) for c in cards
     ]
     total_value = _sum([pick(c.value_eur, c.value_usd, ccy) for c in cards])
-    total_gain = _sum([pick(c.capital_gain_eur, c.capital_gain_usd, ccy) for c in cards])
+    splits = [_gain_split(c, ccy) for c in cards]
+    total_gain = _sum([s[0] for s in splits])
+    total_dividends = _sum([s[1] for s in splits])
+    total_return = _sum([s[2] for s in splits])
+    total_cost = _sum([pick(c.cost_basis_eur, c.cost_basis_usd, ccy) for c in cards])
     return {
         "ccy": ccy,
         "as_of": ctx.as_of.isoformat(),
         "fx_eur_usd": dec(ctx.fx_rate_eur_usd),
         "total_value": dec(total_value),
+        "total_cost_basis": dec(total_cost),
         "total_capital_gain": dec(total_gain),
+        "total_dividends": dec(total_dividends),
+        "total_return": dec(total_return),
         "holdings": rows,
         "summary": _summary(rows, cards, ccy),
     }

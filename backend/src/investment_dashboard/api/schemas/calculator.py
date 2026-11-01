@@ -26,13 +26,13 @@ class CalcInstrumentOut(ApiModel):
     name: str
     category: str
     current_value: DecStr | None
-    current_pct: DecStr | None
+    current_pct: DecStr | None = Field(description="Share of total value, PERCENT 0-100")
 
 
 class CalcCategoryOut(ApiModel):
     name: str
     current_value: DecStr | None
-    current_pct: DecStr | None
+    current_pct: DecStr | None = Field(description="Share of total value, PERCENT 0-100")
     members: list[int]
 
 

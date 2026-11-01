@@ -7,11 +7,13 @@ from pydantic import Field
 from investment_dashboard.api.deps import Ccy
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
 
+_FRAC = "fraction, 0.01 = 1%"
+
 
 class TargetItem(ApiModel):
     instrument_id: int
     symbol: str
-    weight_pct: DecStr
+    weight_pct: DecStr = Field(description=f"Target weight ({_FRAC})")
     no_buy: bool = False
 
 
@@ -30,10 +32,11 @@ class DriftRow(ApiModel):
     label: str
     category: str
     asset_class: str
-    current_pct: DecStr
-    target_pct: DecStr
-    #: Current minus target; positive = over-allocated.
-    drift_pp: DecStr
+    current_pct: DecStr = Field(description=f"Current weight ({_FRAC})")
+    target_pct: DecStr = Field(description=f"Target weight ({_FRAC})")
+    drift_pp: DecStr = Field(
+        description="current - target in percentage points (1.5 = 1.5 pp); positive = over"
+    )
     current_value: DecStr | None = None
     #: Target value minus current value; positive = buy, negative = sell.
     delta_value: DecStr | None = None
@@ -42,7 +45,7 @@ class DriftRow(ApiModel):
 class Bucket(ApiModel):
     label: str
     value: DecStr | None = None
-    pct: DecStr
+    pct: DecStr = Field(description=f"Share of total value ({_FRAC})")
 
 
 class AllocationsResponse(ApiModel):
@@ -58,12 +61,14 @@ class AllocationsResponse(ApiModel):
 
 class TargetItemIn(ApiModel):
     instrument_id: int
-    weight_pct: DecStr
+    weight_pct: DecStr = Field(
+        description="Relative weight; all weights are normalised (fractions or percent both work)"
+    )
     no_buy: bool = False
 
 
 class TargetIn(ApiModel):
-    """Create (no ``id``) or replace (with ``id``) a saved target; weights are normalised to 100."""
+    """Create (no ``id``) or replace (with ``id``) a saved target; weights are normalised."""
 
     id: int | None = None
     name: str = Field(min_length=1, max_length=128)
@@ -77,7 +82,7 @@ class PlanRowOut(ApiModel):
     instrument_id: int
     symbol: str
     name: str
-    target_pct: DecStr
+    target_pct: DecStr = Field(description=f"Target weight ({_FRAC})")
     current_value: DecStr | None = None
     add_value: DecStr | None = None
     current_price: DecStr | None = None

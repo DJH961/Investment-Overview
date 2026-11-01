@@ -300,7 +300,7 @@ def plan_to_dict(plan: TargetPlan) -> dict[str, object]:
                 "instrument_id": r.instrument_id,
                 "symbol": r.symbol,
                 "name": r.name,
-                "target_pct": dec(r.target_pct),
+                "target_pct": dec(r.target_pct / HUNDRED),
                 "current_value": dec(r.current_value),
                 "add_value": dec(r.add_value),
                 "current_price": dec(r.current_price),
