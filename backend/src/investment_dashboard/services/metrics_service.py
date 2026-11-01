@@ -14,7 +14,7 @@ single-currency series rescaled by today's spot.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -42,6 +42,7 @@ from investment_dashboard.repositories import (
     transactions_repo,
 )
 from investment_dashboard.services import (
+    cashflows,
     fx_service,
     intraday_snapshots_service,
     positions_service,
@@ -62,31 +63,12 @@ def _one_year_before(as_of: date) -> date:
         return date(as_of.year - 1, 3, 1)
 
 
-# Kinds that move *external* cash (the user's bank ↔ portfolio).
-# ``transfer_in`` / ``transfer_out`` model inter-account or in-kind moves: a
-# transfer between two *tracked* accounts records both legs, so counting
-# ``transfer_in`` as a contribution and ``transfer_out`` as a withdrawal nets
-# to zero at the portfolio level, while a move that crosses the tracked
-# boundary (only one leg exists) is correctly treated as an external flow.
-_CONTRIBUTION_KINDS = {
-    TransactionKind.DEPOSIT.value,
-    TransactionKind.TRANSFER_IN.value,
-}
-_WITHDRAWAL_KINDS = {
-    TransactionKind.WITHDRAWAL.value,
-    TransactionKind.TRANSFER_OUT.value,
-}
-# External cash-flow kinds (contributions + withdrawals): the moves that change
-# the cumulative-contributions baseline. Exposed so other read-models (e.g. the
-# analytics equity curve) count exactly the same set of ledger kinds rather than
-# drifting to a narrower one.
-EXTERNAL_FLOW_KINDS = _CONTRIBUTION_KINDS | _WITHDRAWAL_KINDS
+# Kind sets live in ``services.cashflows`` (the canonical cash-leg module).
+_CONTRIBUTION_KINDS = cashflows.CONTRIBUTION_KINDS
+_WITHDRAWAL_KINDS = cashflows.WITHDRAWAL_KINDS
+EXTERNAL_FLOW_KINDS = cashflows.EXTERNAL_FLOW_KINDS
 _RETAINED_CASH_ACCOUNT_TYPES = {"savings", "cash"}
-# Kinds that receive cash not represented in the current portfolio value.
-_DISTRIBUTION_KINDS = {
-    TransactionKind.DIVIDEND_CASH.value,
-    TransactionKind.INTEREST.value,
-}
+_DISTRIBUTION_KINDS = cashflows.DISTRIBUTION_KINDS
 
 
 @dataclass(frozen=True)
@@ -190,50 +172,6 @@ class PortfolioMetrics:
     daily_growth_fx_eur_usd_prev: Decimal | None = None
 
 
-def _txn_eur_amount(t: Transaction) -> Decimal:
-    """EUR-converted cash leg of one transaction.
-
-    Uses the cached ``net_eur`` if present; otherwise falls back to
-    ``net_native`` (assumes EUR account). Returning ``Decimal(0)`` for a
-    ``None`` net leaves XIRR unaffected.
-    """
-    if t.net_eur is not None:
-        return t.net_eur
-    if t.net_native is not None:
-        return t.net_native
-    return ZERO
-
-
-def _txn_usd_amount(
-    t: Transaction,
-    *,
-    eur_to_usd: dict[date, Decimal],
-) -> Decimal:
-    """USD-converted cash leg of one transaction (per trade-date FX).
-
-    Prefers the **frozen** ``net_usd`` leg persisted at import / manual entry
-    (v2.9), which for USD-native accounts is the booked amount verbatim. Only
-    when that column is ``NULL`` (a row predating the backfill, or written
-    during an FX-history gap) do we fall back to live derivation: USD-native
-    rows read ``net_native`` directly, every other currency converts the EUR
-    amount at the EUR→USD rate **on the transaction's date** (forward-filled).
-    When no rate is available the figure is excluded from the USD series
-    (``Decimal(0)``) rather than poisoned with a wrong-magnitude value.
-    """
-    if t.net_usd is not None:
-        return t.net_usd
-    native_ccy = (t.account.native_currency if t.account else "EUR").upper()
-    if native_ccy == "USD" and t.net_native is not None:
-        return t.net_native
-    eur_amt = _txn_eur_amount(t)
-    if eur_amt == ZERO:
-        return ZERO
-    rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
-    if rate is None or rate == 0:
-        return ZERO
-    return eur_amt * rate
-
-
 def build_instrument_cashflows(
     session: Session,
     *,
@@ -267,48 +205,12 @@ def build_instrument_cashflows(
             eur_to_usd=eur_to_usd,
             fallback_rate=today_rate,
         )
-        eur_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=eur or ZERO))
-        usd_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=usd or ZERO))
+        # A leg that cannot be derived is omitted, never faked as 0.
+        if eur is not None:
+            eur_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=eur))
+        if usd is not None:
+            usd_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=usd))
     return eur_flows, usd_flows
-
-
-def build_portfolio_cashflows(
-    transactions: Sequence[Transaction],
-    *,
-    retained_cash_account_ids: set[int] | frozenset[int] = frozenset(),
-    amount_fn: Callable[[Transaction], Decimal] | None = None,
-) -> list[Cashflow]:
-    """Translate ledger rows into the signed cashflow stream XIRR needs.
-
-    Sign convention (matches :mod:`investment_dashboard.domain.returns`):
-        * ``deposit`` ⇒ negative (money in from outside).
-        * ``withdrawal`` ⇒ positive (money out).
-        * ``dividend_cash`` / ``interest`` ⇒ positive when the cash is not
-          retained in an account included in terminal portfolio value.
-        * ``buy`` / ``sell`` / ``dividend_reinvest`` are *internal*
-          rebalances — the cash never leaves the portfolio, so they do
-          **not** enter the portfolio-level XIRR. Their P&L appears
-          implicitly via the terminal mark-to-market.
-
-    ``amount_fn`` selects which currency to read each transaction in;
-    defaults to :func:`_txn_eur_amount` to preserve pre-v2.5 callers.
-    Pass a USD-aware function (using FX history) to build the USD
-    parallel series.
-    """
-    fn = amount_fn or _txn_eur_amount
-    flows: list[Cashflow] = []
-    for t in transactions:
-        kind = t.kind
-        amount = fn(t)
-        if kind in _CONTRIBUTION_KINDS:
-            # Deposit: amount > 0 ⇒ cashflow is negative.
-            flows.append(Cashflow(date=t.date, amount=-amount))
-        elif kind in _WITHDRAWAL_KINDS:
-            # Withdrawal: amount < 0 (cash out of account) ⇒ flow positive.
-            flows.append(Cashflow(date=t.date, amount=-amount))
-        elif kind in _DISTRIBUTION_KINDS and t.account_id not in retained_cash_account_ids:
-            flows.append(Cashflow(date=t.date, amount=amount))
-    return flows
 
 
 def build_retained_cash_account_ids(
@@ -331,30 +233,9 @@ def build_retained_cash_account_ids(
     return retained
 
 
-def build_portfolio_cashflows_dual(
-    transactions: Sequence[Transaction],
-    *,
-    retained_cash_account_ids: set[int] | frozenset[int] = frozenset(),
-    usd_amount_fn: Callable[[Transaction], Decimal],
-) -> tuple[list[Cashflow], list[Cashflow]]:
-    """EUR and USD portfolio cashflow streams in a single ledger pass (B5).
-
-    Equivalent to calling :func:`build_portfolio_cashflows` twice (once with
-    the default EUR ``amount_fn`` and once with ``usd_amount_fn``) but walks
-    ``transactions`` only once. The EUR leg always uses :func:`_txn_eur_amount`,
-    matching the default of :func:`build_portfolio_cashflows`.
-    """
-    eur_flows: list[Cashflow] = []
-    usd_flows: list[Cashflow] = []
-    for t in transactions:
-        kind = t.kind
-        if kind in _CONTRIBUTION_KINDS or kind in _WITHDRAWAL_KINDS:
-            eur_flows.append(Cashflow(date=t.date, amount=-_txn_eur_amount(t)))
-            usd_flows.append(Cashflow(date=t.date, amount=-usd_amount_fn(t)))
-        elif kind in _DISTRIBUTION_KINDS and t.account_id not in retained_cash_account_ids:
-            eur_flows.append(Cashflow(date=t.date, amount=_txn_eur_amount(t)))
-            usd_flows.append(Cashflow(date=t.date, amount=usd_amount_fn(t)))
-    return eur_flows, usd_flows
+# Canonical stream builders (re-exported for existing callers).
+build_portfolio_cashflows = cashflows.build_portfolio_cashflows
+build_portfolio_cashflows_dual = cashflows.build_portfolio_cashflows_dual
 
 
 class _ValuationCache:
@@ -394,9 +275,12 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     session: Session,
     *,
     as_of: date | None = None,
+    eur_overrides: Mapping[int, Decimal] | None = None,
 ) -> PortfolioMetrics:
     as_of = as_of or date.today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
+    # FX-pool effective EUR cost of USD deposits (empty without conversions).
+    ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
 
     # Memoise per-date portfolio roll-ups for this request (B1): the terminal
     # value, daily-growth holdings and expense figures all want ``as_of`` and
@@ -405,16 +289,11 @@ def compute_portfolio_metrics(  # noqa: PLR0915
 
     eur_to_usd: dict[date, Decimal] = fx_service.get_rates(session, base="EUR", quote="USD")
 
-    def _usd_amount(t: Transaction) -> Decimal:
-        return _txn_usd_amount(t, eur_to_usd=eur_to_usd)
-
-    contributions_eur = sum(
-        (_txn_eur_amount(t) for t in txns if t.kind in _CONTRIBUTION_KINDS),
-        start=ZERO,
+    contributions_eur = cashflows.sum_amounts(
+        txns, _CONTRIBUTION_KINDS, "EUR", eur_to_usd=eur_to_usd, eur_overrides=ov
     )
-    withdrawals_eur = sum(
-        (_txn_eur_amount(t) for t in txns if t.kind in _WITHDRAWAL_KINDS),
-        start=ZERO,
+    withdrawals_eur = cashflows.sum_amounts(
+        txns, _WITHDRAWAL_KINDS, "EUR", eur_to_usd=eur_to_usd, eur_overrides=ov
     )
     net_contributions_eur = contributions_eur + withdrawals_eur  # withdrawals are negative
 
@@ -454,14 +333,10 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         include_reinvested=True, since=_one_year_before(as_of)
     )
 
-    contributions_usd = sum(
-        (_usd_amount(t) for t in txns if t.kind in _CONTRIBUTION_KINDS),
-        start=ZERO,
+    contributions_usd = cashflows.sum_amounts(
+        txns, _CONTRIBUTION_KINDS, "USD", eur_to_usd=eur_to_usd
     )
-    withdrawals_usd = sum(
-        (_usd_amount(t) for t in txns if t.kind in _WITHDRAWAL_KINDS),
-        start=ZERO,
-    )
+    withdrawals_usd = cashflows.sum_amounts(txns, _WITHDRAWAL_KINDS, "USD", eur_to_usd=eur_to_usd)
     net_contributions_usd = contributions_usd + withdrawals_usd
 
     total_value_eur = cache.total_value(as_of)
@@ -504,7 +379,8 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     cashflows_eur, cashflows_usd = build_portfolio_cashflows_dual(
         txns,
         retained_cash_account_ids=retained_cash_account_ids,
-        usd_amount_fn=_usd_amount,
+        eur_to_usd=eur_to_usd,
+        eur_overrides=ov,
     )
     portfolio_xirr_eur = xirr(cashflows_eur, as_of=as_of, terminal_value=total_value_eur)
     portfolio_xirr_usd = (
@@ -535,7 +411,8 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     ytd_cashflows_eur, ytd_cashflows_usd = build_portfolio_cashflows_dual(
         ytd_txns,
         retained_cash_account_ids=retained_cash_account_ids,
-        usd_amount_fn=_usd_amount,
+        eur_to_usd=eur_to_usd,
+        eur_overrides=ov,
     )
     # Best-effort Jan-1 valuation: requires price + FX history for that
     # date. For brand-new portfolios with no Jan-1 history we fall back
@@ -560,23 +437,19 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     else:
         ytd_xirr_usd = None
 
-    ytd_contributions_eur = sum(
-        (_txn_eur_amount(t) for t in ytd_txns if t.kind in _CONTRIBUTION_KINDS),
-        start=ZERO,
+    ytd_contributions_eur = cashflows.sum_amounts(
+        ytd_txns, _CONTRIBUTION_KINDS, "EUR", eur_to_usd=eur_to_usd, eur_overrides=ov
     )
-    ytd_withdrawals_eur = sum(
-        (_txn_eur_amount(t) for t in ytd_txns if t.kind in _WITHDRAWAL_KINDS),
-        start=ZERO,
+    ytd_withdrawals_eur = cashflows.sum_amounts(
+        ytd_txns, _WITHDRAWAL_KINDS, "EUR", eur_to_usd=eur_to_usd, eur_overrides=ov
     )
     ytd_net_contrib_eur = ytd_contributions_eur + ytd_withdrawals_eur
 
-    ytd_contributions_usd = sum(
-        (_usd_amount(t) for t in ytd_txns if t.kind in _CONTRIBUTION_KINDS),
-        start=ZERO,
+    ytd_contributions_usd = cashflows.sum_amounts(
+        ytd_txns, _CONTRIBUTION_KINDS, "USD", eur_to_usd=eur_to_usd
     )
-    ytd_withdrawals_usd = sum(
-        (_usd_amount(t) for t in ytd_txns if t.kind in _WITHDRAWAL_KINDS),
-        start=ZERO,
+    ytd_withdrawals_usd = cashflows.sum_amounts(
+        ytd_txns, _WITHDRAWAL_KINDS, "USD", eur_to_usd=eur_to_usd
     )
     ytd_net_contrib_usd = ytd_contributions_usd + ytd_withdrawals_usd
 
@@ -599,7 +472,14 @@ def compute_portfolio_metrics(  # noqa: PLR0915
 
     # MTD: same shape as YTD but bounded to the first of the current month.
     mtd_growth, mtd_growth_usd = _compute_mtd_growth(
-        session, txns, as_of, total_value_eur, total_value_usd, eur_to_usd=eur_to_usd, cache=cache
+        session,
+        txns,
+        as_of,
+        total_value_eur,
+        total_value_usd,
+        eur_to_usd=eur_to_usd,
+        ov=ov,
+        cache=cache,
     )
 
     # Daily growth on the most recent completed trading day (dual currency).
@@ -826,6 +706,7 @@ def _compute_mtd_growth(
     total_value_usd: Decimal | None,
     *,
     eur_to_usd: dict[date, Decimal],
+    ov: Mapping[int, Decimal] | None = None,
     cache: _ValuationCache | None = None,
 ) -> tuple[Decimal | None, Decimal | None]:
     """Month-to-date simple growth in EUR and USD, net of this month's flows.
@@ -853,30 +734,18 @@ def _compute_mtd_growth(
     )
 
     mtd_txns = [t for t in txns if t.date >= month_start]
-    mtd_contrib_eur = sum(
-        (_txn_eur_amount(t) for t in mtd_txns if t.kind in _CONTRIBUTION_KINDS),
-        start=ZERO,
+    mtd_contrib_eur = cashflows.sum_amounts(
+        mtd_txns, _CONTRIBUTION_KINDS, "EUR", eur_to_usd=eur_to_usd, eur_overrides=ov
     )
-    mtd_withdraw_eur = sum(
-        (_txn_eur_amount(t) for t in mtd_txns if t.kind in _WITHDRAWAL_KINDS),
-        start=ZERO,
+    mtd_withdraw_eur = cashflows.sum_amounts(
+        mtd_txns, _WITHDRAWAL_KINDS, "EUR", eur_to_usd=eur_to_usd, eur_overrides=ov
     )
     mtd_net_eur = mtd_contrib_eur + mtd_withdraw_eur
-    mtd_contrib_usd = sum(
-        (
-            _txn_usd_amount(t, eur_to_usd=eur_to_usd)
-            for t in mtd_txns
-            if t.kind in _CONTRIBUTION_KINDS
-        ),
-        start=ZERO,
+    mtd_contrib_usd = cashflows.sum_amounts(
+        mtd_txns, _CONTRIBUTION_KINDS, "USD", eur_to_usd=eur_to_usd
     )
-    mtd_withdraw_usd = sum(
-        (
-            _txn_usd_amount(t, eur_to_usd=eur_to_usd)
-            for t in mtd_txns
-            if t.kind in _WITHDRAWAL_KINDS
-        ),
-        start=ZERO,
+    mtd_withdraw_usd = cashflows.sum_amounts(
+        mtd_txns, _WITHDRAWAL_KINDS, "USD", eur_to_usd=eur_to_usd
     )
     mtd_net_usd = mtd_contrib_usd + mtd_withdraw_usd
 

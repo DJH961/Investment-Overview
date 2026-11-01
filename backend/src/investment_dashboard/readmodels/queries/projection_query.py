@@ -69,16 +69,27 @@ def _avg_monthly_contribution(monthly_rows: list[PeriodRow]) -> Decimal:
     return sum(contribs, start=ZERO) / Decimal(len(contribs))
 
 
-def _display_value(value_eur: Decimal, currency: str, fx_rate: Decimal | None) -> Decimal:
-    if currency.upper() == "EUR" or fx_rate is None or fx_rate == 0:
+def _display_value(value_eur: Decimal, currency: str, fx_rate: Decimal | None) -> Decimal | None:
+    """EUR value in the display currency; ``None`` (blank) when no rate is on file.
+
+    Never relabels the euro figure as the foreign one.
+    """
+    if currency.upper() == "EUR":
         return value_eur
-    return value_eur * fx_rate
-
-
-def _convert_to_usd(value_eur: Decimal, fx_rate: Decimal | None) -> Decimal:
     if fx_rate is None or fx_rate == 0:
-        return value_eur
+        return None
     return value_eur * fx_rate
+
+
+def _convert_to_usd(value_eur: Decimal, fx_rate: Decimal | None) -> Decimal | None:
+    if fx_rate is None or fx_rate == 0:
+        return None
+    return value_eur * fx_rate
+
+
+def _m(value: Decimal | None) -> str:
+    """Money string for a table cell; ``None`` renders as an em dash."""
+    return f"{value:,.2f}" if value is not None else "—"
 
 
 def project(
@@ -228,14 +239,14 @@ def to_table_rows(
     for r in rows:
         row: dict[str, str] = {
             "year": str(r.year),
-            "contributed": f"{_display_value(r.contributed, currency, fx_rate):,.2f}",
+            "contributed": _m(_display_value(r.contributed, currency, fx_rate)),
             "contributed_eur": f"{r.contributed:,.2f}",
-            "contributed_usd": f"{_convert_to_usd(r.contributed, fx_rate):,.2f}",
+            "contributed_usd": _m(_convert_to_usd(r.contributed, fx_rate)),
         }
         for rate, value in r.values_by_rate.items():
-            row[f"rate_{rate}"] = f"{_display_value(value, currency, fx_rate):,.2f}"
+            row[f"rate_{rate}"] = _m(_display_value(value, currency, fx_rate))
             row[f"rate_{rate}_eur"] = f"{value:,.2f}"
-            row[f"rate_{rate}_usd"] = f"{_convert_to_usd(value, fx_rate):,.2f}"
+            row[f"rate_{rate}_usd"] = _m(_convert_to_usd(value, fx_rate))
         out.append(row)
     return out
 
@@ -252,13 +263,13 @@ def to_monthly_table_rows(
     for r in rows:
         row: dict[str, str] = {
             "label": r.label,
-            "contributed": f"{_display_value(r.contributed, currency, fx_rate):,.2f}",
+            "contributed": _m(_display_value(r.contributed, currency, fx_rate)),
             "contributed_eur": f"{r.contributed:,.2f}",
-            "contributed_usd": f"{_convert_to_usd(r.contributed, fx_rate):,.2f}",
+            "contributed_usd": _m(_convert_to_usd(r.contributed, fx_rate)),
         }
         for rate, value in r.values_by_rate.items():
-            row[f"rate_{rate}"] = f"{_display_value(value, currency, fx_rate):,.2f}"
+            row[f"rate_{rate}"] = _m(_display_value(value, currency, fx_rate))
             row[f"rate_{rate}_eur"] = f"{value:,.2f}"
-            row[f"rate_{rate}_usd"] = f"{_convert_to_usd(value, fx_rate):,.2f}"
+            row[f"rate_{rate}_usd"] = _m(_convert_to_usd(value, fx_rate))
         out.append(row)
     return out

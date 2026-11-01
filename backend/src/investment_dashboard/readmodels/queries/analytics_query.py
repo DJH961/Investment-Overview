@@ -27,7 +27,6 @@ from investment_dashboard.domain.attribution import (
     InstrumentReturn,
     attribute_portfolio_return,
 )
-from investment_dashboard.domain.currency import dual_currency_amounts
 from investment_dashboard.domain.returns import (
     Cashflow,
     DailyValuation,
@@ -50,10 +49,11 @@ from investment_dashboard.domain.risk_extras import (
     skewness,
     ulcer_index,
 )
-from investment_dashboard.models import Transaction, TransactionKind
+from investment_dashboard.models import TransactionKind
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
     benchmark_service,
+    cashflows,
     fx_service,
     metrics_service,
     positions_service,
@@ -123,27 +123,6 @@ def _daily_returns(values: list[Decimal]) -> list[Decimal]:
     return out
 
 
-def _contribution_amount(t: Transaction, *, usd: bool, eur_to_usd: dict[date, Decimal]) -> Decimal:
-    """One external cashflow in the reporting currency, at its own date's rate.
-
-    EUR: the frozen ``net_eur`` leg (else ``net_native``). USD: the frozen
-    ``net_usd`` leg, or the native amount for a USD account, or the EUR leg
-    converted at the transaction-date rate; ``0`` when no USD figure can be
-    derived (excluded rather than poisoned with a wrong-currency amount).
-    """
-    if not usd:
-        return t.net_eur if t.net_eur is not None else (t.net_native or ZERO)
-    _eur, amount = dual_currency_amounts(
-        native_currency=t.account.native_currency if t.account else "EUR",
-        net_native=t.net_native,
-        net_eur=t.net_eur,
-        on=t.date,
-        eur_to_usd=eur_to_usd,
-        net_usd=t.net_usd,
-    )
-    return amount if amount is not None else ZERO
-
-
 def _build_curve(
     session: Session,
     *,
@@ -171,15 +150,20 @@ def _build_curve(
     # same external-flow kinds as the rest of the app (deposits/withdrawals *and*
     # transfer_in/transfer_out) so the contributions line tracks real funding
     # instead of staying flat when money enters via a transfer rather than a
-    # plain deposit. See metrics_service.EXTERNAL_FLOW_KINDS.
+    # plain deposit. See cashflows.EXTERNAL_FLOW_KINDS.
     txns = list(transactions_repo.list_transactions(session, end=end))
     contribs_by_date: dict[date, Decimal] = {}
     use_usd = currency.upper() == "USD"
-    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD") if use_usd else {}
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+    ov = cashflows.eur_overrides_for(session)
     for t in txns:
-        if t.kind not in metrics_service.EXTERNAL_FLOW_KINDS:
+        if t.kind not in cashflows.EXTERNAL_FLOW_KINDS:
             continue
-        amt = _contribution_amount(t, usd=use_usd, eur_to_usd=eur_to_usd)
+        amt = cashflows.txn_amount(
+            t, "USD" if use_usd else "EUR", eur_to_usd=eur_to_usd, eur_overrides=ov
+        )
+        if amt is None:
+            continue  # leg can't be derived: omitted, never counted as 0
         contribs_by_date[t.date] = contribs_by_date.get(t.date, ZERO) + amt
 
     # The benchmark overlay source: prefer the funded simulation (already in the
@@ -276,13 +260,16 @@ def _attribution_for_window(
     }
     end_positions = positions_service.compute_positions(session, as_of=end)
     txns = list(transactions_repo.list_transactions(session, start=start, end=end))
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
 
     contribs: dict[int, Decimal] = {}
     dividends: dict[int, Decimal] = {}
     for t in txns:
         if t.instrument_id is None:
             continue
-        net_eur = t.net_eur if t.net_eur is not None else (t.net_native or ZERO)
+        net_eur = cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd)
+        if net_eur is None:
+            continue
         if t.kind in {TransactionKind.BUY.value, TransactionKind.SELL.value}:
             contribs[t.instrument_id] = contribs.get(t.instrument_id, ZERO) + (-net_eur)
         elif t.kind == TransactionKind.DIVIDEND_CASH.value:

@@ -40,6 +40,7 @@ from investment_dashboard.repositories import (
     transactions_repo,
 )
 from investment_dashboard.services import (
+    cashflows,
     fx_service,
     investing_power_service,
     metrics_service,
@@ -302,14 +303,11 @@ def _portfolio_cashflows(
 ) -> list[dict[str, str | None]]:
     retained_ids = metrics_service.build_retained_cash_account_ids(session, txns)
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-
-    def _usd_amount(t: Transaction) -> Decimal:
-        return metrics_service._txn_usd_amount(t, eur_to_usd=eur_to_usd)
-
-    eur_flows, usd_flows = metrics_service.build_portfolio_cashflows_dual(
+    eur_flows, usd_flows = cashflows.build_portfolio_cashflows_dual(
         txns,
         retained_cash_account_ids=retained_ids,
-        usd_amount_fn=_usd_amount,
+        eur_to_usd=eur_to_usd,
+        eur_overrides=cashflows.eur_overrides_for(session),
     )
     return _paired_cashflows(eur_flows, usd_flows)
 

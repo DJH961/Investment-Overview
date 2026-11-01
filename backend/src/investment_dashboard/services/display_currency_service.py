@@ -69,20 +69,20 @@ def convert_from_eur(
     *,
     target: str,
     as_of: date | None = None,
-) -> Decimal:
+) -> Decimal | None:
     """Convert an EUR amount into ``target`` using the as-of FX rate.
 
     Returns the input unchanged when ``target == 'EUR'`` so callers can
     pipe everything through this helper without branching. If no FX rate
-    is available the input is returned unchanged (degrade gracefully —
-    spec §5.6).
+    is available the result is ``None`` (unavailable): the EUR figure is never
+    relabelled as the foreign currency.
     """
     target = target.upper()
     if target == "EUR":
         return amount_eur
     rate = fx_service.get_rate_eur_to_quote(session, as_of or date.today(), quote=target)
     if rate is None or rate == 0:
-        return amount_eur
+        return None
     return amount_eur * rate
 
 

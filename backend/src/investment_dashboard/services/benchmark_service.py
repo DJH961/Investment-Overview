@@ -19,6 +19,7 @@ the new instrument; the old rows stay around for free.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -30,31 +31,19 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters import yfinance_client
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import Cashflow, xirr
-from investment_dashboard.models import Instrument, Transaction, TransactionKind
+from investment_dashboard.models import Instrument, Transaction
 from investment_dashboard.repositories import (
     app_config_repo,
     instruments_repo,
     prices_repo,
     transactions_repo,
 )
-from investment_dashboard.services import fx_service
+from investment_dashboard.services import cashflows, fx_service
 
 log = logging.getLogger(__name__)
 
 DEFAULT_SYMBOL = "VT"
 KEY_SYMBOL = "benchmark_symbol"
-
-# External-cash kinds that fund (or drain) the simulated benchmark holding,
-# mirroring metrics_service's portfolio-XIRR contribution convention so the two
-# returns are computed over the same flows.
-_CONTRIBUTION_KINDS = {
-    TransactionKind.DEPOSIT.value,
-    TransactionKind.TRANSFER_IN.value,
-}
-_WITHDRAWAL_KINDS = {
-    TransactionKind.WITHDRAWAL.value,
-    TransactionKind.TRANSFER_OUT.value,
-}
 
 
 @dataclass(frozen=True)
@@ -175,15 +164,6 @@ def get_series(
     return BenchmarkSeries(symbol=symbol, closes=closes)
 
 
-def _txn_eur_amount(t: Transaction) -> Decimal:
-    """EUR cash leg of a transaction (cached ``net_eur`` else ``net_native``)."""
-    if t.net_eur is not None:
-        return t.net_eur
-    if t.net_native is not None:
-        return t.net_native
-    return Decimal(0)
-
-
 def _close_as_of(closes: dict[date, Decimal], sorted_dates: list[date], d: date) -> Decimal | None:
     """Forward-filled benchmark close on ``d`` (earliest close if ``d`` precedes
     the series), or ``None`` when the series is empty."""
@@ -199,25 +179,60 @@ def _close_as_of(closes: dict[date, Decimal], sorted_dates: list[date], d: date)
     return closes[chosen]
 
 
-def simulate_benchmark_xirr(session: Session, *, as_of: date | None = None) -> Decimal | None:
-    """XIRR of a buy-and-hold of the benchmark funded by the portfolio's own
-    external contribution cashflows (EUR basis).
+def _price_in(
+    currency: str,
+    closes: dict[date, Decimal],
+    sorted_dates: list[date],
+    eur_to_usd: Mapping[date, Decimal],
+    d: date,
+) -> Decimal | None:
+    """Benchmark close on ``d`` in ``currency``; ``None`` when it can't be priced.
 
-    Each deposit/transfer-in buys benchmark shares at that day's close
-    (converted to EUR via the EUR→USD history); each withdrawal/transfer-out
-    sells shares. The terminal mark is the resulting share balance valued at the
-    ``as_of`` close. This makes "vs market" an apples-to-apples XIRR comparison —
-    "what return would these same contributions have earned in the index?".
+    The benchmark trades in USD, so the USD price is the close itself (no FX).
+    EUR divides by the EUR->USD rate in force on ``d`` (forward-filled).
+    """
+    close_usd = _close_as_of(closes, sorted_dates, d)
+    if close_usd is None:
+        return None
+    if currency == "USD":
+        return close_usd
+    rate = lookup_rate_with_forward_fill(eur_to_usd, d)
+    if rate is None or rate == 0:
+        return None
+    return close_usd / rate
+
+
+def _funding_txns(session: Session, end: date) -> list[Transaction]:
+    return [
+        t
+        for t in transactions_repo.list_transactions(session, end=end)
+        if t.kind in cashflows.EXTERNAL_FLOW_KINDS
+    ]
+
+
+def simulate_benchmark_xirr(
+    session: Session,
+    *,
+    as_of: date | None = None,
+    currency: str = "EUR",
+    eur_overrides: Mapping[int, Decimal] | None = None,
+) -> Decimal | None:
+    """XIRR of a buy-and-hold of the benchmark funded by the portfolio's own
+    external contribution cashflows, in ``currency`` (``EUR`` or ``USD``).
+
+    Each deposit/transfer-in buys benchmark shares at that day's close;
+    each withdrawal/transfer-out sells shares. The terminal mark is the
+    resulting share balance valued at the ``as_of`` close. The EUR path uses the
+    EUR cashflow stream (actual EUR sent, incl. FX-pool overrides) and EUR
+    prices; the USD path uses the USD cashflow stream and the raw USD close, so
+    neither return is ever converted into the other currency.
 
     Returns ``None`` when there is no benchmark history or no external
     contributions to simulate.
     """
+    ccy = currency.upper()
     as_of = as_of or date.today()
-    txns = [
-        t
-        for t in transactions_repo.list_transactions(session, end=as_of)
-        if t.kind in _CONTRIBUTION_KINDS or t.kind in _WITHDRAWAL_KINDS
-    ]
+    txns = _funding_txns(session, as_of)
     if not txns:
         return None
     start = min(t.date for t in txns)
@@ -226,35 +241,26 @@ def simulate_benchmark_xirr(session: Session, *, as_of: date | None = None) -> D
         return None
     sorted_dates = sorted(series.closes)
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-
-    def _price_eur(d: date) -> Decimal | None:
-        close_usd = _close_as_of(series.closes, sorted_dates, d)
-        if close_usd is None:
-            return None
-        rate = lookup_rate_with_forward_fill(eur_to_usd, d)
-        if rate is None or rate == 0:
-            return None
-        return close_usd / rate
+    ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
 
     shares = Decimal(0)
     flows: list[Cashflow] = []
     for t in sorted(txns, key=lambda r: (r.date, r.id)):
-        amount = _txn_eur_amount(t)
-        if amount == 0:
+        amount = cashflows.txn_amount(t, ccy, eur_to_usd=eur_to_usd, eur_overrides=ov)
+        if amount is None or amount == 0:
             continue
-        price = _price_eur(t.date)
+        price = _price_in(ccy, series.closes, sorted_dates, eur_to_usd, t.date)
         if price is None or price == 0:
             continue
-        # Contributions are positive cash in (amount > 0 ⇒ buy shares, negative
-        # flow); withdrawals are negative cash (amount < 0 ⇒ sell shares,
+        # Contributions are positive cash in (amount > 0 => buy shares, negative
+        # flow); withdrawals are negative cash (amount < 0 => sell shares,
         # positive flow). Both reduce to: shares += amount / price, flow = -amount.
         shares += amount / price
         flows.append(Cashflow(date=t.date, amount=-amount))
-    terminal_price = _price_eur(as_of)
+    terminal_price = _price_in(ccy, series.closes, sorted_dates, eur_to_usd, as_of)
     if terminal_price is None or not flows:
         return None
-    terminal_value = shares * terminal_price
-    return xirr(flows, as_of=as_of, terminal_value=terminal_value)
+    return xirr(flows, as_of=as_of, terminal_value=shares * terminal_price)
 
 
 def simulate_benchmark_value_series(
@@ -263,6 +269,7 @@ def simulate_benchmark_value_series(
     start: date,
     end: date,
     currency: str = "EUR",
+    eur_overrides: Mapping[int, Decimal] | None = None,
 ) -> dict[date, Decimal]:
     """Daily mark-to-market value of a benchmark holding **funded by the
     portfolio's own contributions**, in ``currency``.
@@ -280,11 +287,7 @@ def simulate_benchmark_value_series(
     is no benchmark history or no contributions to simulate.
     """
     currency = currency.upper()
-    txns = [
-        t
-        for t in transactions_repo.list_transactions(session, end=end)
-        if t.kind in _CONTRIBUTION_KINDS or t.kind in _WITHDRAWAL_KINDS
-    ]
+    txns = _funding_txns(session, end)
     if not txns:
         return {}
     first_contribution = min(t.date for t in txns)
@@ -295,39 +298,21 @@ def simulate_benchmark_value_series(
         return {}
     sorted_dates = sorted(series.closes)
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+    ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
 
-    def _price(d: date) -> Decimal | None:
-        """Benchmark close on ``d`` in the display ``currency`` (USD natively)."""
-        close_usd = _close_as_of(series.closes, sorted_dates, d)
-        if close_usd is None:
-            return None
-        if currency == "USD":
-            return close_usd
-        rate = lookup_rate_with_forward_fill(eur_to_usd, d)
-        if rate is None or rate == 0:
-            return None
-        return close_usd / rate
-
-    # Pre-compute the cumulative share balance after each contribution date so
-    # the per-close valuation below is a simple lookup rather than an inner loop.
-    contributions = sorted(txns, key=lambda r: (r.date, r.id))
+    # Shares are accounted in the display ``currency`` itself: USD uses the USD
+    # cashflows and raw USD closes (a real USD path); EUR uses the EUR cashflows
+    # (actual EUR sent) and EUR-converted closes.
     share_steps: list[tuple[date, Decimal]] = []
     shares = Decimal(0)
-    for t in contributions:
-        amount = _txn_eur_amount(t)
-        if amount == 0:
+    for t in sorted(txns, key=lambda r: (r.date, r.id)):
+        amount = cashflows.txn_amount(t, currency, eur_to_usd=eur_to_usd, eur_overrides=ov)
+        if amount is None or amount == 0:
             continue
-        # The benchmark is priced in EUR for share accounting regardless of the
-        # display currency (contributions are stored in EUR), then re-valued in
-        # the display currency at each close — so EUR/USD display agree on the
-        # share count and differ only by the terminal FX, exactly like the
-        # portfolio curve.
-        close_usd = _close_as_of(series.closes, sorted_dates, t.date)
-        rate = lookup_rate_with_forward_fill(eur_to_usd, t.date)
-        if close_usd is None or close_usd == 0 or rate is None or rate == 0:
+        price_at = _price_in(currency, series.closes, sorted_dates, eur_to_usd, t.date)
+        if price_at is None or price_at == 0:
             continue
-        price_eur = close_usd / rate
-        shares += amount / price_eur
+        shares += amount / price_at
         share_steps.append((t.date, shares))
 
     if not share_steps:
@@ -346,7 +331,7 @@ def simulate_benchmark_value_series(
     for d in sorted_dates:
         if d < start or d > end:
             continue
-        price = _price(d)
+        price = _price_in(currency, series.closes, sorted_dates, eur_to_usd, d)
         if price is None:
             continue
         out[d] = _shares_through(d) * price

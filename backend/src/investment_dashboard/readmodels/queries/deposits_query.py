@@ -1,8 +1,8 @@
 """Query helpers for ``/deposits`` — summary KPIs + filtered table rows.
 
 Only ``deposit`` / ``withdrawal`` ledger rows count
-(spec §8.2). EUR-side numbers use ``net_eur`` when present and fall
-back to ``net_native`` otherwise.
+(spec §8.2). Every EUR/USD leg comes from the canonical
+:mod:`investment_dashboard.services.cashflows` module.
 
 v2.4 made every column **FX-aware per trade date**: the USD totals on
 the KPI cards and the per-row "Amount (USD)" column are computed by
@@ -18,7 +18,7 @@ USD-native deposits short-circuit the FX lookup entirely and use
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -27,12 +27,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from investment_dashboard.domain.currency import (
-    dual_currency_amounts,
-    lookup_rate_with_forward_fill,
-)
 from investment_dashboard.models import Account, Transaction
-from investment_dashboard.services import fx_service
+from investment_dashboard.services import cashflows, fx_service
 
 _DEPOSIT_KINDS: tuple[str, ...] = (
     "deposit",
@@ -97,81 +93,42 @@ class DepositRecord:
 def _amounts(
     t: Transaction,
     *,
-    native_currency: str,
     eur_to_usd: dict[date, Decimal],
-    fallback_rate: Decimal | None = None,
-) -> tuple[Decimal, Decimal | None]:
-    """``(eur, usd)`` value of ``t`` on its trade date.
+    eur_overrides: Mapping[int, Decimal] | None = None,
+) -> tuple[Decimal | None, Decimal | None]:
+    """``(eur, usd)`` value of ``t`` on its trade date (canonical, see
+    :mod:`investment_dashboard.services.cashflows`).
 
-    Both legs come from the EUR→USD rate in force on the transaction's date
-    (forward-filled), so a USD-native deposit shows the EUR it was actually
-    worth that day instead of mirroring the USD figure at parity. The EUR leg
-    falls back to :data:`ZERO` (rather than :data:`None`) so the contribution
-    aggregates stay summable even when FX history can't price a row.
+    ``None`` for a leg that cannot be derived (no rate on file); aggregates skip
+    it and the table shows a blank rather than a made-up number.
     """
-    eur, usd = dual_currency_amounts(
-        native_currency=native_currency,
-        net_native=t.net_native,
-        net_eur=t.net_eur,
-        net_usd=t.net_usd,
-        on=t.date,
-        eur_to_usd=eur_to_usd,
-        fallback_rate=fallback_rate,
+    return (
+        cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd, eur_overrides=eur_overrides),
+        cashflows.txn_usd_amount(t, eur_to_usd=eur_to_usd),
     )
-    return (eur if eur is not None else ZERO), usd
 
 
-def _amount_eur(
-    t: Transaction,
-    *,
-    native_currency: str,
-    eur_to_usd: dict[date, Decimal],
-) -> Decimal:
-    return _amounts(t, native_currency=native_currency, eur_to_usd=eur_to_usd)[0]
+def _signed_contrib(amount: Decimal | None, kind: str) -> Decimal:
+    """Net-contribution share of a signed leg (EUR or USD).
 
-
-def _amount_usd(
-    t: Transaction,
-    *,
-    native_currency: str,
-    eur_to_usd: dict[date, Decimal],
-) -> Decimal | None:
-    """USD value of ``t`` on its trade date (see :func:`_amounts`)."""
-    return _amounts(t, native_currency=native_currency, eur_to_usd=eur_to_usd)[1]
-
-
-def _signed_contrib(amount_eur: Decimal, kind: str) -> Decimal:
-    """Return the EUR amount that counts as net contribution.
-
-    ``amount_eur`` is already **signed** at write time (deposits/transfer_in
+    The leg is already **signed** at write time (deposits/transfer_in
     positive, withdrawals/transfer_out negative), so the four external-flow
-    kinds are summed verbatim. Interest is *not* counted as a contribution
-    even though it appears on this page. Negating the (already negative)
-    withdrawal leg here would flip it positive and double-count it.
+    kinds are summed verbatim. Interest is *not* a contribution even though it
+    appears on this page. A leg that could not be derived (``None``) is skipped.
     """
-    if kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
-        return amount_eur
-    return ZERO
-
-
-def _signed_contrib_usd(amount_usd: Decimal | None, kind: str) -> Decimal:
-    """USD-side signed contribution, mirroring :func:`_signed_contrib`.
-
-    Returns :data:`ZERO` rather than skipping the row when ``amount_usd``
-    is :data:`None`; the caller would have no way to distinguish "no
-    FX rate available" from "true zero contribution" otherwise. This
-    is conservative — the KPI undercounts contributions only when FX
-    history is sparse, which the boot refresh now backfills to the
-    earliest transaction date.
-    """
-    if amount_usd is None:
+    if amount is None:
         return ZERO
-    if kind in ("deposit", "transfer_in", "withdrawal", "transfer_out"):
-        return amount_usd
+    if kind in cashflows.EXTERNAL_FLOW_KINDS:
+        return amount
     return ZERO
 
 
-def list_deposit_records(session: Session, *, account_id: int | None = None) -> list[DepositRecord]:
+def list_deposit_records(
+    session: Session,
+    *,
+    account_id: int | None = None,
+    eur_overrides: Mapping[int, Decimal] | None = None,
+) -> list[DepositRecord]:
     """Return raw cash-flow records for the table (newest first)."""
     stmt = (
         select(Transaction)
@@ -183,8 +140,8 @@ def list_deposit_records(session: Session, *, account_id: int | None = None) -> 
         stmt = stmt.where(Transaction.account_id == account_id)
     txns = session.scalars(stmt).all()
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-    fallback_rate = lookup_rate_with_forward_fill(eur_to_usd, date.today())
-    return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fallback_rate) for t in txns]
+    ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
+    return [_to_record(t, eur_to_usd=eur_to_usd, eur_overrides=ov) for t in txns]
 
 
 def list_deposit_rows(session: Session, *, account_id: int | None = None) -> list[dict[str, Any]]:
@@ -196,16 +153,11 @@ def _to_record(
     t: Transaction,
     *,
     eur_to_usd: dict[date, Decimal],
-    fallback_rate: Decimal | None = None,
+    eur_overrides: Mapping[int, Decimal] | None = None,
 ) -> DepositRecord:
     account: Account | None = t.account  # type: ignore[assignment]
     native_ccy = account.native_currency if account else ""
-    amount_eur, amount_usd = _amounts(
-        t,
-        native_currency=native_ccy,
-        eur_to_usd=eur_to_usd,
-        fallback_rate=fallback_rate,
-    )
+    amount_eur, amount_usd = _amounts(t, eur_to_usd=eur_to_usd, eur_overrides=eur_overrides)
     return DepositRecord(
         id=t.id,
         date=t.date,
@@ -213,7 +165,9 @@ def _to_record(
         native_currency=native_ccy,
         kind=t.kind,
         amount_native=t.net_native or ZERO,
-        amount_eur=amount_eur,
+        # The response schema keeps ``amount_eur`` non-null; an underivable EUR leg
+        # is shown as 0.00 (only possible for non-EUR/USD rows without a frozen leg).
+        amount_eur=amount_eur if amount_eur is not None else ZERO,
         amount_usd=amount_usd,
         description=t.description or "",
     )
@@ -236,7 +190,12 @@ def _format_record(r: DepositRecord) -> dict[str, Any]:
     }
 
 
-def compute_summary(session: Session, *, today: date | None = None) -> DepositSummary:
+def compute_summary(
+    session: Session,
+    *,
+    today: date | None = None,
+    eur_overrides: Mapping[int, Decimal] | None = None,
+) -> DepositSummary:
     """Aggregate the KPI numbers shown at the top of the page.
 
     Both the EUR and USD aggregates are summed from per-row legs converted at
@@ -255,7 +214,7 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
     )
     txns: Sequence[Transaction] = session.scalars(stmt).all()
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-    fallback_rate = lookup_rate_with_forward_fill(eur_to_usd, today)
+    ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
 
     total_native = sum(
         (
@@ -267,17 +226,8 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
     )
 
     # Per-trade-date EUR + USD legs for every row, computed once.
-    by_txn: list[tuple[Transaction, Decimal, Decimal | None]] = [
-        (
-            t,
-            *_amounts(
-                t,
-                native_currency=(t.account.native_currency if t.account else ""),
-                eur_to_usd=eur_to_usd,
-                fallback_rate=fallback_rate,
-            ),
-        )
-        for t in txns
+    by_txn: list[tuple[Transaction, Decimal | None, Decimal | None]] = [
+        (t, *_amounts(t, eur_to_usd=eur_to_usd, eur_overrides=ov)) for t in txns
     ]
 
     total_eur = sum((_signed_contrib(eur, t.kind) for t, eur, _ in by_txn), ZERO)
@@ -290,13 +240,13 @@ def compute_summary(session: Session, *, today: date | None = None) -> DepositSu
         ZERO,
     )
 
-    total_usd = sum((_signed_contrib_usd(usd, t.kind) for t, _, usd in by_txn), ZERO)
+    total_usd = sum((_signed_contrib(usd, t.kind) for t, _, usd in by_txn), ZERO)
     ytd_usd = sum(
-        (_signed_contrib_usd(usd, t.kind) for t, _, usd in by_txn if t.date >= year_start),
+        (_signed_contrib(usd, t.kind) for t, _, usd in by_txn if t.date >= year_start),
         ZERO,
     )
     mtd_usd = sum(
-        (_signed_contrib_usd(usd, t.kind) for t, _, usd in by_txn if t.date >= month_start),
+        (_signed_contrib(usd, t.kind) for t, _, usd in by_txn if t.date >= month_start),
         ZERO,
     )
 

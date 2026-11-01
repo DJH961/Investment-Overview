@@ -192,8 +192,8 @@ def test_eur_computed_from_trade_date_fx_not_parity(session: Session) -> None:
     assert summary.total_contrib_eur == Decimal("800.00")
 
 
-def test_eur_native_missing_trade_date_fx_uses_current_fallback(session: Session) -> None:
-    """Keep deposits consistent with the ledger fallback for sparse FX history."""
+def test_eur_native_missing_trade_date_fx_leaves_usd_blank(session: Session) -> None:
+    """No trade-date rate: the USD leg is unavailable, not today's spot (one FX policy)."""
     from investment_dashboard.repositories import fx_repo
 
     acct = accounts_repo.create_account(
@@ -219,4 +219,4 @@ def test_eur_native_missing_trade_date_fx_uses_current_fallback(session: Session
     summary = compute_summary(session, today=date(2024, 6, 2))
 
     assert summary.total_contrib_eur == Decimal("100.00")
-    assert summary.total_contrib_usd == Decimal("120.0000")
+    assert summary.total_contrib_usd == Decimal(0)

@@ -51,7 +51,7 @@ def test_unknown_stored_value_falls_back_to_eur(session: Session) -> None:
     assert display_currency_service.get_display_currency(session) == "EUR"
 
 
-def test_convert_from_eur_passthrough_when_no_rate(session: Session) -> None:
-    # No FX rate available -> return the input unchanged (degrade gracefully).
+def test_convert_from_eur_is_none_when_no_rate(session: Session) -> None:
+    # No FX rate available -> unavailable, never the EUR figure relabelled as USD.
     out = display_currency_service.convert_from_eur(session, Decimal("100"), target="USD")
-    assert out == Decimal("100")
+    assert out is None
