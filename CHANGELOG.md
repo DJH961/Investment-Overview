@@ -28,6 +28,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Deploy: multi-stage `Dockerfile`, `deploy/docker-compose.yml` (app + Caddy + rclone backup sidecar), `Caddyfile`, inert-by-default `deploy.yml` workflow, `inv-dashboard-upload-db`, sealed snapshots after every change + nightly, one-command `deploy/restore.sh` / `inv-dashboard-restore`, runbook sections.
   - React frontend: design system (tokens, BEM SCSS, Radix), responsive shell (desktop sidebar, phone tab bar), charts, all 15 pages, login + passkeys, PWA, live updates, offline cache.
 
+- **v6 server readiness** (plan `docs/v6_server_ready.md`).
+  - Currency storage: EUR/USD cashflow legs are derived from the native amount and that date's FX rate (frozen legs are kept as a cross-check, with a Diagnostics warning above 0.5 % difference); snapshots and live samples store native USD plus the per-instant rate (migration 0017).
+  - Parity tool `investment_dashboard.tools.parity_check` (copy a ledger, dump key numbers under v5 or v6 code, compare). On the real ledger v6 matches v5.3.1 except the known v5 Analytics-USD bug.
+  - Rollback: `inv-dashboard-export-v5` turns the server database back into v5 `ledger.sqlite` + `config.sqlite`; CI tests a v5 database going up to the latest migration and back without losing rows.
+  - Deploy kit: one server folder (`/opt/investments`), the deploy workflow copies compose and scripts to the server, `deploy/first_install.sh`, `deploy/check.sh`, `deploy/try_local.ps1`, runbook sections "First install", "Try it before the server", "Rollback to v5" and "Side-by-side week".
+  - Activity shows which conversion batch paid for each deposit; Diagnostics lists deposits that fell back to the ECB rate; `GET /api/onboarding`; Holdings group-by, detail drawer and per-instrument price chart (`GET /api/holdings/{id}/history`).
+  - Backend cleanup: one ledger walk for positions and instrument metrics (instruments held in several accounts now sum correctly), USD attribution, repositories own every ORM query, cache and config data go through their services, shared `errors.py` with one API error handler, import-linter layering contracts in CI.
+
 - **Agent context and full rebuild guide.**
   - `AGENTS.md` gains a stack-at-a-glance table (v5 now vs v6 target), rules for infrastructure and server access (Tailscale only, Windows OpenSSH for the agent, nothing private in this public repo), notes on working with the owner, and the known laptop-only test failures.
   - `deploy/RUNBOOK.md` now covers a normal restart and a complete step-by-step rebuild: host-key reset, console password, Tailscale re-join, new B2 key, the HTTPS placeholder, and final checks.
@@ -38,6 +46,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The theme pre-paint script was blocked by the server's Content-Security-Policy (inline script); it is now a file (`theme-init.js`).
+- The laptop trial (`deploy/try_local.ps1`) works without a SQLCipher driver: `inv-dashboard-upload-db --local-only --plain` writes an unencrypted local copy (the server copy is always encrypted).
+- An open browser tab no longer keeps a login alive past the idle timeout (the live-update re-check doesn't extend the session).
+- Saving an allocation target keeps its id instead of creating a new one.
+- Frontend dev dependency `minimatch` pinned to a patched version (Dependabot alert).
 - The hosted support-bundle download no longer includes the raw server log (it can hold stack traces); read it on the server with `docker compose logs app`.
 - API test data has prices for the whole last week, so the graph tests pass on weekends.
 - Analytics USD figures were built from EUR cashflows and reported the EUR XIRR as the USD XIRR; they now use USD cashflows.

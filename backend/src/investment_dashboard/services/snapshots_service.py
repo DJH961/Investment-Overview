@@ -19,11 +19,23 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.currency import usd_to_eur_at
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import snapshots_repo
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import PositionSnapshot
+
+
+def snapshot_eur(row: PositionSnapshot) -> Decimal:
+    """EUR value of a stored snapshot: ``usd / fx`` at its instant, else the EUR column."""
+    if row.total_value_usd is not None and row.fx_eur_usd:
+        return usd_to_eur_at(row.total_value_usd, row.fx_eur_usd)
+    return row.total_value_eur
 
 
 def get_or_compute(session: Session, snapshot_date: date, *, force: bool = False) -> Decimal:
@@ -57,11 +69,26 @@ def get_or_compute(session: Session, snapshot_date: date, *, force: bool = False
         with cache_read_session(session) as cache:
             existing = snapshots_repo.get_snapshot(cache, snapshot_date)
         if existing is not None:
-            return existing.total_value_eur
+            return snapshot_eur(existing)
 
-    value = positions_service.total_portfolio_value(session, as_of=snapshot_date)
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+    positions = positions_service.compute_positions(session, as_of=snapshot_date)
+    value = positions_service.total_portfolio_value(
+        session, as_of=snapshot_date, positions=positions
+    )
+    value_usd = positions_service.total_portfolio_value_usd(
+        session, as_of=snapshot_date, positions=positions
+    )
+    fx = fx_service.get_rate_eur_to_quote(session, snapshot_date, quote="USD")
     with cache_write_session(session) as cache:
-        snapshots_repo.upsert_snapshot(cache, snapshot_date, value)
+        snapshots_repo.upsert_snapshot(
+            cache,
+            snapshot_date,
+            value,
+            total_value_usd=value_usd if fx else None,
+            fx_eur_usd=fx if fx else None,
+        )
     return value
 
 
@@ -304,7 +331,7 @@ def stored_snapshots_in_range(
 
     with cache_read_session(session) as cache:
         rows = snapshots_repo.list_in_range(cache, start, end)
-    return {r.snapshot_date: r.total_value_eur for r in rows}
+    return {r.snapshot_date: snapshot_eur(r) for r in rows}
 
 
 def invalidate_all(session: Session) -> int:

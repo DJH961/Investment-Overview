@@ -162,3 +162,15 @@ def test_challenges_single_use_and_ttl(clock: Clock) -> None:
     clock.advance(seconds=svc.CHALLENGE_TTL_SECONDS + 1)
     assert svc.challenges.pop(key, "login") is None
     assert svc.challenges.pop(None, "login") is None
+
+
+def test_peek_session_does_not_slide_idle_timeout(
+    db: Session, settings: Settings, clock: Clock
+) -> None:
+    token = svc.create_session(db, settings, None)
+    for _ in range(2):  # peeking at 20 min intervals never extends the session
+        clock.advance(minutes=20)
+        assert svc.peek_session(db, settings, token) is (clock.t - T0 < timedelta(minutes=30))
+    assert svc.peek_session(db, settings, token) is False
+    assert svc.peek_session(db, settings, "bogus") is False
+    assert svc.peek_session(db, settings, "") is False

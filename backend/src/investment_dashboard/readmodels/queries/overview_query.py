@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -29,13 +29,13 @@ from investment_dashboard.domain.returns import (
     years_between,
 )
 from investment_dashboard.domain.session_fx import graph_anchor_fx
-from investment_dashboard.models import TransactionKind
 from investment_dashboard.readmodels.money_format import currency_symbol, fmt_shares
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
     chart_prefs_service,
     fx_service,
     intraday_snapshots_service,
+    ledger_walk,
     prices_service,
     snapshots_service,
 )
@@ -49,6 +49,10 @@ from investment_dashboard.services.positions_service import (
     compute_positions,
     total_portfolio_value,
 )
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
+
 
 ZERO = Decimal(0)
 _CENT = Decimal("0.01")
@@ -617,6 +621,9 @@ class TreemapDatum:
 
     label: str
     value_eur: Decimal
+    #: Same slice in USD (native USD value, or EUR at ``fx_eur_usd``); ``None``
+    #: when a EUR-native holding has no spot to convert with.
+    value_usd: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -698,7 +705,7 @@ def _convert_native(
     return (eur or ZERO), (usd or ZERO)
 
 
-def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
+def compute_instrument_metrics(  # noqa: PLR0915
     session: Session,
     positions: list[Position],
     *,
@@ -721,17 +728,6 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
     year_start = date(as_of.year, 1, 1)
     month_start = date(as_of.year, as_of.month, 1)
     eur_flows, usd_flows = build_instrument_cashflows(session, as_of=as_of)
-    cost_eur: dict[int, Decimal] = {}
-    cost_usd: dict[int, Decimal] = {}
-    # Running share count per instrument, needed to release a proportional
-    # slice of the cost basis on partial sales (average-cost method).
-    shares_held: dict[int, Decimal] = {}
-    div_eur: dict[int, Decimal] = {}
-    div_usd: dict[int, Decimal] = {}
-    ytd_invested_eur: dict[int, Decimal] = {}
-    ytd_invested_usd: dict[int, Decimal] = {}
-    mtd_invested_eur: dict[int, Decimal] = {}
-    mtd_invested_usd: dict[int, Decimal] = {}
     # Cash-dividend legs that were immediately reinvested must not be counted
     # as income (already captured as cost basis + shares via the reinvest
     # leg), otherwise growth double-counts them.
@@ -740,16 +736,13 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
     # actual return rather than a cost. Excluding those reinvest legs from the
     # cost basis (mirroring positions_service) lets their gain/growth reflect the
     # earned dividends instead of collapsing to zero.
-    mm_iids: set[int] = {
+    mm_iids: set[int | None] = {
         p.instrument.id for p in positions if is_money_market_effective(p.instrument, p.effective)
     }
-    for t in txns:
-        iid = t.instrument_id
-        if iid is None:
-            continue
-        native = t.account.native_currency if t.account else "EUR"
+
+    def _legs(t: Transaction) -> tuple[Decimal, Decimal]:
         eur, usd = dual_currency_amounts(
-            native_currency=native,
+            native_currency=t.account.native_currency if t.account else "EUR",
             net_native=t.net_native,
             net_eur=t.net_eur,
             net_usd=t.net_usd,
@@ -757,67 +750,59 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
             eur_to_usd=eur_to_usd,
             fallback_rate=today_rate,
         )
-        eur = eur or ZERO
-        usd = usd or ZERO
-        qty = t.quantity or ZERO
-        kind = t.kind
-        if kind == TransactionKind.BUY.value:
-            # Buy legs are negative (cash out) ⇒ cost basis is the negation.
-            cost_eur[iid] = cost_eur.get(iid, ZERO) - eur
-            cost_usd[iid] = cost_usd.get(iid, ZERO) - usd
-            shares_held[iid] = shares_held.get(iid, ZERO) + qty
-        elif kind == TransactionKind.SELL.value:
-            # Average-cost partial-sale handling: release the sold shares'
-            # proportional slice of the cost basis in each currency.
-            shares_before = shares_held.get(iid, ZERO)
-            if shares_before > ZERO:
-                sold = min(-qty, shares_before)
-                frac = sold / shares_before
-                cost_eur[iid] = cost_eur.get(iid, ZERO) * (1 - frac)
-                cost_usd[iid] = cost_usd.get(iid, ZERO) * (1 - frac)
-            shares_held[iid] = shares_before + qty
-        elif kind == TransactionKind.DIVIDEND_REINVEST.value and t.price_native is not None:
-            shares_held[iid] = shares_held.get(iid, ZERO) + qty
-            # Money-market reinvests are return, not cost (see ``mm_iids`` above).
-            if iid not in mm_iids:
-                val_native = qty * t.price_native
-                e, u = _convert_native(val_native, native, t.date, eur_to_usd, today_rate)
-                cost_eur[iid] = cost_eur.get(iid, ZERO) + e
-                cost_usd[iid] = cost_usd.get(iid, ZERO) + u
-        elif kind == TransactionKind.SPLIT.value:
-            shares_held[iid] = shares_held.get(iid, ZERO) + qty
-        elif kind == TransactionKind.DIVIDEND_CASH.value:
-            if (t.account_id, iid, t.date) not in reinvest_keys:
-                div_eur[iid] = div_eur.get(iid, ZERO) + eur
-                div_usd[iid] = div_usd.get(iid, ZERO) + usd
-        if t.date >= year_start and kind in {
-            TransactionKind.BUY.value,
-            TransactionKind.SELL.value,
-        }:
-            ytd_invested_eur[iid] = ytd_invested_eur.get(iid, ZERO) - eur
-            ytd_invested_usd[iid] = ytd_invested_usd.get(iid, ZERO) - usd
-        if t.date >= month_start and kind in {
-            TransactionKind.BUY.value,
-            TransactionKind.SELL.value,
-        }:
-            mtd_invested_eur[iid] = mtd_invested_eur.get(iid, ZERO) - eur
-            mtd_invested_usd[iid] = mtd_invested_usd.get(iid, ZERO) - usd
+        return (eur or ZERO), (usd or ZERO)
+
+    # The single ledger walk: one lot per (account, instrument), average cost
+    # applied per account. Per-instrument figures are the sum of its lots.
+    lots = ledger_walk.walk(
+        txns,
+        reinvest_keys=reinvest_keys,
+        money_market_ids=mm_iids,
+        resolver=ledger_walk.LegResolver(
+            legs=_legs,
+            convert_native=lambda v, native, on: _convert_native(
+                v, native, on, eur_to_usd, today_rate
+            ),
+            year_start=year_start,
+            month_start=month_start,
+        ),
+    )
+    cost_eur: dict[int, Decimal] = {}
+    cost_usd: dict[int, Decimal] = {}
+    div_eur: dict[int, Decimal] = {}
+    div_usd: dict[int, Decimal] = {}
+    ytd_invested_eur: dict[int, Decimal] = {}
+    ytd_invested_usd: dict[int, Decimal] = {}
+    mtd_invested_eur: dict[int, Decimal] = {}
+    mtd_invested_usd: dict[int, Decimal] = {}
+    for (_acct, lot_iid), lot in lots.items():
+        if lot_iid is None:
+            continue
+        for acc, value in (
+            (cost_eur, lot.cost_eur),
+            (cost_usd, lot.cost_usd),
+            (div_eur, lot.div_eur),
+            (div_usd, lot.div_usd),
+            (ytd_invested_eur, lot.ytd_invested_eur),
+            (ytd_invested_usd, lot.ytd_invested_usd),
+            (mtd_invested_eur, lot.mtd_invested_eur),
+            (mtd_invested_usd, lot.mtd_invested_usd),
+        ):
+            acc[lot_iid] = acc.get(lot_iid, ZERO) + value
 
     # Start-of-year value per instrument in EUR (best-effort, for YTD growth);
     # USD parallel uses the FX rate on the first of the year. Reuse the ledger
     # already loaded above (``txns`` spans through ``as_of`` ⊇ year-start) so the
     # year-start roll-up does not issue a second full ledger query.
     fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, year_start) or today_rate
-    start_value_eur: dict[int, Decimal] = {
-        p.instrument.id: p.current_value_eur
-        for p in compute_positions(session, as_of=year_start, transactions=txns)
-    }
+    start_value_eur = _value_by_instrument(
+        compute_positions(session, as_of=year_start, transactions=txns)
+    )
     # Start-of-month value per instrument (for MTD growth), same approach.
     fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, month_start) or today_rate
-    month_start_value_eur: dict[int, Decimal] = {
-        p.instrument.id: p.current_value_eur
-        for p in compute_positions(session, as_of=month_start, transactions=txns)
-    }
+    month_start_value_eur = _value_by_instrument(
+        compute_positions(session, as_of=month_start, transactions=txns)
+    )
 
     out: dict[int, InstrumentMetrics] = {}
     # Batch the daily-growth price lookups once for every held instrument
@@ -844,12 +829,17 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
     _baseline_prev = intraday_snapshots_service.previous_trading_session(_baseline_last)
     latest_price_date = _baseline_last if book_price_dates else None
     previous_price_date = _baseline_prev if book_price_dates else None
-    for p in positions:
-        iid = p.instrument.id
+    # A multi-account instrument is one row: its figures sum its positions.
+    by_instrument: dict[int, list[Position]] = {}
+    for pos in positions:
+        by_instrument.setdefault(pos.instrument.id, []).append(pos)
+    for iid, group in by_instrument.items():
+        p = group[0]
         native = p.account.native_currency
+        shares = sum((q.shares for q in group), start=ZERO)
         c_eur = _round_cent(cost_eur.get(iid, ZERO))
         c_usd = _round_cent(cost_usd.get(iid, ZERO))
-        cv_eur = p.current_value_eur
+        cv_eur = sum((q.current_value_eur for q in group), start=ZERO)
         # When the EUR→USD spot is unavailable we degrade the USD figures to
         # ``None`` (blank) rather than relabelling the EUR amount as USD —
         # otherwise XIRR(USD) / growth(USD) would be computed against a
@@ -925,7 +915,7 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         daily_eur, daily_usd, daily_move_eur, daily_move_usd, daily_as_of = (
             _instrument_daily_growth(
                 instrument_id=iid,
-                shares=p.shares,
+                shares=shares,
                 native_currency=native,
                 eur_to_usd=eur_to_usd,
                 today_rate=today_rate,
@@ -937,8 +927,12 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
         )
         ter = p.effective.expense_ratio if p.effective is not None else p.instrument.expense_ratio
         # Legacy native-currency figures (readmodels / API back-compat).
-        cost_native = p.cost_basis_native
-        gain_native = p.current_value_native + p.cumulative_dividends_cash_native - cost_native
+        cost_native = sum((q.cost_basis_native for q in group), start=ZERO)
+        gain_native = (
+            sum((q.current_value_native for q in group), start=ZERO)
+            + sum((q.cumulative_dividends_cash_native for q in group), start=ZERO)
+            - cost_native
+        )
         out[iid] = InstrumentMetrics(
             instrument_id=iid,
             xirr=xirr_eur,
@@ -966,6 +960,14 @@ def compute_instrument_metrics(  # noqa: PLR0912, PLR0915
             daily_move_usd=daily_move_usd,
             daily_growth_as_of=daily_as_of,
         )
+    return out
+
+
+def _value_by_instrument(positions: list[Position]) -> dict[int, Decimal]:
+    """EUR value per instrument, summed over every account that holds it."""
+    out: dict[int, Decimal] = {}
+    for p in positions:
+        out[p.instrument.id] = out.get(p.instrument.id, ZERO) + p.current_value_eur
     return out
 
 
@@ -1358,15 +1360,35 @@ def _num(value: Decimal | None) -> float | None:
     return float(value) if value is not None else None
 
 
-def allocation_treemap(positions: list[Position]) -> list[TreemapDatum]:
-    """Aggregate positions by user-tier ``category`` (fallback effective ``asset_class``)."""
+def allocation_treemap(
+    positions: list[Position], *, fx_eur_usd: Decimal | None = None
+) -> list[TreemapDatum]:
+    """Aggregate positions by user-tier ``category`` (fallback effective ``asset_class``).
+
+    Each slice carries its EUR value and its USD value (``value_usd``): a USD-native
+    holding contributes its native value, any other holding its EUR value at the
+    single-instant spot ``fx_eur_usd``. Slices rank by EUR value.
+    """
     bucket: dict[str, Decimal] = {}
+    bucket_usd: dict[str, Decimal | None] = {}
     for p in positions:
         eff = p.effective
         fallback_class = eff.asset_class if eff is not None else p.instrument.asset_class
         key = p.category or fallback_class or "Uncategorized"
         bucket[key] = bucket.get(key, ZERO) + p.current_value_eur
-    items = [TreemapDatum(label=k, value_eur=v) for k, v in bucket.items() if v > ZERO]
+        if p.account.native_currency.upper() == "USD":
+            usd: Decimal | None = p.current_value_native
+        elif fx_eur_usd:
+            usd = p.current_value_eur * fx_eur_usd
+        else:
+            usd = None
+        prev = bucket_usd.get(key, ZERO)
+        bucket_usd[key] = prev + usd if prev is not None and usd is not None else None
+    items = [
+        TreemapDatum(label=k, value_eur=v, value_usd=bucket_usd.get(k))
+        for k, v in bucket.items()
+        if v > ZERO
+    ]
     items.sort(key=lambda d: d.value_eur, reverse=True)
     return items
 

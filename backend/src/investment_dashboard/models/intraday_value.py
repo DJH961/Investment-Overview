@@ -60,6 +60,9 @@ class IntradayValue(Base):
     captured_at: Mapped[datetime] = mapped_column(DateTime, primary_key=True)
     market_value_eur: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     fx_eur_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    # Native USD value of the intraday-priced holdings (FX-free). EUR is derived
+    # as ``market_value_usd / fx_eur_usd``; NULL on rows written before 0017.
+    market_value_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<IntradayValue {self.captured_at:%Y-%m-%d %H:%M} = €{self.market_value_eur}>"

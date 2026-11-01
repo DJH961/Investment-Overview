@@ -16,14 +16,14 @@ from datetime import datetime, time
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import app_config_repo
-from investment_dashboard.services.tiingo_fallback import (
+from investment_dashboard.domain.tiingo_fallback import (
     DESKTOP_DAILY_CAP,
     DESKTOP_HOURLY_CAP,
     Budget,
     eastern_day,
     is_new_budget_day,
 )
+from investment_dashboard.repositories import app_config_repo
 
 #: app_config key holding the desktop fallback's JSON state blob.
 STATE_KEY = "tiingo_desktop_state"

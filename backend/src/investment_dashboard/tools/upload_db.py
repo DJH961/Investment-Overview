@@ -251,8 +251,8 @@ def prepare_upload(
 ) -> UploadResult:
     """Build the single-file server DB at ``out``. Originals are never modified.
 
-    With ``encrypt=False`` the output is a plain SQLite file (used by tests; the
-    CLI always encrypts).
+    With ``encrypt=False`` the output is a plain SQLite file (tests, and the CLI's
+    ``--local-only --plain`` laptop trial; the server copy is always encrypted).
     """
     for label, path in (("ledger", ledger), ("config", config), ("cache", cache)):
         if path is not None and not path.is_file():
@@ -315,11 +315,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cache", type=Path, default=None, help="optional v5 cache.sqlite")
     p.add_argument("--out", type=Path, required=True, help="encrypted file to write")
     p.add_argument("--no-prune", action="store_true", help="keep unused instruments/accounts")
+    p.add_argument(
+        "--local-only",
+        action="store_true",
+        help="print the steps for running the app on this laptop instead of the server upload",
+    )
+    p.add_argument(
+        "--plain",
+        action="store_true",
+        help="with --local-only: write an unencrypted file (laptop trial without a SQLCipher driver)",
+    )
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
 
-def _print_summary(res: UploadResult) -> None:
+def _print_summary(res: UploadResult, *, local_only: bool = False) -> None:
     print(f"Wrote {res.output} (schema revision {res.revision}, encrypted={res.encrypted})")
     for name in ("accounts", "instruments", "transactions"):
         if name in res.counts:
@@ -330,12 +340,26 @@ def _print_summary(res: UploadResult) -> None:
         print("Kept despite no transactions: " + ", ".join(res.kept_instruments))
     if res.pruned_accounts:
         print("Pruned accounts (no transactions): " + ", ".join(res.pruned_accounts))
+    if local_only:
+        print(
+            "\nNext (details in deploy/RUNBOOK.md, 'Try it before the server'): point the "
+            "app at this file and start it on this laptop, e.g. with deploy/try_local.ps1:\n"
+            f"  INV_DASHBOARD_DB_PATH={res.output.as_posix()}\n"
+            + (
+                "  INV_DASHBOARD_DB_PASSPHRASE=<the same passphrase>\n"
+                if res.encrypted
+                else "  INV_DASHBOARD_ENCRYPT_SYNCED_TIERS=false\n"
+            )
+            + "  uv run inv-dashboard-server\n"
+            "Nothing was sent anywhere."
+        )
+        return
     print(
         "\nNext (details in deploy/RUNBOOK.md, 'Uploading the ledger'). From Git Bash:\n"
         f"  {SCP} {res.output.as_posix()} daniel@hetzner-djh-v1:/tmp/app.sqlite\n"
         f"  {SSH} daniel@hetzner-djh-v1\n"
         "On the server:\n"
-        "  cd ~/investments && docker compose stop app\n"
+        "  cd /opt/investments && docker compose stop app\n"
         "  docker compose run --rm --no-deps -v /tmp/app.sqlite:/in/app.sqlite:ro "
         "--entrypoint sh app -c "
         "'cp /in/app.sqlite /data/app.sqlite && rm -f /data/app.sqlite-wal /data/app.sqlite-shm'\n"
@@ -351,7 +375,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     from investment_dashboard.tools._passphrase import resolve_passphrase  # noqa: PLC0415
 
-    passphrase = resolve_passphrase(None, prompt="Server DB passphrase: ")
+    if args.plain and not args.local_only:
+        print("upload-db aborted: --plain is only for --local-only", file=sys.stderr)
+        return 2
+    passphrase = None if args.plain else resolve_passphrase(None, prompt="Server DB passphrase: ")
     try:
         res = prepare_upload(
             ledger=args.ledger,
@@ -360,6 +387,7 @@ def main(argv: list[str] | None = None) -> int:
             out=args.out,
             passphrase=passphrase,
             prune=not args.no_prune,
+            encrypt=not args.plain,
         )
     except UploadDbError as exc:
         print(f"upload-db aborted: {exc}", file=sys.stderr)
@@ -367,7 +395,7 @@ def main(argv: list[str] | None = None) -> int:
     except RuntimeError as exc:  # EncryptionUnavailableError
         print(f"upload-db aborted: {exc}", file=sys.stderr)
         return 3
-    _print_summary(res)
+    _print_summary(res, local_only=args.local_only)
     return 0
 
 

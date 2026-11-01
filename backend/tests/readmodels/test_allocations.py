@@ -78,3 +78,30 @@ def test_save_target_validation(session: Session) -> None:
     save()
     with pytest.raises(allocations.AllocationConflictError):
         save()
+
+
+def test_save_target_with_id_updates_in_place(session: Session) -> None:
+    ids = seed_ledger(session)
+    first = allocations.save_target(
+        session,
+        target_id=None,
+        name="mix",
+        active=True,
+        allow_sell=False,
+        display_currency=None,
+        items=[(ids["VTI"], D("1"), False), (ids["BND"], D("1"), False)],
+    )
+    second = allocations.save_target(
+        session,
+        target_id=first["id"],
+        name="renamed",
+        active=False,
+        allow_sell=True,
+        display_currency="EUR",
+        items=[(ids["VTI"], D("1"), True)],
+    )
+    assert second["id"] == first["id"]
+    assert second["name"] == "renamed"
+    assert [i["symbol"] for i in second["items"]] == ["VTI"]
+    assert second["items"][0]["no_buy"] is True
+    assert len(allocations.serialize_targets(session)) == 1

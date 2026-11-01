@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, HTTPException, Response
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.accounts import AccountIn, AccountOut, InstrumentOut
-from investment_dashboard.models import Account, Transaction
-from investment_dashboard.repositories import accounts_repo, instruments_repo
+from investment_dashboard.repositories import accounts_repo, instruments_repo, transactions_repo
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Account
 
 router = APIRouter(tags=["accounts"])
 
 
 def _tx_count(session: Session, account_id: int) -> int:
-    stmt = select(func.count()).select_from(Transaction).where(Transaction.account_id == account_id)
-    return int(session.scalar(stmt) or 0)
+    return transactions_repo.count_for_account(session, account_id)
 
 
 def _out(session: Session, row: Account) -> AccountOut:

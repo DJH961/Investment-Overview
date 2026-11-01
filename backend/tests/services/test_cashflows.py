@@ -209,3 +209,45 @@ def test_fx_pool_overrides_drive_eur_xirr_but_not_usd(session: Session) -> None:
     assert eur_b != benchmark_service.simulate_benchmark_xirr(
         session, as_of=AS_OF, currency="EUR", eur_overrides={}
     )
+
+
+# --- B1: derived legs are canonical, frozen legs are cross-checks ------------
+
+
+def test_cashflow_conversion_uses_each_dates_own_rate_not_frozen_leg(session: Session) -> None:
+    usd = _acct(session, "USD")
+    t1 = _txn(
+        usd, "deposit", date(2024, 1, 10), net_native=D("1000"), net_eur=D("1"), net_usd=D("1000")
+    )
+    t2 = _txn(usd, "deposit", date(2024, 3, 10), net_native=D("1000"))
+    session.add_all([t1, t2])
+    session.flush()
+    rates = {date(2024, 1, 10): D("1.25"), date(2024, 3, 10): D("2")}
+    flows = cashflows.build_portfolio_cashflows([t1, t2], currency="EUR", eur_to_usd=rates)
+    assert [f.amount for f in flows] == [D("-800"), D("-500")]
+
+
+def test_frozen_leg_is_fallback_when_no_rate_on_file(session: Session) -> None:
+    usd = _acct(session, "USD")
+    t = _txn(usd, "deposit", date(2024, 1, 10), net_native=D("1000"), net_eur=D("900"))
+    session.add(t)
+    session.flush()
+    assert cashflows.txn_eur_amount(t, eur_to_usd={}) == D("900")
+
+
+def test_eur_xirr_golden_uses_per_date_rates(session: Session) -> None:
+    usd = _acct(session, "USD")
+    t = _txn(usd, "deposit", date(2023, 1, 1), net_native=D("1000"))
+    session.add(t)
+    session.flush()
+    rates = {date(2023, 1, 1): D("1.25")}  # EUR 800 in
+    flows = cashflows.build_portfolio_cashflows([t], currency="EUR", eur_to_usd=rates)
+    # Terminal EUR value 880 one year later => exactly 10 % (365 days).
+    result = xirr(flows, date(2024, 1, 1), terminal_value=D("880"))
+    assert result is not None and abs(result - D("0.10")) < D("0.0001")
+
+
+def test_instant_valuation_in_eur_is_usd_over_fx() -> None:
+    from investment_dashboard.domain.currency import usd_to_eur_at
+
+    assert usd_to_eur_at(D("1100"), D("1.1")) == D("1000")

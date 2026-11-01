@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 #: Sentinel meaning "follow the machine's local timezone".
 LOCAL = "Local"
@@ -46,7 +46,7 @@ def _local_tzinfo() -> tzinfo:
 
 def get_timezone(session: Session) -> str:
     """Return the persisted timezone name, defaulting to ``"Local"``."""
-    raw = app_config_repo.get(session, _CONFIG_KEY)
+    raw = app_config_service.get(session, _CONFIG_KEY)
     if raw is None:
         return DEFAULT_TIMEZONE
     candidate = raw.strip()
@@ -73,7 +73,7 @@ def set_timezone(session: Session, name: str) -> str:
             ZoneInfo(candidate)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError(f"Unknown timezone {name!r}") from exc
-    app_config_repo.set_value(session, _CONFIG_KEY, candidate)
+    app_config_service.set_value(session, _CONFIG_KEY, candidate)
     return candidate
 
 

@@ -78,4 +78,22 @@ describe("Chart", () => {
       ]),
     ).toHaveLength(2);
   });
+
+  it("draws a labelled reference line and keeps it inside the y range", () => {
+    const { container } = render(
+      <Chart {...props} series={[series[0]]} referenceLine={{ value: 500, label: "Cost basis" }} />,
+    );
+    expect(container.querySelector("[data-reference]")).not.toBeNull();
+    expect(screen.getByText("Cost basis")).toBeInTheDocument();
+    // 500 is far above the series (<=130), so the top y tick must reach it.
+    const ticks = [...container.querySelectorAll(".chart__axis-label--y")].map((n) =>
+      Number(n.textContent?.slice(1)),
+    );
+    expect(Math.max(...ticks)).toBeGreaterThanOrEqual(500);
+  });
+
+  it("draws no reference line by default", () => {
+    const { container } = render(<Chart {...props} series={[series[0]]} />);
+    expect(container.querySelector("[data-reference]")).toBeNull();
+  });
 });

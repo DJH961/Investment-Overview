@@ -75,6 +75,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.currency import usd_to_eur_at
 from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import (
     exchange_today,
@@ -83,11 +84,13 @@ from investment_dashboard.domain.market_hours import (
     regular_session_close,
 )
 from investment_dashboard.domain.money_market import is_money_market
-from investment_dashboard.repositories import app_config_repo, intraday_repo
+from investment_dashboard.repositories import intraday_repo
+from investment_dashboard.services import app_config_service
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from investment_dashboard.models import IntradayValue
     from investment_dashboard.services.positions_service import Position
 
 log = logging.getLogger(__name__)
@@ -241,6 +244,18 @@ def _is_usd_native(position: Position) -> bool:
     here, so both keep the day's settled rate — a safe, uniform fallback.
     """
     return position.account.native_currency.upper() == "USD"
+
+
+def _usd_of(eur: Decimal, fx_eur_usd: Decimal | None) -> Decimal | None:
+    """Native-USD value of a EUR-pivot sample at its stored rate (``eur * fx``)."""
+    return eur * fx_eur_usd if fx_eur_usd else None
+
+
+def _row_eur(row: IntradayValue) -> Decimal:
+    """EUR of a stored sample: ``usd / fx`` at its instant, else the EUR column."""
+    if row.market_value_usd is not None and row.fx_eur_usd:
+        return usd_to_eur_at(row.market_value_usd, row.fx_eur_usd)
+    return row.market_value_eur
 
 
 def market_value_eur(positions: list[Position]) -> Decimal:
@@ -636,7 +651,9 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
                     and (captured_at - last.captured_at).total_seconds() < MIN_CAPTURE_GAP_SECONDS
                 ):
                     return False
-                intraday_repo.insert_sample(cache, captured_at, value_eur, fx_eur_usd)
+                intraday_repo.insert_sample(
+                    cache, captured_at, value_eur, fx_eur_usd, _usd_of(value_eur, fx_eur_usd)
+                )
                 intraday_repo.delete_before(cache, week_window_start_utc(now))
     except Exception:  # pragma: no cover - defensive: capture is best-effort
         log.warning("intraday value capture failed", exc_info=True)
@@ -679,7 +696,7 @@ def day_series_with_fx(
     start, end = session_window_utc(now)
     with cache_read_session(session) as cache:
         rows = intraday_repo.list_in_range(cache, start, end)
-    return [(r.captured_at, r.market_value_eur, r.fx_eur_usd) for r in rows]
+    return [(r.captured_at, _row_eur(r), r.fx_eur_usd) for r in rows]
 
 
 def session_close_fx(session: Session, *, now: datetime | None = None) -> Decimal | None:
@@ -998,7 +1015,7 @@ def _reconstruct_session(
     )
     with cache_write_session(session) as cache:
         for t, market, point_fx in samples:
-            intraday_repo.insert_sample(cache, t, market, point_fx)
+            intraday_repo.insert_sample(cache, t, market, point_fx, _usd_of(market, point_fx))
             written += 1
         intraday_repo.delete_before(cache, _week_window_start_for(session_date))
     return written
@@ -1048,7 +1065,7 @@ def _covered_by_live(live_times: list[datetime], at: datetime) -> bool:
 
 
 def _already_reconstructed(session: Session, session_date: date) -> bool:
-    return app_config_repo.get(session, _RECONSTRUCTED_KEY) == session_date.isoformat()
+    return app_config_service.get(session, _RECONSTRUCTED_KEY) == session_date.isoformat()
 
 
 def _session_is_covered(session: Session, session_date: date, now: datetime) -> bool:
@@ -1111,7 +1128,7 @@ def _max_gap_seconds(times: list[datetime]) -> float:
 
 
 def _mark_reconstructed(session: Session, session_date: date) -> None:
-    app_config_repo.set_value(session, _RECONSTRUCTED_KEY, session_date.isoformat())
+    app_config_service.set_value(session, _RECONSTRUCTED_KEY, session_date.isoformat())
 
 
 def recent_trading_sessions(
@@ -1290,7 +1307,7 @@ def week_series_with_fx(
     #    must be preserved).
     with cache_read_session(session) as cache:
         cached = [
-            (r.captured_at, r.market_value_eur, r.fx_eur_usd)
+            (r.captured_at, _row_eur(r), r.fx_eur_usd)
             for r in intraday_repo.list_in_range(cache, week_start, window_end)
         ]
 
@@ -1456,7 +1473,9 @@ def _fetch_and_persist_week_days(
         if fetched:
             with cache_write_session(session) as cache:
                 for t, market, point_fx in fetched:
-                    intraday_repo.insert_sample(cache, t, market, point_fx)
+                    intraday_repo.insert_sample(
+                        cache, t, market, point_fx, _usd_of(market, point_fx)
+                    )
                 intraday_repo.delete_before(cache, week_start)
 
     for session_date in to_fetch:
@@ -1467,13 +1486,13 @@ def _fetch_and_persist_week_days(
 def _week_day_fetched(session: Session, day: date, anchor: date) -> bool:
     """Whether ``day``'s week-curve bars were already fetched this anchor session."""
     return (
-        app_config_repo.get(session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}")
+        app_config_service.get(session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}")
         == anchor.isoformat()
     )
 
 
 def _mark_week_day_fetched(session: Session, day: date, anchor: date) -> None:
-    app_config_repo.set_value(
+    app_config_service.set_value(
         session, f"{_WEEK_FETCHED_PREFIX}{day.isoformat()}", anchor.isoformat()
     )
 
@@ -1610,7 +1629,7 @@ def clear_day_samples(
     end = _session_start_utc(session_date + timedelta(days=1))
     with cache_write_session(session) as cache:
         deleted = intraday_repo.delete_in_range(cache, start, end)
-    app_config_repo.delete_key(session, _RECONSTRUCTED_KEY)
+    app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
     return deleted
 
 
@@ -1627,8 +1646,8 @@ def clear_week_samples(
 
     with cache_write_session(session) as cache:
         deleted = intraday_repo.delete_all(cache)
-    app_config_repo.delete_key(session, _RECONSTRUCTED_KEY)
-    app_config_repo.delete_by_prefix(session, _WEEK_FETCHED_PREFIX)
+    app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
+    app_config_service.delete_by_prefix(session, _WEEK_FETCHED_PREFIX)
     return deleted
 
 

@@ -38,6 +38,9 @@ jobs:
       - name: Mypy (domain layer, strict)
         run: uv run mypy src/investment_dashboard/domain
 
+      - name: Import layering (import-linter)
+        run: uv run lint-imports
+
       - name: Pytest
         run: uv run pytest -q --cov --cov-report=term-missing
 

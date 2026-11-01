@@ -20,8 +20,8 @@ from decimal import Decimal
 from typing import cast
 
 from investment_dashboard.domain import kinds
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV
-from investment_dashboard.models.transaction import TransactionKind
 
 NET_POSITIVE_KINDS = kinds.NET_POSITIVE_KINDS
 NET_NEGATIVE_KINDS = kinds.NET_NEGATIVE_KINDS

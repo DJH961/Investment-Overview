@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from investment_dashboard.domain.currency import (
     lookup_rate_with_forward_fill,
 )
 from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import (
     Cashflow,
@@ -36,11 +38,9 @@ from investment_dashboard.domain.returns import (
     xirr,
     years_between,
 )
-from investment_dashboard.models import Transaction, TransactionKind
 from investment_dashboard.repositories import (
     accounts_repo,
     instrument_overrides_repo,
-    snapshots_repo,
     transactions_repo,
 )
 from investment_dashboard.services import (
@@ -48,8 +48,12 @@ from investment_dashboard.services import (
     fx_service,
     intraday_snapshots_service,
     positions_service,
+    snapshots_service,
 )
 from investment_dashboard.services.instrument_enrichment_service import effective_instrument
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
 
@@ -820,9 +824,10 @@ def _best_effort_ytd_start_value(
 
     horizon = min(as_of, year_start + _td(days=31))
 
-    for snap in snapshots_repo.list_in_range(session, year_start, horizon):
-        if snap.total_value_eur > ZERO:
-            return snap.total_value_eur
+    stored = snapshots_service.stored_snapshots_in_range(session, year_start, horizon)
+    for day in sorted(stored):
+        if stored[day] > ZERO:
+            return stored[day]
 
     cursor = year_start
     while cursor <= horizon:

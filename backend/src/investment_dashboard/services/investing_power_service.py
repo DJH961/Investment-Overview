@@ -19,7 +19,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.repositories import app_config_repo
+from investment_dashboard.services import app_config_service
 
 _CONFIG_KEY = "investing_power.amount_eur"
 
@@ -42,7 +42,7 @@ def clamp_amount_eur(value: Decimal) -> Decimal:
 
 def get_amount_eur(session: Session) -> Decimal:
     """Return the persisted regular investment amount, defaulting + clamped."""
-    raw = app_config_repo.get(session, _CONFIG_KEY)
+    raw = app_config_service.get(session, _CONFIG_KEY)
     if raw is None:
         return DEFAULT_AMOUNT_EUR
     try:
@@ -57,5 +57,5 @@ def get_amount_eur(session: Session) -> Decimal:
 def set_amount_eur(session: Session, value: Decimal) -> Decimal:
     """Persist a new regular investment amount (clamped). Returns the stored value."""
     clamped = clamp_amount_eur(value)
-    app_config_repo.set_value(session, _CONFIG_KEY, str(clamped))
+    app_config_service.set_value(session, _CONFIG_KEY, str(clamped))
     return clamped

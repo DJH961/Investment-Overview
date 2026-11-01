@@ -7,6 +7,8 @@ two together) so the domain layer stays free of ORM imports.
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 BUY = "buy"
 SELL = "sell"
 DIVIDEND_CASH = "dividend_cash"
@@ -45,3 +47,34 @@ NET_NEGATIVE_KINDS: frozenset[str] = frozenset(
 )
 #: Trade kinds for which ``quantity x price`` should reconcile with ``total``.
 TRADE_KINDS: frozenset[str] = frozenset({BUY, SELL, DIVIDEND_REINVEST})
+
+
+class TransactionKind(StrEnum):
+    """Enumerated kinds — see spec §4.1."""
+
+    BUY = "buy"
+    SELL = "sell"
+    DIVIDEND_CASH = "dividend_cash"
+    DIVIDEND_REINVEST = "dividend_reinvest"
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    INTEREST = "interest"
+    FEE = "fee"
+    # ``transfer_in`` / ``transfer_out`` are external-cash-flow kinds for moving
+    # money between accounts (or in/out of the portfolio) without a buy/sell.
+    # They are offered in the manual-add form (``_kinds()``) and counted as a
+    # contribution / withdrawal everywhere external flows matter (metrics_service,
+    # benchmark_service, _deposits_query, _period_query). CSV importers don't emit
+    # them directly — broker "transfer in/out" rows normalise to deposit/withdrawal
+    # in the per-broker action maps — but the kinds are first-class for manual use.
+    TRANSFER_IN = "transfer_in"
+    TRANSFER_OUT = "transfer_out"
+    SPLIT = "split"
+
+
+class TransactionSource(StrEnum):
+    IMPORT_VANGUARD_CSV = "import_vanguard_csv"
+    IMPORT_VANGUARD_XLSX = "import_vanguard_xlsx"
+    IMPORT_FIDELITY_CSV = "import_fidelity_csv"
+    MANUAL = "manual"
+    MIGRATION = "migration"

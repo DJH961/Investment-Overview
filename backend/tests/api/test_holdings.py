@@ -117,3 +117,28 @@ def test_holdings_and_overview_agree(api_client: TestClient, seeded: None, ccy: 
     best = max(hold["holdings"], key=lambda r: Decimal(r["total_growth"]))
     assert summary["best_symbol"] == best["symbol"]
     assert Decimal(summary["best_growth"]) == Decimal(best["total_growth"])
+
+
+def test_history_requires_auth(anon_client: TestClient) -> None:
+    assert anon_client.get("/api/holdings/1/history").status_code == 401
+
+
+def test_history_shape_and_ranges(api_client: TestClient, seeded: None) -> None:
+    iid = _by_symbol(api_client.get("/api/holdings?ccy=USD").json())["VTI"]["instrument_id"]
+    body = api_client.get(f"/api/holdings/{iid}/history?range=all").json()
+    assert body["symbol"] == "VTI"
+    assert body["ccy"] == "USD"  # native currency, never converted
+    assert body["range"] == "all"
+    dates = [p["t"] for p in body["points"]]
+    assert dates == sorted(dates)
+    assert Decimal(body["points"][0]["v"]) == 200  # the first-day close
+    assert Decimal(body["points"][-1]["v"]) == 250
+    short = api_client.get(f"/api/holdings/{iid}/history?range=1m").json()
+    assert 0 < len(short["points"]) <= len(body["points"])
+    assert Decimal(short["points"][-1]["v"]) == 250
+
+
+def test_history_unknown_instrument_and_bad_range(api_client: TestClient, seeded: None) -> None:
+    assert api_client.get("/api/holdings/99999/history").status_code == 404
+    iid = _by_symbol(api_client.get("/api/holdings?ccy=USD").json())["VTI"]["instrument_id"]
+    assert api_client.get(f"/api/holdings/{iid}/history?range=5y").status_code == 422

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
@@ -26,8 +27,14 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.instruments import SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import exchange_today
-from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
+from investment_dashboard.repositories import (
+    instrument_overrides_repo,
+    instruments_repo,
+    transactions_repo,
+)
 from investment_dashboard.services import (
+    cashflows,
+    fx_service,
     positions_service,
     prices_service,
     provider_status,
@@ -156,6 +163,56 @@ def _check_fx_legs(session: Session) -> HealthItem:
             "frozen legs once the rate is cached."
         ),
         examples=_examples([d.isoformat() for d in dates]),
+    )
+
+
+#: Relative gap between a frozen leg and the one derived from ``net_native`` + the
+#: FX table above which a transaction is flagged (0.5 %).
+FROZEN_LEG_TOLERANCE = Decimal("0.005")
+
+
+def _leg_differs(frozen: Decimal | None, derived: Decimal | None) -> bool:
+    if frozen is None or derived is None:
+        return False
+    scale = max(abs(frozen), abs(derived))
+    if scale == 0:
+        return False
+    return abs(frozen - derived) / scale > FROZEN_LEG_TOLERANCE
+
+
+def _check_frozen_legs(session: Session) -> HealthItem:
+    """Rows whose frozen ``net_eur``/``net_usd`` disagree with the derived legs.
+
+    The cash legs are derived from ``net_native`` + the FX table; the frozen
+    legs are read-only cross-checks (kept for the v5 rollback). A gap above
+    0.5 % means the stored leg was struck at a different rate than the table.
+    """
+    rates = fx_service.get_rates(session, base="EUR", quote="USD")
+    bad: list[str] = []
+    for t in transactions_repo.list_transactions(session):
+        if _leg_differs(t.net_eur, cashflows.derived_eur(t, rates)) or _leg_differs(
+            t.net_usd, cashflows.derived_usd(t, rates)
+        ):
+            bad.append(t.date.isoformat())
+    if not bad:
+        return HealthItem(
+            key="frozen_legs",
+            title="Frozen vs derived currency legs",
+            severity="ok",
+            count=0,
+            detail="Every frozen EUR/USD leg matches the leg derived from the native amount.",
+        )
+    return HealthItem(
+        key="frozen_legs",
+        title="Frozen vs derived currency legs",
+        severity="warning",
+        count=len(bad),
+        detail=(
+            f"{len(bad)} transaction(s) have a frozen EUR or USD leg that differs "
+            "from the leg derived from the native amount and the FX table by more "
+            "than 0.5 %. Reports use the derived leg."
+        ),
+        examples=_examples(bad),
     )
 
 
@@ -411,6 +468,7 @@ def check_health(session: Session) -> HealthReport:
     """
     items: list[HealthItem] = [
         _check_fx_legs(session),
+        _check_frozen_legs(session),
         *_check_prices(session),
         _check_positions(session),
         _check_intraday_graph(session),

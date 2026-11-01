@@ -1,9 +1,36 @@
 # Architecture
 
-How the current (v5.3.1) system is put together. The rules that govern the code
-(layering, cache-tier access, currency) live in [`../AGENTS.md`](../AGENTS.md); the
-original requirements are in [`original_spec.md`](original_spec.md); the hosted v6
-rewrite is in [`v6_one_app_plan.md`](v6_one_app_plan.md).
+How the system is put together. Two apps share one Python core in `backend/` until
+cutover: the **v6 server** (FastAPI API + React frontend, hosted) and the **v5 desktop
+app** (NiceGUI, `ui/`). The rules that govern the code (layering, cache-tier access,
+currency) live in [`../AGENTS.md`](../AGENTS.md); the original requirements are in
+[`original_spec.md`](original_spec.md); the v6 plan is
+[`v6_one_app_plan.md`](v6_one_app_plan.md) and the server runbook
+[`../deploy/RUNBOOK.md`](../deploy/RUNBOOK.md).
+
+## v6 server at a glance
+
+```
+browser (React, frontend/) ──HTTPS──► Caddy ──► app container: FastAPI (api/app.py)
+                                                  ├─ /api/*   one router per resource (auth-guarded)
+                                                  ├─ /        built React app (SPA fallback)
+                                                  ├─ scheduler (services/scheduler.py): quotes + FX
+                                                  │   every 60 s in market hours, EOD jobs, backups
+                                                  └─ /data/app.sqlite (SQLCipher, all tiers in one file)
+backup sidecar (rclone) ── copies sealed snapshots ──► Backblaze B2 (append-only)
+```
+
+- **Contract:** Pydantic response models → committed `backend/openapi.json` →
+  generated `frontend/src/lib/api-types.ts` (CI fails on drift). Decimals travel as
+  strings; ratios are fractions (`*_pct`, 0.01 = 1 %).
+- **Auth:** argon2 password + passkeys, server-side sessions in a `__Host-` cookie,
+  Origin check on writes, login rate limit; optional bearer token for scripts.
+- **Live:** `services/live_bus.py` → SSE `/api/stream`; the browser never calls a
+  market-data provider.
+- **Rollback:** every v6 migration has a working downgrade to v5's head (`0014`,
+  tested in CI); `inv-dashboard-export-v5` turns the server DB back into v5 files.
+- **Layering is enforced** by `import-linter` (`[tool.importlinter]` in
+  `backend/pyproject.toml`, `uv run lint-imports` in CI).
 
 ## Goal
 
@@ -15,8 +42,8 @@ phone view from a published snapshot.
 ## Layered structure
 
 ```
-ui/         NiceGUI pages, components, copy.    Thin: input -> service -> render.
-api/        Read-only FastAPI JSON API.         Opt-in; serves readmodels.
+ui/         NiceGUI pages (v5 only).            Thin: input -> service -> render.
+api/        v6 FastAPI routers + schemas.       Thin wrappers over readmodels/services.
 services/   Use-case orchestration.             Composes domain + adapters + repos.
 readmodels/ UI-agnostic JSON shapes.            Shared by the API, export and publish.
 repositories/   DB access.                      Only place that imports ORM models.
@@ -30,9 +57,11 @@ Notes beyond the rules in `AGENTS.md`:
 
 - `domain/` is checked with `mypy --strict`, which is what keeps it pure.
 - Services own transactions: a use-case is one logical commit.
-- Read-heavy UI pages (`ui/pages/_overview_query.py`, `transactions.py`,
-  `settings.py`, `calculator.py`, ...) may query ledger-tier repositories directly;
-  mutations and multi-step use-cases go through a service.
+- Page queries live in `readmodels/queries/*_query.py` (the old
+  `ui/pages/_*_query.py` names are re-export shims for v5); they read through
+  repositories, never ORM selects of their own.
+- Cashflow and currency legs come from one module, `services/cashflows.py`;
+  positions and per-instrument metrics from one pass, `services/ledger_walk.py`.
 
 ## Storage tiers (split-DB layout)
 
@@ -83,10 +112,12 @@ Two physical layouts exist behind the same ORM:
 - **All money is `Numeric(18, 6)`**; shares are `Numeric(18, 8)`; FX rates
   are `Numeric(12, 8)`. SQLAlchemy hands back `decimal.Decimal`; no float
   drift downstream.
-- **v5 FX storage:** transactions still carry frozen `fx_rate_to_eur` / `net_eur`
-  / `net_usd` legs so EUR returns use each cashflow's own date rate. This is the
-  v5 transition state; see the currency rule in `AGENTS.md` and plan section 2 for
-  the v6 migration.
+- **FX:** each transaction's EUR/USD amount is derived from `net_native` and that
+  date's rate (FX conversion batches override the EUR side via the FIFO pool). The
+  frozen `fx_rate_to_eur` / `net_eur` / `net_usd` legs are still written on import
+  for the v5 rollback and are only a cross-check (Diagnostics flags > 0.5 %
+  differences). Snapshots and intraday samples store native USD plus the
+  per-instant rate; EUR is `usd / fx` at that instant.
 - **`UNIQUE(account_id, external_id)`** on transactions is the dedup guard.
   CSV importers compute a SHA-256 over the raw row fields as `external_id`.
 

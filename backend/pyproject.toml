@@ -71,6 +71,7 @@ inv-dashboard-api = "investment_dashboard.api.legacy_v5:run_legacy"
 inv-dashboard-server = "investment_dashboard.api.app:run"
 inv-dashboard-set-password = "investment_dashboard.tools.set_password:main"
 inv-dashboard-upload-db = "investment_dashboard.tools.upload_db:main"
+inv-dashboard-export-v5 = "investment_dashboard.tools.export_v5_ledger:main"
 inv-dashboard-export-snapshot = "investment_dashboard.tools.export_snapshot:main"
 inv-dashboard-split-db = "investment_dashboard.tools.split_db:main"
 inv-dashboard-repair-sidecar = "investment_dashboard.tools.repair_sidecar:main"
@@ -183,3 +184,43 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+
+[tool.importlinter]
+root_package = "investment_dashboard"
+include_external_packages = true
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Layering: ui/api -> services/readmodels -> repositories/adapters -> domain"
+type = "layers"
+layers = [
+    "investment_dashboard.ui : investment_dashboard.api",
+    "investment_dashboard.services : investment_dashboard.readmodels",
+    "investment_dashboard.repositories : investment_dashboard.adapters",
+    "investment_dashboard.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "domain is pure (no I/O libraries, no ORM)"
+type = "forbidden"
+source_modules = ["investment_dashboard.domain"]
+forbidden_modules = [
+    "sqlalchemy",
+    "httpx",
+    "requests",
+    "yfinance",
+    "investment_dashboard.models",
+    "investment_dashboard.db",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Only repositories import ORM models"
+type = "forbidden"
+source_modules = [
+    "investment_dashboard.services",
+    "investment_dashboard.readmodels",
+    "investment_dashboard.api",
+]
+forbidden_modules = ["investment_dashboard.models"]
+allow_indirect_imports = true

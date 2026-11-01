@@ -27,7 +27,6 @@ from investment_dashboard.adapters.importer_types import (
 from investment_dashboard.adapters.vanguard.parser import parse_vanguard_csv
 from investment_dashboard.adapters.vanguard.settlement import inject_settlement_legs
 from investment_dashboard.adapters.vanguard.xlsx_parser import parse_vanguard_xlsx
-from investment_dashboard.models import Transaction
 from investment_dashboard.repositories import (
     accounts_repo,
     transactions_repo,
@@ -170,7 +169,7 @@ def import_csv(
             fx_missing.add(prow.date)
             fx_missing_rows += 1
 
-        txn = Transaction(
+        txn = transactions_repo.new_transaction(
             account_id=account_id,
             instrument_id=instrument_id,
             date=prow.date,

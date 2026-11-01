@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from itertools import pairwise
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -32,14 +32,14 @@ from investment_dashboard.adapters import yfinance_client
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import Cashflow, xirr
-from investment_dashboard.models import Instrument, Transaction
 from investment_dashboard.repositories import (
-    app_config_repo,
     instruments_repo,
-    prices_repo,
     transactions_repo,
 )
-from investment_dashboard.services import cashflows, fx_service
+from investment_dashboard.services import app_config_service, cashflows, fx_service, prices_service
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Instrument, Transaction
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class BenchmarkSeries:
 
 
 def get_symbol(session: Session) -> str:
-    raw = app_config_repo.get(session, KEY_SYMBOL)
+    raw = app_config_service.get(session, KEY_SYMBOL)
     if raw is None or not raw.strip():
         return DEFAULT_SYMBOL
     return raw.strip().upper()
@@ -80,7 +80,7 @@ def set_symbol(session: Session, symbol: str) -> str:
     cleaned = symbol.strip().upper()
     if not cleaned:
         raise ValueError("symbol must be non-empty")
-    app_config_repo.set_value(session, KEY_SYMBOL, cleaned)
+    app_config_service.set_value(session, KEY_SYMBOL, cleaned)
     return cleaned
 
 
@@ -136,12 +136,7 @@ def refresh_history(
         return 0
     if not closes:
         return 0
-    # Closes live in the cache tier; in split-DB mode the ledger session cannot
-    # see ``price_history`` so the write has to go through the cache engine.
-    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
-
-    with cache_write_session(session) as cache:
-        return prices_repo.upsert_closes(cache, instrument.id, closes, source="benchmark")
+    return prices_service.store_closes(session, instrument.id, closes, source="benchmark")
 
 
 def get_series(
@@ -155,12 +150,7 @@ def get_series(
     instrument = instruments_repo.get_by_symbol(session, symbol)
     if instrument is None:
         return BenchmarkSeries(symbol=symbol, closes={})
-    # ``price_history`` is a cache-tier table; read it through the cache engine
-    # so split-DB installs see the full series instead of the empty ledger copy.
-    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
-
-    with cache_read_session(session) as cache:
-        all_closes = prices_repo.get_closes_for_instrument(cache, instrument.id)
+    all_closes = prices_service.closes_for_instrument(session, instrument.id)
     closes = {d: c for d, c in all_closes.items() if start <= d <= end}
     return BenchmarkSeries(symbol=symbol, closes=closes)
 

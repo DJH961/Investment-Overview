@@ -107,8 +107,9 @@ from investment_dashboard.readmodels.queries.overview_query import (
     build_week_value_series,
     previous_session_close_value,
 )
-from investment_dashboard.repositories import app_config_repo, transactions_repo
+from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
+    app_config_service,
     fx_service,
     intraday_snapshots_service,
     positions_service,
@@ -156,7 +157,7 @@ def resolve_grid(session: Session) -> str:
     into a denser ``"15m"`` backbone; an unset or unrecognised value yields the
     ``"30m"`` default.
     """
-    configured = app_config_repo.get(session, _GRID_CONFIG_KEY)
+    configured = app_config_service.get(session, _GRID_CONFIG_KEY)
     return configured if configured in GRID_CHOICES else GRID_DEFAULT
 
 

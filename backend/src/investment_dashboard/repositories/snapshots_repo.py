@@ -37,19 +37,29 @@ def upsert_snapshot(
     session: Session,
     snapshot_date: date,
     total_value_eur: Decimal,
+    total_value_usd: Decimal | None = None,
+    fx_eur_usd: Decimal | None = None,
 ) -> None:
-    """Idempotent insert: today's row is rewritten on every refresh."""
+    """Idempotent insert: today's row is rewritten on every refresh.
+
+    ``total_value_usd`` + ``fx_eur_usd`` are the native USD total and the
+    per-instant rate; readers derive EUR as ``usd / fx`` when both are set.
+    """
     from datetime import UTC, datetime  # noqa: PLC0415
 
     stmt = sqlite_insert(PositionSnapshot).values(
         snapshot_date=snapshot_date,
         total_value_eur=total_value_eur,
+        total_value_usd=total_value_usd,
+        fx_eur_usd=fx_eur_usd,
         computed_at=datetime.now(UTC).replace(tzinfo=None),
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=[PositionSnapshot.snapshot_date],
         set_={
             "total_value_eur": stmt.excluded.total_value_eur,
+            "total_value_usd": stmt.excluded.total_value_usd,
+            "fx_eur_usd": stmt.excluded.fx_eur_usd,
             "computed_at": stmt.excluded.computed_at,
         },
     )

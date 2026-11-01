@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.allocation import current_weights_pct
+from investment_dashboard.errors import ConflictError, ValidationError
 from investment_dashboard.readmodels._context import build_context
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.rebalance import round_to_100, scale_to_100
@@ -26,11 +27,11 @@ HUNDRED = Decimal(100)
 UNCATEGORIZED = "Uncategorized"
 
 
-class AllocationInputError(ValueError):
+class AllocationInputError(ValidationError):
     """The submitted target is invalid (maps to HTTP 422)."""
 
 
-class AllocationConflictError(ValueError):
+class AllocationConflictError(ConflictError):
     """The submitted target clashes with an existing one (maps to HTTP 409)."""
 
 
@@ -186,8 +187,7 @@ def save_target(
 
     ``items`` are ``(instrument_id, weight, no_buy)``; weights are relative and
     normalised, so the input unit (fraction or percent) does not matter. With ``target_id`` the
-    existing allocation is replaced (it gets a fresh id: ``allocations_repo`` has
-    no update). Raises :class:`AllocationInputError` / :class:`AllocationConflictError`.
+    existing allocation is updated in place (its id is kept). Raises :class:`AllocationInputError` / :class:`AllocationConflictError`.
     """
     name = name.strip()
     if not name:
@@ -213,17 +213,26 @@ def save_target(
     if clash is not None:
         raise AllocationConflictError(f"A target named '{name}' already exists")
     if current is not None:
-        session.delete(current)
-        session.flush()
-    created = allocations_repo.create_allocation(
-        session,
-        name,
-        weights,
-        active=active,
-        no_buy_ids=no_buy,
-        allow_sell=allow_sell,
-        display_currency=display_currency,
-    )
+        created = allocations_repo.update_allocation(
+            session,
+            current,
+            name,
+            weights,
+            active=active,
+            no_buy_ids=no_buy,
+            allow_sell=allow_sell,
+            display_currency=display_currency,
+        )
+    else:
+        created = allocations_repo.create_allocation(
+            session,
+            name,
+            weights,
+            active=active,
+            no_buy_ids=no_buy,
+            allow_sell=allow_sell,
+            display_currency=display_currency,
+        )
     session.flush()
     saved = next(t for t in serialize_targets(session) if t["id"] == created.id)
     return saved

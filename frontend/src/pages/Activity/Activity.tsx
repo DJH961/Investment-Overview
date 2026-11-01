@@ -9,7 +9,7 @@ import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
-import { formatDate } from "../../lib/format";
+import { formatDate, formatNumber } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { type PeriodRowOut, toNum, useDeposits, usePeriods } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -40,6 +40,16 @@ export function Activity() {
     </Maybe>
   );
 
+  const paidFrom = (r: DepositRow) => {
+    if (!r.rate_source) return "";
+    const rate = toNum(r.effective_rate);
+    const batches = r.conversion_batches ?? [];
+    const from = batches.map((b) => formatDate(b.date)).join(", ");
+    const ecb = r.rate_source === "conversions" ? "" : r.rate_source === "ecb" ? "ECB rate" : "rest at ECB rate";
+    const head = [from && `Conversion ${from}`, ecb].filter(Boolean).join("; ");
+    return rate === null ? head : `${head} (${formatNumber(rate, 4)} USD/EUR)`;
+  };
+
   const depositColumns: Column<DepositRow>[] = [
     { key: "date", header: "Date", primary: true, sortValue: (r) => r.date, cell: (r) => formatDate(r.date) },
     { key: "kind", header: "Kind", cell: (r) => r.kind },
@@ -51,6 +61,11 @@ export function Activity() {
       cell: (r) => <Money amount={toNum(r.amount_native)} currency={r.currency} />,
     },
     { key: "amount", header: "Amount", align: "right", sortValue: (r) => toNum(r.amount), cell: (r) => money(r.amount) },
+    {
+      key: "paid",
+      header: "Paid from",
+      cell: (r) => (r.rate_source ? <span className="activity-page__paid">{paidFrom(r)}</span> : null),
+    },
   ];
   const dividendColumns: Column<PeriodRowOut>[] = [
     { key: "label", header: "Year", primary: true, cell: (r) => r.label },

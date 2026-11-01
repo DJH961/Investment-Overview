@@ -220,8 +220,7 @@ def build_for_ccy(
     Every figure comes from that currency's own series: the equity curve, the
     contributions overlay (``net_usd`` legs for USD), TWR, XIRR and the risk
     metrics. Nothing is converted between currencies. Attribution is only
-    computed on EUR marks, so it is ``[]`` for USD (``attribution_currency`` is
-    ``null`` then) rather than a mislabelled EUR table.
+    computed on that currency's own marks and cashflows.
     """
     ccy = ccy.upper()
     ctx = context or build_context(session)
@@ -230,9 +229,7 @@ def build_for_ccy(
     result["ccy"] = ccy
     result["curve_start"] = bundle.start.isoformat()
     result["benchmark_is_funded"] = bundle.benchmark_is_funded
-    if ccy != "EUR":
-        result["attribution"] = []
-    result["attribution_currency"] = "EUR" if ccy == "EUR" else None
+    result["attribution_currency"] = ccy
     if full_curve:
         inception = transactions_repo.earliest_transaction_date(session)
         if inception is not None and inception < bundle.start:

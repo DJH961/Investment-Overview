@@ -8,7 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from investment_dashboard.api import security
@@ -30,11 +30,8 @@ def format_event(event: live_bus.Event) -> str:
 
 
 async def _still_authenticated(request: Request) -> bool:
-    try:
-        await security.authenticate(request)
-    except HTTPException:
-        return False
-    return True
+    # Non-touching check: the heartbeat must not extend the session's idle timeout.
+    return await security.still_authenticated(request)
 
 
 async def _events(request: Request) -> AsyncIterator[str]:

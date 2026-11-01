@@ -141,3 +141,39 @@ def test_encrypted_roundtrip(v5: tuple[Path, Path], tmp_path: Path) -> None:
     res = upload_db.prepare_upload(ledger=ledger, config=config, out=out, passphrase="s3cret-pass")
     assert res.encrypted
     assert not out.read_bytes().startswith(b"SQLite format 3")
+
+
+def test_local_only_summary_has_no_server_commands(
+    v5: tuple[Path, Path], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ledger, config = v5
+    res = upload_db.prepare_upload(
+        ledger=ledger, config=config, out=tmp_path / "app.sqlite", encrypt=False
+    )
+    upload_db._print_summary(res, local_only=True)
+    out = capsys.readouterr().out
+    assert "inv-dashboard-server" in out
+    assert "scp" not in out.lower()
+    upload_db._print_summary(res)
+    assert "scp" in capsys.readouterr().out.lower()
+
+
+def test_cli_plain_local_trial_needs_no_passphrase(
+    v5: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    ledger, config = v5
+    monkeypatch.delenv("INV_DASHBOARD_DB_PASSPHRASE", raising=False)
+    out = tmp_path / "app.sqlite"
+    argv = ["--ledger", str(ledger), "--config", str(config), "--out", str(out)]
+    assert upload_db.main([*argv, "--local-only", "--plain"]) == 0
+    assert out.read_bytes()[:16] == b"SQLite format 3\x00"
+    assert "ENCRYPT_SYNCED_TIERS=false" in capsys.readouterr().out
+
+
+def test_cli_plain_is_refused_for_the_server(v5: tuple[Path, Path], tmp_path: Path) -> None:
+    ledger, config = v5
+    argv = ["--ledger", str(ledger), "--config", str(config), "--out", str(tmp_path / "a.sqlite")]
+    assert upload_db.main([*argv, "--plain"]) == 2

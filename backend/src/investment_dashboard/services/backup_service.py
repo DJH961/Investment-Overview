@@ -31,6 +31,7 @@ from typing import Any
 
 from investment_dashboard import db as db_module
 from investment_dashboard.config import get_settings
+from investment_dashboard.errors import UpstreamError
 from investment_dashboard.storage import blob_crypto
 from investment_dashboard.storage.atomic_io import atomic_write_text
 from investment_dashboard.storage.encryption import (
@@ -54,7 +55,7 @@ DEBOUNCE_SECONDS = 60.0
 NIGHTLY_SECONDS = 24 * 3600.0
 
 
-class SnapshotError(RuntimeError):
+class SnapshotError(UpstreamError):
     """A snapshot is unreadable, tampered, or failed verification."""
 
 

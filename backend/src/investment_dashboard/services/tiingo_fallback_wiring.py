@@ -14,6 +14,7 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -21,7 +22,6 @@ from investment_dashboard.adapters import tiingo_client
 from investment_dashboard.adapters._retry import RateLimitedError
 from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import is_us_market_holiday
-from investment_dashboard.models import Instrument
 from investment_dashboard.repositories import price_cache_repo, prices_repo
 from investment_dashboard.repositories import tiingo_state_repo as state_repo
 from investment_dashboard.services import fetch_report, provider_status, pull_log
@@ -34,6 +34,9 @@ from investment_dashboard.services.tiingo_fallback_runner import (
     FallbackOutcome,
     run_desktop_fallback,
 )
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Instrument
 
 log = logging.getLogger(__name__)
 

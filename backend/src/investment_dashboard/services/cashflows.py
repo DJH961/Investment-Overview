@@ -28,13 +28,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import kinds
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.returns import Cashflow
-from investment_dashboard.models import Transaction
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
 
@@ -65,10 +68,12 @@ def _rate(eur_to_usd: Rates | None, on: date) -> Decimal | None:
     return None if rate is None or rate == 0 else rate
 
 
-def _base_eur(t: Transaction, eur_to_usd: Rates | None) -> Decimal | None:
-    """Frozen/derived EUR cash leg *before* any FX-pool override."""
-    if t.net_eur is not None:
-        return t.net_eur
+def derived_eur(t: Transaction, eur_to_usd: Rates | None) -> Decimal | None:
+    """EUR leg derived from ``net_native`` + the FX table (never the frozen leg).
+
+    ``None`` when the native amount, the rate or (for a non-EUR/USD currency) a
+    cross rate is missing.
+    """
     if t.net_native is None:
         return None
     ccy = native_currency(t)
@@ -78,6 +83,30 @@ def _base_eur(t: Transaction, eur_to_usd: Rates | None) -> Decimal | None:
         rate = _rate(eur_to_usd, t.date)
         return t.net_native / rate if rate is not None else None
     return None
+
+
+def derived_usd(t: Transaction, eur_to_usd: Rates | None) -> Decimal | None:
+    """USD leg derived from ``net_native`` + the FX table (never the frozen leg)."""
+    if t.net_native is None:
+        return None
+    ccy = native_currency(t)
+    if ccy == "USD":
+        return t.net_native
+    if ccy == "EUR":
+        rate = _rate(eur_to_usd, t.date)
+        return t.net_native * rate if rate is not None else None
+    return None
+
+
+def _base_eur(t: Transaction, eur_to_usd: Rates | None) -> Decimal | None:
+    """EUR cash leg *before* any FX-pool override.
+
+    Derived from ``net_native`` at the transaction date's rate; the frozen
+    ``net_eur`` is only a fallback when it cannot be derived (no rate on file,
+    other native currency). It is otherwise a read-only cross-check.
+    """
+    derived = derived_eur(t, eur_to_usd)
+    return derived if derived is not None else t.net_eur
 
 
 def txn_eur_amount(
@@ -95,14 +124,15 @@ def txn_eur_amount(
 def txn_usd_amount(t: Transaction, *, eur_to_usd: Rates | None = None) -> Decimal | None:
     """USD cash leg of one transaction at its own date's rate, or ``None``.
 
-    Prefers the frozen ``net_usd``; a USD-native row reads ``net_native``
-    verbatim (never round-tripped through EUR); anything else converts the
-    (un-overridden) EUR leg at the trade-date forward-filled rate.
+    A USD-native row reads ``net_native`` verbatim; a EUR-native row converts at
+    the trade-date forward-filled rate. The frozen ``net_usd`` is a fallback only
+    (cross-check otherwise); a last resort converts the un-overridden EUR leg.
     """
+    derived = derived_usd(t, eur_to_usd)
+    if derived is not None:
+        return derived
     if t.net_usd is not None:
         return t.net_usd
-    if native_currency(t) == "USD" and t.net_native is not None:
-        return t.net_native
     eur = _base_eur(t, eur_to_usd)
     if eur is None:
         return None

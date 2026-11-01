@@ -23,12 +23,12 @@ def test_analytics_empty_db_is_all_null_not_error(api_client: TestClient) -> Non
     assert body["attribution_currency"] == "EUR"
 
 
-def test_analytics_usd_has_no_eur_attribution(api_client: TestClient) -> None:
+def test_analytics_usd_attribution_is_in_usd(api_client: TestClient) -> None:
     body = api_client.get("/api/analytics?ccy=USD&lookback_days=7").json()
     assert body["ccy"] == "USD"
     assert body["currency"] == "USD"
     assert body["attribution"] == []
-    assert body["attribution_currency"] is None
+    assert body["attribution_currency"] == "USD"
 
 
 def test_analytics_validates_params(api_client: TestClient) -> None:

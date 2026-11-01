@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from investment_dashboard import __version__
 from investment_dashboard.api.deps import require_auth
 from investment_dashboard.config import get_settings
+from investment_dashboard.errors import DomainError
 
 API_PREFIX = "/api"
 
@@ -42,6 +43,7 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "analytics",
     "deposits",
     "diagnostics",
+    "onboarding",
     "calculator",
     # B3 writes
     "transactions",
@@ -124,6 +126,11 @@ def create_app(*, lifespan: bool = True) -> FastAPI:
         if request.url.path.startswith(API_PREFIX):
             response.headers.setdefault("Cache-Control", "no-store")
         return response
+
+    @app.exception_handler(DomainError)
+    async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
+        # One mapping for every service error that no route handled itself.
+        return JSONResponse({"detail": str(exc)}, status_code=exc.http_status)
 
     if settings.dev_cors_origins:
         app.add_middleware(

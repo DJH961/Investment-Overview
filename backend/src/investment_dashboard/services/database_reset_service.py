@@ -29,30 +29,12 @@ import enum
 import logging
 from dataclasses import dataclass, field
 
-from sqlalchemy import delete
-from sqlalchemy.orm import Session
-
 from investment_dashboard.db import (
     cache_session_scope,
     config_session_scope,
     ledger_session_scope,
 )
-from investment_dashboard.models import (
-    Account,
-    AppConfig,
-    FxHistory,
-    Instrument,
-    InstrumentOverride,
-    IntradayValue,
-    PositionSnapshot,
-    PriceCacheMetadata,
-    PriceHistory,
-    PriceSplit,
-    TargetAllocation,
-    TargetAllocationItem,
-    Transaction,
-)
-from investment_dashboard.models.base import CacheBase, ConfigBase
+from investment_dashboard.repositories import maintenance_repo
 
 log = logging.getLogger(__name__)
 
@@ -68,54 +50,14 @@ class ResetLevel(enum.Enum):
     EVERYTHING = "everything"
 
 
-# Cached/derived tables, ordered so children are deleted before parents.
-# None of these carry foreign keys today, but the order is kept explicit so
-# adding one later stays safe.
-#
-# IntradayValue and PriceSplit are easy to forget here because they live in
-# their own little services, but both are pure cache: IntradayValue holds the
-# within-day samples behind the Overview "1 Day"/"1 Week" graphs, and PriceSplit
-# holds the cached split factors used to adjust historical closes. If either is
-# left behind, a "Reset cached market data" leaves the very curves the user was
-# trying to fix untouched — so they are wiped alongside the prices they derive
-# from.
-_CACHE_MODELS: tuple[type, ...] = (
-    IntradayValue,
-    PositionSnapshot,
-    PriceHistory,
-    PriceSplit,
-    PriceCacheMetadata,
-    FxHistory,
-)
-
-# Every model, in a foreign-key-safe deletion order (children first):
-# transactions reference accounts + instruments; allocation items reference
-# allocations; so those parents are deleted last.
-_ALL_MODELS_FK_SAFE_ORDER: tuple[type, ...] = (
-    IntradayValue,
-    PositionSnapshot,
-    PriceHistory,
-    PriceSplit,
-    PriceCacheMetadata,
-    FxHistory,
-    InstrumentOverride,
-    TargetAllocationItem,
-    TargetAllocation,
-    Transaction,
-    Instrument,
-    Account,
-    AppConfig,
-)
-
-
 def _models_for_level(level: ResetLevel) -> tuple[type, ...]:
     if level is ResetLevel.CACHE:
-        return _CACHE_MODELS
+        return maintenance_repo.CACHE_MODELS
     if level is ResetLevel.TRANSACTIONS:
         # Clearing transactions invalidates derived snapshots/prices, so wipe
         # the cache too. FK-safe order: snapshots/cache first, then transactions.
-        return (*_CACHE_MODELS, Transaction)
-    return _ALL_MODELS_FK_SAFE_ORDER
+        return maintenance_repo.TRANSACTION_MODELS
+    return maintenance_repo.ALL_MODELS_FK_SAFE_ORDER
 
 
 @dataclass(frozen=True)
@@ -129,12 +71,6 @@ class ResetResult:
     @property
     def total_deleted(self) -> int:
         return sum(self.deleted.values())
-
-
-def _delete_all(session: Session, model: type) -> int:
-    """Delete every row of ``model`` and return the number removed."""
-    result = session.execute(delete(model))
-    return int(result.rowcount or 0)
 
 
 def reset_database(level: ResetLevel) -> ResetResult:
@@ -152,18 +88,13 @@ def reset_database(level: ResetLevel) -> ResetResult:
     block exits.
     """
     models = _models_for_level(level)
-    config_models = tuple(m for m in models if m.__table__.metadata is ConfigBase.metadata)
-    cache_models = tuple(m for m in models if m.__table__.metadata is CacheBase.metadata)
-    # Anything that is neither config- nor cache-tier is a ledger (source-of-truth)
-    # table; routing the remainder this way keeps the legacy ``Base``/``LedgerBase``
-    # alias working without enumerating every ledger model here.
-    ledger_models = tuple(m for m in models if m not in config_models and m not in cache_models)
+    ledger_models, cache_models, config_models = maintenance_repo.split_by_tier(models)
 
     log.info(
         "database reset (%s): wiping %s table(s): %s",
         level.value,
         len(models),
-        ", ".join(m.__tablename__ for m in models),
+        ", ".join(maintenance_repo.table_name(m) for m in models),
     )
 
     deleted: dict[str, int] = {}
@@ -171,17 +102,23 @@ def reset_database(level: ResetLevel) -> ResetResult:
     if ledger_models:
         with ledger_session_scope() as session:
             for model in ledger_models:
-                deleted[model.__tablename__] = _delete_all(session, model)
+                deleted[maintenance_repo.table_name(model)] = maintenance_repo.delete_all(
+                    session, model
+                )
 
     if cache_models:
         with cache_session_scope() as session:
             for model in cache_models:
-                deleted[model.__tablename__] = _delete_all(session, model)
+                deleted[maintenance_repo.table_name(model)] = maintenance_repo.delete_all(
+                    session, model
+                )
 
     if config_models:
         with config_session_scope() as session:
             for model in config_models:
-                deleted[model.__tablename__] = _delete_all(session, model)
+                deleted[maintenance_repo.table_name(model)] = maintenance_repo.delete_all(
+                    session, model
+                )
 
     result = ResetResult(level=level, deleted=deleted)
     log.info(

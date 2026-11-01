@@ -1,6 +1,6 @@
 # v6 stack: app + Caddy. On the server this lives in /opt/investments together
 # with the Caddyfile (see deploy/RUNBOOK.md). Secrets are NOT in this file or in
-# the repo: they live in the env file on the server only (mode 600).
+# the repo: they live in the env file on the server only (mode 600): /opt/investments/app.env.
 #
 #   cp .env.example .env      # compose-level vars (APP_TAG, APP_ENV_FILE)
 #   docker compose up -d
@@ -14,8 +14,8 @@ services:
       context: ..
       dockerfile: Dockerfile
     # Real settings and secrets (see backend/.env.example); server path example:
-    # /home/daniel/app.env, created by the owner, chmod 600.
-    env_file: ${APP_ENV_FILE:-/home/daniel/app.env}
+    # /opt/investments/app.env, created by the owner, chmod 600.
+    env_file: ${APP_ENV_FILE:-/opt/investments/app.env}
     volumes:
       - app-data:/data
     # No published ports: only Caddy reaches the app, over the internal network.
@@ -52,7 +52,7 @@ services:
   # Off-site copy of the sealed snapshots the app writes to /data/backups.
   # rclone only ever COPIES (never deletes, never overwrites: --immutable), so a
   # hacked server cannot erase history; B2 lifecycle rules keep old versions.
-  # Needs ~/investments/rclone.conf (see deploy/rclone.conf.example, mode 600).
+  # Needs /opt/investments/rclone.conf (see deploy/rclone.conf.example, mode 600).
   # Pull snapshots back on a new server: see RUNBOOK.md, section Restore.
   backup:
     image: rclone/rclone:1.68

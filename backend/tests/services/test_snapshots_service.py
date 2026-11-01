@@ -315,3 +315,23 @@ def test_get_or_compute_many_matches_per_date(session: Session) -> None:
 def test_get_or_compute_many_empty() -> None:
     # No session touched for an empty request.
     assert snapshots_service.get_or_compute_many(None, []) == {}  # type: ignore[arg-type]
+
+
+def test_cached_snapshot_eur_is_usd_over_stored_fx(session: Session) -> None:
+    day = date(2020, 1, 2)
+    snapshots_repo.upsert_snapshot(
+        session,
+        day,
+        Decimal("999"),
+        total_value_usd=Decimal("1100"),
+        fx_eur_usd=Decimal("1.1"),
+    )
+    session.flush()
+    assert snapshots_service.get_or_compute(session, day) == Decimal("1000")
+
+
+def test_cached_snapshot_without_usd_falls_back_to_eur_column(session: Session) -> None:
+    day = date(2020, 1, 3)
+    snapshots_repo.upsert_snapshot(session, day, Decimal("123"))
+    session.flush()
+    assert snapshots_service.get_or_compute(session, day) == Decimal("123")

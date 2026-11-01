@@ -22,8 +22,15 @@ export interface ChartSeries {
   tone?: ChartTone;
 }
 
+/** A horizontal guide at a fixed value (e.g. cost basis). It is part of the y range. */
+export interface ChartReferenceLine {
+  value: number;
+  label?: string;
+}
+
 export interface ChartProps {
   series: ChartSeries[];
+  referenceLine?: ChartReferenceLine;
   range?: string;
   onRangeChange?: (range: string) => void;
   ranges?: string[];
@@ -63,6 +70,7 @@ function toneClass(tone: ChartTone | undefined, index: number): string {
 
 export function Chart({
   series,
+  referenceLine,
   range,
   onRangeChange,
   ranges,
@@ -113,8 +121,9 @@ export function Chart({
     if (!values.length) return null;
     const tMin = times[0];
     const tMax = times[times.length - 1];
-    let lo = Math.min(...values);
-    let hi = Math.max(...values);
+    const ref = referenceLine && Number.isFinite(referenceLine.value) ? [referenceLine.value] : [];
+    let lo = Math.min(...values, ...ref);
+    let hi = Math.max(...values, ...ref);
     if (lo === hi) {
       lo -= Math.abs(lo) * 0.01 || 1;
       hi += Math.abs(hi) * 0.01 || 1;
@@ -125,7 +134,7 @@ export function Chart({
     const x = (t: number) => PAD.left + (tMax === tMin ? innerW / 2 : ((t - tMin) / (tMax - tMin)) * innerW);
     const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * innerH;
     return { x, y, lo, hi, tMin, tMax };
-  }, [values, times, innerW, innerH]);
+  }, [values, times, innerW, innerH, referenceLine]);
 
   const setFromClientX = useCallback(
     (clientX: number) => {
@@ -274,6 +283,27 @@ export function Chart({
               {timeFormat(t)}
             </text>
           ))}
+          {referenceLine && Number.isFinite(referenceLine.value) && (
+            <g className="chart__reference" data-reference>
+              <line
+                className="chart__reference-line"
+                x1={PAD.left}
+                x2={width - PAD.right}
+                y1={scales.y(referenceLine.value)}
+                y2={scales.y(referenceLine.value)}
+              />
+              {referenceLine.label && (
+                <text
+                  className="chart__reference-label"
+                  x={width - PAD.right - 4}
+                  y={scales.y(referenceLine.value) - 4}
+                  textAnchor="end"
+                >
+                  {referenceLine.label}
+                </text>
+              )}
+            </g>
+          )}
           {prepared.map((s, i) => {
             const runs = segments(
               s.pts.map((p) => ({

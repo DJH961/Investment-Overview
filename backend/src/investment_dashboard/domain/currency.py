@@ -33,6 +33,14 @@ def eur_to_native(amount_eur: Decimal, fx_rate_eur_to_native: Decimal) -> Decima
     return amount_eur * fx_rate_eur_to_native
 
 
+def usd_to_eur_at(amount_usd: Decimal, fx_eur_usd: Decimal) -> Decimal:
+    """EUR value of a native-USD amount at one instant's rate (``usd / fx``).
+
+    Valid only for a value at that single instant; never apply it to a return.
+    """
+    return native_to_eur(amount_usd, fx_eur_usd)
+
+
 def lookup_rate_with_forward_fill(
     rates_by_date: Mapping[date, Decimal],
     target: date,

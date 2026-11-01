@@ -19,8 +19,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.market_hours import exchange_today
-from investment_dashboard.repositories import app_config_repo
-from investment_dashboard.services import fx_service
+from investment_dashboard.services import app_config_service, fx_service
 
 #: Currencies the toggle accepts. v1.3 introduced the EUR/USD pair; the
 #: v2.2 DKK experiment was reverted in v2.4 because the third leg made
@@ -40,7 +39,7 @@ _CONFIG_KEY = "display_currency"
 
 def get_display_currency(session: Session) -> str:
     """Return the persisted display currency, defaulting to EUR."""
-    raw = app_config_repo.get(session, _CONFIG_KEY)
+    raw = app_config_service.get(session, _CONFIG_KEY)
     if raw is None:
         return DEFAULT_CURRENCY
     candidate = raw.strip().upper()
@@ -60,7 +59,7 @@ def set_display_currency(session: Session, currency: str) -> str:
         raise ValueError(
             f"Unsupported display currency {currency!r}; expected one of {SUPPORTED_CURRENCIES}",
         )
-    app_config_repo.set_value(session, _CONFIG_KEY, normalised)
+    app_config_service.set_value(session, _CONFIG_KEY, normalised)
     return normalised
 
 

@@ -16,15 +16,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.kinds import TransactionKind, TransactionSource
 from investment_dashboard.domain.money_market import (
     MANUAL_SETTLEMENT_DESCRIPTION_PREFIX,
     settlement_external_id_for,
 )
-from investment_dashboard.models import Transaction
-from investment_dashboard.models.transaction import TransactionKind, TransactionSource
+from investment_dashboard.errors import NotFoundError, ValidationError
 from investment_dashboard.repositories import accounts_repo, instruments_repo, transactions_repo
 from investment_dashboard.services import (
     intraday_snapshots_service,
@@ -33,14 +34,17 @@ from investment_dashboard.services import (
     transaction_fx_service,
 )
 
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
+
 NO_MONEY_MARKET_WARNING = "No money-market fund on this account yet - logged the cash move only."
 
 
-class TransactionEditError(ValueError):
+class TransactionEditError(ValidationError):
     """The submitted transaction is invalid (maps to HTTP 422)."""
 
 
-class TransactionNotFoundError(LookupError):
+class TransactionNotFoundError(NotFoundError):
     """No transaction (or account) with the given id."""
 
 
@@ -148,7 +152,7 @@ def _after_write(session: Session, affected: set[date]) -> None:
 def create(session: Session, data: TransactionInput) -> TransactionEditResult:
     """Insert a manual transaction (and optionally its money-market leg)."""
     prep = _prepare(session, data)
-    txn = Transaction(source=TransactionSource.MANUAL, **prep.fields)
+    txn = transactions_repo.new_transaction(source=TransactionSource.MANUAL, **prep.fields)
     inserted = transactions_repo.insert_transaction(session, txn)
     if inserted is None:  # pragma: no cover - manual rows carry no external_id
         raise TransactionEditError("Duplicate transaction")
@@ -248,7 +252,7 @@ def maybe_money_market_leg(
     leg_legs = transaction_fx_service.compute_legs(
         session, native_currency=native_ccy, net_native=leg.net_native, on=txn_date
     )
-    mm_txn = Transaction(
+    mm_txn = transactions_repo.new_transaction(
         account_id=parent.account_id,
         date=txn_date,
         kind=leg.kind,

@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from investment_dashboard.errors import UpstreamError
 from investment_dashboard.redaction import redact_secrets
 from investment_dashboard.storage import blob_crypto
 from investment_dashboard.storage.encryption import (
@@ -89,7 +90,7 @@ _EXPIRY_WARN_WINDOW = timedelta(days=7)
 _EXPIRY_HEADER = "github-authentication-token-expiration"
 
 
-class PublishError(RuntimeError):
+class PublishError(UpstreamError):
     """Raised when publishing can't proceed or the GitHub API rejects it."""
 
 

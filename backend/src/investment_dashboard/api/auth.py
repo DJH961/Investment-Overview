@@ -8,7 +8,7 @@ application/json``.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
@@ -22,8 +22,10 @@ from investment_dashboard.api.schemas.auth import (
     PasskeyOut,
 )
 from investment_dashboard.config import Settings, get_settings
-from investment_dashboard.models.auth import AuthPasskey
 from investment_dashboard.services import auth_service
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import AuthPasskey
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

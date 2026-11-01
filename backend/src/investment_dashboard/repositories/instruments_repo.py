@@ -31,6 +31,15 @@ def list_instruments(session: Session) -> Sequence[Instrument]:
     return session.scalars(stmt).all()
 
 
+def list_ids(session: Session) -> set[int]:
+    """Ids of every instrument row."""
+    return set(session.scalars(select(Instrument.id)).all())
+
+
+def get_instrument(session: Session, instrument_id: int) -> Instrument | None:
+    return session.get(Instrument, instrument_id)
+
+
 def get_by_symbol(session: Session, symbol: str) -> Instrument | None:
     stmt = select(Instrument).where(Instrument.symbol == symbol)
     return session.scalars(stmt).one_or_none()

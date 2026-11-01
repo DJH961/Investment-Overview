@@ -28,9 +28,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends, kinds
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
@@ -41,9 +41,12 @@ from investment_dashboard.domain.returns import (
     xirr,
     years_between,
 )
-from investment_dashboard.models import Transaction
 from investment_dashboard.readmodels.money_format import aggrid_money_formatter
+from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import cashflows
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
 
@@ -322,7 +325,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
     monthly table a contiguous twelve-rows-per-year grid so it can be
     paginated one calendar year at a time.
     """
-    txns = session.scalars(select(Transaction).options(joinedload(Transaction.account))).all()
+    txns = list(transactions_repo.list_all_with_account(session))
 
     # Load the EUR→USD series once: it powers both the EUR fallback
     # (when net_eur was never written by the importer because FX was

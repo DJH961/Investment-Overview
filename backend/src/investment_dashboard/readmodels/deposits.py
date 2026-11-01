@@ -14,6 +14,42 @@ from investment_dashboard.readmodels.queries.deposits_query import (
     compute_summary,
     list_deposit_records,
 )
+from investment_dashboard.services import fx_conversion_service
+
+
+def _conversion_info(session: Session) -> dict[int, dict[str, Any]]:
+    """Per USD deposit id: the conversion batches it was paid from and its rate.
+
+    Empty when no conversions are recorded (then no deposit claims a source).
+    ``effective_rate`` is USD per EUR actually obtained; ``rate_source`` is
+    ``"conversions"``, ``"ecb"`` (pool did not cover it) or ``"mixed"``.
+    """
+    report = fx_conversion_service.pool_report(session)
+    if not report.conversions:
+        return {}
+    dates = {c.id: c.date for c in report.conversions}
+    info: dict[int, dict[str, Any]] = {}
+    for m in report.result.deposits:
+        if not m.matched:
+            source = "ecb"
+        elif m.is_fallback:
+            source = "mixed"
+        else:
+            source = "conversions"
+        info[m.deposit_id] = {
+            "effective_rate": None if m.rate_missing else dec(m.blended_rate),
+            "rate_source": source,
+            "conversion_batches": [
+                {
+                    "conversion_id": sl.conversion_id,
+                    "date": dates[sl.conversion_id].isoformat(),
+                    "usd": dec(sl.usd),
+                    "eur": dec(sl.eur),
+                }
+                for sl in m.matched
+            ],
+        }
+    return info
 
 
 def _summary_dict(s: DepositSummary) -> dict[str, Any]:
@@ -70,6 +106,12 @@ def build_for_ccy(
     summary = compute_summary(session, today=ctx.as_of)
     records = list_deposit_records(session, account_id=account_id)
     usd = ccy == "USD"
+    conv = _conversion_info(session)
+    no_conv: dict[str, Any] = {
+        "effective_rate": None,
+        "rate_source": None,
+        "conversion_batches": [],
+    }
     return {
         "ccy": ccy,
         "as_of": ctx.as_of.isoformat(),
@@ -89,8 +131,7 @@ def build_for_ccy(
                 "currency": r.native_currency,
                 "amount": dec(r.amount_usd if usd else r.amount_eur),
                 "description": r.description,
-                "effective_rate": None,
-                "rate_source": None,
+                **(conv.get(r.id, no_conv) if r.id is not None else no_conv),
             }
             for r in records
         ],

@@ -836,6 +836,37 @@
         "title": "CheckOut",
         "type": "object"
       },
+      "ConversionBatchOut": {
+        "description": "The slice of one currency conversion that paid for (part of) a deposit.",
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "date",
+          "usd",
+          "eur"
+        ],
+        "title": "ConversionBatchOut",
+        "type": "object"
+      },
       "CurrencyBlock": {
         "properties": {
           "lifetime": {
@@ -1188,6 +1219,13 @@
             "title": "Amount Native",
             "type": "string"
           },
+          "conversion_batches": {
+            "items": {
+              "$ref": "#/components/schemas/ConversionBatchOut"
+            },
+            "title": "Conversion Batches",
+            "type": "array"
+          },
           "currency": {
             "title": "Currency",
             "type": "string"
@@ -1210,6 +1248,7 @@
                 "type": "null"
               }
             ],
+            "description": "USD per EUR actually paid for a USD deposit; null without conversions",
             "title": "Effective Rate"
           },
           "id": {
@@ -1236,6 +1275,7 @@
                 "type": "null"
               }
             ],
+            "description": "\"conversions\", \"ecb\" (pool did not cover it), \"mixed\"; null without conversions",
             "title": "Rate Source"
           }
         },
@@ -1852,6 +1892,78 @@
           "app_version"
         ],
         "title": "Health",
+        "type": "object"
+      },
+      "HistoryPoint": {
+        "properties": {
+          "t": {
+            "description": "Date (ISO), one close per trading day",
+            "title": "T",
+            "type": "string"
+          },
+          "v": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "V"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "HistoryPoint",
+        "type": "object"
+      },
+      "HoldingHistoryResponse": {
+        "description": "Daily closes of one instrument in its native currency (never converted).",
+        "properties": {
+          "ccy": {
+            "description": "The instrument's native currency, for display",
+            "title": "Ccy",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "range": {
+            "enum": [
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "range",
+          "ccy",
+          "points"
+        ],
+        "title": "HoldingHistoryResponse",
         "type": "object"
       },
       "HoldingRow": {
@@ -3023,6 +3135,50 @@
           }
         },
         "title": "OkResponse",
+        "type": "object"
+      },
+      "OnboardingOut": {
+        "description": "Which first-run steps are done (each is independent; all can be skipped).",
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "boolean"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "conversions": {
+            "title": "Conversions",
+            "type": "boolean"
+          },
+          "first_import": {
+            "title": "First Import",
+            "type": "boolean"
+          },
+          "passkey": {
+            "title": "Passkey",
+            "type": "boolean"
+          },
+          "password": {
+            "title": "Password",
+            "type": "boolean"
+          },
+          "targets": {
+            "title": "Targets",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "account",
+          "first_import",
+          "password",
+          "passkey",
+          "conversions",
+          "targets",
+          "complete"
+        ],
+        "title": "OnboardingOut",
         "type": "object"
       },
       "OverviewKpis": {
@@ -6981,6 +7137,66 @@
         ]
       }
     },
+    "/api/holdings/{instrument_id}/history": {
+      "get": {
+        "operationId": "get_holding_history_api_holdings__instrument_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "1y",
+              "enum": [
+                "1m",
+                "3m",
+                "6m",
+                "ytd",
+                "1y",
+                "all"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldingHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Holding History",
+        "tags": [
+          "holdings"
+        ]
+      }
+    },
     "/api/imports": {
       "post": {
         "operationId": "upload_import_api_imports_post",
@@ -7154,6 +7370,27 @@
         "summary": "List Instruments",
         "tags": [
           "accounts"
+        ]
+      }
+    },
+    "/api/onboarding": {
+      "get": {
+        "operationId": "get_onboarding_api_onboarding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Onboarding",
+        "tags": [
+          "onboarding"
         ]
       }
     },

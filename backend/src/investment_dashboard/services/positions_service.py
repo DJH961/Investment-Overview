@@ -10,30 +10,29 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends, kinds, market_hours
 from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV, is_money_market
-from investment_dashboard.models import (
-    Account,
-    Instrument,
-    Transaction,
-    TransactionKind,
-)
 from investment_dashboard.repositories import (
     accounts_repo,
     instrument_overrides_repo,
     instruments_repo,
     transactions_repo,
 )
-from investment_dashboard.services import fx_service, prices_service
+from investment_dashboard.services import fx_service, ledger_walk, prices_service
 from investment_dashboard.services.instrument_enrichment_service import (
     EffectiveInstrument,
     effective_instrument,
 )
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Account, Instrument, Transaction
 
 ZERO = Decimal(0)
 #: Below this residual share count a holding is treated as fully closed, so a
@@ -159,48 +158,16 @@ def compute_positions(  # noqa: PLR0912, PLR0915
         if is_money_market_effective(instr, effective_instrument(instr, overrides.get(iid)))
     }
 
-    # Aggregate by (account_id, instrument_id).
-    holdings: dict[tuple[int, int | None], dict[str, Decimal]] = {}
-    for t in txns:
-        key = (t.account_id, t.instrument_id)
-        agg = holdings.setdefault(
-            key,
-            {"shares": ZERO, "cost_basis": ZERO, "dividends_cash": ZERO},
-        )
-        kind = t.kind
-        qty = t.quantity or ZERO
-        net = t.net_native or ZERO
-        if kind == TransactionKind.BUY.value:
-            agg["shares"] += qty
-            agg["cost_basis"] += -net  # buy net is negative ⇒ cost positive
-        elif kind == TransactionKind.SELL.value:
-            # Average-cost method: a partial sale releases a proportional
-            # slice of the cost basis, otherwise the remaining shares keep
-            # the *full* original basis and growth is massively deflated
-            # (spec §6.5). ``qty`` is already negative for sells.
-            shares_before = agg["shares"]
-            if shares_before > ZERO:
-                avg_cost = agg["cost_basis"] / shares_before
-                # qty negative ⇒ this subtracts the sold shares' basis.
-                agg["cost_basis"] += avg_cost * qty
-                agg["cost_basis"] = max(agg["cost_basis"], ZERO)
-            agg["shares"] += qty
-        elif kind == TransactionKind.DIVIDEND_REINVEST.value:
-            agg["shares"] += qty
-            # Reinvested dividends raise the cost basis by the reinvestment
-            # value (spec §6.1) — except for money-market funds, whose NAV is
-            # pinned at par so the reinvested dividend *is* the return. Folding
-            # it into their cost basis would cancel cost against value and zero
-            # out the gain/growth; leaving it out surfaces the earned dividends.
-            if t.price_native is not None and t.instrument_id not in mm_instrument_ids:
-                agg["cost_basis"] += qty * t.price_native
-        elif kind == TransactionKind.DIVIDEND_CASH.value:
-            # Skip the cash leg of a reinvested dividend (already captured by
-            # the paired DIVIDEND_REINVEST as new shares + cost basis).
-            if (t.account_id, t.instrument_id, t.date) not in reinvest_keys:
-                agg["dividends_cash"] += net
-        elif kind == TransactionKind.SPLIT.value:
-            agg["shares"] += qty
+    # One pass over the ledger: a lot per (account_id, instrument_id).
+    lots = ledger_walk.walk(txns, reinvest_keys=reinvest_keys, money_market_ids=mm_instrument_ids)
+    holdings: dict[tuple[int, int | None], dict[str, Decimal]] = {
+        key: {
+            "shares": lot.shares,
+            "cost_basis": lot.cost_native,
+            "dividends_cash": lot.dividends_cash_native,
+        }
+        for key, lot in lots.items()
+    }
 
     accounts_by_id = {a.id: a for a in accounts_repo.list_accounts(session)}
 
@@ -388,6 +355,50 @@ def total_portfolio_value(
         if rate is not None and rate != 0:
             total_eur += balance_native / rate
     return total_eur
+
+
+def total_portfolio_value_usd(
+    session: Session,
+    *,
+    as_of: date | None = None,
+    positions: list[Position] | None = None,
+) -> Decimal:
+    """Native-USD counterpart of :func:`total_portfolio_value` at one instant.
+
+    USD-native holdings and balances count at their native amount; any other
+    currency is converted through EUR at ``as_of``'s rate. Holdings whose rate
+    is unavailable are omitted (same policy as the EUR total).
+    """
+    as_of = as_of or exchange_today()
+    if positions is None:
+        positions = compute_positions(session, as_of=as_of)
+    fx_usd = fx_service.get_rate_eur_to_quote(session, as_of)
+    usable = fx_usd is not None and fx_usd != 0
+    total = ZERO
+    for p in positions:
+        if p.account.native_currency.upper() == "USD":
+            total += p.current_value_native
+        elif usable and fx_usd is not None:
+            total += p.current_value_eur * fx_usd
+    rate_cache: dict[str, Decimal | None] = {"USD": fx_usd}
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type not in {"savings", "cash"}:
+            continue
+        balance_native = compute_cash_balance(session, account.id, as_of=as_of)
+        ccy = account.native_currency.upper()
+        if ccy == "USD":
+            total += balance_native
+            continue
+        if ccy == "EUR":
+            if usable and fx_usd is not None:
+                total += balance_native * fx_usd
+            continue
+        if ccy not in rate_cache:
+            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(session, as_of, quote=ccy)
+        rate = rate_cache[ccy]
+        if rate is not None and rate != 0 and usable and fx_usd is not None:
+            total += balance_native / rate * fx_usd
+    return total
 
 
 def _ignored_account_for_typing(_: Transaction) -> None:  # pragma: no cover

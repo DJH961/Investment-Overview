@@ -22,14 +22,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.market_hours import exchange_today
-from investment_dashboard.models import Account, Transaction
+from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import cashflows, fx_service
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import Account, Transaction
 
 _DEPOSIT_KINDS = tuple(sorted(cashflows.EXTERNAL_FLOW_KINDS))
 
@@ -126,15 +128,9 @@ def list_deposit_records(
     eur_overrides: Mapping[int, Decimal] | None = None,
 ) -> list[DepositRecord]:
     """Return raw cash-flow records for the table (newest first)."""
-    stmt = (
-        select(Transaction)
-        .options(joinedload(Transaction.account))
-        .where(Transaction.kind.in_(_DEPOSIT_KINDS))
-        .order_by(Transaction.date.desc(), Transaction.id.desc())
+    txns = transactions_repo.list_by_kinds_with_account(
+        session, _DEPOSIT_KINDS, account_id=account_id, newest_first=True
     )
-    if account_id is not None:
-        stmt = stmt.where(Transaction.account_id == account_id)
-    txns = session.scalars(stmt).all()
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
     return [_to_record(t, eur_to_usd=eur_to_usd, eur_overrides=ov) for t in txns]
@@ -202,12 +198,9 @@ def compute_summary(
     year_start = date(today.year, 1, 1)
     month_start = date(today.year, today.month, 1)
 
-    stmt = (
-        select(Transaction)
-        .options(joinedload(Transaction.account))
-        .where(Transaction.kind.in_(_DEPOSIT_KINDS))
+    txns: Sequence[Transaction] = transactions_repo.list_by_kinds_with_account(
+        session, _DEPOSIT_KINDS
     )
-    txns: Sequence[Transaction] = session.scalars(stmt).all()
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
 

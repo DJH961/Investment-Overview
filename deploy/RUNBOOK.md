@@ -172,8 +172,8 @@ Then delete the port 22 rule in the Hetzner firewall.
 - On the server, `nano ~/b2.env` with two lines,
   `AWS_ACCESS_KEY_ID=<keyID>` and `AWS_SECRET_ACCESS_KEY=<applicationKey>`, then
   `chmod 600 ~/b2.env`.
-- Later in v6: the app's other secrets in `/opt/investments/.env` (documented in its
-  `.env.example`).
+- The app's own secrets go in `/opt/investments/app.env` (template:
+  `backend/.env.example`; see "First install" step 2).
 
 **8. Web**
 
@@ -210,7 +210,7 @@ anything.
 
 After the one-time setup in "Secrets" below, every green commit on `main` deploys by
 itself: GitHub builds the image, pushes it to GHCR (GitHub's container registry), joins
-your Tailscale network, and runs on the server (in `~/investments`)
+your Tailscale network, and runs on the server (in `/opt/investments`)
 `docker compose pull app && docker compose up -d app`. It then asks the app's
 `/api/health` for up to two minutes. If the app does not answer, the workflow puts the
 previous version back and the run turns red.
@@ -220,8 +220,12 @@ previous version back and the run turns red.
   deploys).
 - **Deploy by hand:** repo **Actions** tab -> **Deploy** -> **Run workflow**.
 - **What runs where:** the version in use is the line `APP_TAG=<git sha>` in
-  `~/investments/.env` on the server; the compose file reads it.
-- **Look at it:** `ssh daniel@hetzner-djh-v1 'cd ~/investments && docker compose ps && docker compose logs --tail 50 app'`
+  `/opt/investments/.env` on the server; the compose file reads it. Before each
+  `docker compose pull` the workflow copies `docker-compose.yml`, `Caddyfile`,
+  `restore.sh` and `first_install.sh` from the commit into `/opt/investments`, so the
+  server never needs a git checkout. Secrets (`app.env`, `rclone.conf`, `.env`) are never
+  touched by it.
+- **Look at it:** `ssh daniel@hetzner-djh-v1 'cd /opt/investments && docker compose ps && docker compose logs --tail 50 app'`
 
 ## Rolling back
 
@@ -232,7 +236,7 @@ By hand, to any older version (every deployed commit stays in GHCR as
 
 ```bash
 ssh daniel@hetzner-djh-v1
-cd ~/investments
+cd /opt/investments
 sed -i 's/^APP_TAG=.*/APP_TAG=<old git sha>/' .env
 docker compose pull app && docker compose up -d app
 ```
@@ -276,17 +280,153 @@ paste any of it into chat, an issue or a file in the repo.
 
 **D. App secrets (owner types these on the server)**
 
-Create `~/investments/app.env` (mode 600) from `backend/.env.example` with the session
-secret and the database passphrase. Generate a random value with
-`openssl rand -base64 32`. Keep the DB passphrase in your password manager as well:
-losing it means losing the data.
+Create `/opt/investments/app.env` (mode 600) from `backend/.env.example` with the
+database passphrase, the backup passphrase and the public address (passkeys). Generate
+each random value with `openssl rand -base64 32`. Keep both passphrases in your
+password manager as well: losing the DB passphrase means losing the data.
 
-**E. Switch deploys on:** variable `DEPLOY_ENABLED` = `true` (see "Deploying v6").
+**E. Switch deploys on:** variable `DEPLOY_ENABLED` = `true` (see "Deploying v6"), but
+only after "First install" has worked once by hand.
 
 | GitHub item | Kind |
 | --- | --- |
 | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` | secrets |
 | `DEPLOY_ENABLED` | variable |
+
+## First install
+
+Do this once, after the server is rebuilt/bootstrapped (see "Rebuild from scratch") and
+before switching `DEPLOY_ENABLED` on. Everything lives in `/opt/investments`; secrets
+A-E are in the "Secrets" section further down.
+
+1. **Secrets A-C** (Tailscale OAuth client, deploy SSH key, GHCR login on the server).
+2. **Secret D, on the server:** create `/opt/investments/app.env` from
+   `backend/.env.example` (`nano /opt/investments/app.env`, then
+   `chmod 600 /opt/investments/app.env`). Fill in at least the database passphrase,
+   the backup passphrase, `INV_DASHBOARD_WEBAUTHN_RP_ID` and
+   `INV_DASHBOARD_WEBAUTHN_ORIGIN`. Leave the optional token lines commented out.
+3. **Backups, on the server:** copy `rclone.conf.example` to
+   `/opt/investments/rclone.conf`, fill in the B2 key, `chmod 600` it (see "Backups").
+4. **Get the deploy files onto the server** (no git checkout there). From Git Bash in
+   the repo folder:
+
+   ```bash
+   /c/Windows/System32/OpenSSH/scp.exe deploy/docker-compose.yml deploy/Caddyfile deploy/restore.sh deploy/first_install.sh daniel@hetzner-djh-v1:/opt/investments/
+   ```
+
+   (After secret E the deploy workflow does this by itself on every deploy.)
+5. **Run the installer, on the server:**
+
+   ```bash
+   cd /opt/investments && chmod +x first_install.sh restore.sh && ./first_install.sh
+   ```
+
+   It checks Docker, the GHCR login, `app.env` (mode 600 and the required keys, never
+   printing values) and `rclone.conf`, removes the `caddy-check` placeholder, runs
+   `docker compose up -d` and waits for `/api/health`. If a check fails it says exactly
+   what is missing; fix that and run it again.
+6. **Set your password, on the server** (you type it; it is not written to any file):
+
+   ```bash
+   cd /opt/investments && docker compose exec app inv-dashboard-set-password
+   ```
+
+7. **Upload your ledger:** follow "Uploading the ledger" below.
+8. **Check from the laptop** (Git Bash, repo folder): `bash deploy/check.sh` (health,
+   401 without a login, security headers, HSTS, valid TLS, and with `nmap` installed
+   only ports 80/443 open). Sign in at `https://investments.daniel-henke.de`, add a
+   passkey on the Onboarding page, and compare the totals with v5.
+9. **Switch automatic deploys on** (secret E).
+
+## Try it before the server
+
+Run the real v6 app on your laptop with a copy of your real ledger, and open it on your
+phone, before the server is involved. Your v5 files are only read.
+
+1. Close the v5 app. Tailscale must be running on the laptop and on the phone.
+2. **Easy way:** in Windows PowerShell, from the repo folder, run
+   `.\deploy\try_local.ps1`. It asks for the folder with `ledger.sqlite` and
+   `config.sqlite` and does everything below. **By hand:** follow steps 3 to 7.
+3. Copy the two files into an empty working folder, e.g. `C:\Temp\upload`.
+4. Make one database from the copies. On the laptop it stays unencrypted (`--plain`),
+   like the v5 files it comes from, because Windows has no SQLCipher driver; the
+   server copy is always encrypted.
+
+   ```bash
+   cd backend
+   uv run inv-dashboard-upload-db --ledger C:/Temp/upload/ledger.sqlite --config C:/Temp/upload/config.sqlite --cache $env:LOCALAPPDATA/inv-dashboard/cache.sqlite --out C:/Temp/upload/app.sqlite --local-only --plain
+   ```
+
+5. Build the frontend once: `cd frontend && npm install && npm run build`.
+6. Find your laptop's Tailscale name (`tailscale status --json`, field `Self.DNSName`,
+   without the trailing dot), e.g. `my-laptop.my-tailnet.ts.net`. Passkeys need HTTPS
+   and an address that matches exactly, so in the same PowerShell window (from
+   `backend/`):
+
+   ```powershell
+   $env:INV_DASHBOARD_DB_PATH = "C:\Temp\upload\app.sqlite"
+   $env:INV_DASHBOARD_SERVER_MODE = "true"
+   $env:INV_DASHBOARD_ENCRYPT_SYNCED_TIERS = "false"
+   $env:INV_DASHBOARD_COOKIE_SECURE = "true"
+   $env:INV_DASHBOARD_HOST = "127.0.0.1"
+   $env:INV_DASHBOARD_PORT = "8000"
+   $env:INV_DASHBOARD_FRONTEND_DIST = "..\frontend\dist"
+   $env:INV_DASHBOARD_WEBAUTHN_RP_ID = "my-laptop.my-tailnet.ts.net"
+   $env:INV_DASHBOARD_WEBAUTHN_ORIGIN = "https://my-laptop.my-tailnet.ts.net"
+   uv run inv-dashboard-set-password
+   ```
+
+7. Share it over Tailscale and start the server:
+
+   ```powershell
+   tailscale serve --bg 8000
+   uv run inv-dashboard-server
+   ```
+
+   On the laptop or phone open `https://my-laptop.my-tailnet.ts.net`, sign in, add a
+   passkey. Press Ctrl+C to stop, then `tailscale serve reset` to stop sharing.
+8. Clean up: delete `C:\Temp\upload` (it holds your ledger) and close the PowerShell
+   window.
+
+## Rollback to v5
+
+Use this only if v6 has to be abandoned. It turns the server's database back into the
+two files the v5.3.1 desktop app reads. Anything that exists only in v6 (FX conversion
+batches, passkeys, the login password) is not carried over.
+
+1. On the server: `cd /opt/investments && docker compose stop app`, then make a spare
+   copy of the database first (see "Backups").
+2. Export (asks for the DB passphrase; never changes `app.sqlite`):
+   `docker compose run --rm --no-deps -v /tmp/v5-export:/out --entrypoint inv-dashboard-export-v5 app --db /data/app.sqlite --out /out`
+3. From Git Bash on the laptop:
+   `/c/Windows/System32/OpenSSH/scp.exe -r daniel@hetzner-djh-v1:/tmp/v5-export .`
+   then on the server `rm -r /tmp/v5-export`.
+4. Close the v5 desktop app. In `OneDrive\inv-dashboard\`, rename the current
+   `ledger.sqlite` and `config.sqlite` to `*.bak`.
+5. Copy `ledger.sqlite` and `config.sqlite` from the export into that folder.
+6. Start v5 (installer or `git checkout legacy/v5`, see `docs/legacy_v5.md`). It
+   rebuilds prices and FX itself on the first refresh. Read
+   `docs/legacy_v5_known_bugs.md` on that branch for the numbers v5 gets wrong.
+7. Leave the server stopped, or `docker compose up -d app` to go back to v6.
+
+## Side-by-side week
+
+After the first upload, run v5 (desktop, as always) and v6 (server) together for a week.
+v5 stays the source of truth until you switch.
+
+- **Every day:** open both, look at Overview and Holdings in EUR and in USD. Compare the
+  totals (value, invested, gain), XIRR/TWR and the biggest holding. Write the numbers and
+  the date in your own notes (not in this repo).
+- **If something differs:** first check Diagnostics in v6 (deposits at the ECB rate,
+  missing prices). Known v5 bugs are listed in `docs/legacy_v5.md`; a difference you can
+  explain from there is expected. Anything else: stop and ask before trusting v6.
+- **New data during the week:** enter it in v5 only, then repeat "Uploading the ledger"
+  (it replaces the server database) when you want v6 to catch up. Do not enter data in
+  both.
+- **When to switch:** seven days in a row with no unexplained difference, backups
+  visible in B2 every day (see "Backups"), and one successful restore drill (see
+  "Restore"). Then: do a final upload from v5, stop using v5, and from then on enter
+  data in v6 only. Keep the v5 files and the "Rollback to v5" steps for at least a month.
 
 ## Uploading the ledger
 
@@ -319,7 +459,7 @@ read; the tool works on copies.
    stopped meanwhile). On the server:
 
    ```bash
-   cd ~/investments
+   cd /opt/investments
    docker compose stop app
    docker compose run --rm --no-deps -v /tmp/app.sqlite:/in/app.sqlite:ro --entrypoint sh app -c 'cp /in/app.sqlite /data/app.sqlite && rm -f /data/app.sqlite-wal /data/app.sqlite-shm'
    rm /tmp/app.sqlite
@@ -349,8 +489,8 @@ are just part of the same file.
 **One-time setup (you do this on the server)**
 
 1. Copy `deploy/rclone.conf.example` to
-   `~/investments/rclone.conf`, fill in the B2 *application key ID* and *key* (bucket
-   `Investment-Overview` only), then `chmod 600 ~/investments/rclone.conf`.
+   `/opt/investments/rclone.conf`, fill in the B2 *application key ID* and *key* (bucket
+   `Investment-Overview` only), then `chmod 600 /opt/investments/rclone.conf`.
 2. In `app.env` add `INV_DASHBOARD_BACKUP_PASSPHRASE=<long random value>` (for example
    `openssl rand -base64 32`). If you leave it out, the database passphrase is used.
 3. **Store offline (password manager, plus a printout if you like):** the database
@@ -369,7 +509,7 @@ then swaps it in atomically. The database it replaces is kept next to it as
 `app.sqlite.before-restore-<time>` (nothing is deleted). If anything fails it says so
 and leaves the live database untouched.
 
-One command does everything: `deploy/restore.sh` (in `~/investments` next to
+One command does everything: `deploy/restore.sh` (in `/opt/investments` next to
 `docker-compose.yml`). It fetches the snapshots from B2 through the compose `backup`
 (rclone) service, stops the app, runs `inv-dashboard-restore`, and starts the app again
 (also when the restore fails, then with the old database). `./restore.sh --list` only
@@ -378,12 +518,12 @@ shows the snapshots; `--yes` skips the confirmation.
 **Server gone (new server, empty volume)**
 
 1. Rebuild the server (see "Rebuild from scratch"), put `app.env` (with both
-   passphrases) and `rclone.conf` into `~/investments`, and start the stack once:
+   passphrases) and `rclone.conf` into `/opt/investments`, and start the stack once:
    `docker compose up -d`.
 2. Restore the newest snapshot:
 
    ```bash
-   cd ~/investments
+   cd /opt/investments
    ./restore.sh
    ```
 
@@ -392,7 +532,7 @@ shows the snapshots; `--yes` skips the confirmation.
 **Bad import or a mistake you want to undo (server is fine)**
 
 ```bash
-cd ~/investments
+cd /opt/investments
 ./restore.sh --list                                           # pick a time before the mistake
 ./restore.sh --at snapshot-20261101-120000.sealed.json
 ```

@@ -15,11 +15,10 @@ import threading
 from collections import OrderedDict, deque
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 from webauthn import (
     generate_authentication_options,
@@ -37,7 +36,11 @@ from webauthn.helpers.structs import (
 )
 
 from investment_dashboard.config import Settings
-from investment_dashboard.models.auth import AuthCredential, AuthPasskey, AuthSession
+from investment_dashboard.errors import ValidationError
+from investment_dashboard.repositories import auth_repo
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import AuthPasskey
 
 MIN_PASSWORD_LENGTH = 12
 CHALLENGE_TTL_SECONDS = 300
@@ -51,7 +54,7 @@ _hasher = PasswordHasher()
 _DUMMY_HASH = _hasher.hash(secrets.token_urlsafe(16))
 
 
-class WeakPasswordError(ValueError):
+class WeakPasswordError(ValidationError):
     """Raised when a new password is too short."""
 
 
@@ -78,22 +81,17 @@ def set_password(session: Session, password: str) -> None:
     if len(password) < MIN_PASSWORD_LENGTH:
         raise WeakPasswordError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
     hashed = _hasher.hash(password)
-    row = session.get(AuthCredential, 1)
-    if row is None:
-        session.add(AuthCredential(id=1, password_hash=hashed, updated_at=now()))
-    else:
-        row.password_hash = hashed
-        row.updated_at = now()
-    session.execute(delete(AuthSession))
+    auth_repo.upsert_credential(session, hashed, now())
+    auth_repo.delete_all_sessions(session)
 
 
 def has_password(session: Session) -> bool:
-    return session.get(AuthCredential, 1) is not None
+    return auth_repo.get_credential(session) is not None
 
 
 def verify_password(session: Session, password: str) -> bool:
     """Constant-effort check; ``False`` when no password is set."""
-    row = session.get(AuthCredential, 1)
+    row = auth_repo.get_credential(session)
     stored = row.password_hash if row is not None else _DUMMY_HASH
     try:
         ok = _hasher.verify(stored, password)
@@ -113,17 +111,15 @@ def create_session(session: Session, settings: Settings, user_agent: str | None)
     """Create a session and return the raw cookie value (shown to the client once)."""
     token = secrets.token_urlsafe(32)
     t = now()
-    session.add(
-        AuthSession(
-            id=_hash_token(token),
-            created_at=t,
-            last_seen_at=t,
-            expires_at=t + timedelta(days=settings.session_max_age_days),
-            user_agent=(user_agent or "")[:256] or None,
-        )
+    auth_repo.add_session(
+        session,
+        session_id=_hash_token(token),
+        created_at=t,
+        expires_at=t + timedelta(days=settings.session_max_age_days),
+        user_agent=(user_agent or "")[:256] or None,
     )
     # Opportunistic cleanup of dead sessions.
-    session.execute(delete(AuthSession).where(AuthSession.expires_at <= t))
+    auth_repo.delete_expired_sessions(session, t)
     return token
 
 
@@ -132,21 +128,38 @@ def validate_session(session: Session, settings: Settings, token: str) -> str | 
     if not token or len(token) > 256:
         return None
     sid = _hash_token(token)
-    row = session.get(AuthSession, sid)
+    row = auth_repo.get_session(session, sid)
     if row is None:
         return None
     t = now()
     idle = timedelta(minutes=settings.session_idle_minutes)
     if t >= row.expires_at or t >= row.last_seen_at + idle:
-        session.delete(row)
+        auth_repo.delete_row(session, row)
         return None
     if t - row.last_seen_at >= _TOUCH_INTERVAL:
         row.last_seen_at = t
     return sid
 
 
+def peek_session(session: Session, settings: Settings, token: str) -> bool:
+    """True if the session is valid right now, WITHOUT sliding the idle timeout.
+
+    For long-lived connections (SSE) that re-check periodically: a heartbeat must
+    not count as user activity. Read-only: expired rows are left for the next
+    ``validate_session`` / cleanup to delete.
+    """
+    if not token or len(token) > 256:
+        return False
+    row = auth_repo.get_session(session, _hash_token(token))
+    if row is None:
+        return False
+    t = now()
+    idle = timedelta(minutes=settings.session_idle_minutes)
+    return not (t >= row.expires_at or t >= row.last_seen_at + idle)
+
+
 def delete_session(session: Session, token: str) -> None:
-    session.execute(delete(AuthSession).where(AuthSession.id == _hash_token(token)))
+    auth_repo.delete_session_by_id(session, _hash_token(token))
 
 
 # --------------------------------------------------------------------------- rate limit
@@ -285,14 +298,13 @@ class PasskeyError(Exception):
 
 
 def passkey_count(session: Session) -> int:
-    return int(session.scalar(select(func.count()).select_from(AuthPasskey)) or 0)
+    return auth_repo.passkey_count(session)
 
 
 def registration_options(session: Session, settings: Settings, name: str | None) -> tuple[str, str]:
     """Return ``(options_json, challenge_key)``."""
     existing = [
-        PublicKeyCredentialDescriptor(id=cid)
-        for cid in session.scalars(select(AuthPasskey.credential_id))
+        PublicKeyCredentialDescriptor(id=cid) for cid in auth_repo.passkey_credential_ids(session)
     ]
     options = generate_registration_options(
         rp_id=settings.webauthn_rp_id,
@@ -333,11 +345,10 @@ def register_passkey(
         raise PasskeyError("Passkey registration failed.") from exc
     raw_transports = (body.get("response") or {}).get("transports") or []
     transports = [t for t in raw_transports if isinstance(t, str)][:8]
-    if session.scalar(
-        select(AuthPasskey.id).where(AuthPasskey.credential_id == verified.credential_id)
-    ):
+    if auth_repo.passkey_exists(session, verified.credential_id):
         raise PasskeyError("Passkey already registered.")
-    row = AuthPasskey(
+    return auth_repo.add_passkey(
+        session,
         credential_id=verified.credential_id,
         public_key=verified.credential_public_key,
         sign_count=verified.sign_count,
@@ -345,9 +356,6 @@ def register_passkey(
         name=((name or stored_name or "Passkey").strip() or "Passkey")[:80],
         created_at=now(),
     )
-    session.add(row)
-    session.flush()
-    return row
 
 
 def authentication_options(settings: Settings) -> tuple[str, str]:
@@ -372,7 +380,7 @@ def authenticate_passkey(
         raw_id = base64url_to_bytes(str(credential.get("rawId") or credential.get("id") or ""))
     except Exception as exc:
         raise PasskeyError("Passkey login failed.") from exc
-    row = session.scalar(select(AuthPasskey).where(AuthPasskey.credential_id == raw_id))
+    row = auth_repo.get_passkey_by_credential_id(session, raw_id)
     if row is None:
         raise PasskeyError("Passkey login failed.")
     try:
@@ -392,12 +400,12 @@ def authenticate_passkey(
 
 
 def list_passkeys(session: Session) -> list[AuthPasskey]:
-    return list(session.scalars(select(AuthPasskey).order_by(AuthPasskey.id)))
+    return auth_repo.list_passkeys(session)
 
 
 def delete_passkey(session: Session, passkey_id: int) -> bool:
-    row = session.get(AuthPasskey, passkey_id)
+    row = auth_repo.get_passkey(session, passkey_id)
     if row is None:
         return False
-    session.delete(row)
+    auth_repo.delete_row(session, row)
     return True

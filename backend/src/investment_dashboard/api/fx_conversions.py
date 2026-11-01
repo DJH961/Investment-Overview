@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Response
 
@@ -16,8 +17,10 @@ from investment_dashboard.api.schemas.fx_conversions import (
     SliceOut,
 )
 from investment_dashboard.domain.fx_pool import DepositMatch
-from investment_dashboard.models.fx_conversion import FxConversion
 from investment_dashboard.services import fx_conversion_service as service
+
+if TYPE_CHECKING:
+    from investment_dashboard.models import FxConversion
 
 router = APIRouter(tags=["fx-conversions"])
 
