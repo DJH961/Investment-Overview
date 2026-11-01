@@ -50,13 +50,13 @@ UI contract: [`v6_frontend_design.md`](v6_frontend_design.md).
 - [x] `api/app.py` factory (lifespan, routers, static/SPA, security headers), `api/deps.py`, `api/schemas/common.py`, router stubs, model stubs, migration ids, `tests/api/conftest.py`, OpenAPI export script
 
 ### W1 — backend slices + deploy + frontend widgets (parallel, ≤ 7 workers)
-- [ ] B1 reads A: overview, holdings, allocations (GET), graphs/{range} + schemas + tests
-- [ ] B2 reads B: periods, analytics, deposits, transactions (GET), diagnostics, calculator + schemas + tests
-- [ ] B3 writes: manual transactions CRUD, allocations PUT, settings GET/PUT, imports upload→preview→confirm, refresh, backup + tests
+- [x] B1 reads A: overview, holdings, allocations (GET), graphs/{range} + schemas + tests
+- [x] B2 reads B: periods, analytics, deposits, transactions (GET), diagnostics, calculator + schemas + tests
+- [x] B3 writes: manual transactions CRUD, allocations PUT, settings GET/PUT, imports upload→preview→confirm, refresh, backup + tests
 - [x] B4 auth: argon2 password, sessions (cookie, idle timeout), login rate limit, passkeys, bearer token kept, `set-password` CLI + tests
 - [x] B5 currency (B5a): `domain/fx_pool.py` + hypothesis/golden tests, then `fx_conversions` model/migration/repo/service/router + deposit matching + tests
-- [ ] B6 live: scheduler (lifespan task), live bus, `/api/stream` SSE + tests
-- [ ] D1 deploy: multi-stage Dockerfile, `deploy/docker-compose.yml`, `Caddyfile`, `litestream.yml`, `backend/.env.example`
+- [x] B6 live: scheduler (lifespan task), live bus, `/api/stream` SSE + tests
+- [x] D1 deploy: multi-stage Dockerfile, `deploy/docker-compose.yml`, `Caddyfile`, `litestream.yml`, `backend/.env.example`
 - [x] D2 ops: `.github/workflows/deploy.yml` (build → GHCR → SSH pull; disabled until secrets exist), `backend/tools/upload_db.py` + tests, RUNBOOK sections
 - [x] F2 Chart (port `web/src/chart.ts`) + AllocationBar/Treemap + Sparkline + tests
 - [x] F3 Login + passkeys + Styleguide page + PWA/service worker + `lib/live.ts`
@@ -79,7 +79,7 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - [ ] Settings "Download backup" uses the same sealed snapshot
 
 ### W1 gate — security review
-- [ ] one `reviewer` over B4 + app factory (auth, cookies, rate limit, headers)
+- [x] one `reviewer` over B4 + app factory (auth, cookies, rate limit, headers)
 
 ### W1.5 — backend unification (owner request 2026-11-01)
 - [ ] audit → `docs/v6_scoping/backend_unification.md` (duplicate currency logic, `date.today()` vs ET clock, Decimal/float, layering, tiers, duplicate helpers, naming)
@@ -87,7 +87,7 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - [ ] U-tasks from the audit (non-overlapping OWN lists, ≤ 4 per wave)
 
 ### W2 — frontend pages on generated types (parallel)
-- [ ] G0 orchestrator: export `openapi.json`, `npm run gen:api`, write `lib/queries.ts` hooks for every endpoint
+- [x] G0 orchestrator: export `openapi.json`, `npm run gen:api`, write `lib/queries.ts` hooks for every endpoint
 - [ ] P1 Overview (KPIs, currency-effect split, chart, allocation, movers) + Holdings
 - [ ] P2 Periods + Activity + Risk + Projection/Calculator
 - [ ] P3 Transactions (list + add/edit) + Import (upload → preview → confirm)
@@ -113,3 +113,5 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - 2026-11-01 B5a done (0e2e458; golden: D1 €3600, D2 €7240, D3 €9178.18), B4 done (07fba91), D2 done (08bc208). Alembic chain 0014→0015→0016 up/down OK. Security review running.
 - Integration todo after D1: deploy.yml assumes `backend/Dockerfile` + port 8080 → align to root `Dockerfile` + 8000; add `name: CI` to ci.yml. Owner: TS_OAUTH_CLIENT_ID/SECRET, DEPLOY_SSH_KEY secrets, DEPLOY_ENABLED var, ghcr login on server.
 - RESUME (2026-11-01): running at cutoff risk: B1, B2, B3, B6 (backend W1), security reviewer. Done: B4, B5a, D1 (ebeed49), D2. Next: on B1–B3/B6 finish → wave gate (ruff, mypy, `pytest tests/api tests/readmodels tests/services tests/ui -q`), fix deploy.yml (root Dockerfile, port 8000), `name: CI`, apply reviewer findings, then D3, W1.5 (R0–R5 per backend_unification.md), G0 + P1–P4, W3. Keep briefs short (owner asked for token economy).
+- 2026-11-01 W1 complete + gate green (1549 passed). Review fixes in be29a57. OpenAPI (35 paths) + api-types generated; RequireAuth wired. W2 started: P1–P4 + D3 (each owns `lib/queries/<area>.ts`).
+- Follow-ups noted by workers: benchmark_service EUR-only (USD benchmark null) → R2; allocations PUT replaces id (repo lacks update) → R4; SSE auth slides idle timeout (needs non-sliding check) → small fix; EOD `_warm_snapshots` uses date.today() → R3; period USD columns null without FX history; `compute_instrument_metrics` wrong for multi-account instruments (merged upstream in holdings.merge_positions_by_instrument) → R6.
