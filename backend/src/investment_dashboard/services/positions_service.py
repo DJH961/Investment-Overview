@@ -390,5 +390,49 @@ def total_portfolio_value(
     return total_eur
 
 
+def total_portfolio_value_usd(
+    session: Session,
+    *,
+    as_of: date | None = None,
+    positions: list[Position] | None = None,
+) -> Decimal:
+    """Native-USD counterpart of :func:`total_portfolio_value` at one instant.
+
+    USD-native holdings and balances count at their native amount; any other
+    currency is converted through EUR at ``as_of``'s rate. Holdings whose rate
+    is unavailable are omitted (same policy as the EUR total).
+    """
+    as_of = as_of or exchange_today()
+    if positions is None:
+        positions = compute_positions(session, as_of=as_of)
+    fx_usd = fx_service.get_rate_eur_to_quote(session, as_of)
+    usable = fx_usd is not None and fx_usd != 0
+    total = ZERO
+    for p in positions:
+        if p.account.native_currency.upper() == "USD":
+            total += p.current_value_native
+        elif usable and fx_usd is not None:
+            total += p.current_value_eur * fx_usd
+    rate_cache: dict[str, Decimal | None] = {"USD": fx_usd}
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type not in {"savings", "cash"}:
+            continue
+        balance_native = compute_cash_balance(session, account.id, as_of=as_of)
+        ccy = account.native_currency.upper()
+        if ccy == "USD":
+            total += balance_native
+            continue
+        if ccy == "EUR":
+            if usable and fx_usd is not None:
+                total += balance_native * fx_usd
+            continue
+        if ccy not in rate_cache:
+            rate_cache[ccy] = fx_service.get_rate_eur_to_quote(session, as_of, quote=ccy)
+        rate = rate_cache[ccy]
+        if rate is not None and rate != 0 and usable and fx_usd is not None:
+            total += balance_native / rate * fx_usd
+    return total
+
+
 def _ignored_account_for_typing(_: Transaction) -> None:  # pragma: no cover
     """Touch :class:`Transaction` so the import isn't pruned by linters."""

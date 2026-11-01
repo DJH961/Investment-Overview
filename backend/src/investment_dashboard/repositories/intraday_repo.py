@@ -26,6 +26,7 @@ def insert_sample(
     captured_at: datetime,
     market_value_eur: Decimal,
     fx_eur_usd: Decimal | None = None,
+    market_value_usd: Decimal | None = None,
 ) -> None:
     """Append one intraday market-component sample (idempotent on its timestamp).
 
@@ -37,6 +38,7 @@ def insert_sample(
         captured_at=captured_at,
         market_value_eur=market_value_eur,
         fx_eur_usd=fx_eur_usd,
+        market_value_usd=market_value_usd,
     )
     # Two captures at the identical instant are a no-op rather than an error.
     stmt = stmt.on_conflict_do_update(
@@ -44,6 +46,7 @@ def insert_sample(
         set_={
             "market_value_eur": stmt.excluded.market_value_eur,
             "fx_eur_usd": stmt.excluded.fx_eur_usd,
+            "market_value_usd": stmt.excluded.market_value_usd,
         },
     )
     session.execute(stmt)
