@@ -18,6 +18,14 @@ and add a log line as steps land. Earlier history: [`v6_progress.md`](v6_progres
 - [ ] Integration: full gate, local device test, PR
 - [ ] Owner: server setup, upload, a week side by side, switch
 
+## Workers (token economy: 3 contexts, reused)
+
+| Worker | Does, in order |
+| --- | --- |
+| `tools` | A1, A2 |
+| `app` | A3, A4, then B2 (follow-up message) |
+| `core` | B1, then C1, C2, D1 (follow-up messages; one at a time) |
+
 ## Rules for every task
 
 - Touch only your **OWN** files. Need something else? Stop and report it.
