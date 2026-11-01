@@ -28,3 +28,9 @@ def test_support_bundle_is_text_download(api_client: TestClient) -> None:
     assert res.headers["content-type"].startswith("text/plain")
     assert "attachment" in res.headers["content-disposition"]
     assert "support bundle" in res.text
+
+
+def test_support_bundle_leaves_out_the_raw_log(api_client: TestClient) -> None:
+    text = api_client.get("/api/diagnostics/support-bundle").text
+    assert "Recent log (last" not in text
+    assert "docker compose logs app" in text

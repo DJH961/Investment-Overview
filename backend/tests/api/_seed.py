@@ -62,7 +62,8 @@ def seed_ledger(session: Session) -> dict[str, int]:
 
     today = exchange_today()
     for iid, then, now in ((vti.id, "200", "250"), (bnd.id, "75", "70")):
-        closes = {FIRST_DAY: D(then), today - timedelta(days=1): D(now), today: D(now)}
+        # The last week at today's close, so the latest weekday is priced on any day.
+        closes = {FIRST_DAY: D(then)} | {today - timedelta(days=k): D(now) for k in range(7)}
         prices_repo.upsert_closes(session, iid, closes)
     fx_repo.upsert_rates(session, {FIRST_DAY - timedelta(days=1): RATE_THEN, today: RATE_NOW})
 

@@ -36,6 +36,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The hosted support-bundle download no longer includes the raw server log (it can hold stack traces); read it on the server with `docker compose logs app`.
+- API test data has prices for the whole last week, so the graph tests pass on weekends.
 - Analytics USD figures were built from EUR cashflows and reported the EUR XIRR as the USD XIRR; they now use USD cashflows.
 - A same-day dividend reinvestment in a different account no longer cancels a cash dividend.
 - Missing FX rates no longer turn into 0, a rate of 1 or a EUR value labelled USD; the figure is left blank.

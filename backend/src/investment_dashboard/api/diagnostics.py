@@ -22,9 +22,9 @@ def get_diagnostics(session: SessionDep) -> dict[str, Any]:
 
 @router.get("/support-bundle", response_class=PlainTextResponse)
 def get_support_bundle() -> PlainTextResponse:
-    """Plain-text support bundle (secrets redacted) as a download."""
+    """Plain-text support bundle (secrets redacted, no raw log) as a download."""
     filename = support_bundle.bundle_filename()
     return PlainTextResponse(
-        support_bundle.build_support_bundle(),
+        support_bundle.build_server_bundle(),
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -143,7 +143,7 @@ def _health_summary() -> str:
         with session_scope() as session:
             report = diagnostics_service.check_health(session)
     except Exception as exc:  # pragma: no cover - defensive: never break the bundle
-        return f"(health check unavailable: {type(exc).__name__}: {exc})"
+        return f"(health check unavailable: {type(exc).__name__})"
     lines = [f"overall : {report.worst_severity} ({report.problem_count} problem(s))"]
     # Problems worst-first (the page's own ordering), then the passing checks.
     ordered = list(report.problems) + [i for i in report.items if i.ok]
@@ -152,12 +152,8 @@ def _health_summary() -> str:
     return redact_secrets("\n".join(lines))
 
 
-def build_support_bundle(
-    *,
-    log_tail_bytes: int = DEFAULT_LOG_TAIL_BYTES,
-    max_errors: int = DEFAULT_MAX_ERRORS,
-) -> str:
-    """Return the full support bundle as a single plain-text document."""
+def _summary_lines(max_errors: int) -> list[str]:
+    """Everything in the bundle except the raw log tail."""
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
     header = [
         _SEPARATOR,
@@ -184,10 +180,35 @@ def build_support_bundle(
         "-" * 32,
         recent_errors_text(max_errors),
         "",
+    ]
+    return header
+
+
+def build_support_bundle(
+    *,
+    log_tail_bytes: int = DEFAULT_LOG_TAIL_BYTES,
+    max_errors: int = DEFAULT_MAX_ERRORS,
+) -> str:
+    """Return the full support bundle (desktop app) as a single plain-text document."""
+    lines = [
+        *_summary_lines(max_errors),
         f"Recent log (last {log_tail_bytes} bytes of dashboard.log)",
         "-" * 32,
     ]
-    return "\n".join(header) + "\n" + read_recent_log_text(log_tail_bytes) + "\n"
+    return "\n".join(lines) + "\n" + read_recent_log_text(log_tail_bytes) + "\n"
+
+
+def build_server_bundle(*, max_errors: int = DEFAULT_MAX_ERRORS) -> str:
+    """The bundle served over HTTP by the hosted app: no raw log tail.
+
+    The log can hold stack traces, which must not leave the server over the
+    API. On the server read it with ``docker compose logs app`` instead.
+    """
+    lines = [
+        *_summary_lines(max_errors),
+        "Server log: not included; on the server run `docker compose logs app`.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def bundle_filename() -> str:
