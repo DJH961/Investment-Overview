@@ -11,7 +11,8 @@ web companion. It is frozen on:
 It has **zero support**: no fixes, no dependency updates, no backports. It exists
 only as a **rollback option** while the v6 rewrite
 ([`v6_one_app_plan.md`](v6_one_app_plan.md)) settles in. Nothing is ever committed
-to `legacy/v5`.
+to `legacy/v5`, except the owner-requested list of known, unfixed v5 bugs
+(`docs/legacy_v5_known_bugs.md` on that branch); read it before rolling back.
 
 ## Rolling back the desktop app
 

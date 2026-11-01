@@ -45,6 +45,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `legacy/v5` gained `docs/legacy_v5_known_bugs.md`: the v5 bugs fixed only in v6, for anyone rolling back.
 - Backend unification: one canonical cashflow module (`services/cashflows.py`), one set of transaction kinds and instrument classes (`domain/kinds.py`, `domain/instruments.py`); every ratio in the API is a fraction.
 
 ### Removed
