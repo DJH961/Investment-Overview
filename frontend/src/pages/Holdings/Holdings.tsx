@@ -1,6 +1,7 @@
 import { ChevronDown, Inbox, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Card } from "../../components/Card";
+import { Chart } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
@@ -9,6 +10,7 @@ import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { Select } from "../../components/Select";
+import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
 import { formatDate, formatMoney, formatNumber, formatPercent, formatTime } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
@@ -51,6 +53,200 @@ function Flags({ row }: { row: HoldingRowDto }) {
   );
 }
 
+type GroupBy = "none" | "account" | "asset_class" | "currency";
+
+const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
+  { value: "none", label: "No grouping" },
+  { value: "account", label: "By account" },
+  { value: "asset_class", label: "By asset class" },
+  { value: "currency", label: "By currency" },
+];
+
+function groupKey(row: HoldingRowDto, by: GroupBy): string {
+  if (by === "account") return row.account;
+  if (by === "asset_class") return row.asset_class;
+  if (by === "currency") return row.native_currency;
+  return "";
+}
+
+export interface HoldingGroup {
+  key: string;
+  rows: HoldingRowDto[];
+  value: number;
+  cost: number;
+  gain: number;
+  dividends: number;
+  totalReturn: number;
+  weight: number;
+}
+
+/** Split rows into groups (largest value first) with summed subtotals in the reporting currency. */
+export function groupHoldings(rows: HoldingRowDto[], by: GroupBy): HoldingGroup[] {
+  const map = new Map<string, HoldingRowDto[]>();
+  for (const r of rows) {
+    const k = groupKey(r, by);
+    map.set(k, [...(map.get(k) ?? []), r]);
+  }
+  const sum = (rs: HoldingRowDto[], pick: (r: HoldingRowDto) => string | null | undefined) =>
+    rs.reduce((acc, r) => acc + (toNum(pick(r)) ?? 0), 0);
+  return [...map.entries()]
+    .map(([key, rs]) => ({
+      key,
+      rows: rs,
+      value: sum(rs, (r) => r.value),
+      cost: sum(rs, (r) => r.cost_basis),
+      gain: sum(rs, (r) => r.capital_gain),
+      dividends: sum(rs, (r) => r.dividends),
+      totalReturn: sum(rs, (r) => r.total_return),
+      weight: sum(rs, (r) => r.weight_pct),
+    }))
+    .sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
+}
+
+function HoldingDetails({ id, row, ccy }: { id?: string; row: HoldingRowDto; ccy: string }) {
+  return (
+    <dl id={id} className="holdings-page__detail">
+      <div>
+        <dt>Price</dt>
+        <dd>{formatMoney(toNum(row.price_native), row.native_currency)}</dd>
+      </div>
+      <div>
+        <dt>Shares</dt>
+        <dd>{formatNumber(toNum(row.shares), 4)}</dd>
+      </div>
+      <div>
+        <dt>Cost basis</dt>
+        <dd>
+          <Money amount={toNum(row.cost_basis)} currency={ccy} />
+        </dd>
+      </div>
+      <div>
+        <dt>Capital gain</dt>
+        <dd>
+          <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored />
+        </dd>
+      </div>
+      <div>
+        <dt>Dividends</dt>
+        <dd>
+          <Money amount={toNum(row.dividends)} currency={ccy} />
+        </dd>
+      </div>
+      <div>
+        <dt>Total return (incl. dividends)</dt>
+        <dd>
+          <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
+        </dd>
+      </div>
+      <div>
+        <dt>Growth</dt>
+        <dd>
+          <Percent ratio={toNum(row.total_growth)} signed colored />
+        </dd>
+      </div>
+      <div>
+        <dt>XIRR</dt>
+        <dd>
+          <Percent ratio={toNum(row.xirr)} signed colored />
+        </dd>
+      </div>
+      <div>
+        <dt>Weight</dt>
+        <dd>{formatPercent(toNum(row.weight_pct), { digits: 1 })}</dd>
+      </div>
+      <div>
+        <dt>Expense</dt>
+        <dd>{formatPercent(toNum(row.expense_ratio))}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function Subtotals({ group, ccy }: { group: HoldingGroup; ccy: string }) {
+  return (
+    <dl className="holdings-page__subtotals" aria-label={`Subtotal ${group.key}`}>
+      <div>
+        <dt>Value</dt>
+        <dd>
+          <Money amount={group.value} currency={ccy} />
+        </dd>
+      </div>
+      <div>
+        <dt>Cost basis</dt>
+        <dd>
+          <Money amount={group.cost} currency={ccy} />
+        </dd>
+      </div>
+      <div>
+        <dt>Capital gain</dt>
+        <dd>
+          <Money amount={group.gain} currency={ccy} signed colored />
+        </dd>
+      </div>
+      <div>
+        <dt>Dividends</dt>
+        <dd>
+          <Money amount={group.dividends} currency={ccy} />
+        </dd>
+      </div>
+      <div>
+        <dt>Total return</dt>
+        <dd>
+          <Money amount={group.totalReturn} currency={ccy} signed colored />
+        </dd>
+      </div>
+      <div>
+        <dt>Weight</dt>
+        <dd>{formatPercent(group.weight, { digits: 1 })}</dd>
+      </div>
+    </dl>
+  );
+}
+
+const DAY_MS = 86_400_000;
+
+/** Last two closes (previous close derived from today's move) against the average purchase price. */
+function HoldingDrawerChart({ row }: { row: HoldingRowDto }) {
+  const price = toNum(row.price_native);
+  const move = toNum(row.today_pct);
+  const avg = toNum(row.avg_price_native);
+  const at = row.price_as_of ? Date.parse(row.price_as_of) : Number.NaN;
+  const points =
+    price !== null && Number.isFinite(at)
+      ? [
+          ...(move !== null && move > -1 ? [{ t: at - DAY_MS, v: price / (1 + move) }] : []),
+          { t: at, v: price },
+        ]
+      : [];
+  return (
+    <Chart
+      series={[{ id: row.symbol, label: row.symbol, points, tone: "primary" }]}
+      referenceLine={avg !== null ? { value: avg, label: "Cost basis" } : undefined}
+      valueFormat={(v) => formatMoney(v, row.native_currency)}
+      timeFormat={(t) => formatDate(new Date(t).toISOString().slice(0, 10), "short")}
+      height={180}
+      ariaLabel={`${row.symbol} price against cost basis`}
+      emptyMessage="No price yet."
+    />
+  );
+}
+
+function HoldingDrawer({ row, ccy, onClose }: { row: HoldingRowDto | null; ccy: string; onClose: () => void }) {
+  return (
+    <Sheet open={row !== null} onOpenChange={(o) => !o && onClose()} title={row ? `${row.symbol} · ${row.name}` : ""}>
+      {row && (
+        <div className="holdings-page__drawer">
+          <p className="holdings-page__muted">
+            {row.account} · {row.category} · {row.native_currency}
+          </p>
+          <HoldingDrawerChart row={row} />
+          <HoldingDetails row={row} ccy={ccy} />
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
 function MobileRow({ row, ccy }: { row: HoldingRowDto; ccy: string }) {
   const [open, setOpen] = useState(false);
   const detailId = `holding-detail-${row.instrument_id}`;
@@ -75,60 +271,7 @@ function MobileRow({ row, ccy }: { row: HoldingRowDto; ccy: string }) {
         <ChevronDown aria-hidden size={16} className="holdings-page__chevron" />
       </button>
       {open && (
-        <dl id={detailId} className="holdings-page__detail">
-          <div>
-            <dt>Price</dt>
-            <dd>{formatMoney(toNum(row.price_native), row.native_currency)}</dd>
-          </div>
-          <div>
-            <dt>Shares</dt>
-            <dd>{formatNumber(toNum(row.shares), 4)}</dd>
-          </div>
-          <div>
-            <dt>Cost basis</dt>
-            <dd>
-              <Money amount={toNum(row.cost_basis)} currency={ccy} />
-            </dd>
-          </div>
-          <div>
-            <dt>Capital gain</dt>
-            <dd>
-              <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored />
-            </dd>
-          </div>
-          <div>
-            <dt>Dividends</dt>
-            <dd>
-              <Money amount={toNum(row.dividends)} currency={ccy} />
-            </dd>
-          </div>
-          <div>
-            <dt>Total return (incl. dividends)</dt>
-            <dd>
-              <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
-            </dd>
-          </div>
-          <div>
-            <dt>Growth</dt>
-            <dd>
-              <Percent ratio={toNum(row.total_growth)} signed colored />
-            </dd>
-          </div>
-          <div>
-            <dt>XIRR</dt>
-            <dd>
-              <Percent ratio={toNum(row.xirr)} signed colored />
-            </dd>
-          </div>
-          <div>
-            <dt>Weight</dt>
-            <dd>{formatPercent(toNum(row.weight_pct), { digits: 1 })}</dd>
-          </div>
-          <div>
-            <dt>Expense</dt>
-            <dd>{formatPercent(toNum(row.expense_ratio))}</dd>
-          </div>
-        </dl>
+        <HoldingDetails id={detailId} row={row} ccy={ccy} />
       )}
     </li>
   );
@@ -141,6 +284,8 @@ export function Holdings() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(ALL);
   const [sortKey, setSortKey] = useState<SortKey>("value");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [selected, setSelected] = useState<HoldingRowDto | null>(null);
 
   const data = query.data;
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
@@ -169,6 +314,9 @@ export function Holdings() {
     return out;
   }, [rows, sortKey]);
 
+  const groups = useMemo(() => groupHoldings(rows, groupBy), [rows, groupBy]);
+  const phoneGroups = useMemo(() => groupHoldings(phoneRows, groupBy), [phoneRows, groupBy]);
+
   const columns: Column<HoldingRowDto>[] = useMemo(
     () => [
       {
@@ -178,7 +326,14 @@ export function Holdings() {
         sortValue: (r) => r.symbol,
         cell: (r) => (
           <span className="holdings-page__symbol">
-            <strong>{r.symbol}</strong>
+            <button
+              type="button"
+              className="holdings-page__open"
+              aria-label={`Details for ${r.symbol}`}
+              onClick={() => setSelected(r)}
+            >
+              <strong>{r.symbol}</strong>
+            </button>
             <Flags row={r} />
           </span>
         ),
@@ -404,6 +559,12 @@ export function Holdings() {
           onValueChange={setCategory}
           options={[{ value: ALL, label: "All categories" }, ...categories.map((c) => ({ value: c, label: c }))]}
         />
+        <Select
+          ariaLabel="Group by"
+          value={groupBy}
+          onValueChange={(v) => setGroupBy(v as GroupBy)}
+          options={GROUP_OPTIONS}
+        />
         {isPhone && (
           <Select
             ariaLabel="Sort by"
@@ -420,13 +581,23 @@ export function Holdings() {
         ) : phoneRows.length === 0 ? (
           <EmptyState icon={<Search aria-hidden />} title="No matches" description="Try a different search or category." />
         ) : (
-          <ul className="holdings-page__list">
-            {phoneRows.map((r) => (
-              <MobileRow key={r.instrument_id} row={r} ccy={currency} />
-            ))}
-          </ul>
+          phoneGroups.map((g) => (
+            <section key={g.key} className="holdings-page__group">
+              {groupBy !== "none" && (
+                <>
+                  <h2 className="holdings-page__group-title">{g.key}</h2>
+                  <Subtotals group={g} ccy={currency} />
+                </>
+              )}
+              <ul className="holdings-page__list">
+                {g.rows.map((r) => (
+                  <MobileRow key={r.instrument_id} row={r} ccy={currency} />
+                ))}
+              </ul>
+            </section>
+          ))
         )
-      ) : (
+      ) : groupBy === "none" ? (
         <DataTable
           caption="All holdings"
           columns={columns}
@@ -436,7 +607,21 @@ export function Holdings() {
           loading={query.isPending}
           emptyMessage="No holdings match your filters."
         />
+      ) : (
+        groups.map((g) => (
+          <Card key={g.key} title={g.key} subtitle={`${g.rows.length} position${g.rows.length === 1 ? "" : "s"}`} flush>
+            <Subtotals group={g} ccy={currency} />
+            <DataTable
+              caption={`Holdings: ${g.key}`}
+              columns={columns}
+              rows={g.rows}
+              rowKey={(r) => String(r.instrument_id)}
+              defaultSort={{ key: "value", direction: "desc" }}
+            />
+          </Card>
+        ))
       )}
+      <HoldingDrawer row={selected} ccy={currency} onClose={() => setSelected(null)} />
     </div>
   );
 }
