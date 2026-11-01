@@ -53,12 +53,13 @@ def update_account(
     account_label: str | None = None,
     account_type: str | None = None,
     active: bool | None = None,
+    broker: str | None = None,
+    native_currency: str | None = None,
 ) -> Account:
     """Update mutable fields on an account. Raises ``ValueError`` if not found.
 
-    ``broker`` and ``native_currency`` are intentionally **not** mutable —
-    they are referenced by ledger rows and changing them would corrupt
-    historical data.
+    ``broker`` and ``native_currency`` are referenced by ledger rows: callers
+    must only pass them for an account without transactions (the API enforces it).
     """
     account = session.get(Account, account_id)
     if account is None:
@@ -69,5 +70,9 @@ def update_account(
         account.account_type = account_type
     if active is not None:
         account.active = active
+    if broker is not None:
+        account.broker = broker
+    if native_currency is not None:
+        account.native_currency = native_currency.upper()
     session.flush()
     return account

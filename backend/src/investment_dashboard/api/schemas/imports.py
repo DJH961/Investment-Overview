@@ -62,3 +62,11 @@ class ImportConfirmResult(ApiModel):
     errors: list[ImportIssue]
     warnings: list[ImportIssue]
     unresolved_symbols: list[str]
+
+
+class ImportBroker(ApiModel):
+    """One available importer plugin."""
+
+    id: str
+    label: str
+    file_types: list[str]

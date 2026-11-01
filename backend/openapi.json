@@ -1,6 +1,104 @@
 {
   "components": {
     "schemas": {
+      "AccountIn": {
+        "properties": {
+          "account_label": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Account Label",
+            "type": "string"
+          },
+          "account_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "brokerage",
+                  "savings",
+                  "cash"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Type"
+          },
+          "broker": {
+            "enum": [
+              "vanguard",
+              "fidelity",
+              "savings_bank"
+            ],
+            "title": "Broker",
+            "type": "string"
+          },
+          "native_currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Native Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_label",
+          "broker",
+          "native_currency"
+        ],
+        "title": "AccountIn",
+        "type": "object"
+      },
+      "AccountOut": {
+        "properties": {
+          "account_label": {
+            "title": "Account Label",
+            "type": "string"
+          },
+          "account_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Type"
+          },
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "broker": {
+            "title": "Broker",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "native_currency": {
+            "title": "Native Currency",
+            "type": "string"
+          },
+          "transaction_count": {
+            "title": "Transaction Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "account_label",
+          "broker",
+          "native_currency",
+          "account_type",
+          "active",
+          "transaction_count"
+        ],
+        "title": "AccountOut",
+        "type": "object"
+      },
       "AllocationsResponse": {
         "properties": {
           "active_target_id": {
@@ -2163,6 +2261,33 @@
         "title": "HoldingsSummary",
         "type": "object"
       },
+      "ImportBroker": {
+        "description": "One available importer plugin.",
+        "properties": {
+          "file_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Types",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "file_types"
+        ],
+        "title": "ImportBroker",
+        "type": "object"
+      },
       "ImportConfirmResult": {
         "properties": {
           "duplicates": {
@@ -2497,6 +2622,46 @@
           "is_duplicate"
         ],
         "title": "ImportPreviewRow",
+        "type": "object"
+      },
+      "InstrumentOut": {
+        "properties": {
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "native_currency": {
+            "title": "Native Currency",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "symbol",
+          "name",
+          "asset_class",
+          "native_currency"
+        ],
+        "title": "InstrumentOut",
         "type": "object"
       },
       "InvestingPower": {
@@ -5411,6 +5576,155 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/accounts": {
+      "get": {
+        "operationId": "list_accounts_api_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccountOut"
+                  },
+                  "title": "Response List Accounts Api Accounts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Accounts",
+        "tags": [
+          "accounts"
+        ]
+      },
+      "post": {
+        "operationId": "create_account_api_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Account",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/api/accounts/{account_id}": {
+      "delete": {
+        "operationId": "delete_account_api_accounts__account_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Account",
+        "tags": [
+          "accounts"
+        ]
+      },
+      "put": {
+        "operationId": "update_account_api_accounts__account_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Account",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/api/allocations": {
       "get": {
         "operationId": "get_allocations_api_allocations_get",
@@ -5954,14 +6268,14 @@
         "operationId": "download_backup_api_backup_get",
         "parameters": [
           {
-            "description": "Only the database snapshot today.",
+            "description": "'sealed': encrypted full snapshot; 'db': plain scrubbed copy.",
             "in": "query",
             "name": "kind",
             "required": false,
             "schema": {
-              "default": "db",
-              "description": "Only the database snapshot today.",
-              "pattern": "^db$",
+              "default": "sealed",
+              "description": "'sealed': encrypted full snapshot; 'db': plain scrubbed copy.",
+              "pattern": "^(db|sealed)$",
               "title": "Kind",
               "type": "string"
             }
@@ -6564,6 +6878,32 @@
         ]
       }
     },
+    "/api/imports/brokers": {
+      "get": {
+        "description": "Importer plugins the server can parse (the frontend builds its picker from this).",
+        "operationId": "list_import_brokers_api_imports_brokers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImportBroker"
+                  },
+                  "title": "Response List Import Brokers Api Imports Brokers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Import Brokers",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/api/imports/{import_id}": {
       "delete": {
         "operationId": "discard_import_api_imports__import_id__delete",
@@ -6645,6 +6985,31 @@
         "summary": "Confirm Import",
         "tags": [
           "imports"
+        ]
+      }
+    },
+    "/api/instruments": {
+      "get": {
+        "operationId": "list_instruments_api_instruments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstrumentOut"
+                  },
+                  "title": "Response List Instruments Api Instruments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Instruments",
+        "tags": [
+          "accounts"
         ]
       }
     },

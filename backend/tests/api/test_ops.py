@@ -59,7 +59,7 @@ def test_backup_is_a_consistent_snapshot_without_secrets(
     with config_session_scope() as s:
         app_config_repo.set_value(s, "theme", "dark")
         app_config_repo.set_value(s, "tiingo_token", "SECRET-VALUE")
-    resp = api_client.get("/api/backup")
+    resp = api_client.get("/api/backup", params={"kind": "db"})
     assert resp.status_code == 200
     assert "attachment" in resp.headers["content-disposition"]
     assert resp.headers["content-disposition"].endswith('.sqlite"')
@@ -77,3 +77,10 @@ def test_requires_auth(anon_client: TestClient) -> None:
     assert anon_client.post("/api/refresh").status_code == 401
     assert anon_client.get("/api/refresh/status").status_code == 401
     assert anon_client.get("/api/backup").status_code == 401
+
+
+def test_backup_defaults_to_sealed(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("INV_DASHBOARD_BACKUP_PASSPHRASE", "test-passphrase")
+    resp = api_client.get("/api/backup")
+    assert resp.status_code == 200
+    assert resp.headers["content-disposition"].endswith('.sealed.json"')

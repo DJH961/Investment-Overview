@@ -11,6 +11,7 @@ from investment_dashboard.adapters.importer_types import RowIssue
 from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.common import OkResponse
 from investment_dashboard.api.schemas.imports import (
+    ImportBroker,
     ImportConfirmResult,
     ImportCounts,
     ImportIssue,
@@ -19,6 +20,7 @@ from investment_dashboard.api.schemas.imports import (
 )
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import import_staging
+from investment_dashboard.services.importer_service import Broker
 
 router = APIRouter(tags=["imports"])
 
@@ -72,6 +74,17 @@ def _preview(staged: import_staging.StagedImport) -> ImportPreview:
         unknown_actions=list(report.unknown_actions),
         expires_at=staged.expires_at,
     )
+
+
+@router.get("/imports/brokers", response_model=list[ImportBroker])
+def list_import_brokers() -> list[ImportBroker]:
+    """Importer plugins the server can parse (the frontend builds its picker from this)."""
+    return [
+        ImportBroker(
+            id=b.value, label=b.value.title(), file_types=list(import_staging.ALLOWED_EXTENSIONS)
+        )
+        for b in Broker
+    ]
 
 
 @router.post("/imports", response_model=ImportPreview, status_code=status.HTTP_201_CREATED)

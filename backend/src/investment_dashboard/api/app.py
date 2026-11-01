@@ -47,6 +47,7 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "transactions",
     "imports",
     "settings",
+    "accounts",
     "ops",
     # B5 currency
     "fx_conversions",

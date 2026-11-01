@@ -37,6 +37,10 @@ EXPECTED_TABLES = {
     "price_cache_metadata",
     "price_split",
     "intraday_value",
+    "auth_credential",
+    "auth_passkeys",
+    "auth_sessions",
+    "fx_conversions",
 }
 
 

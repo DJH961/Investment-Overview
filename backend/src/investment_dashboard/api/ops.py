@@ -4,7 +4,7 @@
   flight: a second request while one runs gets 409) and returns 202.
 * ``GET /backup?kind=sealed`` streams the same sealed snapshot the scheduler writes
   (full database incl. passkeys, AES-GCM sealed; restore with
-  ``inv-dashboard-restore``). ``kind=db`` (default until the frontend moves over)
+  ``inv-dashboard-restore``). ``kind=db``
   streams a plain, secret-scrubbed SQLite copy.
 """
 
@@ -132,7 +132,7 @@ def _sealed_backup() -> FileResponse:
 @router.get("/backup", response_class=FileResponse)
 def download_backup(
     kind: str = Query(
-        "db",
+        "sealed",
         pattern="^(db|sealed)$",
         description="'sealed': encrypted full snapshot; 'db': plain scrubbed copy.",
     ),

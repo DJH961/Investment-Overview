@@ -325,20 +325,22 @@ then swaps it in atomically. The database it replaces is kept next to it as
 `app.sqlite.before-restore-<time>` (nothing is deleted). If anything fails it says so
 and leaves the live database untouched.
 
-Always stop the app first so nothing writes during the swap.
+One command does everything: `deploy/restore.sh` (in `~/investments` next to
+`docker-compose.yml`). It fetches the snapshots from B2 through the compose `backup`
+(rclone) service, stops the app, runs `inv-dashboard-restore`, and starts the app again
+(also when the restore fails, then with the old database). `./restore.sh --list` only
+shows the snapshots; `--yes` skips the confirmation.
 
 **Server gone (new server, empty volume)**
 
 1. Rebuild the server (see "Rebuild from scratch"), put `app.env` (with both
    passphrases) and `rclone.conf` into `~/investments`, and start the stack once:
-   `docker compose up -d`, then `docker compose stop app`.
-2. Fetch the snapshots from B2 and restore the newest:
+   `docker compose up -d`.
+2. Restore the newest snapshot:
 
    ```bash
    cd ~/investments
-   docker compose run --rm --entrypoint rclone backup copy b2:Investment-Overview/snapshots /data/backups
-   docker compose run --rm app inv-dashboard-restore --latest
-   docker compose up -d app
+   ./restore.sh
    ```
 
 3. Open the site and compare the totals with a recent screenshot or the v5 app.
@@ -347,16 +349,12 @@ Always stop the app first so nothing writes during the swap.
 
 ```bash
 cd ~/investments
-docker compose stop app
-docker compose run --rm app inv-dashboard-restore --list      # pick a time before the mistake
-docker compose run --rm app inv-dashboard-restore --snapshot snapshot-20261101-120000.sealed.json
-docker compose up -d app
+./restore.sh --list                                           # pick a time before the mistake
+./restore.sh --at snapshot-20261101-120000.sealed.json
 ```
 
-(`inv-dashboard-restore` without options lists the snapshots and asks which one; add
-`--yes` to skip the confirmation.) Anything entered after that snapshot is lost; the
-state just before the restore is still in `app.sqlite.before-restore-<time>` if you
-need to look at it.
+Anything entered after that snapshot is lost; the state just before the restore is
+still in `app.sqlite.before-restore-<time>` if you need to look at it.
 
 **If the restore refuses:** "wrong passphrase / tampered" means the backup passphrase
 differs from the one the snapshot was sealed with; "database cannot be read" means the
@@ -368,9 +366,9 @@ damaged: try the previous snapshot.
 - [ ] `docker compose logs backup | tail` clean; newest object in B2 is minutes old.
 - [ ] On a scratch machine or a second compose project: fresh volume, `app.env` and
       `rclone.conf` only from your password manager.
-- [ ] Fetch from B2, `inv-dashboard-restore --list`, then `--latest`.
+- [ ] `./restore.sh --list`, then `./restore.sh` (newest).
 - [ ] App starts, login works (passkey or password), totals match the live site.
-- [ ] Try `--snapshot` with an older file, and confirm a wrong passphrase is refused.
+- [ ] Try `./restore.sh --at <older file>`, and confirm a wrong passphrase is refused.
 - [ ] Note the date of the drill here or in your own log.
 
 ## Firewall note
