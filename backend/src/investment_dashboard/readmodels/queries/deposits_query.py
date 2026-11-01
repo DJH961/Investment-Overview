@@ -81,7 +81,7 @@ class DepositRecord:
     native_currency: str
     kind: str
     amount_native: Decimal
-    amount_eur: Decimal
+    amount_eur: Decimal | None
     amount_usd: Decimal | None
     description: str
 
@@ -161,9 +161,8 @@ def _to_record(
         native_currency=native_ccy,
         kind=t.kind,
         amount_native=t.net_native or ZERO,
-        # The response schema keeps ``amount_eur`` non-null; an underivable EUR leg
-        # is shown as 0.00 (only possible for non-EUR/USD rows without a frozen leg).
-        amount_eur=amount_eur if amount_eur is not None else ZERO,
+        # ``None`` when the EUR leg is underivable (never a fake 0.00).
+        amount_eur=amount_eur,
         amount_usd=amount_usd,
         description=t.description or "",
     )
@@ -177,7 +176,7 @@ def _format_record(r: DepositRecord) -> dict[str, Any]:
         "kind": r.kind,
         "amount_native": f"{r.amount_native:,.2f}",
         "currency": r.native_currency,
-        "amount_eur": f"€{r.amount_eur:,.2f}",
+        "amount_eur": f"€{r.amount_eur:,.2f}" if r.amount_eur is not None else "",
         "amount_usd": (f"${r.amount_usd:,.2f}" if r.amount_usd is not None else ""),
         # AG-Grid tooltip field — preserves the native amount as the
         # third currency without burning a column (v2.5).

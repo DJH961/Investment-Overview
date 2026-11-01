@@ -242,6 +242,7 @@
                 "type": "null"
               }
             ],
+            "description": "fraction, 0.01 = 1%",
             "title": "Cagr"
           },
           "calmar": {
@@ -289,6 +290,7 @@
                 "type": "null"
               }
             ],
+            "description": "fraction, 0.01 = 1%",
             "title": "Cvar 95"
           },
           "kurtosis": {
@@ -313,6 +315,7 @@
                 "type": "null"
               }
             ],
+            "description": "fraction, 0.01 = 1%",
             "title": "Max Drawdown"
           },
           "risk_free_rate": {
@@ -325,6 +328,7 @@
                 "type": "null"
               }
             ],
+            "description": "fraction, 0.01 = 1%",
             "title": "Risk Free Rate"
           },
           "risk_free_symbol": {
@@ -381,6 +385,7 @@
                 "type": "null"
               }
             ],
+            "description": "fraction, 0.01 = 1%",
             "title": "Twr"
           },
           "ulcer": {
@@ -405,6 +410,7 @@
                 "type": "null"
               }
             ],
+            "description": "fraction, 0.01 = 1%",
             "title": "Var 95"
           },
           "volatility": {
@@ -417,6 +423,7 @@
                 "type": "null"
               }
             ],
+            "description": "fraction, 0.01 = 1%",
             "title": "Volatility"
           },
           "xirr": {
@@ -429,6 +436,7 @@
                 "type": "null"
               }
             ],
+            "description": "fraction, 0.01 = 1%",
             "title": "Xirr"
           }
         },
@@ -516,6 +524,7 @@
                 "type": "null"
               }
             ],
+            "description": "Share of total return (fraction, 0.01 = 1%)",
             "title": "Pct Of Total Return"
           },
           "start_value": {
@@ -590,6 +599,7 @@
             "type": "string"
           },
           "pct": {
+            "description": "Share of total value (fraction, 0.01 = 1%)",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Pct",
             "type": "string"
@@ -626,6 +636,7 @@
                 "type": "null"
               }
             ],
+            "description": "Share of total value (fraction, 0.01 = 1%)",
             "title": "Current Pct"
           },
           "current_value": {
@@ -677,6 +688,7 @@
                 "type": "null"
               }
             ],
+            "description": "Share of total value (fraction, 0.01 = 1%)",
             "title": "Current Pct"
           },
           "current_value": {
@@ -904,6 +916,7 @@
                 "type": "null"
               }
             ],
+            "description": "Current rate vs average invest rate (fraction, 0.01 = 1%)",
             "title": "Rate Change Pct"
           },
           "repatriation_value_eur": {
@@ -966,6 +979,7 @@
                 "type": "null"
               }
             ],
+            "description": "EUR/USD move vs previous close (fraction, 0.01 = 1%)",
             "title": "Rate Move Pct"
           },
           "regime": {
@@ -1166,6 +1180,7 @@
                 "type": "null"
               }
             ],
+            "description": "Amount in the requested ccy at the transaction date; null when underivable",
             "title": "Amount"
           },
           "amount_native": {
@@ -1402,6 +1417,7 @@
             "type": "string"
           },
           "current_pct": {
+            "description": "Current weight (fraction, 0.01 = 1%)",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Current Pct",
             "type": "string"
@@ -1431,6 +1447,7 @@
             "title": "Delta Value"
           },
           "drift_pp": {
+            "description": "current - target in percentage points (1.5 = 1.5 pp); positive = over",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Drift Pp",
             "type": "string"
@@ -1448,6 +1465,7 @@
             "type": "string"
           },
           "target_pct": {
+            "description": "Target weight (fraction, 0.01 = 1%)",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Target Pct",
             "type": "string"
@@ -1868,6 +1886,7 @@
                 "type": "null"
               }
             ],
+            "description": "value - cost_basis (unrealised, excludes dividends)",
             "title": "Capital Gain"
           },
           "category": {
@@ -1901,6 +1920,19 @@
             "title": "Daily Is Stale",
             "type": "boolean"
           },
+          "dividends": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cash dividends received",
+            "title": "Dividends"
+          },
           "expense_ratio": {
             "anyOf": [
               {
@@ -1911,6 +1943,7 @@
                 "type": "null"
               }
             ],
+            "description": "Annual fee (fraction, 0.01 = 1%)",
             "title": "Expense Ratio"
           },
           "instrument_id": {
@@ -1935,6 +1968,7 @@
                 "type": "null"
               }
             ],
+            "description": "Month to date (fraction, 0.01 = 1%)",
             "title": "Mtd Growth"
           },
           "name": {
@@ -2007,6 +2041,7 @@
                 "type": "null"
               }
             ],
+            "description": "Latest daily move (fraction, 0.01 = 1%)",
             "title": "Today Pct"
           },
           "total_growth": {
@@ -2019,7 +2054,21 @@
                 "type": "null"
               }
             ],
+            "description": "Compounded return since first purchase (fraction, 0.01 = 1%)",
             "title": "Total Growth"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "capital_gain + dividends (same basis as the overview)",
+            "title": "Total Return"
           },
           "updated_at": {
             "anyOf": [
@@ -2058,6 +2107,7 @@
                 "type": "null"
               }
             ],
+            "description": "Share of portfolio value (fraction, 0.01 = 1%)",
             "title": "Weight Pct"
           },
           "xirr": {
@@ -2070,6 +2120,7 @@
                 "type": "null"
               }
             ],
+            "description": "Annualised return (fraction, 0.01 = 1%)",
             "title": "Xirr"
           },
           "ytd_growth": {
@@ -2082,6 +2133,7 @@
                 "type": "null"
               }
             ],
+            "description": "Year to date (fraction, 0.01 = 1%)",
             "title": "Ytd Growth"
           }
         },
@@ -2150,7 +2202,47 @@
                 "type": "null"
               }
             ],
+            "description": "Sum of value - cost_basis over holdings",
             "title": "Total Capital Gain"
+          },
+          "total_cost_basis": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sum of cost bases",
+            "title": "Total Cost Basis"
+          },
+          "total_dividends": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sum of dividends",
+            "title": "Total Dividends"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "total_capital_gain + total_dividends. Differs from the overview total_return by cash not invested in positions and gains realised on closed positions.",
+            "title": "Total Return"
           },
           "total_value": {
             "anyOf": [
@@ -2186,6 +2278,7 @@
                 "type": "null"
               }
             ],
+            "description": "total_growth of the best holding (fraction, 0.01 = 1%)",
             "title": "Best Growth"
           },
           "best_symbol": {
@@ -2200,10 +2293,22 @@
             "title": "Best Symbol"
           },
           "gainers": {
+            "description": "Holdings up today (daily money move > 0)",
             "title": "Gainers",
             "type": "integer"
           },
+          "in_loss": {
+            "description": "Holdings with capital_gain < 0 (total, not today)",
+            "title": "In Loss",
+            "type": "integer"
+          },
+          "in_profit": {
+            "description": "Holdings with capital_gain > 0 (total, not today)",
+            "title": "In Profit",
+            "type": "integer"
+          },
           "losers": {
+            "description": "Holdings down today (daily money move < 0)",
             "title": "Losers",
             "type": "integer"
           },
@@ -2228,6 +2333,7 @@
                 "type": "null"
               }
             ],
+            "description": "Largest weight (fraction, 0.01 = 1%)",
             "title": "Most Concentrated Weight Pct"
           },
           "worst_growth": {
@@ -2240,6 +2346,7 @@
                 "type": "null"
               }
             ],
+            "description": "total_growth of the worst holding (fraction, 0.01 = 1%)",
             "title": "Worst Growth"
           },
           "worst_symbol": {
@@ -2256,7 +2363,9 @@
         },
         "required": [
           "gainers",
-          "losers"
+          "losers",
+          "in_profit",
+          "in_loss"
         ],
         "title": "HoldingsSummary",
         "type": "object"
@@ -2755,6 +2864,7 @@
                 "type": "null"
               }
             ],
+            "description": "Benchmark compounded return (fraction, 0.01 = 1%)",
             "title": "Benchmark Return"
           },
           "benchmark_symbol": {
@@ -2771,6 +2881,7 @@
                 "type": "null"
               }
             ],
+            "description": "Portfolio compounded return (fraction, 0.01 = 1%)",
             "title": "Portfolio Return"
           }
         },
@@ -2832,6 +2943,7 @@
                 "type": "null"
               }
             ],
+            "description": "Move vs previous close in the reporting currency (fraction, 0.01 = 1%)",
             "title": "Pct"
           },
           "reason": {
@@ -2938,6 +3050,7 @@
                 "type": "null"
               }
             ],
+            "description": "total_value - total_invested (excludes dividends)",
             "title": "Capital Gain"
           },
           "daily_growth_as_of": {
@@ -2961,6 +3074,7 @@
                 "type": "null"
               }
             ],
+            "description": "Latest daily move (fraction, 0.01 = 1%)",
             "title": "Daily Growth Pct"
           },
           "daily_move": {
@@ -2997,6 +3111,7 @@
                 "type": "null"
               }
             ],
+            "description": "Dividend yield on income to date (fraction, 0.01 = 1%)",
             "title": "Dividend Yield Pct"
           },
           "dividend_yield_ttm_pct": {
@@ -3009,6 +3124,7 @@
                 "type": "null"
               }
             ],
+            "description": "Trailing-12-month dividend yield (fraction, 0.01 = 1%)",
             "title": "Dividend Yield Ttm Pct"
           },
           "dividends_ttm": {
@@ -3033,6 +3149,7 @@
                 "type": "null"
               }
             ],
+            "description": "Month-to-date growth (fraction, 0.01 = 1%)",
             "title": "Mtd Growth"
           },
           "total_growth_compounded": {
@@ -3045,6 +3162,7 @@
                 "type": "null"
               }
             ],
+            "description": "(1 + XIRR)^years - 1 (fraction, 0.01 = 1%)",
             "title": "Total Growth Compounded"
           },
           "total_invested": {
@@ -3058,6 +3176,19 @@
               }
             ],
             "title": "Total Invested"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "capital_gain + realized cash dividends",
+            "title": "Total Return"
           },
           "total_value": {
             "anyOf": [
@@ -3081,6 +3212,7 @@
                 "type": "null"
               }
             ],
+            "description": "Weighted expense ratio (fraction, 0.01 = 1%)",
             "title": "Weighted Expense Ratio"
           },
           "xirr": {
@@ -3093,6 +3225,7 @@
                 "type": "null"
               }
             ],
+            "description": "Money-weighted annualised return (fraction, 0.01 = 1%)",
             "title": "Xirr"
           },
           "ytd_growth": {
@@ -3105,6 +3238,7 @@
                 "type": "null"
               }
             ],
+            "description": "Year-to-date growth (fraction, 0.01 = 1%)",
             "title": "Ytd Growth"
           },
           "ytd_xirr": {
@@ -3117,6 +3251,7 @@
                 "type": "null"
               }
             ],
+            "description": "Year-to-date XIRR (fraction, 0.01 = 1%)",
             "title": "Ytd Xirr"
           }
         },
@@ -3331,6 +3466,7 @@
                 "type": "null"
               }
             ],
+            "description": "Period growth (fraction, 0.01 = 1%)",
             "title": "Growth Pct"
           },
           "interest": {
@@ -3387,6 +3523,7 @@
                 "type": "null"
               }
             ],
+            "description": "Period XIRR (fraction, 0.01 = 1%)",
             "title": "Period Growth Xirr"
           },
           "total_growth_compounded": {
@@ -3399,6 +3536,7 @@
                 "type": "null"
               }
             ],
+            "description": "Cumulative compounded growth (fraction, 0.01 = 1%)",
             "title": "Total Growth Compounded"
           }
         },
@@ -3513,6 +3651,7 @@
             "type": "string"
           },
           "target_pct": {
+            "description": "Target weight (fraction, 0.01 = 1%)",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Target Pct",
             "type": "string"
@@ -4044,7 +4183,7 @@
         "type": "object"
       },
       "ProjectionRequest": {
-        "description": "What-if assumptions. Percent inputs are percent (``7`` = 7 %); ``None`` = use the default.",
+        "description": "What-if assumptions. ``*_pct`` inputs are fractions (``0.07`` = 7 %); ``band_pp`` is percentage points\n(``3`` = 3 pp); ``None`` = use the default.",
         "properties": {
           "band_pp": {
             "anyOf": [
@@ -4080,8 +4219,8 @@
           "expected_return_pct": {
             "anyOf": [
               {
-                "maximum": 100.0,
-                "minimum": -99.0,
+                "maximum": 1.0,
+                "minimum": -0.99,
                 "type": "number"
               },
               {
@@ -4110,8 +4249,8 @@
           "inflation_pct": {
             "anyOf": [
               {
-                "maximum": 100.0,
-                "minimum": -50.0,
+                "maximum": 1.0,
+                "minimum": -0.5,
                 "type": "number"
               },
               {
@@ -4119,7 +4258,7 @@
                 "type": "string"
               }
             ],
-            "default": "2",
+            "default": "0.02",
             "title": "Inflation Pct"
           },
           "monthly": {
@@ -4135,7 +4274,7 @@
           "step_up_pct": {
             "anyOf": [
               {
-                "maximum": 100.0,
+                "maximum": 1.0,
                 "minimum": 0.0,
                 "type": "number"
               },
@@ -4519,6 +4658,7 @@
                 "type": "null"
               }
             ],
+            "description": "EUR return minus USD return, in percentage points",
             "title": "Currency Effect Pp"
           },
           "investment_return": {
@@ -4531,6 +4671,7 @@
                 "type": "null"
               }
             ],
+            "description": "Investment return in the USD wallet (fraction, 0.01 = 1%)",
             "title": "Investment Return"
           },
           "total_return_eur": {
@@ -4543,6 +4684,7 @@
                 "type": "null"
               }
             ],
+            "description": "Compounded EUR return (fraction, 0.01 = 1%)",
             "title": "Total Return Eur"
           }
         },
@@ -4942,7 +5084,7 @@
         "type": "object"
       },
       "TargetIn": {
-        "description": "Create (no ``id``) or replace (with ``id``) a saved target; weights are normalised to 100.",
+        "description": "Create (no ``id``) or replace (with ``id``) a saved target; weights are normalised.",
         "properties": {
           "active": {
             "default": false,
@@ -5017,6 +5159,7 @@
             "type": "string"
           },
           "weight_pct": {
+            "description": "Target weight (fraction, 0.01 = 1%)",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Weight Pct",
             "type": "string"
@@ -5042,6 +5185,7 @@
             "type": "boolean"
           },
           "weight_pct": {
+            "description": "Relative weight; all weights are normalised (fractions or percent both work)",
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Weight Pct",
             "type": "string"

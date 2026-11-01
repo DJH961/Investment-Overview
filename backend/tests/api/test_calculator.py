@@ -30,7 +30,7 @@ def test_projection_hand_checked(api_client: TestClient) -> None:
         "/api/calculator?ccy=EUR",
         json={
             "monthly": False,
-            "expected_return_pct": "10",
+            "expected_return_pct": "0.10",
             "band_pp": "0",
             "inflation_pct": "0",
             "contribution": "100",

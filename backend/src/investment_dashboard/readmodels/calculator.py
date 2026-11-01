@@ -101,7 +101,7 @@ def build_inputs(
                 "name": i.name,
                 "category": i.category,
                 "current_value": _val(i.current_value_eur),
-                "current_pct": dec(i.current_pct),
+                "current_pct": dec(i.current_pct / Decimal(100)),
             }
             for i in data.instruments
         ],
@@ -109,7 +109,7 @@ def build_inputs(
             {
                 "name": c.name,
                 "current_value": _val(c.current_value_eur),
-                "current_pct": dec(c.current_pct),
+                "current_pct": dec(c.current_pct / Decimal(100)),
                 "members": [m.instrument_id for m in c.members],
             }
             for c in data.categories

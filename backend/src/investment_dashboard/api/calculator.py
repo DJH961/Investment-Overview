@@ -34,10 +34,10 @@ def post_projection(
     return projection_rm.project(
         seed,
         ccy=ccy,
-        expected_rate=None if body.expected_return_pct is None else body.expected_return_pct / _PCT,
+        expected_rate=None if body.expected_return_pct is None else body.expected_return_pct,
         band=body.band_pp / _PCT,
-        stepup=body.step_up_pct / _PCT,
-        inflation=body.inflation_pct / _PCT,
+        stepup=body.step_up_pct,
+        inflation=body.inflation_pct,
         horizon=body.horizon,
         contribution=body.contribution,
         target=body.target,

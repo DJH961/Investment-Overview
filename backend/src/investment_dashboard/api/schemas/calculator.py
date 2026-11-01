@@ -26,13 +26,13 @@ class CalcInstrumentOut(ApiModel):
     name: str
     category: str
     current_value: DecStr | None
-    current_pct: DecStr | None = Field(description="Share of total value, PERCENT 0-100")
+    current_pct: DecStr | None = Field(description="Share of total value (fraction, 0.01 = 1%)")
 
 
 class CalcCategoryOut(ApiModel):
     name: str
     current_value: DecStr | None
-    current_pct: DecStr | None = Field(description="Share of total value, PERCENT 0-100")
+    current_pct: DecStr | None = Field(description="Share of total value (fraction, 0.01 = 1%)")
     members: list[int]
 
 
@@ -52,13 +52,14 @@ class CalculatorInputsOut(ApiModel):
 
 
 class ProjectionRequest(ApiModel):
-    """What-if assumptions. Percent inputs are percent (``7`` = 7 %); ``None`` = use the default."""
+    """What-if assumptions. ``*_pct`` inputs are fractions (``0.07`` = 7 %); ``band_pp`` is percentage points
+    (``3`` = 3 pp); ``None`` = use the default."""
 
     monthly: bool = False
-    expected_return_pct: Decimal | None = Field(default=None, ge=-99, le=100)
+    expected_return_pct: Decimal | None = Field(default=None, ge=-0.99, le=1)
     band_pp: Decimal = Field(default=Decimal(3), ge=0, le=100)
-    step_up_pct: Decimal = Field(default=Decimal(0), ge=0, le=100)
-    inflation_pct: Decimal = Field(default=Decimal(2), ge=-50, le=100)
+    step_up_pct: Decimal = Field(default=Decimal(0), ge=0, le=1)
+    inflation_pct: Decimal = Field(default=Decimal("0.02"), ge=-0.5, le=1)
     contribution: Decimal | None = Field(default=None, ge=0)
     target: Decimal = Field(default=Decimal(0), ge=0)
     horizon: int | None = Field(default=None, ge=0, le=600)
