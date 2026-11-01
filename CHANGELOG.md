@@ -18,6 +18,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Activity logs per subject in `/data/logs/activity/` (auth incl. failed logins, market data polling and scheduler jobs, imports, manual changes, backups, system), rotated daily and kept 90 days. See RUNBOOK "Activity logs".
 
 - **Phone access to Claude on the server (no app change).** `deploy/bootstrap.sh` installs an always-on `claude-remote` user service for `dev` (`claude remote-control` in its own tmux, restarted after crashes and reboots) and no longer overwrites `dev`'s SSH keys on re-run, so a phone key survives. The runbook covers switching the service on and setting up SSH from the phone.
 

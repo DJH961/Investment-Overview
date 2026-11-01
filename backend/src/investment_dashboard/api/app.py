@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from investment_dashboard import __version__
+from investment_dashboard.api.activity import log_request_activity
 from investment_dashboard.api.deps import require_auth
 from investment_dashboard.config import get_settings
 from investment_dashboard.errors import DomainError
@@ -126,6 +127,8 @@ def create_app(*, lifespan: bool = True) -> FastAPI:
         if request.url.path.startswith(API_PREFIX):
             response.headers.setdefault("Cache-Control", "no-store")
         return response
+
+    app.middleware("http")(log_request_activity)
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:

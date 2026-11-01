@@ -119,6 +119,11 @@ def configure_logging() -> None:
 
     root.setLevel(settings.log_level)
 
+    # Per-subject activity files (auth, market data, imports, ...), kept 90 days.
+    from investment_dashboard.activity_log import configure_activity_logs  # noqa: PLC0415
+
+    configure_activity_logs(settings.resolved_log_dir)
+
     if file_handler is not None:
         logging.getLogger(__name__).info("Logging to %s", settings.log_file_path)
     else:

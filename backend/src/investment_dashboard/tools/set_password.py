@@ -47,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     except auth_service.WeakPasswordError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    from investment_dashboard.activity_log import activity, configure_activity_logs  # noqa: PLC0415
+
+    configure_activity_logs(settings.resolved_log_dir)
+    activity("auth").info("password set from the command line; all sessions signed out")
     print("Password updated; all sessions were signed out.")
     return 0
 

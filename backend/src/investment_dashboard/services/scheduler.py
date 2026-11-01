@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from investment_dashboard.activity_log import activity
 from investment_dashboard.domain import market_hours
 from investment_dashboard.services import live_bus
 
@@ -190,13 +192,18 @@ class Scheduler:
         try:
             failed = False
             extra: dict[str, Any] | None = None
+            started = time.perf_counter()
+            subject = activity("backups" if name == "backup" else "market_data")
             try:
                 extra = await asyncio.to_thread(getattr(self.jobs, name))
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.warning("scheduler job %s failed", name, exc_info=True)
+                subject.warning("job %s FAILED after %.1fs", name, time.perf_counter() - started)
                 failed = True
+            else:
+                subject.info("job %s done in %.1fs", name, time.perf_counter() - started)
             # Mark done even on failure so a broken job retries at its normal
             # cadence instead of spinning every poll.
             if name == "tick":

@@ -110,6 +110,32 @@ project's full test suite or builds there competes with the live app; prefer CI 
 heavy work. Remove access at any time with `sudo deluser --remove-home dev` (as
 `daniel`), or skip the user on a rebuild with `DEV_USER= bash bootstrap.sh`.
 
+## Activity logs
+
+The app keeps one log per subject in the data volume, `/data/logs/activity/`:
+
+| File | What is in it |
+| --- | --- |
+| `auth.log` | logins (password/passkey), **failed logins**, logouts, passkey and password changes |
+| `market_data.log` | price, FX and benchmark polling, provider fallbacks, every scheduler job |
+| `imports.log` | broker file uploads, import confirms/discards |
+| `changes.log` | manual edits: transactions, accounts, deposits, settings |
+| `backups.log` | sealed snapshots, backup downloads, restores |
+| `system.log` | startup, shutdown, migrations, watchdog warnings |
+
+Each line has the time (UTC), what happened, the HTTP status, the client IP and the
+browser; never passwords, request bodies or cookies. Files rotate at midnight and are
+kept **90 days**, then deleted automatically. Everything also stays in the general
+`/data/logs/dashboard.log`.
+
+Read one (on the server):
+
+```bash
+cd /opt/investments && docker compose exec app tail -n 50 /data/logs/activity/auth.log
+```
+
+Failed logins only: `docker compose exec app grep FAILED /data/logs/activity/auth.log`.
+
 ## Restart
 
 - **Normal restart:** `ssh daniel@hetzner-djh-v1 'sudo reboot'`, or **Power → Reboot**
