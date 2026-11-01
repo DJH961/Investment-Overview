@@ -6641,7 +6641,7 @@
     },
     "/api/diagnostics/support-bundle": {
       "get": {
-        "description": "Plain-text support bundle (secrets redacted) as a download.",
+        "description": "Plain-text support bundle (secrets redacted, no raw log) as a download.",
         "operationId": "get_support_bundle_api_diagnostics_support_bundle_get",
         "responses": {
           "200": {

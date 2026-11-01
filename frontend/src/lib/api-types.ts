@@ -323,7 +323,7 @@ export interface paths {
         };
         /**
          * Get Support Bundle
-         * @description Plain-text support bundle (secrets redacted) as a download.
+         * @description Plain-text support bundle (secrets redacted, no raw log) as a download.
          */
         get: operations["get_support_bundle_api_diagnostics_support_bundle_get"];
         put?: never;
