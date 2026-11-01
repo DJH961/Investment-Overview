@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
 
-# Minimal token scope; both jobs only need to read the checked-out code.
+# Minimal token scope; the jobs only need to read the checked-out code.
 permissions:
   contents: read
 
@@ -68,6 +68,105 @@ jobs:
       - name: Build
         working-directory: web
         run: npm run build
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npm run test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: OpenAPI drift guard (backend/openapi.json)
+        working-directory: backend
+        run: |
+          uv sync --extra dev
+          uv run python -m investment_dashboard.tools.export_openapi /tmp/o.json
+          diff -u openapi.json /tmp/o.json
+
+      - name: API types drift guard (src/lib/api-types.ts)
+        working-directory: frontend
+        run: |
+          npm run gen:api
+          git diff --exit-code -- src/lib/api-types.ts
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --extra dev
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright smoke test
+        working-directory: frontend
+        run: |
+          export E2E_PASSWORD="$(openssl rand -hex 16)"
+          npx playwright test
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: frontend/test-results
+          if-no-files-found: ignore
 
   image:
     runs-on: ubuntu-latest

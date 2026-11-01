@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router";
 import { AppShell } from "./components/AppShell";
+import { Tour } from "./components/Tour";
 import { setUnauthorizedHandler } from "./lib/api";
 import { Activity } from "./pages/Activity";
 import { Allocations } from "./pages/Allocations";
@@ -27,6 +28,8 @@ export function App() {
   }, [navigate]);
 
   return (
+    <>
+      <Tour />
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route element={<RequireAuth />}>
@@ -51,5 +54,6 @@ export function App() {
       </Route>
       </Route>
     </Routes>
+    </>
   );
 }

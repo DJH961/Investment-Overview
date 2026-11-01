@@ -1,0 +1,53 @@
+.tour {
+  &__overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    background: var(--color-overlay);
+  }
+
+  &__card {
+    z-index: var(--z-dialog);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: calc(100vw - var(--space-6));
+    max-width: var(--dialog-width);
+    padding: var(--space-5);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+
+    &--centred {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+  }
+
+  &__title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__progress {
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__body {
+    font-size: var(--font-size-sm);
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+
+  &__arrow {
+    fill: var(--color-surface);
+  }
+}
