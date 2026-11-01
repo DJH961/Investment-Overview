@@ -24,6 +24,11 @@ class PositionSnapshot(Base):
 
     snapshot_date: Mapped[date] = mapped_column(Date, primary_key=True)
     total_value_eur: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    # Native USD total + the EUR->USD rate (USD per EUR) at that instant. EUR is
+    # derived as ``total_value_usd / fx_eur_usd``; ``total_value_eur`` stays
+    # filled for one release. NULL on rows written before migration 0017.
+    total_value_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    fx_eur_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
