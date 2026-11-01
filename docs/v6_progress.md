@@ -72,10 +72,10 @@ wired into XIRR); B6 runtime/scheduler/SSE. D1/D2 wait for the backup decision
 
 ### D3 — backups + restore (after W1; owner decision 2026-11-01: option A)
 SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher files).
-- [ ] `services/backup_service.py`: consistent snapshot (SQLite backup API) → `blob_crypto`-sealed file in `/data/backups/`; triggered by the scheduler within ~2 min after any ledger/config write (dirty flag via SQLAlchemy commit hook) + nightly; keep N hourly/daily/monthly locally
-- [ ] compose sidecar `backup` (rclone) syncs `/data/backups` → B2 (append-only; B2 lifecycle keeps old versions)
-- [ ] `inv-dashboard-restore`: fetch latest (or a chosen) snapshot, unseal, verify integrity + row counts, swap into `/data/app.sqlite` atomically with the old file kept aside; a one-command runbook path for "server gone" and "bad import"
-- [ ] CI restore test: seal → restore → identical row counts/checksums; runbook "Restore" section + drill checklist
+- [x] `services/backup_service.py`: consistent snapshot (SQLite backup API) → `blob_crypto`-sealed file in `/data/backups/`; triggered by the scheduler within ~2 min after any ledger/config write (dirty flag via SQLAlchemy commit hook) + nightly; keep N hourly/daily/monthly locally
+- [x] compose sidecar `backup` (rclone) syncs `/data/backups` → B2 (append-only; B2 lifecycle keeps old versions)
+- [x] `inv-dashboard-restore`: fetch latest (or a chosen) snapshot, unseal, verify integrity + row counts, swap into `/data/app.sqlite` atomically with the old file kept aside; a one-command runbook path for "server gone" and "bad import"
+- [x] CI restore test: seal → restore → identical row counts/checksums; runbook "Restore" section + drill checklist
 - [ ] Settings "Download backup" uses the same sealed snapshot
 
 ### W1 gate — security review
@@ -83,15 +83,15 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 
 ### W1.5 — backend unification (owner request 2026-11-01)
 - [ ] audit → `docs/v6_scoping/backend_unification.md` (duplicate currency logic, `date.today()` vs ET clock, Decimal/float, layering, tiers, duplicate helpers, naming)
-- [ ] B5b one canonical EUR/USD cashflow builder with the FX-pool override map, used by metrics, periods, deposits, analytics, benchmark
+- [x] B5b one canonical EUR/USD cashflow builder with the FX-pool override map, used by metrics, periods, deposits, analytics, benchmark
 - [ ] U-tasks from the audit (non-overlapping OWN lists, ≤ 4 per wave)
 
 ### W2 — frontend pages on generated types (parallel)
 - [x] G0 orchestrator: export `openapi.json`, `npm run gen:api`, write `lib/queries.ts` hooks for every endpoint
-- [ ] P1 Overview (KPIs, currency-effect split, chart, allocation, movers) + Holdings
+- [x] P1 Overview (KPIs, currency-effect split, chart, allocation, movers) + Holdings
 - [ ] P2 Periods + Activity + Risk + Projection/Calculator
 - [ ] P3 Transactions (list + add/edit) + Import (upload → preview → confirm)
-- [ ] P4 Currency conversions + Allocations/rebalance + Settings (incl. passkeys, backup) + Diagnostics + Onboarding
+- [x] P4 Currency conversions + Allocations/rebalance + Settings (incl. passkeys, backup) + Diagnostics + Onboarding
 
 ### W3 — integration
 - [ ] full gate green, CI `frontend` job, Playwright smoke (login → overview → import), CHANGELOG, plan status line, PR
@@ -115,3 +115,7 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - RESUME (2026-11-01): running at cutoff risk: B1, B2, B3, B6 (backend W1), security reviewer. Done: B4, B5a, D1 (ebeed49), D2. Next: on B1–B3/B6 finish → wave gate (ruff, mypy, `pytest tests/api tests/readmodels tests/services tests/ui -q`), fix deploy.yml (root Dockerfile, port 8000), `name: CI`, apply reviewer findings, then D3, W1.5 (R0–R5 per backend_unification.md), G0 + P1–P4, W3. Keep briefs short (owner asked for token economy).
 - 2026-11-01 W1 complete + gate green (1549 passed). Review fixes in be29a57. OpenAPI (35 paths) + api-types generated; RequireAuth wired. W2 started: P1–P4 + D3 (each owns `lib/queries/<area>.ts`).
 - Follow-ups noted by workers: benchmark_service EUR-only (USD benchmark null) → R2; allocations PUT replaces id (repo lacks update) → R4; SSE auth slides idle timeout (needs non-sliding check) → small fix; EOD `_warm_snapshots` uses date.today() → R3; period USD columns null without FX history; `compute_instrument_metrics` wrong for multi-account instruments (merged upstream in holdings.merge_positions_by_instrument) → R6.
+- P4 done (29a0a8c). Gaps → W3: shared Tour component (reads localStorage iv.tour.replay), accounts/instruments endpoints + Settings UI, onboarding state endpoint.
+- D3 done (70dffb6). W3: `deploy/restore.sh` one-command fetch+restore wrapper; make GET /api/backup default kind=sealed (+test_ops, Settings link). Owner: rclone.conf, INV_DASHBOARD_BACKUP_PASSPHRASE, store secrets offline, B2 keep-all-versions, restore drill.
+- P1 done (f847a96). R5 must fix *_pct units (fraction everywhere, documented in schema descriptions) then a frontend sweep (P1 divides weight_pct/Bucket.pct by 100; P4 assumes percent). Polish: Holdings group-by + row drawer, styled return-split, Chart reference-line prop.
+- R0 done (f659a18 + moves in f847a96). R2/B5b done (8273ada): services/cashflows.py canonical; missing FX → None. R5 todo: DepositRecord.amount_eur nullable (now 0.00 when underivable); overview_query market verdict pass currency=USD to benchmark xirr. R1+R3 running.
