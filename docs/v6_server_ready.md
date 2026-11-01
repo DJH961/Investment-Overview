@@ -11,7 +11,7 @@ and add a log line as steps land. Earlier history: [`v6_progress.md`](v6_progres
 ## Status
 
 - [ ] Wave A: parity tool, rollback kit, deploy kit, missing plan pieces
-- [ ] Parity baseline on a copy of the real ledger (owner reviews the differences)
+- [x] Parity baseline on a copy of the real ledger (owner reviews the differences)
 - [ ] Wave B: currency storage switch, Holdings polish
 - [ ] Wave C: layering and naming cleanup
 - [ ] Wave D: one ledger walk, parity rerun (owner reviews again)
@@ -230,3 +230,4 @@ Same as the baseline. The only allowed differences are the ones explained earlie
 
 ## Log
 - 2026-11-01 plan written; branch created.
+- 2026-11-01 A1+A2 done (c37f774). Parity baseline (as of 2026-10-30, `main` vs v5.3.1, 18 instruments, 43 months): 2 differences, both the known v5 Analytics-USD bug (USD analytics XIRR and TWR); everything else identical. B1 part 1 (cashflows, migration 0017 `f4c8d6e0a3b2`) in 1e48559; writers/readers in progress.
