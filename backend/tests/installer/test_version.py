@@ -190,3 +190,8 @@ def test_resolve_latest_release_falls_back_on_url_error(monkeypatch) -> None:
     monkeypatch.setattr(version_module, "urlopen", _fake_urlopen)
     tag, _ = version_module.resolve_latest_release(timeout=1.0)
     assert tag == "v2.1.3"
+
+
+def test_tarball_url_points_pip_at_backend_after_restructure() -> None:
+    assert tarball_url("v5.3.1").endswith(".tar.gz")
+    assert tarball_url("v5.4.0").endswith("v5.4.0.tar.gz#subdirectory=backend")
