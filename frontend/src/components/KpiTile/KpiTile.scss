@@ -8,6 +8,9 @@
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
+  // The value is sized from the tile's own width so long figures never spill
+  // into the next tile; KpiTile.tsx shrinks it further via --kpi-tile-fit.
+  container-type: inline-size;
 
   &__label {
     color: var(--color-muted);
@@ -16,7 +19,10 @@
   }
 
   &__value {
-    font-size: var(--font-size-2xl);
+    min-width: 0;
+    max-width: 100%;
+    font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-2xl)) * var(--kpi-tile-fit, 1));
+    white-space: nowrap;
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.02em;
     line-height: var(--line-height-tight);

@@ -76,8 +76,22 @@
     text-align: center;
   }
 
-  // Phone: each row becomes a list item; the primary column is the title and
-  // other cells show "label ... value" pairs.
+  // The inline label only shows on phones (the header row does it on wider screens).
+  &__label {
+    display: none;
+  }
+
+  &__value {
+    min-width: 0;
+
+    &--nowrap {
+      white-space: nowrap;
+    }
+  }
+
+  // Phone: each row becomes a list item. The primary column is the title on top;
+  // every other cell is its own "label ........ value" line. Columns marked
+  // `phone: "hide"` are dropped.
   @include m.phone {
     overflow-x: visible;
 
@@ -91,32 +105,54 @@
     }
 
     &__row {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: var(--space-1) var(--space-3);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
       padding: var(--space-3) var(--space-4);
       border-bottom: var(--border-width) solid var(--color-border);
     }
 
+    &__th--phone-hidden,
+    &__td--phone-hidden {
+      display: none;
+    }
+
     &__td {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0 var(--space-3);
+      min-width: 0;
       padding: 0;
       border: 0;
+      text-align: right;
 
       &--primary {
-        grid-column: 1 / -1;
+        order: -1;
+        margin-bottom: var(--space-1);
+        font-size: var(--font-size-md);
         font-weight: var(--font-weight-semibold);
+        text-align: left;
       }
+    }
 
-      &[data-label]::before {
-        content: attr(data-label);
-        margin-right: var(--space-2);
-        color: var(--color-muted);
-        font-size: var(--font-size-xs);
-      }
+    &__label {
+      display: block;
+      flex: 0 1 auto;
+      min-width: 0;
+      color: var(--color-muted);
+      font-size: var(--font-size-xs);
+      text-align: left;
+    }
 
-      &--right {
-        text-align: right;
-      }
+    // Wraps below the label (still right-aligned) only when both cannot share a line.
+    &__value {
+      margin-left: auto;
+    }
+
+    &__td--primary &__value {
+      margin-left: 0;
     }
   }
 }
