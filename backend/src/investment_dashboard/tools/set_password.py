@@ -27,7 +27,19 @@ def main(argv: list[str] | None = None) -> int:
             print("Passwords do not match.", file=sys.stderr)
             return 1
 
-    from investment_dashboard.db import config_session_scope  # noqa: PLC0415
+    from investment_dashboard.config import get_settings  # noqa: PLC0415
+    from investment_dashboard.db import config_session_scope, set_active_encryption  # noqa: PLC0415
+    from investment_dashboard.storage.encryption import resolve_encryption  # noqa: PLC0415
+
+    # This runs outside the app's boot, which is what normally loads the
+    # SQLCipher key; without it an encrypted database reads as "not a database".
+    settings = get_settings()
+    set_active_encryption(
+        resolve_encryption(
+            encrypt_synced_tiers=settings.encrypt_synced_tiers,
+            env_passphrase=settings.db_passphrase,
+        )
+    )
 
     try:
         with config_session_scope() as session:

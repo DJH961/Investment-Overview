@@ -47,6 +47,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - The server could not start with an encrypted (SQLCipher) database: the startup migration opened the file without its key. Migrations now run through the app's keyed connection; CI restarts the image on an existing encrypted database.
+- `inv-dashboard-set-password` failed on an encrypted database with "file is not a database": it ran without the app's boot, which loads the SQLCipher key. It now loads the key itself; the CI image test sets a password on the encrypted database.
 - The theme pre-paint script was blocked by the server's Content-Security-Policy (inline script); it is now a file (`theme-init.js`).
 - The laptop trial (`deploy/try_local.ps1`) works without a SQLCipher driver: `inv-dashboard-upload-db --local-only --plain` writes an unencrypted local copy (the server copy is always encrypted).
 - An open browser tab no longer keeps a login alive past the idle timeout (the live-update re-check doesn't extend the session).

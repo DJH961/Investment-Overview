@@ -193,6 +193,8 @@ jobs:
           # The database must be encrypted, and an existing encrypted database must
           # reopen (boot runs migrations on it) after a restart.
           docker exec inv-smoke python -c "import sys; sys.exit(open('/data/app.sqlite','rb').read(16).startswith(b'SQLite format 3'))"
+          # The CLI tools run outside the app's boot and must load the key too.
+          openssl rand -hex 16 | docker exec -i inv-smoke inv-dashboard-set-password --stdin
           docker restart inv-smoke
           ok=
           for i in $(seq 1 40); do
