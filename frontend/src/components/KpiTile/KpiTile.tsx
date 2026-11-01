@@ -24,7 +24,7 @@ const MIN_FIT = 0.55;
  * CSS already sizes the figure from the tile width (container query units);
  * this catches the long ones ("-$12,345,678.90" in a 2-column phone grid).
  */
-function useFitWidth(ref: RefObject<HTMLDivElement | null>, deps: unknown[]) {
+function useFitWidth(ref: RefObject<HTMLDivElement | null>, value: ReactNode, loading: boolean) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -48,12 +48,12 @@ function useFitWidth(ref: RefObject<HTMLDivElement | null>, deps: unknown[]) {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, deps);
+  }, [ref, value, loading]);
 }
 
 export function KpiTile({ label, value, delta, hint, sparkline, loading = false, className }: KpiTileProps) {
   const valueRef = useRef<HTMLDivElement>(null);
-  useFitWidth(valueRef, [value, loading]);
+  useFitWidth(valueRef, value, loading);
   return (
     <div className={clsx("kpi-tile", className)}>
       <div className="kpi-tile__label">{label}</div>

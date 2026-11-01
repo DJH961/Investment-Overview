@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 /** Every key this hook writes is namespaced under this prefix. */
 export const STORAGE_PREFIX = "iv.";
@@ -61,15 +61,22 @@ export function usePersistentState<T>(
 ): [T, Dispatch<SetStateAction<T>>] {
   const [value, setValue] = useState<T>(() => (key === null ? fallback : readPersisted(key, fallback, validate)));
 
+  // fallback/validate are read through refs so callers may pass inline values.
+  const fallbackRef = useRef(fallback);
+  const validateRef = useRef(validate);
+  useEffect(() => {
+    fallbackRef.current = fallback;
+    validateRef.current = validate;
+  });
+
   // Follow changes made in another tab.
   useEffect(() => {
     if (key === null || typeof window === "undefined") return;
     const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_PREFIX + key) setValue(readPersisted(key, fallback, validate));
+      if (e.key === STORAGE_PREFIX + key) setValue(readPersisted(key, fallbackRef.current, validateRef.current));
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-    // fallback/validate are treated as constants for a given key.
   }, [key]);
 
   const set = useCallback<Dispatch<SetStateAction<T>>>(
