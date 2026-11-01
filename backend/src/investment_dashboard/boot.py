@@ -515,7 +515,13 @@ def _run_alembic_upgrade() -> bool:
     # ``fileConfig`` would otherwise dump migration INFO lines onto stderr where
     # they surface as bogus "Recent errors" in Data Health.
     cfg.attributes["embedded"] = True
-    command.upgrade(cfg, "head")
+    from investment_dashboard.db import get_ledger_engine  # noqa: PLC0415
+
+    # Migrate through the app's ledger engine so an encrypted (SQLCipher) database
+    # is opened with its key; env.py would otherwise connect with plain sqlite3.
+    with get_ledger_engine().begin() as connection:
+        cfg.attributes["connection"] = connection
+        command.upgrade(cfg, "head")
     log.info("Alembic upgrade head applied")
     return True
 

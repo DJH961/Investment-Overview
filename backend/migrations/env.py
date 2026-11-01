@@ -65,6 +65,18 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # The app passes its own (SQLCipher-keyed) connection: a plain engine built
+    # from the URL could not open an encrypted database.
+    shared = config.attributes.get("connection")
+    if shared is not None:
+        context.configure(
+            connection=shared,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

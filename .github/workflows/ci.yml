@@ -190,6 +190,16 @@ jobs:
             sleep 2
           done
           if [ -z "$ok" ]; then docker logs inv-smoke; exit 1; fi
+          # The database must be encrypted, and an existing encrypted database must
+          # reopen (boot runs migrations on it) after a restart.
+          docker exec inv-smoke python -c "import sys; sys.exit(open('/data/app.sqlite','rb').read(16).startswith(b'SQLite format 3'))"
+          docker restart inv-smoke
+          ok=
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8000/api/health; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then docker logs inv-smoke; exit 1; fi
           docker rm -f inv-smoke
 
       - name: SQLCipher check (encrypt, reopen, fail without key)
