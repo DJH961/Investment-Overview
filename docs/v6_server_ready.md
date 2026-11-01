@@ -12,10 +12,10 @@ and add a log line as steps land. Earlier history: [`v6_progress.md`](v6_progres
 
 - [x] Wave A: parity tool, rollback kit, deploy kit, missing plan pieces
 - [x] Parity baseline on a copy of the real ledger (owner reviews the differences)
-- [ ] Wave B: currency storage switch, Holdings polish
-- [ ] Wave C: layering and naming cleanup
-- [ ] Wave D: one ledger walk, parity rerun (owner reviews again)
-- [ ] Integration: full gate, local device test, PR
+- [x] Wave B: currency storage switch, Holdings polish
+- [x] Wave C: layering and naming cleanup
+- [x] Wave D: one ledger walk, parity rerun (owner reviews again)
+- [x] Integration: full gate, local device test, PR
 - [ ] Owner: server setup, upload, a week side by side, switch
 
 ## Workers (token economy: 3 contexts, reused)
@@ -232,3 +232,5 @@ Same as the baseline. The only allowed differences are the ones explained earlie
 - 2026-11-01 plan written; branch created.
 - 2026-11-01 A1+A2 done (c37f774). Parity baseline (as of 2026-10-30, `main` vs v5.3.1, 18 instruments, 43 months): 2 differences, both the known v5 Analytics-USD bug (USD analytics XIRR and TWR); everything else identical. B1 part 1 (cashflows, migration 0017 `f4c8d6e0a3b2`) in 1e48559; writers/readers in progress.
 - 2026-11-01 A3 (cf89dfc) + A4 (216a955) done; runbook rollback filled (c6b2f21). B1 done (952193f): parity main vs branch 0 differences. Running: core C1, app B2. Gate todo: CHANGELOG entries, ruff SIM102 in parity_check.py, stray ruff reformat of untracked files.
+- 2026-11-01 B2 (96e814e, 2dd0f05 price history), C1 (3bf29b0, 9c86abc), C2 part (dd670cc), D1 (a4e5b5b, b90b660). Parity after D1: 0 differences vs main; vs v5 only the Analytics-USD fix. Deferred with reason: TierSessions/_context rework (contract change; single DB on the server), float display helpers (v5 ui only, go at cutover), `_eur`/`_usd`/`*_pct` renames (API churn), calculator ccy (no number changes).
+- 2026-11-01 Integration: merged main (#326). Full gate green: ruff, mypy, lint-imports, 1952 backend tests (3 known laptop-only failures), 62 frontend tests, build, Playwright 3/3. Local trial on the real ledger copy: login, all endpoints 200, Holdings drawer chart, Diagnostics all clear. Fixed during the trial: CSP blocked the inline theme script; Windows has no SQLCipher driver, so the laptop trial uses `--plain`. Dependabot minimatch alert fixed via npm override.

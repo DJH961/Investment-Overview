@@ -14,13 +14,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Investments" />
     <title>Investment Overview</title>
-    <script>
-      // Apply the pinned theme before first paint to avoid a flash.
-      try {
-        var t = localStorage.getItem("iv.theme");
-        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
-      } catch (e) {}
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <noscript>JavaScript is required to run Investment Overview.</noscript>

@@ -68,10 +68,12 @@ What this means in practice:
   (EUR instruments exist in the ledger). Don't hard-code USD or EUR as "the base".
 - Market-sleeve / intraday series are FX-free native USD; the EUR line is derived
   with the **per-instant** rate stored next to each sample.
-- **v5 transition:** transactions still store frozen `net_eur` / `net_usd` /
-  `fx_rate_to_eur` legs, and `PositionSnapshot` / `IntradayValue` store a EUR pivot
-  with per-instant FX. Leave them working until the v6 currency migration
-  (plan §2); do **not** add new derived-currency columns.
+- **Transition (until cutover):** cashflow legs are derived from `net_native` + that
+  date's FX (`services/cashflows.py`); the frozen `net_eur` / `net_usd` /
+  `fx_rate_to_eur` legs are still written on import for the v5 rollback but are only
+  a cross-check. `PositionSnapshot` / `IntradayValue` store native USD + per-instant
+  FX (the old EUR columns stay filled for one release). Do **not** add new
+  derived-currency columns, and don't read the frozen legs in new code.
 - `Decimal` end to end; round only for display.
 
 ## Architecture rules
@@ -143,6 +145,7 @@ Adapted from the owner's starter-project convention (see plan §4a):
   - `uv run ruff format .`
   - `uv run ruff check . --fix`
   - `uv run mypy src/investment_dashboard/domain`
+  - `uv run lint-imports` (layering contracts)
   - `uv run pytest`
   - `npm run typecheck` and `npm run test` inside `web/`
 - Commits use conventional prefixes (`feat:`, `fix:`, `docs:`, `refactor:`,

@@ -348,17 +348,15 @@ phone, before the server is involved. Your v5 files are only read.
    `.\deploy\try_local.ps1`. It asks for the folder with `ledger.sqlite` and
    `config.sqlite` and does everything below. **By hand:** follow steps 3 to 7.
 3. Copy the two files into an empty working folder, e.g. `C:\Temp\upload`.
-4. Make the encrypted database with the local flag (you type a passphrase of your
-   choice; hidden input):
+4. Make one database from the copies. On the laptop it stays unencrypted (`--plain`),
+   like the v5 files it comes from, because Windows has no SQLCipher driver; the
+   server copy is always encrypted.
 
    ```bash
    cd backend
-   uv run inv-dashboard-upload-db --ledger C:/Temp/upload/ledger.sqlite --config C:/Temp/upload/config.sqlite --out C:/Temp/upload/app.sqlite --local-only
+   uv run inv-dashboard-upload-db --ledger C:/Temp/upload/ledger.sqlite --config C:/Temp/upload/config.sqlite --cache $env:LOCALAPPDATA/inv-dashboard/cache.sqlite --out C:/Temp/upload/app.sqlite --local-only --plain
    ```
 
-   `--local-only` only changes the "what next" text: nothing is sent anywhere. If it
-   says there is no SQLCipher driver (typical on Windows), run the same command inside
-   the container on a machine with Docker, as described in "Uploading the ledger".
 5. Build the frontend once: `cd frontend && npm install && npm run build`.
 6. Find your laptop's Tailscale name (`tailscale status --json`, field `Self.DNSName`,
    without the trailing dot), e.g. `my-laptop.my-tailnet.ts.net`. Passkeys need HTTPS
@@ -367,9 +365,8 @@ phone, before the server is involved. Your v5 files are only read.
 
    ```powershell
    $env:INV_DASHBOARD_DB_PATH = "C:\Temp\upload\app.sqlite"
-   $env:INV_DASHBOARD_DB_PASSPHRASE = "<the passphrase from step 4>"
    $env:INV_DASHBOARD_SERVER_MODE = "true"
-   $env:INV_DASHBOARD_ENCRYPT_SYNCED_TIERS = "true"
+   $env:INV_DASHBOARD_ENCRYPT_SYNCED_TIERS = "false"
    $env:INV_DASHBOARD_COOKIE_SECURE = "true"
    $env:INV_DASHBOARD_HOST = "127.0.0.1"
    $env:INV_DASHBOARD_PORT = "8000"
@@ -389,7 +386,7 @@ phone, before the server is involved. Your v5 files are only read.
    On the laptop or phone open `https://my-laptop.my-tailnet.ts.net`, sign in, add a
    passkey. Press Ctrl+C to stop, then `tailscale serve reset` to stop sharing.
 8. Clean up: delete `C:\Temp\upload` (it holds your ledger) and close the PowerShell
-   window (the passphrase lived only there).
+   window.
 
 ## Rollback to v5
 
