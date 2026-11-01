@@ -1,8 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill } from "@simplewebauthn/browser";
-import { Eye, EyeOff, Fingerprint, LineChart, Lock } from "lucide-react";
+import { Eye, EyeOff, Fingerprint, Lock } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { BrandMark } from "../../components/BrandMark";
 import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
 import { IconButton } from "../../components/IconButton";
@@ -91,7 +92,7 @@ export function Login() {
       <main className="login-page__card">
         <div className="login-page__brand">
           <span className="login-page__mark" aria-hidden>
-            <LineChart />
+            <BrandMark tile={false} />
           </span>
           <h1 className="login-page__title">Investment Overview</h1>
           <p className="login-page__subtitle">Sign in to see your portfolio.</p>

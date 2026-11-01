@@ -1,0 +1,20 @@
+.brand-mark {
+  display: block;
+  flex-shrink: 0;
+
+  &__stop--start {
+    stop-color: var(--color-brand-start);
+  }
+
+  &__stop--end {
+    stop-color: var(--color-brand-end);
+  }
+
+  &__bars {
+    fill: var(--color-brand-fg);
+  }
+
+  &--glyph &__bars {
+    fill: currentColor;
+  }
+}
