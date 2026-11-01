@@ -836,6 +836,37 @@
         "title": "CheckOut",
         "type": "object"
       },
+      "ConversionBatchOut": {
+        "description": "The slice of one currency conversion that paid for (part of) a deposit.",
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "date",
+          "usd",
+          "eur"
+        ],
+        "title": "ConversionBatchOut",
+        "type": "object"
+      },
       "CurrencyBlock": {
         "properties": {
           "lifetime": {
@@ -1188,6 +1219,13 @@
             "title": "Amount Native",
             "type": "string"
           },
+          "conversion_batches": {
+            "items": {
+              "$ref": "#/components/schemas/ConversionBatchOut"
+            },
+            "title": "Conversion Batches",
+            "type": "array"
+          },
           "currency": {
             "title": "Currency",
             "type": "string"
@@ -1210,6 +1248,7 @@
                 "type": "null"
               }
             ],
+            "description": "USD per EUR actually paid for a USD deposit; null without conversions",
             "title": "Effective Rate"
           },
           "id": {
@@ -1236,6 +1275,7 @@
                 "type": "null"
               }
             ],
+            "description": "\"conversions\", \"ecb\" (pool did not cover it), \"mixed\"; null without conversions",
             "title": "Rate Source"
           }
         },
@@ -3023,6 +3063,50 @@
           }
         },
         "title": "OkResponse",
+        "type": "object"
+      },
+      "OnboardingOut": {
+        "description": "Which first-run steps are done (each is independent; all can be skipped).",
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "boolean"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "conversions": {
+            "title": "Conversions",
+            "type": "boolean"
+          },
+          "first_import": {
+            "title": "First Import",
+            "type": "boolean"
+          },
+          "passkey": {
+            "title": "Passkey",
+            "type": "boolean"
+          },
+          "password": {
+            "title": "Password",
+            "type": "boolean"
+          },
+          "targets": {
+            "title": "Targets",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "account",
+          "first_import",
+          "password",
+          "passkey",
+          "conversions",
+          "targets",
+          "complete"
+        ],
+        "title": "OnboardingOut",
         "type": "object"
       },
       "OverviewKpis": {
@@ -7154,6 +7238,27 @@
         "summary": "List Instruments",
         "tags": [
           "accounts"
+        ]
+      }
+    },
+    "/api/onboarding": {
+      "get": {
+        "operationId": "get_onboarding_api_onboarding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Onboarding",
+        "tags": [
+          "onboarding"
         ]
       }
     },

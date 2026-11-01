@@ -66,6 +66,25 @@ def _session_lookup(token: str, settings: Settings) -> str | None:
         return auth_service.validate_session(db, settings, token)
 
 
+def _session_peek(token: str, settings: Settings) -> bool:
+    with config_session_scope() as db:
+        return auth_service.peek_session(db, settings, token)
+
+
+async def still_authenticated(request: Request) -> bool:
+    """Re-check a long-lived connection's credentials without extending the session.
+
+    Unlike :func:`authenticate`, a valid session is NOT slid (so an open stream
+    cannot keep an idle session alive) and failed tokens are not rate-counted.
+    """
+    settings = get_settings()
+    token = request.cookies.get(cookie_name(settings))
+    if token and await run_in_threadpool(_session_peek, token, settings):
+        return True
+    presented = _presented_token(request)
+    return presented is not None and _token_ok(presented, settings)
+
+
 async def resolve_principal(request: Request) -> Principal | None:
     """The caller's principal, or ``None`` (only side effect: sliding the session).
 

@@ -526,6 +526,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Onboarding */
+        get: operations["get_onboarding_api_onboarding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/overview": {
         parameters: {
             query?: never;
@@ -931,6 +948,20 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * ConversionBatchOut
+         * @description The slice of one currency conversion that paid for (part of) a deposit.
+         */
+        ConversionBatchOut: {
+            /** Conversion Id */
+            conversion_id: number;
+            /** Date */
+            date: string;
+            /** Eur */
+            eur: string;
+            /** Usd */
+            usd: string;
+        };
         /** CurrencyBlock */
         CurrencyBlock: {
             lifetime: components["schemas"]["CurrencyLifetime"];
@@ -1021,19 +1052,27 @@ export interface components {
             amount: string | null;
             /** Amount Native */
             amount_native: string;
+            /** Conversion Batches */
+            conversion_batches?: components["schemas"]["ConversionBatchOut"][];
             /** Currency */
             currency: string;
             /** Date */
             date: string;
             /** Description */
             description: string;
-            /** Effective Rate */
+            /**
+             * Effective Rate
+             * @description USD per EUR actually paid for a USD deposit; null without conversions
+             */
             effective_rate?: string | null;
             /** Id */
             id: number | null;
             /** Kind */
             kind: string;
-            /** Rate Source */
+            /**
+             * Rate Source
+             * @description "conversions", "ecb" (pool did not cover it), "mixed"; null without conversions
+             */
             rate_source?: string | null;
         };
         /** DepositSummaryOut */
@@ -1612,6 +1651,26 @@ export interface components {
              * @default true
              */
             ok: boolean;
+        };
+        /**
+         * OnboardingOut
+         * @description Which first-run steps are done (each is independent; all can be skipped).
+         */
+        OnboardingOut: {
+            /** Account */
+            account: boolean;
+            /** Complete */
+            complete: boolean;
+            /** Conversions */
+            conversions: boolean;
+            /** First Import */
+            first_import: boolean;
+            /** Passkey */
+            passkey: boolean;
+            /** Password */
+            password: boolean;
+            /** Targets */
+            targets: boolean;
         };
         /**
          * OverviewKpis
@@ -3455,6 +3514,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstrumentOut"][];
+                };
+            };
+        };
+    };
+    get_onboarding_api_onboarding_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingOut"];
                 };
             };
         };

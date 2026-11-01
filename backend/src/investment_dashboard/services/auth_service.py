@@ -145,6 +145,23 @@ def validate_session(session: Session, settings: Settings, token: str) -> str | 
     return sid
 
 
+def peek_session(session: Session, settings: Settings, token: str) -> bool:
+    """True if the session is valid right now, WITHOUT sliding the idle timeout.
+
+    For long-lived connections (SSE) that re-check periodically: a heartbeat must
+    not count as user activity. Read-only: expired rows are left for the next
+    ``validate_session`` / cleanup to delete.
+    """
+    if not token or len(token) > 256:
+        return False
+    row = session.get(AuthSession, _hash_token(token))
+    if row is None:
+        return False
+    t = now()
+    idle = timedelta(minutes=settings.session_idle_minutes)
+    return not (t >= row.expires_at or t >= row.last_seen_at + idle)
+
+
 def delete_session(session: Session, token: str) -> None:
     session.execute(delete(AuthSession).where(AuthSession.id == _hash_token(token)))
 

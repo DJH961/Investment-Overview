@@ -12,7 +12,7 @@ import json
 from typing import Any
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from investment_dashboard.api import security, stream
@@ -44,11 +44,10 @@ def _data(chunk: str) -> dict[str, Any]:
 def authed(monkeypatch: pytest.MonkeyPatch) -> dict[str, bool]:
     state = {"valid": True}
 
-    async def fake_authenticate(request: object) -> None:
-        if not state["valid"]:
-            raise HTTPException(401)
+    async def fake_still_authenticated(request: object) -> bool:
+        return state["valid"]
 
-    monkeypatch.setattr(security, "authenticate", fake_authenticate)
+    monkeypatch.setattr(security, "still_authenticated", fake_still_authenticated)
     return state
 
 
@@ -111,3 +110,41 @@ def test_stream_in_openapi(api_client: TestClient) -> None:
     spec = api_client.get("/openapi.json").json()
     content = spec["paths"]["/api/stream"]["get"]["responses"]["200"]["content"]
     assert "text/event-stream" in content
+
+
+async def test_open_stream_is_closed_after_session_idle_timeout(
+    api_db: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Heartbeat re-checks must not extend the idle timeout (real session, no fakes)."""
+    from datetime import datetime, timedelta
+
+    from investment_dashboard.config import get_settings
+    from investment_dashboard.db import config_session_scope
+    from investment_dashboard.services import auth_service
+
+    t = {"now": datetime(2026, 1, 1, 12, 0, 0)}
+    monkeypatch.setattr(auth_service, "_clock", lambda: t["now"])
+    settings = get_settings()
+    with config_session_scope() as db:
+        token = auth_service.create_session(db, settings, None)
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/stream",
+        "headers": [(b"cookie", f"{security.cookie_name(settings)}={token}".encode())],
+    }
+
+    async def receive() -> dict[str, Any]:
+        await asyncio.Event().wait()
+        return {}
+
+    monkeypatch.setattr(stream, "HEARTBEAT_SECONDS", 0.02)
+    resp = await stream.stream(Request(scope, receive))
+    body: Any = resp.body_iterator
+    await anext(body)  # hello
+    t["now"] += timedelta(minutes=settings.session_idle_minutes - 1)
+    assert await asyncio.wait_for(anext(body), 2) == ": heartbeat\n\n"
+    t["now"] += timedelta(minutes=2)  # idle total > limit; earlier heartbeats must not have slid it
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(anext(body), 2)
+    assert live_bus.bus.subscriber_count == 0

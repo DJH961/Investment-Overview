@@ -14,6 +14,15 @@ class DepositSummaryOut(ApiModel):
     total_contrib_native: DecStr | None
 
 
+class ConversionBatchOut(ApiModel):
+    """The slice of one currency conversion that paid for (part of) a deposit."""
+
+    conversion_id: int
+    date: str
+    usd: DecStr
+    eur: DecStr
+
+
 class DepositRowOut(ApiModel):
     id: int | None
     date: str
@@ -25,9 +34,15 @@ class DepositRowOut(ApiModel):
         description="Amount in the requested ccy at the transaction date; null when underivable"
     )
     description: str
-    #: Reserved for the FIFO match fields (filled by the currency-conversion work).
-    effective_rate: DecStr | None = None
-    rate_source: str | None = None
+    effective_rate: DecStr | None = Field(
+        default=None,
+        description="USD per EUR actually paid for a USD deposit; null without conversions",
+    )
+    rate_source: str | None = Field(
+        default=None,
+        description='"conversions", "ecb" (pool did not cover it), "mixed"; null without conversions',
+    )
+    conversion_batches: list[ConversionBatchOut] = Field(default_factory=list)
 
 
 class DepositsOut(ApiModel):

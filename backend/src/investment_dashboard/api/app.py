@@ -42,6 +42,7 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "analytics",
     "deposits",
     "diagnostics",
+    "onboarding",
     "calculator",
     # B3 writes
     "transactions",

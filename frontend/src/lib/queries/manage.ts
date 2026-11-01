@@ -15,6 +15,7 @@ export type SettingsData = S["SettingsDto"];
 export type SettingsPatch = S["SettingsUpdate"];
 export type DiagnosticsData = S["DiagnosticsOut"];
 export type RefreshStatusData = S["RefreshStatus"];
+export type OnboardingData = S["OnboardingOut"];
 
 /** Plain path for browser downloads (cookie auth, same origin). */
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
@@ -141,5 +142,14 @@ export function useDiagnostics() {
   return useQuery({
     queryKey: ["diagnostics"],
     queryFn: ({ signal }) => api<DiagnosticsData>("/api/diagnostics", { signal }),
+  });
+}
+
+// ---- Onboarding -----------------------------------------------------------
+
+export function useOnboarding() {
+  return useQuery({
+    queryKey: ["onboarding"],
+    queryFn: ({ signal }) => api<OnboardingData>("/api/onboarding", { signal }),
   });
 }
