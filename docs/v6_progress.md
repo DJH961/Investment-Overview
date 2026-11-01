@@ -82,19 +82,19 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - [x] one `reviewer` over B4 + app factory (auth, cookies, rate limit, headers)
 
 ### W1.5 — backend unification (owner request 2026-11-01)
-- [ ] audit → `docs/v6_scoping/backend_unification.md` (duplicate currency logic, `date.today()` vs ET clock, Decimal/float, layering, tiers, duplicate helpers, naming)
+- [x] audit → `docs/v6_scoping/backend_unification.md` (duplicate currency logic, `date.today()` vs ET clock, Decimal/float, layering, tiers, duplicate helpers, naming)
 - [x] B5b one canonical EUR/USD cashflow builder with the FX-pool override map, used by metrics, periods, deposits, analytics, benchmark
 - [ ] U-tasks from the audit (non-overlapping OWN lists, ≤ 4 per wave)
 
 ### W2 — frontend pages on generated types (parallel)
 - [x] G0 orchestrator: export `openapi.json`, `npm run gen:api`, write `lib/queries.ts` hooks for every endpoint
 - [x] P1 Overview (KPIs, currency-effect split, chart, allocation, movers) + Holdings
-- [ ] P2 Periods + Activity + Risk + Projection/Calculator
-- [ ] P3 Transactions (list + add/edit) + Import (upload → preview → confirm)
+- [x] P2 Periods + Activity + Risk + Projection/Calculator
+- [x] P3 Transactions (list + add/edit) + Import (upload → preview → confirm)
 - [x] P4 Currency conversions + Allocations/rebalance + Settings (incl. passkeys, backup) + Diagnostics + Onboarding
 
 ### W3 — integration
-- [ ] full gate green, CI `frontend` job, Playwright smoke (login → overview → import), CHANGELOG, plan status line, PR
+- [x] full gate green, CI `frontend` job, Playwright smoke (login → overview → import), CHANGELOG, plan status line, PR
 
 ## Owner-input items (not done by agents)
 - yfinance spike (Mon 2026-11-02): still to run.
@@ -121,3 +121,5 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - R0 done (f659a18 + moves in f847a96). R2/B5b done (8273ada): services/cashflows.py canonical; missing FX → None. R5 todo: DepositRecord.amount_eur nullable (now 0.00 when underivable); overview_query market verdict pass currency=USD to benchmark xirr. R1+R3 running.
 - 2026-11-01 R1/R3 done (adcbb95, 9ab4c8e). P2 (368ed4c), P3 (752ec18) done. Fixed: shell render loop, login redirect loop (stale/persisted auth), Vite proxy IPv6. Manual run (dev DB + vanguard fixture): all 14 pages render on desktop + phone.
 - W3 bugs from manual run: "Rate move today +37.74%" (pct units); Allocations shows "No positions yet" with positions; Holdings capital gain −€669 vs Overview total return +€379, "Up/down 0/1", Best VTI +71% vs list −2.13% (semantics mismatch); login eye icon outside input; NO accounts API (fresh install can't import) → add GET/POST/PUT /api/accounts + Settings UI + import account picker; tests/models/test_schema.py table list needs v6 tables.
+- 2026-11-01 X1 (025ea41), X2 (6704641, a6d8163), X3a (730b371), X3b (601f3f9) done. Final local gate green (ruff, mypy, 1896 backend tests earlier, 54 frontend tests, build, Playwright 3/3). PR opened.
+- Remaining (not agent work or later): yfinance spike; parity gate + snapshot native-currency migration; R4 layering/tier cleanup, R6 single ledger walk, R7 cutover deletion; owner secrets/server setup; restore drill; CI e2e/image jobs first real run.
