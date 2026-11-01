@@ -52,7 +52,7 @@ class AnalyticsOut(ApiModel):
     benchmark_symbol: str
     benchmark_is_funded: bool
     curve: list[CurvePointOut]
-    #: Attribution is computed on EUR marks only: empty (and
-    #: ``attribution_currency`` null) when ``ccy`` is not EUR.
+    #: Attribution is computed on ``ccy``'s own marks and cashflows;
+    #: ``attribution_currency`` repeats ``ccy``.
     attribution: list[AttributionOut]
     attribution_currency: str | None

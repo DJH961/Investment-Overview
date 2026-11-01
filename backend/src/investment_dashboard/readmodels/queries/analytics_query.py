@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from itertools import pairwise
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from investment_dashboard.domain.attribution import (
     InstrumentReturn,
     attribute_portfolio_return,
 )
+from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.returns import (
     Cashflow,
@@ -60,6 +62,9 @@ from investment_dashboard.services import (
     risk_free_service,
     snapshots_service,
 )
+
+if TYPE_CHECKING:
+    from investment_dashboard.services.positions_service import Position
 
 ZERO = Decimal(0)
 
@@ -247,65 +252,83 @@ def _attribution_for_window(
     *,
     start: date,
     end: date,
+    currency: str = "EUR",
 ) -> list[AttributionRow]:
-    """Per-instrument P&L over ``[start, end]`` using snapshot deltas.
+    """Per-instrument P&L over ``[start, end]`` using snapshot deltas, in ``currency``.
 
-    Approximates start/end instrument values by the EUR mark on each
-    boundary date. ``net_contribution`` is the sum of buy/sell cash
-    legs in the window so the headline P&L doesn't double-count the
-    user's own additions.
+    Approximates start/end instrument values by the mark on each boundary date.
+    EUR uses the EUR mark; USD uses the native USD value (a EUR-native holding is
+    converted at that boundary's own rate, a single-instant conversion).
+    ``net_contribution`` and dividends are the buy/sell and cash-dividend legs in
+    the window at each transaction's own date's rate, so the headline P&L does not
+    double-count the user's own additions. A multi-account instrument is one row
+    (its positions are summed). Nothing is converted after the fact.
     """
-    start_positions = {
-        p.instrument.id: p for p in positions_service.compute_positions(session, as_of=start)
-    }
-    end_positions = positions_service.compute_positions(session, as_of=end)
-    txns = list(transactions_repo.list_transactions(session, start=start, end=end))
+    ccy = currency.upper()
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+
+    def _marks(positions: list[Position], on: date) -> dict[int, Decimal]:
+        out: dict[int, Decimal] = {}
+        for p in positions:
+            if ccy == "EUR":
+                value = p.current_value_eur
+            elif p.account.native_currency.upper() == "USD":
+                value = p.current_value_native
+            else:
+                rate = lookup_rate_with_forward_fill(eur_to_usd, on)
+                value = p.current_value_eur * rate if rate else ZERO
+            out[p.instrument.id] = out.get(p.instrument.id, ZERO) + value
+        return out
+
+    start_positions = positions_service.compute_positions(session, as_of=start)
+    end_positions = positions_service.compute_positions(session, as_of=end)
+    start_marks = _marks(start_positions, start)
+    end_marks = _marks(end_positions, end)
+    names: dict[int, str] = {}
+    for p in end_positions:
+        names.setdefault(
+            p.instrument.id,
+            p.effective.name if p.effective and p.effective.name else p.instrument.symbol,
+        )
+    for p in start_positions:
+        names.setdefault(p.instrument.id, p.instrument.symbol)
+    txns = list(transactions_repo.list_transactions(session, start=start, end=end))
 
     contribs: dict[int, Decimal] = {}
     dividends: dict[int, Decimal] = {}
     for t in txns:
         if t.instrument_id is None:
             continue
-        net_eur = cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd)
-        if net_eur is None:
+        net = cashflows.txn_amount(t, ccy, eur_to_usd=eur_to_usd)
+        if net is None:
             continue
         if t.kind in {TransactionKind.BUY.value, TransactionKind.SELL.value}:
-            contribs[t.instrument_id] = contribs.get(t.instrument_id, ZERO) + (-net_eur)
+            contribs[t.instrument_id] = contribs.get(t.instrument_id, ZERO) + (-net)
         elif t.kind == TransactionKind.DIVIDEND_CASH.value:
-            dividends[t.instrument_id] = dividends.get(t.instrument_id, ZERO) + net_eur
+            dividends[t.instrument_id] = dividends.get(t.instrument_id, ZERO) + net
 
     rows: list[InstrumentReturn] = []
-    seen: set[int] = set()
-    for ep in end_positions:
-        instr_id = ep.instrument.id
-        seen.add(instr_id)
-        start_val = (
-            start_positions[instr_id].current_value_eur if instr_id in start_positions else ZERO
-        )
+    held_at_end = {p.instrument.id for p in end_positions}
+    for instr_id in [*dict.fromkeys(p.instrument.id for p in end_positions)]:
         rows.append(
             InstrumentReturn(
                 instrument_id=instr_id,
-                symbol=(
-                    ep.effective.name
-                    if ep.effective and ep.effective.name
-                    else ep.instrument.symbol
-                ),
-                start_value=start_val,
-                end_value=ep.current_value_eur,
+                symbol=names[instr_id],
+                start_value=start_marks.get(instr_id, ZERO),
+                end_value=end_marks[instr_id],
                 net_contribution=contribs.get(instr_id, ZERO),
                 dividends_cash=dividends.get(instr_id, ZERO),
             )
         )
     # Instruments held at start but fully exited by end still attribute P&L.
-    for instr_id, sp in start_positions.items():
-        if instr_id in seen:
+    for instr_id in dict.fromkeys(p.instrument.id for p in start_positions):
+        if instr_id in held_at_end:
             continue
         rows.append(
             InstrumentReturn(
                 instrument_id=instr_id,
-                symbol=sp.instrument.symbol,
-                start_value=sp.current_value_eur,
+                symbol=names[instr_id],
+                start_value=start_marks[instr_id],
                 end_value=ZERO,
                 net_contribution=contribs.get(instr_id, ZERO),
                 dividends_cash=dividends.get(instr_id, ZERO),
@@ -402,7 +425,7 @@ def build_bundle(
         alpha(portfolio_tail, bench_tail, rf_rate) if n >= 2 and rf_rate is not None else None
     )
 
-    attribution = _attribution_for_window(session, start=start, end=as_of)
+    attribution = _attribution_for_window(session, start=start, end=as_of, currency=currency)
 
     return AnalyticsBundle(
         as_of=as_of,

@@ -621,6 +621,9 @@ class TreemapDatum:
 
     label: str
     value_eur: Decimal
+    #: Same slice in USD (native USD value, or EUR at ``fx_eur_usd``); ``None``
+    #: when a EUR-native holding has no spot to convert with.
+    value_usd: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -1357,15 +1360,35 @@ def _num(value: Decimal | None) -> float | None:
     return float(value) if value is not None else None
 
 
-def allocation_treemap(positions: list[Position]) -> list[TreemapDatum]:
-    """Aggregate positions by user-tier ``category`` (fallback effective ``asset_class``)."""
+def allocation_treemap(
+    positions: list[Position], *, fx_eur_usd: Decimal | None = None
+) -> list[TreemapDatum]:
+    """Aggregate positions by user-tier ``category`` (fallback effective ``asset_class``).
+
+    Each slice carries its EUR value and its USD value (``value_usd``): a USD-native
+    holding contributes its native value, any other holding its EUR value at the
+    single-instant spot ``fx_eur_usd``. Slices rank by EUR value.
+    """
     bucket: dict[str, Decimal] = {}
+    bucket_usd: dict[str, Decimal | None] = {}
     for p in positions:
         eff = p.effective
         fallback_class = eff.asset_class if eff is not None else p.instrument.asset_class
         key = p.category or fallback_class or "Uncategorized"
         bucket[key] = bucket.get(key, ZERO) + p.current_value_eur
-    items = [TreemapDatum(label=k, value_eur=v) for k, v in bucket.items() if v > ZERO]
+        if p.account.native_currency.upper() == "USD":
+            usd: Decimal | None = p.current_value_native
+        elif fx_eur_usd:
+            usd = p.current_value_eur * fx_eur_usd
+        else:
+            usd = None
+        prev = bucket_usd.get(key, ZERO)
+        bucket_usd[key] = prev + usd if prev is not None and usd is not None else None
+    items = [
+        TreemapDatum(label=k, value_eur=v, value_usd=bucket_usd.get(k))
+        for k, v in bucket.items()
+        if v > ZERO
+    ]
     items.sort(key=lambda d: d.value_eur, reverse=True)
     return items
 

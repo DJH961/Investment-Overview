@@ -115,7 +115,7 @@ def build(session: Session, *, context: ReadModelContext | None = None) -> dict[
     price_anomaly_ids = prices_service.instruments_with_price_anomalies(
         session, [p.instrument.id for p in positions]
     )
-    allocation = allocation_treemap(positions)
+    allocation = allocation_treemap(positions, fx_eur_usd=ctx.fx_rate_eur_usd)
     return {
         "metrics": _metrics_dict(metrics),
         "positions": [
@@ -126,7 +126,10 @@ def build(session: Session, *, context: ReadModelContext | None = None) -> dict[
             )
             for p in positions
         ],
-        "allocation": [{"label": d.label, "value_eur": dec(d.value_eur)} for d in allocation],
+        "allocation": [
+            {"label": d.label, "value_eur": dec(d.value_eur), "value_usd": dec(d.value_usd)}
+            for d in allocation
+        ],
     }
 
 
