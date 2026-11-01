@@ -1,0 +1,55 @@
+@use "../../styles/mixins" as m;
+
+.app-shell {
+  --shell-offset: var(--sidebar-width);
+
+  min-height: 100dvh;
+
+  &--rail {
+    --shell-offset: var(--sidebar-rail-width);
+  }
+
+  &--phone {
+    --shell-offset: 0px;
+  }
+
+  &__main {
+    min-width: 0;
+    margin-left: var(--shell-offset);
+    transition: margin-left var(--duration-base) var(--ease-standard);
+  }
+
+  &__content {
+    max-width: var(--content-max-width);
+    margin: 0 auto;
+    padding: var(--space-6);
+
+    @include m.phone {
+      padding: var(--space-4);
+      padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6));
+    }
+  }
+
+  &__shortcuts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  &__shortcut {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--font-size-sm);
+  }
+
+  &__kbd {
+    padding: 2px var(--space-2);
+    background: var(--color-surface-2);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+  }
+}

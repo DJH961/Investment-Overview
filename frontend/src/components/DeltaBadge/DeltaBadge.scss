@@ -1,0 +1,31 @@
+.delta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+
+  &__icon {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+  }
+
+  &--pos {
+    background: var(--color-pos-soft);
+    color: var(--color-pos);
+  }
+
+  &--neg {
+    background: var(--color-neg-soft);
+    color: var(--color-neg);
+  }
+
+  &--flat {
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+  }
+}

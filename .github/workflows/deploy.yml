@@ -1,0 +1,127 @@
+name: Deploy
+
+# Build the v6 image, push it to GHCR, then pull it on the Hetzner server over
+# Tailscale. INERT until the owner sets the repository variable
+# DEPLOY_ENABLED=true (see deploy/RUNBOOK.md, "Secrets").
+
+on:
+  workflow_run:
+    # "CI" is the workflow name; the file path is listed too because an
+    # unnamed workflow is identified by its path.
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/djh961/investment-overview
+  SERVER: hetzner-djh-v1
+  SERVER_USER: daniel
+
+jobs:
+  deploy:
+    if: >-
+      vars.DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Work out the image tag
+        id: tag
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Join the tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Prepare SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$SERVER" >> ~/.ssh/known_hosts
+
+      - name: Deploy on the server
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.sha }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
+            "$SERVER_USER@$SERVER" bash -s -- "$NEW_TAG" <<'REMOTE'
+          set -euo pipefail
+          NEW_TAG="$1"
+          cd ~/investments
+          touch .env
+          PREV_TAG="$(sed -n 's/^APP_TAG=//p' .env | tail -n 1)"
+          PREV_TAG="${PREV_TAG:-latest}"
+          set_tag() {
+            grep -v '^APP_TAG=' .env > .env.tmp || true
+            echo "APP_TAG=$1" >> .env.tmp
+            mv .env.tmp .env
+          }
+          healthy() {
+            for _ in $(seq 1 30); do
+              if docker compose exec -T app python -c \
+                "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/health', timeout=3)" \
+                >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 4
+            done
+            return 1
+          }
+          set_tag "$NEW_TAG"
+          docker compose pull app
+          docker compose up -d app
+          if healthy; then
+            echo "Deployed $NEW_TAG (previous: $PREV_TAG)"
+            docker image prune -f >/dev/null
+            exit 0
+          fi
+          echo "Health check failed; rolling back to $PREV_TAG" >&2
+          docker compose logs --tail 50 app >&2 || true
+          set_tag "$PREV_TAG"
+          docker compose up -d app
+          healthy || echo "Rollback target is also unhealthy" >&2
+          exit 1
+          REMOTE

@@ -1,0 +1,72 @@
+@use "../../styles/mixins" as m;
+
+.toast {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-left: var(--space-1) solid var(--color-accent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+
+  &--success {
+    border-left-color: var(--color-pos);
+  }
+
+  &--error {
+    border-left-color: var(--color-neg);
+  }
+
+  &[data-state="open"] {
+    animation: toast-in var(--duration-base) var(--ease-standard);
+  }
+
+  &[data-state="closed"] {
+    animation: toast-out var(--duration-fast) ease-in;
+  }
+
+  &__viewport {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-toast);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: 100%;
+    max-width: 380px;
+    margin: 0;
+    padding: var(--space-4);
+    padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+    list-style: none;
+    outline: none;
+
+    @include m.phone {
+      bottom: calc(var(--tabbar-height) + var(--safe-bottom));
+      padding-bottom: var(--space-4);
+    }
+  }
+
+  &__title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__description {
+    margin-top: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+  }
+}

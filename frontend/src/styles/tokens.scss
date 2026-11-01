@@ -1,0 +1,151 @@
+// Design tokens. Palette ported from the v5 web companion (web/src/styles.css).
+// Gains/losses use the colour-blind-safe blue/orange pair, never red/green.
+// Theme: [data-theme="light"|"dark"] on <html>; without it, prefers-color-scheme.
+
+@mixin dark-tokens {
+  --color-fg: #eef2f8;
+  --color-muted: #9aa6b8;
+  --color-faint: #6f7c91;
+  --color-accent: #8b85ff;
+  --color-accent-2: #3ad7ee;
+  --color-accent-fg: #0b0e14;
+  --color-accent-soft: rgba(139, 133, 255, 0.16);
+  --color-bg: #0b0e14;
+  --color-bg-glow:
+    radial-gradient(1200px 600px at 100% -10%, rgba(139, 133, 255, 0.16), transparent 60%),
+    radial-gradient(900px 500px at -10% 0%, rgba(58, 215, 238, 0.12), transparent 55%);
+  --color-surface: #141925;
+  --color-surface-2: #1d2433;
+  --color-border: #232b3b;
+  --color-border-strong: #33405a;
+  --color-pos: #5fb3c9;
+  --color-neg: #e8894f;
+  --color-pos-soft: rgba(95, 179, 201, 0.16);
+  --color-neg-soft: rgba(232, 137, 79, 0.16);
+  --color-warn: #d8b84a;
+  --color-warn-soft: rgba(216, 184, 74, 0.16);
+  --color-overlay: rgba(4, 6, 10, 0.62);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --chart-1: #8b85ff;
+  --chart-2: #3ad7ee;
+  --chart-3: #d8b84a;
+  --chart-4: #e8894f;
+  --chart-5: #5fb3c9;
+  --chart-6: #c084fc;
+}
+
+:root {
+  color-scheme: light dark;
+
+  // Colour (light)
+  --color-fg: #0f1623;
+  --color-muted: #5b6678;
+  --color-faint: #6b7588;
+  --color-accent: #4f46e5;
+  --color-accent-2: #06b6d4;
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: rgba(79, 70, 229, 0.1);
+  --color-bg: #f4f6fb;
+  --color-bg-glow:
+    radial-gradient(1200px 600px at 100% -10%, rgba(79, 70, 229, 0.1), transparent 60%),
+    radial-gradient(900px 500px at -10% 0%, rgba(6, 182, 212, 0.1), transparent 55%);
+  --color-surface: #ffffff;
+  --color-surface-2: #eef1f7;
+  --color-border: #e6eaf2;
+  --color-border-strong: #cfd6e4;
+  --color-pos: #1f6f8b;
+  --color-neg: #b34d17;
+  --color-pos-soft: rgba(31, 111, 139, 0.12);
+  --color-neg-soft: rgba(196, 86, 30, 0.12);
+  --color-warn: #8a6d00;
+  --color-warn-soft: rgba(138, 109, 0, 0.12);
+  --color-overlay: rgba(15, 22, 35, 0.4);
+  --shadow-1: 0 1px 2px rgba(16, 22, 35, 0.05);
+  --shadow-2: 0 12px 32px rgba(16, 22, 35, 0.14), 0 2px 6px rgba(16, 22, 35, 0.08);
+  --chart-1: #4f46e5;
+  --chart-2: #06b6d4;
+  --chart-3: #8a6d00;
+  --chart-4: #c4561e;
+  --chart-5: #1f6f8b;
+  --chart-6: #9333ea;
+
+  // Spacing (4px scale)
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  // Radii
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-full: 999px;
+
+  // Type
+  --font-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-md: 0.9375rem;
+  --font-size-lg: 1.0625rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.625rem;
+  --font-size-3xl: 2.125rem;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --line-height-tight: 1.2;
+  --line-height-base: 1.5;
+
+  // Sizes
+  --sidebar-width: 240px;
+  --sidebar-rail-width: 64px;
+  --topbar-height: 56px;
+  --tabbar-height: 60px;
+  --content-max-width: 1440px;
+  --tap-min: 44px;
+  --control-height: 36px;
+  --control-height-sm: 28px;
+  --control-height-lg: 44px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --border-width: 1px;
+  --dialog-width: 480px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  // Motion
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  // Stacking
+  --z-sidebar: 20;
+  --z-topbar: 30;
+  --z-tabbar: 30;
+  --z-overlay: 50;
+  --z-dialog: 60;
+  --z-popover: 70;
+  --z-toast: 80;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  @include dark-tokens;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    @include dark-tokens;
+  }
+}

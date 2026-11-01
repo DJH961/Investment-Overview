@@ -1,0 +1,66 @@
+@use "../../styles/mixins" as m;
+
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-topbar);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: calc(var(--topbar-height) + var(--safe-top));
+  padding: var(--safe-top) var(--space-6) 0;
+  background: var(--color-surface);
+  border-bottom: var(--border-width) solid var(--color-border);
+
+  &__title-block {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  &__title {
+    @include m.truncate;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.01em;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+  }
+
+  &__spin {
+    animation: top-bar-spin 0.9s linear infinite;
+  }
+
+  &--compact {
+    padding-inline: var(--space-4);
+
+    .top-bar__title-block {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+    }
+
+    .top-bar__title {
+      font-size: var(--font-size-md);
+    }
+  }
+}
+
+@keyframes top-bar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@include m.reduced-motion {
+  .top-bar__spin {
+    animation: none;
+  }
+}

@@ -153,8 +153,15 @@ def is_newer(remote: str, current: str) -> bool:
 
 
 def tarball_url(tag: str) -> str:
-    """URL of the GitHub-generated source tarball for ``tag``."""
-    return f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.tar.gz"
+    """URL of the GitHub-generated source tarball for ``tag``.
+
+    Releases after 5.3.1 keep the Python project in ``backend/``, so pip is
+    pointed at that subdirectory.
+    """
+    url = f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.tar.gz"
+    if is_newer(tag.lstrip("v"), "5.3.1"):
+        url += "#subdirectory=backend"
+    return url
 
 
 def predicted_wheel_url(tag: str) -> str:

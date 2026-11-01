@@ -1,0 +1,49 @@
+@use "../../styles/mixins" as m;
+
+.freshness {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+
+  &__dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--color-faint);
+  }
+
+  &__label {
+    @include m.truncate;
+  }
+
+  &--live &__dot {
+    background: var(--color-pos);
+    box-shadow: 0 0 0 3px var(--color-pos-soft);
+  }
+
+  &--stale &__dot {
+    background: var(--color-warn);
+    box-shadow: 0 0 0 3px var(--color-warn-soft);
+  }
+
+  &--loading &__dot {
+    animation: freshness-pulse 1.2s ease-in-out infinite;
+  }
+
+  @include m.reduced-motion {
+    &--loading &__dot {
+      animation: none;
+    }
+  }
+}
+
+@keyframes freshness-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}

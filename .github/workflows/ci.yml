@@ -1,15 +1,20 @@
+name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
 
-# Minimal token scope; both jobs only need to read the checked-out code.
+# Minimal token scope; the jobs only need to read the checked-out code.
 permissions:
   contents: read
 
 jobs:
   quality:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -63,3 +68,146 @@ jobs:
       - name: Build
         working-directory: web
         run: npm run build
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Unit tests
+        working-directory: frontend
+        run: npm run test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: OpenAPI drift guard (backend/openapi.json)
+        working-directory: backend
+        run: |
+          uv sync --extra dev
+          uv run python -m investment_dashboard.tools.export_openapi /tmp/o.json
+          diff -u openapi.json /tmp/o.json
+
+      - name: API types drift guard (src/lib/api-types.ts)
+        working-directory: frontend
+        run: |
+          npm run gen:api
+          git diff --exit-code -- src/lib/api-types.ts
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --extra dev
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright smoke test
+        working-directory: frontend
+        run: |
+          export E2E_PASSWORD="$(openssl rand -hex 16)"
+          npx playwright test
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: frontend/test-results
+          if-no-files-found: ignore
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t inv-app:ci .
+
+      - name: Smoke test /api/health
+        run: |
+          docker run -d --name inv-smoke -p 8000:8000 \
+            -e INV_DASHBOARD_DB_PASSPHRASE="$(openssl rand -hex 16)" \
+            -e INV_DASHBOARD_COOKIE_SECURE=false \
+            inv-app:ci
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8000/api/health; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then docker logs inv-smoke; exit 1; fi
+          docker rm -f inv-smoke
+
+      - name: SQLCipher check (encrypt, reopen, fail without key)
+        run: |
+          docker run --rm --entrypoint python inv-app:ci -c '
+          import sqlcipher3, tempfile, os
+          p = os.path.join(tempfile.mkdtemp(), "t.sqlite")
+          c = sqlcipher3.connect(p)
+          c.execute("PRAGMA key = '"'"'throwaway-key'"'"'")
+          c.execute("CREATE TABLE t (x INTEGER)")
+          c.execute("INSERT INTO t VALUES (1)")
+          c.commit(); c.close()
+          assert not open(p, "rb").read().startswith(b"SQLite format 3")
+          c = sqlcipher3.connect(p)
+          c.execute("PRAGMA key = '"'"'throwaway-key'"'"'")
+          assert c.execute("SELECT x FROM t").fetchone() == (1,)
+          c.close()
+          c = sqlcipher3.connect(p)
+          try:
+              c.execute("SELECT x FROM t")
+              raise SystemExit("opened without key")
+          except sqlcipher3.DatabaseError:
+              print("ok: encrypted, needs key")
+          '

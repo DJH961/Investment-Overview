@@ -1,6 +1,6 @@
 # v6.0 "One App": a hosted, single-backend Investment Overview
 
-> Status: **approved direction, pre-implementation** (2026-10-31). Phase 0 steps 1–2 are done (rules rewrite; server provisioned and hardened, see [`../deploy/RUNBOOK.md`](../deploy/RUNBOOK.md)); the one-day yfinance polling test is next. **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)). The backend and frontend build waits until the approach is validated (Phase 0 spike).
+> Status: **in implementation** (2026-11-01, branch `feat/v6-one-app`). Phase 0 steps 1–2 done; the yfinance spike (step 3) is still to run (Mon 2026-11-02). Phases 1 and 3 and the agent-doable parts of Phase 2 are built (not deployed); the snapshot/intraday native-currency migration waits for the parity gate on the real ledger. Execution order and resume notes: [`v6_progress.md`](v6_progress.md). Backups changed from Litestream to sealed snapshots (Litestream can't replicate SQLCipher files). **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)).
 
 ## Context
 

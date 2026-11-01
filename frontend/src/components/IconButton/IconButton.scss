@@ -1,0 +1,43 @@
+@use "../../styles/mixins" as m;
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  border-radius: var(--radius-sm);
+  color: var(--color-muted);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+
+  &:hover:not(:disabled) {
+    background: var(--color-surface-2);
+    color: var(--color-fg);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &--sm {
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
+  }
+
+  &--lg {
+    width: var(--control-height-lg);
+    height: var(--control-height-lg);
+  }
+
+  &--active {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+  }
+
+  @include m.phone {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+  }
+}

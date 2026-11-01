@@ -88,7 +88,7 @@ REQUIRED_MODULES = (
 
 
 def _ensure_src_on_path() -> None:
-    src = ROOT / "src"
+    src = ROOT / "backend" / "src"
     if src.exists() and str(src) not in sys.path:
         sys.path.insert(0, str(src))
 
@@ -409,7 +409,7 @@ def _current_python_has_dependencies() -> bool:
 
 
 def _read_pyproject() -> dict:
-    pyproject = ROOT / "pyproject.toml"
+    pyproject = ROOT / "backend" / "pyproject.toml"
     try:
         return tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -417,7 +417,7 @@ def _read_pyproject() -> dict:
 
 
 def _project_version() -> str:
-    pyproject = ROOT / "pyproject.toml"
+    pyproject = ROOT / "backend" / "pyproject.toml"
     data = _read_pyproject()
 
     version = data.get("project", {}).get("version")

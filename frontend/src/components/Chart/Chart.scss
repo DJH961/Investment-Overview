@@ -1,0 +1,212 @@
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+
+  &__header {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  &__svg {
+    display: block;
+    width: 100%;
+    touch-action: pan-y;
+    outline: none;
+    border-radius: var(--radius-sm);
+
+    &:focus-visible {
+      box-shadow: 0 0 0 2px var(--color-accent);
+    }
+  }
+
+  &__grid {
+    stroke: var(--color-border);
+    stroke-width: 1;
+    stroke-dasharray: 2 4;
+  }
+
+  &__axis-label {
+    fill: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+
+    &--y {
+      text-anchor: end;
+    }
+  }
+
+  &__grad-stop--top {
+    stop-color: var(--chart-1);
+    stop-opacity: 0.32;
+  }
+
+  &__grad-stop--bottom {
+    stop-color: var(--chart-1);
+    stop-opacity: 0;
+  }
+
+  &__line {
+    fill: none;
+    stroke: var(--chart-1);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  &__dot {
+    fill: var(--chart-1);
+  }
+
+  &__series--benchmark {
+    .chart__line {
+      stroke: var(--chart-3);
+      stroke-width: 1.5;
+      stroke-dasharray: 5 4;
+    }
+
+    .chart__dot {
+      fill: var(--chart-3);
+    }
+  }
+
+  &__series--muted {
+    .chart__line {
+      stroke: var(--color-muted);
+      stroke-width: 1.5;
+    }
+
+    .chart__dot {
+      fill: var(--color-muted);
+    }
+  }
+
+  @each $i in 1, 2, 3, 4 {
+    &__series--n#{$i} {
+      .chart__line {
+        stroke: var(--chart-#{$i + 1});
+        stroke-width: 1.5;
+      }
+
+      .chart__dot {
+        fill: var(--chart-#{$i + 1});
+      }
+    }
+  }
+
+  &__crosshair {
+    stroke: var(--color-border-strong);
+    stroke-width: 1;
+  }
+
+  &__marker {
+    fill: var(--chart-1);
+    stroke: var(--color-surface);
+    stroke-width: 2;
+
+    &--benchmark {
+      fill: var(--chart-3);
+    }
+
+    &--muted {
+      fill: var(--color-muted);
+    }
+
+    @each $i in 1, 2, 3, 4 {
+      &--n#{$i} {
+        fill: var(--chart-#{$i + 1});
+      }
+    }
+  }
+
+  &__tooltip {
+    position: absolute;
+    z-index: 1;
+    min-width: 140px;
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+    font-size: var(--font-size-sm);
+    pointer-events: none;
+    transform: translateX(12px);
+
+    &--left {
+      transform: translateX(calc(-100% - 12px));
+    }
+  }
+
+  &__tooltip-time {
+    margin-bottom: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__tooltip-label {
+    flex: 1;
+    color: var(--color-muted);
+  }
+
+  &__tooltip-value {
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+
+    &--benchmark {
+      background: var(--chart-3);
+    }
+
+    &--muted {
+      background: var(--color-muted);
+    }
+
+    @each $i in 1, 2, 3, 4 {
+      &--n#{$i} {
+        background: var(--chart-#{$i + 1});
+      }
+    }
+  }
+
+  &__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+}

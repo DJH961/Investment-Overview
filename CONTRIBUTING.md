@@ -11,6 +11,7 @@ Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/) (`pip install
 --user uv` on Windows).
 
 ```powershell
+cd backend
 uv sync --extra dev
 uv run pre-commit install
 ```
@@ -42,6 +43,7 @@ Layering, the cache-tier rule, the currency rule and test expectations are in
 Generate after changing models:
 
 ```powershell
+cd backend
 uv run alembic revision --autogenerate -m "describe change"
 uv run alembic upgrade head
 ```

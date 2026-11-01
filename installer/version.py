@@ -97,9 +97,13 @@ def tarball_url(tag: str) -> str:
 
     Used as a fallback when the release does not carry a built wheel asset.
     ``pip install <url>`` works directly against this URL because the repo
-    ships a valid ``pyproject.toml`` at its root.
+    ships a valid ``pyproject.toml``: at the root up to 5.3.1, in ``backend/``
+    afterwards (hence the ``#subdirectory`` fragment pip understands).
     """
-    return f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.tar.gz"
+    url = f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.tar.gz"
+    if is_newer(tag, "5.3.1"):
+        url += "#subdirectory=backend"
+    return url
 
 
 def predicted_wheel_url(tag: str) -> str:

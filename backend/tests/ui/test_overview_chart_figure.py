@@ -1,0 +1,318 @@
+"""Tests for the Overview value-over-time Plotly figure (multi-currency view)."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+
+import plotly.graph_objects as go
+import pytest
+from sqlalchemy.orm import Session
+
+from investment_dashboard.readmodels.queries.overview_query import ValueSeriesPoint
+from investment_dashboard.ui.charts import padded_range
+from investment_dashboard.ui.pages.overview import _value_curve_figure, _week_xaxis_range
+from investment_dashboard.ui.theme import register_plotly_template
+
+# The figure uses the app's custom Plotly template; register it for these tests.
+register_plotly_template()
+
+
+def _pts(values: list[float]) -> list[ValueSeriesPoint]:
+    return [
+        ValueSeriesPoint(date=date(2024, 6, 1 + i), value=Decimal(str(v)))
+        for i, v in enumerate(values)
+    ]
+
+
+def _has_secondary_axis(fig: go.Figure) -> bool:
+    return "yaxis2" in fig.layout.to_plotly_json()
+
+
+class TestSecondaryCurrencyAxis:
+    def test_no_secondary_keeps_single_axis(self) -> None:
+        fig = _value_curve_figure(_pts([100, 110]), currency="EUR")
+        assert not _has_secondary_axis(fig)
+        assert fig.layout.showlegend is False
+
+    def test_secondary_axis_shares_starting_point(self) -> None:
+        primary = _pts([100, 120])  # +20% in EUR
+        secondary = _pts([200, 260])  # +30% in USD, different absolute level
+        fig = _value_curve_figure(
+            primary,
+            currency="EUR",
+            secondary=secondary,
+            secondary_currency="USD",
+        )
+        # A right-hand axis is added and the legend turned on.
+        assert fig.layout.showlegend is True
+        scale = 200.0 / 100.0  # secondary[0] / primary[0]
+        # The left range is fitted to BOTH lines: the primary values plus the
+        # companion values mapped into primary units (secondary ÷ scale), so the
+        # diverging companion line is never clipped.
+        left_lo, left_hi = padded_range([100.0, 120.0, 200.0 / scale, 260.0 / scale])
+        r2_lo, r2_hi = fig.layout.yaxis2.range
+        assert r2_lo == left_lo * scale
+        assert r2_hi == left_hi * scale
+
+        # Shared starting point: the first secondary value lands on the same axis
+        # fraction as the first primary value (so both lines start at one pixel).
+        def frac(value: float, lo: float, hi: float) -> float:
+            return (value - lo) / (hi - lo)
+
+        assert frac(200.0, r2_lo, r2_hi) == frac(100.0, left_lo, left_hi)
+
+        # The companion line really is plotted against the right axis.
+        sec_traces = [t for t in fig.data if getattr(t, "yaxis", None) == "y2"]
+        assert len(sec_traces) == 1
+
+    def test_axis_encloses_diverging_companion_line(self) -> None:
+        # A companion (USD) line that diverges far above the primary (EUR) line
+        # — as happens over the long "All" window when EUR/USD drifts — must stay
+        # fully inside both axes rather than running off the top.
+        primary = _pts([100, 101, 102])  # almost flat in EUR
+        secondary = _pts([100, 130, 160])  # +60% in USD
+        fig = _value_curve_figure(
+            primary,
+            currency="EUR",
+            secondary=secondary,
+            secondary_currency="USD",
+        )
+        left_lo, left_hi = fig.layout.yaxis.range
+        r2_lo, r2_hi = fig.layout.yaxis2.range
+        # Neither line is clipped: every plotted value sits within its own axis.
+        assert left_lo <= 100.0
+        assert left_hi >= 102.0
+        assert r2_lo <= 100.0
+        assert r2_hi >= 160.0
+
+    def test_secondary_ignored_when_lengths_mismatch(self) -> None:
+        fig = _value_curve_figure(
+            _pts([100, 120]),
+            currency="EUR",
+            secondary=_pts([200, 260, 300]),
+            secondary_currency="USD",
+        )
+        assert not _has_secondary_axis(fig)
+
+    def test_week_axis_uses_datetime_points(self) -> None:
+        # Week points are datetimes; the figure should render without error and
+        # keep a single axis when no secondary series is supplied.
+        pts = [
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 14, 0), value=Decimal("100")),
+            ValueSeriesPoint(date=datetime(2024, 6, 4, 18, 0), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", week=True)
+        assert fig.layout.xaxis.tickformat == "%a %d"
+
+
+def _week_session_pts() -> list[ValueSeriesPoint]:
+    """Two trading sessions, three intraday points each (start/midday/close)."""
+    out: list[ValueSeriesPoint] = []
+    for day, base in ((3, 100.0), (4, 104.0)):  # Mon 3rd, Tue 4th of June 2024
+        for hour, bump in ((15, 0.0), (18, 1.0), (22, 2.0)):
+            out.append(
+                ValueSeriesPoint(
+                    date=datetime(2024, 6, day, hour, 0), value=Decimal(str(base + bump))
+                )
+            )
+    return out
+
+
+class TestWeekSessionAxis:
+    def test_collapses_dead_time_with_rangebreaks(self) -> None:
+        # The 1W axis drops weekends + the overnight non-session hours so the real
+        # price action isn't crushed into thin slivers (docs plan, opt 1).
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        breaks = fig.layout.xaxis.rangebreaks
+        assert breaks  # non-empty
+        kinds = [rb.to_plotly_json() for rb in breaks]
+        # Weekend drop is always present.
+        assert any(rb.get("bounds") == ["sat", "mon"] for rb in kinds)
+        # The overnight hour window is collapsed (a pattern="hour" bound).
+        assert any(rb.get("pattern") == "hour" for rb in kinds)
+
+    def test_breaks_the_line_between_sessions(self) -> None:
+        # A None gap is inserted between the two sessions so the area renders one
+        # island per day rather than one interpolated ribbon (opt 4).
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        primary = fig.data[0]
+        assert primary.connectgaps is False
+        ys = list(primary.y)
+        assert None in ys  # a per-session break is present
+        # Exactly one break for two sessions.
+        assert sum(1 for y in ys if y is None) == 1
+
+    def test_draws_a_separator_per_session_boundary(self) -> None:
+        # A thin vertical rule marks each session boundary (opt 3): one boundary
+        # between two sessions ⇒ one vline shape.
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        vlines = [s for s in fig.layout.shapes if s.type == "line"]
+        assert len(vlines) == 1
+
+    def test_daily_fallback_series_keeps_plain_axis(self) -> None:
+        # When the week range falls back to the daily snapshot series (plain
+        # ``date`` points, no intraday shape), no rangebreaks/None-gaps are added.
+        fig = _value_curve_figure(_pts([100, 101, 102]), currency="EUR", week=True)
+        assert not fig.layout.xaxis.rangebreaks
+        assert None not in list(fig.data[0].y)
+        assert not [s for s in fig.layout.shapes if s.type == "line"]
+
+
+class TestWeekFullDayPlane:
+    """The latest 1W session gets a full-width day-plane so a still-forming today's
+    live tip sits at its true time-of-day rather than the band's right edge."""
+
+    def test_axis_end_reaches_the_session_close_on_the_last_day(self) -> None:
+        # Two settled sessions (open 15:00 → close 22:00) plus a today that has
+        # only just opened (a single 15:30 point). The axis must still end at the
+        # close hour (22:00) on today's date, reserving today a full band.
+        pts = [
+            *_week_session_pts(),
+            ValueSeriesPoint(date=datetime(2024, 6, 5, 15, 30), value=Decimal("108")),
+        ]
+        rng = _week_xaxis_range([p.date for p in pts])
+        assert rng is not None
+        start, end = rng
+        assert start == datetime(2024, 6, 3, 15, 0)  # first session open
+        assert end == datetime(2024, 6, 5, 22, 0)  # close hour, today's date
+
+    def test_axis_range_applied_to_week_figure(self) -> None:
+        pts = [
+            *_week_session_pts(),
+            ValueSeriesPoint(date=datetime(2024, 6, 5, 15, 30), value=Decimal("108")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", week=True)
+        rng = fig.layout.xaxis.range
+        assert rng is not None
+        # Plotly stores the range as ISO strings; the end carries the 22:00 close.
+        end_str = str(rng[1])
+        assert "2024-06-05" in end_str
+        assert "22:00" in end_str
+
+    def test_closed_session_end_is_a_noop_at_the_real_close(self) -> None:
+        # When the last point already sits at the close, the reserved end equals
+        # it — the band is full and nothing is stretched.
+        pts = _week_session_pts()  # last point is 2024-06-04 22:00 (the close)
+        rng = _week_xaxis_range([p.date for p in pts])
+        assert rng is not None
+        assert rng[1] == datetime(2024, 6, 4, 22, 0)
+
+    def test_no_range_for_daily_fallback_or_too_few_points(self) -> None:
+        # Plain date points (daily fallback) and single points keep autorange.
+        assert _week_xaxis_range([date(2024, 6, 3)]) is None  # type: ignore[list-item]
+        assert _week_xaxis_range([datetime(2024, 6, 3, 15, 0)]) is None
+
+    def test_no_range_when_session_wraps_past_midnight(self) -> None:
+        # A session whose close time-of-day is not later than its open (wraps
+        # midnight) keeps the plain autorange, mirroring the rangebreaks guard.
+        wrap = [
+            datetime(2024, 6, 3, 22, 0),
+            datetime(2024, 6, 4, 22, 0),
+        ]
+        # min/max time-of-day are equal here ⇒ no usable open→close span.
+        assert _week_xaxis_range(wrap) is None
+
+
+class TestHoverTimestamp:
+    def test_week_hover_header_includes_time(self) -> None:
+        # The "x unified" tooltip header is formatted by ``hoverformat`` (not the
+        # per-trace template), so the 1W read-out must carry the timestamp.
+        fig = _value_curve_figure(_week_session_pts(), currency="EUR", week=True)
+        assert fig.layout.xaxis.hoverformat == "%a %d %b %H:%M"
+
+    def test_intraday_hover_header_is_time_of_day(self) -> None:
+        pts = [
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 14, 0), value=Decimal("100")),
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 18, 0), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert fig.layout.xaxis.hoverformat == "%H:%M"
+
+
+class TestIntradayDayLabel:
+    def test_title_names_the_day_when_not_today(self) -> None:
+        # A frozen weekend session (3 June 2024) is not "today": the title must
+        # name the real day instead of misleadingly reading "today".
+        pts = [
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 14, 0), value=Decimal("100")),
+            ValueSeriesPoint(date=datetime(2024, 6, 3, 18, 0), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert "today" not in fig.layout.title.text
+        assert "Mon 03 Jun" in fig.layout.title.text
+
+    def test_title_says_today_for_todays_session(self) -> None:
+        # Anchor to today's calendar date at midday so the assertion stays
+        # deterministic (never straddles a midnight boundary mid-run).
+        today_noon = datetime.combine(date.today(), datetime.min.time()).replace(hour=12)
+        pts = [
+            ValueSeriesPoint(date=today_noon.replace(hour=10), value=Decimal("100")),
+            ValueSeriesPoint(date=today_noon.replace(hour=11), value=Decimal("105")),
+        ]
+        fig = _value_curve_figure(pts, currency="EUR", intraday=True)
+        assert "today" in fig.layout.title.text
+
+
+class TestGraphReloadHelpers:
+    def test_perform_graph_reload_dispatches_correctly(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from investment_dashboard.services import intraday_snapshots_service, snapshots_service
+        from investment_dashboard.ui.pages.overview import _perform_graph_reload
+
+        called: dict[str, bool] = {}
+
+        def _fake_reload_day(sess: Session) -> int:
+            called["day"] = True
+            return 10
+
+        def _fake_reload_week(sess: Session) -> int:
+            called["week"] = True
+            return 20
+
+        def _fake_warm_range(sess: Session, *args: object, **kw: object) -> int:
+            called["warm"] = True
+            return 5
+
+        monkeypatch.setattr(intraday_snapshots_service, "reload_day_graph", _fake_reload_day)
+        monkeypatch.setattr(intraday_snapshots_service, "reload_week_graph", _fake_reload_week)
+        monkeypatch.setattr(snapshots_service, "warm_range", _fake_warm_range)
+
+        assert _perform_graph_reload("Day") == 10
+        assert called.get("day") is True
+
+        assert _perform_graph_reload("Week") == 20
+        assert called.get("week") is True
+
+        assert _perform_graph_reload("Month") is None
+        assert called.get("warm") is True
+
+    def test_rebuild_plot_figure_runs_without_error(self, session: Session) -> None:
+        from investment_dashboard.ui.pages.overview import _rebuild_plot_figure
+
+        # On empty session, returns None (no series) or Figure without raising
+        _rebuild_plot_figure(
+            "Day", display_ccy="EUR", secondary_ccy="USD", display_tz=None, session=session
+        )
+        _rebuild_plot_figure(
+            "Week", display_ccy="EUR", secondary_ccy=None, display_tz=None, session=session
+        )
+
+    @pytest.mark.anyio
+    async def test_reload_graphs_after_import_calls_service(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from investment_dashboard.services import intraday_snapshots_service
+        from investment_dashboard.ui.pages.transactions import _reload_graphs_after_import
+
+        called = False
+
+        def _fake_reload(sess: Session) -> dict[str, int]:
+            nonlocal called
+            called = True
+            return {"day": 1, "week": 2}
+
+        monkeypatch.setattr(intraday_snapshots_service, "reload_graphs", _fake_reload)
+        await _reload_graphs_after_import()
+        assert called is True

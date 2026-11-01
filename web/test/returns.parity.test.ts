@@ -26,7 +26,7 @@ import {
 } from "../src/returns";
 import { projectForward } from "../src/phase4";
 
-const VECTORS_PATH = fileURLToPath(new URL("../../tests/parity/vectors.json", import.meta.url));
+const VECTORS_PATH = fileURLToPath(new URL("../../backend/tests/parity/vectors.json", import.meta.url));
 
 interface Vectors {
   tolerances: { money: string; rates: string; xirr: string };

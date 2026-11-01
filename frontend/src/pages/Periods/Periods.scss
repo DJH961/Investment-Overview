@@ -1,0 +1,48 @@
+.periods-page {
+  display: block;
+
+  &__grid {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  &__pill {
+    color: var(--color-accent);
+    font-size: var(--font-size-xs);
+  }
+
+  &__bars {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-1);
+    height: 8rem;
+    overflow-x: auto;
+  }
+
+  &__bar-slot {
+    flex: 1 0 0.5rem;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+  }
+
+  &__bar {
+    width: 100%;
+    border-radius: var(--radius-sm);
+    min-height: var(--border-width);
+
+    &--pos {
+      background: var(--color-pos);
+    }
+
+    &--neg {
+      background: var(--color-neg);
+    }
+  }
+
+  &__note {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+}

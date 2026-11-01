@@ -15,7 +15,7 @@ on:
   push:
     branches: [main]
     paths:
-      - pyproject.toml
+      - backend/pyproject.toml
   workflow_dispatch:
 
 permissions:
@@ -36,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           version="$(
-            python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])"
+            python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('backend/pyproject.toml').read_text())['project']['version'])"
           )"
           if [ -z "${version}" ]; then
             echo "Could not read project.version from pyproject.toml" >&2

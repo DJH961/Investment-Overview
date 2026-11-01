@@ -1,0 +1,106 @@
+.login-page {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: var(--space-4);
+  padding-top: calc(var(--space-4) + var(--safe-top));
+  padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+  background: var(--color-bg-glow), var(--color-bg);
+
+  &__card {
+    width: 100%;
+    max-width: 420px;
+    padding: var(--space-7) var(--space-6);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+  }
+
+  &__brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-6);
+    text-align: center;
+  }
+
+  &__mark {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: var(--space-2);
+    color: var(--color-accent-fg);
+    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-1);
+
+    svg {
+      width: var(--icon-lg);
+      height: var(--icon-lg);
+    }
+  }
+
+  &__title {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    color: var(--color-fg);
+  }
+
+  &__subtitle {
+    margin: 0;
+    font-size: var(--font-size-md);
+    color: var(--color-muted);
+  }
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  &__password {
+    position: relative;
+
+    .login-page__input .input__control {
+      padding-inline-end: var(--space-8);
+    }
+  }
+
+  &__toggle {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: var(--space-1);
+    margin-block: auto;
+    height: fit-content;
+  }
+
+  &__error {
+    margin: 0;
+    padding: var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-neg);
+    background: var(--color-neg-soft);
+    border-radius: var(--radius-sm);
+  }
+
+  &__divider {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--font-size-xs);
+    color: var(--color-faint);
+
+    &::before,
+    &::after {
+      content: "";
+      flex: 1;
+      height: var(--border-width);
+      background: var(--color-border);
+    }
+  }
+}

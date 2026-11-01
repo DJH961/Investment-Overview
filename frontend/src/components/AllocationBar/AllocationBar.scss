@@ -1,0 +1,91 @@
+.allocation-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  &__track {
+    margin: 0;
+    position: relative;
+    display: flex;
+    height: var(--space-5);
+    overflow: hidden;
+    background: var(--color-border);
+    border-radius: var(--radius-full);
+  }
+
+  &__segment {
+    height: 100%;
+    border-right: 2px solid var(--color-surface);
+    transition: width var(--duration-base) var(--ease-standard);
+
+    &:last-of-type {
+      border-right: 0;
+    }
+  }
+
+  &__marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--color-fg);
+    opacity: 0.85;
+  }
+
+  @each $i in 1, 2, 3, 4, 5, 6 {
+    &__segment--c#{$i},
+    &__swatch--c#{$i} {
+      background: var(--chart-#{$i});
+    }
+  }
+
+  &__legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--space-2) var(--space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+  }
+
+  &__item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  &__swatch {
+    width: 10px;
+    height: 10px;
+    align-self: center;
+    border-radius: var(--radius-full);
+  }
+
+  &__name {
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__actual {
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__target {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__drift {
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+
+    &--pos {
+      color: var(--color-pos);
+    }
+
+    &--neg {
+      color: var(--color-neg);
+    }
+  }
+}

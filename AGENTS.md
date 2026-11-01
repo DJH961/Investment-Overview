@@ -13,7 +13,8 @@ other doc.
   [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md). Do not start a v6 phase
   until the owner has approved it; keep v5 working until cutover.
 - **Legacy:** branch `legacy/v5` / tag `v5.3.1` is frozen. Never commit to it or
-  backport to it; see [`docs/legacy_v5.md`](docs/legacy_v5.md).
+  backport to it (the owner-requested known-bugs note there is the only exception);
+  see [`docs/legacy_v5.md`](docs/legacy_v5.md).
 - **Where v6 stands:** the plan's status line (top of `docs/v6_one_app_plan.md`) is
   the source of truth; keep it current when a phase step finishes.
 
@@ -23,7 +24,7 @@ other doc.
 | --- | --- | --- |
 | Backend | Python 3.12, NiceGUI on FastAPI/uvicorn, SQLAlchemy 2 + Alembic, SQLite (ledger / config / cache tiers), pandas/numpy/scipy, yfinance + Frankfurter (+ Tiingo fallback), `uv` | Same Python core as a FastAPI API server in `backend/`, SQLCipher, server-side scheduler, SSE |
 | Frontend | `web/`: Vite + vanilla TypeScript PWA on GitHub Pages, reads an encrypted blob | `frontend/`: React 19 + TS + Vite, SCSS/BEM tokens, TanStack Query |
-| Hosting | Owner's laptop (LAN) + GitHub Pages + Cloudflare Worker | One Docker Compose stack (app + Caddy + Litestream) on the Hetzner server |
+| Hosting | Owner's laptop (LAN) + GitHub Pages + Cloudflare Worker | One Docker Compose stack (app + Caddy + rclone backup sidecar; sealed SQLCipher snapshots, no Litestream) on the Hetzner server |
 | Docs | [`docs/architecture.md`](docs/architecture.md) | [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md), [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) |
 
 ## Infrastructure and server access
@@ -96,8 +97,9 @@ What this means in practice:
 
 Adapted from the owner's starter-project convention (see plan §4a):
 
-- Top level: `backend/`, `frontend/`, `deploy/`, `docs/`. The move from `src/` and
-  `web/` happens in one `git mv` commit at the start of v6 Phase 1.
+- Top level: `backend/`, `frontend/`, `deploy/`, `docs/`. The Python project already
+  lives in `backend/` (run `uv` and `pytest` from there); `web/` moves to `frontend/`
+  at the start of v6 Phase 1.
 - Backend: one router module per resource in `api/`, mounted under `/api`;
   settings via pydantic-settings (`config.py`, cached `get_settings()`).
 - Frontend: TypeScript; `components/<Name>/` and `pages/<Name>/` each hold
@@ -124,7 +126,7 @@ Adapted from the owner's starter-project convention (see plan §4a):
 - **Release fast — default is one release per change.** Any change that alters
   what the app does (feature or bug fix) is released **in the same PR/push**: a
   patch bump for fixes, a minor bump for features, under a dated
-  `## [x.y.z] — YYYY-MM-DD` heading. Bump `pyproject.toml` and `web/package.json`
+  `## [x.y.z] — YYYY-MM-DD` heading. Bump `backend/pyproject.toml` and `web/package.json`
   in lockstep and regenerate lockfiles (`uv lock`, and `npm install` inside
   `web/`). Pushing the bump to `main` tags the release.
 - **`[Unreleased]` is temporary storage, not the default.** Use it only for
@@ -137,6 +139,7 @@ Adapted from the owner's starter-project convention (see plan §4a):
   laptop-only failures (they read the real keyring and Dropbox/OneDrive folders):
   `tests/storage/test_cloud_and_paths.py` cloud-detection tests and
   `tests/services/test_publish_service.py::test_publish_now_requires_repo_passphrase_token`.
+  - From `backend/`:
   - `uv run ruff format .`
   - `uv run ruff check . --fix`
   - `uv run mypy src/investment_dashboard/domain`

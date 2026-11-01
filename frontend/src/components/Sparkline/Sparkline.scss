@@ -1,0 +1,20 @@
+.sparkline {
+  display: block;
+  max-width: 100%;
+
+  &__line {
+    fill: none;
+    stroke: var(--chart-1);
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &--pos &__line {
+    stroke: var(--color-pos);
+  }
+
+  &--neg &__line {
+    stroke: var(--color-neg);
+  }
+}

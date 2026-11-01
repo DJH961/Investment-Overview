@@ -19,11 +19,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **v6 "One App" (Phases 1 and 3, most of Phase 2; not deployed yet).** Execution log in `docs/v6_progress.md`.
+  - Repo restructure: the Python project now lives in `backend/`; the new React app in `frontend/` (the v5 web companion stays in `web/` until cutover).
+  - FastAPI server (`inv-dashboard-server`, `api/app.py`): one router per resource under `/api` (overview, holdings, allocations + rebalance, graphs, periods, analytics, deposits, diagnostics, calculator, transactions CRUD, imports with preview/confirm, settings, refresh, backup, accounts, FX conversions, SSE `/api/stream`), Pydantic response models, committed `backend/openapi.json` and generated frontend types, security headers, SPA serving.
+  - Auth: argon2 password (`inv-dashboard-set-password`), passkeys (user verification required), server-side sessions in a `__Host-` cookie with idle/absolute expiry, Origin checks, login rate limits; bearer token kept for scripts (min. 32 chars).
+  - Currency conversions: `fx_conversions` table (migration 0015) and a pure FIFO USD pool (`domain/fx_pool.py`, property-tested); EUR returns use the euros actually sent when batches exist, with ECB fallback flagged.
+  - Server runtime: in-process scheduler (market-hours ticks, EOD jobs, off-hours FX), live event bus and SSE.
+  - Deploy: multi-stage `Dockerfile`, `deploy/docker-compose.yml` (app + Caddy + rclone backup sidecar), `Caddyfile`, inert-by-default `deploy.yml` workflow, `inv-dashboard-upload-db`, sealed snapshots after every change + nightly, one-command `deploy/restore.sh` / `inv-dashboard-restore`, runbook sections.
+  - React frontend: design system (tokens, BEM SCSS, Radix), responsive shell (desktop sidebar, phone tab bar), charts, all 15 pages, login + passkeys, PWA, live updates, offline cache.
+
 - **Agent context and full rebuild guide.**
   - `AGENTS.md` gains a stack-at-a-glance table (v5 now vs v6 target), rules for infrastructure and server access (Tailscale only, Windows OpenSSH for the agent, nothing private in this public repo), notes on working with the owner, and the known laptop-only test failures.
   - `deploy/RUNBOOK.md` now covers a normal restart and a complete step-by-step rebuild: host-key reset, console password, Tailscale re-join, new B2 key, the HTTPS placeholder, and final checks.
 
 - **v6 server, provisioned and hardened (no app change).** `deploy/bootstrap.sh` turns a fresh Ubuntu LTS server into a hardened Docker host in three safe steps (base setup and admin user; root and password login off; SSH only over Tailscale). Also: automatic security updates with a 04:30 UTC reboot, `ufw`, swap, Docker and Tailscale. `deploy/RUNBOOK.md` documents the server, everyday access, rebuild and updates. `.gitattributes` keeps shell scripts LF. Phase 0 checks: HTTPS placeholder at `investments.daniel-henke.de` with a Let's Encrypt certificate, a one-shot yfinance request from the server works, and a bucket-scoped Backblaze B2 key can write, read and delete backups. The v6 plan now records the Porkbun subdomain and the actual server size.
+
+### Fixed
+
+- The hosted support-bundle download no longer includes the raw server log (it can hold stack traces); read it on the server with `docker compose logs app`.
+- API test data has prices for the whole last week, so the graph tests pass on weekends.
+- Analytics USD figures were built from EUR cashflows and reported the EUR XIRR as the USD XIRR; they now use USD cashflows.
+- A same-day dividend reinvestment in a different account no longer cancels a cash dividend.
+- Missing FX rates no longer turn into 0, a rate of 1 or a EUR value labelled USD; the figure is left blank.
+- Server-side "today" uses the New York exchange day everywhere (was the host clock in ~70 places).
+- Holdings "capital gain" no longer includes dividends; the old figure is now "total return".
+- Installer source-tarball fallback points pip at `backend/` for releases after 5.3.1.
+
+### Changed
+
+- `legacy/v5` gained `docs/legacy_v5_known_bugs.md`: the v5 bugs fixed only in v6, for anyone rolling back.
+- Backend unification: one canonical cashflow module (`services/cashflows.py`), one set of transaction kinds and instrument classes (`domain/kinds.py`, `domain/instruments.py`); every ratio in the API is a fraction.
 
 ### Removed
 

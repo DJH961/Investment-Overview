@@ -20,6 +20,7 @@ valuation moment's rate, so EUR returns are FX-aware (rule in
 Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/).
 
 ```powershell
+cd backend
 uv sync                          # add --extra dev for lint/test tooling
 uv run alembic upgrade head      # create the SQLite schema
 uv run investment-dashboard      # NiceGUI on http://localhost:8080
@@ -60,28 +61,30 @@ Not sure what a screen does? Use the in-app Help page or the
 ## Repository layout
 
 ```
-src/investment_dashboard/   Python package (layers: ui/api -> services/readmodels
+backend/src/investment_dashboard/   Python package (layers: ui/api -> services/readmodels
                             -> repositories/adapters -> domain; see docs/architecture.md)
-migrations/                 Alembic migrations
-tests/                      pytest suite, mirrors src/
+backend/migrations/         Alembic migrations
+backend/tests/              pytest suite, mirrors src/
 web/                        v5 read-only web companion (TypeScript) + web/proxy Cloudflare Worker
 installer/                  Windows installer and portable-bundle build
-tools/                      helper scripts
+backend/tools/              helper scripts
 docs/                       architecture, user guide, legacy guide, v6 plan (see docs/README.md)
 run_dashboard.*             one-click launchers
 ```
 
-At the start of v6 Phase 1 `src/` and `web/` move to `backend/` and `frontend/`
+The Python project lives in `backend/` (run all `uv` commands from there); `web/`
+moves to `frontend/` at the start of v6 Phase 1
 ([plan §4a](docs/v6_one_app_plan.md)).
 
 ## Development
 
 ```powershell
+cd backend
 uv sync --extra dev
 uv run ruff format . ; uv run ruff check . --fix
 uv run mypy src/investment_dashboard/domain
 uv run pytest                      # add --run-network for live-API tests
-cd web; npm run typecheck; npm run test
+cd ..\web; npm run typecheck; npm run test
 ```
 
 ## Documentation and project files

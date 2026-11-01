@@ -1,0 +1,79 @@
+@use "../../styles/mixins" as m;
+
+.dialog {
+  &__overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    background: var(--color-overlay);
+    animation: dialog-fade var(--duration-base) var(--ease-standard);
+  }
+
+  &__content {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: var(--z-dialog);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: calc(100vw - var(--space-6));
+    max-width: var(--dialog-width);
+    max-height: calc(100dvh - var(--space-6));
+    padding: var(--space-5);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+    transform: translate(-50%, -50%);
+    animation: dialog-pop var(--duration-base) var(--ease-standard);
+  }
+
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  &__title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__description {
+    margin-top: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__body {
+    overflow-y: auto;
+  }
+
+  &__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+}
+
+@keyframes dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.98);
+  }
+}
+
+@include m.reduced-motion {
+  .dialog__overlay,
+  .dialog__content {
+    animation: none;
+  }
+}
