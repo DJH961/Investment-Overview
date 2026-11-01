@@ -25,6 +25,7 @@ from investment_dashboard.domain.money_market import (
     MANUAL_SETTLEMENT_DESCRIPTION_PREFIX,
     settlement_external_id_for,
 )
+from investment_dashboard.errors import NotFoundError, ValidationError
 from investment_dashboard.repositories import accounts_repo, instruments_repo, transactions_repo
 from investment_dashboard.services import (
     intraday_snapshots_service,
@@ -39,11 +40,11 @@ if TYPE_CHECKING:
 NO_MONEY_MARKET_WARNING = "No money-market fund on this account yet - logged the cash move only."
 
 
-class TransactionEditError(ValueError):
+class TransactionEditError(ValidationError):
     """The submitted transaction is invalid (maps to HTTP 422)."""
 
 
-class TransactionNotFoundError(LookupError):
+class TransactionNotFoundError(NotFoundError):
     """No transaction (or account) with the given id."""
 
 

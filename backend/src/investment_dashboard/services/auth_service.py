@@ -36,6 +36,7 @@ from webauthn.helpers.structs import (
 )
 
 from investment_dashboard.config import Settings
+from investment_dashboard.errors import ValidationError
 from investment_dashboard.repositories import auth_repo
 
 if TYPE_CHECKING:
@@ -53,7 +54,7 @@ _hasher = PasswordHasher()
 _DUMMY_HASH = _hasher.hash(secrets.token_urlsafe(16))
 
 
-class WeakPasswordError(ValueError):
+class WeakPasswordError(ValidationError):
     """Raised when a new password is too short."""
 
 

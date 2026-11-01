@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters.importer_types import ParsedTransactionRow, ParseReport
 from investment_dashboard.adapters.vanguard.settlement import inject_settlement_legs
+from investment_dashboard.errors import NotFoundError, ValidationError
 from investment_dashboard.repositories import accounts_repo, transactions_repo
 from investment_dashboard.services import importer_service
 from investment_dashboard.services.importer_service import Broker, ImportResult
@@ -33,11 +34,11 @@ TTL = timedelta(minutes=30)
 ALLOWED_EXTENSIONS: tuple[str, ...] = (".csv", ".xlsx")
 
 
-class ImportStagingError(ValueError):
+class ImportStagingError(ValidationError):
     """The upload can't be staged (bad file, unknown broker/account) -> 422."""
 
 
-class StagedImportNotFoundError(LookupError):
+class StagedImportNotFoundError(NotFoundError):
     """Unknown or expired import id -> 404."""
 
 

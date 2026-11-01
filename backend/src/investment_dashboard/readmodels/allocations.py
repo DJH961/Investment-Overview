@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.allocation import current_weights_pct
+from investment_dashboard.errors import ConflictError, ValidationError
 from investment_dashboard.readmodels._context import build_context
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.rebalance import round_to_100, scale_to_100
@@ -26,11 +27,11 @@ HUNDRED = Decimal(100)
 UNCATEGORIZED = "Uncategorized"
 
 
-class AllocationInputError(ValueError):
+class AllocationInputError(ValidationError):
     """The submitted target is invalid (maps to HTTP 422)."""
 
 
-class AllocationConflictError(ValueError):
+class AllocationConflictError(ConflictError):
     """The submitted target clashes with an existing one (maps to HTTP 409)."""
 
 

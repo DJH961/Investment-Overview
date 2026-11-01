@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.errors import ValidationError
 from investment_dashboard.repositories import (
     accounts_repo,
     instrument_overrides_repo,
@@ -241,7 +242,7 @@ def _repair_preset_metadata(
     )
 
 
-class InvalidTickerError(ValueError):
+class InvalidTickerError(ValidationError):
     """Raised when a caller tries to seed a ticker that didn't validate."""
 
 

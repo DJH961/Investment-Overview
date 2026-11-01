@@ -23,6 +23,7 @@ from investment_dashboard.domain.allocation import (
     expand_category_weights,
     plan_rebalance,
 )
+from investment_dashboard.errors import ValidationError
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.queries.calculator_query import (
     UNCATEGORIZED,
@@ -36,7 +37,7 @@ HUNDRED = Decimal(100)
 TENTH = Decimal("0.1")
 
 
-class RebalanceInputError(ValueError):
+class RebalanceInputError(ValidationError):
     """The requested plan cannot be assembled from the given inputs."""
 
 
