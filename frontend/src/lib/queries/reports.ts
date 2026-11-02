@@ -24,7 +24,9 @@ export function toNum(v: string | number | null | undefined): number | null {
 export function usePeriods(kind: PeriodKind, ccy: ReportingCurrency) {
   return useQuery({
     queryKey: ["periods", kind, ccy],
-    queryFn: ({ signal }) => api<PeriodsOut>(`/api/periods/${kind}?ccy=${ccy}`, { signal }),
+    // Monthly asks the server to pad empty months so the history is contiguous.
+    queryFn: ({ signal }) =>
+      api<PeriodsOut>(`/api/periods/${kind}?ccy=${ccy}${kind === "monthly" ? "&fill_gaps=true" : ""}`, { signal }),
   });
 }
 

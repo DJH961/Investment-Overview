@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrefsProvider } from "../../lib/prefs";
 import { Risk } from "../Risk";
@@ -12,7 +13,7 @@ function wrap(node: React.ReactNode) {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <PrefsProvider>
-        {node}
+        <MemoryRouter>{node}</MemoryRouter>
       </PrefsProvider>
     </QueryClientProvider>,
   );
@@ -20,7 +21,42 @@ function wrap(node: React.ReactNode) {
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.localStorage.clear();
+});
+
+const row = (label: string, over: Record<string, unknown> = {}) => ({
+  label,
+  is_current: false,
+  closing_value: "1000",
+  growth_pct: "0.05",
+  net_flow: "10",
+  contributions: "10",
+  dividends: "0",
+  interest: "0",
+  opening_value: "900",
+  period_growth_xirr: "0.06",
+  total_growth_compounded: "0.2",
+  ...over,
+});
+
+function stubPeriods() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const monthly = String(url).includes("/monthly");
+      return json({
+        as_of: "2026-10-31",
+        ccy: "EUR",
+        granularity: monthly ? "monthly" : "yearly",
+        rows: monthly
+          ? [row("2025-12"), row("2026-01"), row("2026-02", { is_current: true })]
+          : [row("2025"), row("2026", { is_current: true })],
+      });
+    }),
+  );
+}
 
 describe("Periods", () => {
   it("renders rows and a dash for missing values", async () => {
@@ -58,6 +94,31 @@ describe("Periods", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 400 })));
     wrap(<Periods />);
     expect(await screen.findByText("Could not load periods")).toBeInTheDocument();
+  });
+});
+
+describe("Periods by year", () => {
+  it("opens the current year only and remembers folds", async () => {
+    stubPeriods();
+    wrap(<Periods />);
+    expect(await screen.findByText("2026-02")).toBeInTheDocument();
+    expect(screen.queryByText("2025-12")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /2025/ }));
+    expect(await screen.findByText("2025-12")).toBeInTheDocument();
+    expect(window.localStorage.getItem("iv.fold.periods.year.2025")).toBe("true");
+  });
+
+  it("requests padded months and shows Total growth and XIRR on the yearly view", async () => {
+    stubPeriods();
+    wrap(<Periods />);
+    await screen.findByText("2026-02");
+    const urls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes("/monthly") && u.includes("fill_gaps=true"))).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "Yearly" }));
+    expect((await screen.findAllByText("Total growth")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("XIRR (period)").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Growth (TWR)").length).toBeGreaterThan(0);
+    expect(window.localStorage.getItem("iv.periods.view")).toBe('"yearly"');
   });
 });
 
