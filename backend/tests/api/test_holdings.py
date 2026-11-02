@@ -119,6 +119,74 @@ def test_holdings_and_overview_agree(api_client: TestClient, seeded: None, ccy: 
     assert Decimal(summary["best_growth"]) == Decimal(best["total_growth"])
 
 
+def test_group_by_category_subtotals_golden(api_client: TestClient, seeded: None) -> None:
+    body = api_client.get("/api/holdings?ccy=USD&group_by=category").json()
+    assert body["group_by"] == "category"
+    groups = {g["key"]: g for g in body["groups"]}
+    assert [g["key"] for g in body["groups"]] == ["US Stocks", "Bonds"]  # value desc
+    stocks, bonds = groups["US Stocks"], groups["Bonds"]
+    assert Decimal(stocks["value"]) == 3750
+    assert Decimal(stocks["cost_basis"]) == 3050
+    assert Decimal(stocks["capital_gain"]) == 700
+    assert Decimal(bonds["value"]) == 1400
+    assert Decimal(bonds["capital_gain"]) == -100
+    assert stocks["count"] == 1
+    rows = _by_symbol(body)
+    assert stocks["instrument_ids"] == [rows["VTI"]["instrument_id"]]
+    assert Decimal(stocks["weight_pct"]) == pytest.approx(Decimal(3750) / 5150)
+
+
+@pytest.mark.parametrize("ccy", ["EUR", "USD"])
+@pytest.mark.parametrize("by", ["account", "asset_class", "currency", "category"])
+def test_group_subtotals_add_up_to_totals(
+    api_client: TestClient, seeded: None, ccy: str, by: str
+) -> None:
+    body = api_client.get(f"/api/holdings?ccy={ccy}&group_by={by}").json()
+    groups = body["groups"]
+    assert sum(g["count"] for g in groups) == len(body["holdings"])
+    for field, total in (
+        ("value", "total_value"),
+        ("cost_basis", "total_cost_basis"),
+        ("capital_gain", "total_capital_gain"),
+        ("dividends", "total_dividends"),
+        ("total_return", "total_return"),
+    ):
+        assert sum(Decimal(g[field]) for g in groups) == pytest.approx(
+            Decimal(body[total]), abs=Decimal("0.0001")
+        )
+    members = [i for g in groups for i in g["instrument_ids"]]
+    assert sorted(members) == sorted(r["instrument_id"] for r in body["holdings"])
+
+
+def test_group_by_default_none_and_invalid(api_client: TestClient, seeded: None) -> None:
+    assert api_client.get("/api/holdings?ccy=USD").json()["groups"] == []
+    assert api_client.get("/api/holdings?group_by=nope").status_code == 422
+
+
+@pytest.mark.parametrize("ccy", ["EUR", "USD"])
+def test_second_kpi_row_fields(api_client: TestClient, seeded: None, ccy: str) -> None:
+    body = api_client.get(f"/api/holdings?ccy={ccy}").json()
+    over = api_client.get(f"/api/overview?ccy={ccy}").json()["kpis"]
+    for field in ("xirr", "dividend_income", "dividends_ttm", "annual_expense_cost"):
+        assert field in body
+    assert body["xirr"] == over["xirr"]
+    assert body["total_growth"] == over["total_growth_compounded"]
+    assert body["dividend_yield_pct"] == over["dividend_yield_pct"]
+    assert body["dividend_yield_ttm_pct"] == over["dividend_yield_ttm_pct"]
+    assert body["weighted_expense_ratio"] == over["weighted_expense_ratio"]
+    assert body["annual_expense_cost"] == over["annual_expense_cost"]
+    assert body["dividend_income"] == over["dividend_income"]
+    assert body["dividends_ttm"] == over["dividends_ttm"]
+
+
+def test_fx_block_only_when_a_holding_is_foreign(api_client: TestClient, seeded: None) -> None:
+    usd = api_client.get("/api/holdings?ccy=USD").json()
+    assert usd["fx"] is None  # every holding is USD: nothing to show
+    eur = api_client.get("/api/holdings?ccy=EUR").json()
+    assert eur["fx"]["pair"] == "USD/EUR"
+    assert Decimal(eur["fx"]["spot"]) == pytest.approx(1 / RATE_NOW, rel=Decimal("1e-9"))
+
+
 def test_history_requires_auth(anon_client: TestClient) -> None:
     assert anon_client.get("/api/holdings/1/history").status_code == 401
 
