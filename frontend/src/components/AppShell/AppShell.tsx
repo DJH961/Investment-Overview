@@ -1,20 +1,23 @@
 /* The refresh bar is a styled div (native <progress> cannot animate the indeterminate stripe). */
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import clsx from "clsx";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { api } from "../../lib/api";
 import { NAV_ITEMS, titleFor } from "../../lib/nav";
 import { useServerRefresh } from "../../lib/refresh";
 import { useShell } from "../../lib/shell";
+import { PULL_THRESHOLD, usePullToRefresh } from "../../lib/usePullToRefresh";
 import { useShortcuts } from "../../lib/useShortcuts";
-import { useIsDesktop, useIsPhone } from "../../lib/useMediaQuery";
+import { useIsDesktop, useIsPhone, useMediaQuery } from "../../lib/useMediaQuery";
 import { Dialog } from "../Dialog";
 import { updatingView } from "../Freshness";
 import { Sidebar } from "../Sidebar";
 import { TabBar } from "../TabBar";
 import { TopBar } from "../TopBar";
 import "./AppShell.scss";
+import { useShellHealth } from "./useShellHealth";
 
 const RAIL_KEY = "iv.sidebar.rail";
 
@@ -24,6 +27,25 @@ function readRail(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Phone pull-to-refresh: its own component so finger moves only re-render the indicator. */
+function PullToRefresh({ enabled, onRefresh }: { enabled: boolean; onRefresh: () => void }) {
+  const { offset, armed } = usePullToRefresh({ enabled, onRefresh });
+  const still = useMediaQuery("(prefers-reduced-motion: reduce)");
+  if (offset <= 0) return null;
+  return (
+    <div
+      className={clsx("app-shell__pull", armed && "app-shell__pull--armed")}
+      style={{ transform: `translate(-50%, ${offset}px)` }}
+      aria-hidden
+    >
+      <RefreshCw
+        className="app-shell__pull-icon"
+        style={still ? undefined : { transform: `rotate(${Math.round((offset / PULL_THRESHOLD) * 270)}deg)` }}
+      />
+    </div>
+  );
 }
 
 /** Responsive frame: sidebar (desktop) / rail (tablet) / bottom tab bar (phone). */
@@ -37,7 +59,9 @@ export function AppShell() {
   const server = useServerRefresh();
   const refresh = server.state;
   const freshness = refresh.running ? updatingView(refresh) : pageFreshness;
+  // Always enabled, on every page: it never depends on a page registering a handler.
   const onRefresh = server.start;
+  const health = useShellHealth();
   const refreshing = refresh.running || pageRefreshing;
   const determinate = refresh.historical && refresh.total > 0;
   const [userRail, setUserRail] = useState(readRail);
@@ -93,12 +117,15 @@ export function AppShell() {
           onRefresh={onRefresh}
           refreshing={refreshing}
           onLogout={logout}
+          health={health}
+          // privacyToggle: the "hide numbers" eye button goes here (see plans/4_hide_numbers.md).
         />
         <main className="app-shell__content" id="main">
           <Outlet />
         </main>
       </div>
-      {phone && <TabBar onLogout={logout} onRefresh={onRefresh} />}
+      {phone && <TabBar />}
+      {phone && <PullToRefresh enabled={!refresh.running} onRefresh={onRefresh} />}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen} title="Keyboard shortcuts" description="Press g, then a letter.">
         <ul className="app-shell__shortcuts">
           {NAV_ITEMS.filter((i) => i.shortcut).map((i) => (

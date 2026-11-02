@@ -58,9 +58,35 @@
     padding: var(--space-6);
 
     @include m.phone {
-      padding: var(--space-4);
-      padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6));
+      padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6))
+        calc(var(--space-4) + var(--safe-left));
     }
+  }
+
+  &__pull {
+    position: fixed;
+    top: calc(var(--topbar-height) + var(--safe-top) - var(--space-8));
+    left: 50%;
+    z-index: var(--z-topbar);
+    display: grid;
+    place-items: center;
+    width: var(--space-8);
+    height: var(--space-8);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-2);
+    color: var(--color-muted);
+    pointer-events: none;
+
+    &--armed {
+      color: var(--color-accent);
+    }
+  }
+
+  &__pull-icon {
+    width: var(--icon-md);
+    height: var(--icon-md);
   }
 
   &__shortcuts {

@@ -54,6 +54,9 @@ describe("AppShell", () => {
     expect(screen.getByRole("navigation", { name: "Main tabs" })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Primary" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "More" })).toBeInTheDocument();
+    // Refresh and the account menu (sign out) are in the top bar, enabled without any page registering a handler.
+    expect(screen.getByRole("button", { name: "Refresh data" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Account and sign out" })).toBeInTheDocument();
   });
   it("shows Updating… and a progress bar while a server refresh runs", () => {
     mockViewport(1280);
