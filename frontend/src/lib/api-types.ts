@@ -1439,8 +1439,39 @@ export interface components {
             /** Total Value */
             total_value: string | null;
         };
+        /**
+         * CheckAction
+         * @description A "Fix" button: run a repair job (``POST /maintenance/jobs/{id}``) or open a page.
+         */
+        CheckAction: {
+            /**
+             * Danger
+             * @enum {string}
+             */
+            danger: "none" | "confirm" | "typed";
+            /** Href */
+            href: string | null;
+            /**
+             * Id
+             * @description Job id for kind=job; the check id for kind=link.
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "job" | "link";
+            /** Label */
+            label: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+        };
         /** CheckOut */
         CheckOut: {
+            /** Actions */
+            actions?: components["schemas"]["CheckAction"][];
             /** Count */
             count: number;
             /** Detail */

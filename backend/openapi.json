@@ -861,8 +861,72 @@
         "title": "CalculatorInputsOut",
         "type": "object"
       },
+      "CheckAction": {
+        "description": "A \"Fix\" button: run a repair job (``POST /maintenance/jobs/{id}``) or open a page.",
+        "properties": {
+          "danger": {
+            "enum": [
+              "none",
+              "confirm",
+              "typed"
+            ],
+            "title": "Danger",
+            "type": "string"
+          },
+          "href": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Href"
+          },
+          "id": {
+            "description": "Job id for kind=job; the check id for kind=link.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "job",
+              "link"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "label",
+          "params",
+          "danger",
+          "href"
+        ],
+        "title": "CheckAction",
+        "type": "object"
+      },
       "CheckOut": {
         "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/CheckAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
