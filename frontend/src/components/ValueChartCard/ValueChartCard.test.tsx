@@ -1,4 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
+import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GraphDto, GraphRange } from "../../lib/queries/portfolio";
 
@@ -23,9 +25,14 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
 }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
+import { ToastProvider } from "../Toast";
+import { handleLiveEvent } from "../../lib/live";
 import { initialRange, ValueChartCard } from "./ValueChartCard";
 
+const render = (ui: ReactElement) => rtlRender(<ToastProvider>{ui}</ToastProvider>);
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   calls.length = 0;
   remembered.length = 0;
   graphData = undefined;
@@ -99,5 +106,25 @@ describe("ValueChartCard", () => {
     unmount();
     const again = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
     expect(again.container.querySelector('[data-series="secondary"]')).toBeNull();
+  });
+
+  it("reloads the shown graph and reports when the graphs event arrives", async () => {
+    graphData = day;
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ range: "1d", status: "started" }), { status: 202 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
+    const btn = screen.getByRole("button", { name: "Reload 1D graph" });
+    await act(async () => fireEvent.click(btn));
+    expect(fetchMock.mock.calls[0]![0]).toBe("/api/graphs/1d/reload");
+    expect(fetchMock.mock.calls[0]![1]).toMatchObject({ method: "POST" });
+    expect(btn).toBeDisabled();
+    act(() => handleLiveEvent(new QueryClient(), JSON.stringify({ type: "graphs", range: "1w", ok: true, points: 3 })));
+    expect(btn).toBeDisabled();
+    act(() => handleLiveEvent(new QueryClient(), JSON.stringify({ type: "graphs", range: "1d", ok: true, points: 42 })));
+    expect(btn).toBeEnabled();
+    expect(await screen.findByText("1D graph reloaded")).toBeInTheDocument();
+    expect(screen.getByText("42 points")).toBeInTheDocument();
   });
 });

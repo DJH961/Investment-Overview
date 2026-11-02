@@ -1,9 +1,12 @@
 import clsx from "clsx";
+import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Card } from "../Card";
 import { Chart, type ChartSeries, type ChartXMode } from "../Chart";
 import { ErrorState } from "../ErrorState";
+import { IconButton } from "../IconButton";
 import { Percent } from "../Percent";
+import { useToast } from "../Toast";
 import {
   chartMoneyFormat,
   formatDate,
@@ -17,6 +20,7 @@ import { GRAPH_RANGES, rememberGraphRange, toNum, useGraph, type GraphRange } fr
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useTimeZone } from "../../lib/timezone";
 import { usePersistentState } from "../../lib/usePersistentState";
+import { useGraphReload } from "./useGraphReload";
 import "./ValueChartCard.scss";
 
 export const RANGE_LABELS: Record<GraphRange, string> = {
@@ -66,6 +70,20 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
   // Other-currency line: on by default, remembered per device.
   const [showSecondary, setShowSecondary] = usePersistentState<boolean>(SECONDARY_KEY, true);
   const graph = useGraph(range, currency);
+  const { toast } = useToast();
+  const { reload, busy: reloading } = useGraphReload(
+    (r) => {
+      const label = RANGE_LABELS[r.range as GraphRange] ?? r.range;
+      if (!r.ok) toast({ title: `${label} graph reload failed`, tone: "error" });
+      else
+        toast({
+          title: `${label} graph reloaded`,
+          description: r.points === null ? undefined : `${r.points} point${r.points === 1 ? "" : "s"}`,
+          tone: "success",
+        });
+    },
+    (message) => toast({ title: "Graph reload failed", description: message, tone: "error" }),
+  );
   const g = graph.data;
   // Format by the range actually drawn (a placeholder may still be the previous range).
   const shown: GraphRange = g?.range ?? range;
@@ -126,6 +144,15 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
       title="Value"
       collapsibleId="overview.chart"
       subtitle={subtitle}
+      actions={
+        <IconButton
+          size="sm"
+          label={`Reload ${RANGE_LABELS[range]} graph`}
+          icon={<RefreshCw aria-hidden className={clsx(reloading === range && "value-chart-card__spin")} />}
+          onClick={() => reload(range)}
+          disabled={reloading !== null}
+        />
+      }
     >
       {graph.isError && !g ? (
         <ErrorState message={graph.error.message} onRetry={() => void graph.refetch()} />
@@ -158,7 +185,7 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
             valueFormat={axisFormat}
             timeFormat={timeFormat}
             tooltipTimeFormat={tooltipTimeFormat}
-            busy={graph.isPlaceholderData || (graph.isFetching && !graph.isPending)}
+            busy={graph.isPlaceholderData || (graph.isFetching && !graph.isPending) || reloading === shown}
             loading={graph.isPending}
             emptyMessage="No history for this range yet."
             ariaLabel="Portfolio value over time"

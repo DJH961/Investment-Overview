@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render as rtlRender, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toNum } from "../../lib/queries/portfolio";
@@ -33,7 +34,10 @@ vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
+import { ToastProvider } from "../../components/Toast";
 import { Overview } from "./Overview";
+
+const render = (ui: ReactElement) => rtlRender(<ToastProvider>{ui}</ToastProvider>);
 
 afterEach(() => {
   overview = empty;

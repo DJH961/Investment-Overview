@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .value-chart-card {
   min-width: 0;
 
@@ -15,9 +17,23 @@
     font-weight: var(--font-weight-medium);
   }
 
+  &__spin {
+    animation: value-chart-card-spin 1s linear infinite;
+
+    @include m.reduced-motion {
+      animation: none;
+    }
+  }
+
   &__note {
     margin: var(--space-2) 0 0;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+  }
+}
+
+@keyframes value-chart-card-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
