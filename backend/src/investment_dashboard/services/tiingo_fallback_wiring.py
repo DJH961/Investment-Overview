@@ -199,7 +199,11 @@ def apply_desktop_fallback(
         holding_values=holding_values,
     )
 
-    fetch_start = expected - timedelta(days=_FETCH_LOOKBACK_DAYS)
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    fetch_days = settings_service.get_or("tiingo.fetch_lookback_days", _FETCH_LOOKBACK_DAYS)
+    write_days = settings_service.get_or("tiingo.write_lookback_days", _WRITE_LOOKBACK_DAYS)
+    fetch_start = expected - timedelta(days=int(fetch_days))
     fetch_end = today + timedelta(days=1)
 
     def _fetch(symbols: Sequence[str]) -> dict[str, dict[date, Decimal]]:
@@ -228,7 +232,7 @@ def apply_desktop_fallback(
         state_repo.save(session, state)
         raise
 
-    write_cutoff = expected - timedelta(days=_WRITE_LOOKBACK_DAYS)
+    write_cutoff = expected - timedelta(days=int(write_days))
     result: dict[str, int] = {}
     for symbol in outcome.used_symbols:
         instr = by_symbol.get(symbol)

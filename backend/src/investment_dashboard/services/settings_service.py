@@ -149,6 +149,21 @@ def get(key: str, session: Session | None = None) -> Any:
     return effective(key, session).value
 
 
+def get_or(key: str, fallback: Any, session: Session | None = None) -> Any:
+    """The value set in the app or env, else ``fallback`` (also on any error).
+
+    For wiring module constants: the constant stays the effective default (the
+    registry default equals it, a test checks that), so code and tests that
+    patch the constant keep working.
+    """
+    try:
+        eff = effective(key, session)
+    except Exception:
+        log.debug("setting %s unreadable; using %r", key, fallback, exc_info=True)
+        return fallback
+    return fallback if eff.source == "default" else eff.value
+
+
 def get_all(session: Session | None = None) -> dict[str, Effective]:
     raw = _raw_values(session)
     return {k: _resolve(d, raw.get(k)) for k, d in registry.BY_KEY.items()}

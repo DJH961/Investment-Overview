@@ -145,7 +145,10 @@ def _earliest_needed_date() -> date:
             earliest = earliest_transaction_date(session)
     except Exception:  # pragma: no cover - defensive
         earliest = None
-    fallback = exchange_today() - timedelta(days=_BOOT_BACKFILL_DAYS)
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    days = int(settings_service.get_or("boot.backfill_days", _BOOT_BACKFILL_DAYS))
+    fallback = exchange_today() - timedelta(days=days)
     if earliest is None:
         return fallback
     return min(earliest, fallback)
@@ -1011,7 +1014,12 @@ def _warm_snapshots() -> None:
                 # Fill any missing older days (cheap: cached days are skipped),
                 # then force-refresh just the recent tail that a pre-backfill
                 # render could have cached stale.
-                recent_floor = max(start, today - timedelta(days=_WARM_FORCE_RECENT_DAYS))
+                from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+                recent_days = int(
+                    settings_service.get_or("boot.warm_force_recent_days", _WARM_FORCE_RECENT_DAYS)
+                )
+                recent_floor = max(start, today - timedelta(days=recent_days))
                 warmed = warm_range(session, start, recent_floor - timedelta(days=1), force=False)
                 warmed += warm_range(session, recent_floor, today, force=True)
         log.info("Warmed %d daily snapshot(s) (floor=%s, full_history=%s)", warmed, start, large)

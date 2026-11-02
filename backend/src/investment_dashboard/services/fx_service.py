@@ -403,6 +403,14 @@ def _record_status(status: str, message: str) -> None:
     record(_PROVIDER, status, message)  # type: ignore[arg-type]
 
 
+def tracked_quotes(session: Session | None = None) -> tuple[str, ...]:
+    """Quote currencies whose EUR history is kept (setting ``fx.tracked_quotes``)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    value = settings_service.get_or("fx.tracked_quotes", DEFAULT_QUOTES, session)
+    return tuple(value) if value else DEFAULT_QUOTES
+
+
 def refresh_fx_history(
     session: Session,
     *,
@@ -416,7 +424,7 @@ def refresh_fx_history(
 
     Accepts either a single ``quote`` (back-compat with v2.1 callers) or
     an iterable of ``quotes``. When neither is provided the function
-    backfills :data:`DEFAULT_QUOTES`.
+    backfills :func:`tracked_quotes` (default :data:`DEFAULT_QUOTES`).
 
     Strategy per quote:
         * Find the latest stored rate. If it's already ``today``, no-op.
@@ -434,7 +442,7 @@ def refresh_fx_history(
     elif quotes is not None:
         targets = tuple(quotes)
     else:
-        targets = DEFAULT_QUOTES
+        targets = tracked_quotes(session)
 
     total = 0
     for q in targets:

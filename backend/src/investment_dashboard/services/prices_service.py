@@ -38,16 +38,25 @@ log = logging.getLogger(__name__)
 
 
 def _resolve_tiingo_token() -> str | None:
-    """Resolve the Tiingo token from settings, else the OS keyring.
+    """Resolve the Tiingo token: in-app setting > env > the OS keyring.
 
+    The in-app value (``tiingo.api_token``, write-only, encrypted config tier)
+    falls back to ``INV_DASHBOARD_TIINGO_TOKEN`` inside ``settings_service``.
     Returns ``None`` when no token is configured, which cleanly disables the
     fallback (a vanilla install never touches Tiingo).
     """
     from investment_dashboard.config import get_settings  # noqa: PLC0415
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
     from investment_dashboard.storage.encryption import (  # noqa: PLC0415
         load_tiingo_token_from_keyring,
     )
 
+    try:
+        token = settings_service.get("tiingo.api_token")
+    except Exception:
+        token = None
+    if isinstance(token, str) and token:
+        return token
     return get_settings().tiingo_token or load_tiingo_token_from_keyring()
 
 
@@ -550,8 +559,29 @@ def instruments_with_price_anomalies(session: Session, instrument_ids: Sequence[
         return prices_repo.instrument_ids_with_nonpositive_close(cache, instrument_ids)
 
 
-def _ttl_for(instr: Instrument) -> int:
-    return REFRESH_TTL_SECONDS.get(instr.asset_class, _DEFAULT_TTL_SECONDS)
+def ttl_seconds_by_class(session: Session | None = None) -> dict[str, int]:
+    """Effective price TTLs per asset class (settings ``prices.ttl_seconds.*``).
+
+    Keys are the asset classes plus ``"default"``; the module constants are the
+    defaults and the fallback when settings cannot be read.
+    """
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    out = {**REFRESH_TTL_SECONDS, "default": _DEFAULT_TTL_SECONDS}
+    try:
+        values = settings_service.get_all(session)
+    except Exception:
+        return out
+    for cls in out:
+        eff = values.get(f"prices.ttl_seconds.{cls}")
+        if eff is not None and eff.source != "default" and isinstance(eff.value, int):
+            out[cls] = eff.value
+    return out
+
+
+def _ttl_for(instr: Instrument, ttls: dict[str, int] | None = None) -> int:
+    ttls = ttls if ttls is not None else {**REFRESH_TTL_SECONDS, "default": _DEFAULT_TTL_SECONDS}
+    return ttls.get(instr.asset_class, ttls["default"])
 
 
 def _is_due_for_market_state(
@@ -629,13 +659,14 @@ def instruments_due_for_refresh(
     # print dates instead of one lookup per instrument.
     last_refreshed = price_cache_repo.get_last_refreshed_at_map(cache, ids)
     latest_dates = prices_repo.latest_price_dates(cache, ids)
+    ttls = ttl_seconds_by_class(session)
     for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
             continue
         if instr.id in inactive:
             continue
         last = last_refreshed.get(instr.id)
-        if last is not None and (now - last).total_seconds() < _ttl_for(instr):
+        if last is not None and (now - last).total_seconds() < _ttl_for(instr, ttls):
             continue
         if not _is_due_for_market_state(
             instr,

@@ -153,10 +153,8 @@ def default_interval() -> int:
 def default_fx_interval() -> timedelta:
     from investment_dashboard.services import settings_service  # noqa: PLC0415
 
-    try:
-        return timedelta(minutes=int(settings_service.get("scheduler.fx_interval_minutes")))
-    except Exception:
-        return FX_INTERVAL
+    minutes = settings_service.get_or("scheduler.fx_interval_minutes", None)
+    return FX_INTERVAL if minutes is None else timedelta(minutes=int(minutes))
 
 
 def default_heavy_busy() -> str | None:
