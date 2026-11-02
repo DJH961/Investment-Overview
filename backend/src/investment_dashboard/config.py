@@ -296,42 +296,76 @@ class ServerConfigError(RuntimeError):
     """The server-mode configuration is unsafe; the server refuses to start."""
 
 
-def server_config_problems(settings: Settings, env: dict[str, str] | None = None) -> list[str]:
-    """Unsafe server-mode settings, as human-readable lines (empty when fine).
+def server_config_checks(
+    settings: Settings, env: dict[str, str] | None = None
+) -> list[tuple[str, str | None]]:
+    """Every server-mode rule as ``(rule, problem)``; ``problem`` is ``None`` when it passes.
 
     A plain-http loopback origin (``http://localhost`` / ``http://127.0.0.1``)
     is treated as a local dev/test run: cookies and RP ID are not checked
     there, because a browser on any other host could not use such a server.
+    Problem texts never contain secret values.
     """
     from urllib.parse import urlsplit  # noqa: PLC0415
 
     env = dict(os.environ) if env is None else env
-    problems: list[str] = []
+    checks: list[tuple[str, str | None]] = []
     origin = urlsplit(settings.webauthn_origin.strip())
     host = (origin.hostname or "").lower()
     local_dev = origin.scheme == "http" and host in _LOOPBACK_HOSTS
     if not local_dev:
-        if origin.scheme != "https" or not host:
-            problems.append("webauthn_origin must be an https:// origin")
+        checks.append(
+            (
+                "webauthn_origin is an https:// origin",
+                None
+                if origin.scheme == "https" and host
+                else "webauthn_origin must be an https:// origin",
+            )
+        )
         rp_id = settings.webauthn_rp_id.strip().lower()
-        if host and not (host == rp_id or host.endswith("." + rp_id)):
-            problems.append("webauthn_rp_id must be the origin's host (or a parent domain)")
-        if not settings.cookie_secure:
-            problems.append("cookie_secure must be true")
-        if settings.dev_cors_origins:
-            problems.append("dev_cors_origins must be empty")
+        rp_ok = not host or host == rp_id or host.endswith("." + rp_id)
+        checks.append(
+            (
+                "webauthn_rp_id matches the origin's host",
+                None if rp_ok else "webauthn_rp_id must be the origin's host (or a parent domain)",
+            )
+        )
+        checks.append(
+            (
+                "cookie_secure is true",
+                None if settings.cookie_secure else "cookie_secure must be true",
+            )
+        )
+        checks.append(
+            (
+                "dev_cors_origins is empty",
+                None if not settings.dev_cors_origins else "dev_cors_origins must be empty",
+            )
+        )
     secrets_to_check = {
         "INV_DASHBOARD_DB_PASSPHRASE": settings.db_passphrase,
         "INV_DASHBOARD_BACKUP_PASSPHRASE": env.get("INV_DASHBOARD_BACKUP_PASSPHRASE"),
     }
     for name, value in secrets_to_check.items():
-        if not value:
-            continue
-        if value.strip().lower() in _PLACEHOLDER_SECRETS:
-            problems.append(f"{name} is still a placeholder")
-        elif len(value) < MIN_SERVER_PASSPHRASE_LENGTH:
-            problems.append(f"{name} must be at least {MIN_SERVER_PASSPHRASE_LENGTH} characters")
-    return problems
+        problem: str | None = None
+        if value:
+            if value.strip().lower() in _PLACEHOLDER_SECRETS:
+                problem = f"{name} is still a placeholder"
+            elif len(value) < MIN_SERVER_PASSPHRASE_LENGTH:
+                problem = f"{name} must be at least {MIN_SERVER_PASSPHRASE_LENGTH} characters"
+        checks.append(
+            (
+                f"{name} is not a placeholder and at least "
+                f"{MIN_SERVER_PASSPHRASE_LENGTH} characters (if set)",
+                problem,
+            )
+        )
+    return checks
+
+
+def server_config_problems(settings: Settings, env: dict[str, str] | None = None) -> list[str]:
+    """Unsafe server-mode settings, as human-readable lines (empty when fine)."""
+    return [p for _, p in server_config_checks(settings, env) if p]
 
 
 def validate_server_config(settings: Settings) -> None:

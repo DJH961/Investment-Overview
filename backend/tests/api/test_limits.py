@@ -271,3 +271,22 @@ def test_run_validates_and_passes_proxy_and_concurrency_settings(
 
 def test_forwarded_allow_ips_default_is_not_wildcard() -> None:
     assert Settings().forwarded_allow_ips != "*"
+
+
+def test_run_passes_trusted_proxy_setting_to_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import types
+
+    from investment_dashboard.api import app as app_module
+
+    captured: dict[str, object] = {}
+    fake = types.SimpleNamespace(run=lambda _app, **kw: captured.update(kw))
+    monkeypatch.setitem(sys.modules, "uvicorn", fake)
+    monkeypatch.setattr("investment_dashboard.logging.configure_logging", lambda *a, **k: None)
+    monkeypatch.setattr(app_module, "create_app", object)
+    monkeypatch.setattr(
+        app_module, "get_settings", lambda: _settings(forwarded_allow_ips="172.29.40.2")
+    )
+    app_module.run()
+    assert captured["proxy_headers"] is True
+    assert captured["forwarded_allow_ips"] == "172.29.40.2"

@@ -268,6 +268,13 @@ your Tailscale network, and runs on the server (in `/opt/investments`)
 `/api/health` for up to two minutes. If the app does not answer, the workflow puts the
 previous version back and the run turns red.
 
+- **Check `app.env` before deploying:** the server refuses to boot on an unsafe
+  configuration (non-https origin, RP ID that does not match the origin, insecure
+  cookies, passphrases shorter than 20 characters or placeholders). Preview it on the
+  server (read-only; prints PASS/FAIL per rule, never the secret values):
+  `cd /opt/investments && docker compose run --rm --no-deps app inv-dashboard-check-config`
+  (it exits 1 on any FAIL). Fix `app.env` first, then deploy. `deploy/check.sh` runs
+  from your laptop against the public site, so it cannot read `app.env`.
 - **Switch it on or off:** GitHub repo, **Settings -> Secrets and variables -> Actions
   -> Variables**, `DEPLOY_ENABLED` = `true` (anything else, or missing, = nothing
   deploys).
@@ -384,6 +391,12 @@ A-E are in the "Secrets" section further down.
    `chmod 600 /opt/investments/app.env`). Fill in at least the database passphrase,
    the backup passphrase, `INV_DASHBOARD_WEBAUTHN_RP_ID` and
    `INV_DASHBOARD_WEBAUTHN_ORIGIN`. Leave the optional token lines commented out.
+   Both passphrases need at least 20 characters. `INV_DASHBOARD_FORWARDED_ALLOW_IPS`
+   needs no entry: `docker-compose.yml` gives the internal network the fixed subnet
+   `172.29.84.0/24`, pins Caddy to `172.29.84.2` and tells the app to trust
+   `X-Forwarded-For` from that address only (Caddy sets it by default), so the
+   per-IP login limits see real client addresses. If that subnet clashes with
+   something on the server, change it and the address in both places.
 3. **Backups, on the server:** copy `rclone.conf.example` to
    `/opt/investments/rclone.conf`, fill in the B2 key, `chmod 600` it and
    `sudo chown 10001:10001` it (the backup container runs as uid 10001; see "Backups").

@@ -16,6 +16,10 @@ services:
     # Real settings and secrets (see backend/.env.example); server path example:
     # /opt/investments/app.env, created by the owner, chmod 600.
     env_file: ${APP_ENV_FILE:-/opt/investments/app.env}
+    # Only Caddy (fixed IP below) may set X-Forwarded-For, so the per-IP rate limits
+    # see real client addresses. Overrides any value in app.env.
+    environment:
+      INV_DASHBOARD_FORWARDED_ALLOW_IPS: "172.29.84.2"
     volumes:
       - app-data:/data
     # No published ports: only Caddy reaches the app, over the internal network.
@@ -59,7 +63,8 @@ services:
     mem_limit: 128m
     pids_limit: 128
     networks:
-      - internal
+      internal:
+        ipv4_address: 172.29.84.2
 
   # Off-site copy of the sealed snapshots the app writes to /data/backups.
   # rclone only ever COPIES (never deletes, never overwrites: --immutable), so a
@@ -110,3 +115,6 @@ volumes:
 
 networks:
   internal:
+    ipam:
+      config:
+        - subnet: 172.29.84.0/24
