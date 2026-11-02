@@ -103,3 +103,87 @@ def test_rate_move_is_a_fraction(api_client: TestClient, seeded: None) -> None:
     expected = (D(today["spot"]) - D(today["prev"])) / D(today["prev"])
     assert D(today["rate_move_pct"]) == pytest.approx(expected, abs=D("1e-12"))
     assert abs(D(today["rate_move_pct"])) < D("0.2")  # a fraction, not percent
+
+
+# -- v2 fields -----------------------------------------------------------------
+
+
+def test_kpis_secondary_are_the_other_currencys_own_kpis(
+    api_client: TestClient, seeded: None
+) -> None:
+    eur = api_client.get("/api/overview?ccy=EUR").json()
+    usd = api_client.get("/api/overview?ccy=USD").json()
+    assert eur["secondary_ccy"] == "USD"
+    assert usd["secondary_ccy"] == "EUR"
+    assert eur["kpis_secondary"] == usd["kpis"]
+    assert usd["kpis_secondary"] == eur["kpis"]
+
+
+def test_freshness_caption_and_default_range(
+    api_client: TestClient, seeded: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from investment_dashboard.services import refresh_status
+
+    refresh_status.reset()
+    body = api_client.get("/api/overview").json()
+    fresh = body["freshness"]
+    assert fresh["market_state"] in ("open", "closed", "holiday")
+    # No refresh has landed in this process: never "live".
+    assert fresh["prices_live"] is False
+    assert fresh["last_price_update_at"] is None
+    assert fresh["refresh_running"] is False
+    caption = body["daily_caption"]
+    assert caption["title"]
+    assert isinstance(caption["live"], bool)
+    assert body["default_range"] in ("1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all")
+    assert body["total_value_complete"] is True
+
+    refresh_status.begin("Scheduled live refresh")
+    try:
+        running = api_client.get("/api/overview").json()["freshness"]
+        assert running["refresh_running"] is True
+        assert running["refresh_source"] == "Scheduled live refresh"
+    finally:
+        refresh_status.finish("Scheduled live refresh", updated=True)
+        after = api_client.get("/api/overview").json()["freshness"]
+        assert after["last_price_update_at"] is not None
+        refresh_status.reset()
+
+
+def test_prices_live_needs_open_market_and_fresh_price() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from investment_dashboard.readmodels import overview as overview_rm
+    from investment_dashboard.services import refresh_status
+
+    now = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)  # Wed 11:00 ET
+    refresh_status.reset()
+    try:
+        assert overview_rm._freshness({}, now=now)["prices_live"] is False
+        refresh_status.finish("t", updated=True)  # stamps last_update_at = real now
+        snap = refresh_status.snapshot()
+        assert snap.last_update_at is not None
+        fresh_now = snap.last_update_at + timedelta(minutes=1)
+        if overview_rm.market_hours.is_us_market_open(fresh_now):
+            assert overview_rm._freshness({}, now=fresh_now)["prices_live"] is True
+        stale = snap.last_update_at + timedelta(hours=1)
+        assert (
+            overview_rm.market_hours.is_live_now(
+                market_open=True, last_update_at=snap.last_update_at, now=stale
+            )
+            is False
+        )
+        closed = datetime(2026, 10, 31, 15, 0, tzinfo=UTC)
+        assert overview_rm._freshness({}, now=closed)["prices_live"] is False
+        assert overview_rm._freshness({}, now=closed)["market_state"] == "closed"
+    finally:
+        refresh_status.reset()
+
+
+def test_today_has_regime_aware_move(api_client: TestClient, seeded: None) -> None:
+    today = api_client.get("/api/overview?ccy=USD").json()["currency"]["today"]
+    assert today["since_phrase"]["kind"] in ("since_yesterday", "yesterday", "on_day", "since_day")
+    if today["spot"] is not None:
+        assert today["pair"] == "EUR/USD"
+        assert D(today["spot_display"]) == D(today["spot"])
+        assert today["move"]["anchor_kind"] in ("prev_close", "overnight", "session_open")

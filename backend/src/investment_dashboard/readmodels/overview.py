@@ -8,7 +8,7 @@ are identical to what the NiceGUI overview page renders.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, tzinfo
 from decimal import Decimal
 from typing import Any
 
@@ -17,10 +17,12 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.currency_effect import compute_currency_effect
 from investment_dashboard.domain.returns import years_between
-from investment_dashboard.readmodels import fx_effect, holdings
+from investment_dashboard.readmodels import fx_effect, holdings, live_graphs
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
+    HoldingCard,
+    HoldingFreshness,
     InstrumentMetrics,
     MoverEntry,
     allocation_treemap,
@@ -30,7 +32,19 @@ from investment_dashboard.readmodels.queries.overview_query import (
     compute_market_verdict,
     holding_freshness,
 )
-from investment_dashboard.services import fx_service, investing_power_service, prices_service
+from investment_dashboard.services import (
+    fx_service,
+    intraday_snapshots_service,
+    investing_power_service,
+    live_bus,
+    prices_service,
+    refresh_status,
+    timezone_service,
+)
+from investment_dashboard.services.daily_growth_view import (
+    build_daily_growth_caption,
+    fx_move_pct,
+)
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
@@ -146,8 +160,111 @@ def _mover(entry: MoverEntry, ccy: str) -> dict[str, Any]:
     }
 
 
+def _local_date(now: datetime, tz: tzinfo | None) -> date:
+    return (now.astimezone(tz) if tz is not None else now).date()
+
+
+def _fraction(pct: Decimal | None) -> Decimal | None:
+    """``fx_move_pct`` returns percent; the API speaks fractions."""
+    return None if pct is None else pct / Decimal(100)
+
+
+def _since_phrase_kind(regime: fx_effect.FxBoxRegime, *, days_since_session: int) -> str:
+    """``ui/pages/overview._effect_since_phrase`` as a kind (the client words it)."""
+    if regime.forex_frozen:
+        return "yesterday" if days_since_session <= 1 else "on_day"
+    if regime.weekend_overnight:
+        return "since_day"
+    return "since_yesterday"
+
+
+def _today_fx_view(
+    session: Session,
+    metrics: PortfolioMetrics,
+    *,
+    ccy: str,
+    regime: fx_effect.FxBoxRegime,
+    now: datetime,
+    tz: tzinfo | None,
+) -> dict[str, Any]:
+    """The currency box's rate stats, exactly as ``ui/pages/overview._currency_box_html``.
+
+    Regime-aware anchors: live -> previous close; US-only holiday -> previous close
+    as one overnight drift; any other closed view -> the session open. Moves follow
+    :func:`fx_move_pct`'s display-currency strength sign, as fractions.
+    """
+    live_fx = metrics.daily_growth_fx_eur_usd
+    session_date = intraday_snapshots_service.last_session_date(now)
+    local_today = _local_date(now, tz)
+    phrase_kind = _since_phrase_kind(regime, days_since_session=(local_today - session_date).days)
+    out: dict[str, Any] = {
+        "pair": None,
+        "spot_display": None,
+        "move": None,
+        "since": None,
+        "as_of": None,
+        "since_phrase": {"kind": phrase_kind, "session_date": session_date.isoformat()},
+        "anchor_missing": False,
+    }
+    info = fx_service.eur_quote_as_of(session, quote="USD", today=local_today)
+    if info is not None:
+        out["as_of"] = {
+            "as_of": info.as_of.isoformat(),
+            "source": info.source,
+            "observed_at": info.observed_at.isoformat() if info.observed_at else None,
+        }
+    if live_fx is None or live_fx <= 0:
+        return out
+    prev_fx = metrics.daily_growth_fx_eur_usd_prev
+    in_usd = ccy == "USD"
+    out["pair"] = "EUR/USD" if in_usd else "USD/EUR"
+    out["spot_display"] = dec(live_fx if in_usd else Decimal(1) / live_fx)
+
+    if regime.market_open:
+        anchor, anchor_kind = prev_fx, "prev_close"
+    elif regime.single_overnight:
+        anchor, anchor_kind = prev_fx, "overnight"
+    else:
+        anchor = intraday_snapshots_service.session_open_fx(session, now=now)
+        anchor_kind = "session_open"
+    if regime.forex_frozen:
+        label_kind = "yesterday" if (local_today - session_date).days <= 1 else "weekday"
+    else:
+        label_kind = "today"
+    out["move"] = {
+        "pct": dec(_fraction(fx_move_pct(live_fx, anchor, ccy) if anchor is not None else None)),
+        "anchor_kind": anchor_kind,
+        "label_kind": label_kind,
+        "session_date": session_date.isoformat(),
+    }
+    missing = anchor is None or anchor <= 0
+    if regime.session_view:
+        if regime.market_open:
+            since_anchor = intraday_snapshots_service.session_open_fx(session, now=now)
+            since_kind = "open"
+        else:
+            since_anchor = intraday_snapshots_service.session_close_fx(session, now=now)
+            since_kind = "close"
+        out["since"] = {
+            "pct": dec(
+                _fraction(
+                    fx_move_pct(live_fx, since_anchor, ccy) if since_anchor is not None else None
+                )
+            ),
+            "kind": since_kind,
+        }
+        missing = missing or since_anchor is None or since_anchor <= 0
+    out["anchor_missing"] = missing
+    return out
+
+
 def _currency_block(
-    session: Session, metrics: PortfolioMetrics, *, now: datetime
+    session: Session,
+    metrics: PortfolioMetrics,
+    *,
+    now: datetime,
+    ccy: str = "EUR",
+    tz: tzinfo | None = None,
 ) -> dict[str, Any]:
     """Lifetime split plus the "today" currency box (EUR effect or investing power)."""
     lifetime = compute_currency_effect(
@@ -187,6 +304,7 @@ def _currency_block(
         "effect_eur": None,
         "investing_power_usd": None,
     }
+    today.update(_today_fx_view(session, metrics, ccy=ccy, regime=regime, now=now, tz=tz))
     if live_fx is not None and live_fx > 0 and metrics.total_value_usd is not None:
         eur_effect = fx_effect.compute_eur_fx_effect(
             session, metrics, live_fx=live_fx, prev_fx=prev_fx, now=now
@@ -230,50 +348,13 @@ def _currency_block(
     }
 
 
-def build_overview(
-    session: Session,
-    *,
-    ccy: str,
-    as_of: date | None = None,
-    now: datetime | None = None,
-) -> dict[str, Any]:
-    """The ``GET /api/overview`` payload for reporting currency ``ccy``."""
-    now = now or datetime.now(UTC)
-    ctx = build_context(session, as_of=as_of)
-    metrics = compute_portfolio_metrics(session, as_of=ctx.as_of)
-    usd = ccy == "USD"
+def _kpis(metrics: PortfolioMetrics, ccy: str, *, fx_rate: Decimal | None) -> dict[str, Any]:
+    """The KPI block in ``ccy`` - every figure from that currency's own legs."""
     pick = holdings.pick
-
-    positions = holdings.merge_positions_by_instrument(compute_positions(session, as_of=ctx.as_of))
-    instrument_metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of)
-    anomalies = prices_service.instruments_with_price_anomalies(
-        session, [p.instrument.id for p in positions]
-    )
-    cards = build_holding_cards(
-        positions,
-        metrics=instrument_metrics,
-        freshness=holding_freshness(session, positions),
-        price_anomaly_ids=anomalies,
-    )
-    movers = build_movers(cards, ccy)
-
-    # Both sides of the verdict are computed in the reporting currency (the
-    # benchmark simulation supports EUR and USD), never converted across.
-    verdict = compute_market_verdict(
-        session,
-        portfolio_xirr=pick(metrics.xirr, metrics.xirr_usd, ccy),
-        currency=ccy,
-        years=(
-            years_between(metrics.first_cashflow_date, metrics.as_of)
-            if metrics.first_cashflow_date
-            else None
-        ),
-        as_of=metrics.as_of,
-    )
     # Single-instant conversion of the annual fee estimate at the spot rate.
     expense_cost: Decimal | None = metrics.annual_expense_cost_eur
-    if usd:
-        rate = ctx.fx_rate_eur_usd
+    if ccy == "USD":
+        rate = fx_rate
         expense_cost = expense_cost * rate if rate is not None else None
 
     # Total return = value + realized cash dividends - net contributions (the
@@ -287,7 +368,7 @@ def build_overview(
         dividends_realized = total_return - total_value + invested
         capital_gain = total_return - dividends_realized
 
-    kpis = {
+    return {
         "total_value": dec(pick(metrics.total_value_eur, metrics.total_value_usd, ccy)),
         "total_invested": dec(
             pick(metrics.total_contributions_eur, metrics.total_contributions_usd, ccy)
@@ -315,6 +396,108 @@ def build_overview(
         "dividend_yield_pct": dec(metrics.dividend_yield_pct),
         "dividend_yield_ttm_pct": dec(metrics.dividend_yield_ttm_pct),
     }
+
+
+def _max_time(times: Any) -> datetime | None:
+    present = [t for t in times if t is not None]
+    return max(present) if present else None
+
+
+def _iso_utc(at: datetime | None) -> str | None:
+    if at is None:
+        return None
+    return (at if at.tzinfo is not None else at.replace(tzinfo=UTC)).isoformat()
+
+
+def _freshness(freshness: dict[int, HoldingFreshness], *, now: datetime) -> dict[str, Any]:
+    """Live / Updated / Updating... state: market clock + refresh activity + price times."""
+    snap = refresh_status.snapshot()
+    market_open = market_hours.is_us_market_open(now)
+    return {
+        "market_state": live_bus.market_state(now),
+        "prices_live": market_hours.is_live_now(
+            market_open=market_open, last_update_at=snap.last_update_at, now=now
+        ),
+        "last_price_update_at": _iso_utc(snap.last_update_at),
+        "price_market_at": _iso_utc(_max_time(f.price_market_time for f in freshness.values())),
+        "price_observed_at": _iso_utc(_max_time(f.updated_at for f in freshness.values())),
+        "refresh_running": snap.active,
+        "refresh_source": snap.source,
+        "historical": snap.historical,
+        "progress_done": snap.progress_done,
+        "progress_total": snap.progress_total,
+        "progress_label": snap.progress_label,
+    }
+
+
+def _total_value_complete(cards: list[HoldingCard], *, fx_rate: Decimal | None) -> bool:
+    """Every held position priced (and sanely), and EUR/USD known."""
+    if fx_rate is None:
+        return False
+    for c in cards:
+        if c.value_warning:
+            return False
+        if not c.is_money_market and c.shares > 0 and c.current_price_native is None:
+            return False
+    return True
+
+
+def build_overview(
+    session: Session,
+    *,
+    ccy: str,
+    as_of: date | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """The ``GET /api/overview`` payload for reporting currency ``ccy``."""
+    now = now or datetime.now(UTC)
+    ctx = build_context(session, as_of=as_of)
+    metrics = compute_portfolio_metrics(session, as_of=ctx.as_of)
+    usd = ccy == "USD"
+    pick = holdings.pick
+
+    positions = holdings.merge_positions_by_instrument(compute_positions(session, as_of=ctx.as_of))
+    instrument_metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of)
+    anomalies = prices_service.instruments_with_price_anomalies(
+        session, [p.instrument.id for p in positions]
+    )
+    freshness = holding_freshness(session, positions)
+    cards = build_holding_cards(
+        positions,
+        metrics=instrument_metrics,
+        freshness=freshness,
+        price_anomaly_ids=anomalies,
+    )
+    movers = build_movers(cards, ccy)
+
+    # Both sides of the verdict are computed in the reporting currency (the
+    # benchmark simulation supports EUR and USD), never converted across.
+    verdict = compute_market_verdict(
+        session,
+        portfolio_xirr=pick(metrics.xirr, metrics.xirr_usd, ccy),
+        currency=ccy,
+        years=(
+            years_between(metrics.first_cashflow_date, metrics.as_of)
+            if metrics.first_cashflow_date
+            else None
+        ),
+        as_of=metrics.as_of,
+    )
+    other = "EUR" if usd else "USD"
+    tz = timezone_service.resolve_tzinfo(timezone_service.get_timezone(session))
+    fresh_view = _freshness(freshness, now=now)
+    caption = build_daily_growth_caption(
+        last_date=metrics.daily_growth_as_of,
+        fx_eur_usd=metrics.daily_growth_fx_eur_usd,
+        fx_eur_usd_prev=metrics.daily_growth_fx_eur_usd_prev,
+        display_ccy=ccy,
+        today=_local_date(now, tz),
+        tz=tz,
+        market_open=market_hours.is_us_market_open(now),
+        price_observed_at=_max_time(f.updated_at for f in freshness.values()),
+        price_market_at=_max_time(f.price_market_time for f in freshness.values()),
+        now=now,
+    )
     return {
         "ccy": ccy,
         "as_of": ctx.as_of.isoformat(),
@@ -322,8 +505,20 @@ def build_overview(
         "fx_eur_usd": dec(ctx.fx_rate_eur_usd),
         "is_live": market_hours.is_us_market_open(now),
         "position_count": len(cards),
-        "kpis": kpis,
-        "currency": _currency_block(session, metrics, now=now),
+        "kpis": _kpis(metrics, ccy, fx_rate=ctx.fx_rate_eur_usd),
+        "secondary_ccy": other,
+        "kpis_secondary": _kpis(metrics, other, fx_rate=ctx.fx_rate_eur_usd),
+        "freshness": fresh_view,
+        "daily_caption": {
+            "title": caption.title,
+            "corner_text": caption.corner_text,
+            "live": caption.is_live,
+            "as_of_text": caption.as_of_text,
+            "updated_text": caption.updated_text,
+        },
+        "default_range": live_graphs.default_range(session, now=now),
+        "total_value_complete": _total_value_complete(cards, fx_rate=ctx.fx_rate_eur_usd),
+        "currency": _currency_block(session, metrics, now=now, ccy=ccy, tz=tz),
         "market_verdict": {
             "benchmark_symbol": verdict.benchmark_symbol,
             "portfolio_return": dec(verdict.portfolio_return),
