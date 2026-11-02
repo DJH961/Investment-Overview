@@ -28,6 +28,14 @@ Design (locked in for v3.0, mirrored by the browser's WebCrypto code):
   and ``tag`` are stored separately so the JS side can recombine them for the
   WebCrypto ``decrypt`` call (which expects ``ciphertext || tag``).
 
+Callers may pass ``aad`` (additional authenticated data): bytes that are not
+encrypted but are bound to the ciphertext, so changing them makes decryption
+fail. The envelope format itself is unchanged (the web client never uses AAD);
+the caller stores the AAD's source next to the envelope and rebuilds it.
+
+The iteration count is read from the envelope, so :func:`decrypt_bytes` refuses
+counts above :data:`MAX_PBKDF2_ITERATIONS` (a crafted file cannot pin the CPU).
+
 The passphrase is the entire wall protecting this blob once it is public, so
 callers must collect a long, unique mobile passphrase (see
 :func:`investment_dashboard.storage.encryption.validate_passphrase`).
@@ -49,6 +57,9 @@ KDF_NAME = "PBKDF2-HMAC-SHA256"
 #: PBKDF2 work factor. Deliberately slow so an attacker who grabs the public
 #: blob can only test a few guesses per second. Locked at 600k for v3.0.
 PBKDF2_ITERATIONS = 600_000
+
+#: Upper bound accepted on decrypt (the count comes from the untrusted file).
+MAX_PBKDF2_ITERATIONS = 5_000_000
 
 #: Derived AES key length in bytes (AES-256).
 KEY_LENGTH = 32
@@ -91,6 +102,7 @@ def encrypt_bytes(
     passphrase: str,
     *,
     iterations: int = PBKDF2_ITERATIONS,
+    aad: bytes | None = None,
 ) -> dict[str, Any]:
     """Encrypt ``plaintext`` into a JSON-serializable AES-GCM envelope.
 
@@ -109,7 +121,7 @@ def encrypt_bytes(
     salt = os.urandom(SALT_LENGTH)
     nonce = os.urandom(NONCE_LENGTH)
     key = _derive_key(passphrase, salt, iterations)
-    sealed = AESGCM(key).encrypt(nonce, plaintext, None)
+    sealed = AESGCM(key).encrypt(nonce, plaintext, aad)
     # AESGCM returns ``ciphertext || tag``; store them as separate envelope
     # fields so the browser can hand WebCrypto the exact buffer it expects.
     ciphertext, tag = sealed[:-TAG_LENGTH], sealed[-TAG_LENGTH:]
@@ -123,8 +135,16 @@ def encrypt_bytes(
     }
 
 
-def decrypt_bytes(envelope: dict[str, Any], passphrase: str) -> bytes:
+def decrypt_bytes(
+    envelope: dict[str, Any],
+    passphrase: str,
+    *,
+    aad: bytes | None = None,
+    max_iterations: int = MAX_PBKDF2_ITERATIONS,
+) -> bytes:
     """Recover the plaintext from an envelope produced by :func:`encrypt_bytes`.
+
+    ``aad`` must equal the bytes given on encrypt (``None`` for none).
 
     Raises :class:`EnvelopeError` if the envelope is malformed, uses an
     unsupported version/KDF, or fails GCM authentication (wrong passphrase or
@@ -141,8 +161,10 @@ def decrypt_bytes(envelope: dict[str, Any], passphrase: str) -> bytes:
     if not isinstance(params, dict):
         raise EnvelopeError("envelope is missing kdf_params")
     iterations = params.get("iterations")
-    if not isinstance(iterations, int) or iterations <= 0:
+    if not isinstance(iterations, int) or isinstance(iterations, bool) or iterations <= 0:
         raise EnvelopeError("envelope has an invalid iteration count")
+    if iterations > max_iterations:
+        raise EnvelopeError(f"envelope iteration count is above the {max_iterations:,} limit")
 
     salt = _b64decode(params.get("salt", ""), field="kdf_params.salt")
     nonce = _b64decode(envelope.get("nonce", ""), field="nonce")
@@ -154,7 +176,7 @@ def decrypt_bytes(envelope: dict[str, Any], passphrase: str) -> bytes:
 
     key = _derive_key(passphrase, salt, iterations)
     try:
-        return AESGCM(key).decrypt(nonce, ciphertext + tag, None)
+        return AESGCM(key).decrypt(nonce, ciphertext + tag, aad)
     except InvalidTag as exc:
         raise EnvelopeError(
             "decryption failed — wrong passphrase or the blob was tampered with"

@@ -99,7 +99,8 @@ def test_row_count_mismatch_refused(tmp_path: Path, snapshot: tuple[Path, Path])
     env["meta"]["counts"] = {"t": 99}
     snap.write_text(json.dumps(env))
     live = tmp_path / "app.sqlite"
-    with pytest.raises(restore_db.RestoreError, match="row counts"):
+    # v2 snapshots authenticate meta, so the edit already fails decryption.
+    with pytest.raises(restore_db.RestoreError, match=r"row counts|tampered"):
         restore_db.restore_snapshot(snap, live, seal_passphrase="pw")
     assert not live.exists()
 

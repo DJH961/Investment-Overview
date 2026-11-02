@@ -145,3 +145,109 @@ def test_run_scheduled_clears_dirty_and_remarks_on_failure(
     with pytest.raises(RuntimeError):
         backup_service.run_scheduled()
     assert db_module.dirty_since() is not None
+
+
+# -- envelope v2: authenticated metadata ----------------------------------------
+
+
+def _seal_v1(db: Path, dest: Path, passphrase: str) -> Path:
+    """A snapshot exactly as the v1 writer produced it (meta not authenticated)."""
+    import hashlib
+
+    from investment_dashboard.storage import blob_crypto
+    from investment_dashboard.storage.integrity import backup_database
+
+    copy = dest.with_suffix(".copy")
+    backup_database(db, copy)
+    raw = copy.read_bytes()
+    copy.unlink()
+    env = blob_crypto.encrypt_bytes(raw, passphrase, iterations=FAST)
+    env["kind"] = backup_service.SNAPSHOT_KIND
+    env["meta"] = {
+        "created": "2026-11-01T12:00:00+00:00",
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "size": len(raw),
+        "counts": backup_service.row_counts(db),
+    }
+    dest.write_text(json.dumps(env))
+    return dest
+
+
+def test_v2_snapshot_binds_meta(app_db: Path, tmp_path: Path) -> None:
+    dest = backup_service.seal_database(app_db, tmp_path / "s.sealed.json", "pw", iterations=FAST)
+    env = json.loads(dest.read_text())
+    assert env["snapshot_format"] == 2
+    assert env["v"] == 1  # the blob_crypto envelope itself is unchanged
+    for field, value in (("counts", {"x": 1}), ("created", "2020-01-01T00:00:00+00:00")):
+        tampered = json.loads(dest.read_text())
+        tampered["meta"][field] = value
+        bad = tmp_path / f"bad-{field}.sealed.json"
+        bad.write_text(json.dumps(tampered))
+        with pytest.raises(backup_service.SnapshotError):
+            backup_service.unseal_snapshot(bad, "pw", tmp_path / f"o-{field}")
+        assert not (tmp_path / f"o-{field}").exists()
+    # Downgrading the format marker to v1 does not skip the check either.
+    downgraded = json.loads(dest.read_text())
+    del downgraded["snapshot_format"]
+    bad = tmp_path / "bad-format.sealed.json"
+    bad.write_text(json.dumps(downgraded))
+    with pytest.raises(backup_service.SnapshotError):
+        backup_service.unseal_snapshot(bad, "pw", tmp_path / "o-format")
+
+
+def test_v1_snapshot_still_restores(app_db: Path, tmp_path: Path) -> None:
+    dest = _seal_v1(app_db, tmp_path / "snapshot-20261101-120000.sealed.json", "pw")
+    out = tmp_path / "out.sqlite"
+    meta = backup_service.unseal_snapshot(dest, "pw", out)
+    assert _dump(out) == _dump(app_db)
+    assert meta["counts"] == backup_service.row_counts(app_db)
+
+
+def test_renamed_v2_snapshot_is_refused(app_db: Path, tmp_path: Path) -> None:
+    now = datetime(2026, 11, 1, 12, 30, 5, tzinfo=UTC)
+    path = backup_service.create_snapshot(now=now, retain=False)
+    assert backup_service.unseal_snapshot(path, "backup-pass-123", tmp_path / "ok.sqlite")
+    moved = path.with_name("snapshot-20261102-000000.sealed.json")
+    path.rename(moved)
+    with pytest.raises(backup_service.SnapshotError, match="file name"):
+        backup_service.unseal_snapshot(moved, "backup-pass-123", tmp_path / "o.sqlite")
+    # Any other name (e.g. a browser download renamed by the user) is fine.
+    other = moved.rename(tmp_path / "my-backup.json")
+    assert backup_service.unseal_snapshot(other, "backup-pass-123", tmp_path / "o2.sqlite")
+
+
+def test_seal_takes_created_from_a_snapshot_name(app_db: Path, tmp_path: Path) -> None:
+    dest = backup_service.seal_database(
+        app_db, tmp_path / "snapshot-20261101-120000.sealed.json", "pw", iterations=FAST
+    )
+    assert json.loads(dest.read_text())["meta"]["created"] == "2026-11-01T12:00:00+00:00"
+
+
+def test_huge_iteration_count_and_unknown_format_refused(app_db: Path, tmp_path: Path) -> None:
+    from investment_dashboard.storage import blob_crypto
+
+    dest = backup_service.seal_database(app_db, tmp_path / "s.sealed.json", "pw", iterations=FAST)
+    env = json.loads(dest.read_text())
+    env["kdf_params"]["iterations"] = blob_crypto.MAX_PBKDF2_ITERATIONS + 1
+    dest.write_text(json.dumps(env))
+    with pytest.raises(backup_service.SnapshotError, match="limit"):
+        backup_service.unseal_snapshot(dest, "pw", tmp_path / "o")
+    env["kdf_params"]["iterations"] = FAST
+    env["snapshot_format"] = 3
+    dest.write_text(json.dumps(env))
+    with pytest.raises(backup_service.SnapshotError, match="format"):
+        backup_service.unseal_snapshot(dest, "pw", tmp_path / "o")
+
+
+def test_blob_crypto_aad_round_trip_and_v1_compat() -> None:
+    from investment_dashboard.storage import blob_crypto
+
+    env = blob_crypto.encrypt_bytes(b"data", "pw", iterations=FAST, aad=b"meta")
+    assert blob_crypto.decrypt_bytes(env, "pw", aad=b"meta") == b"data"
+    with pytest.raises(blob_crypto.EnvelopeError):
+        blob_crypto.decrypt_bytes(env, "pw", aad=b"other")
+    with pytest.raises(blob_crypto.EnvelopeError):
+        blob_crypto.decrypt_bytes(env, "pw")
+    plain = blob_crypto.encrypt_bytes(b"data", "pw", iterations=FAST)
+    assert set(plain) == {"v", "kdf", "kdf_params", "nonce", "ciphertext", "tag"}
+    assert blob_crypto.decrypt_bytes(plain, "pw") == b"data"
