@@ -75,7 +75,11 @@ export function Overview() {
       {data && <CurrencyBox data={data} />}
 
       <div className="overview-page__row">
-        <ValueChartCard currency={currency} />
+        <ValueChartCard
+          currency={currency}
+          defaultRange={data?.default_range}
+          marketOpen={data?.freshness?.market_state === "open"}
+        />
         <MoversCard movers={data?.movers} currency={currency} loading={loading} />
       </div>
 

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Chart, segments, type ChartSeries } from "./Chart";
+import { Chart, segments, timeTicks, type ChartSeries } from "./Chart";
 
 const series: ChartSeries[] = [
   {
@@ -95,5 +95,48 @@ describe("Chart", () => {
   it("draws no reference line by default", () => {
     const { container } = render(<Chart {...props} series={[series[0]]} />);
     expect(container.querySelector("[data-reference]")).toBeNull();
+  });
+
+  it("places intraday ticks on round clock times", () => {
+    const h = 3_600_000;
+    const open = Date.UTC(2026, 10, 2, 14, 30);
+    const ticks = timeTicks(open, open + 6.5 * h, 7);
+    expect(ticks[0]).toBe(Date.UTC(2026, 10, 2, 15, 0));
+    expect(ticks.every((t) => t % h === 0)).toBe(true);
+    expect(ticks.length).toBeLessThanOrEqual(7);
+  });
+
+  it("uses time ticks, the tooltip time format and range labels", () => {
+    const h = 3_600_000;
+    const pts = [0, 1, 2, 3].map((i) => ({ t: Date.UTC(2026, 10, 2, 14, 30) + i * h, v: 100 + i }));
+    render(
+      <Chart
+        {...props}
+        series={[{ id: "a", label: "EUR", points: pts }]}
+        xMode="time"
+        tooltipTimeFormat={(t) => `TIP${t}`}
+        ranges={["1d"]}
+        range="1d"
+        rangeLabel={(r) => r.toUpperCase()}
+        onRangeChange={() => undefined}
+        headerExtra={<span>+1.2%</span>}
+      />,
+    );
+    expect(screen.getByText("1D")).toBeInTheDocument();
+    expect(screen.getByText("+1.2%")).toBeInTheDocument();
+    fireEvent.pointerMove(screen.getByRole("img"), { clientX: 0 });
+    expect(screen.getByRole("status")).toHaveTextContent(`TIP${pts[0].t}`);
+  });
+
+  it("colours by trend and draws the end marker", () => {
+    const { container } = render(<Chart {...props} series={[series[0]]} trend="down" />);
+    expect(container.firstElementChild).toHaveClass("chart--down");
+    expect(container.querySelector('[data-end-marker="down"]')).not.toBeNull();
+  });
+
+  it("marks a busy chart but keeps the curve", () => {
+    const { container } = render(<Chart {...props} series={[series[0]]} busy />);
+    expect(container.firstElementChild).toHaveAttribute("aria-busy", "true");
+    expect(container.querySelectorAll(".chart__line").length).toBeGreaterThan(0);
   });
 });

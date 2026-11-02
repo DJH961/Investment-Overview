@@ -1,13 +1,29 @@
 /* The plot is a custom scrubbable graphic: an svg that takes focus, arrow keys and pointer input. */
 /* oxlint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex, jsx-a11y/prefer-tag-over-role */
 import clsx from "clsx";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { EmptyState } from "../EmptyState";
 import { SegmentedControl } from "../SegmentedControl";
 import { Skeleton } from "../Skeleton";
 import "./Chart.scss";
 
 export type ChartTone = "primary" | "benchmark" | "muted";
+
+/** x axis layout: evenly spaced dates (default) or clock-aligned intraday ticks. */
+export type ChartXMode = "date" | "time";
+
+/** Direction of the primary line versus its reference (colours line, area and end marker). */
+export type ChartTrend = "up" | "down" | "flat";
 
 export interface ChartPoint {
   t: string | number;
@@ -35,7 +51,19 @@ export interface ChartProps {
   onRangeChange?: (range: string) => void;
   ranges?: string[];
   valueFormat: (v: number) => string;
+  /** Axis tick labels. */
   timeFormat: (t: number) => string;
+  /** Tooltip time label (default: `timeFormat`). */
+  tooltipTimeFormat?: (t: number) => string;
+  /** Range button labels (default: the range id). */
+  rangeLabel?: (range: string) => string;
+  /** Extra content in the header row, left of the range control (growth, reload). */
+  headerExtra?: ReactNode;
+  xMode?: ChartXMode;
+  /** Colours the primary series green/red and draws a ▲/▼ end marker. */
+  trend?: ChartTrend;
+  /** Keep the drawn curve but dim it while new data loads. */
+  busy?: boolean;
   height?: number;
   loading?: boolean;
   emptyMessage?: string;
@@ -63,6 +91,22 @@ export function segments(points: { x: number; y: number | null }[]): { x: number
   return out;
 }
 
+const MINUTE = 60_000;
+const TIME_STEPS = [5, 10, 15, 30, 60, 120, 180, 240, 360].map((m) => m * MINUTE);
+
+/**
+ * Intraday ticks on round clock times (multiples of the step since the epoch,
+ * which are round local times in every whole/half-hour timezone).
+ */
+export function timeTicks(tMin: number, tMax: number, maxTicks: number): number[] {
+  if (!(tMax > tMin)) return [tMin];
+  const span = tMax - tMin;
+  const step = TIME_STEPS.find((s) => span / s <= maxTicks) ?? TIME_STEPS[TIME_STEPS.length - 1];
+  const out: number[] = [];
+  for (let t = Math.ceil(tMin / step) * step; t <= tMax; t += step) out.push(t);
+  return out.length ? out : [tMin, tMax];
+}
+
 function toneClass(tone: ChartTone | undefined, index: number): string {
   if (tone) return tone;
   return index === 0 ? "primary" : `n${((index - 1) % 4) + 1}`;
@@ -76,6 +120,12 @@ export function Chart({
   ranges,
   valueFormat,
   timeFormat,
+  tooltipTimeFormat,
+  rangeLabel,
+  headerExtra,
+  xMode = "date",
+  trend,
+  busy = false,
   height = 280,
   loading = false,
   emptyMessage = "No data for this range.",
@@ -176,16 +226,21 @@ export function Chart({
     setCursor(next);
   }
 
-  const header =
+  const rangeControl =
     ranges && ranges.length > 0 && range !== undefined && onRangeChange ? (
+      <SegmentedControl
+        ariaLabel="Chart range"
+        size="sm"
+        options={ranges.map((r) => ({ value: r, label: rangeLabel ? rangeLabel(r) : r }))}
+        value={range}
+        onChange={onRangeChange}
+      />
+    ) : null;
+  const header =
+    rangeControl || headerExtra ? (
       <div className="chart__header">
-        <SegmentedControl
-          ariaLabel="Chart range"
-          size="sm"
-          options={ranges.map((r) => ({ value: r, label: r }))}
-          value={range}
-          onChange={onRangeChange}
-        />
+        {headerExtra && <div className="chart__header-extra">{headerExtra}</div>}
+        {rangeControl}
       </div>
     ) : null;
 
@@ -213,10 +268,14 @@ export function Chart({
 
   const yTicks = Array.from({ length: 5 }, (_, i) => scales.lo + ((scales.hi - scales.lo) * i) / 4);
   const xCount = width < 420 ? 3 : 5;
-  const xTicks = Array.from(
-    { length: xCount },
-    (_, i) => scales.tMin + ((scales.tMax - scales.tMin) * i) / (xCount - 1),
-  );
+  const xTicks =
+    xMode === "time"
+      ? timeTicks(scales.tMin, scales.tMax, width < 420 ? 4 : 7)
+      : Array.from({ length: xCount }, (_, i) => scales.tMin + ((scales.tMax - scales.tMin) * i) / (xCount - 1));
+  const tipTime = tooltipTimeFormat ?? timeFormat;
+  // End marker: last drawn point of the primary series.
+  const primaryPts = prepared[0]?.pts.filter((p): p is { x: number; y: number } => p.y !== null) ?? [];
+  const endPt = trend && primaryPts.length ? primaryPts[primaryPts.length - 1] : null;
   const cursorT = cursor !== null ? (times[cursor] ?? null) : null;
   const cursorX = cursorT !== null ? scales.x(cursorT) : null;
   const tipRows =
@@ -239,7 +298,7 @@ export function Chart({
   const tipOnLeft = cursorX !== null && cursorX > width * 0.6;
 
   return (
-    <div className={clsx("chart", className)}>
+    <div className={clsx("chart", trend && `chart--${trend}`, busy && "chart--busy", className)} aria-busy={busy || undefined}>
       {header}
       <div className="chart__wrap" ref={wrapRef} style={{ height }}>
         <svg
@@ -278,7 +337,9 @@ export function Chart({
               className="chart__axis-label chart__axis-label--x"
               x={scales.x(t)}
               y={height - 6}
-              textAnchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"}
+              textAnchor={
+                xMode === "time" ? "middle" : i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"
+              }
             >
               {timeFormat(t)}
             </text>
@@ -339,6 +400,19 @@ export function Chart({
               </g>
             );
           })}
+          {endPt && (
+            <path
+              className="chart__end-marker"
+              data-end-marker={trend}
+              d={
+                trend === "down"
+                  ? `M${scales.x(endPt.x) - 5},${scales.y(endPt.y) - 4} L${scales.x(endPt.x) + 5},${scales.y(endPt.y) - 4} L${scales.x(endPt.x)},${scales.y(endPt.y) + 5} Z`
+                  : trend === "up"
+                    ? `M${scales.x(endPt.x) - 5},${scales.y(endPt.y) + 4} L${scales.x(endPt.x) + 5},${scales.y(endPt.y) + 4} L${scales.x(endPt.x)},${scales.y(endPt.y) - 5} Z`
+                    : `M${scales.x(endPt.x) - 4},${scales.y(endPt.y)} a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0`
+              }
+            />
+          )}
           {cursorX !== null && (
             <g className="chart__cursor" pointerEvents="none">
               <line className="chart__crosshair" x1={cursorX} x2={cursorX} y1={PAD.top} y2={PAD.top + innerH} />
@@ -359,7 +433,7 @@ export function Chart({
             className={clsx("chart__tooltip", tipOnLeft && "chart__tooltip--left")}
             style={{ left: cursorX, top: PAD.top }}
           >
-            <div className="chart__tooltip-time">{timeFormat(cursorT)}</div>
+            <div className="chart__tooltip-time">{tipTime(cursorT)}</div>
             {tipRows.map((r) => (
               <div key={r.id} className="chart__tooltip-row">
                 <span className={clsx("chart__swatch", `chart__swatch--${r.tone}`)} aria-hidden />

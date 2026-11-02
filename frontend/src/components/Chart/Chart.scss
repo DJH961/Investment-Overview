@@ -6,7 +6,52 @@
 
   &__header {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: flex-end;
+    gap: var(--space-3);
+  }
+
+  &__header-extra {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  &--busy &__svg {
+    opacity: 0.6;
+    transition: opacity var(--duration-base) var(--ease-standard);
+  }
+
+  &__end-marker {
+    fill: var(--chart-1);
+    stroke: var(--color-surface);
+    stroke-width: 1.5;
+  }
+
+  @each $trend, $color in (up: --color-pos, down: --color-neg) {
+    &--#{$trend} {
+      .chart__series--primary .chart__line {
+        stroke: var(#{$color});
+      }
+
+      .chart__series--primary .chart__dot,
+      .chart__end-marker,
+      .chart__marker--primary {
+        fill: var(#{$color});
+      }
+
+      .chart__grad-stop--top,
+      .chart__grad-stop--bottom {
+        stop-color: var(#{$color});
+      }
+
+      .chart__swatch--primary {
+        background: var(#{$color});
+      }
+    }
   }
 
   &__empty {

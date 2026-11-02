@@ -99,3 +99,22 @@ export function formatDayLabel(value: string, style: "short" | "weekday" = "shor
 export function todayIn(timeZone?: string, now: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
+
+/** "Mon 26" in `timeZone` (1W axis labels). */
+export function formatShortDay(value: string | number | Date, timeZone?: string): string {
+  const d = validDate(value);
+  if (!d) return "–";
+  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, { ...o, timeZone }).format(d);
+  return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric" })}`;
+}
+
+/**
+ * The one place charts format money (axis ticks, tooltips, reference labels).
+ * Keep every chart going through this so a later "hide numbers" / "% from
+ * start" mode can swap the formatter in one spot.
+ */
+export function chartMoneyFormat(currency: Currency, kind: "axis" | "tooltip" = "tooltip"): (v: number) => string {
+  return kind === "axis"
+    ? (v) => formatMoney(v, currency, { digits: 0, compact: Math.abs(v) >= 1_000_000 })
+    : (v) => formatMoney(v, currency, { digits: 0 });
+}
