@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Chart, segments, timeTicks, type ChartSeries } from "./Chart";
+import { Chart, segments, sessionLayout, timeTicks, type ChartSeries } from "./Chart";
 
 const series: ChartSeries[] = [
   {
@@ -200,6 +200,48 @@ describe("Chart", () => {
       expect(btn).toHaveAttribute("aria-pressed", "false");
       fireEvent.click(btn);
       expect(toggled).toBe("secondary");
+    });
+  });
+
+  describe("1W session bands", () => {
+    const H = 3_600_000;
+    const day = (d: number) => Date.UTC(2026, 9, d, 13, 30);
+    const sessions = [26, 27, 28].map((d) => ({ date: `2026-10-${d}`, open: day(d), close: day(d) + 6.5 * H }));
+
+    it("gives every session an equal band and maps time to its fraction of the day", () => {
+      const l = sessionLayout(sessions, 50, 300);
+      expect(l.bands.map((b) => [b.x0, b.x1])).toEqual([
+        [50, 150],
+        [150, 250],
+        [250, 350],
+      ]);
+      expect(l.x(day(27))).toBe(150);
+      expect(l.x(day(27) + 3.25 * H)).toBe(200);
+      // after the close and overnight: clamped to the end of that session's band
+      expect(l.x(day(27) + 10 * H)).toBe(250);
+      expect(l.index(day(27) + 10 * H)).toBe(1);
+      // the live session keeps its full band: an early tip sits near its start
+      expect(l.x(day(28) + 0.65 * H)).toBeCloseTo(260, 6);
+    });
+
+    it("draws no path across a session break, with separators and day labels", () => {
+      const pts = sessions.flatMap((s, i) => [
+        { t: s.open, v: 100 + i },
+        { t: s.open + 3 * H, v: 101 + i },
+      ]);
+      const { container } = render(
+        <Chart
+          {...props}
+          series={[{ id: "a", label: "EUR", points: pts }]}
+          xMode="session"
+          sessions={sessions}
+          timeFormat={(t) => `D${new Date(t).getUTCDate()}`}
+        />,
+      );
+      expect(container.querySelectorAll('[data-series="a"] .chart__line')).toHaveLength(3);
+      expect(container.querySelectorAll(".chart__session-sep")).toHaveLength(2);
+      const labels = [...container.querySelectorAll(".chart__axis-label--x")].map((n) => n.textContent);
+      expect(labels).toEqual(["D26", "D27", "D28"]);
     });
   });
 });

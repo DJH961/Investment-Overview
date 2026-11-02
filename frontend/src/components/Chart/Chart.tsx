@@ -19,8 +19,59 @@ import "./Chart.scss";
 
 export type ChartTone = "primary" | "benchmark" | "muted";
 
-/** x axis layout: evenly spaced dates (default) or clock-aligned intraday ticks. */
-export type ChartXMode = "date" | "time";
+/**
+ * x axis layout: evenly spaced dates (default), clock-aligned intraday ticks, or
+ * `session`: each exchange session an equal band (nights/weekends squeezed out).
+ */
+export type ChartXMode = "date" | "time" | "session";
+
+/** One exchange session (UTC instants) for `xMode="session"`. */
+export interface ChartSession {
+  date: string;
+  open: string | number;
+  close: string | number;
+}
+
+export interface SessionBand {
+  date: string;
+  open: number;
+  close: number;
+  x0: number;
+  x1: number;
+}
+
+export interface SessionLayout {
+  bands: SessionBand[];
+  /** Index of the session a time belongs to (before the first: 0; between two: the earlier). */
+  index: (t: number) => number;
+  x: (t: number) => number;
+}
+
+/**
+ * Lays sessions side by side as equal bands across `[left, left + width]`. A
+ * time maps to its fraction of its session's open→close (clamped), so the live
+ * session keeps a full band and its tip sits at its true time of day.
+ */
+export function sessionLayout(sessions: ChartSession[], left: number, width: number): SessionLayout {
+  const sorted = sessions
+    .map((s) => ({ date: s.date, open: toTime(s.open), close: toTime(s.close) }))
+    .filter((s) => Number.isFinite(s.open) && Number.isFinite(s.close) && s.close > s.open)
+    .sort((a, b) => a.open - b.open);
+  const bandW = sorted.length ? width / sorted.length : width;
+  const bands = sorted.map((s, i) => ({ ...s, x0: left + i * bandW, x1: left + (i + 1) * bandW }));
+  const index = (t: number) => {
+    let i = 0;
+    for (let k = 0; k < bands.length; k++) if (bands[k].open <= t) i = k;
+    return i;
+  };
+  const x = (t: number) => {
+    if (!bands.length) return left;
+    const b = bands[index(t)];
+    const f = Math.min(1, Math.max(0, (t - b.open) / (b.close - b.open)));
+    return b.x0 + f * (b.x1 - b.x0);
+  };
+  return { bands, index, x };
+}
 
 /** Direction of the primary line versus its reference (colours line, area and end marker). */
 export type ChartTrend = "up" | "down" | "flat";
@@ -79,6 +130,8 @@ export interface ChartProps {
   rightAxisFormat?: (v: number) => string;
   /** Makes legend entries toggle buttons. */
   onToggleSeries?: (id: string) => void;
+  /** Exchange sessions for `xMode="session"` (falls back to `date` when empty). */
+  sessions?: ChartSession[];
   height?: number;
   loading?: boolean;
   emptyMessage?: string;
@@ -144,6 +197,7 @@ export function Chart({
   busy = false,
   rightAxisFormat,
   onToggleSeries,
+  sessions,
   height = 280,
   loading = false,
   emptyMessage = "No data for this range.",
@@ -207,10 +261,13 @@ export function Chart({
     const pad = (hi - lo) * 0.08;
     lo -= pad;
     hi += pad;
-    const x = (t: number) => PAD.left + (tMax === tMin ? innerW / 2 : ((t - tMin) / (tMax - tMin)) * innerW);
+    const layout = xMode === "session" && sessions?.length ? sessionLayout(sessions, PAD.left, innerW) : null;
+    const x = layout
+      ? layout.x
+      : (t: number) => PAD.left + (tMax === tMin ? innerW / 2 : ((t - tMin) / (tMax - tMin)) * innerW);
     const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * innerH;
-    return { x, y, lo, hi, tMin, tMax };
-  }, [values, times, innerW, innerH, referenceLine, PAD.left, PAD.top]);
+    return { x, y, lo, hi, tMin, tMax, layout };
+  }, [values, times, innerW, innerH, referenceLine, PAD.left, PAD.top, xMode, sessions]);
 
   const setFromClientX = useCallback(
     (clientX: number) => {
@@ -294,8 +351,10 @@ export function Chart({
 
   const yTicks = Array.from({ length: 5 }, (_, i) => scales.lo + ((scales.hi - scales.lo) * i) / 4);
   const xCount = width < 420 ? 3 : 5;
-  const xTicks =
-    xMode === "time"
+  const layout = scales.layout;
+  const xTicks = layout
+    ? []
+    : xMode === "time"
       ? timeTicks(scales.tMin, scales.tMax, width < 420 ? 4 : 7)
       : Array.from({ length: xCount }, (_, i) => scales.tMin + ((scales.tMax - scales.tMin) * i) / (xCount - 1));
   const tipTime = tooltipTimeFormat ?? timeFormat;
@@ -380,6 +439,21 @@ export function Chart({
               {timeFormat(t)}
             </text>
           ))}
+          {layout?.bands.map((b, i) => (
+            <g key={b.date} data-session={b.date}>
+              {i > 0 && (
+                <line className="chart__session-sep" x1={b.x0} x2={b.x0} y1={PAD.top} y2={PAD.top + innerH} />
+              )}
+              <text
+                className="chart__axis-label chart__axis-label--x"
+                x={(b.x0 + b.x1) / 2}
+                y={height - 6}
+                textAnchor="middle"
+              >
+                {timeFormat(b.open)}
+              </text>
+            </g>
+          ))}
           {referenceLine && Number.isFinite(referenceLine.value) && (
             <g className="chart__reference" data-reference>
               <line
@@ -402,12 +476,16 @@ export function Chart({
             </g>
           )}
           {prepared.map((s) => {
-            const runs = segments(
-              s.pts.map((p) => ({
-                x: scales.x(p.x),
-                y: p.y === null ? null : scales.y(p.y),
-              })),
-            );
+            // In session mode the line breaks between sessions (no overnight bridge).
+            const mapped: { x: number; y: number | null }[] = [];
+            let prevSession = -1;
+            for (const p of s.pts) {
+              const si = layout ? layout.index(p.x) : 0;
+              if (layout && prevSession !== -1 && si !== prevSession) mapped.push({ x: NaN, y: null });
+              prevSession = si;
+              mapped.push({ x: scales.x(p.x), y: p.y === null ? null : scales.y(p.y) });
+            }
+            const runs = segments(mapped);
             const tone = s.toneCls;
             return (
               <g key={s.id} className={clsx("chart__series", `chart__series--${tone}`)} data-series={s.id}>

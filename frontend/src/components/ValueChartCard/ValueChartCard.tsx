@@ -101,7 +101,8 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
   }, [g, showSecondary]);
 
   const intraday = shown === "1d" || shown === "1w";
-  const xMode: ChartXMode = shown === "1d" ? "time" : "date";
+  const sessions = shown === "1w" ? (g?.sessions ?? []) : [];
+  const xMode: ChartXMode = shown === "1d" ? "time" : sessions.length ? "session" : "date";
   const axisFormat = chartMoneyFormat(currency, "axis");
   const tipFormat = chartMoneyFormat(currency, "tooltip");
   const timeFormat = (t: number) =>
@@ -153,6 +154,7 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
               if (id === "secondary") setShowSecondary((v) => !v);
             }}
             xMode={xMode}
+            sessions={sessions}
             valueFormat={axisFormat}
             timeFormat={timeFormat}
             tooltipTimeFormat={tooltipTimeFormat}
