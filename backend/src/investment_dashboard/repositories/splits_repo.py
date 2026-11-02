@@ -16,6 +16,9 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import PriceSplit
 
+#: ``source`` of a split the user entered by hand; refreshes never overwrite it.
+MANUAL_SOURCE = "manual"
+
 
 def get_splits_for_instrument(session: Session, instrument_id: int) -> dict[date, Decimal]:
     """Return ``{date: ratio}`` of every cached split for ``instrument_id``."""
@@ -96,11 +99,13 @@ def upsert_splits(
     splits: Mapping[date, Decimal],
     *,
     source: str = "yfinance",
+    overwrite_manual: bool = False,
 ) -> int:
     """Idempotent insert of ``{date: ratio}`` for ``instrument_id``.
 
     Uses SQLite ``ON CONFLICT(...) DO UPDATE`` so re-running the split refresh
-    is safe. Returns the number of rows touched.
+    is safe; hand-entered rows are kept unless ``overwrite_manual``. Returns the
+    number of rows touched.
     """
     if not splits:
         return 0
@@ -117,16 +122,39 @@ def upsert_splits(
     stmt = stmt.on_conflict_do_update(
         index_elements=[PriceSplit.instrument_id, PriceSplit.date],
         set_={"ratio": stmt.excluded.ratio, "source": stmt.excluded.source},
+        where=None if overwrite_manual else PriceSplit.source != MANUAL_SOURCE,
     )
     result = session.execute(stmt)
     return result.rowcount or len(splits)
 
 
-def delete_for_instrument(session: Session, instrument_id: int) -> int:
+def delete_for_instrument(
+    session: Session, instrument_id: int, *, keep_manual: bool = False
+) -> int:
     """Drop every cached split for ``instrument_id``. Returns rows removed.
 
     Used when an instrument's ticker is repointed so stale corporate actions
-    for the old symbol can't keep mis-adjusting the new one.
+    for the old symbol can't keep mis-adjusting the new one. ``keep_manual``
+    keeps hand-entered rows.
     """
-    result = session.execute(delete(PriceSplit).where(PriceSplit.instrument_id == instrument_id))
+    stmt = delete(PriceSplit).where(PriceSplit.instrument_id == instrument_id)
+    if keep_manual:
+        stmt = stmt.where(PriceSplit.source != MANUAL_SOURCE)
+    result = session.execute(stmt)
     return result.rowcount or 0
+
+
+def list_splits(session: Session, instrument_id: int) -> list[tuple[date, Decimal, str]]:
+    stmt = (
+        select(PriceSplit.date, PriceSplit.ratio, PriceSplit.source)
+        .where(PriceSplit.instrument_id == instrument_id)
+        .order_by(PriceSplit.date)
+    )
+    return [(d, r, s) for d, r, s in session.execute(stmt)]
+
+
+def delete_split(session: Session, instrument_id: int, on: date) -> bool:
+    result = session.execute(
+        delete(PriceSplit).where(PriceSplit.instrument_id == instrument_id, PriceSplit.date == on)
+    )
+    return bool(result.rowcount)

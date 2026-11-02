@@ -175,14 +175,15 @@ def test_change_publishes_event_and_runs_hook(
     monkeypatch.setattr(live_bus.bus, "publish", events.append)
     settings_service.set_many({"log_level": "DEBUG"}, actor="t")
     assert applied == ["DEBUG"]
-    assert events and events[0]["type"] == "settings"
+    assert events
+    assert events[0]["type"] == "settings"
     # No-op writes leave no audit row.
     settings_service.set_many({"log_level": "DEBUG"}, actor="t")
     assert len(settings_service.history(key="log_level")) == 1
 
 
 def test_audit_prune_keeps_newest(settings_db: Path) -> None:
-    from datetime import datetime  # noqa: PLC0415
+    from datetime import datetime
 
     with config_session_scope() as s:
         for i in range(5):
@@ -200,7 +201,7 @@ def test_audit_prune_keeps_newest(settings_db: Path) -> None:
 
 
 def test_cli_reset(settings_db: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from investment_dashboard.tools import settings_cli  # noqa: PLC0415
+    from investment_dashboard.tools import settings_cli
 
     settings_service.set_many({"backup.retention.daily": 3}, actor="t")
     assert settings_cli.main(["get", "backup.retention.daily"]) == 0

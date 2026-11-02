@@ -752,3 +752,71 @@ def eur_quote_as_of(
     if not prior:
         return None
     return FxAsOf(as_of=max(prior), source="eod")
+
+
+# -- manual FX fixes (Health & Repair → Market data) -------------------------------
+#
+# A hand-entered daily rate (``base`` EUR -> ``quote``, quote per EUR) is stored
+# with ``source="manual"`` and never overwritten by a refresh. Changing one
+# invalidates valuation snapshots from its date.
+
+MANUAL_SOURCE = fx_repo.MANUAL_SOURCE
+
+
+def _check_quote(quote: str) -> str:
+    from investment_dashboard.errors import ValidationError  # noqa: PLC0415
+
+    code = quote.strip().upper()
+    if len(code) != 3 or not code.isalpha() or code == "EUR":
+        raise ValidationError(f"{quote!r} is not a quote currency")
+    return code
+
+
+def _fx_changed(session: Session, from_date: date) -> None:
+    from investment_dashboard.services import refresh_status, snapshots_service  # noqa: PLC0415
+
+    snapshots_service.invalidate_from(session, from_date)
+    refresh_status._publish({"type": "refresh", "reason": "manual fx"})
+
+
+def list_rates(
+    session: Session, quote: str, *, start: date | None = None, end: date | None = None
+) -> list[tuple[date, Decimal, str]]:
+    """``(date, rate, source)`` rows for EUR->``quote`` in ``[start, end]``."""
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    code = _check_quote(quote)
+    with cache_read_session(session) as cache:
+        return fx_repo.list_rates(cache, base="EUR", quote=code, start=start, end=end)
+
+
+def set_manual_rate(session: Session, quote: str, on: date, rate: Decimal) -> None:
+    """Pin the EUR->``quote`` rate on ``on`` (protected from refreshes)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import ValidationError  # noqa: PLC0415
+
+    code = _check_quote(quote)
+    if not rate.is_finite() or rate <= 0 or rate > 100_000:
+        raise ValidationError("a rate must be a positive number")
+    with cache_write_session(session) as cache:
+        fx_repo.upsert_rates(
+            cache, {on: rate}, base="EUR", quote=code, source=MANUAL_SOURCE, overwrite_manual=True
+        )
+    log.info("manual FX rate set: EUR/%s on %s", code, on)
+    _fx_changed(session, on)
+
+
+def clear_manual_rate(session: Session, quote: str, on: date) -> bool:
+    """Delete the stored rate on ``on``; returns whether it was a manual one."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import NotFoundError  # noqa: PLC0415
+
+    code = _check_quote(quote)
+    with cache_write_session(session) as cache:
+        row = fx_repo.get_rate_row(cache, on, base="EUR", quote=code)
+        if row is None:
+            raise NotFoundError(f"no EUR/{code} rate stored on {on}")
+        fx_repo.delete_rate(cache, on, base="EUR", quote=code)
+    log.info("FX rate removed: EUR/%s on %s (was %s)", code, on, row[1])
+    _fx_changed(session, on)
+    return row[1] == MANUAL_SOURCE

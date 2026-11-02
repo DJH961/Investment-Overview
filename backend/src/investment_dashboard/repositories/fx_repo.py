@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import FxHistory
 
+#: ``source`` of a rate the user entered by hand; refreshes never overwrite it.
+MANUAL_SOURCE = "manual"
+
 
 def get_rates(session: Session, *, base: str = "EUR", quote: str = "USD") -> dict[date, Decimal]:
     """Return ``{date: rate}`` for the ``(base, quote)`` pair."""
@@ -62,8 +65,13 @@ def upsert_rates(
     base: str = "EUR",
     quote: str = "USD",
     source: str = "frankfurter",
+    overwrite_manual: bool = False,
 ) -> int:
-    """Idempotent insert of ``{date: rate}``. Returns rows touched."""
+    """Idempotent insert of ``{date: rate}``. Returns rows touched.
+
+    Hand-entered rows (``source == MANUAL_SOURCE``) are kept unless
+    ``overwrite_manual``.
+    """
     if not rates:
         return 0
     rows: Iterable[dict[str, object]] = [
@@ -80,6 +88,7 @@ def upsert_rates(
     stmt = stmt.on_conflict_do_update(
         index_elements=[FxHistory.date, FxHistory.base, FxHistory.quote],
         set_={"rate": stmt.excluded.rate, "source": stmt.excluded.source},
+        where=None if overwrite_manual else FxHistory.source != MANUAL_SOURCE,
     )
     result = session.execute(stmt)
     return result.rowcount or len(rates)
@@ -106,3 +115,38 @@ def delete_by_source(
         )
     )
     return int(result.rowcount or 0)
+
+
+def list_rates(
+    session: Session,
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+    start: date | None = None,
+    end: date | None = None,
+) -> list[tuple[date, Decimal, str]]:
+    """``(date, rate, source)`` rows in ``[start, end]``, oldest first."""
+    stmt = select(FxHistory.date, FxHistory.rate, FxHistory.source).where(
+        FxHistory.base == base, FxHistory.quote == quote
+    )
+    if start is not None:
+        stmt = stmt.where(FxHistory.date >= start)
+    if end is not None:
+        stmt = stmt.where(FxHistory.date <= end)
+    return [(d, r, s) for d, r, s in session.execute(stmt.order_by(FxHistory.date))]
+
+
+def get_rate_row(
+    session: Session, on: date, *, base: str = "EUR", quote: str = "USD"
+) -> tuple[Decimal, str] | None:
+    row = session.get(FxHistory, (on, base, quote))
+    return None if row is None else (row.rate, row.source)
+
+
+def delete_rate(session: Session, on: date, *, base: str = "EUR", quote: str = "USD") -> bool:
+    result = session.execute(
+        delete(FxHistory).where(
+            FxHistory.date == on, FxHistory.base == base, FxHistory.quote == quote
+        )
+    )
+    return bool(result.rowcount)

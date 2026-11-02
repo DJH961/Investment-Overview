@@ -471,19 +471,23 @@ def closes_as_of(
         return prices_repo.latest_closes(cache, instrument_ids, on_or_before=as_of)
 
 
-def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
+def invalidate_instrument_prices(
+    session: Session, instrument_id: int, *, keep_manual: bool = False
+) -> int:
     """Drop an instrument's cached closes + refresh timestamp (cache tier).
 
     Called when an instrument's ticker is repointed at a different symbol so
     the stale closes for the old symbol can't keep forward-filling the new
-    one. Returns the number of price rows removed.
+    one (everything goes), and by the "Re-download prices" repair
+    (``keep_manual=True``: hand-entered closes and splits stay). Returns the
+    number of price rows removed.
     """
     from investment_dashboard.db import cache_write_session  # noqa: PLC0415
 
     with cache_write_session(session) as cache:
-        removed = prices_repo.delete_for_instrument(cache, instrument_id)
+        removed = prices_repo.delete_for_instrument(cache, instrument_id, keep_manual=keep_manual)
         price_cache_repo.delete_for_instrument(cache, instrument_id)
-        splits_repo.delete_for_instrument(cache, instrument_id)
+        splits_repo.delete_for_instrument(cache, instrument_id, keep_manual=keep_manual)
     return removed
 
 
@@ -903,3 +907,118 @@ def refresh_via_tiingo(
     finally:
         if owns_round:
             pull_log.end(round_)
+
+
+# -- manual market-data fixes (Health & Repair → Market data) --------------------
+#
+# A hand-entered close or split is stored with ``source="manual"`` and is never
+# overwritten by a refresh (the repositories' upserts skip manual rows). Every
+# change invalidates the valuation snapshots from its date and publishes a
+# ``refresh`` event. Closes are native currency (currency rule).
+
+MANUAL_SOURCE = prices_repo.MANUAL_SOURCE
+
+
+def _market_data_changed(session: Session, from_date: date) -> None:
+    from investment_dashboard.services import refresh_status, snapshots_service  # noqa: PLC0415
+
+    snapshots_service.invalidate_from(session, from_date)
+    refresh_status._publish({"type": "refresh", "reason": "manual market data"})
+
+
+def _check_instrument(session: Session, instrument_id: int) -> None:
+    from investment_dashboard.errors import NotFoundError  # noqa: PLC0415
+
+    if instruments_repo.get_instrument(session, instrument_id) is None:
+        raise NotFoundError(f"instrument {instrument_id} not found")
+
+
+def list_closes(
+    session: Session,
+    instrument_id: int,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+) -> list[tuple[date, Decimal, str]]:
+    """``(date, close, source)`` for ``instrument_id`` in ``[start, end]``."""
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    with cache_read_session(session) as cache:
+        return prices_repo.list_closes(cache, instrument_id, start=start, end=end)
+
+
+def set_manual_close(session: Session, instrument_id: int, on: date, close: Decimal) -> None:
+    """Pin the close of ``instrument_id`` on ``on`` (protected from refreshes)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import ValidationError  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    if not close.is_finite() or close <= 0:
+        raise ValidationError("a close must be a positive number")
+    with cache_write_session(session) as cache:
+        prices_repo.upsert_closes(
+            cache, instrument_id, {on: close}, source=MANUAL_SOURCE, overwrite_manual=True
+        )
+    log.info("manual close set: instrument %s on %s", instrument_id, on)
+    _market_data_changed(session, on)
+
+
+def clear_manual_close(session: Session, instrument_id: int, on: date) -> bool:
+    """Remove a hand-entered close (the next price refresh fills the day again)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import NotFoundError  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    with cache_write_session(session) as cache:
+        row = prices_repo.get_close_row(cache, instrument_id, on)
+        if row is None:
+            raise NotFoundError(f"no close stored on {on}")
+        prices_repo.delete_close(cache, instrument_id, on)
+    log.info("close removed: instrument %s on %s (was %s)", instrument_id, on, row[1])
+    _market_data_changed(session, on)
+    return row[1] == MANUAL_SOURCE
+
+
+def list_anomalies(session: Session) -> list[int]:
+    """Ids of active instruments with a corrupt (non-positive) cached close."""
+    ids = sorted(instruments_repo.list_ids(session))
+    return sorted(instruments_with_price_anomalies(session, ids))
+
+
+def list_splits(session: Session, instrument_id: int) -> list[tuple[date, Decimal, str]]:
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    with cache_read_session(session) as cache:
+        return splits_repo.list_splits(cache, instrument_id)
+
+
+def set_manual_split(session: Session, instrument_id: int, on: date, ratio: Decimal) -> None:
+    """Add/replace a split (``ratio`` = shares after / before; ``1`` cancels a bad feed split)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import ValidationError  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    if not ratio.is_finite() or ratio <= 0 or ratio > 1000:
+        raise ValidationError("a split ratio must be between 0 and 1000")
+    with cache_write_session(session) as cache:
+        splits_repo.upsert_splits(
+            cache, instrument_id, {on: ratio}, source=MANUAL_SOURCE, overwrite_manual=True
+        )
+    log.info("manual split set: instrument %s on %s ratio %s", instrument_id, on, ratio)
+    # A split rescales every earlier day's share count.
+    _market_data_changed(session, date.min)
+
+
+def delete_split(session: Session, instrument_id: int, on: date) -> None:
+    """Delete a split row (a feed split comes back on the next split refresh)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import NotFoundError  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    with cache_write_session(session) as cache:
+        if not splits_repo.delete_split(cache, instrument_id, on):
+            raise NotFoundError(f"no split stored on {on}")
+    log.info("split removed: instrument %s on %s", instrument_id, on)
+    _market_data_changed(session, date.min)
