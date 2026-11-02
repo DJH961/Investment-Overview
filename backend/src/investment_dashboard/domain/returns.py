@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from itertools import pairwise
+from typing import Literal
 
 DAYS_PER_YEAR = Decimal("365.0")
 DAYS_PER_YEAR_FLOAT = 365.0
@@ -337,3 +338,150 @@ def total_growth_pct_compounded(
     if math.isnan(grown) or math.isinf(grown):
         return None
     return Decimal(repr(grown)) - Decimal(1)
+
+
+# -----------------------------------------------------------------------------
+# Window growth (the "+x.xx% 1M" headline beside the value graph)
+# -----------------------------------------------------------------------------
+
+#: How a window's growth is measured:
+#:
+#: * ``"reference"`` — ``(closing - reference) / reference``: the 1D move from the
+#:   previous session's close (the dashed reference line on the intraday graph);
+#: * ``"simple"`` — the Modified Dietz period return (1W: short enough that the
+#:   timing of a cashflow barely matters);
+#: * ``"xirr"`` — the window's money-weighted rate (opening value as the initial
+#:   investment, every external flow at its own date, closing value as the
+#:   terminal flow) compounded back over the window length (1M … 1Y);
+#: * ``"total"`` — the lifetime compounded total growth (ALL; computed elsewhere,
+#:   listed so callers share one vocabulary).
+GrowthMode = Literal["reference", "simple", "xirr", "total"]
+
+
+@dataclass(frozen=True)
+class WindowGrowth:
+    """A window's growth as a fraction and the mode that actually produced it.
+
+    ``mode`` differs from the requested one only when the XIRR solver could not
+    find a root and the Modified Dietz figure was used instead (``"simple"``).
+    """
+
+    pct: Decimal
+    mode: GrowthMode
+
+
+def _in_window(flows: Sequence[Cashflow], start: date, end: date) -> list[Cashflow]:
+    """External flows strictly after ``start`` and on/before ``end``.
+
+    A flow dated on the opening day is already inside the opening value (the
+    window opens at that day's close), so it is not counted again.
+    """
+    return [cf for cf in flows if start < cf.date <= end and cf.amount != 0]
+
+
+def _solves(rate: Decimal, stream: Sequence[Cashflow], as_of: date, terminal: Decimal) -> bool:
+    """Whether ``rate`` really zeroes the stream's NPV (the solver can stall on a
+    bracket edge for extreme short-window rates and return a non-root)."""
+    flows = [*stream, Cashflow(date=as_of, amount=terminal)]
+    scale = sum(abs(float(cf.amount)) for cf in flows) or 1.0
+    try:
+        residual = _npv(float(rate), flows, as_of)
+    except (OverflowError, ZeroDivisionError):
+        return False
+    return not math.isnan(residual) and abs(residual) <= 1e-6 * scale
+
+
+def modified_dietz(
+    *,
+    opening_date: date,
+    opening_value: Decimal,
+    closing_date: date,
+    closing_value: Decimal,
+    flows: Sequence[Cashflow] = (),
+) -> Decimal | None:
+    """Modified Dietz return over ``[opening_date, closing_date]``.
+
+    ``flows`` use this module's sign convention (money *into* the portfolio is
+    negative), so the net contribution is ``F = -sum(amount)``. Each flow is
+    weighted by the share of the window it was invested for::
+
+        (closing - opening - F) / (opening + sum(-amount_i * w_i)),
+        w_i = (closing_date - date_i) / (closing_date - opening_date)
+
+    With no flows this is exactly ``closing / opening - 1``. Returns ``None`` on a
+    non-positive denominator (nothing invested to grow from).
+    """
+    window = _in_window(flows, opening_date, closing_date)
+    span = (closing_date - opening_date).days
+    net_in = -sum((cf.amount for cf in window), start=Decimal(0))
+    weighted = Decimal(0)
+    for cf in window:
+        weight = Decimal((closing_date - cf.date).days) / Decimal(span) if span > 0 else Decimal(0)
+        weighted += -cf.amount * weight
+    denom = opening_value + weighted
+    if denom <= 0:
+        return None
+    return (closing_value - opening_value - net_in) / denom
+
+
+def window_growth(
+    *,
+    mode: GrowthMode,
+    opening_date: date,
+    opening_value: Decimal | None,
+    closing_date: date,
+    closing_value: Decimal | None,
+    flows: Sequence[Cashflow] = (),
+    reference: Decimal | None = None,
+) -> WindowGrowth | None:
+    """Growth over one graph window, in the currency of its inputs.
+
+    Every input must be in **one** currency: the series and its cashflows (each
+    at its own date's rate) — a growth is never computed in one currency and
+    converted into another. ``mode`` picks the formula (see :data:`GrowthMode`);
+    ``"total"`` is not computed here and returns ``None``.
+
+    * ``"reference"`` needs ``reference`` > 0 (the previous close);
+    * ``"simple"`` is :func:`modified_dietz`;
+    * ``"xirr"`` solves :func:`xirr` on ``[-opening at opening_date, flows…,
+      +closing at closing_date]`` and compounds the rate over the window on the
+      solver's own 365-day year, so a window without flows reads exactly
+      ``closing / opening - 1``; it falls back to Modified Dietz (reported as
+      ``"simple"``) when the solver finds no root.
+
+    Returns ``None`` when the window has no usable opening/closing value.
+    """
+    if closing_value is None:
+        return None
+    if mode == "reference":
+        if reference is None or reference <= 0:
+            return None
+        return WindowGrowth((closing_value - reference) / reference, "reference")
+    if mode == "total" or opening_value is None or opening_value <= 0:
+        return None
+    if closing_date < opening_date:
+        return None
+    simple = modified_dietz(
+        opening_date=opening_date,
+        opening_value=opening_value,
+        closing_date=closing_date,
+        closing_value=closing_value,
+        flows=flows,
+    )
+    if mode == "simple" or closing_date == opening_date:
+        return WindowGrowth(simple, "simple") if simple is not None else None
+    stream = [
+        Cashflow(date=opening_date, amount=-opening_value),
+        *_in_window(flows, opening_date, closing_date),
+    ]
+    rate = xirr(stream, closing_date, terminal_value=closing_value)
+    if (
+        rate is not None
+        and Decimal(1) + rate > 0
+        and _solves(rate, stream, closing_date, closing_value)
+    ):
+        years = (closing_date - opening_date).days / DAYS_PER_YEAR_FLOAT
+        grown = float(Decimal(1) + rate) ** years
+        if not (math.isnan(grown) or math.isinf(grown)):
+            return WindowGrowth(Decimal(repr(grown)) - Decimal(1), "xirr")
+    return WindowGrowth(simple, "simple") if simple is not None else None

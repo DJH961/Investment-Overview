@@ -25,7 +25,7 @@ from datetime import UTC, datetime, tzinfo
 
 from investment_dashboard.domain.market_hours import (
     LIVE_PRICE_WINDOW_SECONDS,
-    feed_is_fresh,
+    is_live_now,
 )
 
 #: How often each client re-reads the refresh state. Cheap (an in-memory read),
@@ -82,27 +82,6 @@ def decide_reload(
     if repaint_at and now >= repaint_at:
         return "repaint"
     return None
-
-
-def is_live_now(
-    *,
-    market_open: bool,
-    last_update_at: datetime | None,
-    now: datetime,
-    window_seconds: float = LIVE_PRICE_WINDOW_SECONDS,
-) -> bool:
-    """Decide whether the header chip should read "Live" (vs. "Updated").
-
-    Pure (no side effects) so it can be unit-tested. The feed is considered
-    *live* only when the market is open **and** at least one fresh price has
-    landed within ``window_seconds`` — i.e. the automatic refresh is actively
-    pulling current prices. Outside the session, or once the prices we hold have
-    gone stale, the chip falls back to "Updated" (the last figures are settled,
-    not moving).
-    """
-    if not market_open:
-        return False
-    return feed_is_fresh(last_update_at, now, window_seconds=window_seconds)
 
 
 def history_progress_percent(done: int, total: int) -> int:
