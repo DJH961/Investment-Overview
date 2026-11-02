@@ -1,5 +1,6 @@
 import { render as rtlRender, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toNum } from "../../lib/queries/portfolio";
@@ -37,7 +38,12 @@ vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 import { ToastProvider } from "../../components/Toast";
 import { Overview } from "./Overview";
 
-const render = (ui: ReactElement) => rtlRender(<ToastProvider>{ui}</ToastProvider>);
+const render = (ui: ReactElement) =>
+  rtlRender(
+    <MemoryRouter>
+      <ToastProvider>{ui}</ToastProvider>
+    </MemoryRouter>,
+  );
 
 afterEach(() => {
   overview = empty;
@@ -56,7 +62,7 @@ describe("Overview page", () => {
   it("renders every section as a collapsible card that remembers its state", async () => {
     overview = populated;
     const { unmount } = render(<Overview />);
-    for (const name of ["Currency · EUR ↔ USD", "Value", "Top movers", "Allocation", "Asset classes"]) {
+    for (const name of ["Currency · EUR ↔ USD", "Holdings", "Currency effect (lifetime)", "Value", "Top movers", "Allocation", "Asset classes"]) {
       expect(screen.getByRole("button", { name })).toHaveAttribute("aria-expanded", "true");
     }
     expect(screen.getByText("Portfolio value")).toBeInTheDocument();

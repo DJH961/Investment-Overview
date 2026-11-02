@@ -2,11 +2,13 @@ import { Inbox } from "lucide-react";
 import { AllocationCard } from "../../components/AllocationCard";
 import { AssetClassCard } from "../../components/AssetClassCard";
 import { CurrencyBox } from "../../components/CurrencyBox";
+import { CurrencyLifetime } from "../../components/CurrencyLifetime";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { KpiGrid } from "../../components/KpiGrid";
 import { MoversCard } from "../../components/MoversCard";
 import { OverviewHero } from "../../components/OverviewHero";
+import { OverviewHoldings } from "../../components/OverviewHoldings";
 import { OverviewWarnings } from "../../components/OverviewWarnings";
 import { PageHeader } from "../../components/PageHeader";
 import { ValueChartCard } from "../../components/ValueChartCard";
@@ -85,6 +87,10 @@ export function Overview() {
         />
         <MoversCard movers={data?.movers} currency={currency} loading={loading} />
       </div>
+
+      <OverviewHoldings currency={currency} movers={data?.movers} />
+
+      {data && <CurrencyLifetime data={data} />}
 
       <div className="overview-page__row overview-page__row--alloc">
         <AllocationCard currency={currency} />

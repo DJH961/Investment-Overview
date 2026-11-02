@@ -33,6 +33,28 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  &__who,
+  &__figures {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__figures {
+    align-items: flex-end;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__tag,
+  &__trail {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__lead {
+    font-weight: var(--font-weight-semibold);
+  }
+
   &__muted {
     margin: 0;
     color: var(--color-muted);
