@@ -259,9 +259,51 @@
             ],
             "title": "Attribution Currency"
           },
+          "attribution_total": {
+            "$ref": "#/components/schemas/AttributionTotalOut"
+          },
+          "benchmark_diff": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Portfolio minus benchmark, in ccy",
+            "title": "Benchmark Diff"
+          },
+          "benchmark_diff_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Diff relative to the benchmark value (fraction, 0.01 = 1%)",
+            "title": "Benchmark Diff Pct"
+          },
           "benchmark_is_funded": {
             "title": "Benchmark Is Funded",
             "type": "boolean"
+          },
+          "benchmark_last_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest benchmark curve value",
+            "title": "Benchmark Last Value"
           },
           "benchmark_symbol": {
             "title": "Benchmark Symbol",
@@ -364,6 +406,32 @@
             ],
             "description": "fraction, 0.01 = 1%",
             "title": "Max Drawdown"
+          },
+          "net_invested_last": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest cumulative net contributions",
+            "title": "Net Invested Last"
+          },
+          "portfolio_last_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest curve value in ccy",
+            "title": "Portfolio Last Value"
           },
           "risk_free_rate": {
             "anyOf": [
@@ -512,8 +580,14 @@
           "risk_free_symbol",
           "benchmark_symbol",
           "benchmark_is_funded",
+          "portfolio_last_value",
+          "net_invested_last",
+          "benchmark_last_value",
+          "benchmark_diff",
+          "benchmark_diff_pct",
           "curve",
           "attribution",
+          "attribution_total",
           "attribution_currency"
         ],
         "title": "AnalyticsOut",
@@ -617,6 +691,66 @@
           "pct_of_total_return"
         ],
         "title": "AttributionOut",
+        "type": "object"
+      },
+      "AttributionTotalOut": {
+        "properties": {
+          "absolute_pnl": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Absolute Pnl"
+          },
+          "end_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Value"
+          },
+          "net_contribution": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Contribution"
+          },
+          "start_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Value"
+          }
+        },
+        "required": [
+          "start_value",
+          "end_value",
+          "net_contribution",
+          "absolute_pnl"
+        ],
+        "title": "AttributionTotalOut",
         "type": "object"
       },
       "BackupInfo": {

@@ -1456,8 +1456,24 @@ export interface components {
             attribution: components["schemas"]["AttributionOut"][];
             /** Attribution Currency */
             attribution_currency: string | null;
+            attribution_total: components["schemas"]["AttributionTotalOut"];
+            /**
+             * Benchmark Diff
+             * @description Portfolio minus benchmark, in ccy
+             */
+            benchmark_diff: string | null;
+            /**
+             * Benchmark Diff Pct
+             * @description Diff relative to the benchmark value (fraction, 0.01 = 1%)
+             */
+            benchmark_diff_pct: string | null;
             /** Benchmark Is Funded */
             benchmark_is_funded: boolean;
+            /**
+             * Benchmark Last Value
+             * @description Latest benchmark curve value
+             */
+            benchmark_last_value: string | null;
             /** Benchmark Symbol */
             benchmark_symbol: string;
             /** Beta */
@@ -1492,6 +1508,16 @@ export interface components {
              * @description fraction, 0.01 = 1%
              */
             max_drawdown: string | null;
+            /**
+             * Net Invested Last
+             * @description Latest cumulative net contributions
+             */
+            net_invested_last: string | null;
+            /**
+             * Portfolio Last Value
+             * @description Latest curve value in ccy
+             */
+            portfolio_last_value: string | null;
             /**
              * Risk Free Rate
              * @description fraction, 0.01 = 1%
@@ -1554,6 +1580,17 @@ export interface components {
             start_value: string | null;
             /** Symbol */
             symbol: string;
+        };
+        /** AttributionTotalOut */
+        AttributionTotalOut: {
+            /** Absolute Pnl */
+            absolute_pnl: string | null;
+            /** End Value */
+            end_value: string | null;
+            /** Net Contribution */
+            net_contribution: string | null;
+            /** Start Value */
+            start_value: string | null;
         };
         /** BackupInfo */
         BackupInfo: {
