@@ -736,9 +736,7 @@ re-run `bash deploy/check.sh` from the laptop afterwards. Background: `SECURITY.
       (resolved from the registries on 2026-11-01 for the tags `node:22-slim`,
       `python:3.12-slim`, `uv:0.5`, `caddy:2.11`, `rclone:1.68`). Dependabot proposes
       digest updates. The `caddy` and `rclone` digests may be newer than the image
-      currently running: the first `docker compose up -d` pulls them. Note that this
-      repository does not pin by digest the images it never builds itself except via
-      these lines.
+      currently running: the first `docker compose up -d` pulls them.
 
 **Rotating secrets (not automated yet)**
 
