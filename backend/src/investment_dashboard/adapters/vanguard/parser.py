@@ -23,7 +23,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -82,10 +82,12 @@ def _iter_dict_rows(content: str) -> Iterator[tuple[int, dict[str, str]]]:
         yield header_idx + reader.line_num, row
 
 
-def _parse_row(raw: dict[str, str]) -> ParsedTransactionRow | None:
+def _parse_row(
+    raw: dict[str, str], action_overrides: Mapping[str, str] | None = None
+) -> ParsedTransactionRow | None:
     """Parse one dict row. Returns ``None`` for a sweep; raises on a bad cell."""
     txn_type = raw["transaction type"]
-    kind = map_transaction_type(txn_type)
+    kind = map_transaction_type(txn_type, action_overrides)
     if kind is None:
         return None  # sweep — caller counts it
 
@@ -137,7 +139,9 @@ def _parse_row(raw: dict[str, str]) -> ParsedTransactionRow | None:
     )
 
 
-def parse_vanguard_csv(content: str) -> VanguardParseResult:
+def parse_vanguard_csv(
+    content: str, action_overrides: Mapping[str, str] | None = None
+) -> VanguardParseResult:
     """Parse a Vanguard brokerage CSV into a :class:`ParseReport`.
 
     Sweeps are dropped (counted in ``sweeps_dropped``); unknown transaction
@@ -153,7 +157,7 @@ def parse_vanguard_csv(content: str) -> VanguardParseResult:
     for line, raw in _iter_dict_rows(content):
         txn_type = raw.get("transaction type", "")
         try:
-            parsed = _parse_row(raw)
+            parsed = _parse_row(raw, action_overrides)
         except UnknownActionError as exc:
             unknown_actions.append(txn_type)
             errors.append(RowIssue(message=str(exc), line=line, raw=txn_type))

@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import hashlib
 import io
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -164,10 +164,12 @@ def _row_records(
         yield offset, record
 
 
-def _parse_record(record: dict[str, object]) -> ParsedTransactionRow | None:
+def _parse_record(
+    record: dict[str, object], action_overrides: Mapping[str, str] | None = None
+) -> ParsedTransactionRow | None:
     """Parse one record. Returns ``None`` for a sweep; raises on a bad cell."""
     txn_type = _to_str(record.get("transaction type"))
-    kind = map_transaction_type(txn_type)
+    kind = map_transaction_type(txn_type, action_overrides)
     if kind is None:
         return None  # sweep — caller counts it
 
@@ -213,7 +215,9 @@ def _parse_record(record: dict[str, object]) -> ParsedTransactionRow | None:
     )
 
 
-def parse_vanguard_xlsx(content: bytes) -> VanguardXlsxParseResult:
+def parse_vanguard_xlsx(
+    content: bytes, action_overrides: Mapping[str, str] | None = None
+) -> VanguardXlsxParseResult:
     """Parse a Vanguard Full-History Excel workbook into a :class:`ParseReport`.
 
     Unknown transaction types and bad/EU-locale cells are collected as
@@ -242,7 +246,7 @@ def parse_vanguard_xlsx(content: bytes) -> VanguardXlsxParseResult:
     for line, record in _row_records(grid, header_row):
         txn_type = _to_str(record.get("transaction type"))
         try:
-            parsed = _parse_record(record)
+            parsed = _parse_record(record, action_overrides)
         except UnknownActionError as exc:
             unknown_actions.append(txn_type)
             errors.append(RowIssue(message=str(exc), line=line, raw=txn_type))

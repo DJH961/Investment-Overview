@@ -86,6 +86,13 @@ class ValueSeriesPoint:
     value: Decimal
 
 
+def _mm_extra() -> tuple[str, ...]:
+    """User-added money-market symbols (setting ``portfolio.money_market_symbols``)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    return tuple(settings_service.get_or("portfolio.money_market_symbols", ()))
+
+
 def resolve_range_days(label: str | None) -> tuple[str, int | None]:
     """Map a range query-param to ``(canonical_label, lookback_days|None)``.
 
@@ -743,7 +750,9 @@ def compute_instrument_metrics(  # noqa: PLR0915
     # cost basis (mirroring positions_service) lets their gain/growth reflect the
     # earned dividends instead of collapsing to zero.
     mm_iids: set[int | None] = {
-        p.instrument.id for p in positions if is_money_market_effective(p.instrument, p.effective)
+        p.instrument.id
+        for p in positions
+        if is_money_market_effective(p.instrument, p.effective, _mm_extra())
     }
 
     def _legs(t: Transaction) -> tuple[Decimal, Decimal]:
@@ -917,7 +926,9 @@ def compute_instrument_metrics(  # noqa: PLR0915
         )
         eff_name = p.effective.name if p.effective is not None else p.instrument.name
         eff_class = p.effective.asset_class if p.effective is not None else p.instrument.asset_class
-        is_mm = is_money_market(p.instrument.symbol, asset_class=eff_class, name=eff_name)
+        is_mm = is_money_market(
+            p.instrument.symbol, asset_class=eff_class, name=eff_name, extra_symbols=_mm_extra()
+        )
         daily_eur, daily_usd, daily_move_eur, daily_move_usd, daily_as_of = (
             _instrument_daily_growth(
                 instrument_id=iid,
@@ -1447,7 +1458,9 @@ def holding_freshness(session: Session, positions: list[Position]) -> dict[int, 
         eff = p.effective
         eff_name = eff.name if eff is not None else p.instrument.name
         eff_class = eff.asset_class if eff is not None else p.instrument.asset_class
-        is_mm = is_money_market(p.instrument.symbol, asset_class=eff_class, name=eff_name)
+        is_mm = is_money_market(
+            p.instrument.symbol, asset_class=eff_class, name=eff_name, extra_symbols=_mm_extra()
+        )
         out[iid] = HoldingFreshness(
             price_as_of=None if is_mm else as_of_dates.get(iid),
             updated_at=None if is_mm else refreshed.get(iid),

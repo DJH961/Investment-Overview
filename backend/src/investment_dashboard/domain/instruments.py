@@ -11,6 +11,25 @@ from investment_dashboard.domain.money_market import is_money_market
 SYNTHETIC_ASSET_CLASSES: frozenset[str] = frozenset({"cash", "savings"})
 #: Priced from an end-of-day NAV (published after the close), not intraday.
 NAV_ASSET_CLASSES: frozenset[str] = frozenset({"mutual_fund"})
+#: Every asset class the ledger accepts (mirrors ``ck_instrument_asset_class``).
+ASSET_CLASSES: tuple[str, ...] = ("etf", "mutual_fund", "stock", "cash", "savings", "unknown")
+
+#: How an instrument gets its closes: fetched (``auto``), typed in as manual
+#: price fixes (``manual``), or frozen at the last known close (``delisted``).
+PRICING_AUTO = "auto"
+PRICING_MANUAL = "manual"
+PRICING_DELISTED = "delisted"
+PRICING_MODES: tuple[str, ...] = (PRICING_AUTO, PRICING_MANUAL, PRICING_DELISTED)
+
+
+def is_fetched(pricing_mode: str | None) -> bool:
+    """Whether a provider is asked for this instrument's prices (``None`` = auto)."""
+    return pricing_mode in (None, PRICING_AUTO)
+
+
+def fetch_symbol(symbol: str, provider_symbol: str | None) -> str:
+    """The ticker to send to the price provider (the mapping, else the ledger symbol)."""
+    return provider_symbol or symbol
 
 
 def is_synthetic(asset_class: str | None) -> bool:

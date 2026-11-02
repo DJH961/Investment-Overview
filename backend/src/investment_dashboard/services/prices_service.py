@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,11 @@ from investment_dashboard.adapters.yfinance_client import (
     fetch_market_times,
     fetch_splits,
 )
-from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
+from investment_dashboard.domain.instruments import (
+    NAV_ASSET_CLASSES,
+    SYNTHETIC_ASSET_CLASSES,
+    fetch_symbol,
+)
 from investment_dashboard.domain.market_hours import (
     exchange_today,
     is_us_market_open,
@@ -35,6 +39,20 @@ if TYPE_CHECKING:
     from investment_dashboard.models import Instrument
 
 log = logging.getLogger(__name__)
+
+
+def _fetch_rules(session: Session) -> tuple[set[int], dict[int, str]]:
+    """``(skip_ids, provider_symbols)`` from the instrument settings (config tier).
+
+    ``skip_ids`` are never sent to a provider: inactive instruments and those
+    whose pricing mode is ``manual`` or ``delisted`` (their last close keeps
+    valuing them). ``provider_symbols`` maps an instrument id to the ticker the
+    provider knows it by, when that differs from the ledger symbol.
+    """
+    return (
+        instrument_overrides_repo.not_fetched_ids(session),
+        instrument_overrides_repo.provider_symbol_map(session),
+    )
 
 
 def _resolve_tiingo_token() -> str | None:
@@ -143,6 +161,44 @@ def _report_suspect_data(
     round_.suspect_data("yfinance", [id_to_symbol[i] for i in suspect_ids if i in id_to_symbol])
 
 
+def provider_symbols_for(session: Session, symbols: Iterable[str]) -> dict[str, str | None]:
+    """``{ledger symbol: provider ticker}`` for ``symbols``.
+
+    The value is ``None`` for an instrument the provider must not be asked
+    about (inactive, or pricing mode ``manual`` / ``delisted``). A symbol with
+    no instrument row maps to itself.
+    """
+    wanted = set(symbols)
+    out: dict[str, str | None] = {sym: sym for sym in wanted}
+    skip, provider_symbols = _fetch_rules(session)
+    for instr in instruments_repo.list_instruments(session):
+        if instr.symbol in wanted:
+            out[instr.symbol] = (
+                None
+                if instr.id in skip
+                else fetch_symbol(instr.symbol, provider_symbols.get(instr.id))
+            )
+    return out
+
+
+def via_provider_symbols(session: Session, fetch: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a symbol-batch fetch (first argument: the symbols) for the instrument
+    mapping: it asks the provider for the mapped tickers, skips not-fetched
+    instruments, and answers keyed by ledger symbol again."""
+
+    def wrapped(symbols: Sequence[str], *args: Any, **kwargs: Any) -> dict[str, Any]:
+        mapping = provider_symbols_for(session, symbols)
+        wanted = {ledger: prov for ledger, prov in mapping.items() if prov is not None}
+        if not wanted:
+            return {}
+        if all(ledger == prov for ledger, prov in wanted.items()) and len(wanted) == len(mapping):
+            return dict(fetch(symbols, *args, **kwargs))
+        raw = fetch(sorted(set(wanted.values())), *args, **kwargs)
+        return {ledger: raw[prov] for ledger, prov in wanted.items() if prov in raw}
+
+    return wrapped
+
+
 def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start to end
     session: Session,
     cache_session: Session | None = None,
@@ -187,7 +243,7 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
         round_ = pull_log.begin(source or "Price re-pull", mode="full re-pull (recent window)")
     try:
         instruments = instruments_repo.list_instruments(session)
-        inactive = instrument_overrides_repo.inactive_ids(session)
+        inactive, provider_symbols = _fetch_rules(session)
         # Batch the per-instrument MAX/MIN(date) lookups into two GROUP BY queries
         # instead of 2N individual round-trips.
         candidate_ids = [
@@ -200,6 +256,7 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
         symbols_to_fetch: list[str] = []
         earliest_per_symbol: dict[str, date] = {}
         anchors: list[date] = []
+        targets: list[Instrument] = []
         for instr in instruments:
             if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
                 continue
@@ -214,9 +271,11 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
                 settled=settled,
                 market_open=market_open,
             )
-            symbols_to_fetch.append(instr.symbol)
-            earliest_per_symbol[instr.symbol] = start
+            sym = fetch_symbol(instr.symbol, provider_symbols.get(instr.id))
+            symbols_to_fetch.append(sym)
+            earliest_per_symbol[sym] = start
             anchors.append(anchor)
+            targets.append(instr)
 
         if not symbols_to_fetch:
             round_.note(
@@ -245,15 +304,13 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
         by_symbol = {i.symbol: i for i in instruments}
         now = datetime.now(UTC).replace(tzinfo=None)
         written_ids: list[int] = []
-        for symbol in symbols_to_fetch:
-            instr = by_symbol.get(symbol)
-            if instr is None:
-                continue
-            closes = closes_by_symbol.get(symbol, {})
-            cutoff = earliest_per_symbol.get(symbol, earliest_needed)
+        for instr in targets:
+            sym = fetch_symbol(instr.symbol, provider_symbols.get(instr.id))
+            closes = closes_by_symbol.get(sym, {})
+            cutoff = earliest_per_symbol.get(sym, earliest_needed)
             filtered = {d: c for d, c in closes.items() if d >= cutoff}
-            result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
-            if result[symbol]:
+            result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
+            if result[instr.symbol]:
                 written_ids.append(instr.id)
             # Stamp every instrument we queried (see refresh_due_prices) so the
             # overview's per-symbol "updated" time advances even when the feed
@@ -295,12 +352,14 @@ def refresh_splits(
         return result
 
     instruments = instruments_repo.list_instruments(session)
-    inactive = instrument_overrides_repo.inactive_ids(session)
-    symbols_to_fetch = [
-        instr.symbol
+    inactive, provider_symbols = _fetch_rules(session)
+    # provider ticker -> instrument (the mapping, else the ledger symbol)
+    by_fetch_symbol = {
+        fetch_symbol(instr.symbol, provider_symbols.get(instr.id)): instr
         for instr in instruments
         if instr.asset_class not in _SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
-    ]
+    }
+    symbols_to_fetch = list(by_fetch_symbol)
     if not symbols_to_fetch:
         return result
 
@@ -311,12 +370,11 @@ def refresh_splits(
         log.warning("yfinance split refresh failed (%s); keeping cached splits", exc)
         return result
 
-    by_symbol = {i.symbol: i for i in instruments}
     for symbol, splits in splits_by_symbol.items():
-        instr = by_symbol.get(symbol)
+        instr = by_fetch_symbol.get(symbol)
         if instr is None:
             continue
-        result[symbol] = splits_repo.upsert_splits(cache, instr.id, splits)
+        result[instr.symbol] = splits_repo.upsert_splits(cache, instr.id, splits)
     return result
 
 
@@ -652,7 +710,7 @@ def instruments_due_for_refresh(
     market_open = is_us_market_open(now_utc)
     settled_date = latest_settled_session_date(now_utc)
     due: list[Instrument] = []
-    inactive = instrument_overrides_repo.inactive_ids(session)
+    inactive = instrument_overrides_repo.not_fetched_ids(session)
     instruments = instruments_repo.list_instruments(session)
     ids = [i.id for i in instruments]
     # One IN(...) query each for the last-refresh timestamps and newest cached
@@ -719,6 +777,8 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
         symbols_to_fetch: list[str] = []
         earliest_per_symbol: dict[str, date] = {}
         latest_dates = prices_repo.latest_price_dates(cache, [i.id for i in due])
+        provider_symbols = instrument_overrides_repo.provider_symbol_map(session)
+        fetch_sym = {i.id: fetch_symbol(i.symbol, provider_symbols.get(i.id)) for i in due}
         for instr in due:
             latest = latest_dates.get(instr.id)
             start = (
@@ -726,8 +786,8 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
             )
             # Always fetch today's window so intraday closes overwrite stale rows.
             start = min(start, today)
-            symbols_to_fetch.append(instr.symbol)
-            earliest_per_symbol[instr.symbol] = start
+            symbols_to_fetch.append(fetch_sym[instr.id])
+            earliest_per_symbol[fetch_sym[instr.id]] = start
 
         fetch_start = min(earliest_per_symbol.values())
         fetch_end = today + timedelta(days=1)
@@ -769,8 +829,8 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
         # to recover.
         if closes_by_symbol:
             for instr in due:
-                closes = closes_by_symbol.get(instr.symbol, {})
-                cutoff = earliest_per_symbol.get(instr.symbol, fetch_start)
+                closes = closes_by_symbol.get(fetch_sym[instr.id], {})
+                cutoff = earliest_per_symbol.get(fetch_sym[instr.id], fetch_start)
                 filtered = {d: c for d, c in closes.items() if d >= cutoff}
                 result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
                 if result[instr.symbol]:
@@ -782,7 +842,7 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
                 # leaving it stuck at the last time a price actually changed. The "as
                 # of" date still reflects the real (possibly older) observation date.
                 price_cache_repo.upsert_last_refreshed_at(
-                    cache, instr.id, now, market_time=market_times.get(instr.symbol)
+                    cache, instr.id, now, market_time=market_times.get(fetch_sym[instr.id])
                 )
             round_.settled("yfinance", result)
             _report_suspect_data(cache, {i.symbol: i for i in due}, written_ids, round_)
@@ -793,7 +853,12 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
             due=due,
             now=now,
             today=today,
-            primary_closes=closes_by_symbol,
+            # The fallback works in ledger symbols; re-key the provider's answer.
+            primary_closes={
+                i.symbol: closes_by_symbol[fetch_sym[i.id]]
+                for i in due
+                if fetch_sym[i.id] in closes_by_symbol
+            },
             result=result,
         )
         return result
@@ -906,7 +971,7 @@ def refresh_via_tiingo(
             "secondary price source."
         )
 
-    inactive = instrument_overrides_repo.inactive_ids(session)
+    inactive = instrument_overrides_repo.not_fetched_ids(session)
     instruments = [
         instr
         for instr in instruments_repo.list_instruments(session)

@@ -22,6 +22,7 @@ from investment_dashboard.models.base import (
     LedgerBase,
 )
 from investment_dashboard.models.fx_history import FxHistory
+from investment_dashboard.models.import_batch import ImportBatch
 from investment_dashboard.models.instrument import Instrument
 from investment_dashboard.models.instrument_override import InstrumentOverride
 from investment_dashboard.models.intraday_value import IntradayValue
@@ -44,6 +45,7 @@ __all__ = [
     "CacheBase",
     "ConfigBase",
     "FxHistory",
+    "ImportBatch",
     "Instrument",
     "InstrumentOverride",
     "IntradayValue",

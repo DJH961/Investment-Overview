@@ -47,6 +47,12 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ("POST", "/api/imports"): ("import file uploaded (preview)", "import upload rejected"),
     ("POST", "/api/imports/{import_id}/confirm"): ("import confirmed", "import confirm failed"),
     ("DELETE", "/api/imports/{import_id}"): ("import discarded", "import discard failed"),
+    ("POST", "/api/imports/{import_id}/reparse"): ("import re-previewed", "import reparse failed"),
+    ("PUT", "/api/imports/action-overrides/{broker}"): (
+        "import action mapping changed",
+        "import action mapping rejected",
+    ),
+    ("POST", "/api/imports/batches/{batch_id}/undo"): ("import UNDONE", "import undo refused"),
     ("POST", "/api/refresh"): ("manual refresh requested", "manual refresh refused"),
     ("POST", "/api/graphs/{range_key}/reload"): (
         "graph reload requested",
@@ -68,6 +74,10 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("POST", "/api/settings/import"): ("settings imported", "settings import rejected"),
     ("POST", "/api/maintenance/jobs/{job_id}"): ("repair job started", "repair job refused"),
+    ("PATCH", "/api/instruments/{instrument_id}"): (
+        "instrument settings changed",
+        "instrument change rejected",
+    ),
     ("POST", "/api/maintenance/scheduler/{job}/run"): (
         "scheduler run-now requested",
         "scheduler run-now refused",

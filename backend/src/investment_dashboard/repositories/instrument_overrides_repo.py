@@ -66,6 +66,27 @@ def inactive_ids(session: Session) -> set[int]:
     return set(session.scalars(stmt).all())
 
 
+def not_fetched_ids(session: Session) -> set[int]:
+    """Ids a price provider must not be asked about: inactive, or pricing mode
+    ``manual`` / ``delisted`` (v6 instrument mapping)."""
+    stmt = select(InstrumentOverride.instrument_id).where(
+        (InstrumentOverride.active.is_(False))
+        | (
+            InstrumentOverride.pricing_mode.is_not(None)
+            & (InstrumentOverride.pricing_mode != "auto")
+        )
+    )
+    return set(session.scalars(stmt).all())
+
+
+def provider_symbol_map(session: Session) -> dict[int, str]:
+    """``{instrument_id: provider_symbol}`` for every instrument with a mapping."""
+    stmt = select(InstrumentOverride.instrument_id, InstrumentOverride.provider_symbol).where(
+        InstrumentOverride.provider_symbol.is_not(None)
+    )
+    return {iid: sym for iid, sym in session.execute(stmt).all() if sym}
+
+
 def upsert(
     session: Session,
     instrument_id: int,
@@ -75,6 +96,8 @@ def upsert(
     name_override: str | None | _Sentinel = ...,  # type: ignore[assignment]
     asset_class_override: str | None | _Sentinel = ...,  # type: ignore[assignment]
     expense_ratio_override: Decimal | None | _Sentinel = ...,  # type: ignore[assignment]
+    provider_symbol: str | None | _Sentinel = ...,  # type: ignore[assignment]
+    pricing_mode: str | None | _Sentinel = ...,  # type: ignore[assignment]
 ) -> InstrumentOverride:
     """Insert-or-update the override for ``instrument_id``.
 
@@ -97,6 +120,8 @@ def upsert(
             expense_ratio_override=(
                 expense_ratio_override if expense_ratio_override is not ... else None
             ),
+            provider_symbol=provider_symbol if provider_symbol is not ... else None,
+            pricing_mode=pricing_mode if pricing_mode is not ... else None,
         )
         session.add(ov)
     else:
@@ -110,6 +135,10 @@ def upsert(
             ov.asset_class_override = asset_class_override  # type: ignore[assignment]
         if expense_ratio_override is not ...:
             ov.expense_ratio_override = expense_ratio_override  # type: ignore[assignment]
+        if provider_symbol is not ...:
+            ov.provider_symbol = provider_symbol  # type: ignore[assignment]
+        if pricing_mode is not ...:
+            ov.pricing_mode = pricing_mode  # type: ignore[assignment]
     session.flush()
     return ov
 

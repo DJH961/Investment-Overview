@@ -122,6 +122,7 @@ from investment_dashboard.services import (
     metrics_service,
     positions_service,
     prices_service,
+    settings_service,
     snapshots_service,
 )
 
@@ -393,7 +394,13 @@ def _money_market_value_native(
     if not window:
         return {}
     mm_ids = {
-        p.instrument.id for p in positions if is_money_market_effective(p.instrument, p.effective)
+        p.instrument.id
+        for p in positions
+        if is_money_market_effective(
+            p.instrument,
+            p.effective,
+            settings_service.get_or("portfolio.money_market_symbols", ()),
+        )
     }
     if not mm_ids:
         return {}

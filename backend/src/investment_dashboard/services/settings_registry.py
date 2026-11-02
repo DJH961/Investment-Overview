@@ -20,6 +20,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
+from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.settings_schema import (
     SettingDef,
     SettingError,
@@ -74,6 +75,39 @@ def _currencies(value: Typed) -> None:
             raise SettingError(f"fx.tracked_quotes: {code!r} is not a 3-letter currency code")
         if code == "EUR":
             raise SettingError("fx.tracked_quotes: EUR is the base currency")
+
+
+#: Values an action override may map to: a ledger kind, or "ignore" (drop the row).
+ACTION_OVERRIDE_TARGETS: tuple[str, ...] = (*(k.value for k in TransactionKind), "ignore")
+#: Brokers whose parsers accept action overrides (``import.action_overrides.<broker>``).
+ACTION_OVERRIDE_BROKERS: tuple[str, ...] = ("fidelity", "vanguard")
+
+
+def _action_overrides(value: Typed) -> None:
+    if not isinstance(value, dict):  # pragma: no cover - type-checked by coerce
+        raise SettingError("expected an object")
+    for action, kind in value.items():
+        if not action:
+            raise SettingError("an action cannot be empty")
+        if kind not in ACTION_OVERRIDE_TARGETS:
+            raise SettingError(
+                f"{action!r}: {kind!r} is not one of {', '.join(ACTION_OVERRIDE_TARGETS)}"
+            )
+
+
+def _action_map(broker: str) -> SettingDef:
+    return SettingDef(
+        f"import.action_overrides.{broker}",
+        SettingType.JSON_MAP,
+        {},
+        "imports",
+        f"{broker.title()} action mapping",
+        help=(
+            "Broker action text -> transaction kind (or 'ignore'), for actions the "
+            "importer does not know. Matched case-insensitively; wins over the built-in rules."
+        ),
+        validator=_action_overrides,
+    )
 
 
 def _ttl(asset_class: str, default: int, label: str) -> SettingDef:
@@ -299,6 +333,7 @@ DEFS: tuple[SettingDef, ...] = (
         max=_D(5000),
         level="advanced",
     ),
+    *(_action_map(b) for b in ACTION_OVERRIDE_BROKERS),
     # -- data refresh ----------------------------------------------------------
     _ttl("etf", 120, "ETF price age"),
     _ttl("stock", 120, "Stock price age"),

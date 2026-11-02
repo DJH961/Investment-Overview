@@ -185,6 +185,8 @@ def update(session: Session, txn_id: int, data: TransactionInput) -> Transaction
     updated = transactions_repo.update_transaction(session, txn_id, **prep.fields)
     if updated is None:  # pragma: no cover - checked above
         raise TransactionNotFoundError(f"Transaction {txn_id} not found")
+    # A hand-edited imported row is the user's now: undoing its import keeps it.
+    updated.import_batch_id = None
     # Keep the paired (often hidden) settlement leg in lock-step with the cash it
     # mirrors, so an edit can't silently diverge the money-market balance.
     resync_settlement_leg(
@@ -329,6 +331,7 @@ def resync_settlement_leg(
     leg_legs = transaction_fx_service.compute_legs(
         session, native_currency=native_ccy, net_native=values.net_native, on=parent.date
     )
+    leg.import_batch_id = None  # follows its edited parent out of the import batch
     leg.account_id = parent.account_id
     leg.date = parent.date
     leg.kind = values.kind

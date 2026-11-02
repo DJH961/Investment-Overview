@@ -1,4 +1,4 @@
-"""``/api/accounts`` CRUD and the read-only ``/api/instruments`` list."""
+"""``/api/accounts`` CRUD (the instruments list moved to ``api/instruments.py``)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from investment_dashboard.api.deps import SessionDep
-from investment_dashboard.api.schemas.accounts import AccountIn, AccountOut, InstrumentOut
-from investment_dashboard.repositories import accounts_repo, instruments_repo, transactions_repo
+from investment_dashboard.api.schemas.accounts import AccountIn, AccountOut
+from investment_dashboard.repositories import accounts_repo, transactions_repo
 
 if TYPE_CHECKING:
     from investment_dashboard.models import Account
@@ -85,17 +85,3 @@ def delete_account(account_id: int, session: SessionDep) -> Response:
     session.delete(row)
     session.flush()
     return Response(status_code=204)
-
-
-@router.get("/instruments", response_model=list[InstrumentOut])
-def list_instruments(session: SessionDep) -> list[InstrumentOut]:
-    return [
-        InstrumentOut(
-            id=i.id,
-            symbol=i.symbol,
-            name=i.name,
-            asset_class=i.asset_class,
-            native_currency=i.native_currency,
-        )
-        for i in instruments_repo.list_instruments(session)
-    ]
