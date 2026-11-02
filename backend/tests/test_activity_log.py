@@ -87,6 +87,15 @@ def test_unknown_subject_is_refused() -> None:
         ("GET", "/api/overview", None),
         ("POST", "/api/calculator", None),
         ("POST", "/api/auth/passkey/login/options", None),
+        ("PATCH", "/api/settings/values", "changes"),
+        ("GET", "/api/settings/export", "changes"),
+        ("POST", "/api/maintenance/jobs/cache.reset", "system"),
+        ("POST", "/api/maintenance/jobs/backup.now", "backups"),
+        ("PUT", "/api/maintenance/prices/1/2026-01-05", "market_data"),
+        ("PUT", "/api/maintenance/scheduler/pause", "market_data"),
+        ("POST", "/api/maintenance/probe", None),
+        ("GET", "/api/maintenance/logs", "system"),
+        ("GET", "/api/maintenance/jobs", None),
     ],
 )
 def test_subject_for(method: str, path: str, subject: str | None) -> None:
