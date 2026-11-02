@@ -82,7 +82,7 @@ class GraphResponse(ApiModel):
     #: 1d only: last point vs ``reference``.
     direction: Literal["up", "down", "flat"] | None = None
     #: Exchange sessions in the window, oldest first (intraday ranges only).
-    sessions: list[GraphSession] = []
+    sessions: list[GraphSession] = []  # noqa: RUF012 - pydantic copies defaults
     coverage: GraphCoverage | None = None
     growth: GraphGrowth | None = None
 
