@@ -7,9 +7,10 @@ code used before (``tests/services/test_settings_registry.py`` checks each one),
 and those constants stay as the fallback where a value cannot be read.
 
 Must-stay-env items (paths, passphrases, ports, cookie and passkey origin) are
-not here; ``GET /api/system`` shows them read-only. Session / login / body-cap
-settings are owned by the security branch and are added there with
-``env_bound="ceiling"`` (the app may only make them stricter).
+not here; ``GET /api/system`` shows them read-only. Session / login limits are
+advanced ``env_bound="ceiling"`` settings: the app may only make them stricter
+than the bootstrap/env value (see :func:`settings_service.stricter`). Body caps
+stay env-only (the request guard reads them before any database access).
 """
 
 from __future__ import annotations
@@ -541,6 +542,62 @@ DEFS: tuple[SettingDef, ...] = (
         choices=LOG_LEVELS,
         level="advanced",
         env_var="log_level",
+    ),
+    # -- sign-in & sessions (ceilings: the app can only tighten the env value) ----
+    SettingDef(
+        "session_idle_minutes",
+        SettingType.INT,
+        30,
+        "system",
+        "Sign out after idle (minutes)",
+        help="Can only be lower than the server's configured value.",
+        min=_D(5),
+        max=_D(1440),
+        level="advanced",
+        env_var="session_idle_minutes",
+        env_bound="ceiling",
+        unit="min",
+    ),
+    SettingDef(
+        "session_max_age_days",
+        SettingType.INT,
+        30,
+        "system",
+        "Sign out at the latest after (days)",
+        help="Can only be lower than the server's configured value.",
+        min=_D(1),
+        max=_D(365),
+        level="advanced",
+        env_var="session_max_age_days",
+        env_bound="ceiling",
+        unit="days",
+    ),
+    SettingDef(
+        "fresh_session_minutes",
+        SettingType.INT,
+        10,
+        "system",
+        "Re-sign-in for sensitive actions after (minutes)",
+        help="Passkey changes and backup downloads need a recent sign-in.",
+        min=_D(1),
+        max=_D(240),
+        level="advanced",
+        env_var="fresh_session_minutes",
+        env_bound="ceiling",
+        unit="min",
+    ),
+    SettingDef(
+        "login_rate_limit_per_minute",
+        SettingType.INT,
+        5,
+        "system",
+        "Failed sign-ins allowed per minute",
+        help="Per client address. Can only be lower than the server's value.",
+        min=_D(1),
+        max=_D(60),
+        level="advanced",
+        env_var="login_rate_limit_per_minute",
+        env_bound="ceiling",
     ),
 )
 

@@ -28,35 +28,48 @@ env:
 
 jobs:
   deploy:
+    # Only ever deploy a commit that was pushed to main of THIS repository and
+    # passed CI. workflow_run also fires for pull requests (including forks, whose
+    # head_branch can be named "main"), so the event and the repository are
+    # checked explicitly. Manual runs must be started on main.
     if: >-
       vars.DEPLOY_ENABLED == 'true' &&
-      (github.event_name == 'workflow_dispatch' ||
-       github.event.workflow_run.conclusion == 'success')
+      (
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.head_repository.full_name == github.repository &&
+         github.event.workflow_run.head_branch == 'main')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The deploy secrets live in this environment (restrict it to the main branch
+    # in the repository settings; see deploy/RUNBOOK.md).
+    environment: production
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
 
       - name: Work out the image tag
         id: tag
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
-
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: Dockerfile
@@ -68,72 +81,39 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Join the tailnet
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade # v3.3.0
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
       - name: Prepare SSH
+        # The server's host key comes from a secret (output of
+        # `ssh-keyscan -t ed25519 <server>` taken from a trusted network), never from
+        # a scan at deploy time.
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "$SERVER" >> ~/.ssh/known_hosts
-
-      - name: Copy the deploy files to the server
-        # The server never needs a git checkout: compose file, Caddyfile and the
-        # helper scripts are pushed here, from the commit being deployed.
-        run: |
-          scp -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
-            deploy/docker-compose.yml deploy/Caddyfile deploy/restore.sh deploy/first_install.sh \
-            "$SERVER_USER@$SERVER:/opt/investments/"
+          if [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "Secret DEPLOY_KNOWN_HOSTS is not set" >&2
+            exit 1
+          fi
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
 
       - name: Deploy on the server
+        # The deploy key is restricted to /opt/investments/deploy.sh (forced
+        # command), so there is no scp and no shell: the deploy files travel as a
+        # tar stream on stdin and the tag as the command (deploy/deploy.sh checks
+        # both).
         env:
           NEW_TAG: ${{ steps.tag.outputs.sha }}
         run: |
-          ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
-            "$SERVER_USER@$SERVER" bash -s -- "$NEW_TAG" <<'REMOTE'
-          set -euo pipefail
-          NEW_TAG="$1"
-          cd /opt/investments
-          chmod 755 restore.sh first_install.sh
-          touch .env
-          PREV_TAG="$(sed -n 's/^APP_TAG=//p' .env | tail -n 1)"
-          PREV_TAG="${PREV_TAG:-latest}"
-          set_tag() {
-            grep -v '^APP_TAG=' .env > .env.tmp || true
-            echo "APP_TAG=$1" >> .env.tmp
-            mv .env.tmp .env
-          }
-          healthy() {
-            for _ in $(seq 1 30); do
-              if docker compose exec -T app python -c \
-                "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/health', timeout=3)" \
-                >/dev/null 2>&1; then
-                return 0
-              fi
-              sleep 4
-            done
-            return 1
-          }
-          set_tag "$NEW_TAG"
-          docker compose pull app
-          docker compose up -d app
-          if healthy; then
-            echo "Deployed $NEW_TAG (previous: $PREV_TAG)"
-            # Pick up a changed Caddyfile (no-op when caddy is not running yet).
-            docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
-            docker image prune -f >/dev/null
-            exit 0
-          fi
-          echo "Health check failed; rolling back to $PREV_TAG" >&2
-          docker compose logs --tail 50 app >&2 || true
-          set_tag "$PREV_TAG"
-          docker compose up -d app
-          healthy || echo "Rollback target is also unhealthy" >&2
-          exit 1
-          REMOTE
+          tar -C deploy -czf - docker-compose.yml Caddyfile restore.sh first_install.sh \
+            | ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes \
+                -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+                "$SERVER_USER@$SERVER" "deploy $NEW_TAG"

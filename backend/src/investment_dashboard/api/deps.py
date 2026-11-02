@@ -41,7 +41,14 @@ ReportCcy = Annotated[Ccy, Query(description="Reporting currency.")]
 
 
 async def require_auth(request: Request) -> None:
-    """Reject the request with 401 unless it carries a valid session or token."""
+    """Reject the request with 401 unless it carries a valid session or token.
+
+    Guarded ``/api`` paths are already authenticated by
+    :class:`investment_dashboard.api.limits.RequestGuard` before the body is
+    read; its principal is reused here instead of looking the session up twice.
+    """
     from investment_dashboard.api import security  # noqa: PLC0415
 
+    if isinstance(getattr(request.state, "principal", None), security.Principal):
+        return
     await security.authenticate(request)

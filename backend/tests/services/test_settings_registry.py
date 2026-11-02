@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from investment_dashboard.api import ops
+from investment_dashboard.config import Settings
 from investment_dashboard.domain import risk_extras
 from investment_dashboard.domain.settings_schema import check_catalogue
 from investment_dashboard.domain.tiingo_fallback import DESKTOP_DAILY_CAP, DESKTOP_HOURLY_CAP
@@ -78,6 +79,15 @@ def test_defaults_match_code_constants() -> None:
     assert _default("risk_free_rate_symbol") == risk_free_service.DEFAULT_SYMBOL
     assert set(reg.GRAPH_RANGE_KEYS) == set(GRAPH_RANGES)
     assert isinstance(_default("risk.var_alpha"), Decimal)
+    boot_settings = Settings.model_construct()
+    for key in (
+        "session_idle_minutes",
+        "session_max_age_days",
+        "fresh_session_minutes",
+        "login_rate_limit_per_minute",
+    ):
+        assert _default(key) == getattr(boot_settings, key)
+        assert reg.BY_KEY[key].env_bound == "ceiling"
 
 
 def test_boot_constants() -> None:

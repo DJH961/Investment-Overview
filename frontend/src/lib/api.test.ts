@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, api, setUnauthorizedHandler } from "./api";
+import { ApiError, addAuthLostListener, api, reauthLoginPath, setReauthHandler, setUnauthorizedHandler } from "./api";
 
 function respond(status: number, body?: unknown) {
   vi.stubGlobal(
@@ -38,5 +38,36 @@ describe("api", () => {
     respond(401, {});
     await expect(api("/api/auth/me", { skipAuthRedirect: true })).rejects.toBeInstanceOf(ApiError);
     expect(handler).not.toHaveBeenCalled();
+  });
+  it("notifies auth-lost listeners on every 401, even without the redirect", async () => {
+    setUnauthorizedHandler(vi.fn());
+    const lost = vi.fn();
+    const off = addAuthLostListener(lost);
+    respond(401, {});
+    await expect(api("/api/x")).rejects.toBeInstanceOf(ApiError);
+    respond(401, {});
+    await expect(api("/api/auth/login", { method: "POST", skipAuthRedirect: true })).rejects.toBeInstanceOf(ApiError);
+    expect(lost).toHaveBeenCalledTimes(2);
+    off();
+    respond(401, {});
+    await expect(api("/api/x")).rejects.toBeInstanceOf(ApiError);
+    expect(lost).toHaveBeenCalledTimes(2);
+  });
+  it("asks for a new sign-in on 403 reauth_required", async () => {
+    const reauth = vi.fn();
+    setReauthHandler(reauth);
+    respond(403, { detail: { code: "reauth_required", message: "Please sign in again to continue." } });
+    await expect(api("/api/backup")).rejects.toMatchObject({
+      status: 403,
+      code: "reauth_required",
+      message: "Please sign in again to continue.",
+    });
+    expect(reauth).toHaveBeenCalledTimes(1);
+    respond(403, { detail: "Cross-origin request rejected." });
+    await expect(api("/api/x", { method: "POST" })).rejects.toMatchObject({ status: 403, code: undefined });
+    expect(reauth).toHaveBeenCalledTimes(1);
+  });
+  it("builds a login path that returns to the page", () => {
+    expect(reauthLoginPath("/settings?tab=security")).toBe("/login?next=%2Fsettings%3Ftab%3Dsecurity&reauth=1");
   });
 });

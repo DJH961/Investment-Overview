@@ -7,6 +7,11 @@ by :func:`investment_dashboard.api.deps.require_auth`.
 
 When ``settings.frontend_dist`` is set, the built React app is served at ``/``
 with an SPA fallback (any non-``/api`` path returns ``index.html``).
+
+:class:`investment_dashboard.api.limits.RequestGuard` caps every body and
+authenticates guarded ``/api`` paths before any body is read. In server mode the
+interactive docs and ``/openapi.json`` are off unless ``expose_api_docs`` is set,
+and :func:`run` refuses to start with an unsafe configuration.
 """
 
 from __future__ import annotations
@@ -24,7 +29,8 @@ from fastapi.staticfiles import StaticFiles
 from investment_dashboard import __version__
 from investment_dashboard.api.activity import log_request_activity
 from investment_dashboard.api.deps import require_auth
-from investment_dashboard.config import get_settings
+from investment_dashboard.api.limits import RequestGuard
+from investment_dashboard.config import get_settings, validate_server_config
 from investment_dashboard.errors import DomainError
 
 API_PREFIX = "/api"
@@ -68,6 +74,8 @@ _SECURITY_HEADERS = {
     "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
     "Content-Security-Policy": (
         "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
         "font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
@@ -95,7 +103,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await server_runtime.shutdown(app)
 
 
-def _mount_frontend(app: FastAPI, dist: Path) -> None:
+#: Paths the docs live at; with docs off they are 404, not the SPA fallback.
+_DOCS_PATHS = ("docs", "redoc", "openapi.json")
+
+
+def _mount_frontend(app: FastAPI, dist: Path, *, docs: bool = True) -> None:
     index = dist / "index.html"
     assets = dist / "assets"
     if assets.is_dir():
@@ -104,6 +116,8 @@ def _mount_frontend(app: FastAPI, dist: Path) -> None:
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa(full_path: str) -> Response:
         if full_path.startswith("api/") or full_path == "api":
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        if not docs and full_path.split("/", 1)[0] in _DOCS_PATHS:
             return JSONResponse({"detail": "Not Found"}, status_code=404)
         candidate = (dist / full_path).resolve()
         if full_path and candidate.is_file() and dist.resolve() in candidate.parents:
@@ -114,12 +128,20 @@ def _mount_frontend(app: FastAPI, dist: Path) -> None:
 def create_app(*, lifespan: bool = True) -> FastAPI:
     """Build the v6 app. ``lifespan=False`` skips boot/scheduler (tests, OpenAPI export)."""
     settings = get_settings()
+    docs = not settings.server_mode or settings.expose_api_docs
     app = FastAPI(
         title="Investment Overview",
         version=__version__,
         summary="v6 API: the server owns data, prices and all maths.",
         lifespan=_lifespan if lifespan else None,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
     )
+
+    # Innermost of the middlewares, so its 401/413 answers still get the
+    # security headers and the activity log line added below.
+    app.add_middleware(RequestGuard)
 
     @app.middleware("http")
     async def security_headers(
@@ -156,7 +178,7 @@ def create_app(*, lifespan: bool = True) -> FastAPI:
         )
 
     if settings.frontend_dist is not None and (settings.frontend_dist / "index.html").is_file():
-        _mount_frontend(app, settings.frontend_dist)
+        _mount_frontend(app, settings.frontend_dist, docs=docs)
     return app
 
 
@@ -168,10 +190,12 @@ def run() -> None:  # pragma: no cover - thin uvicorn launcher
 
     configure_logging()
     settings = get_settings()
+    validate_server_config(settings)
     uvicorn.run(
         create_app(),
         host=settings.host,
         port=settings.port,
         proxy_headers=True,
-        forwarded_allow_ips="*",
+        forwarded_allow_ips=settings.forwarded_allow_ips,
+        limit_concurrency=settings.limit_concurrency,
     )

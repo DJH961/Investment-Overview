@@ -17,6 +17,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+- **Deploy pipeline:** a deploy runs only for a successful CI run from a `push` to this repo's `main`; all third-party actions are pinned to commit SHAs; deploys use a `production` environment, a pinned `DEPLOY_KNOWN_HOSTS` and a forced-command `deploy/deploy.sh`; Dependabot added.
+- **Requests:** authentication is checked before any request body is read; per-route body caps (413); Caddy caps bodies at 12 MB, hides `/docs`, `/redoc`, `/openapi.json` and stops logging auth headers; the app trusts `X-Forwarded-For` only from Caddy's fixed address.
+- **Login:** at most 2 password checks run at once, attempts are counted before verifying, passkey login has its own limit (an attacker can no longer lock the owner out), wrong API tokens have their own limiter.
+- **Sensitive actions** (passkey add/remove, backup download) need a cookie session signed in within the last 10 minutes; the login page explains a re-sign-in.
+- **Startup checks:** server mode refuses to boot with an http origin, mismatched RP ID, insecure cookies or short/placeholder passphrases; `inv-dashboard-check-config` runs the same checks read-only before a deploy.
+- **Browser data:** sign-out and any 401 wipe cached portfolio data from the browser.
+- **Backups:** sealed snapshot format v2 binds the metadata to the ciphertext (tampering is detected); v1 snapshots still restore; restoring signs everyone out.
+- **Logs:** tracebacks, auth headers, key/value secrets and configured secrets are redacted.
+- **Containers:** Caddy and the backup sidecar are hardened (read-only, dropped capabilities, pids limits); the sidecar only sees the backups folder; base images pinned by digest.
+- `SECURITY.md` rewritten for the hosted v6 threat model; RUNBOOK gains an owner security checklist.
+
 ### Added
 - Activity logs per subject in `/data/logs/activity/` (auth incl. failed logins, market data polling and scheduler jobs, imports, manual changes, backups, system), rotated daily and kept 90 days. See RUNBOOK "Activity logs".
 - RUNBOOK: a quick restore drill that leaves the live database untouched, and a drill log (first drill 2026-11-01 passed).

@@ -36,6 +36,7 @@ export function Login() {
   const [busy, setBusy] = useState<"password" | "passkey" | null>(null);
   const [error, setError] = useState<{ text: string; field: boolean } | null>(null);
   const passkeys = browserSupportsWebAuthn();
+  const reauth = new URLSearchParams(location.search).get("reauth") === "1";
 
   const done = useCallback(async () => {
     await invalidateAuth(queryClient);
@@ -97,6 +98,12 @@ export function Login() {
           <h1 className="login-page__title">Investment Overview</h1>
           <p className="login-page__subtitle">Sign in to see your portfolio.</p>
         </div>
+
+        {reauth && (
+          <output className="login-page__notice">
+            For your security, please sign in again to continue.
+          </output>
+        )}
 
         <form className="login-page__form" onSubmit={onSubmit} noValidate>
           <Field label="Password" error={error?.field ? error.text : undefined}>

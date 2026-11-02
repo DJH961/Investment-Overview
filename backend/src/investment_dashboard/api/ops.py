@@ -7,7 +7,11 @@
   (full database incl. passkeys, AES-GCM sealed; restore with
   ``inv-dashboard-restore``). ``kind=db``
   streams a plain, secret-scrubbed SQLite copy. ``name=<snapshot>`` downloads
-  one of the stored sealed snapshots (see ``GET /maintenance/backups``).
+  one of the stored sealed snapshots (see ``GET /maintenance/backups``). All
+  need a fresh cookie session
+  (:func:`investment_dashboard.api.security.require_fresh_session`): the API
+  token cannot take data off the server, and a session that signed in more
+  than ``settings.fresh_session_minutes`` ago gets 403 ``reauth_required``.
 """
 
 from __future__ import annotations
@@ -19,10 +23,11 @@ from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
+from investment_dashboard.api import security
 from investment_dashboard.api.guards import actor_of
 from investment_dashboard.api.schemas.ops import RefreshStatus
 from investment_dashboard.config import get_settings
@@ -121,7 +126,11 @@ def _sealed_backup() -> FileResponse:
     )
 
 
-@router.get("/backup", response_class=FileResponse)
+@router.get(
+    "/backup",
+    response_class=FileResponse,
+    dependencies=[Depends(security.require_fresh_session)],
+)
 def download_backup(
     kind: str = Query(
         "sealed",

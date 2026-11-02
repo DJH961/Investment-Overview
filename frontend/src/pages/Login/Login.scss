@@ -79,6 +79,16 @@
     height: fit-content;
   }
 
+  &__notice {
+    display: block;
+    margin-bottom: var(--space-4);
+    padding: var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-fg);
+    background: var(--color-surface-2);
+    border-radius: var(--radius-sm);
+  }
+
   &__error {
     margin: 0;
     padding: var(--space-3);

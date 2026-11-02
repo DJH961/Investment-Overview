@@ -3,7 +3,14 @@
 Public router: every route except login/logout/passkey-login/``me`` depends on
 :func:`investment_dashboard.api.deps.require_auth`. State-changing routes check
 the ``Origin`` header; routes with a body also require ``Content-Type:
-application/json``.
+application/json``. Adding or removing a passkey needs a *fresh* cookie session
+(:func:`investment_dashboard.api.security.require_fresh_session`).
+
+Login attempts are counted *before* the check (a reserved slot, refunded on
+success), so concurrent guesses cannot all slip past the limit. Password checks
+are capped at ``settings.login_max_concurrent_verifies`` at a time (503 +
+``Retry-After`` when busy). Passkey failures use their own per-IP limiter and
+never touch the global password cap.
 """
 
 from __future__ import annotations
@@ -76,30 +83,37 @@ def _client_key(request: Request) -> str:
     return security.client_key(request)
 
 
-def _check_rate(
+def _too_many(wait: int) -> HTTPException:
+    return HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="Too many failed attempts; try again later.",
+        headers={"Retry-After": str(wait)},
+    )
+
+
+def _has_session(request: Request, settings: Settings, db: Session) -> bool:
+    token = request.cookies.get(security.cookie_name(settings))
+    return bool(token) and auth_service.validate_session(db, settings, token or "") is not None
+
+
+def _reserve(
     request: Request,
     settings: Settings,
     db: Session,
-    limiter: auth_service.RateLimiter | None = None,
+    limiter: auth_service.RateLimiter,
     limit: int | None = None,
-) -> None:
-    """429 when over the limit; a caller holding a valid session skips the global cap."""
-    limiter = limiter or auth_service.rate_limiter
-    token = request.cookies.get(security.cookie_name(settings))
-    has_session = (
-        bool(token) and auth_service.validate_session(db, settings, token or "") is not None
-    )
-    wait = limiter.retry_after(
-        _client_key(request),
-        limit if limit is not None else settings.login_rate_limit_per_minute,
-        bypass_global=has_session,
-    )
-    if wait is not None:
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many failed attempts; try again later.",
-            headers={"Retry-After": str(wait)},
+) -> auth_service.Reservation:
+    """Count this attempt up front (429 when over); a live session skips the global cap."""
+    try:
+        return limiter.reserve(
+            _client_key(request),
+            limit
+            if limit is not None
+            else auth_service.limit(settings, "login_rate_limit_per_minute"),
+            bypass_global=_has_session(request, settings, db),
         )
+    except auth_service.RateLimitedError as exc:
+        raise _too_many(exc.retry_after) from None
 
 
 def _start_session(request: Request, response: Response, db: Session, settings: Settings) -> None:
@@ -113,7 +127,7 @@ def _start_session(request: Request, response: Response, db: Session, settings: 
         settings,
         security.cookie_name(settings),
         token,
-        settings.session_max_age_days * 86400,
+        auth_service.limit(settings, "session_max_age_days") * 86400,
     )
 
 
@@ -133,10 +147,21 @@ def login(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="password not set: run inv-dashboard-set-password",
         )
-    _check_rate(request, settings, db)
-    if not auth_service.verify_password(db, body.password):
-        auth_service.rate_limiter.record_failure(_client_key(request))
+    slot = _reserve(request, settings, db, auth_service.rate_limiter)
+    try:
+        ok = auth_service.verify_password(
+            db, body.password, max_concurrent=settings.login_max_concurrent_verifies
+        )
+    except auth_service.VerifierBusyError:
+        slot.refund()  # nothing was checked: do not count it
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Sign-in is busy; try again in a moment.",
+            headers={"Retry-After": str(auth_service.VerifierBusyError.retry_after)},
+        ) from None
+    if not ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.")
+    slot.refund()
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     _start_session(request, response, db, settings)
     return response
@@ -168,9 +193,8 @@ def passkey_login_options(
     request: Request, db: ConfigSessionDep, settings: SettingsDep
 ) -> Response:
     # Every request counts (options are unauthenticated and allocate a challenge).
-    limit = max(settings.login_rate_limit_per_minute * 6, 30)
-    _check_rate(request, settings, db, auth_service.options_limiter, limit)
-    auth_service.options_limiter.record_failure(_client_key(request))
+    limit = max(auth_service.limit(settings, "login_rate_limit_per_minute") * 6, 30)
+    _reserve(request, settings, db, auth_service.options_limiter, limit)
     options_json, key = auth_service.authentication_options(settings)
     response = Response(content=options_json, media_type="application/json")
     _set_cookie(
@@ -194,14 +218,14 @@ def passkey_login_verify(
     settings: SettingsDep,
     credential: Annotated[dict[str, Any], Body()],
 ) -> Response:
-    _check_rate(request, settings, db)
+    slot = _reserve(request, settings, db, auth_service.passkey_limiter)
     cname = _challenge_cookie_name(settings)
     try:
         auth_service.authenticate_passkey(db, settings, request.cookies.get(cname), credential)
     except auth_service.PasskeyError:
         # Persist nothing from a failed ceremony; the scope rolls back on raise.
-        auth_service.rate_limiter.record_failure(_client_key(request))
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials.") from None
+    slot.refund()
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     _clear_cookie(response, settings, cname)
     _start_session(request, response, db, settings)
@@ -211,7 +235,10 @@ def passkey_login_verify(
 # ------------------------------------------------------------------ passkey management
 
 
-@router.post("/passkey/register/options", dependencies=[Depends(require_auth)])
+FreshSession = Depends(security.require_fresh_session)
+
+
+@router.post("/passkey/register/options", dependencies=[FreshSession])
 def passkey_register_options(
     db: ConfigSessionDep,
     settings: SettingsDep,
@@ -232,7 +259,7 @@ def passkey_register_options(
 @router.post(
     "/passkey/register/verify",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_auth), JsonGuard],
+    dependencies=[FreshSession, JsonGuard],
 )
 def passkey_register_verify(
     request: Request,
@@ -274,7 +301,7 @@ def list_passkeys(db: ConfigSessionDep) -> list[PasskeyOut]:
 @router.delete(
     "/passkeys/{passkey_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_auth)],
+    dependencies=[FreshSession],
 )
 def delete_passkey(passkey_id: int, db: ConfigSessionDep) -> Response:
     if not auth_service.delete_passkey(db, passkey_id):

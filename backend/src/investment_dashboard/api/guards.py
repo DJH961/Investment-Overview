@@ -3,12 +3,9 @@
 * :func:`require_session` — the caller must be a logged-in **browser session**,
   not the API token (scripts may read, but never run repairs or change secrets).
 * :func:`require_fresh` — for destructive actions and secret changes. It runs
-  :func:`require_session` and then the fresh-session check.
-
-  TODO(security-branch): when ``security.require_fresh_session`` (re-auth within
-  ``fresh_session_minutes``) is merged, call it from :func:`_fresh_session_check`
-  below. Until then the fallback is a valid cookie session plus the server-side
-  typed confirmation.
+  :func:`require_session` and then :func:`security.require_fresh_session`
+  (signed in within ``fresh_session_minutes``, else 403 ``reauth_required``),
+  on top of the server-side typed confirmation.
 
 Both put the acting principal on ``request.state.actor`` (``session:<id8>`` or
 ``token``) for the settings audit and job log.
@@ -20,7 +17,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 
-from investment_dashboard.api.security import Principal, resolve_principal
+from investment_dashboard.api.security import Principal, require_fresh_session, resolve_principal
 
 
 async def _principal(request: Request) -> Principal | None:
@@ -54,8 +51,8 @@ async def require_session(request: Request) -> str:
 
 
 async def _fresh_session_check(request: Request) -> None:
-    """Hook for ``security.require_fresh_session`` (see the module TODO)."""
-    return None
+    """Re-auth gate: the session must have signed in recently."""
+    await require_fresh_session(request)
 
 
 async def require_fresh(request: Request) -> str:

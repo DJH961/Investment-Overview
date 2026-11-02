@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from investment_dashboard.api import guards
@@ -81,6 +82,18 @@ def test_secrets_are_write_only_and_need_a_session(
         return Principal(kind="session", session_id="abcdef0123456789")
 
     monkeypatch.setattr(guards, "_principal", session)
+
+    async def stale(_r: object) -> Principal:
+        raise HTTPException(403, detail={"code": "reauth_required"})
+
+    monkeypatch.setattr(guards, "require_fresh_session", stale)
+    resp = api_client.patch("/api/settings/values", json=change)
+    assert resp.status_code == 403
+
+    async def fresh(_r: object) -> Principal:
+        return Principal(kind="session", session_id="abcdef0123456789")
+
+    monkeypatch.setattr(guards, "require_fresh_session", fresh)
     resp = api_client.patch("/api/settings/values", json=change)
     assert resp.status_code == 200
     assert "abcdefghijklmnop" not in resp.text

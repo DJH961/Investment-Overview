@@ -107,7 +107,7 @@ def test_stream_requires_auth(anon_client: TestClient) -> None:
 
 
 def test_stream_in_openapi(api_client: TestClient) -> None:
-    spec = api_client.get("/openapi.json").json()
+    spec = api_client.app.openapi()  # type: ignore[attr-defined]
     content = spec["paths"]["/api/stream"]["get"]["responses"]["200"]["content"]
     assert "text/event-stream" in content
 

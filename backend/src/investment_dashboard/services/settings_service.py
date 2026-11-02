@@ -164,6 +164,19 @@ def get_or(key: str, fallback: Any, session: Session | None = None) -> Any:
     return fallback if eff.source == "default" else eff.value
 
 
+def stricter(key: str, env_value: int) -> int:
+    """For ``env_bound="ceiling"`` settings: the app value, never above ``env_value``.
+
+    ``env_value`` is the bootstrap ``Settings`` field (env or its default), so an
+    app value can only tighten it. Any read error falls back to ``env_value``.
+    """
+    value = get_or(key, env_value)
+    try:
+        return min(int(value), env_value)
+    except (TypeError, ValueError):
+        return env_value
+
+
 def get_all(session: Session | None = None) -> dict[str, Effective]:
     raw = _raw_values(session)
     return {k: _resolve(d, raw.get(k)) for k, d in registry.BY_KEY.items()}
