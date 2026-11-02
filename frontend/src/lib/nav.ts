@@ -39,7 +39,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/import", label: "Import", icon: Upload, group: "Manage", shortcut: "i" },
   { to: "/conversions", label: "Currency conversions", icon: ArrowLeftRight, group: "Manage" },
   { to: "/allocations", label: "Allocations", icon: PieChart, group: "Manage", shortcut: "l" },
-  { to: "/diagnostics", label: "Data health", icon: HeartPulse, group: "System", shortcut: "d" },
+  { to: "/diagnostics", label: "Health & Repair", icon: HeartPulse, group: "System", shortcut: "d" },
   { to: "/settings", label: "Settings", icon: Settings, group: "System", shortcut: "s" },
   { to: "/help", label: "Help", icon: CircleHelp, group: "System" },
 ];

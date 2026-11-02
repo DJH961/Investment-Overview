@@ -31,7 +31,7 @@ describe("TabBar", () => {
     expect(within(sheet).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["Portfolio", "Manage", "System"]);
     const portfolio = within(sheet).getByRole("region", { name: "Portfolio" });
     expect(within(portfolio).getAllByRole("link")[0]).toHaveTextContent("Activity");
-    expect(within(sheet).getByRole("link", { name: "Data health" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("link", { name: "Health & Repair" })).toBeInTheDocument();
     expect(within(sheet).queryByRole("link", { name: "Transactions" })).not.toBeInTheDocument();
     expect(within(sheet).queryByRole("button", { name: /Refresh|Sign out/ })).not.toBeInTheDocument();
   });
