@@ -11,6 +11,7 @@ import { Diagnostics } from "./pages/Diagnostics";
 import { Help } from "./pages/Help";
 import { Holdings } from "./pages/Holdings";
 import { Import } from "./pages/Import";
+import { Instruments } from "./pages/Instruments";
 import { Login, RequireAuth } from "./pages/Login";
 import { NotFound } from "./pages/NotFound";
 import { Onboarding } from "./pages/Onboarding";
@@ -45,6 +46,7 @@ export function App() {
         <Route path="/projection" element={<Projection />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/import" element={<Import />} />
+        <Route path="/instruments" element={<Instruments />} />
         <Route path="/conversions" element={<CurrencyConversions />} />
         <Route path="/allocations" element={<Allocations />} />
         <Route path="/diagnostics" element={<Diagnostics />} />
