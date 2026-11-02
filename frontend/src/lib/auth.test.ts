@@ -7,7 +7,8 @@ vi.mock("@simplewebauthn/browser", () => ({
 
 import { startAuthentication } from "@simplewebauthn/browser";
 import { ApiError } from "./api";
-import { deletePasskey, listPasskeys, login, passkeyLogin, registerPasskey, safeNext } from "./auth";
+import { deletePasskey, listPasskeys, login, logout, passkeyLogin, registerPasskey, safeNext } from "./auth";
+import { QUERY_CACHE_KEY, queryClient } from "./queries";
 
 function respond(status: number, body?: unknown) {
   return new Response(body === undefined ? null : JSON.stringify(body), { status });
@@ -65,5 +66,22 @@ describe("auth", () => {
     expect(safeNext("?next=https%3A%2F%2Fevil.com")).toBe("/");
     expect(safeNext("?next=%2F%2Fevil.com")).toBe("/");
     expect(safeNext("")).toBe("/");
+  });
+  it("logout wipes cached portfolio data, even when the request fails", async () => {
+    for (const status of [204, 500]) {
+      queryClient.setQueryData(["overview", "EUR"], { total: 1 });
+      localStorage.setItem(QUERY_CACHE_KEY, "{}");
+      vi.stubGlobal("fetch", vi.fn(async () => respond(status)));
+      const done = logout();
+      if (status === 204) await expect(done).resolves.toBeUndefined();
+      else await expect(done).rejects.toBeInstanceOf(ApiError);
+      expect(queryClient.getQueryData(["overview", "EUR"])).toBeUndefined();
+      expect(localStorage.getItem(QUERY_CACHE_KEY)).toBeNull();
+    }
+  });
+
+  it("safeNext rejects backslash tricks", () => {
+    expect(safeNext("?next=/%5C%5Cevil.example")).toBe("/");
+    expect(safeNext("?next=/settings")).toBe("/settings");
   });
 });
