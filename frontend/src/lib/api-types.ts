@@ -2964,8 +2964,17 @@ export interface components {
             /** Symbol */
             symbol: string | null;
         };
+        /** InstrumentErrorDto */
+        InstrumentErrorDto: {
+            /** Detail */
+            detail: string;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
         /**
-         * InstrumentDetail
+         * InstrumentOut
          * @description One instrument with its effective values and the ledger values underneath.
          *
          *     ``name`` / ``asset_class`` / ``expense_ratio`` are the effective values
@@ -2973,7 +2982,7 @@ export interface components {
          *     provider, ``null`` when nothing is fetched (cash, inactive, manual, delisted).
          *     ``native_currency`` is read-only.
          */
-        InstrumentDetail: {
+        InstrumentOut: {
             /** Active */
             active: boolean;
             /** Asset Class */
@@ -3017,15 +3026,6 @@ export interface components {
             /** Transaction Count */
             transaction_count: number;
         };
-        /** InstrumentErrorDto */
-        InstrumentErrorDto: {
-            /** Detail */
-            detail: string;
-            /** Errors */
-            errors: {
-                [key: string]: string;
-            };
-        };
         /**
          * InstrumentPatch
          * @description Only the fields sent are changed; ``null`` clears an override.
@@ -3053,7 +3053,7 @@ export interface components {
         InstrumentUpdateResult: {
             /** Changed */
             changed: string[];
-            instrument: components["schemas"]["InstrumentDetail"];
+            instrument: components["schemas"]["InstrumentOut"];
             /**
              * Redownload Suggested
              * @description The price mapping changed: offer job prices.redownload for this instrument.
@@ -6026,7 +6026,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InstrumentDetail"][];
+                    "application/json": components["schemas"]["InstrumentOut"][];
                 };
             };
         };
@@ -6048,7 +6048,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InstrumentDetail"];
+                    "application/json": components["schemas"]["InstrumentOut"];
                 };
             };
             /** @description Validation Error */

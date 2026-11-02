@@ -4733,7 +4733,28 @@
         "title": "ImportUndoRow",
         "type": "object"
       },
-      "InstrumentDetail": {
+      "InstrumentErrorDto": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "object"
+          }
+        },
+        "required": [
+          "detail",
+          "errors"
+        ],
+        "title": "InstrumentErrorDto",
+        "type": "object"
+      },
+      "InstrumentOut": {
         "description": "One instrument with its effective values and the ledger values underneath.\n\n``name`` / ``asset_class`` / ``expense_ratio`` are the effective values\n(override, else ledger). ``fetch_symbol`` is the ticker sent to the price\nprovider, ``null`` when nothing is fetched (cash, inactive, manual, delisted).\n``native_currency`` is read-only.",
         "properties": {
           "active": {
@@ -4905,28 +4926,7 @@
           "transaction_count",
           "latest_price_date"
         ],
-        "title": "InstrumentDetail",
-        "type": "object"
-      },
-      "InstrumentErrorDto": {
-        "properties": {
-          "detail": {
-            "title": "Detail",
-            "type": "string"
-          },
-          "errors": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Errors",
-            "type": "object"
-          }
-        },
-        "required": [
-          "detail",
-          "errors"
-        ],
-        "title": "InstrumentErrorDto",
+        "title": "InstrumentOut",
         "type": "object"
       },
       "InstrumentPatch": {
@@ -5037,7 +5037,7 @@
             "type": "array"
           },
           "instrument": {
-            "$ref": "#/components/schemas/InstrumentDetail"
+            "$ref": "#/components/schemas/InstrumentOut"
           },
           "redownload_suggested": {
             "description": "The price mapping changed: offer job prices.redownload for this instrument.",
@@ -11951,7 +11951,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/InstrumentDetail"
+                    "$ref": "#/components/schemas/InstrumentOut"
                   },
                   "title": "Response List Instruments Api Instruments Get",
                   "type": "array"
@@ -11986,7 +11986,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InstrumentDetail"
+                  "$ref": "#/components/schemas/InstrumentOut"
                 }
               }
             },
