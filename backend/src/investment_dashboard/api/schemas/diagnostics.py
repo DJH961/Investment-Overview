@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
+from typing import Any, Literal
+
+from pydantic import Field
+
 from investment_dashboard.api.schemas.common import ApiModel
+
+
+class CheckAction(ApiModel):
+    """A "Fix" button: run a repair job (``POST /maintenance/jobs/{id}``) or open a page."""
+
+    kind: Literal["job", "link"]
+    id: str = Field(description="Job id for kind=job; the check id for kind=link.")
+    label: str
+    params: dict[str, Any]
+    danger: Literal["none", "confirm", "typed"]
+    href: str | None
 
 
 class CheckOut(ApiModel):
@@ -12,6 +27,7 @@ class CheckOut(ApiModel):
     count: int
     detail: str
     examples: list[str]
+    actions: list[CheckAction] = Field(default_factory=list)
 
 
 class ProviderOut(ApiModel):
