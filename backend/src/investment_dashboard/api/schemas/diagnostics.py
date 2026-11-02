@@ -75,3 +75,17 @@ class DiagnosticsOut(ApiModel):
     provider_log: list[ProviderEventOut]
     problems: list[ProblemOut]
     refresh: RefreshOut
+
+
+class DiagnosticsStatusOut(ApiModel):
+    """Cheap headline for the top-bar badge (no full positions walk)."""
+
+    severity: str = Field(
+        description="Worst severity of the quick checks: ok, info, warning or error."
+    )
+    count: int = Field(description="Number of quick checks that found a problem.")
+    problems: int = Field(description="Recent background problems not yet dismissed.")
+
+
+class DismissOut(ApiModel):
+    dismissed: int

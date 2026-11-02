@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import PlainTextResponse
 
 from investment_dashboard.api.deps import SessionDep
-from investment_dashboard.api.schemas.diagnostics import DiagnosticsOut
+from investment_dashboard.api.schemas.diagnostics import (
+    DiagnosticsOut,
+    DiagnosticsStatusOut,
+    DismissOut,
+)
 from investment_dashboard.readmodels import diagnostics as diagnostics_rm
-from investment_dashboard.services import support_bundle
+from investment_dashboard.services import diagnostics_service, runtime_status, support_bundle
 
 router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])
 
@@ -28,3 +32,23 @@ def get_support_bundle() -> PlainTextResponse:
         support_bundle.build_server_bundle(),
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/status", response_model=DiagnosticsStatusOut)
+def get_status(session: SessionDep) -> dict[str, Any]:
+    """Headline severity + count for the top-bar data-health badge."""
+    severity, count = diagnostics_service.quick_status(session)
+    return {"severity": severity, "count": count, "problems": len(runtime_status.recent())}
+
+
+@router.post("/problems/dismiss-all", response_model=DismissOut)
+def dismiss_all_problems() -> dict[str, Any]:
+    """Clear every recent background problem (a new failure shows up again)."""
+    return {"dismissed": runtime_status.dismiss_all()}
+
+
+@router.post("/problems/{problem_id}/dismiss", response_model=DismissOut)
+def dismiss_problem(problem_id: int) -> dict[str, Any]:
+    if not runtime_status.dismiss(problem_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "problem not found (already dismissed?)")
+    return {"dismissed": 1}
