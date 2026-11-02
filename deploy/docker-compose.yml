@@ -30,11 +30,12 @@ services:
     cap_drop:
       - ALL
     mem_limit: 512m
+    pids_limit: 256
     networks:
       - internal
 
   caddy:
-    image: caddy:2.11
+    image: caddy:2.11@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e
     ports:
       - "80:80"
       - "443:443"
@@ -45,7 +46,18 @@ services:
     depends_on:
       - app
     restart: unless-stopped
+    # Only what serving 80/443 needs; certificates and config live in the volumes.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
     mem_limit: 128m
+    pids_limit: 128
     networks:
       - internal
 
@@ -55,12 +67,12 @@ services:
   # Needs /opt/investments/rclone.conf (see deploy/rclone.conf.example, mode 600).
   # Pull snapshots back on a new server: see RUNBOOK.md, section Restore.
   backup:
-    image: rclone/rclone:1.68
+    image: rclone/rclone:1.68@sha256:74c51b8817e5431bd6d7ed27cb2a50d8ee78d77f6807b72a41ef6f898845942b
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         while true; do
-          rclone copy /data/backups "${BACKUP_REMOTE:-b2:Investment-Overview/snapshots}"             --immutable --cache-dir /tmp/rclone --log-level NOTICE || echo "backup sync failed"
+          rclone copy /data/backups "${BACKUP_REMOTE:-b2:Investment-Overview/snapshots}" --include "/snapshot-*.sealed.json" --immutable --cache-dir /tmp/rclone --log-level NOTICE || echo "backup sync failed"
           sleep 300
         done
     # Same user as the app, so restored files stay readable/writable for it.
@@ -68,7 +80,13 @@ services:
     environment:
       RCLONE_CONFIG: /config/rclone.conf
     volumes:
-      - app-data:/data
+      # Only the backups folder, not the live database. Needs Docker Compose
+      # >= 2.23 / Engine >= 26 and an existing /data/backups (RUNBOOK, "First install").
+      - type: volume
+        source: app-data
+        target: /data/backups
+        volume:
+          subpath: backups
       - ./rclone.conf:/config/rclone.conf:ro
     depends_on:
       - app
@@ -81,6 +99,7 @@ services:
     cap_drop:
       - ALL
     mem_limit: 128m
+    pids_limit: 64
     networks:
       - internal
 
