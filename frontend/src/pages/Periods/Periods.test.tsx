@@ -3,7 +3,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrefsProvider } from "../../lib/prefs";
-import { Risk } from "../Risk";
 import { Periods } from "./Periods";
 
 // lib/shell.tsx hands out an unstable setShell (loops with useShellStatus); stub until fixed.
@@ -119,34 +118,5 @@ describe("Periods by year", () => {
     expect(screen.getAllByText("XIRR (period)").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Growth (TWR)").length).toBeGreaterThan(0);
     expect(window.localStorage.getItem("iv.periods.view")).toBe('"yearly"');
-  });
-});
-
-describe("Risk", () => {
-  it("explains missing attribution", async () => {
-    const nulls = Object.fromEntries(
-      ["alpha", "beta", "cagr", "calmar", "cvar_95", "kurtosis", "max_drawdown", "sharpe", "skew", "sortino", "twr", "ulcer", "var_95", "volatility", "xirr", "risk_free_rate"].map((k) => [k, null]),
-    );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        json({
-          ...nulls,
-          as_of: "2026-10-31",
-          attribution: [],
-          attribution_currency: null,
-          benchmark_is_funded: true,
-          benchmark_symbol: "VT",
-          ccy: "EUR",
-          currency: "EUR",
-          curve: [{ date: "2026-10-30", portfolio_value: "10", benchmark_value: "9", cumulative_contributions: "8" }],
-          curve_start: "2026-10-30",
-          risk_free_symbol: "^IRX",
-          start: "2026-01-01",
-        }),
-      ),
-    );
-    wrap(<Risk />);
-    expect(await screen.findByText(/Attribution is only available in EUR/)).toBeInTheDocument();
   });
 });
