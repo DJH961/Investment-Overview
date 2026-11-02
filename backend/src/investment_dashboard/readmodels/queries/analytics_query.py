@@ -45,6 +45,7 @@ from investment_dashboard.domain.risk import (
     sortino_ratio,
 )
 from investment_dashboard.domain.risk_extras import (
+    DEFAULT_VAR_ALPHA,
     calmar_ratio,
     excess_kurtosis,
     historical_cvar,
@@ -343,8 +344,12 @@ def build_bundle(
     currency: str = "EUR",
     lookback_days: int = 365,
     as_of: date | None = None,
+    var_alpha: Decimal | None = None,
 ) -> AnalyticsBundle:
-    """Compose every analytics figure into a single :class:`AnalyticsBundle`."""
+    """Compose every analytics figure into a single :class:`AnalyticsBundle`.
+
+    ``var_alpha`` defaults to the ``risk.var_alpha`` setting (0.05 = 95 % VaR).
+    """
     # Default the as-of (and therefore the equity curve's last day stamp) to the
     # New-York exchange date, not the publisher's local `date.today()`: a daily
     # close must be filed under its NYSE trading day so the exported curve sits on
@@ -416,8 +421,12 @@ def build_bundle(
     mdd = max_drawdown(portfolio_values)
     calmar = calmar_ratio(daily_rets, portfolio_values)
     ulcer = ulcer_index(portfolio_values)
-    var_95 = historical_var(daily_rets)
-    cvar_95 = historical_cvar(daily_rets)
+    if var_alpha is None:
+        from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+        var_alpha = settings_service.get_or("risk.var_alpha", DEFAULT_VAR_ALPHA, session)
+    var_95 = historical_var(daily_rets, var_alpha)
+    cvar_95 = historical_cvar(daily_rets, var_alpha)
     skew_val = skewness(daily_rets)
     kurt_val = excess_kurtosis(daily_rets)
     beta_val = beta(portfolio_tail, bench_tail) if n >= 2 else None

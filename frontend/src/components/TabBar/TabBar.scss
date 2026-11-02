@@ -15,6 +15,7 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
+    min-width: 0;
     min-height: var(--tap-min);
     color: var(--color-muted);
     font-size: var(--font-size-xs);
@@ -38,42 +39,68 @@
     white-space: nowrap;
   }
 
-  &__more {
-    display: flex;
-    flex-direction: column;
+  &__section {
+    & + & {
+      margin-top: var(--space-3);
+    }
   }
 
-  &__more-link {
+  &__section-title {
+    margin-bottom: var(--space-2);
+    padding: 0 var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  &__cell {
+    min-width: 0;
+  }
+
+  &__tile {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    width: 100%;
+    gap: var(--space-2);
+    min-width: 0;
     min-height: var(--tap-min);
-    padding: 0 var(--space-2);
-    border-radius: var(--radius-sm);
+    height: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
     color: var(--color-fg);
-    font-size: var(--font-size-md);
-    text-align: left;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-tight);
     text-decoration: none;
 
-    &:hover:not(:disabled) {
-      background: var(--color-surface-2);
-    }
-
-    &:disabled {
-      opacity: 0.5;
+    &--active {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
     }
   }
 
-  &__more-icon {
+  &__tile-icon {
+    flex-shrink: 0;
     width: var(--icon-md);
     height: var(--icon-md);
     color: var(--color-muted);
   }
 
-  &__more-sep {
-    height: var(--border-width);
-    margin: var(--space-2) 0;
-    background: var(--color-border);
+  &__tile--active &__tile-icon {
+    color: var(--color-accent);
+  }
+
+  &__tile-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 }

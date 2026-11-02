@@ -12,8 +12,12 @@ export interface Column<Row> {
   sortValue?: (row: Row) => string | number | null | undefined;
   /** Numbers and money: right-aligned, tabular. */
   align?: "left" | "right";
-  /** On phones the primary column becomes the list-row title (no label). */
+  /** On phones the primary column becomes the list-row title (no label), shown first. */
   primary?: boolean;
+  /** Phone visibility: `"hide"` drops low-priority columns (source, edit icons) on phones. */
+  phone?: "show" | "hide";
+  /** Keep the value on one line (default: true for right-aligned columns). */
+  nowrap?: boolean;
 }
 
 export interface DataTableProps<Row> {
@@ -25,6 +29,8 @@ export interface DataTableProps<Row> {
   loading?: boolean;
   emptyMessage?: string;
   className?: string;
+  /** Extra class for a body row (e.g. a gain/loss tint). */
+  rowClassName?: (row: Row) => string | false | undefined;
 }
 
 type Direction = "asc" | "desc";
@@ -46,6 +52,7 @@ export function DataTable<Row>({
   loading = false,
   emptyMessage = "Nothing to show yet.",
   className,
+  rowClassName,
 }: DataTableProps<Row>) {
   const [sort, setSort] = useState<{ key: string; direction: Direction } | undefined>(defaultSort);
 
@@ -77,7 +84,11 @@ export function DataTable<Row>({
                   key={col.key}
                   scope="col"
                   aria-sort={col.sortValue ? (ariaSort ?? "none") : undefined}
-                  className={clsx("data-table__th", col.align === "right" && "data-table__th--right")}
+                  className={clsx(
+                    "data-table__th",
+                    col.align === "right" && "data-table__th--right",
+                    col.phone === "hide" && "data-table__th--phone-hidden",
+                  )}
                 >
                   {col.sortValue ? (
                     <button type="button" className="data-table__sort" onClick={() => toggle(col.key)}>
@@ -105,7 +116,10 @@ export function DataTable<Row>({
             Array.from({ length: 4 }, (_, i) => (
               <tr key={`sk-${i}`} className="data-table__row">
                 {columns.map((col) => (
-                  <td key={col.key} className="data-table__td">
+                  <td
+                    key={col.key}
+                    className={clsx("data-table__td", col.phone === "hide" && "data-table__td--phone-hidden")}
+                  >
                     <Skeleton height="1rem" width={col.align === "right" ? "60%" : "80%"} />
                   </td>
                 ))}
@@ -113,18 +127,30 @@ export function DataTable<Row>({
             ))}
           {!loading &&
             sorted.map((row) => (
-              <tr key={rowKey(row)} className="data-table__row">
+              <tr key={rowKey(row)} className={clsx("data-table__row", rowClassName?.(row))}>
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    data-label={col.primary ? undefined : col.header}
                     className={clsx(
                       "data-table__td",
                       col.align === "right" && "data-table__td--right",
                       col.primary && "data-table__td--primary",
+                      col.phone === "hide" && "data-table__td--phone-hidden",
                     )}
                   >
-                    {col.cell(row)}
+                    {!col.primary && col.header && (
+                      <span className="data-table__label" aria-hidden>
+                        {col.header}
+                      </span>
+                    )}
+                    <span
+                      className={clsx(
+                        "data-table__value",
+                        (col.nowrap ?? col.align === "right") && "data-table__value--nowrap",
+                      )}
+                    >
+                      {col.cell(row)}
+                    </span>
                   </td>
                 ))}
               </tr>

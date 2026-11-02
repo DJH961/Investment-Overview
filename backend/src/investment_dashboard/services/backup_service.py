@@ -19,7 +19,9 @@ from a file is capped at :data:`blob_crypto.MAX_PBKDF2_ITERATIONS`.
 
 Snapshots are taken ~1 minute after the first durable write (see the dirty flag
 in :mod:`db`) and at least nightly. Retention keeps the newest snapshot of each of
-the last N hours / days / months.
+the last N hours / days / months. All three are in-app settings
+(``backup.debounce_seconds``, ``backup.nightly_hours``, ``backup.retention.*``);
+the constants below are their defaults and the fallback.
 """
 
 from __future__ import annotations
@@ -82,6 +84,30 @@ class SnapshotInfo:
     created: datetime
 
 
+def _setting(key: str, fallback: Any) -> Any:
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    return settings_service.get_or(key, fallback)
+
+
+def configured_retention() -> Retention:
+    """The retention policy from settings (defaults: :class:`Retention`)."""
+    base = Retention()
+    return Retention(
+        hourly=int(_setting("backup.retention.hourly", base.hourly)),
+        daily=int(_setting("backup.retention.daily", base.daily)),
+        monthly=int(_setting("backup.retention.monthly", base.monthly)),
+    )
+
+
+def debounce_seconds() -> float:
+    return float(_setting("backup.debounce_seconds", DEBOUNCE_SECONDS))
+
+
+def nightly_seconds() -> float:
+    return float(_setting("backup.nightly_hours", NIGHTLY_SECONDS / 3600)) * 3600
+
+
 # -- configuration -------------------------------------------------------------
 
 
@@ -136,7 +162,7 @@ def list_snapshots(directory: Path | None = None) -> list[SnapshotInfo]:
 
 def prune(directory: Path, policy: Retention | None = None) -> list[Path]:
     """Delete snapshots outside the retention policy; returns what was removed."""
-    policy = policy or Retention()
+    policy = policy or configured_retention()
     snaps = list_snapshots(directory)
     keep: set[Path] = set()
     for limit, fmt in (
@@ -159,6 +185,46 @@ def prune(directory: Path, policy: Retention | None = None) -> list[Path]:
             s.path.unlink(missing_ok=True)
             removed.append(s.path)
     return removed
+
+
+def snapshot_by_name(name: str, directory: Path | None = None) -> Path:
+    """The snapshot file called ``name`` (only real snapshot names; no paths)."""
+    if not _NAME_RE.match(name):
+        raise SnapshotError("not a snapshot name")
+    for snap in list_snapshots(directory):
+        if snap.path.name == name:
+            return snap.path
+    raise SnapshotError(f"{name} not found")
+
+
+def describe_snapshots(directory: Path | None = None) -> list[dict[str, Any]]:
+    """Newest first: ``{name, created, size_bytes}`` (no secrets, no unsealing)."""
+    out = []
+    for snap in list_snapshots(directory):
+        try:
+            size = snap.path.stat().st_size
+        except OSError:  # pragma: no cover - vanished meanwhile
+            continue
+        out.append({"name": snap.path.name, "created": snap.created, "size_bytes": size})
+    return out
+
+
+def verify_snapshot(name: str, directory: Path | None = None) -> dict[str, Any]:
+    """Unseal ``name`` into a temp folder, integrity-check it, compare row counts."""
+    path = snapshot_by_name(name, directory)
+    passphrase = backup_passphrase()
+    if passphrase is None:
+        raise SnapshotError(f"set {ENV_BACKUP_PASSPHRASE} (or the DB passphrase) to verify")
+    with tempfile.TemporaryDirectory(prefix="inv-verify-") as tmp:
+        out = Path(tmp) / "verify.sqlite"
+        meta = unseal_snapshot(path, passphrase, out)
+        encryption = db_module.get_active_encryption()
+        status = integrity_check(out, encryption=encryption)
+        counts = row_counts(out, encryption)
+    if counts != meta.get("counts"):
+        raise SnapshotError(f"{name}: row counts differ from the snapshot metadata")
+    log.info("backup verified: %s", name)
+    return {"name": name, "integrity": status, "tables": len(counts), "size": meta.get("size")}
 
 
 # -- create --------------------------------------------------------------------
@@ -322,10 +388,10 @@ def is_due(now: datetime) -> bool:
     if not is_configured():
         return False
     since = db_module.dirty_since()
-    if since is not None and now.timestamp() - since >= DEBOUNCE_SECONDS:
+    if since is not None and now.timestamp() - since >= debounce_seconds():
         return True
     last = last_snapshot_time()
-    return last is None or (now - last).total_seconds() >= NIGHTLY_SECONDS
+    return last is None or (now - last).total_seconds() >= nightly_seconds()
 
 
 def run_scheduled() -> dict[str, Any] | None:

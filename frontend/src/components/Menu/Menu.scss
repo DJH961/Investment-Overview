@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .menu {
   &__content {
     z-index: var(--z-popover);
@@ -26,6 +28,11 @@
     cursor: pointer;
     outline: none;
     user-select: none;
+
+    @include m.phone {
+      min-height: var(--tap-min);
+      font-size: var(--font-size-md);
+    }
 
     &[data-highlighted] {
       background: var(--color-surface-2);

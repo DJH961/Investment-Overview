@@ -58,6 +58,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/allocations/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Builder Plan
+         * @description Plan for an unsaved builder mix (by fund or by category); nothing is stored.
+         */
+        post: operations["post_builder_plan_api_allocations_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/allocations/rebalance": {
         parameters: {
             query?: never;
@@ -297,6 +317,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/deposits/dividends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dividends */
+        get: operations["get_dividends_api_deposits_dividends_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/diagnostics": {
         parameters: {
             query?: never;
@@ -306,6 +343,63 @@ export interface paths {
         };
         /** Get Diagnostics */
         get: operations["get_diagnostics_api_diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/problems/dismiss-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss All Problems
+         * @description Clear every recent background problem (a new failure shows up again).
+         */
+        post: operations["dismiss_all_problems_api_diagnostics_problems_dismiss_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/problems/{problem_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Problem */
+        post: operations["dismiss_problem_api_diagnostics_problems__problem_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Status
+         * @description Headline severity + count for the top-bar data-health badge.
+         */
+        get: operations["get_status_api_diagnostics_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -387,6 +481,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/graphs/range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Graph Range */
+        put: operations["put_graph_range_api_graphs_range_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/graphs/{range_key}": {
         parameters: {
             query?: never;
@@ -398,6 +509,23 @@ export interface paths {
         get: operations["get_graph_api_graphs__range_key__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graphs/{range_key}/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reload Graph */
+        post: operations["reload_graph_api_graphs__range_key__reload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -472,6 +600,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/action-overrides/{broker}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Action Overrides */
+        get: operations["get_action_overrides_api_imports_action_overrides__broker__get"];
+        /**
+         * Put Action Override
+         * @description Map one broker action to a kind (or ``ignore``); ``kind: null`` removes it.
+         *
+         *     Stored in the setting ``import.action_overrides.<broker>`` (settings history
+         *     keeps every change). Re-run the preview with ``POST /imports/{id}/reparse``.
+         */
+        put: operations["put_action_override_api_imports_action_overrides__broker__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Batches */
+        get: operations["list_batches_api_imports_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/batches/{batch_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Batch
+         * @description Delete the batch's transactions (browser session + typed ``UNDO``; backup first).
+         */
+        post: operations["undo_batch_api_imports_batches__batch_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/batches/{batch_id}/undo-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Undo Preview */
+        get: operations["undo_preview_api_imports_batches__batch_id__undo_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/brokers": {
         parameters: {
             query?: never;
@@ -484,6 +690,26 @@ export interface paths {
          * @description Importer plugins the server can parse (the frontend builds its picker from this).
          */
         get: operations["list_import_brokers_api_imports_brokers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/unknown-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unknown Actions
+         * @description Unknown actions in the given (or the latest) staged preview, to map in the UI.
+         */
+        get: operations["unknown_actions_api_imports_unknown_actions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -526,6 +752,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/{import_id}/reparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reparse Import
+         * @description Parse a staged upload again with the current action mapping (new ``import_id``).
+         */
+        post: operations["reparse_import_api_imports__import_id__reparse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instruments": {
         parameters: {
             query?: never;
@@ -538,6 +784,299 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/instruments/{instrument_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Instrument */
+        get: operations["get_instrument_api_instruments__instrument_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Instrument */
+        patch: operations["update_instrument_api_instruments__instrument_id__patch"];
+        trace?: never;
+    };
+    "/api/maintenance/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Backups */
+        get: operations["get_backups_api_maintenance_backups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/fx/{quote}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rates */
+        get: operations["get_rates_api_maintenance_fx__quote__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/fx/{quote}/{on}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Rate */
+        put: operations["put_rate_api_maintenance_fx__quote___on__put"];
+        post?: never;
+        /** Delete Rate */
+        delete: operations["delete_rate_api_maintenance_fx__quote___on__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Jobs */
+        get: operations["get_jobs_api_maintenance_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Job */
+        post: operations["start_job_api_maintenance_jobs__job_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Logs */
+        get: operations["get_logs_api_maintenance_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/prices/anomalies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Anomalies */
+        get: operations["get_anomalies_api_maintenance_prices_anomalies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/prices/{instrument_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prices */
+        get: operations["get_prices_api_maintenance_prices__instrument_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/prices/{instrument_id}/{on}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Price */
+        put: operations["put_price_api_maintenance_prices__instrument_id___on__put"];
+        post?: never;
+        /** Delete Price */
+        delete: operations["delete_price_api_maintenance_prices__instrument_id___on__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Probe */
+        post: operations["probe_api_maintenance_probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_maintenance_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/scheduler": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scheduler */
+        get: operations["get_scheduler_api_maintenance_scheduler_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/scheduler/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pause Scheduler */
+        put: operations["pause_scheduler_api_maintenance_scheduler_pause_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/scheduler/{job}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Scheduler Job */
+        post: operations["run_scheduler_job_api_maintenance_scheduler__job__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/splits/{instrument_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Splits */
+        get: operations["get_splits_api_maintenance_splits__instrument_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/splits/{instrument_id}/{on}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Split */
+        put: operations["put_split_api_maintenance_splits__instrument_id___on__put"];
+        post?: never;
+        /** Delete Split */
+        delete: operations["delete_split_api_maintenance_splits__instrument_id___on__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -663,6 +1202,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Settings */
+        get: operations["export_settings_api_settings_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get History */
+        get: operations["get_history_api_settings_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/history/{audit_id}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revert Change */
+        post: operations["revert_change_api_settings_history__audit_id__revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Settings */
+        post: operations["import_settings_api_settings_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Values */
+        post: operations["reset_values_api_settings_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Schema */
+        get: operations["get_schema_api_settings_schema_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Values */
+        get: operations["get_values_api_settings_values_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Values */
+        patch: operations["patch_values_api_settings_values_patch"];
+        trace?: never;
+    };
     "/api/stream": {
         parameters: {
             query?: never;
@@ -672,6 +1331,23 @@ export interface paths {
         };
         /** Live event stream (SSE) */
         get: operations["stream_api_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get System */
+        get: operations["get_system_api_system_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -692,6 +1368,26 @@ export interface paths {
         put?: never;
         /** Create Transaction */
         post: operations["create_transaction_api_transactions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/transactions/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile
+         * @description Fill the missing one of quantity / price / total, or flag a mismatch.
+         */
+        post: operations["reconcile_api_transactions_reconcile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -752,6 +1448,22 @@ export interface components {
             /** Transaction Count */
             transaction_count: number;
         };
+        /** ActionOverrideIn */
+        ActionOverrideIn: {
+            /** Action */
+            action: string;
+            /** Kind */
+            kind?: string | null;
+        };
+        /** ActionOverridesOut */
+        ActionOverridesOut: {
+            /** Broker */
+            broker: string;
+            /** Overrides */
+            overrides: {
+                [key: string]: string;
+            };
+        };
         /** AllocationsResponse */
         AllocationsResponse: {
             /** Active Target Id */
@@ -784,8 +1496,24 @@ export interface components {
             attribution: components["schemas"]["AttributionOut"][];
             /** Attribution Currency */
             attribution_currency: string | null;
+            attribution_total: components["schemas"]["AttributionTotalOut"];
+            /**
+             * Benchmark Diff
+             * @description Portfolio minus benchmark, in ccy
+             */
+            benchmark_diff: string | null;
+            /**
+             * Benchmark Diff Pct
+             * @description Diff relative to the benchmark value (fraction, 0.01 = 1%)
+             */
+            benchmark_diff_pct: string | null;
             /** Benchmark Is Funded */
             benchmark_is_funded: boolean;
+            /**
+             * Benchmark Last Value
+             * @description Latest benchmark curve value
+             */
+            benchmark_last_value: string | null;
             /** Benchmark Symbol */
             benchmark_symbol: string;
             /** Beta */
@@ -820,6 +1548,16 @@ export interface components {
              * @description fraction, 0.01 = 1%
              */
             max_drawdown: string | null;
+            /**
+             * Net Invested Last
+             * @description Latest cumulative net contributions
+             */
+            net_invested_last: string | null;
+            /**
+             * Portfolio Last Value
+             * @description Latest curve value in ccy
+             */
+            portfolio_last_value: string | null;
             /**
              * Risk Free Rate
              * @description fraction, 0.01 = 1%
@@ -858,6 +1596,11 @@ export interface components {
              */
             xirr: string | null;
         };
+        /** AnomaliesDto */
+        AnomaliesDto: {
+            /** Instrument Ids */
+            instrument_ids: number[];
+        };
         /** AttributionOut */
         AttributionOut: {
             /** Absolute Pnl */
@@ -877,6 +1620,38 @@ export interface components {
             start_value: string | null;
             /** Symbol */
             symbol: string;
+        };
+        /** AttributionTotalOut */
+        AttributionTotalOut: {
+            /** Absolute Pnl */
+            absolute_pnl: string | null;
+            /** End Value */
+            end_value: string | null;
+            /** Net Contribution */
+            net_contribution: string | null;
+            /** Start Value */
+            start_value: string | null;
+        };
+        /** BackupInfo */
+        BackupInfo: {
+            /**
+             * Created
+             * Format: date-time
+             */
+            created: string;
+            /** Name */
+            name: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /** BackupsDto */
+        BackupsDto: {
+            /** Configured */
+            configured: boolean;
+            /** Directory */
+            directory: string;
+            /** Snapshots */
+            snapshots: components["schemas"]["BackupInfo"][];
         };
         /** Body_upload_import_api_imports_post */
         Body_upload_import_api_imports_post: {
@@ -898,6 +1673,55 @@ export interface components {
             pct: string;
             /** Value */
             value?: string | null;
+        };
+        /** BuilderPlanRowOut */
+        BuilderPlanRowOut: {
+            /** Add Shares */
+            add_shares: string;
+            /**
+             * Add Value
+             * @description Signed: + buy, - sell
+             */
+            add_value?: string | null;
+            /**
+             * After Pct
+             * @description Share of the plan total after the plan (fraction, 0.01 = 1%)
+             */
+            after_pct: string;
+            /**
+             * Before Pct
+             * @description Current value as a share of the plan total after (fraction, 0.01 = 1%)
+             */
+            before_pct: string;
+            /** Category */
+            category: string;
+            /**
+             * Current Pct
+             * @description Share of the whole portfolio today (fraction, 0.01 = 1%)
+             */
+            current_pct: string;
+            /** Current Price */
+            current_price?: string | null;
+            /** Current Value */
+            current_value?: string | null;
+            /**
+             * Held Unticked
+             * @description Held but un-ticked fund credited to its category
+             */
+            held_unticked: boolean;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Name */
+            name: string;
+            /** No Buy */
+            no_buy: boolean;
+            /** Symbol */
+            symbol: string;
+            /**
+             * Target Pct
+             * @description Target weight (fraction, 0.01 = 1%)
+             */
+            target_pct: string;
         };
         /** CalcCategoryOut */
         CalcCategoryOut: {
@@ -950,8 +1774,61 @@ export interface components {
             /** Total Value */
             total_value: string | null;
         };
+        /** CategoryWeightIn */
+        CategoryWeightIn: {
+            /** Name */
+            name: string;
+            /**
+             * Selected
+             * @description Ticked member funds
+             */
+            selected?: number[];
+            /**
+             * Split
+             * @description Split across ticked funds: fair by value, or evenly
+             * @default value
+             * @enum {string}
+             */
+            split: "value" | "even";
+            /**
+             * Weight
+             * @description Relative weight; normalised to 100 %
+             */
+            weight: number | string;
+        };
+        /**
+         * CheckAction
+         * @description A "Fix" button: run a repair job (``POST /maintenance/jobs/{id}``) or open a page.
+         */
+        CheckAction: {
+            /**
+             * Danger
+             * @enum {string}
+             */
+            danger: "none" | "confirm" | "typed";
+            /** Href */
+            href: string | null;
+            /**
+             * Id
+             * @description Job id for kind=job; the check id for kind=link.
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "job" | "link";
+            /** Label */
+            label: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+        };
         /** CheckOut */
         CheckOut: {
+            /** Actions */
+            actions?: components["schemas"]["CheckAction"][];
             /** Count */
             count: number;
             /** Detail */
@@ -964,6 +1841,18 @@ export interface components {
             severity: string;
             /** Title */
             title: string;
+        };
+        /** ClosePoint */
+        ClosePoint: {
+            /** Close */
+            close: string;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Source */
+            source: string;
         };
         /**
          * ConversionBatchOut
@@ -1005,20 +1894,33 @@ export interface components {
         };
         /** CurrencyToday */
         CurrencyToday: {
+            /**
+             * Anchor Missing
+             * @default false
+             */
+            anchor_missing: boolean;
+            as_of?: components["schemas"]["FxAsOf"] | null;
             effect_eur?: components["schemas"]["FxLegs"] | null;
             investing_power_usd?: components["schemas"]["InvestingPower"] | null;
+            move?: components["schemas"]["FxMove"] | null;
+            /** Pair */
+            pair?: string | null;
             /** Prev */
             prev?: string | null;
             /**
              * Rate Move Pct
-             * @description EUR/USD move vs previous close (fraction, 0.01 = 1%)
+             * @description Deprecated: naive EUR/USD move vs previous close (fraction, 0.01 = 1%). Use ``move.pct``.
              */
             rate_move_pct?: string | null;
             regime: components["schemas"]["FxRegime"];
             /** Reopen At */
             reopen_at?: string | null;
+            since?: components["schemas"]["FxSince"] | null;
+            since_phrase?: components["schemas"]["FxSincePhrase"] | null;
             /** Spot */
             spot?: string | null;
+            /** Spot Display */
+            spot_display?: string | null;
             /** Spot Observed At */
             spot_observed_at?: string | null;
         };
@@ -1032,6 +1934,22 @@ export interface components {
             date: string;
             /** Portfolio Value */
             portfolio_value: string | null;
+        };
+        /**
+         * DailyCaption
+         * @description The day the "Today" move lands on (NiceGUI ``build_daily_growth_caption``).
+         */
+        DailyCaption: {
+            /** As Of Text */
+            as_of_text: string;
+            /** Corner Text */
+            corner_text?: string | null;
+            /** Live */
+            live: boolean;
+            /** Title */
+            title: string;
+            /** Updated Text */
+            updated_text?: string | null;
         };
         /** DepositMatchOut */
         DepositMatchOut: {
@@ -1069,6 +1987,11 @@ export interface components {
             amount: string | null;
             /** Amount Native */
             amount_native: string;
+            /**
+             * Amount Other
+             * @description Same cashflow in the other reporting currency, trade-date rate
+             */
+            amount_other?: string | null;
             /** Conversion Batches */
             conversion_batches?: components["schemas"]["ConversionBatchOut"][];
             /** Currency */
@@ -1103,18 +2026,49 @@ export interface components {
             /** Ytd Contrib */
             ytd_contrib: string | null;
         };
+        /** DepositYearOut */
+        DepositYearOut: {
+            /** Count */
+            count: number;
+            /**
+             * Total
+             * @description Net contributions that year in ccy (sum of trade-date legs)
+             */
+            total: string;
+            /** Total Other */
+            total_other: string;
+            /** Year */
+            year: number;
+        };
         /** DepositsOut */
         DepositsOut: {
             /** As Of */
             as_of: string;
             /**
+             * By Year
+             * @description Of the filtered rows, newest year first
+             */
+            by_year: components["schemas"]["DepositYearOut"][];
+            /**
              * Ccy
              * @enum {string}
              */
             ccy: "EUR" | "USD";
+            /**
+             * Other Ccy
+             * @enum {string}
+             */
+            other_ccy: "EUR" | "USD";
             /** Rows */
             rows: components["schemas"]["DepositRowOut"][];
+            /** @description Whole ledger; ignores the row filters */
             summary: components["schemas"]["DepositSummaryOut"];
+            summary_other: components["schemas"]["DepositSummaryOut"];
+            /**
+             * Years
+             * @description Years with cash flows (unfiltered), newest first
+             */
+            years: number[];
         };
         /**
          * DiagnosticsOut
@@ -1136,6 +2090,135 @@ export interface components {
             refresh: components["schemas"]["RefreshOut"];
             /** Status */
             status: string;
+        };
+        /**
+         * DiagnosticsStatusOut
+         * @description Cheap headline for the top-bar badge (no full positions walk).
+         */
+        DiagnosticsStatusOut: {
+            /**
+             * Count
+             * @description Number of quick checks that found a problem.
+             */
+            count: number;
+            /**
+             * Problems
+             * @description Recent background problems not yet dismissed.
+             */
+            problems: number;
+            /**
+             * Severity
+             * @description Worst severity of the quick checks: ok, info, warning or error.
+             */
+            severity: string;
+        };
+        /** DismissOut */
+        DismissOut: {
+            /** Dismissed */
+            dismissed: number;
+        };
+        /** DividendHoldingOut */
+        DividendHoldingOut: {
+            /** Count */
+            count: number;
+            /** Last Date */
+            last_date: string;
+            /** Lifetime */
+            lifetime: string;
+            /** Lifetime Other */
+            lifetime_other: string;
+            /** Name */
+            name: string;
+            /** Symbol */
+            symbol: string;
+            /** Ttm */
+            ttm: string;
+            /** Ttm Other */
+            ttm_other: string;
+        };
+        /** DividendRowOut */
+        DividendRowOut: {
+            /** Account */
+            account: string;
+            /**
+             * Amount
+             * @description In ccy at the payment date's rate
+             */
+            amount: string | null;
+            /** Amount Native */
+            amount_native: string | null;
+            /** Amount Other */
+            amount_other: string | null;
+            /** Currency */
+            currency: string;
+            /** Date */
+            date: string;
+            /** Id */
+            id: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cash" | "reinvest" | "interest";
+            /** Symbol */
+            symbol: string;
+        };
+        /** DividendYearOut */
+        DividendYearOut: {
+            /** Count */
+            count: number;
+            /** Dividends */
+            dividends: string;
+            /** Dividends Other */
+            dividends_other: string;
+            /** Interest */
+            interest: string;
+            /** Interest Other */
+            interest_other: string;
+            /** Year */
+            year: number;
+        };
+        /** DividendsOut */
+        DividendsOut: {
+            /** As Of */
+            as_of: string;
+            /** By Holding */
+            by_holding: components["schemas"]["DividendHoldingOut"][];
+            /** By Year */
+            by_year: components["schemas"]["DividendYearOut"][];
+            /**
+             * Ccy
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /** Lifetime Total */
+            lifetime_total: string;
+            /** Lifetime Total Other */
+            lifetime_total_other: string;
+            /**
+             * Other Ccy
+             * @enum {string}
+             */
+            other_ccy: "EUR" | "USD";
+            /** Rows */
+            rows: components["schemas"]["DividendRowOut"][];
+            /**
+             * Ttm Total
+             * @description Dividends dated in the last 12 months (no interest)
+             */
+            ttm_total: string;
+            /** Ttm Total Other */
+            ttm_total_other: string;
+            /**
+             * Yield Lifetime
+             * @description Lifetime dividends / value, fraction
+             */
+            yield_lifetime?: string | null;
+            /**
+             * Yield Ttm
+             * @description Trailing-12-month yield, fraction (same as the Overview)
+             */
+            yield_ttm?: string | null;
         };
         /** DriftRow */
         DriftRow: {
@@ -1168,6 +2251,73 @@ export interface components {
              * @description Target weight (fraction, 0.01 = 1%)
              */
             target_pct: string;
+        };
+        /**
+         * Freshness
+         * @description How fresh the figures are (drives the Live / Updated / Updating... chip).
+         */
+        Freshness: {
+            /**
+             * Historical
+             * @default false
+             */
+            historical: boolean;
+            /** Last Price Update At */
+            last_price_update_at?: string | null;
+            /**
+             * Market State
+             * @enum {string}
+             */
+            market_state: "open" | "closed" | "holiday";
+            /** Price Market At */
+            price_market_at?: string | null;
+            /** Price Observed At */
+            price_observed_at?: string | null;
+            /** Prices Live */
+            prices_live: boolean;
+            /**
+             * Progress Done
+             * @default 0
+             */
+            progress_done: number;
+            /** Progress Label */
+            progress_label?: string | null;
+            /**
+             * Progress Total
+             * @default 0
+             */
+            progress_total: number;
+            /** Refresh Running */
+            refresh_running: boolean;
+            /** Refresh Source */
+            refresh_source?: string | null;
+        };
+        /** FundWeightIn */
+        FundWeightIn: {
+            /** Instrument Id */
+            instrument_id: number;
+            /**
+             * No Buy
+             * @default false
+             */
+            no_buy: boolean;
+            /**
+             * Weight
+             * @description Relative weight; normalised to 100 %
+             */
+            weight: number | string;
+        };
+        /** FxAsOf */
+        FxAsOf: {
+            /** As Of */
+            as_of: string;
+            /** Observed At */
+            observed_at?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "live" | "eod";
         };
         /** FxConversionIn */
         FxConversionIn: {
@@ -1214,6 +2364,29 @@ export interface components {
             /** Overnight */
             overnight?: string | null;
         };
+        /**
+         * FxMove
+         * @description The box's headline rate move, regime-aware (as the NiceGUI currency box).
+         */
+        FxMove: {
+            /**
+             * Anchor Kind
+             * @enum {string}
+             */
+            anchor_kind: "prev_close" | "overnight" | "session_open";
+            /**
+             * Label Kind
+             * @enum {string}
+             */
+            label_kind: "today" | "yesterday" | "weekday";
+            /**
+             * Pct
+             * @description Move of the pair shown in ``pair`` (fraction, 0.01 = 1%); positive = the foreign currency (EUR in USD display, USD in EUR display) got stronger
+             */
+            pct?: string | null;
+            /** Session Date */
+            session_date: string;
+        };
         /** FxRegime */
         FxRegime: {
             /** Forex Frozen */
@@ -1231,12 +2404,105 @@ export interface components {
             /** Weekend Overnight */
             weekend_overnight: boolean;
         };
+        /** FxSince */
+        FxSince: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "open" | "close";
+            /**
+             * Pct
+             * @description Same convention as move (fraction, 0.01 = 1%)
+             */
+            pct?: string | null;
+        };
+        /**
+         * FxSincePhrase
+         * @description The "Currency effect …" / "Investing power …" title phrase.
+         *
+         *     since_yesterday -> "since yesterday"; yesterday -> "yesterday" (frozen weekend,
+         *     one day on); on_day -> "on <weekday of session_date>" (frozen weekend);
+         *     since_day -> "since <weekday of session_date>" (Sunday-evening spill-over).
+         */
+        FxSincePhrase: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "since_yesterday" | "yesterday" | "on_day" | "since_day";
+            /** Session Date */
+            session_date: string;
+        };
+        /**
+         * GraphCoverage
+         * @description How many of the window's finished sessions reached their intraday target.
+         */
+        GraphCoverage: {
+            /** Complete */
+            complete: boolean;
+            /** Covered */
+            covered: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * GraphGrowth
+         * @description Growth over the drawn window, computed in this line's own currency.
+         */
+        GraphGrowth: {
+            /**
+             * Mode
+             * @description reference: move vs the previous close (1d); simple: Modified Dietz (1w); xirr: window XIRR compounded over the window (1m..1y); total: lifetime compounded growth (all)
+             * @enum {string}
+             */
+            mode: "reference" | "simple" | "xirr" | "total";
+            /**
+             * Pct
+             * @description Growth over the window (fraction, 0.01 = 1%)
+             */
+            pct: string;
+        };
         /** GraphPoint */
         GraphPoint: {
             /** T */
             t: string;
             /** V */
             v?: string | null;
+        };
+        /** GraphRangePref */
+        GraphRangePref: {
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+        };
+        /** GraphRangePrefResponse */
+        GraphRangePrefResponse: {
+            /**
+             * Default Range
+             * @enum {string}
+             */
+            default_range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+        };
+        /** GraphReloadResponse */
+        GraphReloadResponse: {
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            /**
+             * Status
+             * @constant
+             */
+            status: "started";
         };
         /** GraphResponse */
         GraphResponse: {
@@ -1247,8 +2513,17 @@ export interface components {
              * @enum {string}
              */
             ccy: "EUR" | "USD";
+            coverage?: components["schemas"]["GraphCoverage"] | null;
+            /** Direction */
+            direction?: ("up" | "down" | "flat") | null;
+            growth?: components["schemas"]["GraphGrowth"] | null;
             /** Intraday */
             intraday: boolean;
+            /**
+             * Market Open
+             * @default false
+             */
+            market_open: boolean;
             /** Points */
             points: components["schemas"]["GraphPoint"][];
             /**
@@ -1259,16 +2534,46 @@ export interface components {
             /** Reference */
             reference?: string | null;
             secondary?: components["schemas"]["GraphSecondary"] | null;
+            /** Session Date */
+            session_date?: string | null;
+            /**
+             * Sessions
+             * @default []
+             */
+            sessions: components["schemas"]["GraphSession"][];
         };
-        /** GraphSecondary */
+        /**
+         * GraphSecondary
+         * @description The other currency's line, built independently (never converted).
+         */
         GraphSecondary: {
+            /** Anchor T */
+            anchor_t?: string | null;
             /**
              * Ccy
              * @enum {string}
              */
             ccy: "EUR" | "USD";
+            growth?: components["schemas"]["GraphGrowth"] | null;
             /** Points */
             points: components["schemas"]["GraphPoint"][];
+            /**
+             * Scale
+             * @description Display factor secondary/primary at the window's first shared point. Plot secondary at v/scale on the primary axis so both lines start at the same pixel; right-axis ticks = left ticks x scale. Not a conversion.
+             */
+            scale?: string | null;
+        };
+        /**
+         * GraphSession
+         * @description One exchange session inside an intraday window (UTC instants).
+         */
+        GraphSession: {
+            /** Close */
+            close: string;
+            /** Date */
+            date: string;
+            /** Open */
+            open: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1291,6 +2596,36 @@ export interface components {
             t: string;
             /** V */
             v?: string | null;
+        };
+        /**
+         * HoldingGroup
+         * @description Subtotals of one group, in the reporting ccy (``null`` when a member lacks the leg).
+         */
+        HoldingGroup: {
+            /** Capital Gain */
+            capital_gain?: string | null;
+            /** Cost Basis */
+            cost_basis?: string | null;
+            /** Count */
+            count: number;
+            /** Dividends */
+            dividends?: string | null;
+            /**
+             * Instrument Ids
+             * @description Members, in the order of ``holdings``
+             */
+            instrument_ids: number[];
+            /** Key */
+            key: string;
+            /** Total Return */
+            total_return?: string | null;
+            /** Value */
+            value?: string | null;
+            /**
+             * Weight Pct
+             * @description Summed weight (fraction, 0.01 = 1%)
+             */
+            weight_pct?: string | null;
         };
         /**
          * HoldingHistoryResponse
@@ -1411,8 +2746,34 @@ export interface components {
              */
             ytd_growth?: string | null;
         };
+        /** HoldingsFx */
+        HoldingsFx: {
+            /** As Of */
+            as_of?: string | null;
+            /**
+             * Move Pct
+             * @description Move vs the previous close (fraction, 0.01 = 1%)
+             */
+            move_pct?: string | null;
+            /** Observed At */
+            observed_at?: string | null;
+            /**
+             * Pair
+             * @description "USD/EUR" (EUR reporting) or "EUR/USD" (USD reporting)
+             */
+            pair: string;
+            /** Source */
+            source?: ("live" | "eod") | null;
+            /** Spot */
+            spot: string;
+        };
         /** HoldingsResponse */
         HoldingsResponse: {
+            /**
+             * Annual Expense Cost
+             * @description Estimated yearly fees in ccy (spot-converted)
+             */
+            annual_expense_cost?: string | null;
             /** As Of */
             as_of: string;
             /**
@@ -1420,8 +2781,38 @@ export interface components {
              * @enum {string}
              */
             ccy: "EUR" | "USD";
+            /**
+             * Dividend Income
+             * @description Lifetime cash dividends received
+             */
+            dividend_income?: string | null;
+            /**
+             * Dividend Yield Pct
+             * @description Lifetime dividends / value (fraction, 0.01 = 1%)
+             */
+            dividend_yield_pct?: string | null;
+            /**
+             * Dividend Yield Ttm Pct
+             * @description Trailing-12-month yield (fraction, 0.01 = 1%)
+             */
+            dividend_yield_ttm_pct?: string | null;
+            /**
+             * Dividends Ttm
+             * @description Dividends, last 12 months
+             */
+            dividends_ttm?: string | null;
+            /** @description Current FX; null when every holding is in ccy */
+            fx?: components["schemas"]["HoldingsFx"] | null;
             /** Fx Eur Usd */
             fx_eur_usd?: string | null;
+            /**
+             * Group By
+             * @default none
+             * @enum {string}
+             */
+            group_by: "none" | "account" | "asset_class" | "currency" | "category";
+            /** Groups */
+            groups?: components["schemas"]["HoldingGroup"][];
             /** Holdings */
             holdings: components["schemas"]["HoldingRow"][];
             summary: components["schemas"]["HoldingsSummary"];
@@ -1441,12 +2832,27 @@ export interface components {
              */
             total_dividends?: string | null;
             /**
+             * Total Growth
+             * @description Portfolio compounded growth (fraction, 0.01 = 1%)
+             */
+            total_growth?: string | null;
+            /**
              * Total Return
              * @description total_capital_gain + total_dividends. Differs from the overview total_return by cash not invested in positions and gains realised on closed positions.
              */
             total_return?: string | null;
             /** Total Value */
             total_value?: string | null;
+            /**
+             * Weighted Expense Ratio
+             * @description fraction, 0.01 = 1%
+             */
+            weighted_expense_ratio?: string | null;
+            /**
+             * Xirr
+             * @description Portfolio XIRR (fraction, 0.01 = 1%)
+             */
+            xirr?: string | null;
         };
         /** HoldingsSummary */
         HoldingsSummary: {
@@ -1492,6 +2898,52 @@ export interface components {
             /** Worst Symbol */
             worst_symbol?: string | null;
         };
+        /** ImportBatchList */
+        ImportBatchList: {
+            /** Batches */
+            batches: components["schemas"]["ImportBatchOut"][];
+            /** Note */
+            note: string;
+        };
+        /** ImportBatchOut */
+        ImportBatchOut: {
+            /** Account Id */
+            account_id: number;
+            /** Account Label */
+            account_label: string | null;
+            /** Actor */
+            actor: string | null;
+            /** Broker */
+            broker: string;
+            /** Can Undo */
+            can_undo: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Rows */
+            current_rows: number;
+            /** Duplicate Count */
+            duplicate_count: number;
+            /** Filename */
+            filename: string;
+            /** Id */
+            id: number;
+            /** Row Count */
+            row_count: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "undone";
+            /** Undone At */
+            undone_at: string | null;
+            /** Undone By */
+            undone_by: string | null;
+            /** Undone Rows */
+            undone_rows: number | null;
+        };
         /**
          * ImportBroker
          * @description One available importer plugin.
@@ -1512,6 +2964,8 @@ export interface components {
             errors: components["schemas"]["ImportIssue"][];
             /** Fx Missing Dates */
             fx_missing_dates: string[];
+            /** Import Batch Id */
+            import_batch_id?: number | null;
             /** Import Id */
             import_id: string;
             /** Inserted */
@@ -1539,6 +2993,15 @@ export interface components {
             sweeps_dropped: number;
             /** Warnings */
             warnings: number;
+        };
+        /** ImportErrorDto */
+        ImportErrorDto: {
+            /** Detail */
+            detail: string;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
         };
         /** ImportIssue */
         ImportIssue: {
@@ -1611,23 +3074,164 @@ export interface components {
             /** Symbol */
             symbol?: string | null;
         };
-        /** InstrumentOut */
-        InstrumentOut: {
-            /** Asset Class */
-            asset_class: string;
+        /** ImportUndoPreview */
+        ImportUndoPreview: {
+            batch: components["schemas"]["ImportBatchOut"];
+            /** Confirm Word */
+            confirm_word: string;
+            /** Detached */
+            detached: number;
+            /** Earliest Date */
+            earliest_date: string | null;
+            /** Latest Date */
+            latest_date: string | null;
+            /** Rows */
+            rows: components["schemas"]["ImportUndoRow"][];
+            /** Rows Truncated */
+            rows_truncated: boolean;
+            /** Total */
+            total: number;
+        };
+        /** ImportUndoRequest */
+        ImportUndoRequest: {
+            /**
+             * Confirm
+             * @default
+             */
+            confirm: string;
+        };
+        /** ImportUndoResult */
+        ImportUndoResult: {
+            /** Backup */
+            backup: string | null;
+            batch: components["schemas"]["ImportBatchOut"];
+            /** Deleted */
+            deleted: number;
+            /** Invalidated From */
+            invalidated_from: string | null;
+        };
+        /** ImportUndoRow */
+        ImportUndoRow: {
+            /** Date */
+            date: string;
+            /** Description */
+            description: string | null;
             /** Id */
             id: number;
+            /** Kind */
+            kind: string;
+            /** Net Native */
+            net_native: string | null;
+            /** Quantity */
+            quantity: string | null;
+            /** Symbol */
+            symbol: string | null;
+        };
+        /** InstrumentErrorDto */
+        InstrumentErrorDto: {
+            /** Detail */
+            detail: string;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * InstrumentOut
+         * @description One instrument with its effective values and the ledger values underneath.
+         *
+         *     ``name`` / ``asset_class`` / ``expense_ratio`` are the effective values
+         *     (override, else ledger). ``fetch_symbol`` is the ticker sent to the price
+         *     provider, ``null`` when nothing is fetched (cash, inactive, manual, delisted).
+         *     ``native_currency`` is read-only.
+         */
+        InstrumentOut: {
+            /** Active */
+            active: boolean;
+            /** Asset Class */
+            asset_class: string;
+            /** Asset Class Override */
+            asset_class_override: string | null;
+            /** Category */
+            category: string | null;
+            /**
+             * Expense Ratio
+             * @description Fraction as a decimal string (0.0003).
+             */
+            expense_ratio: string | null;
+            /** Expense Ratio Override */
+            expense_ratio_override: string | null;
+            /** Fetch Symbol */
+            fetch_symbol: string | null;
+            /** Id */
+            id: number;
+            /** Latest Price Date */
+            latest_price_date: string | null;
+            /** Ledger Asset Class */
+            ledger_asset_class: string;
+            /** Ledger Name */
+            ledger_name: string | null;
             /** Name */
             name: string | null;
+            /** Name Override */
+            name_override: string | null;
             /** Native Currency */
             native_currency: string;
+            /**
+             * Pricing Mode
+             * @enum {string}
+             */
+            pricing_mode: "auto" | "manual" | "delisted";
+            /** Provider Symbol */
+            provider_symbol: string | null;
             /** Symbol */
             symbol: string;
+            /** Transaction Count */
+            transaction_count: number;
+        };
+        /**
+         * InstrumentPatch
+         * @description Only the fields sent are changed; ``null`` clears an override.
+         */
+        InstrumentPatch: {
+            /** Active */
+            active?: boolean | null;
+            /** Asset Class */
+            asset_class?: ("etf" | "mutual_fund" | "stock" | "cash" | "savings" | "unknown") | null;
+            /** Category */
+            category?: string | null;
+            /**
+             * Expense Ratio
+             * @description Fraction, e.g. "0.0003".
+             */
+            expense_ratio?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Pricing Mode */
+            pricing_mode?: ("auto" | "manual" | "delisted") | null;
+            /** Provider Symbol */
+            provider_symbol?: string | null;
+        };
+        /** InstrumentUpdateResult */
+        InstrumentUpdateResult: {
+            /** Changed */
+            changed: string[];
+            instrument: components["schemas"]["InstrumentOut"];
+            /**
+             * Redownload Suggested
+             * @description The price mapping changed: offer job prices.redownload for this instrument.
+             */
+            redownload_suggested: boolean;
         };
         /** InvestingPower */
         InvestingPower: {
             /** Amount Eur */
             amount_eur?: string | null;
+            /**
+             * Amount Usd
+             * @description ``amount_eur`` valued at the live EUR/USD rate (USD).
+             */
+            amount_usd?: string | null;
             /** Market Hours */
             market_hours?: string | null;
             /** Net */
@@ -1635,10 +3239,167 @@ export interface components {
             /** Overnight */
             overnight?: string | null;
         };
+        /** JobCatalogue */
+        JobCatalogue: {
+            /** Generated At */
+            generated_at: string;
+            /** Groups */
+            groups: components["schemas"]["JobGroup"][];
+            /** Heavy Job */
+            heavy_job: string | null;
+            /** Jobs */
+            jobs: components["schemas"]["JobInfo"][];
+            /** Recent */
+            recent: components["schemas"]["JobRun"][];
+        };
+        /** JobGroup */
+        JobGroup: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** JobInfo */
+        JobInfo: {
+            /** Backup First */
+            backup_first: boolean;
+            /** Confirm Word */
+            confirm_word: string | null;
+            /**
+             * Danger
+             * @description none: run; confirm: send confirm='yes'; typed: send confirm=confirm_word.
+             * @enum {string}
+             */
+            danger: "none" | "confirm" | "typed";
+            /** Description */
+            description: string;
+            /** Group */
+            group: string;
+            /**
+             * Heavy
+             * @description Shares the one-at-a-time lock with other heavy jobs.
+             */
+            heavy: boolean;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            last_run: components["schemas"]["JobRun"] | null;
+            /** Params */
+            params: components["schemas"]["JobParam"][];
+            /** Running */
+            running: boolean;
+        };
+        /** JobParam */
+        JobParam: {
+            /** Choices */
+            choices: string[];
+            /** Default */
+            default?: unknown;
+            /** Help */
+            help: string;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Required */
+            required: boolean;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "bool" | "int" | "date" | "enum" | "string";
+        };
+        /** JobRun */
+        JobRun: {
+            /** Actor */
+            actor: string;
+            /**
+             * Error
+             * @description Exception message only (no traceback).
+             */
+            error: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: string;
+            /** Job */
+            job: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** Started At */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "succeeded" | "failed";
+        };
+        /** JobStart */
+        JobStart: {
+            /** Confirm */
+            confirm?: string | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+        };
+        /** LogLine */
+        LogLine: {
+            /** Level */
+            level: string;
+            /** Logger */
+            logger: string;
+            /** Message */
+            message: string;
+            /** Traceback */
+            traceback: string | null;
+            /** Ts */
+            ts: string;
+        };
         /** LoginBody */
         LoginBody: {
             /** Password */
             password: string;
+        };
+        /** LogsDto */
+        LogsDto: {
+            /** Entries */
+            entries: components["schemas"]["LogLine"][];
+            /** Source */
+            source: string;
+            /** Sources */
+            sources: string[];
+        };
+        /** MaintenanceErrorDto */
+        MaintenanceErrorDto: {
+            /** Detail */
+            detail: string;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** ManualClose */
+        ManualClose: {
+            /** Close */
+            close: string;
+        };
+        /** ManualRate */
+        ManualRate: {
+            /** Rate */
+            rate: string;
+        };
+        /** ManualSplit */
+        ManualSplit: {
+            /** Ratio */
+            ratio: string;
         };
         /** MarketVerdict */
         MarketVerdict: {
@@ -1806,6 +3567,13 @@ export interface components {
              */
             ccy: "EUR" | "USD";
             currency: components["schemas"]["CurrencyBlock"];
+            daily_caption: components["schemas"]["DailyCaption"];
+            /**
+             * Default Range
+             * @enum {string}
+             */
+            default_range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            freshness: components["schemas"]["Freshness"];
             /** Fx Eur Usd */
             fx_eur_usd?: string | null;
             /** Generated At */
@@ -1813,10 +3581,18 @@ export interface components {
             /** Is Live */
             is_live: boolean;
             kpis: components["schemas"]["OverviewKpis"];
+            kpis_secondary: components["schemas"]["OverviewKpis"];
             market_verdict: components["schemas"]["MarketVerdict"];
             movers: components["schemas"]["Movers"];
             /** Position Count */
             position_count: number;
+            /**
+             * Secondary Ccy
+             * @enum {string}
+             */
+            secondary_ccy: "EUR" | "USD";
+            /** Total Value Complete */
+            total_value_complete: boolean;
             warnings: components["schemas"]["OverviewWarnings"];
         };
         /** OverviewWarnings */
@@ -1895,6 +3671,84 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["PeriodRowOut"][];
         };
+        /** PlanCategoryOut */
+        PlanCategoryOut: {
+            /** Add Value */
+            add_value?: string | null;
+            /** After Pct */
+            after_pct: string;
+            /** Before Pct */
+            before_pct: string;
+            /** Current Pct */
+            current_pct: string;
+            /** Name */
+            name: string;
+            /** Target Pct */
+            target_pct: string;
+        };
+        /** PlanRequest */
+        PlanRequest: {
+            /**
+             * Allow Sell
+             * @default false
+             */
+            allow_sell: boolean;
+            /**
+             * Amount
+             * @description Cash to invest, in `ccy`.
+             */
+            amount: number | string;
+            /** Category Weights */
+            category_weights?: components["schemas"]["CategoryWeightIn"][];
+            /**
+             * Ccy
+             * @default EUR
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /**
+             * Fractional
+             * @default false
+             */
+            fractional: boolean;
+            /** Fund Weights */
+            fund_weights?: components["schemas"]["FundWeightIn"][];
+            /**
+             * Mode
+             * @default fund
+             * @enum {string}
+             */
+            mode: "fund" | "category";
+        };
+        /** PlanResponse */
+        PlanResponse: {
+            /** Allow Fractional */
+            allow_fractional: boolean;
+            /** Allow Sell */
+            allow_sell: boolean;
+            /** Categories */
+            categories: components["schemas"]["PlanCategoryOut"][];
+            /**
+             * Ccy
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /**
+             * Extras
+             * @description Held but un-ticked funds credited to their category
+             */
+            extras: string[];
+            /** Fx Usd Per Eur */
+            fx_usd_per_eur?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "fund" | "category";
+            /** Rows */
+            rows: components["schemas"]["BuilderPlanRowOut"][];
+            summary: components["schemas"]["PlanSummaryOut"];
+        };
         /** PlanRowOut */
         PlanRowOut: {
             /** Add Shares */
@@ -1919,6 +3773,35 @@ export interface components {
              */
             target_pct: string;
         };
+        /** PlanSummaryOut */
+        PlanSummaryOut: {
+            /** Buying */
+            buying?: string | null;
+            /** Cash */
+            cash?: string | null;
+            /** Leftover */
+            leftover?: string | null;
+            /** Other Buying */
+            other_buying?: string | null;
+            /** Other Cash */
+            other_cash?: string | null;
+            /**
+             * Other Ccy
+             * @enum {string}
+             */
+            other_ccy: "EUR" | "USD";
+            /** Other Leftover */
+            other_leftover?: string | null;
+            /** Other Selling */
+            other_selling?: string | null;
+            /**
+             * Pct Of Wealth
+             * @description Cash as a share of current portfolio value (fraction, 0.01 = 1%)
+             */
+            pct_of_wealth?: string | null;
+            /** Selling */
+            selling?: string | null;
+        };
         /** PoolOut */
         PoolOut: {
             /** Balance Eur */
@@ -1931,6 +3814,42 @@ export interface components {
             fallbacks: components["schemas"]["DepositMatchOut"][];
             /** Remaining */
             remaining: components["schemas"]["RemainingBatchOut"][];
+        };
+        /** PricesDto */
+        PricesDto: {
+            /** Closes */
+            closes: components["schemas"]["ClosePoint"][];
+            /** Instrument Id */
+            instrument_id: number;
+        };
+        /** ProbeRequest */
+        ProbeRequest: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "yfinance" | "tiingo";
+            /** Symbol */
+            symbol: string;
+        };
+        /** ProbeResult */
+        ProbeResult: {
+            /** As Of */
+            as_of: string | null;
+            /** Detail */
+            detail: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Price */
+            price: string | null;
+            /** Provider */
+            provider: string;
+            /** Provider Label */
+            provider_label: string;
+            /** Symbol */
+            symbol: string;
+            /** Verdict */
+            verdict: string;
         };
         /** ProblemOut */
         ProblemOut: {
@@ -2109,6 +4028,27 @@ export interface components {
             /** Status */
             status: string | null;
         };
+        /** RatePoint */
+        RatePoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Rate */
+            rate: string;
+            /** Source */
+            source: string;
+        };
+        /** RatesDto */
+        RatesDto: {
+            /** Base */
+            base: string;
+            /** Quote */
+            quote: string;
+            /** Rates */
+            rates: components["schemas"]["RatePoint"][];
+        };
         /** RebalanceResponse */
         RebalanceResponse: {
             /** Allow Fractional */
@@ -2132,6 +4072,31 @@ export interface components {
             target_id: number;
             /** Target Name */
             target_name: string;
+        };
+        /**
+         * ReconcileRequest
+         * @description Quantity x price = total check for the manual-entry form (magnitudes).
+         */
+        ReconcileRequest: {
+            /** Price */
+            price?: number | string | null;
+            /** Quantity */
+            quantity?: number | string | null;
+            /** Total */
+            total?: number | string | null;
+        };
+        /** ReconcileResult */
+        ReconcileResult: {
+            /** Error */
+            error?: string | null;
+            /** Filled */
+            filled?: string | null;
+            /** Price */
+            price?: string | null;
+            /** Quantity */
+            quantity?: string | null;
+            /** Total */
+            total?: string | null;
         };
         /** RefreshOut */
         RefreshOut: {
@@ -2208,6 +4173,51 @@ export interface components {
              */
             total_return_eur?: string | null;
         };
+        /** SchedulerJob */
+        SchedulerJob: {
+            /** Last Failed */
+            last_failed: boolean;
+            /** Last Run At */
+            last_run_at: string | null;
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "tick" | "fx" | "eod" | "backup";
+            /** Paused Until */
+            paused_until: string | null;
+            /** Requested */
+            requested: boolean;
+            /** Running */
+            running: boolean;
+        };
+        /** SchedulerPause */
+        SchedulerPause: {
+            /**
+             * Hours
+             * @description Default: scheduler.pause_default_hours.
+             */
+            hours?: number | null;
+            /** Jobs */
+            jobs: ("tick" | "fx" | "eod" | "backup")[];
+            /** Paused */
+            paused: boolean;
+        };
+        /** SchedulerState */
+        SchedulerState: {
+            /** Enabled */
+            enabled: boolean;
+            /** Heavy Job */
+            heavy_job?: string | null;
+            /** Jobs */
+            jobs?: components["schemas"]["SchedulerJob"][];
+            /** Last Eod Session */
+            last_eod_session?: string | null;
+            /** Market State */
+            market_state?: string | null;
+            /** Now */
+            now?: string | null;
+        };
         /** SeedOut */
         SeedOut: {
             /** As Of */
@@ -2229,6 +4239,142 @@ export interface components {
             usd_per_eur: string | null;
             /** Xirr Available */
             xirr_available: boolean;
+        };
+        /** SettingField */
+        SettingField: {
+            /** Choices */
+            choices: string[];
+            /** Danger */
+            danger: string | null;
+            /**
+             * Default
+             * @description Default value (null for secrets).
+             */
+            default: boolean | number | string | string[] | {
+                [key: string]: string;
+            } | null;
+            /**
+             * Env Bound
+             * @description Env value bounds the app value (security settings).
+             */
+            env_bound: ("ceiling" | "floor") | null;
+            /**
+             * Env Var
+             * @description Env var that supplies a fallback value.
+             */
+            env_var: string | null;
+            /** Help */
+            help: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "user" | "advanced";
+            /** Max */
+            max?: string | null;
+            /** Min */
+            min?: string | null;
+            /** Nullable */
+            nullable: boolean;
+            /** Restart Required */
+            restart_required: boolean;
+            /**
+             * Secret
+             * @description Write-only: the value is never returned.
+             */
+            secret: boolean;
+            /** Section */
+            section: string;
+            /** Since */
+            since: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "bool" | "int" | "decimal" | "percent" | "string" | "enum" | "symbol" | "symbol_list" | "percent_list" | "time_hm" | "duration_s" | "json_map";
+            /** Unit */
+            unit: string | null;
+        };
+        /** SettingSection */
+        SettingSection: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** SettingValueDto */
+        SettingValueDto: {
+            /** Default */
+            default: boolean | number | string | string[] | {
+                [key: string]: string;
+            } | null;
+            /** Env Value Present */
+            env_value_present: boolean;
+            /**
+             * Is Set
+             * @description A value is in effect (the only info for secrets).
+             */
+            is_set: boolean;
+            /** Modified At */
+            modified_at: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "db" | "env" | "default";
+            /**
+             * Stored Invalid
+             * @description The stored value was unreadable and is ignored.
+             */
+            stored_invalid: boolean;
+            /**
+             * Value
+             * @description Effective value; always null for secrets.
+             */
+            value: boolean | number | string | string[] | {
+                [key: string]: string;
+            } | null;
+        };
+        /** SettingsAuditRow */
+        SettingsAuditRow: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "set" | "reset" | "import" | "revert";
+            /** Actor */
+            actor: string;
+            /**
+             * Changed At
+             * Format: date-time
+             */
+            changed_at: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** New Value */
+            new_value: string | null;
+            /**
+             * Old Value
+             * @description Stored text; '<redacted>' for secrets.
+             */
+            old_value: string | null;
+            /** Request Id */
+            request_id: string | null;
+        };
+        /** SettingsChangedDto */
+        SettingsChangedDto: {
+            /** Changed */
+            changed: string[];
+            /** Values */
+            values: {
+                [key: string]: components["schemas"]["SettingValueDto"];
+            };
         };
         /** SettingsDto */
         SettingsDto: {
@@ -2264,6 +4410,58 @@ export interface components {
             /** Timezone */
             timezone: string;
         };
+        /** SettingsErrorDto */
+        SettingsErrorDto: {
+            /** Detail */
+            detail: string;
+            /**
+             * Errors
+             * @description Per-key messages.
+             */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** SettingsExportDto */
+        SettingsExportDto: {
+            /** Exported At */
+            exported_at: string;
+            /** Kind */
+            kind: string;
+            /** Settings */
+            settings: {
+                [key: string]: boolean | number | string | string[] | {
+                    [key: string]: string;
+                } | null;
+            };
+            /** Version */
+            version: number;
+        };
+        /** SettingsHistoryDto */
+        SettingsHistoryDto: {
+            /** Rows */
+            rows: components["schemas"]["SettingsAuditRow"][];
+        };
+        /** SettingsImportDiff */
+        SettingsImportDiff: {
+            /** Current */
+            current: boolean | number | string | string[] | {
+                [key: string]: string;
+            } | null;
+            /** Key */
+            key: string;
+            /** New */
+            new: boolean | number | string | string[] | {
+                [key: string]: string;
+            } | null;
+        };
+        /** SettingsImportResult */
+        SettingsImportResult: {
+            /** Diff */
+            diff: components["schemas"]["SettingsImportDiff"][];
+            /** Dry Run */
+            dry_run: boolean;
+        };
         /** SettingsOptions */
         SettingsOptions: {
             /** Auto Refresh Max Seconds */
@@ -2290,6 +4488,37 @@ export interface components {
             /** Timezones */
             timezones: string[];
         };
+        /** SettingsPatch */
+        SettingsPatch: {
+            /**
+             * Changes
+             * @description key -> new value; null clears a nullable setting.
+             */
+            changes: {
+                [key: string]: boolean | number | string | string[] | {
+                    [key: string]: string;
+                } | null;
+            };
+        };
+        /** SettingsReset */
+        SettingsReset: {
+            /**
+             * All
+             * @default false
+             */
+            all: boolean;
+            /** Keys */
+            keys?: string[] | null;
+            /** Section */
+            section?: string | null;
+        };
+        /** SettingsSchemaDto */
+        SettingsSchemaDto: {
+            /** Fields */
+            fields: components["schemas"]["SettingField"][];
+            /** Sections */
+            sections: components["schemas"]["SettingSection"][];
+        };
         /**
          * SettingsUpdate
          * @description Partial update: only the fields present are changed.
@@ -2312,6 +4541,13 @@ export interface components {
             /** Timezone */
             timezone?: string | null;
         };
+        /** SettingsValuesDto */
+        SettingsValuesDto: {
+            /** Values */
+            values: {
+                [key: string]: components["schemas"]["SettingValueDto"];
+            };
+        };
         /** SliceOut */
         SliceOut: {
             /** Conversion Id */
@@ -2320,6 +4556,68 @@ export interface components {
             eur: string;
             /** Usd */
             usd: string;
+        };
+        /** SplitPoint */
+        SplitPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Ratio */
+            ratio: string;
+            /** Source */
+            source: string;
+        };
+        /** SplitsDto */
+        SplitsDto: {
+            /** Instrument Id */
+            instrument_id: number;
+            /** Splits */
+            splits: components["schemas"]["SplitPoint"][];
+        };
+        /** SystemInfo */
+        SystemInfo: {
+            /** Api Token Enabled */
+            api_token_enabled: boolean;
+            /** Backup Falls Back To Db Key */
+            backup_falls_back_to_db_key: boolean;
+            /** Backup Passphrase Set */
+            backup_passphrase_set: boolean;
+            /** Db Size Bytes */
+            db_size_bytes: number | null;
+            /** Encrypted */
+            encrypted: boolean;
+            /**
+             * Env Shadowed By App
+             * @description Settings whose in-app value overrides an env value.
+             */
+            env_shadowed_by_app: string[];
+            /** Image Tag */
+            image_tag: string | null;
+            /**
+             * Migrations
+             * @description {current, head} Alembic revisions.
+             */
+            migrations: {
+                [key: string]: string | null;
+            };
+            /** Paths */
+            paths: {
+                [key: string]: string;
+            };
+            /** Scheduler Enabled */
+            scheduler_enabled: boolean;
+            /** Server Mode */
+            server_mode: boolean;
+            /** Split Db */
+            split_db: boolean;
+            /** Started At */
+            started_at: string;
+            /** Uptime Seconds */
+            uptime_seconds: number;
+            /** Version */
+            version: string;
         };
         /** TargetHitOut */
         TargetHitOut: {
@@ -2405,12 +4703,45 @@ export interface components {
          * @enum {string}
          */
         TransactionKind: "buy" | "sell" | "dividend_cash" | "dividend_reinvest" | "deposit" | "withdrawal" | "interest" | "fee" | "transfer_in" | "transfer_out" | "split";
+        /**
+         * TransactionMonth
+         * @description Totals of one month over the whole filter (trade-date FX per row).
+         */
+        TransactionMonth: {
+            /** Count */
+            count: number;
+            /**
+             * Fx Incomplete
+             * @description Rows without a rate were left out.
+             * @default false
+             */
+            fx_incomplete: boolean;
+            /**
+             * Month
+             * @description YYYY-MM
+             */
+            month: string;
+            /** Net Eur */
+            net_eur: string;
+            /** Net Usd */
+            net_usd: string;
+        };
         /** TransactionOut */
         TransactionOut: {
             /** Account */
             account: string;
             /** Account Id */
             account_id?: number | null;
+            /**
+             * Cash Eur
+             * @description Net cash in EUR from net_native at the trade date's rate (null: no rate).
+             */
+            cash_eur?: string | null;
+            /**
+             * Cash Usd
+             * @description Net cash in USD from net_native at the trade date's rate (null: no rate).
+             */
+            cash_usd?: string | null;
             /**
              * Currency
              * @description Native currency of the account.
@@ -2464,10 +4795,22 @@ export interface components {
         TransactionPage: {
             /** Limit */
             limit: number;
+            /** Months */
+            months?: components["schemas"]["TransactionMonth"][];
             /** Offset */
             offset: number;
+            /**
+             * Order
+             * @default desc
+             */
+            order: string;
             /** Rows */
             rows: components["schemas"]["TransactionOut"][];
+            /**
+             * Sort
+             * @default date
+             */
+            sort: string;
             summary: components["schemas"]["TransactionSummary"];
             /** Total */
             total: number;
@@ -2522,6 +4865,33 @@ export interface components {
             transaction: components["schemas"]["TransactionOut"];
             /** Warnings */
             warnings?: string[];
+        };
+        /** UnknownAction */
+        UnknownAction: {
+            /** Action */
+            action: string;
+            /** Count */
+            count: number;
+        };
+        /**
+         * UnknownActionsOut
+         * @description Unknown broker actions in the latest (or given) staged preview.
+         */
+        UnknownActionsOut: {
+            /** Actions */
+            actions: components["schemas"]["UnknownAction"][];
+            /** Broker */
+            broker: string | null;
+            /** Filename */
+            filename: string | null;
+            /** Import Id */
+            import_id: string | null;
+            /** Overrides */
+            overrides: {
+                [key: string]: string;
+            };
+            /** Targets */
+            targets: string[];
         };
         /** ValidationError */
         ValidationError: {
@@ -2714,6 +5084,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TargetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_builder_plan_api_allocations_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3041,6 +5444,8 @@ export interface operations {
             query?: {
                 /** @description 'sealed': encrypted full snapshot; 'db': plain scrubbed copy. */
                 kind?: string;
+                /** @description A stored sealed snapshot to download instead of a fresh one. */
+                name?: string | null;
             };
             header?: never;
             path?: never;
@@ -3140,6 +5545,10 @@ export interface operations {
                 /** @description Reporting currency. */
                 ccy?: "EUR" | "USD";
                 account_id?: number | null;
+                /** @description Row filter; transfer = in + out. */
+                kind?: ("deposit" | "withdrawal" | "transfer") | null;
+                /** @description Row filter. */
+                year?: number | null;
             };
             header?: never;
             path?: never;
@@ -3154,6 +5563,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DepositsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dividends_api_deposits_dividends_get: {
+        parameters: {
+            query?: {
+                /** @description Reporting currency. */
+                ccy?: "EUR" | "USD";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DividendsOut"];
                 };
             };
             /** @description Validation Error */
@@ -3183,6 +5624,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiagnosticsOut"];
+                };
+            };
+        };
+    };
+    dismiss_all_problems_api_diagnostics_problems_dismiss_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissOut"];
+                };
+            };
+        };
+    };
+    dismiss_problem_api_diagnostics_problems__problem_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                problem_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_diagnostics_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticsStatusOut"];
                 };
             };
         };
@@ -3344,12 +5856,45 @@ export interface operations {
             };
         };
     };
+    put_graph_range_api_graphs_range_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphRangePref"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphRangePrefResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_graph_api_graphs__range_key__get: {
         parameters: {
             query?: {
                 /** @description Reporting currency. */
                 ccy?: "EUR" | "USD";
-                /** @description Also return the other currency line. */
+                /** @description Also return the other currency line (default on). */
                 compare?: boolean;
             };
             header?: never;
@@ -3368,6 +5913,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GraphResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_graph_api_graphs__range_key__reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                range_key: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphReloadResponse"];
+                };
+            };
+            /** @description A graph reload is already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -3405,6 +5988,7 @@ export interface operations {
             query?: {
                 /** @description Reporting currency. */
                 ccy?: "EUR" | "USD";
+                group_by?: "none" | "account" | "asset_class" | "currency" | "category";
             };
             header?: never;
             path?: never;
@@ -3498,6 +6082,169 @@ export interface operations {
             };
         };
     };
+    get_action_overrides_api_imports_action_overrides__broker__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                broker: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOverridesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_action_override_api_imports_action_overrides__broker__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                broker: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionOverrideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOverridesOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportErrorDto"];
+                };
+            };
+        };
+    };
+    list_batches_api_imports_batches_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportBatchList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_batch_api_imports_batches__batch_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportUndoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportUndoResult"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportErrorDto"];
+                };
+            };
+        };
+    };
+    undo_preview_api_imports_batches__batch_id__undo_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportUndoPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_import_brokers_api_imports_brokers_get: {
         parameters: {
             query?: never;
@@ -3514,6 +6261,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportBroker"][];
+                };
+            };
+        };
+    };
+    unknown_actions_api_imports_unknown_actions_get: {
+        parameters: {
+            query?: {
+                import_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnknownActionsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3580,6 +6358,37 @@ export interface operations {
             };
         };
     };
+    reparse_import_api_imports__import_id__reparse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_instruments_api_instruments_get: {
         parameters: {
             query?: never;
@@ -3596,6 +6405,649 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstrumentOut"][];
+                };
+            };
+        };
+    };
+    get_instrument_api_instruments__instrument_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_instrument_api_instruments__instrument_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstrumentPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentUpdateResult"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentErrorDto"];
+                };
+            };
+        };
+    };
+    get_backups_api_maintenance_backups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupsDto"];
+                };
+            };
+        };
+    };
+    get_rates_api_maintenance_fx__quote__get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                quote: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatesDto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_rate_api_maintenance_fx__quote___on__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote: string;
+                on: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualRate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatesDto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_rate_api_maintenance_fx__quote___on__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                quote: string;
+                on: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_jobs_api_maintenance_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCatalogue"];
+                };
+            };
+        };
+    };
+    start_job_api_maintenance_jobs__job_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRun"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceErrorDto"];
+                };
+            };
+        };
+    };
+    get_logs_api_maintenance_logs_get: {
+        parameters: {
+            query?: {
+                /** @description 'main' or an activity subject. */
+                source?: string;
+                level?: string;
+                limit?: number;
+                contains?: string | null;
+                /** @description Include tracebacks (browser session only). */
+                tracebacks?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogsDto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_anomalies_api_maintenance_prices_anomalies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnomaliesDto"];
+                };
+            };
+        };
+    };
+    get_prices_api_maintenance_prices__instrument_id__get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+                end?: string | null;
+            };
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricesDto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_price_api_maintenance_prices__instrument_id___on__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+                on: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualClose"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricesDto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_price_api_maintenance_prices__instrument_id___on__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+                on: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    probe_api_maintenance_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_maintenance_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRun"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scheduler_api_maintenance_scheduler_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulerState"];
+                };
+            };
+        };
+    };
+    pause_scheduler_api_maintenance_scheduler_pause_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SchedulerPause"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulerState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_scheduler_job_api_maintenance_scheduler__job__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulerState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_splits_api_maintenance_splits__instrument_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitsDto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_split_api_maintenance_splits__instrument_id___on__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+                on: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualSplit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitsDto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_split_api_maintenance_splits__instrument_id___on__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+                on: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3822,6 +7274,233 @@ export interface operations {
             };
         };
     };
+    export_settings_api_settings_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsExportDto"];
+                };
+            };
+        };
+    };
+    get_history_api_settings_history_get: {
+        parameters: {
+            query?: {
+                key?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsHistoryDto"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revert_change_api_settings_history__audit_id__revert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                audit_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsChangedDto"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsErrorDto"];
+                };
+            };
+        };
+    };
+    import_settings_api_settings_import_post: {
+        parameters: {
+            query?: {
+                /** @description Only show the diff. */
+                dry_run?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsImportResult"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsErrorDto"];
+                };
+            };
+        };
+    };
+    reset_values_api_settings_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsReset"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsChangedDto"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsErrorDto"];
+                };
+            };
+        };
+    };
+    get_schema_api_settings_schema_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsSchemaDto"];
+                };
+            };
+        };
+    };
+    get_values_api_settings_values_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsValuesDto"];
+                };
+            };
+        };
+    };
+    patch_values_api_settings_values_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsChangedDto"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsErrorDto"];
+                };
+            };
+        };
+    };
     stream_api_stream_get: {
         parameters: {
             query?: never;
@@ -3854,11 +7533,15 @@ export interface operations {
                     } | {
                         /** Fx Eur Usd */
                         fx_eur_usd?: string | null;
+                        /** Last Update At */
+                        last_update_at?: string | null;
                         /**
                          * Market State
                          * @enum {string}
                          */
                         market_state: "open" | "closed" | "holiday";
+                        /** Prices Live */
+                        prices_live?: boolean | null;
                         /** Total Value Eur */
                         total_value_eur?: string | null;
                         /** Total Value Usd */
@@ -3901,7 +7584,105 @@ export interface operations {
                          * @constant
                          */
                         type: "fx";
+                    } | {
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /** Source */
+                        source: string;
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default refresh_started
+                         * @constant
+                         */
+                        type: "refresh_started";
+                    } | {
+                        /** Historical */
+                        historical: boolean;
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /** Progress Done */
+                        progress_done: number;
+                        /** Progress Label */
+                        progress_label?: string | null;
+                        /** Progress Total */
+                        progress_total: number;
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default refresh_progress
+                         * @constant
+                         */
+                        type: "refresh_progress";
+                    } | {
+                        /** Last Update At */
+                        last_update_at?: string | null;
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /** Source */
+                        source: string;
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default refresh_finished
+                         * @constant
+                         */
+                        type: "refresh_finished";
+                        /** Updated */
+                        updated: boolean;
+                    } | {
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /** Ok */
+                        ok: boolean;
+                        /** Points */
+                        points?: number | null;
+                        /** Range */
+                        range: string;
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default graphs
+                         * @constant
+                         */
+                        type: "graphs";
                     };
+                };
+            };
+        };
+    };
+    get_system_api_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemInfo"];
                 };
             };
         };
@@ -3920,6 +7701,9 @@ export interface operations {
                 hide_sweeps?: boolean;
                 limit?: number;
                 offset?: number;
+                /** @description Sort key over the whole filtered set (net = native amount). */
+                sort?: "date" | "symbol" | "kind" | "account" | "quantity" | "net";
+                order?: "asc" | "desc";
             };
             header?: never;
             path?: never;
@@ -3967,6 +7751,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionWriteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_api_transactions_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconcileResult"];
                 };
             };
             /** @description Validation Error */

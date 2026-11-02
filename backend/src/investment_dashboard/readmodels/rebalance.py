@@ -311,3 +311,215 @@ def plan_to_dict(plan: TargetPlan) -> dict[str, object]:
             for r in plan.rows
         ],
     }
+
+
+# -- v6 API: plan for an unsaved builder mix (``POST /allocations/plan``) -----
+
+
+@dataclass(frozen=True)
+class CategoryInput:
+    """One category row of the builder: its target, split rule and ticked funds."""
+
+    name: str
+    weight: Decimal
+    split: str = "value"
+    selected: tuple[int, ...] = ()
+
+
+def _ccy_out(value_eur: Decimal | None, ccy: str, fx: Decimal | None) -> str | None:
+    return dec(_in_ccy(value_eur, ccy, fx))
+
+
+def _pct(part: Decimal, whole: Decimal) -> Decimal:
+    return part / whole if whole > ZERO else ZERO
+
+
+def _shape_rows(
+    plan: RebalancePlan,
+    data: CalcData,
+    *,
+    ccy: str,
+    extra_no_buy: set[int],
+    cat_order: Mapping[str, Decimal] | None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Plan rows (with before/after shares) and their per-category subtotals."""
+    fx = data.fx_rate_usd_per_eur
+    by_id = data.by_id()
+    category_by_id = {i.instrument_id: i.category for i in data.instruments}
+    total_after = sum((r.current_value + r.add_value for r in plan.rows), start=ZERO)
+    rows: list[dict[str, object]] = []
+    groups: dict[str, dict[str, Decimal]] = {}
+    order: list[str] = []
+    for r in sorted(plan.rows, key=lambda row: row.add_value, reverse=True):
+        instr = by_id.get(r.instrument_id)
+        category = category_by_id.get(r.instrument_id, UNCATEGORIZED)
+        after = r.current_value + r.add_value
+        rows.append(
+            {
+                "instrument_id": r.instrument_id,
+                "symbol": instr.symbol if instr else str(r.instrument_id),
+                "name": instr.name if instr else "",
+                "category": category,
+                "target_pct": dec(r.target_pct / HUNDRED),
+                "current_pct": dec(instr.current_pct / HUNDRED if instr else ZERO),
+                "before_pct": dec(_pct(r.current_value, total_after)),
+                "after_pct": dec(_pct(after, total_after)),
+                "current_value": _ccy_out(r.current_value, ccy, fx),
+                "add_value": _ccy_out(r.add_value, ccy, fx),
+                "current_price": _ccy_out(r.current_price, ccy, fx),
+                "add_shares": dec(r.add_shares),
+                "no_buy": r.no_buy,
+                "held_unticked": r.instrument_id in extra_no_buy,
+            }
+        )
+        g = groups.get(category)
+        if g is None:
+            order.append(category)
+            g = groups[category] = {"target": ZERO, "add": ZERO, "before": ZERO, "after": ZERO}
+        g["target"] += r.target_pct
+        g["add"] += r.add_value
+        g["before"] += r.current_value
+        g["after"] += after
+    if cat_order is not None:
+        order.sort(key=lambda n: cat_order.get(n, ZERO), reverse=True)
+    cat_pct_now = {c.name: c.current_pct for c in data.categories}
+    category_rows: list[dict[str, object]] = [
+        {
+            "name": name,
+            "target_pct": dec(groups[name]["target"] / HUNDRED),
+            "current_pct": dec(cat_pct_now.get(name, ZERO) / HUNDRED),
+            "before_pct": dec(_pct(groups[name]["before"], total_after)),
+            "after_pct": dec(_pct(groups[name]["after"], total_after)),
+            "add_value": _ccy_out(groups[name]["add"], ccy, fx),
+        }
+        for name in order
+    ]
+
+    return rows, category_rows
+
+
+def _summary(
+    plan: RebalancePlan, *, amount: Decimal, cash_eur: Decimal, ccy: str, data: CalcData
+) -> dict[str, object]:
+    """Plan KPIs in ``ccy`` and restated in the other currency at the same spot."""
+    fx = data.fx_rate_usd_per_eur
+    buys = sum((r.add_value for r in plan.rows if r.add_value > ZERO), start=ZERO)
+    sells = sum((-r.add_value for r in plan.rows if r.add_value < ZERO), start=ZERO)
+    other = "USD" if ccy == "EUR" else "EUR"
+    wealth = data.total_value_eur
+    return {
+        "cash": dec(amount),
+        "buying": _ccy_out(buys, ccy, fx),
+        "selling": _ccy_out(sells, ccy, fx),
+        "leftover": _ccy_out(plan.residual_cash, ccy, fx),
+        "other_ccy": other,
+        "other_cash": _ccy_out(cash_eur, other, fx),
+        "other_buying": _ccy_out(buys, other, fx),
+        "other_selling": _ccy_out(sells, other, fx),
+        "other_leftover": _ccy_out(plan.residual_cash, other, fx),
+        "pct_of_wealth": dec(cash_eur / wealth) if wealth > ZERO else None,
+    }
+
+
+def build_builder_plan(
+    session: Session,
+    *,
+    amount: Decimal,
+    ccy: str,
+    allow_fractional: bool,
+    allow_sell: bool,
+    mode: str,
+    fund_weights: Mapping[int, Decimal] | None = None,
+    fund_no_buy: set[int] | None = None,
+    categories: list[CategoryInput] | None = None,
+) -> dict[str, object]:
+    """Plan for the builder's current (unsaved) mix, by fund or by category.
+
+    Plans in EUR like the desktop calculator; ``amount`` is in ``ccy`` and is
+    converted in at the single spot rate, and every money figure is converted
+    back out at that same rate (a single-instant valuation conversion). The
+    summary also restates the figures in the other currency at that rate.
+    Percentages are fractions (0.01 = 1 %). Raises :class:`RebalanceInputError`.
+    """
+    if amount < ZERO or (amount == ZERO and not allow_sell):
+        raise RebalanceInputError(
+            "Enter a positive cash amount (or allow selling to rebalance only)"
+        )
+    data = build_calculator_data(session)
+    fx = data.fx_rate_usd_per_eur
+    if ccy != "EUR" and (fx is None or fx <= ZERO):
+        raise RebalanceInputError("FX rate unavailable")
+    by_id = data.by_id()
+    current_values = {i.instrument_id: i.current_value_eur for i in data.instruments}
+    category_by_id = {i.instrument_id: i.category for i in data.instruments}
+    category_mode = mode == "category"
+    no_buy: set[int] = set()
+    cat_targets: dict[str, Decimal] = {}
+    cat_selected: dict[str, set[int]] = {}
+    cat_members: dict[str, list[int]] = {
+        c.name: [m.instrument_id for m in c.members] for c in data.categories
+    }
+    if category_mode:
+        cats = categories or []
+        cat_targets = {c.name: c.weight for c in cats}
+        cat_selected = {c.name: set(c.selected) for c in cats}
+        raw = expand_category_targets(
+            cat_targets,
+            cat_members=cat_members,
+            cat_selected=cat_selected,
+            cat_split={c.name: c.split for c in cats},
+            current_values=current_values,
+        )
+    else:
+        raw = {i: w for i, w in (fund_weights or {}).items() if i in by_id}
+        no_buy = set(fund_no_buy or set())
+    if any(w < ZERO for w in raw.values()):
+        raise RebalanceInputError("Weights must not be negative")
+    target_pct = scale_to_100(raw)
+    if not target_pct:
+        raise RebalanceInputError("Set at least one positive target weight")
+    extra_no_buy, category_of = held_unticked_extras(
+        target_pct,
+        current_values,
+        category_mode=category_mode,
+        allow_sell=allow_sell,
+        cat_targets=cat_targets,
+        cat_selected=cat_selected,
+        cat_members=cat_members,
+        category_by_id=category_by_id,
+    )
+    cash_eur = amount if ccy == "EUR" else amount / fx  # type: ignore[operator]
+    try:
+        plan = compute_plan(
+            data,
+            target_pct,
+            cash_eur=cash_eur,
+            no_buy=no_buy,
+            extra_no_buy=extra_no_buy,
+            category_of=category_of,
+            allow_fractional=allow_fractional,
+            allow_sell=allow_sell,
+        )
+    except ValueError as exc:
+        raise RebalanceInputError(str(exc)) from exc
+
+    rows, category_rows = _shape_rows(
+        plan,
+        data,
+        ccy=ccy,
+        extra_no_buy=extra_no_buy,
+        cat_order=cat_targets if category_mode else None,
+    )
+    summary = _summary(plan, amount=amount, cash_eur=cash_eur, ccy=ccy, data=data)
+    extras = sorted(by_id[i].symbol for i in extra_no_buy if i in by_id)
+    return {
+        "ccy": ccy,
+        "mode": "category" if category_mode else "fund",
+        "allow_sell": allow_sell,
+        "allow_fractional": allow_fractional,
+        "fx_usd_per_eur": dec(fx),
+        "summary": summary,
+        "rows": rows,
+        "categories": category_rows,
+        "extras": extras,
+    }

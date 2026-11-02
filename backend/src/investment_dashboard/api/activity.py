@@ -17,9 +17,30 @@ from investment_dashboard.activity_log import activity
 
 _WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 #: Writes that change nothing (they only compute a result).
-_READ_ONLY_WRITES = frozenset({"/api/calculator", "/api/auth/passkey/login/options"})
+_READ_ONLY_WRITES = frozenset(
+    {
+        "/api/calculator",
+        "/api/allocations/plan",
+        "/api/auth/passkey/login/options",
+        "/api/maintenance/probe",
+    }
+)
 #: Reads worth recording because they take data off the server.
-_DOWNLOADS = {"/api/backup": "backups", "/api/diagnostics/support-bundle": "system"}
+_DOWNLOADS = {
+    "/api/backup": "backups",
+    "/api/diagnostics/support-bundle": "system",
+    "/api/maintenance/logs": "system",
+    "/api/settings/export": "changes",
+}
+#: Write-path prefix -> subject (checked in order, after auth/imports).
+_WRITE_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("/api/maintenance/prices/", "market_data"),
+    ("/api/maintenance/fx/", "market_data"),
+    ("/api/maintenance/splits/", "market_data"),
+    ("/api/maintenance/scheduler/", "market_data"),
+    ("/api/maintenance/jobs/backup.", "backups"),
+    ("/api/maintenance/jobs/", "system"),
+)
 
 #: (method, route) -> what happened, by response status class (ok / refused).
 _LABELS: dict[tuple[str, str], tuple[str, str]] = {
@@ -31,16 +52,75 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ("POST", "/api/imports"): ("import file uploaded (preview)", "import upload rejected"),
     ("POST", "/api/imports/{import_id}/confirm"): ("import confirmed", "import confirm failed"),
     ("DELETE", "/api/imports/{import_id}"): ("import discarded", "import discard failed"),
+    ("POST", "/api/imports/{import_id}/reparse"): ("import re-previewed", "import reparse failed"),
+    ("PUT", "/api/imports/action-overrides/{broker}"): (
+        "import action mapping changed",
+        "import action mapping rejected",
+    ),
+    ("POST", "/api/imports/batches/{batch_id}/undo"): ("import UNDONE", "import undo refused"),
     ("POST", "/api/refresh"): ("manual refresh requested", "manual refresh refused"),
+    ("POST", "/api/graphs/{range_key}/reload"): (
+        "graph reload requested",
+        "graph reload refused",
+    ),
+    ("PUT", "/api/graphs/range"): ("graph range remembered", "graph range refused"),
     ("GET", "/api/backup"): ("backup downloaded", "backup download failed"),
     ("GET", "/api/diagnostics/support-bundle"): (
         "support bundle downloaded",
         "support bundle failed",
     ),
+    ("GET", "/api/maintenance/logs"): ("log viewer opened", "log viewer refused"),
+    ("POST", "/api/diagnostics/problems/dismiss-all"): (
+        "problems dismissed",
+        "problem dismiss failed",
+    ),
+    ("POST", "/api/diagnostics/problems/{problem_id}/dismiss"): (
+        "problem dismissed",
+        "problem dismiss failed",
+    ),
+    ("GET", "/api/settings/export"): ("settings exported", "settings export failed"),
+    ("PATCH", "/api/settings/values"): ("settings changed", "settings change rejected"),
+    ("POST", "/api/settings/reset"): ("settings reset", "settings reset rejected"),
+    ("POST", "/api/settings/history/{audit_id}/revert"): (
+        "settings change reverted",
+        "settings revert rejected",
+    ),
+    ("POST", "/api/settings/import"): ("settings imported", "settings import rejected"),
+    ("POST", "/api/maintenance/jobs/{job_id}"): ("repair job started", "repair job refused"),
+    ("PATCH", "/api/instruments/{instrument_id}"): (
+        "instrument settings changed",
+        "instrument change rejected",
+    ),
+    ("POST", "/api/maintenance/scheduler/{job}/run"): (
+        "scheduler run-now requested",
+        "scheduler run-now refused",
+    ),
+    ("PUT", "/api/maintenance/scheduler/pause"): (
+        "scheduler pause changed",
+        "scheduler pause refused",
+    ),
+    ("PUT", "/api/maintenance/prices/{instrument_id}/{on}"): (
+        "manual close set",
+        "manual close rejected",
+    ),
+    ("DELETE", "/api/maintenance/prices/{instrument_id}/{on}"): (
+        "close removed",
+        "close remove failed",
+    ),
+    ("PUT", "/api/maintenance/fx/{quote}/{on}"): ("manual FX rate set", "manual FX rate rejected"),
+    ("DELETE", "/api/maintenance/fx/{quote}/{on}"): ("FX rate removed", "FX rate remove failed"),
+    ("PUT", "/api/maintenance/splits/{instrument_id}/{on}"): (
+        "manual split set",
+        "manual split rejected",
+    ),
+    ("DELETE", "/api/maintenance/splits/{instrument_id}/{on}"): (
+        "split removed",
+        "split remove failed",
+    ),
 }
 
 
-def subject_for(method: str, path: str) -> str | None:
+def subject_for(method: str, path: str) -> str | None:  # noqa: PLR0911 - flat routing table
     """The activity subject for a request, or ``None`` when it is not logged."""
     if method in _WRITES:
         if path in _READ_ONLY_WRITES or not path.startswith("/api/"):
@@ -49,8 +129,11 @@ def subject_for(method: str, path: str) -> str | None:
             return "auth"
         if path.startswith("/api/imports"):
             return "imports"
-        if path == "/api/refresh":
+        if path == "/api/refresh" or (path.startswith("/api/graphs/") and path.endswith("/reload")):
             return "market_data"
+        for prefix, subject in _WRITE_PREFIXES:
+            if path.startswith(prefix):
+                return subject
         return "changes"
     return _DOWNLOADS.get(path) if method == "GET" else None
 

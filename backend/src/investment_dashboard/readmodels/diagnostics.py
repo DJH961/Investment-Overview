@@ -14,14 +14,82 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.repositories import instruments_repo
 from investment_dashboard.services import (
     diagnostics_service,
     fetch_report,
     fx_conversion_service,
+    maintenance_service,
     provider_status,
     refresh_status,
     runtime_status,
 )
+
+#: Failing check id -> repair jobs offered next to it (job id, label, params).
+_JOB_ACTIONS: dict[str, tuple[tuple[str, str, dict[str, Any]], ...]] = {
+    "fx_legs": (
+        ("fx.refresh", "Re-download FX history", {}),
+        ("fx.recalc_legs", "Recalculate missing FX legs", {"force": False}),
+    ),
+    "frozen_legs": (("fx.recalc_legs", "Recalculate all FX legs", {"force": True}),),
+    "prices_missing": (("prices.refresh", "Refresh prices", {"force": True}),),
+    "prices_stale": (("prices.refresh", "Refresh prices", {"force": True}),),
+    "prices_anomaly": (),
+    "position_value": (("snapshots.rebuild", "Rebuild valuation history", {}),),
+    "intraday_graph": (("graphs.reload", "Reload 1D / 1W graphs", {"which": "all"}),),
+}
+#: Checks whose examples are instrument symbols (offer a per-instrument re-download).
+_PER_INSTRUMENT = frozenset({"prices_missing", "prices_stale", "prices_anomaly"})
+_MAX_PER_INSTRUMENT = 5
+#: Failing check id -> a page to open instead of (or besides) a job.
+_LINKS: dict[str, tuple[str, str]] = {
+    "providers": ("Test the providers", "/diagnostics#system"),
+    "prices_anomaly": ("Open the price editor", "/diagnostics#market-data"),
+    "ecb_fallback_deposits": ("Record the missing conversion", "/transactions"),
+}
+
+
+def _job_action(job_id: str, label: str, params: dict[str, Any]) -> dict[str, Any]:
+    spec = maintenance_service.BY_ID[job_id]
+    return {
+        "kind": "job",
+        "id": job_id,
+        "label": label,
+        "params": params,
+        "danger": spec.danger,
+        "href": None,
+    }
+
+
+def actions_for(
+    session: Session, check_id: str, severity: str, examples: list[str]
+) -> list[dict[str, Any]]:
+    """The "Fix" buttons for one check (none while it is ok)."""
+    if severity == "ok":
+        return []
+    out = [_job_action(*a) for a in _JOB_ACTIONS.get(check_id, ())]
+    if check_id in _PER_INSTRUMENT:
+        for symbol in examples[:_MAX_PER_INSTRUMENT]:
+            instr = instruments_repo.get_by_symbol(session, symbol)
+            if instr is not None:
+                out.append(
+                    _job_action(
+                        "prices.redownload", f"Re-download {symbol}", {"instrument_id": instr.id}
+                    )
+                )
+    link = _LINKS.get(check_id)
+    if link is not None:
+        out.append(
+            {
+                "kind": "link",
+                "id": check_id,
+                "label": link[0],
+                "params": {},
+                "danger": "none",
+                "href": link[1],
+            }
+        )
+    return out
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -60,6 +128,9 @@ def build(session: Session, *, log_limit: int = 50) -> dict[str, Any]:
     """Return the JSON-serializable diagnostics read-model."""
     report = diagnostics_service.check_health(session)
     fallback_check = _ecb_fallback_check(session)
+    fallback_check["actions"] = actions_for(
+        session, fallback_check["id"], fallback_check["severity"], fallback_check["examples"]
+    )
     latest = provider_status.all_latest()
     fetched = fetch_report.all_latest()
     providers = []
@@ -91,6 +162,7 @@ def build(session: Session, *, log_limit: int = 50) -> dict[str, Any]:
                 "count": i.count,
                 "detail": i.detail,
                 "examples": list(i.examples),
+                "actions": actions_for(session, i.key, i.severity, list(i.examples)),
             }
             for i in report.items
         ]

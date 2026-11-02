@@ -7,6 +7,7 @@ export type TransactionOut = Schemas["TransactionOut"];
 export type TransactionPage = Schemas["TransactionPage"];
 export type TransactionWrite = Schemas["TransactionWrite"];
 export type TransactionWriteResult = Schemas["TransactionWriteResult"];
+export type TransactionMonth = Schemas["TransactionMonth"];
 export type ImportPreview = Schemas["ImportPreview"];
 export type ImportConfirmResult = Schemas["ImportConfirmResult"];
 
@@ -18,6 +19,9 @@ export interface TransactionFilters {
   end?: string;
   q?: string;
   hide_sweeps?: boolean;
+  /** Server-side sort over the whole filtered set. */
+  sort?: "date" | "symbol" | "kind" | "account" | "quantity" | "net";
+  order?: "asc" | "desc";
   limit: number;
   offset: number;
 }

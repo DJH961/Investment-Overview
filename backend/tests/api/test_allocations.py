@@ -7,6 +7,8 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from investment_dashboard.db import ledger_session_scope
 
@@ -147,3 +149,140 @@ def test_rebalance_errors(api_client: TestClient, ids: dict[str, int]) -> None:
     assert api_client.get("/api/allocations/rebalance?amount=-5").status_code == 422
     assert api_client.get("/api/allocations/rebalance?amount=0").status_code == 422  # buy-only
     assert api_client.get("/api/allocations/rebalance?amount=10&ccy=GBP").status_code == 422
+
+
+# -- POST /allocations/plan (builder mix) ------------------------------------
+
+
+def _one_category(ids: dict[str, int]) -> None:
+    """Move BND into "US Stocks" so the category holds two funds (3750 + 1400 USD)."""
+    from investment_dashboard.repositories import instrument_overrides_repo
+
+    with ledger_session_scope() as session:
+        instrument_overrides_repo.set_category(session, ids["BND"], "US Stocks")
+
+
+def _cat_body(
+    ids: dict[str, int], split: str, selected: list[str], **kw: object
+) -> dict[str, object]:
+    body: dict[str, object] = {
+        "amount": "1000",
+        "ccy": "USD",
+        "fractional": True,
+        "mode": "category",
+        "category_weights": [
+            {
+                "name": "US Stocks",
+                "weight": "100",
+                "split": split,
+                "selected": [ids[s] for s in selected],
+            }
+        ],
+    }
+    body.update(kw)
+    return body
+
+
+def test_builder_plan_needs_no_saved_target(api_client: TestClient, ids: dict[str, int]) -> None:
+    body = {
+        "amount": "1200",
+        "ccy": "USD",
+        "fractional": True,
+        "fund_weights": [
+            {"instrument_id": ids["VTI"], "weight": "60"},
+            {"instrument_id": ids["BND"], "weight": "40"},
+        ],
+    }
+    res = api_client.post("/api/allocations/plan", json=body)
+    assert res.status_code == 200, res.text
+    plan = res.json()
+    assert plan["mode"] == "fund"
+    s = plan["summary"]
+    assert Decimal(s["cash"]) == 1200
+    assert Decimal(s["buying"]) + Decimal(s["leftover"]) == pytest.approx(Decimal(1200))
+    assert s["other_ccy"] == "EUR"
+    assert Decimal(s["other_cash"]) == pytest.approx(Decimal(1000), rel=Decimal("1e-9"))
+    assert Decimal(s["pct_of_wealth"]) == pytest.approx(Decimal(1200) / 5150, rel=Decimal("1e-9"))
+    rows = {r["symbol"]: r for r in plan["rows"]}
+    assert sum(Decimal(r["after_pct"]) for r in plan["rows"]) == pytest.approx(Decimal(1))
+    assert Decimal(rows["BND"]["after_pct"]) > Decimal(rows["BND"]["before_pct"])
+    assert {c["name"] for c in plan["categories"]} == {"US Stocks", "Bonds"}
+    assert plan["extras"] == []
+
+    # Same cash in EUR -> the same shares, the summary restated at the spot.
+    eur = api_client.post(
+        "/api/allocations/plan", json=body | {"amount": "1000", "ccy": "EUR"}
+    ).json()
+    assert eur["summary"]["other_ccy"] == "USD"
+    assert Decimal(eur["summary"]["other_cash"]) == pytest.approx(Decimal(1200))
+    eur_rows = {r["symbol"]: r for r in eur["rows"]}
+    assert Decimal(eur_rows["VTI"]["add_shares"]) == pytest.approx(
+        Decimal(rows["VTI"]["add_shares"]), rel=Decimal("1e-6")
+    )
+
+
+def test_builder_plan_category_split(api_client: TestClient, ids: dict[str, int]) -> None:
+    _one_category(ids)
+    even = api_client.post("/api/allocations/plan", json=_cat_body(ids, "even", ["VTI", "BND"]))
+    assert even.status_code == 200, even.text
+    tgt = {r["symbol"]: Decimal(r["target_pct"]) for r in even.json()["rows"]}
+    assert tgt == {"VTI": pytest.approx(Decimal("0.5")), "BND": pytest.approx(Decimal("0.5"))}
+
+    fair = api_client.post("/api/allocations/plan", json=_cat_body(ids, "value", ["VTI", "BND"]))
+    tgt = {r["symbol"]: Decimal(r["target_pct"]) for r in fair.json()["rows"]}
+    assert tgt["VTI"] == pytest.approx(Decimal(3750) / 5150, abs=Decimal("0.001"))
+    cats = fair.json()["categories"]
+    assert [c["name"] for c in cats] == ["US Stocks"]
+    assert Decimal(cats[0]["target_pct"]) == pytest.approx(Decimal(1))
+
+
+def test_builder_plan_held_unticked_extras(api_client: TestClient, ids: dict[str, int]) -> None:
+    _one_category(ids)
+    plan = api_client.post("/api/allocations/plan", json=_cat_body(ids, "value", ["VTI"])).json()
+    assert plan["extras"] == ["BND"]
+    rows = {r["symbol"]: r for r in plan["rows"]}
+    assert rows["BND"]["held_unticked"] is True
+    assert Decimal(rows["BND"]["add_value"]) == 0
+    # Selling turns the credit off: un-ticked funds are not part of the plan.
+    sell = api_client.post(
+        "/api/allocations/plan", json=_cat_body(ids, "value", ["VTI"], allow_sell=True)
+    ).json()
+    assert sell["extras"] == []
+
+
+def test_builder_plan_errors(api_client: TestClient, ids: dict[str, int]) -> None:
+    post = api_client.post
+    assert post("/api/allocations/plan", json={"amount": "100"}).status_code == 422  # no weights
+    assert post("/api/allocations/plan", json={"amount": "-1"}).status_code == 422
+    zero = {"amount": "0", "fund_weights": [{"instrument_id": ids["VTI"], "weight": "1"}]}
+    assert post("/api/allocations/plan", json=zero).status_code == 422  # buy-only needs cash
+    assert post("/api/allocations/plan", json=zero | {"allow_sell": True}).status_code == 200
+    _one_category(ids)
+    unticked = _cat_body(ids, "value", [])
+    assert post("/api/allocations/plan", json=unticked).status_code == 422
+
+
+@settings(
+    max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(
+    cash=st.decimals(min_value=0, max_value=100000, places=2, allow_nan=False),
+    w=st.integers(min_value=0, max_value=100),
+    fractional=st.booleans(),
+)
+def test_builder_plan_never_overspends(
+    api_client: TestClient, ids: dict[str, int], cash: Decimal, w: int, fractional: bool
+) -> None:
+    body = {
+        "amount": str(cash + Decimal("0.01")),
+        "ccy": "EUR",
+        "fractional": fractional,
+        "fund_weights": [
+            {"instrument_id": ids["VTI"], "weight": str(w)},
+            {"instrument_id": ids["BND"], "weight": str(100 - w)},
+        ],
+    }
+    plan = api_client.post("/api/allocations/plan", json=body).json()
+    s = plan["summary"]
+    assert Decimal(s["leftover"]) >= 0
+    assert Decimal(s["buying"]) <= Decimal(body["amount"]) + Decimal("1e-9")

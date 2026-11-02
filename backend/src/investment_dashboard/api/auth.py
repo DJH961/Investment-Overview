@@ -107,7 +107,9 @@ def _reserve(
     try:
         return limiter.reserve(
             _client_key(request),
-            limit if limit is not None else settings.login_rate_limit_per_minute,
+            limit
+            if limit is not None
+            else auth_service.limit(settings, "login_rate_limit_per_minute"),
             bypass_global=_has_session(request, settings, db),
         )
     except auth_service.RateLimitedError as exc:
@@ -125,7 +127,7 @@ def _start_session(request: Request, response: Response, db: Session, settings: 
         settings,
         security.cookie_name(settings),
         token,
-        settings.session_max_age_days * 86400,
+        auth_service.limit(settings, "session_max_age_days") * 86400,
     )
 
 
@@ -191,7 +193,7 @@ def passkey_login_options(
     request: Request, db: ConfigSessionDep, settings: SettingsDep
 ) -> Response:
     # Every request counts (options are unauthenticated and allocate a challenge).
-    limit = max(settings.login_rate_limit_per_minute * 6, 30)
+    limit = max(auth_service.limit(settings, "login_rate_limit_per_minute") * 6, 30)
     _reserve(request, settings, db, auth_service.options_limiter, limit)
     options_json, key = auth_service.authentication_options(settings)
     response = Response(content=options_json, media_type="application/json")

@@ -22,7 +22,7 @@ from investment_dashboard.domain.money_market import (
 )
 from investment_dashboard.readmodels.money_format import currency_symbol, fmt_shares
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import fx_service
+from investment_dashboard.services import cashflows, fx_service
 
 if TYPE_CHECKING:
     from investment_dashboard.models import Account, Instrument, Transaction
@@ -73,6 +73,10 @@ class LedgerRecord:
     is_settlement_leg: bool = False
     #: ``True`` when a frozen EUR/USD leg is NULL on the stored row (FX gap).
     fx_incomplete: bool = False
+    #: Cash leg in EUR / USD derived from ``net_native`` at the row's own date
+    #: rate (currency rule); never the frozen legs. ``None`` when no rate.
+    cash_eur: Decimal | None = None
+    cash_usd: Decimal | None = None
 
 
 def _fmt_money(value: Decimal | None, currency: str, places: int = 2) -> str:
@@ -104,6 +108,8 @@ def list_ledger_records(
     fx_rate: Decimal | None = None,
     limit: int | None = None,
     offset: int = 0,
+    sort: str = "date",
+    order: str = "desc",
 ) -> list[LedgerRecord]:
     """Return raw ledger records in newest-first order.
 
@@ -114,7 +120,7 @@ def list_ledger_records(
     fallback when a row predates the available FX history.
     """
     txns = transactions_repo.list_ledger(
-        session, **_filter_kwargs(filters), limit=limit, offset=offset
+        session, **_filter_kwargs(filters), limit=limit, offset=offset, sort=sort, order=order
     )
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     return [_to_record(t, eur_to_usd=eur_to_usd, fallback_rate=fx_rate) for t in txns]
@@ -175,7 +181,11 @@ def summarize_ledger(
     fx_rate: Decimal | None = None,
 ) -> LedgerSummary:
     """Aggregate KPI figures for the (optionally filtered) ledger."""
-    records = list_ledger_records(session, filters, fx_rate=fx_rate)
+    return summarize_records(list_ledger_records(session, filters, fx_rate=fx_rate))
+
+
+def summarize_records(records: list[LedgerRecord]) -> LedgerSummary:
+    """:class:`LedgerSummary` over already-loaded records."""
     count = len(records)
     buy_count = sum(1 for r in records if r.kind == kinds.BUY)
     sell_count = sum(1 for r in records if r.kind == kinds.SELL)
@@ -191,6 +201,37 @@ def summarize_ledger(
         avg_trade_size_eur=avg_eur,
         avg_trade_size_usd=avg_usd,
     )
+
+
+@dataclass(frozen=True)
+class MonthTotal:
+    """Count and net cash (both currencies, trade-date FX) of one calendar month."""
+
+    month: str
+    count: int
+    net_eur: Decimal
+    net_usd: Decimal
+    #: Some rows of the month had no rate on file and are left out of a sum.
+    fx_incomplete: bool
+
+
+def month_totals(records: list[LedgerRecord]) -> dict[str, MonthTotal]:
+    """Per ``YYYY-MM`` totals of ``records`` from their derived cash legs."""
+    buckets: dict[str, list[LedgerRecord]] = {}
+    for r in records:
+        buckets.setdefault(r.date.strftime("%Y-%m"), []).append(r)
+    out: dict[str, MonthTotal] = {}
+    for month, rows in buckets.items():
+        eur = [r.cash_eur for r in rows if r.cash_eur is not None]
+        usd = [r.cash_usd for r in rows if r.cash_usd is not None]
+        out[month] = MonthTotal(
+            month=month,
+            count=len(rows),
+            net_eur=sum(eur, Decimal(0)),
+            net_usd=sum(usd, Decimal(0)),
+            fx_incomplete=len(eur) < len(rows) or len(usd) < len(rows),
+        )
+    return out
 
 
 def _reinvested_dividend_value(t: Transaction) -> Decimal | None:
@@ -279,6 +320,8 @@ def _to_record(
         external_id=t.external_id,
         is_settlement_leg=is_settlement_external_id(t.external_id),
         fx_incomplete=t.net_eur is None or t.net_usd is None,
+        cash_eur=cashflows.derived_eur(t, eur_to_usd),
+        cash_usd=cashflows.derived_usd(t, eur_to_usd),
     )
 
 

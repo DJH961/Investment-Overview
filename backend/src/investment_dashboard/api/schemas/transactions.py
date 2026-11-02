@@ -35,6 +35,14 @@ class TransactionOut(ApiModel):
     fx_incomplete: bool = Field(
         default=False, description="A frozen EUR/USD leg is missing (FX history gap)."
     )
+    cash_eur: DecStr | None = Field(
+        default=None,
+        description="Net cash in EUR from net_native at the trade date's rate (null: no rate).",
+    )
+    cash_usd: DecStr | None = Field(
+        default=None,
+        description="Net cash in USD from net_native at the trade date's rate (null: no rate).",
+    )
 
 
 class TransactionSummary(ApiModel):
@@ -45,12 +53,44 @@ class TransactionSummary(ApiModel):
     avg_trade_size_usd: DecStr
 
 
+class TransactionMonth(ApiModel):
+    """Totals of one month over the whole filter (trade-date FX per row)."""
+
+    month: str = Field(description="YYYY-MM")
+    count: int
+    net_eur: DecStr
+    net_usd: DecStr
+    fx_incomplete: bool = Field(default=False, description="Rows without a rate were left out.")
+
+
 class TransactionPage(ApiModel):
     summary: TransactionSummary
     rows: list[TransactionOut]
+    months: list[TransactionMonth] = Field(default_factory=list)
     total: int
     limit: int
     offset: int
+    sort: str = "date"
+    order: str = "desc"
+
+
+class ReconcileRequest(ApiModel):
+    """Quantity x price = total check for the manual-entry form (magnitudes)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    quantity: Decimal | None = None
+    price: Decimal | None = None
+    total: Decimal | None = None
+
+
+class ReconcileResult(ApiModel):
+    quantity: DecStr | None = None
+    price: DecStr | None = None
+    total: DecStr | None = None
+    error: str | None = None
+    #: Which field the server filled in (``None`` if nothing was missing).
+    filled: str | None = None
 
 
 class TransactionWrite(ApiModel):

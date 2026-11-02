@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import "./Treemap.scss";
 
 export interface TreemapItem {
@@ -111,9 +112,11 @@ export function Treemap({
     return () => ro.disconnect();
   }, []);
 
+  const { hide } = useHideAmounts();
   const rects = squarify(items, width, height);
   const byId = new Map(items.map((i) => [i.id, i]));
   const total = items.reduce((a, i) => a + Math.max(i.value, 0), 0);
+  const share = (v: number) => `${((v / total) * 100).toFixed(1)}%`;
   const active = hover ? rects.find((r) => r.id === hover) : undefined;
   const activeItem = active ? byId.get(active.id) : undefined;
 
@@ -131,7 +134,7 @@ export function Treemap({
             className={clsx("treemap__cell", `treemap__cell--${item.tone ?? "neutral"}`)}
             data-testid={`cell-${r.id}`}
             style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
-            aria-label={`${item.label}, ${valueFormat(item.value)}, ${((item.value / total) * 100).toFixed(1)}%`}
+            aria-label={hide ? `${item.label}, ${share(item.value)}` : `${item.label}, ${valueFormat(item.value)}, ${share(item.value)}`}
             onPointerEnter={() => setHover(r.id)}
             onPointerLeave={() => setHover(null)}
             onFocus={() => setHover(r.id)}
@@ -140,7 +143,7 @@ export function Treemap({
             {fitsLabel && (
               <span className="treemap__label">
                 <span className="treemap__name">{item.label}</span>
-                {fitsDetail && <span className="treemap__detail">{item.detail ?? valueFormat(item.value)}</span>}
+                {fitsDetail && <span className="treemap__detail">{hide ? share(item.value) : (item.detail ?? valueFormat(item.value))}</span>}
               </span>
             )}
           </button>
@@ -155,8 +158,8 @@ export function Treemap({
           }}
         >
           <strong>{activeItem.label}</strong>
-          <span>{valueFormat(activeItem.value)}</span>
-          <span className="treemap__share">{((activeItem.value / total) * 100).toFixed(1)}%</span>
+          {!hide && <span>{valueFormat(activeItem.value)}</span>}
+          <span className="treemap__share">{share(activeItem.value)}</span>
         </output>
       )}
     </figure>

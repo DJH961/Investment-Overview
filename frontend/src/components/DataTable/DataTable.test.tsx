@@ -53,3 +53,25 @@ describe("DataTable", () => {
     expect(screen.getByText("Nada")).toBeInTheDocument();
   });
 });
+
+describe("DataTable phone markup", () => {
+  it("labels non-primary cells, marks hidden columns and keeps numbers on one line", () => {
+    const cols: Column<Row>[] = [
+      { key: "value", header: "Value", align: "right", cell: (r) => `€${r.value},000.00` },
+      { key: "name", header: "Name", primary: true, cell: (r) => r.name },
+      { key: "src", header: "Source", phone: "hide", cell: () => "csv" },
+    ];
+    render(<DataTable caption="Test" columns={cols} rows={rows.slice(0, 1)} rowKey={(r) => r.id} />);
+    const body = screen.getAllByRole("rowgroup")[1];
+    const cells = within(body).getAllByRole("cell");
+    // value cell: inline label + nowrap value
+    expect(cells[0].querySelector(".data-table__label")?.textContent).toBe("Value");
+    expect(cells[0].querySelector(".data-table__value--nowrap")?.textContent).toBe("€20,000.00");
+    // primary cell: no label, gets the primary modifier (CSS orders it first)
+    expect(cells[1]).toHaveClass("data-table__td--primary");
+    expect(cells[1].querySelector(".data-table__label")).toBeNull();
+    // low-priority column is flagged for phones, header too
+    expect(cells[2]).toHaveClass("data-table__td--phone-hidden");
+    expect(screen.getByRole("columnheader", { name: "Source" })).toHaveClass("data-table__th--phone-hidden");
+  });
+});

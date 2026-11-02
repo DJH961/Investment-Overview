@@ -11,7 +11,7 @@ re-imports (spec §5.1).
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
@@ -71,22 +71,38 @@ class ImportResult:
     #: provider was offline), so the instrument stays an ``unknown`` stub
     #: until a later refresh (audit D2).
     unresolved_symbols: list[str] = field(default_factory=list)
+    #: The batch the inserted rows belong to (``None`` when nothing was inserted
+    #: or the caller did not record a batch).
+    import_batch_id: int | None = None
 
 
-def _parse(broker: Broker, content: str | bytes) -> ParseReport:
+def action_overrides(broker: Broker) -> dict[str, str]:
+    """The user's action mapping for ``broker`` (``import.action_overrides.<broker>``)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    value = settings_service.get_or(f"import.action_overrides.{broker.value}", {})
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _parse(
+    broker: Broker, content: str | bytes, overrides: Mapping[str, str] | None = None
+) -> ParseReport:
+    """Run the broker's parser; ``overrides`` default to the saved action mapping."""
+    if overrides is None:
+        overrides = action_overrides(broker)
     if broker == Broker.FIDELITY:
         text = (
             content.decode("utf-8-sig", errors="replace") if isinstance(content, bytes) else content
         )
-        return parse_fidelity_csv(text)
+        return parse_fidelity_csv(text, overrides)
     # Vanguard supports two formats: the brokerage CSV (last 18
     # months) and the Excel-formatted Full History report (no
     # 18-month cap). We detect the workbook by the standard ZIP
     # magic bytes (``PK\x03\x04``) so the UI can hand us either.
     if isinstance(content, bytes) and content[:4] == b"PK\x03\x04":
-        return parse_vanguard_xlsx(content)
+        return parse_vanguard_xlsx(content, overrides)
     text = content.decode("utf-8-sig", errors="replace") if isinstance(content, bytes) else content
-    return parse_vanguard_csv(text)
+    return parse_vanguard_csv(text, overrides)
 
 
 def import_csv(
@@ -95,6 +111,7 @@ def import_csv(
     broker: Broker,
     account_id: int,
     content: str | bytes,
+    import_batch_id: int | None = None,
 ) -> ImportResult:
     """Parse ``content`` and insert rows under ``account_id``.
 
@@ -102,6 +119,9 @@ def import_csv(
     CSV (text or bytes). For Vanguard it may be either the brokerage CSV
     (text/bytes) or the Full History ``.xlsx`` workbook (bytes); the
     importer dispatches on the ZIP magic bytes at the head of the file.
+
+    ``import_batch_id`` tags every inserted row with its import batch (see
+    ``import_staging.confirm``), so the import can be undone as a whole.
 
     Idempotent: re-importing the same export writes zero new rows because
     the parser's ``external_id`` is a sha256 of the row's stable fields
@@ -186,6 +206,7 @@ def import_csv(
             description=prow.description,
             external_id=prow.external_id,
             source=prow.source,
+            import_batch_id=import_batch_id,
         )
         result = transactions_repo.insert_transaction(session, txn)
         if result is None:

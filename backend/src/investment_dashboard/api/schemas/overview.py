@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 
 from investment_dashboard.api.deps import Ccy
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
+from investment_dashboard.api.schemas.graphs import GraphRange
 
 _FRAC = "fraction, 0.01 = 1%"
 
@@ -92,14 +95,78 @@ class FxLegs(ApiModel):
 
 class InvestingPower(FxLegs):
     amount_eur: DecStr | None = None
+    amount_usd: DecStr | None = Field(
+        default=None,
+        description="``amount_eur`` valued at the live EUR/USD rate (USD).",
+    )
+
+
+class FxMove(ApiModel):
+    """The box's headline rate move, regime-aware (as the NiceGUI currency box)."""
+
+    pct: DecStr | None = Field(
+        default=None,
+        description=(
+            f"Move of the pair shown in ``pair`` ({_FRAC}); positive = the foreign "
+            "currency (EUR in USD display, USD in EUR display) got stronger"
+        ),
+    )
+    #: What the move is measured from: the previous close (market open), the
+    #: previous close as one overnight drift (US-only holiday), or the session open
+    #: (every other closed-market view).
+    anchor_kind: Literal["prev_close", "overnight", "session_open"]
+    #: Stat label: "Today", or - while forex is frozen for the weekend - "Yesterday"
+    #: / the weekday of ``session_date`` (viewer's clock).
+    label_kind: Literal["today", "yesterday", "weekday"]
+    session_date: str
+
+
+class FxSince(ApiModel):
+    pct: DecStr | None = Field(default=None, description=f"Same convention as move ({_FRAC})")
+    #: "open": since this session's open (market open); "close": since its close.
+    kind: Literal["open", "close"]
+
+
+class FxAsOf(ApiModel):
+    #: Calendar date the displayed rate belongs to.
+    as_of: str
+    #: "live": an intraday spot (``observed_at`` set); "eod": the ECB end-of-day rate.
+    source: Literal["live", "eod"]
+    observed_at: str | None = None
+
+
+class FxSincePhrase(ApiModel):
+    """The "Currency effect …" / "Investing power …" title phrase.
+
+    since_yesterday -> "since yesterday"; yesterday -> "yesterday" (frozen weekend,
+    one day on); on_day -> "on <weekday of session_date>" (frozen weekend);
+    since_day -> "since <weekday of session_date>" (Sunday-evening spill-over).
+    """
+
+    kind: Literal["since_yesterday", "yesterday", "on_day", "since_day"]
+    session_date: str
 
 
 class CurrencyToday(ApiModel):
     spot: DecStr | None = None
     prev: DecStr | None = None
     rate_move_pct: DecStr | None = Field(
-        default=None, description=f"EUR/USD move vs previous close ({_FRAC})"
+        default=None,
+        description=(
+            f"Deprecated: naive EUR/USD move vs previous close ({_FRAC}). Use ``move.pct``."
+        ),
     )
+    #: "EUR/USD" in USD display, "USD/EUR" in EUR display.
+    pair: str | None = None
+    #: The spot quoted as ``pair`` (the reciprocal of ``spot`` in EUR display).
+    spot_display: DecStr | None = None
+    move: FxMove | None = None
+    #: Null in the single-overnight (US-holiday) regime.
+    since: FxSince | None = None
+    as_of: FxAsOf | None = None
+    since_phrase: FxSincePhrase | None = None
+    #: True when a session open/close FX anchor the regime needs was not captured.
+    anchor_missing: bool = False
     spot_observed_at: str | None = None
     regime: FxRegime
     reopen_at: str | None = None
@@ -147,14 +214,60 @@ class OverviewWarnings(ApiModel):
     missing_fx: list[str]
 
 
+class Freshness(ApiModel):
+    """How fresh the figures are (drives the Live / Updated / Updating... chip)."""
+
+    market_state: Literal["open", "closed", "holiday"]
+    #: Market open AND a price landed within the live window (15 min).
+    prices_live: bool
+    #: When the last refresh brought in new prices (this server process).
+    last_price_update_at: str | None = None
+    #: Newest provider market time across holdings (when the prices are *from*).
+    price_market_at: str | None = None
+    #: Newest pull instant across holdings (persisted cache).
+    price_observed_at: str | None = None
+    refresh_running: bool
+    refresh_source: str | None = None
+    #: A historic-data download is running (``progress_*`` describe it).
+    historical: bool = False
+    progress_done: int = 0
+    progress_total: int = 0
+    progress_label: str | None = None
+
+
+class DailyCaption(ApiModel):
+    """The day the "Today" move lands on (NiceGUI ``build_daily_growth_caption``)."""
+
+    #: "Today" | "Yesterday" | short date such as "Fri 26 Jun".
+    title: str
+    #: "live", or the settled close clock "16:00" (settings timezone); null for older.
+    corner_text: str | None = None
+    live: bool
+    #: "live" | "today" | "as of Fri 26 Jun" | "awaiting two priced days".
+    as_of_text: str
+    #: "as of 22:00 · updated 22:05" in the settled-today state.
+    updated_text: str | None = None
+
+
 class OverviewResponse(ApiModel):
     ccy: Ccy
     as_of: str
     generated_at: str
     fx_eur_usd: DecStr | None = None
+    #: Deprecated: NYSE open (not price freshness). Use ``freshness.prices_live``.
     is_live: bool
     position_count: int
     kpis: OverviewKpis
+    #: The other currency (USD when ``ccy`` is EUR and vice versa).
+    secondary_ccy: Ccy
+    #: The same KPIs computed in ``secondary_ccy`` (its own cashflows; never converted).
+    kpis_secondary: OverviewKpis
+    freshness: Freshness
+    daily_caption: DailyCaption
+    #: Market-aware range the value graph should open on (1d while the market is open).
+    default_range: GraphRange
+    #: False when a holding has no price, a corrupt price or EUR/USD is missing.
+    total_value_complete: bool
     currency: CurrencyBlock
     market_verdict: MarketVerdict
     movers: Movers

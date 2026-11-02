@@ -1,0 +1,78 @@
+@use "../../styles/mixins" as m;
+
+.instruments-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+
+  &__filters {
+    display: grid;
+    grid-template-columns: minmax(12rem, 24rem) auto;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: start;
+
+    @include m.phone {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--color-muted);
+  }
+
+  &__mode {
+    font-size: var(--font-size-sm);
+
+    &--manual {
+      color: var(--color-warn);
+    }
+
+    &--delisted {
+      color: var(--color-muted);
+    }
+  }
+
+  &__row--inactive {
+    color: var(--color-muted);
+  }
+
+  &__form,
+  &__suggest {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+
+    @include m.phone {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__text {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-muted);
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--color-neg);
+    font-size: var(--font-size-sm);
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+}

@@ -30,6 +30,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `SECURITY.md` rewritten for the hosted v6 threat model; RUNBOOK gains an owner security checklist.
 
 ### Added
+- **v6 parity with v5, in-app settings and repair (v6 app, not deployed yet).**
+  - Settings: every tunable setting is editable in the app (schema-driven page, search, per-setting reset, change history with revert, export/import with a diff preview). Precedence is app > env > default; session, sign-in limit and re-sign-in settings can only be made stricter than the server's env.
+  - Health & Repair page: status headline and badge in the top bar, fix actions on failing checks, dismissable background problems, repair jobs with typed confirmation, scheduler pause / run-now, protected manual closes, FX rates and splits, stored backups list and download, redacted log viewer.
+  - Instruments editor: name, asset class, expense ratio, provider symbol and pricing mode (auto / manual / delisted), with an offer to re-download prices after a symbol change.
+  - Import history: every confirmed import is a batch that can be undone (hand-edited rows are kept); unknown broker actions can be mapped; supported formats listed.
+  - Overview: hero and KPI grid in both currencies, live 1D chart with clock axis and previous close, 1W chart without nights and weekends, other-currency line on a right axis, per-graph reload, daily currency box with market-hours / overnight split and investing power, lifetime currency card, movers tags, compact holdings.
+  - Holdings group subtotals and KPI rows; Activity filters, year folds and dividends view; Periods by-year folds with total growth and XIRR; Projection monthly labels, remembered inputs and detail table; Risk lookbacks, KPI groups and benchmark; Transactions server sort, quick ranges and month groups; Allocations calculator builder with modes, presets and a plan.
+  - Hide numbers: a per-device privacy mode that masks every amount (charts switch to percent).
+  - Phone layout: top-bar actions, grouped More, pull-to-refresh, phone table rows, collapsible cards; rising-bars logo, favicon set and brand mark.
 - Activity logs per subject in `/data/logs/activity/` (auth incl. failed logins, market data polling and scheduler jobs, imports, manual changes, backups, system), rotated daily and kept 90 days. See RUNBOOK "Activity logs".
 - RUNBOOK: a quick restore drill that leaves the live database untouched, and a drill log (first drill 2026-11-01 passed).
 - AGENTS.md: a "keep in step with every feature" checklist (activity logs, API types, migrations and the v5 export, parity, env docs, CI image job, CSP).
@@ -62,6 +71,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Claude Code on the server (no app change).** `deploy/bootstrap.sh` creates a locked-down `dev` workspace user (same SSH key, no sudo, no Docker, admin home set to `750`) and installs Claude Code there; `deploy/RUNBOOK.md` explains the one-time login and three ways in: desktop app over SSH, phone/browser via `claude remote-control` in tmux, or plain SSH.
 
 ### Fixed
+- Overview/KPI tiles and movers rows no longer overflow on 390 px phones; the Overview chart opens on the configured default range.
+- Diagnostics no longer flags manual or delisted instruments as stale; the Tiingo fallback asks for the mapped provider symbol.
 
 - Deploys no longer fill the server's disk: `deploy/deploy.sh` now deletes old app images after a healthy deploy and keeps only the running and the previous one (`docker image prune` alone never removed tagged images). RUNBOOK notes that the Windows `ssh-keyscan` cannot read the server's host key and gives the working alternative.
 - The server could not start with an encrypted (SQLCipher) database: the startup migration opened the file without its key. Migrations now run through the app's keyed connection; CI restarts the image on an existing encrypted database.
@@ -84,6 +95,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Installer source-tarball fallback points pip at `backend/` for releases after 5.3.1.
 
 ### Changed
+- "Data health" is now "Health & Repair" everywhere; the investing-power dollar amount is computed on the server.
 
 - `legacy/v5` gained `docs/legacy_v5_known_bugs.md`: the v5 bugs fixed only in v6, for anyone rolling back.
 - Backend unification: one canonical cashflow module (`services/cashflows.py`), one set of transaction kinds and instrument classes (`domain/kinds.py`, `domain/instruments.py`); every ratio in the API is a fraction.

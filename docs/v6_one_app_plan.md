@@ -1,6 +1,6 @@
 # v6.0 "One App": a hosted, single-backend Investment Overview
 
-> Status: **in implementation** (2026-11-01, branch `feat/v6-one-app`). Phase 0 steps 1–2 done; the yfinance spike (step 3) is still to run (Mon 2026-11-02). Phases 1 and 3 and the agent-doable parts of Phase 2 are built (not deployed); the snapshot/intraday native-currency migration waits for the parity gate on the real ledger. Execution order and resume notes: [`v6_progress.md`](v6_progress.md). Backups changed from Litestream to sealed snapshots (Litestream can't replicate SQLCipher files). **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)).
+> Status: **in implementation** (2026-11-01, branch `feat/v6-one-app`). Phase 0 steps 1–2 done; the yfinance spike (step 3) is still to run (Mon 2026-11-02). Phases 1 and 3 and the agent-doable parts of Phase 2 are built (not deployed). 2026-11-02: v5 parity, in-app settings/repair, instruments editor, import undo, phone layout and hide-numbers built on `feat/v6-parity-settings` with the security hardening merged; cutover release is the owner's call. The snapshot/intraday native-currency migration waits for the parity gate on the real ledger. Execution order and resume notes: [`v6_progress.md`](v6_progress.md). Backups changed from Litestream to sealed snapshots (Litestream can't replicate SQLCipher files). **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)).
 
 ## Context
 

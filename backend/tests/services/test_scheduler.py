@@ -154,3 +154,83 @@ async def test_job_never_overlaps_itself() -> None:
     gate.set()
     await first
     assert r.calls == ["tick"]
+
+
+def test_tick_freshness_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    from investment_dashboard.api.schemas.stream import TickEvent
+    from investment_dashboard.services import refresh_status, scheduler
+
+    refresh_status.reset()
+    try:
+        open_now = et(2026, 10, 28, 11)
+        assert scheduler._price_freshness(open_now) == {
+            "last_update_at": None,
+            "prices_live": False,
+        }
+        refresh_status.finish("t", updated=True)
+        last = refresh_status.snapshot().last_update_at
+        assert last is not None
+        payload = scheduler._price_freshness(last)
+        assert payload["last_update_at"] == last.isoformat()
+        TickEvent.model_validate({"ts": last.isoformat(), "market_state": "open", **payload})
+    finally:
+        refresh_status.reset()
+
+
+# -- control: pause, run now, heavy jobs, snapshot ---------------------------------
+
+
+@pytest.fixture
+def no_pauses() -> Any:
+    from investment_dashboard.services import scheduler as sched_mod
+
+    sched_mod.reset_pauses_for_tests()
+    saved = sched_mod._save_pauses
+    sched_mod._save_pauses = lambda: None  # type: ignore[assignment]
+    yield sched_mod
+    sched_mod._save_pauses = saved  # type: ignore[assignment]
+    sched_mod.reset_pauses_for_tests()
+
+
+async def test_paused_job_is_skipped_until_expiry(no_pauses: Any) -> None:
+    r = Rig(et(2026, 11, 2, 10))
+    no_pauses.set_pause(["tick"], until=r.now + timedelta(hours=1), now=r.now)
+    assert await r.sched.step() == []
+    r.now += timedelta(hours=2)  # the pause expired by itself
+    assert await r.sched.step() == ["tick"]
+    with pytest.raises(ValueError, match="7 days"):
+        no_pauses.set_pause(["tick"], until=r.now + timedelta(days=30), now=r.now)
+    with pytest.raises(ValueError, match="unknown"):
+        no_pauses.set_pause(["nope"], until=None, now=r.now)
+
+
+async def test_request_run_overrides_due_and_pause(no_pauses: Any) -> None:
+    r = Rig(et(2026, 11, 2, 10))
+    assert await r.sched.step() == ["tick"]
+    no_pauses.set_pause(["fx"], until=r.now + timedelta(hours=1), now=r.now)
+    r.sched.request_run("fx")
+    assert await r.sched.step() == ["fx"]
+    assert r.calls == ["tick", "fx"]
+    snap = r.sched.snapshot()
+    fx = next(j for j in snap["jobs"] if j["name"] == "fx")
+    assert fx["paused_until"] is not None
+    assert fx["last_run_at"] is not None
+    assert snap["market_state"] == "open"
+    with pytest.raises(ValueError, match="unknown"):
+        r.sched.request_run("nope")
+
+
+async def test_heavy_maintenance_job_blocks_market_jobs(no_pauses: Any) -> None:
+    r = Rig(et(2026, 11, 2, 10))
+    r.sched.jobs.heavy_busy = lambda: "cache.reset"
+    assert await r.sched.step() == []
+    r.sched.jobs.heavy_busy = lambda: None
+    assert await r.sched.step() == ["tick"]
+
+
+async def test_fx_interval_comes_from_jobs(no_pauses: Any) -> None:
+    r = Rig(et(2026, 11, 2, 20))  # after close
+    assert await r.sched.step() == ["eod"]
+    r.sched.jobs.fx_interval = lambda: timedelta(minutes=5)
+    r.now += timedelta(minutes=6)
+    assert await r.sched.step() == ["fx"]

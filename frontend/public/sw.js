@@ -3,7 +3,7 @@
  * SSE stream) is never cached or intercepted; offline data comes from the
  * TanStack Query persistence layer.
  */
-const CACHE = "iv-shell-v1";
+const CACHE = "iv-shell-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -15,7 +15,7 @@ self.addEventListener("install", (event) => {
           const html = await res.clone().text();
           await cache.put("/index.html", res.clone());
           await cache.put("/", res);
-          const assets = [...html.matchAll(/(?:src|href)="(\/[^"]+\.(?:js|css|svg|webmanifest))"/g)].map((m) => m[1]);
+          const assets = [...html.matchAll(/(?:src|href)="(\/[^"]+\.(?:js|css|svg|png|ico|webmanifest))"/g)].map((m) => m[1]);
           await Promise.allSettled(assets.map((url) => cache.add(url)));
         }
       } catch {

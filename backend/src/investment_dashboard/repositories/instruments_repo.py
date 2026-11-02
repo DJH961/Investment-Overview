@@ -13,10 +13,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from investment_dashboard.models import Instrument
+from investment_dashboard.models import Instrument, Transaction
 
 
 def list_instruments(session: Session) -> Sequence[Instrument]:
@@ -135,3 +135,13 @@ def update_instrument(
         instr.expense_ratio = expense_ratio
     session.flush()
     return instr
+
+
+def transaction_counts(session: Session) -> dict[int, int]:
+    """``{instrument_id: number of ledger transactions}`` (one GROUP BY)."""
+    stmt = (
+        select(Transaction.instrument_id, func.count(Transaction.id))
+        .where(Transaction.instrument_id.is_not(None))
+        .group_by(Transaction.instrument_id)
+    )
+    return {int(iid): int(n) for iid, n in session.execute(stmt).all() if iid is not None}

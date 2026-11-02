@@ -19,15 +19,74 @@
     transition: margin-left var(--duration-base) var(--ease-standard);
   }
 
+  &__progress {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: var(--shell-offset);
+    z-index: var(--z-toast);
+    height: 3px;
+    overflow: hidden;
+    background: var(--color-accent-soft);
+    pointer-events: none;
+  }
+
+  &__progress-bar {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--color-accent);
+    transition: width var(--duration-base) var(--ease-standard);
+  }
+
+  &__progress--indeterminate &__progress-bar {
+    width: 30%;
+    animation: app-shell-progress 1.4s var(--ease-standard) infinite;
+  }
+
+  @include m.reduced-motion {
+    &__progress--indeterminate &__progress-bar {
+      width: 100%;
+      animation: none;
+      opacity: 0.6;
+    }
+  }
+
   &__content {
     max-width: var(--content-max-width);
     margin: 0 auto;
     padding: var(--space-6);
 
     @include m.phone {
-      padding: var(--space-4);
-      padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6));
+      padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6))
+        calc(var(--space-4) + var(--safe-left));
     }
+  }
+
+  &__pull {
+    position: fixed;
+    top: calc(var(--topbar-height) + var(--safe-top) - var(--space-8));
+    left: 50%;
+    z-index: var(--z-topbar);
+    display: grid;
+    place-items: center;
+    width: var(--space-8);
+    height: var(--space-8);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-2);
+    color: var(--color-muted);
+    pointer-events: none;
+
+    &--armed {
+      color: var(--color-accent);
+    }
+  }
+
+  &__pull-icon {
+    width: var(--icon-md);
+    height: var(--icon-md);
   }
 
   &__shortcuts {
@@ -51,5 +110,15 @@
     font-family: var(--font-sans);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
+  }
+}
+
+@keyframes app-shell-progress {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(340%);
   }
 }

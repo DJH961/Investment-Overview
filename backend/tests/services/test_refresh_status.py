@@ -139,3 +139,64 @@ def test_progress_held_while_an_overlapping_refresh_runs() -> None:
     assert snap.progress_done == 3
     refresh_status.finish("Cache reset re-download", updated=True)
     assert refresh_status.snapshot().historical is False
+
+
+# -- live events (``/api/stream``) ---------------------------------------------
+
+
+@pytest.fixture
+def published(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    from investment_dashboard.services import live_bus
+
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(live_bus.bus, "publish", events.append)
+    return events
+
+
+def test_begin_and_finish_publish_started_and_finished(
+    published: list[dict[str, object]],
+) -> None:
+    from investment_dashboard.api.schemas.stream import RefreshFinishedEvent, RefreshStartedEvent
+
+    refresh_status.begin("Manual refresh")
+    refresh_status.finish("Manual refresh", updated=True)
+    assert [e["type"] for e in published] == ["refresh_started", "refresh_finished"]
+    RefreshStartedEvent.model_validate(published[0])
+    finished = RefreshFinishedEvent.model_validate(published[1])
+    assert finished.updated is True
+    assert finished.last_update_at is not None
+    assert published[0]["source"] == "Manual refresh"
+
+
+def test_overlapping_refreshes_announce_outermost_only(
+    published: list[dict[str, object]],
+) -> None:
+    refresh_status.begin("a")
+    refresh_status.begin("b")
+    refresh_status.finish("b", updated=False)
+    assert [e["type"] for e in published] == ["refresh_started"]
+    refresh_status.finish("a", updated=False)
+    assert [e["type"] for e in published] == ["refresh_started", "refresh_finished"]
+    assert published[-1]["updated"] is False
+    assert published[-1]["last_update_at"] is None
+
+
+def test_set_progress_publishes_progress(published: list[dict[str, object]]) -> None:
+    from investment_dashboard.api.schemas.stream import RefreshProgressEvent
+
+    refresh_status.set_progress(2, 5, "prices")
+    event = RefreshProgressEvent.model_validate(published[-1])
+    assert (event.progress_done, event.progress_total, event.progress_label) == (2, 5, "prices")
+    assert event.historical is True
+
+
+def test_publish_failure_never_breaks_a_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
+    from investment_dashboard.services import live_bus
+
+    def boom(_event: object) -> None:
+        raise RuntimeError("bus down")
+
+    monkeypatch.setattr(live_bus.bus, "publish", boom)
+    refresh_status.begin("x")
+    refresh_status.finish("x", updated=True)
+    assert refresh_status.snapshot().active is False

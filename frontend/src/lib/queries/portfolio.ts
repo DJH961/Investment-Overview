@@ -1,15 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 import type { ReportingCurrency } from "../prefs";
 
 export type OverviewDto = components["schemas"]["OverviewResponse"];
-export type HoldingsDto = components["schemas"]["HoldingsResponse"];
-export type HoldingRowDto = components["schemas"]["HoldingRow"];
+export type { HoldingRowDto, HoldingsDto } from "./holdings";
 export type GraphDto = components["schemas"]["GraphResponse"];
 export type AllocationsDto = components["schemas"]["AllocationsResponse"];
-export type HoldingHistoryDto = components["schemas"]["HoldingHistoryResponse"];
-export type HistoryRange = HoldingHistoryDto["range"];
+export type { HistoryRange, HoldingHistoryDto } from "./holdings";
+export { useHoldingHistory, useHoldings } from "./holdings";
 export type GraphRange = GraphDto["range"];
 
 export const GRAPH_RANGES: GraphRange[] = ["1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all"];
@@ -28,28 +27,18 @@ export function useOverview(ccy: ReportingCurrency) {
   });
 }
 
-export function useHoldings(ccy: ReportingCurrency) {
+export function useGraph(range: GraphRange, ccy: ReportingCurrency) {
   return useQuery({
-    queryKey: ["holdings", ccy],
-    queryFn: ({ signal }) => api<HoldingsDto>(`/api/holdings?ccy=${ccy}`, { signal }),
+    queryKey: ["graphs", range, ccy],
+    queryFn: ({ signal }) => api<GraphDto>(`/api/graphs/${range}?ccy=${ccy}`, { signal }),
+    // Keep the previous curve only within the same currency (never show EUR values labelled USD).
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[2] === ccy ? keepPreviousData(prev) : undefined),
   });
 }
 
-/** Daily closes of one instrument in its native currency (drawer chart). */
-export function useHoldingHistory(instrumentId: number | null, range: HistoryRange) {
-  return useQuery({
-    queryKey: ["holdings", "history", instrumentId, range],
-    enabled: instrumentId !== null,
-    queryFn: ({ signal }) =>
-      api<HoldingHistoryDto>(`/api/holdings/${instrumentId}/history?range=${range}`, { signal }),
-  });
-}
-
-export function useGraph(range: GraphRange, ccy: ReportingCurrency, compare: boolean) {
-  return useQuery({
-    queryKey: ["graphs", range, ccy, compare],
-    queryFn: ({ signal }) => api<GraphDto>(`/api/graphs/${range}?ccy=${ccy}&compare=${compare}`, { signal }),
-  });
+/** Remember the Overview range on the server (market-aware default). Fire and forget. */
+export function rememberGraphRange(range: GraphRange): void {
+  api("/api/graphs/range", { method: "PUT", body: { range } }).catch(() => undefined);
 }
 
 export function useAllocations(ccy: ReportingCurrency) {

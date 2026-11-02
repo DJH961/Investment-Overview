@@ -148,3 +148,34 @@ async def test_open_stream_is_closed_after_session_idle_timeout(
     with pytest.raises(StopAsyncIteration):
         await asyncio.wait_for(anext(body), 2)
     assert live_bus.bus.subscriber_count == 0
+
+
+def test_event_schema_lists_every_event_type() -> None:
+    from investment_dashboard.api.schemas.stream import event_schema
+
+    types = {s["properties"]["type"]["default"] for s in event_schema()["anyOf"]}
+    assert types == {
+        "hello",
+        "tick",
+        "refresh",
+        "fx",
+        "refresh_started",
+        "refresh_progress",
+        "refresh_finished",
+        "graphs",
+    }
+
+
+def test_graphs_event_serialises() -> None:
+    from investment_dashboard.api.schemas.stream import GraphsEvent
+
+    event = {
+        "type": "graphs",
+        "ts": "2026-10-28T15:00:00+00:00",
+        "market_state": "open",
+        "range": "1d",
+        "ok": True,
+        "points": 12,
+    }
+    assert GraphsEvent.model_validate(event).points == 12
+    assert stream.format_event(event).startswith('data: {"type":"graphs"')

@@ -7,6 +7,7 @@ no risk-free rate) is serialized as ``null``.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -207,6 +208,43 @@ def build(
     return result
 
 
+def _summary_fields(bundle: AnalyticsBundle) -> dict[str, Any]:
+    """Latest curve values, benchmark gap and the attribution total (all Decimal maths)."""
+    last_pv = next(
+        (p.portfolio_value for p in reversed(bundle.curve) if p.portfolio_value is not None), None
+    )
+    last_net = next(
+        (
+            p.cumulative_contributions
+            for p in reversed(bundle.curve)
+            if p.cumulative_contributions is not None
+        ),
+        None,
+    )
+    last_bench = next(
+        (p.benchmark_value for p in reversed(bundle.curve) if p.benchmark_value is not None), None
+    )
+    diff: Decimal | None = None
+    pct: Decimal | None = None
+    if last_pv is not None and last_bench is not None:
+        diff = last_pv - last_bench
+        pct = diff / last_bench if last_bench != 0 else None
+    rows = bundle.attribution
+    return {
+        "portfolio_last_value": dec(last_pv),
+        "net_invested_last": dec(last_net),
+        "benchmark_last_value": dec(last_bench),
+        "benchmark_diff": dec(diff),
+        "benchmark_diff_pct": dec(pct),
+        "attribution_total": {
+            "start_value": dec(sum((r.start_value for r in rows), Decimal(0))),
+            "end_value": dec(sum((r.end_value for r in rows), Decimal(0))),
+            "net_contribution": dec(sum((r.net_contribution for r in rows), Decimal(0))),
+            "absolute_pnl": dec(sum((r.absolute_pnl for r in rows), Decimal(0))),
+        },
+    }
+
+
 def build_for_ccy(
     session: Session,
     *,
@@ -230,6 +268,7 @@ def build_for_ccy(
     result["curve_start"] = bundle.start.isoformat()
     result["benchmark_is_funded"] = bundle.benchmark_is_funded
     result["attribution_currency"] = ccy
+    result.update(_summary_fields(bundle))
     if full_curve:
         inception = transactions_repo.earliest_transaction_date(session)
         if inception is not None and inception < bundle.start:

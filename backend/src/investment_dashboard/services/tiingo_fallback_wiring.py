@@ -20,9 +20,13 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters import tiingo_client
 from investment_dashboard.adapters._retry import RateLimitedError
-from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES
+from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, fetch_symbol
 from investment_dashboard.domain.market_hours import is_us_market_holiday
-from investment_dashboard.repositories import price_cache_repo, prices_repo
+from investment_dashboard.repositories import (
+    instrument_overrides_repo,
+    price_cache_repo,
+    prices_repo,
+)
 from investment_dashboard.repositories import tiingo_state_repo as state_repo
 from investment_dashboard.services import fetch_report, provider_status, pull_log
 from investment_dashboard.services.tiingo_fallback import (
@@ -119,6 +123,40 @@ def _nav_holding_values(session: Session, symbols: Sequence[str]) -> dict[str, D
     return totals
 
 
+def _provider_symbols(session: Session, due: Sequence[Instrument]) -> dict[str, str]:
+    """``{ledger symbol: provider symbol}`` for due instruments with a mapping."""
+    try:
+        mapped = instrument_overrides_repo.provider_symbol_map(session)
+    except Exception:  # pragma: no cover - defensive: an unreadable map = no mapping
+        log.debug("provider symbol map unreadable", exc_info=True)
+        return {}
+    out: dict[str, str] = {}
+    for instr in due:
+        provider = fetch_symbol(instr.symbol, mapped.get(instr.id))
+        if provider != instr.symbol:
+            out[instr.symbol] = provider
+    return out
+
+
+def _mapped_fetch(
+    fetch_impl: TiingoFetchCloses,
+    to_provider: Mapping[str, str],
+    start: date,
+    end: date,
+    token: str,
+) -> Callable[[Sequence[str]], dict[str, dict[date, Decimal]]]:
+    """Tiingo is asked for the provider ticker (Instruments → provider symbol)
+    when one is mapped; results come back keyed by the ledger symbol."""
+    to_ledger = {v: k for k, v in to_provider.items()}
+
+    def _fetch(symbols: Sequence[str]) -> dict[str, dict[date, Decimal]]:
+        sent = [to_provider.get(s, s) for s in symbols]
+        got = fetch_impl(sent, start, end, token=token)
+        return {to_ledger.get(k, k): v for k, v in got.items()}
+
+    return _fetch
+
+
 def _build_candidates(
     due: Sequence[Instrument],
     held_dates: Mapping[int, date],
@@ -199,11 +237,16 @@ def apply_desktop_fallback(
         holding_values=holding_values,
     )
 
-    fetch_start = expected - timedelta(days=_FETCH_LOOKBACK_DAYS)
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    fetch_days = settings_service.get_or("tiingo.fetch_lookback_days", _FETCH_LOOKBACK_DAYS)
+    write_days = settings_service.get_or("tiingo.write_lookback_days", _WRITE_LOOKBACK_DAYS)
+    fetch_start = expected - timedelta(days=int(fetch_days))
     fetch_end = today + timedelta(days=1)
 
-    def _fetch(symbols: Sequence[str]) -> dict[str, dict[date, Decimal]]:
-        return fetch_impl(list(symbols), fetch_start, fetch_end, token=token)
+    _fetch = _mapped_fetch(
+        fetch_impl, _provider_symbols(session, due), fetch_start, fetch_end, token
+    )
 
     try:
         outcome = run_desktop_fallback(
@@ -228,7 +271,7 @@ def apply_desktop_fallback(
         state_repo.save(session, state)
         raise
 
-    write_cutoff = expected - timedelta(days=_WRITE_LOOKBACK_DAYS)
+    write_cutoff = expected - timedelta(days=int(write_days))
     result: dict[str, int] = {}
     for symbol in outcome.used_symbols:
         instr = by_symbol.get(symbol)

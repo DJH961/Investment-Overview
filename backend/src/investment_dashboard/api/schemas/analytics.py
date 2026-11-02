@@ -26,6 +26,13 @@ class AttributionOut(ApiModel):
     )
 
 
+class AttributionTotalOut(ApiModel):
+    start_value: DecStr | None
+    end_value: DecStr | None
+    net_contribution: DecStr | None
+    absolute_pnl: DecStr | None
+
+
 class AnalyticsOut(ApiModel):
     ccy: Ccy
     currency: str
@@ -51,8 +58,16 @@ class AnalyticsOut(ApiModel):
     risk_free_symbol: str
     benchmark_symbol: str
     benchmark_is_funded: bool
+    portfolio_last_value: DecStr | None = Field(description="Latest curve value in ccy")
+    net_invested_last: DecStr | None = Field(description="Latest cumulative net contributions")
+    benchmark_last_value: DecStr | None = Field(description="Latest benchmark curve value")
+    benchmark_diff: DecStr | None = Field(description="Portfolio minus benchmark, in ccy")
+    benchmark_diff_pct: DecStr | None = Field(
+        description="Diff relative to the benchmark value (fraction, 0.01 = 1%)"
+    )
     curve: list[CurvePointOut]
     #: Attribution is computed on ``ccy``'s own marks and cashflows;
     #: ``attribution_currency`` repeats ``ccy``.
     attribution: list[AttributionOut]
+    attribution_total: AttributionTotalOut
     attribution_currency: str | None

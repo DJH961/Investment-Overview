@@ -1,134 +1,76 @@
-import { CheckCircle2, Download, RefreshCw, TriangleAlert } from "lucide-react";
-import { Button } from "../../components/Button";
-import { Card } from "../../components/Card";
-import { DataTable, type Column } from "../../components/DataTable";
-import { EmptyState } from "../../components/EmptyState";
-import { ErrorState } from "../../components/ErrorState";
+import clsx from "clsx";
+import { Download } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { PageHeader } from "../../components/PageHeader";
-import { Skeleton } from "../../components/Skeleton";
-import { useToast } from "../../components/Toast";
-import { formatDate, formatTime } from "../../lib/format";
-import {
-  SUPPORT_BUNDLE_URL,
-  useDiagnostics,
-  useRefreshStatus,
-  useStartRefresh,
-  type DiagnosticsData,
-} from "../../lib/queries/manage";
+import { useJobEvents } from "../../lib/queries/maintenance";
+import { SUPPORT_BUNDLE_URL } from "../../lib/queries/manage";
+import { usePersistentState } from "../../lib/usePersistentState";
+import { HealthTab } from "./HealthTab";
+import { LogsTab } from "./LogsTab";
+import { MarketDataTab } from "./MarketDataTab";
+import { RepairTab } from "./RepairTab";
+import { SchedulerTab } from "./SchedulerTab";
+import { SystemTab } from "./SystemTab";
 import "./Diagnostics.scss";
 
-type Check = DiagnosticsData["checks"][number];
-type Provider = DiagnosticsData["providers"][number];
+export { RefreshCard } from "./HealthTab";
 
-const stamp = (iso: string | null | undefined) => (iso ? `${formatDate(iso)} ${formatTime(iso)}` : "never");
+const TABS = [
+  { id: "health", label: "Health", render: () => <HealthTab /> },
+  { id: "repair", label: "Repair", render: () => <RepairTab /> },
+  { id: "scheduler", label: "Scheduler", render: () => <SchedulerTab /> },
+  { id: "market", label: "Market data", render: () => <MarketDataTab /> },
+  { id: "logs", label: "Logs", render: () => <LogsTab /> },
+  { id: "system", label: "System", render: () => <SystemTab /> },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+const isTab = (v: unknown): v is TabId => TABS.some((t) => t.id === v);
 
-export function RefreshCard() {
-  const status = useRefreshStatus();
-  const start = useStartRefresh();
-  const { toast } = useToast();
-  const s = status.data;
-  return (
-    <Card
-      title="Data refresh"
-      subtitle={s?.running ? "Refreshing now" : `Last update: ${stamp(s?.last_update_at)}`}
-      actions={
-        <Button
-          variant="secondary"
-          leftIcon={<RefreshCw aria-hidden />}
-          loading={start.isPending || Boolean(s?.running)}
-          onClick={() =>
-            start.mutate(true, { onError: () => toast({ title: "Could not start a refresh", tone: "error" }) })
-          }
-        >
-          Refresh now
-        </Button>
-      }
-    >
-      {s?.running ? (
-        <p className="diagnostics__muted" aria-live="polite">
-          {s.progress_label ?? "Working"} ({s.progress_done}/{s.progress_total})
-        </p>
-      ) : (
-        <p className="diagnostics__muted">Prices and FX rates are refreshed on a schedule.</p>
-      )}
-    </Card>
-  );
-}
-
+/** Health & Repair (route `/diagnostics`). */
 export function Diagnostics() {
-  const q = useDiagnostics();
+  useJobEvents();
+  const [params, setParams] = useSearchParams();
+  const [remembered, setRemembered] = usePersistentState<TabId>("diagnostics.tab", "health", isTab);
+  const fromUrl = params.get("tab");
+  const tab: TabId = isTab(fromUrl) ? fromUrl : remembered;
+  const select = (id: TabId) => {
+    setRemembered(id);
+    if (fromUrl) {
+      params.delete("tab");
+      setParams(params, { replace: true });
+    }
+  };
 
-  const checkColumns: Column<Check>[] = [
-    {
-      key: "sev",
-      header: "Status",
-      cell: (c) => (
-        <span className={`diagnostics__sev diagnostics__sev--${c.severity}`}>
-          {c.count === 0 ? "OK" : c.severity}
-        </span>
-      ),
-      sortValue: (c) => c.severity,
-    },
-    { key: "title", header: "Check", primary: true, cell: (c) => c.title, sortValue: (c) => c.title },
-    { key: "detail", header: "Detail", cell: (c) => c.detail },
-    { key: "examples", header: "Examples", cell: (c) => c.examples.join(", ") },
-  ];
-  const providerColumns: Column<Provider>[] = [
-    { key: "name", header: "Provider", primary: true, cell: (p) => p.name },
-    { key: "status", header: "Status", cell: (p) => p.status ?? "unknown" },
-    { key: "fetch", header: "Last fetch", cell: (p) => stamp(p.last_fetch_at) },
-    { key: "msg", header: "Message", cell: (p) => p.message ?? "" },
-  ];
-
-  const d = q.data;
-  const allClear = d && d.count === 0;
   return (
     <div className="diagnostics">
       <PageHeader
-        title="Diagnostics"
-        subtitle="Silent data problems, surfaced in one place."
+        title="Health & Repair"
+        subtitle="Checks never change your data; Repair jobs do, and say so before they run."
         actions={
           <a className="diagnostics__download" href={SUPPORT_BUNDLE_URL} download>
-            <Download aria-hidden size={16} /> Download support bundle
+            <Download aria-hidden size={16} /> Support bundle
           </a>
         }
       />
-      <RefreshCard />
-      {q.isError ? (
-        <ErrorState onRetry={() => void q.refetch()} />
-      ) : q.isPending || !d ? (
-        <Skeleton height="240px" />
-      ) : (
-        <>
-          {allClear ? (
-            <EmptyState icon={<CheckCircle2 aria-hidden />} title="All clear" description="Every check passed." />
-          ) : (
-            <output className="diagnostics__banner">
-              <TriangleAlert aria-hidden size={16} /> {d.count} item(s) need attention
-            </output>
-          )}
-          <Card title="All checks" flush>
-            <DataTable caption="Health checks" columns={checkColumns} rows={d.checks} rowKey={(c) => c.id} />
-          </Card>
-          <Card title="Data providers" flush>
-            <DataTable caption="Data providers" columns={providerColumns} rows={d.providers} rowKey={(p) => p.name} />
-          </Card>
-          {d.problems.length > 0 && (
-            <Card title={`Recent problems (${d.problems.length})`}>
-              <ul className="diagnostics__problems">
-                {d.problems.map((p) => (
-                  <li key={p.id} className="diagnostics__problem">
-                    <span className="diagnostics__muted">
-                      {p.source} - {stamp(p.at)}
-                    </span>
-                    <span>{p.message}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-        </>
-      )}
+      <div className="diagnostics__tabs" role="tablist" aria-label="Health & Repair sections">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`diag-tab-${t.id}`}
+            aria-selected={t.id === tab}
+            aria-controls="diag-panel"
+            className={clsx("diagnostics__tab-button", t.id === tab && "diagnostics__tab-button--active")}
+            onClick={() => select(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id="diag-panel" aria-labelledby={`diag-tab-${tab}`}>
+        {TABS.find((t) => t.id === tab)?.render()}
+      </div>
     </div>
   );
 }

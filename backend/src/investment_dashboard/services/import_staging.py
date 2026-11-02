@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -24,7 +24,11 @@ from sqlalchemy.orm import Session
 from investment_dashboard.adapters.importer_types import ParsedTransactionRow, ParseReport
 from investment_dashboard.adapters.vanguard.settlement import inject_settlement_legs
 from investment_dashboard.errors import NotFoundError, ValidationError
-from investment_dashboard.repositories import accounts_repo, transactions_repo
+from investment_dashboard.repositories import (
+    accounts_repo,
+    import_batches_repo,
+    transactions_repo,
+)
 from investment_dashboard.services import importer_service
 from investment_dashboard.services.importer_service import Broker, ImportResult
 
@@ -32,6 +36,22 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_STAGED = 20
 TTL = timedelta(minutes=30)
 ALLOWED_EXTENSIONS: tuple[str, ...] = (".csv", ".xlsx")
+
+
+def max_upload_bytes() -> int:
+    """Largest accepted file (setting ``import.max_upload_mb``; default 10 MB)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    mb = settings_service.get_or("import.max_upload_mb", None)
+    return MAX_UPLOAD_BYTES if mb is None else int(mb) * 1024 * 1024
+
+
+def staging_ttl() -> timedelta:
+    """How long an unconfirmed preview is kept (``import.staging_ttl_minutes``)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    minutes = settings_service.get_or("import.staging_ttl_minutes", None)
+    return TTL if minutes is None else timedelta(minutes=int(minutes))
 
 
 class ImportStagingError(ValidationError):
@@ -126,8 +146,9 @@ def stage(
         raise ImportStagingError("Only .csv and .xlsx files can be imported")
     if not content:
         raise ImportStagingError("The file is empty")
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise ImportStagingError(f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
+    limit = max_upload_bytes()
+    if len(content) > limit:
+        raise ImportStagingError(f"File is larger than {limit // (1024 * 1024)} MB")
     acct_id = _resolve_account(session, account_id, broker)
     account = accounts_repo.get_account(session, acct_id)
     if account is None:
@@ -161,7 +182,7 @@ def stage(
         report=report,
         rows=rows,
         created_at=moment,
-        expires_at=moment + TTL,
+        expires_at=moment + staging_ttl(),
     )
     with _lock:
         _purge(moment)
@@ -187,14 +208,69 @@ def discard(import_id: str) -> bool:
         return _store.pop(import_id, None) is not None
 
 
-def confirm(session: Session, import_id: str, *, now: datetime | None = None) -> ImportResult:
-    """Write the staged import (idempotent) and drop it from the store."""
+def latest(*, now: datetime | None = None) -> StagedImport | None:
+    """The most recently staged (still unexpired) import, if any."""
+    moment = now or _now()
+    with _lock:
+        _purge(moment)
+        if not _store:
+            return None
+        return max(_store.values(), key=lambda s: s.created_at)
+
+
+def restage(session: Session, import_id: str, *, now: datetime | None = None) -> StagedImport:
+    """Parse a staged upload again (e.g. after an action mapping changed).
+
+    Returns a new staged import (new id); the old one is dropped.
+    """
     staged = get(import_id, now=now)
+    fresh = stage(
+        session,
+        filename=staged.filename,
+        content=staged.raw_bytes,
+        broker=staged.broker.value,
+        account_id=staged.account_id,
+        now=now,
+    )
+    discard(import_id)
+    return fresh
+
+
+def confirm(
+    session: Session,
+    import_id: str,
+    *,
+    now: datetime | None = None,
+    actor: str | None = None,
+) -> ImportResult:
+    """Write the staged import (idempotent) as one import batch and drop it from the store.
+
+    The batch row is kept only when the import inserted something (a re-upload of
+    an already imported file leaves no empty batch behind).
+    """
+    staged = get(import_id, now=now)
+    batch = import_batches_repo.create(
+        session,
+        created_at=(now or _now()).astimezone(UTC).replace(tzinfo=None),
+        account_id=staged.account_id,
+        broker=staged.broker.value,
+        filename=staged.filename,
+        actor=actor,
+    )
     result = importer_service.import_csv(
         session,
         broker=staged.broker,
         account_id=staged.account_id,
         content=staged.raw_bytes,
+        import_batch_id=batch.id,
     )
+    if result.inserted:
+        batch.row_count = result.inserted
+        batch.duplicate_count = result.duplicates
+        session.flush()
+        result = replace(result, import_batch_id=batch.id)
+    else:
+        session.delete(batch)
+        session.flush()
     discard(import_id)
     return result

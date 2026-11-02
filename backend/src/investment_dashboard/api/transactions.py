@@ -7,7 +7,8 @@ paired); only the ledger rows themselves are touched, never the broker file.
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from decimal import Decimal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -15,13 +16,17 @@ from sqlalchemy.orm import Session
 from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.common import OkResponse
 from investment_dashboard.api.schemas.transactions import (
+    ReconcileRequest,
+    ReconcileResult,
     TransactionOut,
     TransactionPage,
     TransactionWrite,
     TransactionWriteResult,
 )
 from investment_dashboard.readmodels import transactions as transactions_rm
+from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.queries.ledger_query import LedgerFilters
+from investment_dashboard.services import manual_entry
 from investment_dashboard.services import transaction_edit_service as edit
 
 router = APIRouter(tags=["transactions"])
@@ -62,6 +67,11 @@ def list_transactions(
     hide_sweeps: bool = True,
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    sort: Annotated[
+        Literal["date", "symbol", "kind", "account", "quantity", "net"],
+        Query(description="Sort key over the whole filtered set (net = native amount)."),
+    ] = "date",
+    order: Literal["asc", "desc"] = "desc",
 ) -> TransactionPage:
     filters = LedgerFilters(
         account_id=account_id,
@@ -74,7 +84,41 @@ def list_transactions(
         text=q,
     )
     return TransactionPage(
-        **transactions_rm.build_page(session, filters=filters, limit=limit, offset=offset)
+        **transactions_rm.build_page(
+            session, filters=filters, limit=limit, offset=offset, sort=sort, order=order
+        )
+    )
+
+
+@router.post("/transactions/reconcile", response_model=ReconcileResult)
+def reconcile(body: ReconcileRequest) -> ReconcileResult:
+    """Fill the missing one of quantity / price / total, or flag a mismatch."""
+    figures = manual_entry.reconcile_trade(body.quantity, body.price, body.total)
+    given = {"quantity": body.quantity, "price": body.price, "total": body.total}
+    got = {"quantity": figures.quantity, "price": figures.price, "total": figures.total}
+    filled = next(
+        (k for k, v in given.items() if v is None and got[k] is not None and not figures.error),
+        None,
+    )
+    places = {
+        "quantity": Decimal("0.000001"),
+        "price": Decimal("0.000001"),
+        "total": Decimal("0.01"),
+    }
+
+    def out(key: str) -> str | None:
+        value = got[key]
+        if value is None:
+            return None
+        # A derived figure is rounded for the form; typed ones are echoed as-is.
+        return dec(value.quantize(places[key]).normalize() if key == filled else value)
+
+    return ReconcileResult(
+        quantity=out("quantity"),
+        price=out("price"),
+        total=out("total"),
+        error=figures.error,
+        filled=filled,
     )
 
 

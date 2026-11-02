@@ -11,10 +11,10 @@ from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.queries.ledger_query import (
     LedgerFilters,
     LedgerRecord,
-    count_ledger_records,
     get_ledger_record,
     list_ledger_records,
-    summarize_ledger,
+    month_totals,
+    summarize_records,
 )
 
 
@@ -72,6 +72,8 @@ def _detail_dict(r: LedgerRecord) -> dict[str, Any]:
         "external_id": r.external_id,
         "is_settlement_leg": r.is_settlement_leg,
         "fx_incomplete": r.fx_incomplete,
+        "cash_eur": dec(r.cash_eur),
+        "cash_usd": dec(r.cash_usd),
     }
 
 
@@ -82,13 +84,30 @@ def build_page(
     filters: LedgerFilters | None = None,
     limit: int = 50,
     offset: int = 0,
+    sort: str = "date",
+    order: str = "desc",
 ) -> dict[str, Any]:
-    """Paged transactions (newest first) with a filter-wide summary."""
+    """Paged transactions with a filter-wide summary and month totals.
+
+    ``sort`` / ``order`` apply to the whole filtered set (server-side), so a
+    page is a true slice of the sorted ledger. ``months`` holds the totals of
+    every month that appears on this page, computed over the full filter (not
+    only the rows on the page).
+    """
     ctx = context or build_context(session)
     rows = list_ledger_records(
-        session, filters, fx_rate=ctx.fx_rate_eur_usd, limit=limit, offset=offset
+        session,
+        filters,
+        fx_rate=ctx.fx_rate_eur_usd,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        order=order,
     )
-    summary = summarize_ledger(session, filters, fx_rate=ctx.fx_rate_eur_usd)
+    every = list_ledger_records(session, filters, fx_rate=ctx.fx_rate_eur_usd)
+    summary = summarize_records(every)
+    totals = month_totals(every)
+    page_months = list(dict.fromkeys(r.date.strftime("%Y-%m") for r in rows))
     return {
         "summary": {
             "count": summary.count,
@@ -98,9 +117,21 @@ def build_page(
             "avg_trade_size_usd": dec(summary.avg_trade_size_usd),
         },
         "rows": [_detail_dict(r) for r in rows],
-        "total": count_ledger_records(session, filters),
+        "months": [
+            {
+                "month": m,
+                "count": totals[m].count,
+                "net_eur": dec(totals[m].net_eur),
+                "net_usd": dec(totals[m].net_usd),
+                "fx_incomplete": totals[m].fx_incomplete,
+            }
+            for m in page_months
+        ],
+        "total": len(every),
         "limit": limit,
         "offset": offset,
+        "sort": sort,
+        "order": order,
     }
 
 

@@ -147,6 +147,29 @@ Failed logins only: `docker compose exec app grep FAILED /data/logs/activity/aut
 - **Check after a restart:** `ssh daniel@hetzner-djh-v1 'uptime; docker ps; sudo ufw status | head -1'`
   and open `https://investments.daniel-henke.de`.
 
+## Settings changed in the app
+
+Most tuning (price refresh ages, backup retention, import limits, the Tiingo token,
+log detail ...) is set in the app under **Settings**. A value set there wins over the
+same setting in `app.env`; Settings shows where each value comes from, and
+**Settings → System** lists in-app values that hide an `app.env` value. Every change
+is kept in the settings history (secrets only as `<redacted>`).
+
+Sign-in limits (idle sign-out, maximum session age, re-sign-in window for sensitive
+actions, failed sign-ins per minute) are **ceilings**: the app can only make them
+stricter than `app.env` (or its default), never looser. Request body caps stay in
+`app.env` only.
+
+If a setting made the app unusable, reset it from the server:
+
+```bash
+cd /opt/investments && docker compose exec app inv-dashboard-settings list
+docker compose exec app inv-dashboard-settings reset <key>     # or: reset --all
+```
+
+The running app picks the change up within a minute; the reset is logged in
+`changes.log`.
+
 ## Rebuild from scratch (about 30 minutes)
 
 Use this when the server is broken beyond repair or you want a clean start. The

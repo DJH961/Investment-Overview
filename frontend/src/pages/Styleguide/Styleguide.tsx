@@ -172,7 +172,11 @@ export function Styleguide() {
             <Chart series={[]} valueFormat={eur} timeFormat={timeFmt} height={160} emptyMessage="No history yet." />
           </Card>
         </div>
-        <Card title="Allocation" subtitle="Actual weights with target markers and drift">
+        <Card
+          title="Allocation"
+          subtitle="Collapsible: fold state remembered per device"
+          collapsibleId="styleguide.allocation"
+        >
           <AllocationBar
             slices={DEMO_HOLDINGS.map((h) => ({
               id: h.id,
@@ -198,6 +202,11 @@ export function Styleguide() {
 
       <Section id="tiles" title="KPI tiles">
         <div className="styleguide__grid styleguide__grid--tiles">
+          <KpiTile label="Long value (fits the tile)" value={<Money amount={1234567.89} currency="EUR" />} />
+          <KpiTile
+            label="Long negative value"
+            value={<Money amount={-12345678.9} currency="USD" signed colored />}
+          />
           <KpiTile
             label="Total value"
             value={<Money amount={total} currency="EUR" />}

@@ -62,6 +62,10 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "fx_conversions",
     # B6 live
     "stream",
+    # v6 settings & repair
+    "maintenance",
+    "system",
+    "instruments",
 )
 
 _SECURITY_HEADERS = {

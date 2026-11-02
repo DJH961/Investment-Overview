@@ -928,7 +928,11 @@ def _reconstruct_session(
 ) -> int:
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
-    from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
+    from investment_dashboard.services import (  # noqa: PLC0415
+        fx_service,
+        positions_service,
+        prices_service,
+    )
 
     positions = positions_service.compute_positions(session, as_of=session_date)
     priced = [
@@ -944,7 +948,10 @@ def _reconstruct_session(
         return 0
 
     symbols = sorted({p.instrument.symbol for p in priced})
-    fetch = fetcher or yfinance_client.fetch_intraday_closes
+    # Instrument mapping: provider tickers, and no fetch for manual/delisted ones.
+    fetch = prices_service.via_provider_symbols(
+        session, fetcher or yfinance_client.fetch_intraday_closes
+    )
     bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
         symbols, session_date, interval=RECONSTRUCT_INTERVAL
     )
@@ -1425,6 +1432,7 @@ def _fetch_and_persist_week_days(
     """
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.services import prices_service  # noqa: PLC0415
 
     positions_by_day = {d: _priced_intraday_positions(session, d) for d in to_fetch}
     symbols = sorted({p.instrument.symbol for priced in positions_by_day.values() for p in priced})
@@ -1432,7 +1440,9 @@ def _fetch_and_persist_week_days(
     fetched: list[tuple[datetime, Decimal, Decimal | None]] = []
     if symbols:
         needs_fx = any(_is_usd_native(p) for priced in positions_by_day.values() for p in priced)
-        fetch = fetcher or yfinance_client.fetch_intraday_closes_range
+        fetch = prices_service.via_provider_symbols(
+            session, fetcher or yfinance_client.fetch_intraday_closes_range
+        )
         try:
             bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
                 symbols, to_fetch[0], to_fetch[-1], interval=interval

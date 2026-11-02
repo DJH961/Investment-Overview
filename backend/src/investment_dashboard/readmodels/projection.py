@@ -121,6 +121,12 @@ def build_seed(
     if avg_usd is None:
         avg_usd = avg_eur * usd_per_eur
 
+    from investment_dashboard.readmodels.queries.projection_model import (  # noqa: PLC0415
+        FALLBACK_EXPECTED_RATE,
+    )
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    fallback = settings_service.get_or("projection.fallback_rate", FALLBACK_EXPECTED_RATE, session)
     return ProjectionSeed(
         monthly=monthly,
         primary=primary.upper(),
@@ -132,8 +138,8 @@ def build_seed(
         ),
         avg_contribution_eur=avg_eur,
         avg_contribution_usd=avg_usd,
-        expected_rate_eur=default_expected_rate(metrics.xirr),
-        expected_rate_usd=default_expected_rate(metrics.xirr_usd),
+        expected_rate_eur=default_expected_rate(metrics.xirr, fallback),
+        expected_rate_usd=default_expected_rate(metrics.xirr_usd, fallback),
         usd_per_eur=usd_per_eur,
         xirr_available=metrics.xirr is not None or metrics.xirr_usd is not None,
         today=today,
