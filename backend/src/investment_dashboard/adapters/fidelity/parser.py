@@ -22,7 +22,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from decimal import Decimal
 
 from investment_dashboard.adapters.fidelity.action_map import map_action
@@ -82,10 +82,17 @@ def _iter_dict_rows(content: str) -> Iterator[tuple[int, dict[str, str]]]:
         yield header_idx + reader.line_num, row
 
 
-def _parse_row(row: dict[str, str]) -> ParsedTransactionRow:
-    """Parse one dict row. Raises on an unknown action or a bad/EU cell."""
+def _parse_row(
+    row: dict[str, str], action_overrides: Mapping[str, str] | None = None
+) -> ParsedTransactionRow | None:
+    """Parse one dict row. ``None`` = ignored by a user override.
+
+    Raises on an unknown action or a bad/EU cell.
+    """
     action = row["action"]
-    kind = map_action(action)
+    kind = map_action(action, action_overrides)
+    if kind is None:
+        return None
     run_date = parse_us_date(row["run date"])
     settlement_raw = row.get("settlement date") or ""
     settlement = parse_us_date(settlement_raw) if settlement_raw.strip() else None
@@ -153,7 +160,9 @@ def _parse_row(row: dict[str, str]) -> ParsedTransactionRow:
     )
 
 
-def parse_fidelity_csv(content: str) -> ParseReport:
+def parse_fidelity_csv(
+    content: str, action_overrides: Mapping[str, str] | None = None
+) -> ParseReport:
     """Parse Fidelity transaction CSV text into a :class:`ParseReport`.
 
     Unknown actions and un-parseable / EU-locale cells are collected as
@@ -169,7 +178,7 @@ def parse_fidelity_csv(content: str) -> ParseReport:
     for line, row in _iter_dict_rows(content):
         raw = row.get("action", "")
         try:
-            parsed = _parse_row(row)
+            parsed = _parse_row(row, action_overrides)
         except UnknownActionError as exc:
             unknown_actions.append(raw)
             errors.append(RowIssue(message=str(exc), line=line, raw=raw))
@@ -177,6 +186,8 @@ def parse_fidelity_csv(content: str) -> ParseReport:
         except (LocaleError, ValueError) as exc:
             errors.append(RowIssue(message=str(exc), line=line, raw=raw))
             continue
+        if parsed is None:
+            continue  # the user mapped this action to "ignore"
         rows.append(parsed)
         for warn in validate_row(parsed):
             warnings.append(RowIssue(message=warn, line=line, raw=raw))

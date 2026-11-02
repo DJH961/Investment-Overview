@@ -171,13 +171,15 @@ def _check_fx_legs(session: Session) -> HealthItem:
 FROZEN_LEG_TOLERANCE = Decimal("0.005")
 
 
-def _leg_differs(frozen: Decimal | None, derived: Decimal | None) -> bool:
+def _leg_differs(
+    frozen: Decimal | None, derived: Decimal | None, tolerance: Decimal = FROZEN_LEG_TOLERANCE
+) -> bool:
     if frozen is None or derived is None:
         return False
     scale = max(abs(frozen), abs(derived))
     if scale == 0:
         return False
-    return abs(frozen - derived) / scale > FROZEN_LEG_TOLERANCE
+    return abs(frozen - derived) / scale > tolerance
 
 
 def _check_frozen_legs(session: Session) -> HealthItem:
@@ -187,11 +189,14 @@ def _check_frozen_legs(session: Session) -> HealthItem:
     legs are read-only cross-checks (kept for the v5 rollback). A gap above
     0.5 % means the stored leg was struck at a different rate than the table.
     """
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    tol = settings_service.get_or("diagnostics.frozen_leg_tolerance", FROZEN_LEG_TOLERANCE, session)
     rates = fx_service.get_rates(session, base="EUR", quote="USD")
     bad: list[str] = []
     for t in transactions_repo.list_transactions(session):
-        if _leg_differs(t.net_eur, cashflows.derived_eur(t, rates)) or _leg_differs(
-            t.net_usd, cashflows.derived_usd(t, rates)
+        if _leg_differs(t.net_eur, cashflows.derived_eur(t, rates), tol) or _leg_differs(
+            t.net_usd, cashflows.derived_usd(t, rates), tol
         ):
             bad.append(t.date.isoformat())
     if not bad:
@@ -210,7 +215,7 @@ def _check_frozen_legs(session: Session) -> HealthItem:
         detail=(
             f"{len(bad)} transaction(s) have a frozen EUR or USD leg that differs "
             "from the leg derived from the native amount and the FX table by more "
-            "than 0.5 %. Reports use the derived leg."
+            f"than {(tol * 100).normalize():f} %. Reports use the derived leg."
         ),
         examples=_examples(bad),
     )
@@ -240,17 +245,27 @@ def _check_prices(session: Session) -> list[HealthItem]:
     # only once a day and routinely lands a day late.
     price_dates = prices_service.latest_price_dates_for(session, have_price_ids)
     today = exchange_today()
-    general_cutoff = market_hours.trading_days_before(today, _STALE_GRACE_TRADING_DAYS)
-    mutual_fund_cutoff = market_hours.trading_days_before(
-        today, _MUTUAL_FUND_STALE_GRACE_TRADING_DAYS
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    grace = settings_service.get_or(
+        "diagnostics.stale_grace_trading_days", _STALE_GRACE_TRADING_DAYS, session
     )
+    mf_grace = settings_service.get_or(
+        "diagnostics.mutual_fund_stale_grace_trading_days",
+        _MUTUAL_FUND_STALE_GRACE_TRADING_DAYS,
+        session,
+    )
+    general_cutoff = market_hours.trading_days_before(today, int(grace))
+    mutual_fund_cutoff = market_hours.trading_days_before(today, int(mf_grace))
 
     def _cutoff_for(instr: Instrument) -> date:
         if instr.asset_class == _MUTUAL_FUND_ASSET_CLASS:
             return mutual_fund_cutoff
         return general_cutoff
 
-    have_price = set(have_price_ids)
+    # Manual / delisted instruments are never fetched: their last close is the
+    # intended value, so an old date is not a fault to flag.
+    have_price = set(have_price_ids) - instrument_overrides_repo.not_fetched_ids(session)
     stale = sorted(
         instr.symbol
         for instr in actives

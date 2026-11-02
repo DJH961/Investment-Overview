@@ -14,6 +14,7 @@ settlement cash.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from decimal import Decimal
 
 #: Constant net asset value of a money-market fund share (USD).
@@ -79,14 +80,19 @@ def is_money_market(
     *,
     asset_class: str | None = None,
     name: str | None = None,
+    extra_symbols: Collection[str] = (),
 ) -> bool:
     """Return ``True`` if the instrument is a money-market / settlement fund.
 
-    Detection is by known ticker or by a name that mentions "money market".
+    Detection is by known ticker (the built-ins plus the user's
+    ``extra_symbols``, setting ``portfolio.money_market_symbols``, upper-case)
+    or by a name that mentions "money market".
     ``asset_class`` is accepted for call-site symmetry but intentionally not
     used on its own: money-market funds share the broad ``mutual_fund`` class
     with ordinary funds, so it is not a reliable discriminator.
     """
-    if symbol and symbol.strip().upper() in MONEY_MARKET_SYMBOLS:
-        return True
+    if symbol:
+        cleaned = symbol.strip().upper()
+        if cleaned in MONEY_MARKET_SYMBOLS or cleaned in extra_symbols:
+            return True
     return bool(name and "money market" in name.lower())

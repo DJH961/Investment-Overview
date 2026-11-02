@@ -7,7 +7,13 @@ parser discards them.
 
 from __future__ import annotations
 
-from investment_dashboard.adapters.importer_types import UnknownActionError
+from collections.abc import Mapping
+
+from investment_dashboard.adapters.importer_types import (
+    IGNORE_ACTION,
+    UnknownActionError,
+    lookup_override,
+)
 
 # value of None means "drop this row".
 _RULES: dict[str, str | None] = {
@@ -32,14 +38,21 @@ _RULES: dict[str, str | None] = {
 }
 
 
-def map_transaction_type(txn_type: str) -> str | None:
+def map_transaction_type(txn_type: str, overrides: Mapping[str, str] | None = None) -> str | None:
     """Map a Vanguard ``Transaction Type``. Returns ``None`` for sweeps.
+
+    ``overrides`` (setting ``import.action_overrides.vanguard``) maps a type
+    (case-insensitive) to a kind, or to ``ignore`` (dropped like a sweep); it
+    wins over the built-in rules.
 
     Raises
     ------
     UnknownActionError
         If no rule matches.
     """
+    override = lookup_override(txn_type, overrides)
+    if override is not None:
+        return None if override == IGNORE_ACTION else override
     key = txn_type.strip().lower()
     if key in _RULES:
         return _RULES[key]

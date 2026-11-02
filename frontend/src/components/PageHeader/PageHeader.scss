@@ -8,6 +8,14 @@
   gap: var(--space-3);
   margin-bottom: var(--space-5);
 
+  @include m.phone {
+    margin-bottom: var(--space-4);
+
+    &--bare {
+      margin-bottom: 0;
+    }
+  }
+
   &__text {
     min-width: 0;
   }
@@ -19,18 +27,20 @@
     line-height: var(--line-height-tight);
 
     @include m.phone {
-      font-size: var(--font-size-xl);
+      @include m.visually-hidden;
     }
   }
 
   &__subtitle {
     margin-top: var(--space-1);
+    overflow-wrap: anywhere;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
 
   &__actions {
     display: flex;
+    max-width: 100%;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);

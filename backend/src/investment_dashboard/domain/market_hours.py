@@ -84,6 +84,26 @@ def feed_is_fresh(
     return 0 <= age <= window_seconds
 
 
+def is_live_now(
+    *,
+    market_open: bool,
+    last_update_at: datetime | None,
+    now: datetime,
+    window_seconds: float = LIVE_PRICE_WINDOW_SECONDS,
+) -> bool:
+    """Whether the figures on screen are genuinely *live* right now.
+
+    Live only when the market is open **and** at least one fresh price landed
+    within ``window_seconds`` — i.e. the automatic refresh is actively pulling
+    current prices. Outside the session, or once the prices held have gone
+    stale, the figures are settled ("Updated …"), not moving. Shared by the
+    NiceGUI header chip and the v6 API freshness block.
+    """
+    if not market_open:
+        return False
+    return feed_is_fresh(last_update_at, now, window_seconds=window_seconds)
+
+
 def _observed(holiday: date) -> date:
     """The weekday the market is actually closed for a fixed-date ``holiday``.
 

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,11 @@ from investment_dashboard.adapters.yfinance_client import (
     fetch_market_times,
     fetch_splits,
 )
-from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
+from investment_dashboard.domain.instruments import (
+    NAV_ASSET_CLASSES,
+    SYNTHETIC_ASSET_CLASSES,
+    fetch_symbol,
+)
 from investment_dashboard.domain.market_hours import (
     exchange_today,
     is_us_market_open,
@@ -37,17 +41,40 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def _resolve_tiingo_token() -> str | None:
-    """Resolve the Tiingo token from settings, else the OS keyring.
+def _fetch_rules(session: Session) -> tuple[set[int], dict[int, str]]:
+    """``(skip_ids, provider_symbols)`` from the instrument settings (config tier).
 
+    ``skip_ids`` are never sent to a provider: inactive instruments and those
+    whose pricing mode is ``manual`` or ``delisted`` (their last close keeps
+    valuing them). ``provider_symbols`` maps an instrument id to the ticker the
+    provider knows it by, when that differs from the ledger symbol.
+    """
+    return (
+        instrument_overrides_repo.not_fetched_ids(session),
+        instrument_overrides_repo.provider_symbol_map(session),
+    )
+
+
+def _resolve_tiingo_token() -> str | None:
+    """Resolve the Tiingo token: in-app setting > env > the OS keyring.
+
+    The in-app value (``tiingo.api_token``, write-only, encrypted config tier)
+    falls back to ``INV_DASHBOARD_TIINGO_TOKEN`` inside ``settings_service``.
     Returns ``None`` when no token is configured, which cleanly disables the
     fallback (a vanilla install never touches Tiingo).
     """
     from investment_dashboard.config import get_settings  # noqa: PLC0415
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
     from investment_dashboard.storage.encryption import (  # noqa: PLC0415
         load_tiingo_token_from_keyring,
     )
 
+    try:
+        token = settings_service.get("tiingo.api_token")
+    except Exception:
+        token = None
+    if isinstance(token, str) and token:
+        return token
     return get_settings().tiingo_token or load_tiingo_token_from_keyring()
 
 
@@ -134,6 +161,44 @@ def _report_suspect_data(
     round_.suspect_data("yfinance", [id_to_symbol[i] for i in suspect_ids if i in id_to_symbol])
 
 
+def provider_symbols_for(session: Session, symbols: Iterable[str]) -> dict[str, str | None]:
+    """``{ledger symbol: provider ticker}`` for ``symbols``.
+
+    The value is ``None`` for an instrument the provider must not be asked
+    about (inactive, or pricing mode ``manual`` / ``delisted``). A symbol with
+    no instrument row maps to itself.
+    """
+    wanted = set(symbols)
+    out: dict[str, str | None] = {sym: sym for sym in wanted}
+    skip, provider_symbols = _fetch_rules(session)
+    for instr in instruments_repo.list_instruments(session):
+        if instr.symbol in wanted:
+            out[instr.symbol] = (
+                None
+                if instr.id in skip
+                else fetch_symbol(instr.symbol, provider_symbols.get(instr.id))
+            )
+    return out
+
+
+def via_provider_symbols(session: Session, fetch: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a symbol-batch fetch (first argument: the symbols) for the instrument
+    mapping: it asks the provider for the mapped tickers, skips not-fetched
+    instruments, and answers keyed by ledger symbol again."""
+
+    def wrapped(symbols: Sequence[str], *args: Any, **kwargs: Any) -> dict[str, Any]:
+        mapping = provider_symbols_for(session, symbols)
+        wanted = {ledger: prov for ledger, prov in mapping.items() if prov is not None}
+        if not wanted:
+            return {}
+        if all(ledger == prov for ledger, prov in wanted.items()) and len(wanted) == len(mapping):
+            return dict(fetch(symbols, *args, **kwargs))
+        raw = fetch(sorted(set(wanted.values())), *args, **kwargs)
+        return {ledger: raw[prov] for ledger, prov in wanted.items() if prov in raw}
+
+    return wrapped
+
+
 def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start to end
     session: Session,
     cache_session: Session | None = None,
@@ -178,7 +243,7 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
         round_ = pull_log.begin(source or "Price re-pull", mode="full re-pull (recent window)")
     try:
         instruments = instruments_repo.list_instruments(session)
-        inactive = instrument_overrides_repo.inactive_ids(session)
+        inactive, provider_symbols = _fetch_rules(session)
         # Batch the per-instrument MAX/MIN(date) lookups into two GROUP BY queries
         # instead of 2N individual round-trips.
         candidate_ids = [
@@ -191,6 +256,7 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
         symbols_to_fetch: list[str] = []
         earliest_per_symbol: dict[str, date] = {}
         anchors: list[date] = []
+        targets: list[Instrument] = []
         for instr in instruments:
             if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
                 continue
@@ -205,9 +271,11 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
                 settled=settled,
                 market_open=market_open,
             )
-            symbols_to_fetch.append(instr.symbol)
-            earliest_per_symbol[instr.symbol] = start
+            sym = fetch_symbol(instr.symbol, provider_symbols.get(instr.id))
+            symbols_to_fetch.append(sym)
+            earliest_per_symbol[sym] = start
             anchors.append(anchor)
+            targets.append(instr)
 
         if not symbols_to_fetch:
             round_.note(
@@ -236,15 +304,13 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
         by_symbol = {i.symbol: i for i in instruments}
         now = datetime.now(UTC).replace(tzinfo=None)
         written_ids: list[int] = []
-        for symbol in symbols_to_fetch:
-            instr = by_symbol.get(symbol)
-            if instr is None:
-                continue
-            closes = closes_by_symbol.get(symbol, {})
-            cutoff = earliest_per_symbol.get(symbol, earliest_needed)
+        for instr in targets:
+            sym = fetch_symbol(instr.symbol, provider_symbols.get(instr.id))
+            closes = closes_by_symbol.get(sym, {})
+            cutoff = earliest_per_symbol.get(sym, earliest_needed)
             filtered = {d: c for d, c in closes.items() if d >= cutoff}
-            result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
-            if result[symbol]:
+            result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
+            if result[instr.symbol]:
                 written_ids.append(instr.id)
             # Stamp every instrument we queried (see refresh_due_prices) so the
             # overview's per-symbol "updated" time advances even when the feed
@@ -286,12 +352,14 @@ def refresh_splits(
         return result
 
     instruments = instruments_repo.list_instruments(session)
-    inactive = instrument_overrides_repo.inactive_ids(session)
-    symbols_to_fetch = [
-        instr.symbol
+    inactive, provider_symbols = _fetch_rules(session)
+    # provider ticker -> instrument (the mapping, else the ledger symbol)
+    by_fetch_symbol = {
+        fetch_symbol(instr.symbol, provider_symbols.get(instr.id)): instr
         for instr in instruments
         if instr.asset_class not in _SYNTHETIC_ASSET_CLASSES and instr.id not in inactive
-    ]
+    }
+    symbols_to_fetch = list(by_fetch_symbol)
     if not symbols_to_fetch:
         return result
 
@@ -302,12 +370,11 @@ def refresh_splits(
         log.warning("yfinance split refresh failed (%s); keeping cached splits", exc)
         return result
 
-    by_symbol = {i.symbol: i for i in instruments}
     for symbol, splits in splits_by_symbol.items():
-        instr = by_symbol.get(symbol)
+        instr = by_fetch_symbol.get(symbol)
         if instr is None:
             continue
-        result[symbol] = splits_repo.upsert_splits(cache, instr.id, splits)
+        result[instr.symbol] = splits_repo.upsert_splits(cache, instr.id, splits)
     return result
 
 
@@ -471,19 +538,23 @@ def closes_as_of(
         return prices_repo.latest_closes(cache, instrument_ids, on_or_before=as_of)
 
 
-def invalidate_instrument_prices(session: Session, instrument_id: int) -> int:
+def invalidate_instrument_prices(
+    session: Session, instrument_id: int, *, keep_manual: bool = False
+) -> int:
     """Drop an instrument's cached closes + refresh timestamp (cache tier).
 
     Called when an instrument's ticker is repointed at a different symbol so
     the stale closes for the old symbol can't keep forward-filling the new
-    one. Returns the number of price rows removed.
+    one (everything goes), and by the "Re-download prices" repair
+    (``keep_manual=True``: hand-entered closes and splits stay). Returns the
+    number of price rows removed.
     """
     from investment_dashboard.db import cache_write_session  # noqa: PLC0415
 
     with cache_write_session(session) as cache:
-        removed = prices_repo.delete_for_instrument(cache, instrument_id)
+        removed = prices_repo.delete_for_instrument(cache, instrument_id, keep_manual=keep_manual)
         price_cache_repo.delete_for_instrument(cache, instrument_id)
-        splits_repo.delete_for_instrument(cache, instrument_id)
+        splits_repo.delete_for_instrument(cache, instrument_id, keep_manual=keep_manual)
     return removed
 
 
@@ -546,8 +617,29 @@ def instruments_with_price_anomalies(session: Session, instrument_ids: Sequence[
         return prices_repo.instrument_ids_with_nonpositive_close(cache, instrument_ids)
 
 
-def _ttl_for(instr: Instrument) -> int:
-    return REFRESH_TTL_SECONDS.get(instr.asset_class, _DEFAULT_TTL_SECONDS)
+def ttl_seconds_by_class(session: Session | None = None) -> dict[str, int]:
+    """Effective price TTLs per asset class (settings ``prices.ttl_seconds.*``).
+
+    Keys are the asset classes plus ``"default"``; the module constants are the
+    defaults and the fallback when settings cannot be read.
+    """
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    out = {**REFRESH_TTL_SECONDS, "default": _DEFAULT_TTL_SECONDS}
+    try:
+        values = settings_service.get_all(session)
+    except Exception:
+        return out
+    for cls in out:
+        eff = values.get(f"prices.ttl_seconds.{cls}")
+        if eff is not None and eff.source != "default" and isinstance(eff.value, int):
+            out[cls] = eff.value
+    return out
+
+
+def _ttl_for(instr: Instrument, ttls: dict[str, int] | None = None) -> int:
+    ttls = ttls if ttls is not None else {**REFRESH_TTL_SECONDS, "default": _DEFAULT_TTL_SECONDS}
+    return ttls.get(instr.asset_class, ttls["default"])
 
 
 def _is_due_for_market_state(
@@ -618,20 +710,21 @@ def instruments_due_for_refresh(
     market_open = is_us_market_open(now_utc)
     settled_date = latest_settled_session_date(now_utc)
     due: list[Instrument] = []
-    inactive = instrument_overrides_repo.inactive_ids(session)
+    inactive = instrument_overrides_repo.not_fetched_ids(session)
     instruments = instruments_repo.list_instruments(session)
     ids = [i.id for i in instruments]
     # One IN(...) query each for the last-refresh timestamps and newest cached
     # print dates instead of one lookup per instrument.
     last_refreshed = price_cache_repo.get_last_refreshed_at_map(cache, ids)
     latest_dates = prices_repo.latest_price_dates(cache, ids)
+    ttls = ttl_seconds_by_class(session)
     for instr in instruments:
         if instr.asset_class in _SYNTHETIC_ASSET_CLASSES:
             continue
         if instr.id in inactive:
             continue
         last = last_refreshed.get(instr.id)
-        if last is not None and (now - last).total_seconds() < _ttl_for(instr):
+        if last is not None and (now - last).total_seconds() < _ttl_for(instr, ttls):
             continue
         if not _is_due_for_market_state(
             instr,
@@ -684,6 +777,8 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
         symbols_to_fetch: list[str] = []
         earliest_per_symbol: dict[str, date] = {}
         latest_dates = prices_repo.latest_price_dates(cache, [i.id for i in due])
+        provider_symbols = instrument_overrides_repo.provider_symbol_map(session)
+        fetch_sym = {i.id: fetch_symbol(i.symbol, provider_symbols.get(i.id)) for i in due}
         for instr in due:
             latest = latest_dates.get(instr.id)
             start = (
@@ -691,8 +786,8 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
             )
             # Always fetch today's window so intraday closes overwrite stale rows.
             start = min(start, today)
-            symbols_to_fetch.append(instr.symbol)
-            earliest_per_symbol[instr.symbol] = start
+            symbols_to_fetch.append(fetch_sym[instr.id])
+            earliest_per_symbol[fetch_sym[instr.id]] = start
 
         fetch_start = min(earliest_per_symbol.values())
         fetch_end = today + timedelta(days=1)
@@ -734,8 +829,8 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
         # to recover.
         if closes_by_symbol:
             for instr in due:
-                closes = closes_by_symbol.get(instr.symbol, {})
-                cutoff = earliest_per_symbol.get(instr.symbol, fetch_start)
+                closes = closes_by_symbol.get(fetch_sym[instr.id], {})
+                cutoff = earliest_per_symbol.get(fetch_sym[instr.id], fetch_start)
                 filtered = {d: c for d, c in closes.items() if d >= cutoff}
                 result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
                 if result[instr.symbol]:
@@ -747,7 +842,7 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
                 # leaving it stuck at the last time a price actually changed. The "as
                 # of" date still reflects the real (possibly older) observation date.
                 price_cache_repo.upsert_last_refreshed_at(
-                    cache, instr.id, now, market_time=market_times.get(instr.symbol)
+                    cache, instr.id, now, market_time=market_times.get(fetch_sym[instr.id])
                 )
             round_.settled("yfinance", result)
             _report_suspect_data(cache, {i.symbol: i for i in due}, written_ids, round_)
@@ -758,7 +853,12 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
             due=due,
             now=now,
             today=today,
-            primary_closes=closes_by_symbol,
+            # The fallback works in ledger symbols; re-key the provider's answer.
+            primary_closes={
+                i.symbol: closes_by_symbol[fetch_sym[i.id]]
+                for i in due
+                if fetch_sym[i.id] in closes_by_symbol
+            },
             result=result,
         )
         return result
@@ -871,7 +971,7 @@ def refresh_via_tiingo(
             "secondary price source."
         )
 
-    inactive = instrument_overrides_repo.inactive_ids(session)
+    inactive = instrument_overrides_repo.not_fetched_ids(session)
     instruments = [
         instr
         for instr in instruments_repo.list_instruments(session)
@@ -903,3 +1003,118 @@ def refresh_via_tiingo(
     finally:
         if owns_round:
             pull_log.end(round_)
+
+
+# -- manual market-data fixes (Health & Repair → Market data) --------------------
+#
+# A hand-entered close or split is stored with ``source="manual"`` and is never
+# overwritten by a refresh (the repositories' upserts skip manual rows). Every
+# change invalidates the valuation snapshots from its date and publishes a
+# ``refresh`` event. Closes are native currency (currency rule).
+
+MANUAL_SOURCE = prices_repo.MANUAL_SOURCE
+
+
+def _market_data_changed(session: Session, from_date: date) -> None:
+    from investment_dashboard.services import refresh_status, snapshots_service  # noqa: PLC0415
+
+    snapshots_service.invalidate_from(session, from_date)
+    refresh_status._publish({"type": "refresh", "reason": "manual market data"})
+
+
+def _check_instrument(session: Session, instrument_id: int) -> None:
+    from investment_dashboard.errors import NotFoundError  # noqa: PLC0415
+
+    if instruments_repo.get_instrument(session, instrument_id) is None:
+        raise NotFoundError(f"instrument {instrument_id} not found")
+
+
+def list_closes(
+    session: Session,
+    instrument_id: int,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+) -> list[tuple[date, Decimal, str]]:
+    """``(date, close, source)`` for ``instrument_id`` in ``[start, end]``."""
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    with cache_read_session(session) as cache:
+        return prices_repo.list_closes(cache, instrument_id, start=start, end=end)
+
+
+def set_manual_close(session: Session, instrument_id: int, on: date, close: Decimal) -> None:
+    """Pin the close of ``instrument_id`` on ``on`` (protected from refreshes)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import ValidationError  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    if not close.is_finite() or close <= 0:
+        raise ValidationError("a close must be a positive number")
+    with cache_write_session(session) as cache:
+        prices_repo.upsert_closes(
+            cache, instrument_id, {on: close}, source=MANUAL_SOURCE, overwrite_manual=True
+        )
+    log.info("manual close set: instrument %s on %s", instrument_id, on)
+    _market_data_changed(session, on)
+
+
+def clear_manual_close(session: Session, instrument_id: int, on: date) -> bool:
+    """Remove a hand-entered close (the next price refresh fills the day again)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import NotFoundError  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    with cache_write_session(session) as cache:
+        row = prices_repo.get_close_row(cache, instrument_id, on)
+        if row is None:
+            raise NotFoundError(f"no close stored on {on}")
+        prices_repo.delete_close(cache, instrument_id, on)
+    log.info("close removed: instrument %s on %s (was %s)", instrument_id, on, row[1])
+    _market_data_changed(session, on)
+    return row[1] == MANUAL_SOURCE
+
+
+def list_anomalies(session: Session) -> list[int]:
+    """Ids of active instruments with a corrupt (non-positive) cached close."""
+    ids = sorted(instruments_repo.list_ids(session))
+    return sorted(instruments_with_price_anomalies(session, ids))
+
+
+def list_splits(session: Session, instrument_id: int) -> list[tuple[date, Decimal, str]]:
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    with cache_read_session(session) as cache:
+        return splits_repo.list_splits(cache, instrument_id)
+
+
+def set_manual_split(session: Session, instrument_id: int, on: date, ratio: Decimal) -> None:
+    """Add/replace a split (``ratio`` = shares after / before; ``1`` cancels a bad feed split)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import ValidationError  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    if not ratio.is_finite() or ratio <= 0 or ratio > 1000:
+        raise ValidationError("a split ratio must be between 0 and 1000")
+    with cache_write_session(session) as cache:
+        splits_repo.upsert_splits(
+            cache, instrument_id, {on: ratio}, source=MANUAL_SOURCE, overwrite_manual=True
+        )
+    log.info("manual split set: instrument %s on %s ratio %s", instrument_id, on, ratio)
+    # A split rescales every earlier day's share count.
+    _market_data_changed(session, date.min)
+
+
+def delete_split(session: Session, instrument_id: int, on: date) -> None:
+    """Delete a split row (a feed split comes back on the next split refresh)."""
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.errors import NotFoundError  # noqa: PLC0415
+
+    _check_instrument(session, instrument_id)
+    with cache_write_session(session) as cache:
+        if not splits_repo.delete_split(cache, instrument_id, on):
+            raise NotFoundError(f"no split stored on {on}")
+    log.info("split removed: instrument %s on %s", instrument_id, on)
+    _market_data_changed(session, date.min)

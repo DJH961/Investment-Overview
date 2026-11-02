@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { formatDate, formatMoney, formatNumber, formatPercent, signOf } from "./format";
+import { afterEach, describe, expect, it } from "vitest";
+import { chartMoneyFormat, formatDate, formatMoney, formatNumber, formatPercent, formatQuantity, setHideAmounts, signOf } from "./format";
 
 describe("format", () => {
   it("formats money in the given currency", () => {
@@ -29,5 +29,19 @@ describe("format", () => {
     expect(signOf(-1)).toBe("neg");
     expect(signOf(0)).toBe("flat");
     expect(signOf(null)).toBe("flat");
+  });
+});
+
+describe("hide mode", () => {
+  afterEach(() => setHideAmounts(false));
+  it("masks money (symbol kept), quantities and the chart formatters; keeps percentages", () => {
+    setHideAmounts(true);
+    expect(formatMoney(1234.5, "EUR")).toBe("€ •••••");
+    expect(formatMoney(null, "EUR")).toBe("–");
+    expect(formatQuantity(12.5, 4)).toBe("•••••");
+    expect(chartMoneyFormat("USD", "axis")(5000)).toBe("US$ •••••");
+    expect(formatPercent(0.05)).toContain("5");
+    setHideAmounts(false);
+    expect(formatMoney(1234.5, "EUR")).toContain("1,234.50");
   });
 });

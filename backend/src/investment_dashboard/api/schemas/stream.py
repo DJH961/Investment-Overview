@@ -30,6 +30,10 @@ class TickEvent(ApiModel):
     total_value_usd: DecStr | None = None
     #: Live EUR->USD rate at ``ts`` (USD per EUR).
     fx_eur_usd: DecStr | None = None
+    #: When the last refresh brought in new prices (null: none yet in this process).
+    last_update_at: str | None = None
+    #: Market open and a price landed within the live window.
+    prices_live: bool | None = None
 
 
 class RefreshEvent(ApiModel):
@@ -49,8 +53,62 @@ class FxEvent(ApiModel):
     fx_eur_usd: DecStr | None = None
 
 
+class RefreshStartedEvent(ApiModel):
+    """A price refresh (scheduled tick, manual or historic download) started."""
+
+    type: Literal["refresh_started"] = "refresh_started"
+    ts: str
+    market_state: MarketState
+    source: str
+
+
+class RefreshProgressEvent(ApiModel):
+    """A historic-data download advanced one stage."""
+
+    type: Literal["refresh_progress"] = "refresh_progress"
+    ts: str
+    market_state: MarketState
+    historical: bool
+    progress_done: int
+    progress_total: int
+    progress_label: str | None = None
+
+
+class RefreshFinishedEvent(ApiModel):
+    """Every running price refresh finished (``updated``: new data landed)."""
+
+    type: Literal["refresh_finished"] = "refresh_finished"
+    ts: str
+    market_state: MarketState
+    source: str
+    updated: bool
+    last_update_at: str | None = None
+
+
+class GraphsEvent(ApiModel):
+    """A ``POST /api/graphs/{range}/reload`` finished: refetch that graph."""
+
+    type: Literal["graphs"] = "graphs"
+    ts: str
+    market_state: MarketState
+    range: str
+    ok: bool
+    #: Points rebuilt (1d/1w); null for daily ranges.
+    points: int | None = None
+
+
+EVENT_MODELS: tuple[type[ApiModel], ...] = (
+    HelloEvent,
+    TickEvent,
+    RefreshEvent,
+    FxEvent,
+    RefreshStartedEvent,
+    RefreshProgressEvent,
+    RefreshFinishedEvent,
+    GraphsEvent,
+)
+
+
 def event_schema() -> dict[str, Any]:
     """OpenAPI schema (``anyOf``) of every event, for the stream route docs."""
-    return {
-        "anyOf": [m.model_json_schema() for m in (HelloEvent, TickEvent, RefreshEvent, FxEvent)]
-    }
+    return {"anyOf": [m.model_json_schema() for m in EVENT_MODELS]}

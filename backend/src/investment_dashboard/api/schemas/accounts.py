@@ -1,4 +1,4 @@
-"""Schemas for ``/api/accounts`` and ``/api/instruments``."""
+"""Schemas for ``/api/accounts``."""
 
 from __future__ import annotations
 
@@ -27,11 +27,3 @@ class AccountOut(ApiModel):
     account_type: str | None
     active: bool
     transaction_count: int
-
-
-class InstrumentOut(ApiModel):
-    id: int
-    symbol: str
-    name: str | None
-    asset_class: str
-    native_currency: str

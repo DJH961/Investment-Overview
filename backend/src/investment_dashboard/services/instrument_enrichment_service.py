@@ -74,6 +74,11 @@ class EffectiveInstrument:
     native_currency: str
     expense_ratio: Decimal | None
     category: str | None
+    #: Ticker sent to the price provider (the mapping, else ``symbol``).
+    provider_symbol: str | None = None
+    #: ``auto`` | ``manual`` | ``delisted`` (see ``domain.instruments``).
+    pricing_mode: str = "auto"
+    active: bool = True
 
 
 def effective_instrument(
@@ -111,6 +116,9 @@ def effective_instrument(
         native_currency=instrument.native_currency,
         expense_ratio=expense_ratio,
         category=override.category,
+        provider_symbol=override.provider_symbol,
+        pricing_mode=override.pricing_mode or "auto",
+        active=bool(override.active),
     )
 
 

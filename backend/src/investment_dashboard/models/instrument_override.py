@@ -27,6 +27,15 @@ authoritatively:
 * ``expense_ratio_override`` — manual TER when the issuer does not
   publish one to yfinance.
 
+v6 adds two *pricing* fields (migration 0019):
+
+* ``provider_symbol`` — the ticker the price provider knows the
+  instrument by when it differs from the broker symbol (``BRK.B`` vs
+  ``BRK-B``, a renamed ticker). ``None`` = use ``Instrument.symbol``.
+* ``pricing_mode`` — ``auto`` (fetch, the default; ``None`` means auto),
+  ``manual`` (never fetch; closes are entered as manual price fixes) or
+  ``delisted`` (never fetch; the last known close keeps valuing it).
+
 Effective-value composition (override → ledger → default) is centralised
 in :func:`investment_dashboard.services.instrument_enrichment_service.
 effective_instrument` so every read path agrees on precedence.
@@ -54,6 +63,8 @@ class InstrumentOverride(ConfigBase):
     name_override: Mapped[str | None] = mapped_column(String(256))
     asset_class_override: Mapped[str | None] = mapped_column(String(16))
     expense_ratio_override: Mapped[Decimal | None] = mapped_column(Numeric(7, 5))
+    provider_symbol: Mapped[str | None] = mapped_column(String(32))
+    pricing_mode: Mapped[str | None] = mapped_column(String(16))
 
     def __repr__(self) -> str:  # pragma: no cover
         return (

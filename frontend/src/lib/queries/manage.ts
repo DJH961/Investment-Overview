@@ -7,10 +7,6 @@ export type FxConversion = S["FxConversionOut"];
 export type FxConversionInput = S["FxConversionIn"];
 export type FxPool = S["PoolOut"];
 export type DepositMatch = S["DepositMatchOut"];
-export type AllocationsData = S["AllocationsResponse"];
-export type TargetOut = S["TargetOut"];
-export type TargetInput = S["TargetIn"];
-export type RebalancePlan = S["RebalanceResponse"];
 export type SettingsData = S["SettingsDto"];
 export type SettingsPatch = S["SettingsUpdate"];
 export type DiagnosticsData = S["DiagnosticsOut"];
@@ -59,46 +55,18 @@ export function useDeleteConversion() {
 }
 
 // ---- Allocations ----------------------------------------------------------
-
-export function useAllocations(ccy: "EUR" | "USD") {
-  return useQuery({
-    queryKey: ["allocations", ccy],
-    queryFn: ({ signal }) => api<AllocationsData>(`/api/allocations?ccy=${ccy}`, { signal }),
-  });
-}
-
-export function useSaveTarget() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: TargetInput) => api<TargetOut>("/api/allocations", { method: "PUT", body }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["allocations"] }),
-  });
-}
-
-export interface RebalanceParams {
-  amount: string;
-  ccy: "EUR" | "USD";
-  fractional: boolean;
-  allowSell: boolean;
-  targetId?: number;
-}
-
-export function rebalancePath(p: RebalanceParams): string {
-  const q = new URLSearchParams({
-    amount: p.amount,
-    ccy: p.ccy,
-    fractional: String(p.fractional),
-    allow_sell: String(p.allowSell),
-  });
-  if (p.targetId !== undefined) q.set("target_id", String(p.targetId));
-  return `/api/allocations/rebalance?${q.toString()}`;
-}
-
-export function useRebalance() {
-  return useMutation({
-    mutationFn: (p: RebalanceParams) => api<RebalancePlan>(rebalancePath(p)),
-  });
-}
+// Moved to ./allocations; re-exported for existing importers.
+export {
+  rebalancePath,
+  useAllocations,
+  useRebalance,
+  useSaveTarget,
+  type AllocationsData,
+  type RebalanceParams,
+  type RebalancePlan,
+  type TargetInput,
+  type TargetOut,
+} from "./allocations";
 
 // ---- Settings -------------------------------------------------------------
 

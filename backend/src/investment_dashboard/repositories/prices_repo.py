@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.models import PriceHistory
 
+#: ``source`` of a close the user entered by hand; refreshes never overwrite it.
+MANUAL_SOURCE = "manual"
+
 
 def get_closes_for_instrument(session: Session, instrument_id: int) -> dict[date, Decimal]:
     stmt = select(PriceHistory.date, PriceHistory.close_native).where(
@@ -257,11 +260,14 @@ def upsert_closes(
     closes: Mapping[date, Decimal],
     *,
     source: str = "yfinance",
+    overwrite_manual: bool = False,
 ) -> int:
     """Idempotent insert of ``{date: close}`` for ``instrument_id``.
 
     Uses SQLite's ``ON CONFLICT(...) DO UPDATE`` so re-running the price
-    refresh is safe (spec §5.5). Returns the number of rows touched.
+    refresh is safe (spec §5.5). A row the user fixed by hand
+    (``source == MANUAL_SOURCE``) is never overwritten unless
+    ``overwrite_manual``. Returns the number of rows touched.
     """
     if not closes:
         return 0
@@ -278,19 +284,52 @@ def upsert_closes(
     stmt = stmt.on_conflict_do_update(
         index_elements=[PriceHistory.instrument_id, PriceHistory.date],
         set_={"close_native": stmt.excluded.close_native, "source": stmt.excluded.source},
+        where=None if overwrite_manual else PriceHistory.source != MANUAL_SOURCE,
     )
     result = session.execute(stmt)
     return result.rowcount or len(closes)
 
 
-def delete_for_instrument(session: Session, instrument_id: int) -> int:
+def delete_for_instrument(
+    session: Session, instrument_id: int, *, keep_manual: bool = False
+) -> int:
     """Drop every cached close for ``instrument_id``. Returns rows removed.
 
     Used when an instrument's ticker is repointed at a different symbol so
     the next refresh repopulates the cache from the new ticker instead of
-    forward-filling the old symbol's (now wrong) closes.
+    forward-filling the old symbol's (now wrong) closes. ``keep_manual`` keeps
+    the user's hand-entered closes (a plain re-download).
     """
-    result = session.execute(
-        delete(PriceHistory).where(PriceHistory.instrument_id == instrument_id)
-    )
+    stmt = delete(PriceHistory).where(PriceHistory.instrument_id == instrument_id)
+    if keep_manual:
+        stmt = stmt.where(PriceHistory.source != MANUAL_SOURCE)
+    result = session.execute(stmt)
     return result.rowcount or 0
+
+
+def list_closes(
+    session: Session, instrument_id: int, *, start: date | None = None, end: date | None = None
+) -> list[tuple[date, Decimal, str]]:
+    """``(date, close, source)`` rows in ``[start, end]``, oldest first."""
+    stmt = select(PriceHistory.date, PriceHistory.close_native, PriceHistory.source).where(
+        PriceHistory.instrument_id == instrument_id
+    )
+    if start is not None:
+        stmt = stmt.where(PriceHistory.date >= start)
+    if end is not None:
+        stmt = stmt.where(PriceHistory.date <= end)
+    return [(d, c, s) for d, c, s in session.execute(stmt.order_by(PriceHistory.date))]
+
+
+def get_close_row(session: Session, instrument_id: int, on: date) -> tuple[Decimal, str] | None:
+    row = session.get(PriceHistory, (instrument_id, on))
+    return None if row is None else (row.close_native, row.source)
+
+
+def delete_close(session: Session, instrument_id: int, on: date) -> bool:
+    result = session.execute(
+        delete(PriceHistory).where(
+            PriceHistory.instrument_id == instrument_id, PriceHistory.date == on
+        )
+    )
+    return bool(result.rowcount)

@@ -1,7 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+import { applyRefreshEvent } from "./refresh";
 
-export type LiveStatus = "connected" | "reconnecting" | "offline";
+/** `connecting`: first attempt (or back from a hidden tab); `reconnecting`: after an error. */
+export type LiveStatus = "connecting" | "connected" | "reconnecting" | "offline";
 
 let status: LiveStatus = "offline";
 const listeners = new Set<() => void>();
@@ -23,23 +25,51 @@ export function useLiveStatus(): LiveStatus {
   );
 }
 
+export function getLiveStatus(): LiveStatus {
+  return status;
+}
+
 const TICK_KEYS = ["overview", "holdings", "graphs"];
 const STREAM_URL = "/api/stream";
 
+/** A parsed SSE message (`type` discriminates; see `api/schemas/stream.py`). */
+export type LiveEvent = Record<string, unknown> & { type: string };
+
+const eventListeners = new Set<(ev: LiveEvent) => void>();
+
+/** Listen to every SSE event (components waiting for e.g. a `graphs` reload). Returns unsubscribe. */
+export function subscribeLiveEvents(cb: (ev: LiveEvent) => void): () => void {
+  eventListeners.add(cb);
+  return () => {
+    eventListeners.delete(cb);
+  };
+}
+
+function invalidateTickKeys(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({
+    predicate: (q) => TICK_KEYS.includes(String(q.queryKey[0])),
+  });
+}
+
 export function handleLiveEvent(queryClient: QueryClient, data: string): void {
-  let type: unknown;
+  let ev: LiveEvent;
   try {
-    type = (JSON.parse(data) as { type?: unknown }).type;
+    const parsed = JSON.parse(data) as unknown;
+    if (!parsed || typeof parsed !== "object" || typeof (parsed as { type?: unknown }).type !== "string") return;
+    ev = parsed as LiveEvent;
   } catch {
     return;
   }
+  const type = ev.type;
+  applyRefreshEvent(queryClient, ev);
   if (type === "tick" || type === "fx") {
-    void queryClient.invalidateQueries({
-      predicate: (q) => TICK_KEYS.includes(String(q.queryKey[0])),
-    });
+    invalidateTickKeys(queryClient);
   } else if (type === "refresh") {
     void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
+  } else if (type === "graphs" && typeof ev.range === "string") {
+    void queryClient.invalidateQueries({ queryKey: ["graphs", ev.range] });
   }
+  eventListeners.forEach((l) => l(ev));
 }
 
 /** Opens the SSE stream with backoff reconnect; pauses while the tab is hidden. Returns a stop function. */
@@ -48,6 +78,8 @@ export function startLive(queryClient: QueryClient): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
   let stopped = false;
+  // After the first successful open, every later open means we may have missed ticks.
+  let openedBefore = false;
 
   const close = () => {
     if (timer) clearTimeout(timer);
@@ -63,6 +95,8 @@ export function startLive(queryClient: QueryClient): () => void {
     es.onopen = () => {
       attempt = 0;
       setStatus("connected");
+      if (openedBefore) invalidateTickKeys(queryClient);
+      openedBefore = true;
     };
     es.onmessage = (ev: MessageEvent<string>) => handleLiveEvent(queryClient, ev.data);
     es.onerror = () => {
@@ -80,12 +114,12 @@ export function startLive(queryClient: QueryClient): () => void {
       setStatus("offline");
     } else {
       attempt = 0;
-      setStatus("reconnecting");
+      setStatus("connecting");
       connect();
     }
   };
   document.addEventListener("visibilitychange", onVisibility);
-  if (!document.hidden) setStatus("reconnecting");
+  if (!document.hidden) setStatus("connecting");
   connect();
 
   return () => {

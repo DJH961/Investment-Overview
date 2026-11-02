@@ -16,6 +16,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -48,6 +49,7 @@ class Transaction(Base):
         Index("ix_transactions_date", "date"),
         Index("ix_transactions_instrument_id", "instrument_id"),
         Index("ix_transactions_account_date", "account_id", "date"),
+        Index("ix_transactions_import_batch_id", "import_batch_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -84,6 +86,9 @@ class Transaction(Base):
     description: Mapped[str | None] = mapped_column(String(512))
     external_id: Mapped[str | None] = mapped_column(String(128))
     source: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: Loose reference to ``import_batches.id`` (migration 0020); ``None`` for
+    #: manual rows, older imports and imported rows edited by hand since.
+    import_batch_id: Mapped[int | None] = mapped_column(Integer)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False),

@@ -11,7 +11,10 @@ rebuilds prices/FX itself) -> check both files open with v5's schema -> write
 them to ``--out``. The input file is never modified and existing files in
 ``--out`` are never overwritten.
 
-Data that only exists in v6 (``fx_conversions``, login credentials) is dropped
+Data that only exists in v6 (``fx_conversions``, login credentials, the settings
+change history ``app_config_audit``, the instrument provider-symbol mapping and
+pricing mode on ``instrument_overrides``, and the import history
+``import_batches`` / ``transactions.import_batch_id``) is dropped
 by the downgrade: v5 has no place for it.
 
 The key comes from ``INV_DASHBOARD_DB_PASSPHRASE`` or a hidden prompt.
@@ -42,6 +45,30 @@ log = logging.getLogger(__name__)
 
 #: Alembic revision of migration 0014, the last v5 schema.
 V5_HEAD = "c1f5a3b9e2d4"
+
+
+def _drop_v6_columns(target: Path, v5: Path) -> None:
+    """Drop columns the v5 schema does not have from ``target``'s tables.
+
+    The config file is built from the current models, so v6-only columns (e.g.
+    ``instrument_overrides.provider_symbol``) must go again; ``v5`` is the
+    downgraded work file that has the v5 columns.
+    """
+    conn = sqlite3.connect(target)
+    try:
+        conn.execute("ATTACH DATABASE ? AS v5", (str(v5),))
+        for (table,) in conn.execute(
+            "SELECT name FROM v5.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall():
+            keep = {r[1] for r in conn.execute(f'PRAGMA v5.table_info("{table}")')}
+            have = [r[1] for r in conn.execute(f'PRAGMA main.table_info("{table}")')]
+            for column in have:
+                if keep and column not in keep:
+                    conn.execute(f'ALTER TABLE main."{table}" DROP COLUMN "{column}"')
+        conn.commit()
+        conn.execute("DETACH DATABASE v5")
+    finally:
+        conn.close()
 
 
 class ExportV5Error(RuntimeError):
@@ -177,6 +204,7 @@ def export_v5(*, db: Path, out_dir: Path, passphrase: str | None = None) -> Expo
 
         config_tmp = tmp / "config.sqlite"
         _merge_tier(config_tmp, work, ConfigBase.metadata)
+        _drop_v6_columns(config_tmp, work)
         config_names = {t.name for t in ConfigBase.metadata.sorted_tables}
         ledger_names = {t.name for t in LedgerBase.metadata.sorted_tables}
         _empty_non_ledger_tables(work, config_names - ledger_names)

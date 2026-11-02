@@ -1,7 +1,8 @@
 import clsx from "clsx";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NavLink } from "react-router";
-import { BRAND_ICON, NAV_GROUPS, NAV_ITEMS } from "../../lib/nav";
+import { NAV_GROUPS, NAV_ITEMS } from "../../lib/nav";
+import { BrandMark } from "../BrandMark";
 import { IconButton } from "../IconButton";
 import "./Sidebar.scss";
 
@@ -13,13 +14,10 @@ export interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const Brand = BRAND_ICON;
   return (
     <aside className={clsx("sidebar", collapsed && "sidebar--rail")}>
       <div className="sidebar__brand">
-        <span className="sidebar__logo">
-          <Brand aria-hidden />
-        </span>
+        <BrandMark className="sidebar__logo" size={32} />
         <span className="sidebar__brand-text">Investment Overview</span>
       </div>
       <nav className="sidebar__nav" aria-label="Primary">

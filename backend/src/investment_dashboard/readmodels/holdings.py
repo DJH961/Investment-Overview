@@ -26,7 +26,9 @@ from investment_dashboard.readmodels.queries.overview_query import (
     holding_freshness,
 )
 from investment_dashboard.repositories import instruments_repo
-from investment_dashboard.services import prices_service
+from investment_dashboard.services import fx_service, prices_service
+from investment_dashboard.services.daily_growth_view import fx_move_pct
+from investment_dashboard.services.metrics_service import compute_portfolio_metrics
 from investment_dashboard.services.positions_service import Position, compute_positions
 
 ZERO = Decimal(0)
@@ -165,9 +167,92 @@ def _summary(rows: list[dict[str, Any]], cards: list[HoldingCard], ccy: str) -> 
     }
 
 
-def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str, Any]:
+GROUP_BY_VALUES = ("none", "account", "asset_class", "currency", "category")
+
+
+def _group_key(row: dict[str, Any], by: str) -> str:
+    field = {
+        "account": "account",
+        "asset_class": "asset_class",
+        "currency": "native_currency",
+        "category": "category",
+    }[by]
+    return str(row[field] or "")
+
+
+def build_groups(
+    rows: list[dict[str, Any]], cards: list[HoldingCard], by: str, ccy: str
+) -> list[dict[str, Any]]:
+    """Per-group subtotals (``Decimal``, in ``ccy``), largest value first.
+
+    💱 Same rule as the page totals: each figure is the sum of the holdings'
+    own ``ccy`` legs; a group missing a leg for any member reports ``None`` for
+    that figure instead of a partial sum. Nothing is converted.
+    """
+    if by == "none":
+        return []
+    members: dict[str, list[int]] = {}
+    for i, row in enumerate(rows):
+        members.setdefault(_group_key(row, by), []).append(i)
+    out: list[dict[str, Any]] = []
+    for key, idx in members.items():
+        group_cards = [cards[i] for i in idx]
+        splits = [_gain_split(c, ccy) for c in group_cards]
+        weights = [c.weight for c in group_cards]
+        out.append(
+            {
+                "key": key,
+                "count": len(idx),
+                "instrument_ids": [rows[i]["instrument_id"] for i in idx],
+                "value": _sum([pick(c.value_eur, c.value_usd, ccy) for c in group_cards]),
+                "cost_basis": _sum(
+                    [pick(c.cost_basis_eur, c.cost_basis_usd, ccy) for c in group_cards]
+                ),
+                "capital_gain": _sum([s[0] for s in splits]),
+                "dividends": _sum([s[1] for s in splits]),
+                "total_return": _sum([s[2] for s in splits]),
+                "weight_pct": _sum(weights),
+            }
+        )
+    out.sort(key=lambda g: (-(g["value"] if g["value"] is not None else ZERO), g["key"]))
+    return [{k: (dec(v) if isinstance(v, Decimal) else v) for k, v in g.items()} for g in out]
+
+
+def _fx_block(
+    session: Session,
+    *,
+    ccy: str,
+    live_fx: Decimal | None,
+    prev_fx: Decimal | None,
+    native_currencies: set[str],
+    today: date,
+) -> dict[str, Any] | None:
+    """Current FX stamp for the second KPI row, or ``None`` when irrelevant.
+
+    Irrelevant when no rate exists or every holding already trades in ``ccy``.
+    The move is a display-relative fraction (strength of the foreign currency).
+    """
+    if live_fx is None or live_fx <= 0 or native_currencies <= {ccy}:
+        return None
+    in_usd = ccy == "USD"
+    info = fx_service.eur_quote_as_of(session, quote="USD", today=today)
+    move = fx_move_pct(live_fx, prev_fx, ccy)
+    return {
+        "pair": "EUR/USD" if in_usd else "USD/EUR",
+        "spot": dec(live_fx if in_usd else Decimal(1) / live_fx),
+        "move_pct": dec(move / Decimal(100) if move is not None else None),
+        "as_of": iso(info.as_of) if info else None,
+        "source": info.source if info else None,
+        "observed_at": iso(info.observed_at) if info and info.observed_at else None,
+    }
+
+
+def build(
+    session: Session, *, ccy: str, group_by: str = "none", as_of: date | None = None
+) -> dict[str, Any]:
     """The ``GET /api/holdings`` payload."""
     ctx = build_context(session, as_of=as_of)
+    pm = compute_portfolio_metrics(session, as_of=ctx.as_of)
     positions = merge_positions_by_instrument(compute_positions(session, as_of=ctx.as_of))
     metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of)
     freshness = holding_freshness(session, positions)
@@ -196,9 +281,37 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
         "total_capital_gain": dec(total_gain),
         "total_dividends": dec(total_dividends),
         "total_return": dec(total_return),
+        "xirr": dec(pick(pm.xirr, pm.xirr_usd, ccy)),
+        "total_growth": dec(
+            pick(pm.total_growth_compounded_eur, pm.total_growth_compounded_usd, ccy)
+        ),
+        "dividend_income": dec(pick(pm.total_dividends_cash_eur, pm.total_dividends_cash_usd, ccy)),
+        "dividends_ttm": dec(pick(pm.dividends_ttm_eur, pm.dividends_ttm_usd, ccy)),
+        "dividend_yield_pct": dec(pm.dividend_yield_pct),
+        "dividend_yield_ttm_pct": dec(pm.dividend_yield_ttm_pct),
+        "weighted_expense_ratio": dec(pm.weighted_expense_ratio),
+        "annual_expense_cost": dec(_expense_cost(pm.annual_expense_cost_eur, ccy, ctx)),
+        "fx": _fx_block(
+            session,
+            ccy=ccy,
+            live_fx=pm.daily_growth_fx_eur_usd or ctx.fx_rate_eur_usd,
+            prev_fx=pm.daily_growth_fx_eur_usd_prev,
+            native_currencies={r["native_currency"] for r in rows},
+            today=ctx.as_of,
+        ),
+        "group_by": group_by,
+        "groups": build_groups(rows, cards, group_by, ccy),
         "holdings": rows,
         "summary": _summary(rows, cards, ccy),
     }
+
+
+def _expense_cost(cost_eur: Decimal | None, ccy: str, ctx: Any) -> Decimal | None:
+    """Annual fee estimate: a single-instant value, so converted at the spot rate."""
+    if cost_eur is None or ccy != "USD":
+        return cost_eur
+    rate = ctx.fx_rate_eur_usd
+    return cost_eur * rate if rate is not None else None
 
 
 def _sum(values: list[Decimal | None]) -> Decimal | None:

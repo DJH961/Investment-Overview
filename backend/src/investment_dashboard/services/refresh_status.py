@@ -23,9 +23,13 @@ refresh tick repopulates it within a minute.
 
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,26 @@ _state: dict[str, object] = {
 }
 
 
+def _publish(event: dict[str, Any]) -> None:
+    """Best-effort fan-out to ``/api/stream`` (never raises, never blocks).
+
+    Called *outside* :data:`_lock` so a slow subscriber can never stall a refresh.
+    """
+    try:
+        from investment_dashboard.services import live_bus  # noqa: PLC0415
+
+        now = datetime.now(UTC)
+        live_bus.bus.publish(
+            {"ts": now.isoformat(), "market_state": live_bus.market_state(now), **event}
+        )
+    except Exception:  # pragma: no cover - publishing is best-effort
+        log.debug("refresh event publish failed", exc_info=True)
+
+
+def _iso(at: object) -> str | None:
+    return at.isoformat() if isinstance(at, datetime) else None
+
+
 def _clear_progress() -> None:
     _state["historical"] = False
     _state["progress_done"] = 0
@@ -86,6 +110,9 @@ def begin(source: str) -> None:
         _state["depth"] = int(_state["depth"]) + 1
         _state["source"] = source
         _state["seq"] = int(_state["seq"]) + 1
+        first = int(_state["depth"]) == 1
+    if first:  # overlapping refreshes announce only the outermost start
+        _publish({"type": "refresh_started", "source": source})
 
 
 def set_progress(done: int, total: int, label: str | None = None) -> None:
@@ -104,6 +131,14 @@ def set_progress(done: int, total: int, label: str | None = None) -> None:
         _state["progress_total"] = max(0, total)
         _state["progress_label"] = label
         _state["seq"] = int(_state["seq"]) + 1
+        payload = {
+            "type": "refresh_progress",
+            "historical": total > 0,
+            "progress_done": int(_state["progress_done"]),
+            "progress_total": int(_state["progress_total"]),
+            "progress_label": label,
+        }
+    _publish(payload)
 
 
 def finish(source: str, *, updated: bool) -> None:
@@ -123,6 +158,17 @@ def finish(source: str, *, updated: bool) -> None:
         if updated:
             _state["last_update_at"] = datetime.now(UTC)
         _state["seq"] = int(_state["seq"]) + 1
+        idle = int(_state["depth"]) == 0
+        last = _state["last_update_at"]
+    if idle:  # only once every overlapping refresh has finished
+        _publish(
+            {
+                "type": "refresh_finished",
+                "source": source,
+                "updated": updated,
+                "last_update_at": _iso(last),
+            }
+        )
 
 
 def snapshot() -> RefreshActivity:

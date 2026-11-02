@@ -107,7 +107,9 @@ async def resolve_principal(request: Request) -> Principal | None:
     presented = _presented_token(request)
     if presented is not None:
         key = client_key(request)
-        wait = auth_service.token_limiter.retry_after(key, settings.login_rate_limit_per_minute)
+        wait = auth_service.token_limiter.retry_after(
+            key, auth_service.limit(settings, "login_rate_limit_per_minute")
+        )
         if wait is not None:
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,

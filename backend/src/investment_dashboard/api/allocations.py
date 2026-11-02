@@ -10,6 +10,8 @@ from fastapi import APIRouter, HTTPException, Query
 from investment_dashboard.api.deps import ReportCcy, SessionDep
 from investment_dashboard.api.schemas.allocations import (
     AllocationsResponse,
+    PlanRequest,
+    PlanResponse,
     RebalanceResponse,
     TargetIn,
     TargetOut,
@@ -68,3 +70,28 @@ def get_rebalance_plan(
     except rebalance.RebalanceInputError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return RebalanceResponse.model_validate(rebalance.plan_to_dict(plan))
+
+
+@router.post("/allocations/plan", response_model=PlanResponse)
+def post_builder_plan(body: PlanRequest, session: SessionDep) -> PlanResponse:
+    """Plan for an unsaved builder mix (by fund or by category); nothing is stored."""
+    try:
+        plan = rebalance.build_builder_plan(
+            session,
+            amount=body.amount,
+            ccy=body.ccy,
+            allow_fractional=body.fractional,
+            allow_sell=body.allow_sell,
+            mode=body.mode,
+            fund_weights={w.instrument_id: w.weight for w in body.fund_weights},
+            fund_no_buy={w.instrument_id for w in body.fund_weights if w.no_buy},
+            categories=[
+                rebalance.CategoryInput(
+                    name=c.name, weight=c.weight, split=c.split, selected=tuple(c.selected)
+                )
+                for c in body.category_weights
+            ],
+        )
+    except rebalance.RebalanceInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PlanResponse.model_validate(plan)

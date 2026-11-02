@@ -138,10 +138,10 @@ def _advance_label(start: date, index: int, periods_per_year: int) -> tuple[str,
     return f"{year:04d}", date(year, 12, 31)
 
 
-def sanitize_rate(rate: Decimal | None) -> Decimal:
+def sanitize_rate(rate: Decimal | None, fallback: Decimal = FALLBACK_EXPECTED_RATE) -> Decimal:
     """Clamp an arbitrary (possibly ``None``/extreme) rate into a sane band."""
     if rate is None:
-        return FALLBACK_EXPECTED_RATE
+        return fallback
     if rate < _MIN_REASONABLE_RATE:
         return _MIN_REASONABLE_RATE
     if rate > _MAX_REASONABLE_RATE:
@@ -149,11 +149,16 @@ def sanitize_rate(rate: Decimal | None) -> Decimal:
     return rate
 
 
-def default_expected_rate(xirr: Decimal | None) -> Decimal:
-    """Pick the default expected return: the portfolio's XIRR, sanitised."""
+def default_expected_rate(
+    xirr: Decimal | None, fallback: Decimal = FALLBACK_EXPECTED_RATE
+) -> Decimal:
+    """Pick the default expected return: the portfolio's XIRR, sanitised.
+
+    ``fallback`` (setting ``projection.fallback_rate``) applies without an XIRR.
+    """
     if xirr is None:
-        return FALLBACK_EXPECTED_RATE
-    return sanitize_rate(xirr)
+        return fallback
+    return sanitize_rate(xirr, fallback)
 
 
 def band_rates(expected: Decimal, band: Decimal) -> dict[str, Decimal]:

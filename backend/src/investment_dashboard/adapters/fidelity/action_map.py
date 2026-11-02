@@ -9,7 +9,13 @@ silently disappearing.
 
 from __future__ import annotations
 
-from investment_dashboard.adapters.importer_types import UnknownActionError
+from collections.abc import Mapping
+
+from investment_dashboard.adapters.importer_types import (
+    IGNORE_ACTION,
+    UnknownActionError,
+    lookup_override,
+)
 
 # Order matters: more specific patterns first.
 _RULES: tuple[tuple[str, str], ...] = (
@@ -34,8 +40,12 @@ _RULES: tuple[tuple[str, str], ...] = (
 )
 
 
-def map_action(action: str) -> str:
+def map_action(action: str, overrides: Mapping[str, str] | None = None) -> str | None:
     """Return the ledger ``kind`` for a Fidelity Action string.
+
+    ``overrides`` (setting ``import.action_overrides.fidelity``) maps a whole
+    action string (case-insensitive) to a kind, or to ``ignore`` (returns
+    ``None``: the row is dropped); it wins over the built-in rules.
 
     Raises
     ------
@@ -43,6 +53,9 @@ def map_action(action: str) -> str:
         If no rule matches. The importer surfaces this row in the UI so
         the user can decide whether to add a new rule or skip it.
     """
+    override = lookup_override(action, overrides)
+    if override is not None:
+        return None if override == IGNORE_ACTION else override
     upper = action.upper().strip()
     for needle, kind in _RULES:
         if needle in upper:

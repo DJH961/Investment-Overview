@@ -18,3 +18,44 @@
     font-size: var(--font-size-sm);
   }
 }
+
+.risk-page__group {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.risk-page__group-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.risk-page__total {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+
+  dt {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  dd {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin: 0;
+  }
+}
+
+.risk-page__pos {
+  color: var(--color-pos);
+}
+
+.risk-page__neg {
+  color: var(--color-neg);
+}

@@ -74,6 +74,34 @@ class HoldingsSummary(ApiModel):
     in_loss: int = Field(description="Holdings with capital_gain < 0 (total, not today)")
 
 
+GroupBy = Literal["none", "account", "asset_class", "currency", "category"]
+
+
+class HoldingGroup(ApiModel):
+    """Subtotals of one group, in the reporting ccy (``null`` when a member lacks the leg)."""
+
+    key: str
+    count: int
+    instrument_ids: list[int] = Field(description="Members, in the order of ``holdings``")
+    value: DecStr | None = None
+    cost_basis: DecStr | None = None
+    capital_gain: DecStr | None = None
+    dividends: DecStr | None = None
+    total_return: DecStr | None = None
+    weight_pct: DecStr | None = Field(default=None, description=f"Summed weight ({_FRAC})")
+
+
+class HoldingsFx(ApiModel):
+    pair: str = Field(description='"USD/EUR" (EUR reporting) or "EUR/USD" (USD reporting)')
+    spot: DecStr
+    move_pct: DecStr | None = Field(
+        default=None, description=f"Move vs the previous close ({_FRAC})"
+    )
+    as_of: str | None = None
+    source: Literal["live", "eod"] | None = None
+    observed_at: str | None = None
+
+
 class HoldingsResponse(ApiModel):
     ccy: Ccy
     as_of: str
@@ -91,6 +119,29 @@ class HoldingsResponse(ApiModel):
             "cash not invested in positions and gains realised on closed positions."
         ),
     )
+    xirr: DecStr | None = Field(default=None, description=f"Portfolio XIRR ({_FRAC})")
+    total_growth: DecStr | None = Field(
+        default=None, description=f"Portfolio compounded growth ({_FRAC})"
+    )
+    dividend_income: DecStr | None = Field(
+        default=None, description="Lifetime cash dividends received"
+    )
+    dividends_ttm: DecStr | None = Field(default=None, description="Dividends, last 12 months")
+    dividend_yield_pct: DecStr | None = Field(
+        default=None, description=f"Lifetime dividends / value ({_FRAC})"
+    )
+    dividend_yield_ttm_pct: DecStr | None = Field(
+        default=None, description=f"Trailing-12-month yield ({_FRAC})"
+    )
+    weighted_expense_ratio: DecStr | None = Field(default=None, description=_FRAC)
+    annual_expense_cost: DecStr | None = Field(
+        default=None, description="Estimated yearly fees in ccy (spot-converted)"
+    )
+    fx: HoldingsFx | None = Field(
+        default=None, description="Current FX; null when every holding is in ccy"
+    )
+    group_by: GroupBy = "none"
+    groups: list[HoldingGroup] = Field(default_factory=list)
     holdings: list[HoldingRow]
     summary: HoldingsSummary
 

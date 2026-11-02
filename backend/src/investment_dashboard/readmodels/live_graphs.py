@@ -89,6 +89,8 @@ older or data-less exports.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -98,6 +100,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV
+from investment_dashboard.domain.returns import Cashflow, GrowthMode, window_growth
 from investment_dashboard.readmodels._context import ReadModelContext
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
@@ -105,16 +108,25 @@ from investment_dashboard.readmodels.queries.overview_query import (
     build_intraday_value_series,
     build_value_series,
     build_week_value_series,
+    effective_overview_range,
     previous_session_close_value,
+    range_start_date,
+    remember_overview_range,
 )
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
     app_config_service,
+    cashflows,
     fx_service,
     intraday_snapshots_service,
+    metrics_service,
     positions_service,
     prices_service,
+    settings_service,
+    snapshots_service,
 )
+
+log = logging.getLogger(__name__)
 
 #: Cap on the 1D session's exported points (≈ a 5-min trading session's density).
 #: A dense live-captured session can hold far more rows; down-sampling keeps the
@@ -382,7 +394,13 @@ def _money_market_value_native(
     if not window:
         return {}
     mm_ids = {
-        p.instrument.id for p in positions if is_money_market_effective(p.instrument, p.effective)
+        p.instrument.id
+        for p in positions
+        if is_money_market_effective(
+            p.instrument,
+            p.effective,
+            settings_service.get_or("portfolio.money_market_symbols", ()),
+        )
     }
     if not mm_ids:
         return {}
@@ -519,6 +537,59 @@ GRAPH_RANGES: dict[str, tuple[str | None, int | None]] = {
 }
 
 
+#: API range key <-> the stored Overview range label (``chart_prefs``).
+RANGE_LABELS: dict[str, str] = {
+    "1d": "Day",
+    "1w": "Week",
+    "1m": "Month",
+    "3m": "3M",
+    "6m": "6M",
+    "ytd": "YTD",
+    "1y": "Year",
+    "all": "All",
+}
+_KEY_FOR_LABEL = {label: key for key, label in RANGE_LABELS.items()}
+
+
+def default_range(session: Session, *, now: datetime | None = None) -> str:
+    """The range key the Overview graph should open on right now (market-aware).
+
+    1d while the market is open (reset each session, a mid-session switch is
+    remembered until the close); the last range chosen outside market hours
+    otherwise. See :func:`overview_query.effective_overview_range`.
+    """
+    return _KEY_FOR_LABEL.get(effective_overview_range(session, now=now), "1y")
+
+
+def remember_range(session: Session, range_key: str, *, now: datetime | None = None) -> str:
+    """Store a manual range choice; returns the new :func:`default_range`."""
+    remember_overview_range(session, RANGE_LABELS[range_key], now=now)
+    return default_range(session, now=now)
+
+
+def reload_range(session: Session, range_key: str, *, now: datetime | None = None) -> int | None:
+    """Re-pull one graph's data from scratch (blocking; run off the request path).
+
+    1d / 1w wipe and re-pull the intraday bars (the count of points rebuilt is
+    returned); daily ranges re-warm the snapshot cache over the window
+    (``None``: there is no point count to report).
+    """
+    now = now or datetime.now(UTC)
+    if range_key == "1d":
+        return intraday_snapshots_service.reload_day_graph(session, now=now)
+    if range_key == "1w":
+        return intraday_snapshots_service.reload_week_graph(session, now=now)
+    today = market_hours.exchange_today(now)
+    label, days = GRAPH_RANGES[range_key]
+    start = (
+        today - timedelta(days=days)
+        if days is not None
+        else range_start_date(session, label, today)
+    )
+    snapshots_service.warm_range(session, start or today, today, force=True)
+    return None
+
+
 def _series_points(points: list[ValueSeriesPoint]) -> list[dict[str, str | None]]:
     """``{t, v}`` pairs; intraday points carry a full UTC timestamp, daily a date."""
     return [{"t": _point_time(p.date), "v": dec(p.value)} for p in points]
@@ -573,35 +644,232 @@ def _graph_points(
     )
 
 
+#: Growth formula per range (see :data:`domain.returns.GrowthMode`).
+GROWTH_MODES: dict[str, GrowthMode] = {
+    "1d": "reference",
+    "1w": "simple",
+    "1m": "xirr",
+    "3m": "xirr",
+    "6m": "xirr",
+    "ytd": "xirr",
+    "1y": "xirr",
+    "all": "total",
+}
+
+
+def _other_ccy(ccy: str) -> str:
+    return "USD" if ccy == "EUR" else "EUR"
+
+
+def _utc_iso(at: datetime) -> str:
+    return at.astimezone(UTC).isoformat()
+
+
+def _point_day(at: date) -> date:
+    """Exchange date of a point (intraday instants are naive UTC)."""
+    if isinstance(at, datetime):
+        return intraday_snapshots_service.session_date_of(at)
+    return at
+
+
+def _window_sessions(range_key: str, now: datetime) -> list[date]:
+    if range_key == "1d":
+        return [intraday_snapshots_service.last_session_date(now)]
+    return intraday_snapshots_service.recent_trading_sessions(now)
+
+
+def _sessions_payload(days: list[date]) -> list[dict[str, str]]:
+    return [
+        {
+            "date": d.isoformat(),
+            "open": _utc_iso(market_hours.regular_session_open(d)),
+            "close": _utc_iso(market_hours.regular_session_close(d)),
+        }
+        for d in days
+    ]
+
+
+def _coverage(
+    session: Session, *, range_key: str, days: list[date], now: datetime
+) -> dict[str, Any] | None:
+    """Finished sessions that reached their intraday target, from the read-only check."""
+    try:
+        verdict = intraday_snapshots_service.assess_graph_coverage(session, now=now)
+    except Exception:  # pragma: no cover - best-effort: never break the graph
+        log.warning("graph coverage check failed", exc_info=True)
+        return None
+    total = len(days)
+    missing = int(verdict.day_below_target)
+    if range_key == "1w":
+        missing += len(verdict.week_days_below_target)
+    covered = max(0, total - missing)
+    return {"covered": covered, "total": total, "complete": covered == total}
+
+
+class _FlowSource:
+    """External portfolio cashflows per currency, built once per request.
+
+    Each currency's stream uses every flow's own date's rate
+    (:func:`services.cashflows.build_portfolio_cashflows_dual`), so a window's
+    EUR growth is FX-aware and never derived from the USD one.
+    """
+
+    def __init__(self, session: Session, as_of: date) -> None:
+        self._session = session
+        self._as_of = as_of
+        self._flows: dict[str, list[Cashflow]] | None = None
+
+    def get(self, ccy: str) -> list[Cashflow]:
+        if self._flows is None:
+            txns = list(transactions_repo.list_transactions(self._session, end=self._as_of))
+            eur, usd = cashflows.build_portfolio_cashflows_dual(
+                txns,
+                retained_cash_account_ids=metrics_service.build_retained_cash_account_ids(
+                    self._session, txns
+                ),
+                eur_to_usd=fx_service.get_rates(self._session, base="EUR", quote="USD"),
+                eur_overrides=cashflows.eur_overrides_for(self._session),
+            )
+            self._flows = {"EUR": eur, "USD": usd}
+        return self._flows.get(ccy, [])
+
+
+def _growth(
+    *,
+    range_key: str,
+    ccy: str,
+    points: list[ValueSeriesPoint],
+    reference: Decimal | None,
+    flows: _FlowSource,
+    total: Callable[[str], Decimal | None],
+) -> dict[str, Any] | None:
+    """The window growth for one currency line (``None`` when not computable)."""
+    mode = GROWTH_MODES[range_key]
+    if mode == "total":
+        pct = total(ccy)
+        return {"pct": dec(pct), "mode": "total"} if pct is not None else None
+    if not points:
+        return None
+    first, last = points[0], points[-1]
+    result = window_growth(
+        mode=mode,
+        opening_date=_point_day(first.date),
+        opening_value=first.value,
+        closing_date=_point_day(last.date),
+        closing_value=last.value,
+        flows=flows.get(ccy) if mode != "reference" else (),
+        reference=reference,
+    )
+    if result is None:
+        return None
+    return {"pct": dec(result.pct), "mode": result.mode}
+
+
+def _align_secondary(
+    primary: list[ValueSeriesPoint], secondary: list[ValueSeriesPoint]
+) -> tuple[list[ValueSeriesPoint], Decimal | None, date | None]:
+    """Secondary points sharing a primary timestamp, plus the shared-start scale.
+
+    Only unmatched secondary points are dropped (never the whole line). ``scale``
+    is ``secondary / primary`` at the first shared timestamp where both values
+    are positive: a pure display factor between two independently built series.
+    """
+    by_time = {p.date: p.value for p in primary}
+    aligned = [p for p in secondary if p.date in by_time]
+    scale: Decimal | None = None
+    anchor: date | None = None
+    for p in aligned:
+        base = by_time[p.date]
+        if base is not None and base > 0 and p.value is not None and p.value > 0:
+            scale, anchor = p.value / base, p.date
+            break
+    return aligned, scale, anchor
+
+
+def _direction(points: list[ValueSeriesPoint], reference: Decimal | None) -> str | None:
+    if not points or reference is None:
+        return None
+    last = points[-1].value
+    if last > reference:
+        return "up"
+    if last < reference:
+        return "down"
+    return "flat"
+
+
 def build_graph(
     session: Session,
     *,
     range_key: str,
     ccy: str,
-    compare: bool = False,
+    compare: bool = True,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """The ``GET /api/graphs/{range}`` payload.
 
     Each currency line is built independently (USD intraday is FX-free; EUR uses
     the per-instant stored rate) - one is never rescaled from the other. With
-    ``compare`` the other currency's line is returned as ``secondary``, dropped
-    when its point count differs (as the NiceGUI page does).
+    ``compare`` (the default) the other currency's line is returned as
+    ``secondary``, aligned to the primary timestamps, with the shared-start
+    ``scale`` the chart uses to start both lines at the same pixel. ``growth`` is
+    the window growth of each line, each from its own series and cashflows.
     """
     now = now or datetime.now(UTC)
+    today = market_hours.exchange_today(now)
     points, reference, intraday = _graph_points(session, range_key=range_key, ccy=ccy, now=now)
+    flows = _FlowSource(session, today)
+    metrics_cache: dict[str, metrics_service.PortfolioMetrics] = {}
+
+    def total(c: str) -> Decimal | None:
+        if "m" not in metrics_cache:
+            metrics_cache["m"] = metrics_service.compute_portfolio_metrics(session, as_of=today)
+        m = metrics_cache["m"]
+        return m.total_growth_compounded_usd if c == "USD" else m.total_growth_compounded_eur
+
     secondary: dict[str, Any] | None = None
     if compare:
-        other = "USD" if ccy == "EUR" else "EUR"
-        other_points, _ref, _intra = _graph_points(session, range_key=range_key, ccy=other, now=now)
-        if other_points and len(other_points) == len(points):
-            secondary = {"ccy": other, "points": _series_points(other_points)}
+        other = _other_ccy(ccy)
+        other_points, other_ref, _intra = _graph_points(
+            session, range_key=range_key, ccy=other, now=now
+        )
+        aligned, scale, anchor = _align_secondary(points, other_points)
+        if aligned:
+            secondary = {
+                "ccy": other,
+                "points": _series_points(aligned),
+                "scale": dec(scale),
+                "anchor_t": _point_time(anchor) if anchor is not None else None,
+                "growth": _growth(
+                    range_key=range_key,
+                    ccy=other,
+                    points=other_points,
+                    reference=other_ref,
+                    flows=flows,
+                    total=total,
+                ),
+            }
+    days = _window_sessions(range_key, now) if intraday else []
     return {
         "ccy": ccy,
         "range": range_key,
-        "as_of": market_hours.exchange_today(now).isoformat(),
+        "as_of": today.isoformat(),
         "intraday": intraday,
         "points": _series_points(points),
         "reference": dec(reference),
         "secondary": secondary,
+        "session_date": days[-1].isoformat() if days else None,
+        "market_open": market_hours.is_us_market_open(now),
+        "direction": _direction(points, reference) if range_key == "1d" else None,
+        "sessions": _sessions_payload(days),
+        "coverage": (
+            _coverage(session, range_key=range_key, days=days, now=now) if intraday else None
+        ),
+        "growth": _growth(
+            range_key=range_key,
+            ccy=ccy,
+            points=points,
+            reference=reference,
+            flows=flows,
+            total=total,
+        ),
     }

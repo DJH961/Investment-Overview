@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
 import { Select, type SelectOption } from "../../components/Select";
 import { fieldErrors, type TransactionOut, type TransactionWrite } from "../../lib/queries/ledger";
+import { reconcileTrade } from "../../lib/queries/transactions-extra";
 
 export const KIND_OPTIONS: SelectOption[] = [
   { value: "buy", label: "Buy" },
@@ -20,6 +21,13 @@ export const KIND_OPTIONS: SelectOption[] = [
 ];
 
 const TRADE_KINDS = new Set(["buy", "sell", "dividend_reinvest", "split"]);
+/** Kinds where the server can book the matching money-market leg. */
+export const CASH_MOVE_KINDS = new Set(["deposit", "withdrawal", "transfer_in", "transfer_out"]);
+/** Kinds where quantity x price = total applies. */
+const RECONCILE_KINDS = new Set(["buy", "sell", "dividend_reinvest"]);
+export const MONEY_MARKET_HINT =
+  "Also books the matching buy or sell of the account's money-market (settlement) fund, so cash you move in or out " +
+  "does not sit uninvested. Leave it on unless you enter the fund's legs yourself, otherwise the cash is counted twice.";
 const DECIMAL = /^\d+(\.\d+)?$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -50,7 +58,7 @@ function initial(row: TransactionOut | null, accounts: SelectOption[]): FormStat
     total: magnitude(row?.gross_native),
     fees: magnitude(row?.fees_native),
     description: row?.description ?? "",
-    route: false,
+    route: true,
   };
 }
 
@@ -71,6 +79,36 @@ export function TransactionForm({ row, accounts, busy, serverError, onSubmit, on
   const server = serverError ? fieldErrors(serverError) : {};
   const err = (key: string) => errors[key] ?? server[key];
   const isTrade = TRADE_KINDS.has(state.kind);
+  const canRoute = !row && CASH_MOVE_KINDS.has(state.kind);
+  const [check, setCheck] = useState<{ ok: boolean; text: string } | null>(null);
+  const checkSeq = useRef(0);
+
+  /** On blur: fill the one missing figure, or flag qty x price != total (server maths). */
+  const reconcile = async (next: FormState = state) => {
+    if (!RECONCILE_KINDS.has(next.kind)) return setCheck(null);
+    const figures = { quantity: next.quantity, price: next.price, total: next.total };
+    const given = Object.values(figures).filter((v) => v && DECIMAL.test(v)).length;
+    if (given < 2 || Object.values(figures).some((v) => v && !DECIMAL.test(v))) return setCheck(null);
+    const seq = ++checkSeq.current;
+    try {
+      const res = await reconcileTrade({
+        quantity: figures.quantity || null,
+        price: figures.price || null,
+        total: figures.total || null,
+      });
+      if (seq !== checkSeq.current) return;
+      if (res.error) return setCheck({ ok: false, text: res.error });
+      if (res.filled === "quantity" || res.filled === "price" || res.filled === "total") {
+        const field = res.filled;
+        const value = res[field] ?? "";
+        setState((s) => ({ ...s, [field]: value }));
+        return setCheck({ ok: true, text: `Filled in ${field} - quantity x price = total OK` });
+      }
+      setCheck({ ok: true, text: "Quantity x price = total OK" });
+    } catch {
+      if (seq === checkSeq.current) setCheck(null); // the check is a convenience; saving still validates
+    }
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -92,7 +130,7 @@ export function TransactionForm({ row, accounts, busy, serverError, onSubmit, on
       total: state.total || null,
       fees: state.fees || null,
       description: state.description.trim() || null,
-      route_money_market: row ? false : state.route,
+      route_money_market: canRoute ? state.route : false,
     };
     onSubmit(body);
   };
@@ -107,6 +145,7 @@ export function TransactionForm({ row, accounts, busy, serverError, onSubmit, on
           value={state[key]}
           invalid={c.invalid}
           onChange={(e) => set(key, e.target.value)}
+          onBlur={decimal && key !== "fees" ? () => void reconcile() : undefined}
         />
       );
     };
@@ -172,15 +211,24 @@ export function TransactionForm({ row, accounts, busy, serverError, onSubmit, on
           {text("fees", true)}
         </Field>
       </div>
+      {check && RECONCILE_KINDS.has(state.kind) && (
+        <p
+          className={`transaction-form__check-hint transaction-form__check-hint--${check.ok ? "ok" : "error"}`}
+          role={check.ok ? "status" : "alert"}
+        >
+          {check.text}
+        </p>
+      )}
       <Field label="Description" error={err("description")}>
         {text("description")}
       </Field>
-      {!row && (
-        <label className="transaction-form__check">
+      {canRoute && (
+        <label className="transaction-form__check" title={MONEY_MARKET_HINT}>
           <input type="checkbox" checked={state.route} onChange={(e) => set("route", e.target.checked)} />
-          <span>Auto-fill the money-market fund for cash transfers</span>
+          <span>Auto-fill the money-market fund</span>
         </label>
       )}
+      {canRoute && <p className="transaction-form__hint">{MONEY_MARKET_HINT}</p>}
       <div className="transaction-form__actions">
         {onDelete && (
           <Button type="button" variant="danger" onClick={onDelete}>

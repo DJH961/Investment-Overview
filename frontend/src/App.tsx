@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from "react-router";
 import { AppShell } from "./components/AppShell";
 import { Tour } from "./components/Tour";
 import { setUnauthorizedHandler } from "./lib/api";
+import { FormatBoundary } from "./lib/displayPrefs";
 import { Activity } from "./pages/Activity";
 import { Allocations } from "./pages/Allocations";
 import { CurrencyConversions } from "./pages/CurrencyConversions";
@@ -10,6 +11,7 @@ import { Diagnostics } from "./pages/Diagnostics";
 import { Help } from "./pages/Help";
 import { Holdings } from "./pages/Holdings";
 import { Import } from "./pages/Import";
+import { Instruments } from "./pages/Instruments";
 import { Login, RequireAuth } from "./pages/Login";
 import { NotFound } from "./pages/NotFound";
 import { Onboarding } from "./pages/Onboarding";
@@ -30,6 +32,7 @@ export function App() {
   return (
     <>
       <Tour />
+      <FormatBoundary>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route element={<RequireAuth />}>
@@ -43,6 +46,7 @@ export function App() {
         <Route path="/projection" element={<Projection />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/import" element={<Import />} />
+        <Route path="/instruments" element={<Instruments />} />
         <Route path="/conversions" element={<CurrencyConversions />} />
         <Route path="/allocations" element={<Allocations />} />
         <Route path="/diagnostics" element={<Diagnostics />} />
@@ -54,6 +58,7 @@ export function App() {
       </Route>
       </Route>
     </Routes>
+      </FormatBoundary>
     </>
   );
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -39,6 +40,26 @@ class ParsedTransactionRow:
     asset_class: str | None = None
     native_currency: str | None = None
     expense_ratio: Decimal | None = None
+
+
+#: Action-override value meaning "drop rows with this action".
+IGNORE_ACTION = "ignore"
+
+
+def action_key(action: str) -> str:
+    """Normalised broker action used to match user overrides (case/space-insensitive)."""
+    return " ".join(action.split()).upper()
+
+
+def lookup_override(action: str, overrides: Mapping[str, str] | None) -> str | None:
+    """The user's mapping for ``action`` (a ledger kind or ``ignore``), else ``None``."""
+    if not overrides:
+        return None
+    wanted = action_key(action)
+    for key, kind in overrides.items():
+        if action_key(key) == wanted:
+            return kind
+    return None
 
 
 class UnknownActionError(ValueError):

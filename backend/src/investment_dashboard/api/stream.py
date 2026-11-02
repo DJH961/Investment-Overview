@@ -1,4 +1,4 @@
-"""``GET /api/stream``: server-sent events (hello, tick, refresh, fx)."""
+"""``GET /api/stream``: server-sent events (hello, tick, refresh*, fx, graphs)."""
 
 from __future__ import annotations
 

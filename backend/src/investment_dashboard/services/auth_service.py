@@ -137,6 +137,13 @@ def verify_password(session: Session, password: str, *, max_concurrent: int = 2)
 # --------------------------------------------------------------------------- sessions
 
 
+def limit(settings: Settings, key: str) -> int:
+    """A session/login limit: the app setting, never looser than ``settings``."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    return settings_service.stricter(key, int(getattr(settings, key)))
+
+
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -149,7 +156,7 @@ def create_session(session: Session, settings: Settings, user_agent: str | None)
         session,
         session_id=_hash_token(token),
         created_at=t,
-        expires_at=t + timedelta(days=settings.session_max_age_days),
+        expires_at=t + timedelta(days=limit(settings, "session_max_age_days")),
         user_agent=(user_agent or "")[:256] or None,
     )
     # Opportunistic cleanup of dead sessions.
@@ -166,7 +173,7 @@ def validate_session(session: Session, settings: Settings, token: str) -> str | 
     if row is None:
         return None
     t = now()
-    idle = timedelta(minutes=settings.session_idle_minutes)
+    idle = timedelta(minutes=limit(settings, "session_idle_minutes"))
     if t >= row.expires_at or t >= row.last_seen_at + idle:
         auth_repo.delete_row(session, row)
         return None
@@ -188,7 +195,7 @@ def peek_session(session: Session, settings: Settings, token: str) -> bool:
     if row is None:
         return False
     t = now()
-    idle = timedelta(minutes=settings.session_idle_minutes)
+    idle = timedelta(minutes=limit(settings, "session_idle_minutes"))
     return not (t >= row.expires_at or t >= row.last_seen_at + idle)
 
 
@@ -201,7 +208,7 @@ def session_is_fresh(session: Session, settings: Settings, session_id: str) -> b
     row = auth_repo.get_session(session, session_id)
     if row is None:
         return False
-    return now() - row.created_at < timedelta(minutes=settings.fresh_session_minutes)
+    return now() - row.created_at < timedelta(minutes=limit(settings, "fresh_session_minutes"))
 
 
 def delete_session(session: Session, token: str) -> None:

@@ -1,5 +1,5 @@
 import { Inbox } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { Card } from "../../components/Card";
 import { Chart, type ChartSeries } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
@@ -11,44 +11,89 @@ import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
-import { formatDate, formatMoney, formatNumber } from "../../lib/format";
+import { useDisplayPrefs } from "../../lib/displayPrefs";
+import { formatDate, formatMoney, formatNumber, formatPercent } from "../../lib/format";
+import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
+import { glossaryText } from "../../lib/glossary";
 import { usePrefs } from "../../lib/prefs";
+import { usePersistentState } from "../../lib/usePersistentState";
 import { type AnalyticsOut, toNum, useAnalytics } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
 import { Maybe } from "../Periods/Maybe";
 import "./Risk.scss";
 
 const LOOKBACKS = [
+  { value: "30", label: "1M" },
   { value: "90", label: "3M" },
   { value: "180", label: "6M" },
   { value: "365", label: "1Y" },
   { value: "1095", label: "3Y" },
+  { value: "1825", label: "5Y" },
 ] as const;
 
 type AttrRow = AnalyticsOut["attribution"][number];
 type Kind = "pct" | "ratio";
+type Tone = "none" | "sign";
 
-const METRICS: { key: keyof AnalyticsOut; label: string; kind: Kind; tip: string }[] = [
-  { key: "cagr", label: "CAGR", kind: "pct", tip: "Compound annual growth rate." },
-  { key: "twr", label: "TWR", kind: "pct", tip: "Time-weighted return, ignoring the timing of cashflows." },
-  { key: "xirr", label: "XIRR", kind: "pct", tip: "Money-weighted annualised return." },
-  { key: "volatility", label: "Volatility", kind: "pct", tip: "Annualised standard deviation of daily returns." },
-  { key: "sharpe", label: "Sharpe", kind: "ratio", tip: "Excess return per unit of volatility." },
-  { key: "sortino", label: "Sortino", kind: "ratio", tip: "Excess return per unit of downside volatility." },
-  { key: "max_drawdown", label: "Max drawdown", kind: "pct", tip: "Largest peak-to-trough fall." },
-  { key: "calmar", label: "Calmar", kind: "ratio", tip: "Return divided by maximum drawdown." },
-  { key: "ulcer", label: "Ulcer index", kind: "ratio", tip: "Depth and duration of drawdowns." },
-  { key: "var_95", label: "VaR (95%)", kind: "pct", tip: "Daily loss exceeded on 5% of days." },
-  { key: "cvar_95", label: "CVaR (95%)", kind: "pct", tip: "Average daily loss on the worst 5% of days." },
-  { key: "beta", label: "Beta", kind: "ratio", tip: "Sensitivity to the benchmark." },
-  { key: "alpha", label: "Alpha", kind: "pct", tip: "Return beyond what beta explains." },
-  { key: "skew", label: "Skew", kind: "ratio", tip: "Asymmetry of returns." },
-  { key: "kurtosis", label: "Excess kurtosis", kind: "ratio", tip: "Tail heaviness versus a normal distribution." },
+interface Metric {
+  key: keyof AnalyticsOut;
+  label: string;
+  kind: Kind;
+  tone?: Tone;
+}
+
+const GROUPS: { id: string; title: string; metrics: Metric[] }[] = [
+  {
+    id: "returns",
+    title: "Returns",
+    metrics: [
+      { key: "cagr", label: "CAGR", kind: "pct", tone: "sign" },
+      { key: "twr", label: "TWR", kind: "pct", tone: "sign" },
+      { key: "xirr", label: "XIRR", kind: "pct", tone: "sign" },
+    ],
+  },
+  {
+    id: "risk",
+    title: "Risk and volatility",
+    metrics: [
+      { key: "volatility", label: "Volatility", kind: "pct" },
+      { key: "sharpe", label: "Sharpe", kind: "ratio", tone: "sign" },
+      { key: "sortino", label: "Sortino", kind: "ratio", tone: "sign" },
+    ],
+  },
+  {
+    id: "drawdown",
+    title: "Drawdown and tail",
+    metrics: [
+      { key: "max_drawdown", label: "Max drawdown", kind: "pct", tone: "sign" },
+      { key: "calmar", label: "Calmar", kind: "ratio" },
+      { key: "ulcer", label: "Ulcer index", kind: "ratio" },
+      { key: "var_95", label: "VaR (95%)", kind: "pct" },
+      { key: "cvar_95", label: "CVaR (95%)", kind: "pct" },
+      { key: "skew", label: "Skew", kind: "ratio" },
+      { key: "kurtosis", label: "Excess kurtosis", kind: "ratio" },
+    ],
+  },
+  {
+    id: "market",
+    title: "Benchmark and market",
+    metrics: [
+      { key: "beta", label: "Beta", kind: "ratio" },
+      { key: "alpha", label: "Alpha", kind: "pct", tone: "sign" },
+    ],
+  },
 ];
+
+const isLookback = (v: unknown): v is string => typeof v === "string" && LOOKBACKS.some((l) => l.value === v);
 
 export function Risk() {
   const { currency } = usePrefs();
-  const [lookback, setLookback] = useState("365");
+  const defaultLookback = String(useDisplayPrefs().riskLookback);
+  const [lookback, setLookback] = usePersistentState(
+    "risk.lookback",
+    isLookback(defaultLookback) ? defaultLookback : "365",
+    isLookback,
+  );
   const q = useAnalytics(currency, Number(lookback));
   const { refetch: qRefetch } = q;
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
@@ -60,9 +105,10 @@ export function Risk() {
   );
 
   const d = q.data;
+  const { hide } = useHideAmounts();
   const series = useMemo<ChartSeries[]>(() => {
     if (!d) return [];
-    return [
+    const all: ChartSeries[] = [
       { id: "portfolio", label: "Portfolio", tone: "primary", points: d.curve.map((p) => ({ t: p.date, v: toNum(p.portfolio_value) })) },
       {
         id: "benchmark",
@@ -72,16 +118,47 @@ export function Risk() {
       },
       { id: "contrib", label: "Net invested", tone: "muted", points: d.curve.map((p) => ({ t: p.date, v: toNum(p.cumulative_contributions) })) },
     ];
-  }, [d]);
+    // Hide numbers: plot as % of today's net invested (shapes kept, amounts not).
+    return hide ? relativeSeries(all, "contrib", "last") : all;
+  }, [d, hide]);
+
+  const ccy = d?.ccy ?? currency;
+  const money = (v: string | null | undefined, colored = false) => (
+    <Money amount={toNum(v ?? null)} currency={ccy} colored={colored} />
+  );
 
   const attrColumns: Column<AttrRow>[] = [
-    { key: "symbol", header: "Symbol", primary: true, cell: (r) => r.symbol },
+    { key: "symbol", header: "Holding", primary: true, cell: (r) => r.symbol },
+    {
+      key: "start",
+      header: "Start",
+      align: "right",
+      phone: "hide",
+      sortValue: (r) => toNum(r.start_value),
+      cell: (r) => money(r.start_value),
+    },
+    {
+      key: "end",
+      header: "End",
+      align: "right",
+      phone: "hide",
+      sortValue: (r) => toNum(r.end_value),
+      cell: (r) => money(r.end_value),
+    },
+    {
+      key: "net",
+      header: "Net added",
+      align: "right",
+      phone: "hide",
+      sortValue: (r) => toNum(r.net_contribution),
+      cell: (r) => money(r.net_contribution),
+    },
     {
       key: "pnl",
       header: "P&L",
       align: "right",
       sortValue: (r) => toNum(r.absolute_pnl),
-      cell: (r) => <Money amount={toNum(r.absolute_pnl)} currency={d?.attribution_currency ?? currency} colored />,
+      cell: (r) => money(r.absolute_pnl, true),
     },
     {
       key: "pct",
@@ -92,11 +169,33 @@ export function Risk() {
     },
   ];
 
+  const renderMetric = (m: Metric) => {
+    const n = toNum(d?.[m.key] as string | null);
+    const body = m.kind === "pct" ? <Percent ratio={n} colored={m.tone === "sign"} /> : <span className={m.tone === "sign" && n !== null && n !== 0 ? (n > 0 ? "risk-page__pos" : "risk-page__neg") : undefined}>{formatNumber(n)}</span>;
+    return (
+      <KpiTile
+        key={m.key}
+        label={m.label}
+        tooltip={glossaryText(m.key)}
+        value={
+          <Maybe present={n !== null} ccy={currency}>
+            {body}
+          </Maybe>
+        }
+      />
+    );
+  };
+
+  const diff = d ? toNum(d.benchmark_diff) : null;
+  const diffPct = d ? toNum(d.benchmark_diff_pct) : null;
+  const rf = d ? toNum(d.risk_free_rate) : null;
+  const benchLabel = d ? `vs ${d.benchmark_symbol}${d.benchmark_is_funded ? " (funded)" : ""}` : "";
+
   return (
     <div className="risk-page">
       <PageHeader
         title="Risk"
-        subtitle="Risk, return and attribution."
+        subtitle={d ? `${formatDate(d.start)} to ${formatDate(d.as_of)}` : "Risk, return and attribution."}
         actions={
           <SegmentedControl ariaLabel="Lookback" options={[...LOOKBACKS]} value={lookback} onChange={setLookback} />
         }
@@ -109,51 +208,89 @@ export function Risk() {
         <EmptyState icon={<Inbox aria-hidden />} title="No analytics yet" description="Import transactions to see risk metrics." />
       ) : (
         <div className="risk-page__stack">
-          <div className="risk-page__metrics">
-            {METRICS.map((m) => {
-              const n = toNum(d[m.key] as string | null);
-              return (
-                <KpiTile
-                  key={m.key}
-                  label={m.label}
-                  hint={m.tip}
-                  value={
-                    <Maybe present={n !== null} ccy={currency}>
-                      {m.kind === "pct" ? <Percent ratio={n} /> : <span>{formatNumber(n)}</span>}
-                    </Maybe>
-                  }
-                />
-              );
-            })}
-          </div>
-          <Card title="Equity curve" subtitle={`Since ${formatDate(d.curve_start)}`}>
+          {GROUPS.map((g) => (
+            <section key={g.id} className="risk-page__group" aria-label={g.title}>
+              <h2 className="risk-page__group-title">{g.title}</h2>
+              <div className="risk-page__metrics">
+                {g.metrics.map(renderMetric)}
+                {g.id === "risk" ? (
+                  <KpiTile
+                    label="Risk-free rate"
+                    tooltip={glossaryText("risk_free")}
+                    value={
+                      <Maybe present={rf !== null} ccy={currency}>
+                        <Percent ratio={rf} />
+                      </Maybe>
+                    }
+                    hint={rf !== null ? `source: ${d.risk_free_symbol}` : "no live rate cached"}
+                  />
+                ) : null}
+                {g.id === "market" ? (
+                  <>
+                    <KpiTile
+                      label="Benchmark"
+                      tooltip={glossaryText("benchmark")}
+                      value={<span>{d.benchmark_symbol}</span>}
+                      hint={d.benchmark_is_funded ? "funded with your deposits" : "price only"}
+                    />
+                    <KpiTile
+                      label={benchLabel}
+                      tooltip={glossaryText("benchmark")}
+                      value={
+                        <Maybe present={diff !== null} ccy={currency}>
+                          {money(d.benchmark_diff, true)}
+                        </Maybe>
+                      }
+                      hint={diffPct !== null ? <Percent ratio={diffPct} colored /> : undefined}
+                    />
+                  </>
+                ) : null}
+              </div>
+            </section>
+          ))}
+          <Card title="Equity curve" subtitle={`Since ${formatDate(d.curve_start)}`} collapsibleId="risk.curve">
             <Chart
               series={series}
-              valueFormat={(v) => formatMoney(v, d.currency, { compact: true })}
+              valueFormat={(v) =>
+                hide ? formatPercent(v, { digits: 0 }) : formatMoney(v, d.currency, { compact: true })
+              }
               timeFormat={(t) => formatDate(new Date(t))}
-              ariaLabel="Equity curve"
+              ariaLabel={hide ? "Equity curve, as a share of net invested" : "Equity curve"}
             />
-          </Card>
-          <Card title="Attribution">
-            {d.attribution_currency === null ? (
+            {d.portfolio_last_value !== null ? (
               <p className="risk-page__note">
-                Attribution is only available in EUR (it needs the EUR cashflow stream). Switch the reporting currency
-                to EUR to see it.
+                Latest value {money(d.portfolio_last_value)} · net invested {money(d.net_invested_last)}
+                {diff !== null ? (
+                  <>
+                    {" "}
+                    · {diff >= 0 ? "ahead of" : "behind"} {d.benchmark_symbol} by {money(d.benchmark_diff)}
+                  </>
+                ) : null}
               </p>
-            ) : (
-              <DataTable
-                caption="Return attribution"
-                columns={attrColumns}
-                rows={d.attribution}
-                rowKey={(r) => String(r.instrument_id)}
-                defaultSort={{ key: "pnl", direction: "desc" }}
-                emptyMessage="No attribution data."
-              />
-            )}
+            ) : null}
           </Card>
-          <p className="risk-page__note">
-            Risk-free rate: {d.risk_free_symbol}. Benchmark: {d.benchmark_symbol}.
-          </p>
+          <Card title="Attribution" subtitle="What each holding added to the return" collapsibleId="risk.attribution">
+            <DataTable
+              caption="Return attribution"
+              columns={attrColumns}
+              rows={d.attribution}
+              rowKey={(r) => String(r.instrument_id)}
+              defaultSort={{ key: "pnl", direction: "desc" }}
+              emptyMessage="No attribution data."
+            />
+            {d.attribution.length > 0 ? (
+              <dl className="risk-page__total" aria-label="Attribution total">
+                <dt>Total</dt>
+                <dd>
+                  <span>Start {money(d.attribution_total.start_value)}</span>
+                  <span>End {money(d.attribution_total.end_value)}</span>
+                  <span>Net added {money(d.attribution_total.net_contribution)}</span>
+                  <strong>P&amp;L {money(d.attribution_total.absolute_pnl, true)}</strong>
+                </dd>
+              </dl>
+            ) : null}
+            <p className="risk-page__note">{glossaryText("attribution")}</p>
+          </Card>
         </div>
       )}
     </div>
