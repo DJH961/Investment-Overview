@@ -2,7 +2,39 @@
 
 export type Currency = string;
 
-const LOCALE = "en-GB";
+/** Supported number/date locales (Settings → Display; `display.locale`). */
+export type Locale = "en-GB" | "de-DE" | "en-US";
+
+export interface FormatPrefs {
+  locale: Locale;
+  /** IANA zone for date-times; `undefined` = the browser's own zone. */
+  timeZone: string | undefined;
+  /** `true` 12-hour, `false` 24-hour, `undefined` = the locale's default. */
+  hour12: boolean | undefined;
+}
+
+// Module-level so plain functions (no hooks) format with the user's prefs.
+// `lib/displayPrefs.tsx` feeds these from the server settings (+ local cache).
+let LOCALE: Locale = "en-GB";
+let TIME_ZONE: string | undefined;
+let HOUR12: boolean | undefined;
+
+/** Called by `lib/displayPrefs.tsx`; tests may call it directly. */
+export function setFormatPrefs(prefs: Partial<FormatPrefs>): void {
+  if (prefs.locale) LOCALE = prefs.locale;
+  if ("timeZone" in prefs) TIME_ZONE = prefs.timeZone;
+  if ("hour12" in prefs) HOUR12 = prefs.hour12;
+}
+
+export function getFormatPrefs(): FormatPrefs {
+  return { locale: LOCALE, timeZone: TIME_ZONE, hour12: HOUR12 };
+}
+
+/*
+ * Hook point for the per-device "Hide numbers" switch (a later package): add a
+ * module flag here next to LOCALE, set it from `lib/displayPrefs.tsx`, and make
+ * formatMoney / chartMoneyFormat return a mask while it is on.
+ */
 
 export interface MoneyOptions {
   signed?: boolean;
@@ -47,16 +79,43 @@ export function formatNumber(value: number | null | undefined, digits = 2): stri
   return new Intl.NumberFormat(LOCALE, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
 }
 
-export function formatDate(value: string | Date, style: "short" | "medium" | "long" = "medium"): string {
+const isCalendarDate = (value: string | Date): value is string =>
+  typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const clock = (): Intl.DateTimeFormatOptions => (HOUR12 === undefined ? {} : { hour12: HOUR12 });
+
+/**
+ * A calendar date ("2026-03-05") is shown as that day everywhere (UTC); a
+ * timestamp is shown in the user's timezone (`timeZone` overrides it).
+ */
+export function formatDate(
+  value: string | Date,
+  style: "short" | "medium" | "long" = "medium",
+  timeZone?: string,
+): string {
   const d = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "–";
-  return new Intl.DateTimeFormat(LOCALE, { dateStyle: style, timeZone: "UTC" }).format(d);
+  const zone = isCalendarDate(value) ? "UTC" : (timeZone ?? TIME_ZONE);
+  return new Intl.DateTimeFormat(LOCALE, { dateStyle: style, timeZone: zone }).format(d);
 }
 
 export function formatTime(value: string | Date, timeZone?: string): string {
   const d = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "–";
-  return new Intl.DateTimeFormat(LOCALE, { hour: "2-digit", minute: "2-digit", timeZone }).format(d);
+  return new Intl.DateTimeFormat(LOCALE, {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: timeZone ?? TIME_ZONE,
+    ...clock(),
+  }).format(d);
+}
+
+/** "5 Mar 2026, 14:30" in the user's timezone; "never" for a missing stamp. */
+export function formatDateTime(value: string | Date | null | undefined, missing = "never"): string {
+  if (value === null || value === undefined || value === "") return missing;
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return "–";
+  return `${formatDate(d)} ${formatTime(d)}`;
 }
 
 /** Sign class helper: gains / losses / flat. */
@@ -74,7 +133,8 @@ function validDate(value: string | number | Date): Date | null {
 export function formatWeekdayTime(value: string | number | Date, timeZone?: string): string {
   const d = validDate(value);
   if (!d) return "–";
-  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, { ...o, timeZone }).format(d);
+  const fmt = (o: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(LOCALE, { ...o, ...clock(), timeZone: timeZone ?? TIME_ZONE }).format(d);
   return `${fmt({ weekday: "short" })} ${fmt({ hour: "2-digit", minute: "2-digit" })}`;
 }
 
@@ -82,7 +142,8 @@ export function formatWeekdayTime(value: string | number | Date, timeZone?: stri
 export function formatDayTime(value: string | number | Date, timeZone?: string): string {
   const d = validDate(value);
   if (!d) return "–";
-  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, { ...o, timeZone }).format(d);
+  const fmt = (o: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(LOCALE, { ...o, ...clock(), timeZone: timeZone ?? TIME_ZONE }).format(d);
   return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric", month: "short" })} ${fmt({ hour: "2-digit", minute: "2-digit" })}`;
 }
 
@@ -97,14 +158,15 @@ export function formatDayLabel(value: string, style: "short" | "weekday" = "shor
 
 /** Today's calendar date (ISO) in `timeZone`. */
 export function todayIn(timeZone?: string, now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone ?? TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 /** "Mon 26" in `timeZone` (1W axis labels). */
 export function formatShortDay(value: string | number | Date, timeZone?: string): string {
   const d = validDate(value);
   if (!d) return "–";
-  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, { ...o, timeZone }).format(d);
+  const fmt = (o: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(LOCALE, { ...o, ...clock(), timeZone: timeZone ?? TIME_ZONE }).format(d);
   return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric" })}`;
 }
 

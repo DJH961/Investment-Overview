@@ -12,6 +12,7 @@ import { Percent } from "../../components/Percent";
 import { Select } from "../../components/Select";
 import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
+import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { formatDate, formatMoney, formatNumber, formatTime } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import {
@@ -115,7 +116,10 @@ const HISTORY_RANGES: HistoryRange[] = ["1m", "3m", "6m", "ytd", "1y", "all"];
 
 /** Daily closes (native currency) with the average purchase price as a cost-basis line. */
 function HoldingDrawerChart({ row }: { row: HoldingRowDto }) {
-  const [range, setRange] = useState<HistoryRange>("1y");
+  const defaultRange = useDisplayPrefs().holdingsRange;
+  const [range, setRange] = useState<HistoryRange>(() =>
+    HISTORY_RANGES.includes(defaultRange as HistoryRange) ? (defaultRange as HistoryRange) : "1y",
+  );
   const history = useHoldingHistory(row.instrument_id, range);
   const avg = toNum(row.avg_price_native);
   const ccy = history.data?.ccy ?? row.native_currency;

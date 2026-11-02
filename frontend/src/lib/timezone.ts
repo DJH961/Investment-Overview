@@ -1,10 +1,9 @@
-import { useSettings } from "./queries/manage";
+import { useDisplayPrefs } from "./displayPrefs";
 
 /**
  * The user's display timezone from Settings (IANA name), or `undefined` for the
- * browser's own zone until settings have loaded.
+ * browser's own zone ("Browser" / "Local", or before settings have loaded).
  */
 export function useTimeZone(): string | undefined {
-  const tz = useSettings().data?.timezone;
-  return tz || undefined;
+  return useDisplayPrefs().timeZone;
 }

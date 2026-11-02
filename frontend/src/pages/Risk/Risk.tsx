@@ -12,6 +12,7 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { formatDate, formatMoney, formatNumber } from "../../lib/format";
+import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { usePrefs } from "../../lib/prefs";
 import { type AnalyticsOut, toNum, useAnalytics } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -48,7 +49,10 @@ const METRICS: { key: keyof AnalyticsOut; label: string; kind: Kind; tip: string
 
 export function Risk() {
   const { currency } = usePrefs();
-  const [lookback, setLookback] = useState("365");
+  const defaultLookback = String(useDisplayPrefs().riskLookback);
+  const [lookback, setLookback] = useState(() =>
+    LOOKBACKS.some((l) => l.value === defaultLookback) ? defaultLookback : "365",
+  );
   const q = useAnalytics(currency, Number(lookback));
   const { refetch: qRefetch } = q;
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
