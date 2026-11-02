@@ -331,6 +331,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diagnostics/problems/dismiss-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss All Problems
+         * @description Clear every recent background problem (a new failure shows up again).
+         */
+        post: operations["dismiss_all_problems_api_diagnostics_problems_dismiss_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/problems/{problem_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Problem */
+        post: operations["dismiss_problem_api_diagnostics_problems__problem_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Status
+         * @description Headline severity + count for the top-bar data-health badge.
+         */
+        get: operations["get_status_api_diagnostics_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/diagnostics/support-bundle": {
         parameters: {
             query?: never;
@@ -523,6 +580,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/action-overrides/{broker}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Action Overrides */
+        get: operations["get_action_overrides_api_imports_action_overrides__broker__get"];
+        /**
+         * Put Action Override
+         * @description Map one broker action to a kind (or ``ignore``); ``kind: null`` removes it.
+         *
+         *     Stored in the setting ``import.action_overrides.<broker>`` (settings history
+         *     keeps every change). Re-run the preview with ``POST /imports/{id}/reparse``.
+         */
+        put: operations["put_action_override_api_imports_action_overrides__broker__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Batches */
+        get: operations["list_batches_api_imports_batches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/batches/{batch_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Batch
+         * @description Delete the batch's transactions (browser session + typed ``UNDO``; backup first).
+         */
+        post: operations["undo_batch_api_imports_batches__batch_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/batches/{batch_id}/undo-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Undo Preview */
+        get: operations["undo_preview_api_imports_batches__batch_id__undo_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/brokers": {
         parameters: {
             query?: never;
@@ -535,6 +670,26 @@ export interface paths {
          * @description Importer plugins the server can parse (the frontend builds its picker from this).
          */
         get: operations["list_import_brokers_api_imports_brokers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/unknown-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Unknown Actions
+         * @description Unknown actions in the given (or the latest) staged preview, to map in the UI.
+         */
+        get: operations["unknown_actions_api_imports_unknown_actions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -577,6 +732,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/{import_id}/reparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reparse Import
+         * @description Parse a staged upload again with the current action mapping (new ``import_id``).
+         */
+        post: operations["reparse_import_api_imports__import_id__reparse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instruments": {
         parameters: {
             query?: never;
@@ -592,6 +767,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/instruments/{instrument_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Instrument */
+        get: operations["get_instrument_api_instruments__instrument_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Instrument */
+        patch: operations["update_instrument_api_instruments__instrument_id__patch"];
         trace?: never;
     };
     "/api/maintenance/backups": {
@@ -1215,6 +1408,22 @@ export interface components {
             /** Transaction Count */
             transaction_count: number;
         };
+        /** ActionOverrideIn */
+        ActionOverrideIn: {
+            /** Action */
+            action: string;
+            /** Kind */
+            kind?: string | null;
+        };
+        /** ActionOverridesOut */
+        ActionOverridesOut: {
+            /** Broker */
+            broker: string;
+            /** Overrides */
+            overrides: {
+                [key: string]: string;
+            };
+        };
         /** AllocationsResponse */
         AllocationsResponse: {
             /** Active Target Id */
@@ -1733,6 +1942,32 @@ export interface components {
             refresh: components["schemas"]["RefreshOut"];
             /** Status */
             status: string;
+        };
+        /**
+         * DiagnosticsStatusOut
+         * @description Cheap headline for the top-bar badge (no full positions walk).
+         */
+        DiagnosticsStatusOut: {
+            /**
+             * Count
+             * @description Number of quick checks that found a problem.
+             */
+            count: number;
+            /**
+             * Problems
+             * @description Recent background problems not yet dismissed.
+             */
+            problems: number;
+            /**
+             * Severity
+             * @description Worst severity of the quick checks: ok, info, warning or error.
+             */
+            severity: string;
+        };
+        /** DismissOut */
+        DismissOut: {
+            /** Dismissed */
+            dismissed: number;
         };
         /** DividendHoldingOut */
         DividendHoldingOut: {
@@ -2500,6 +2735,52 @@ export interface components {
             /** Worst Symbol */
             worst_symbol?: string | null;
         };
+        /** ImportBatchList */
+        ImportBatchList: {
+            /** Batches */
+            batches: components["schemas"]["ImportBatchOut"][];
+            /** Note */
+            note: string;
+        };
+        /** ImportBatchOut */
+        ImportBatchOut: {
+            /** Account Id */
+            account_id: number;
+            /** Account Label */
+            account_label: string | null;
+            /** Actor */
+            actor: string | null;
+            /** Broker */
+            broker: string;
+            /** Can Undo */
+            can_undo: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Rows */
+            current_rows: number;
+            /** Duplicate Count */
+            duplicate_count: number;
+            /** Filename */
+            filename: string;
+            /** Id */
+            id: number;
+            /** Row Count */
+            row_count: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "undone";
+            /** Undone At */
+            undone_at: string | null;
+            /** Undone By */
+            undone_by: string | null;
+            /** Undone Rows */
+            undone_rows: number | null;
+        };
         /**
          * ImportBroker
          * @description One available importer plugin.
@@ -2520,6 +2801,8 @@ export interface components {
             errors: components["schemas"]["ImportIssue"][];
             /** Fx Missing Dates */
             fx_missing_dates: string[];
+            /** Import Batch Id */
+            import_batch_id?: number | null;
             /** Import Id */
             import_id: string;
             /** Inserted */
@@ -2547,6 +2830,15 @@ export interface components {
             sweeps_dropped: number;
             /** Warnings */
             warnings: number;
+        };
+        /** ImportErrorDto */
+        ImportErrorDto: {
+            /** Detail */
+            detail: string;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
         };
         /** ImportIssue */
         ImportIssue: {
@@ -2619,18 +2911,154 @@ export interface components {
             /** Symbol */
             symbol?: string | null;
         };
-        /** InstrumentOut */
-        InstrumentOut: {
-            /** Asset Class */
-            asset_class: string;
+        /** ImportUndoPreview */
+        ImportUndoPreview: {
+            batch: components["schemas"]["ImportBatchOut"];
+            /** Confirm Word */
+            confirm_word: string;
+            /** Detached */
+            detached: number;
+            /** Earliest Date */
+            earliest_date: string | null;
+            /** Latest Date */
+            latest_date: string | null;
+            /** Rows */
+            rows: components["schemas"]["ImportUndoRow"][];
+            /** Rows Truncated */
+            rows_truncated: boolean;
+            /** Total */
+            total: number;
+        };
+        /** ImportUndoRequest */
+        ImportUndoRequest: {
+            /**
+             * Confirm
+             * @default
+             */
+            confirm: string;
+        };
+        /** ImportUndoResult */
+        ImportUndoResult: {
+            /** Backup */
+            backup: string | null;
+            batch: components["schemas"]["ImportBatchOut"];
+            /** Deleted */
+            deleted: number;
+            /** Invalidated From */
+            invalidated_from: string | null;
+        };
+        /** ImportUndoRow */
+        ImportUndoRow: {
+            /** Date */
+            date: string;
+            /** Description */
+            description: string | null;
             /** Id */
             id: number;
+            /** Kind */
+            kind: string;
+            /** Net Native */
+            net_native: string | null;
+            /** Quantity */
+            quantity: string | null;
+            /** Symbol */
+            symbol: string | null;
+        };
+        /**
+         * InstrumentDetail
+         * @description One instrument with its effective values and the ledger values underneath.
+         *
+         *     ``name`` / ``asset_class`` / ``expense_ratio`` are the effective values
+         *     (override, else ledger). ``fetch_symbol`` is the ticker sent to the price
+         *     provider, ``null`` when nothing is fetched (cash, inactive, manual, delisted).
+         *     ``native_currency`` is read-only.
+         */
+        InstrumentDetail: {
+            /** Active */
+            active: boolean;
+            /** Asset Class */
+            asset_class: string;
+            /** Asset Class Override */
+            asset_class_override: string | null;
+            /** Category */
+            category: string | null;
+            /**
+             * Expense Ratio
+             * @description Fraction as a decimal string (0.0003).
+             */
+            expense_ratio: string | null;
+            /** Expense Ratio Override */
+            expense_ratio_override: string | null;
+            /** Fetch Symbol */
+            fetch_symbol: string | null;
+            /** Id */
+            id: number;
+            /** Latest Price Date */
+            latest_price_date: string | null;
+            /** Ledger Asset Class */
+            ledger_asset_class: string;
+            /** Ledger Name */
+            ledger_name: string | null;
             /** Name */
             name: string | null;
+            /** Name Override */
+            name_override: string | null;
             /** Native Currency */
             native_currency: string;
+            /**
+             * Pricing Mode
+             * @enum {string}
+             */
+            pricing_mode: "auto" | "manual" | "delisted";
+            /** Provider Symbol */
+            provider_symbol: string | null;
             /** Symbol */
             symbol: string;
+            /** Transaction Count */
+            transaction_count: number;
+        };
+        /** InstrumentErrorDto */
+        InstrumentErrorDto: {
+            /** Detail */
+            detail: string;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /**
+         * InstrumentPatch
+         * @description Only the fields sent are changed; ``null`` clears an override.
+         */
+        InstrumentPatch: {
+            /** Active */
+            active?: boolean | null;
+            /** Asset Class */
+            asset_class?: ("etf" | "mutual_fund" | "stock" | "cash" | "savings" | "unknown") | null;
+            /** Category */
+            category?: string | null;
+            /**
+             * Expense Ratio
+             * @description Fraction, e.g. "0.0003".
+             */
+            expense_ratio?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Pricing Mode */
+            pricing_mode?: ("auto" | "manual" | "delisted") | null;
+            /** Provider Symbol */
+            provider_symbol?: string | null;
+        };
+        /** InstrumentUpdateResult */
+        InstrumentUpdateResult: {
+            /** Changed */
+            changed: string[];
+            instrument: components["schemas"]["InstrumentDetail"];
+            /**
+             * Redownload Suggested
+             * @description The price mapping changed: offer job prices.redownload for this instrument.
+             */
+            redownload_suggested: boolean;
         };
         /** InvestingPower */
         InvestingPower: {
@@ -4093,6 +4521,33 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** UnknownAction */
+        UnknownAction: {
+            /** Action */
+            action: string;
+            /** Count */
+            count: number;
+        };
+        /**
+         * UnknownActionsOut
+         * @description Unknown broker actions in the latest (or given) staged preview.
+         */
+        UnknownActionsOut: {
+            /** Actions */
+            actions: components["schemas"]["UnknownAction"][];
+            /** Broker */
+            broker: string | null;
+            /** Filename */
+            filename: string | null;
+            /** Import Id */
+            import_id: string | null;
+            /** Overrides */
+            overrides: {
+                [key: string]: string;
+            };
+            /** Targets */
+            targets: string[];
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -4795,6 +5250,77 @@ export interface operations {
             };
         };
     };
+    dismiss_all_problems_api_diagnostics_problems_dismiss_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissOut"];
+                };
+            };
+        };
+    };
+    dismiss_problem_api_diagnostics_problems__problem_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                problem_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_status_api_diagnostics_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticsStatusOut"];
+                };
+            };
+        };
+    };
     get_support_bundle_api_diagnostics_support_bundle_get: {
         parameters: {
             query?: never;
@@ -5178,6 +5704,169 @@ export interface operations {
             };
         };
     };
+    get_action_overrides_api_imports_action_overrides__broker__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                broker: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOverridesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_action_override_api_imports_action_overrides__broker__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                broker: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionOverrideIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOverridesOut"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportErrorDto"];
+                };
+            };
+        };
+    };
+    list_batches_api_imports_batches_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportBatchList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_batch_api_imports_batches__batch_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportUndoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportUndoResult"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportErrorDto"];
+                };
+            };
+        };
+    };
+    undo_preview_api_imports_batches__batch_id__undo_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportUndoPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_import_brokers_api_imports_brokers_get: {
         parameters: {
             query?: never;
@@ -5194,6 +5883,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportBroker"][];
+                };
+            };
+        };
+    };
+    unknown_actions_api_imports_unknown_actions_get: {
+        parameters: {
+            query?: {
+                import_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnknownActionsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5260,6 +5980,37 @@ export interface operations {
             };
         };
     };
+    reparse_import_api_imports__import_id__reparse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_instruments_api_instruments_get: {
         parameters: {
             query?: never;
@@ -5275,7 +6026,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InstrumentOut"][];
+                    "application/json": components["schemas"]["InstrumentDetail"][];
+                };
+            };
+        };
+    };
+    get_instrument_api_instruments__instrument_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_instrument_api_instruments__instrument_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstrumentPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentUpdateResult"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentErrorDto"];
                 };
             };
         };

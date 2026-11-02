@@ -99,6 +99,53 @@
         "title": "AccountOut",
         "type": "object"
       },
+      "ActionOverrideIn": {
+        "properties": {
+          "action": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Action",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "ActionOverrideIn",
+        "type": "object"
+      },
+      "ActionOverridesOut": {
+        "properties": {
+          "broker": {
+            "title": "Broker",
+            "type": "string"
+          },
+          "overrides": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Overrides",
+            "type": "object"
+          }
+        },
+        "required": [
+          "broker",
+          "overrides"
+        ],
+        "title": "ActionOverridesOut",
+        "type": "object"
+      },
       "AllocationsResponse": {
         "properties": {
           "active_target_id": {
@@ -1789,6 +1836,46 @@
           "refresh"
         ],
         "title": "DiagnosticsOut",
+        "type": "object"
+      },
+      "DiagnosticsStatusOut": {
+        "description": "Cheap headline for the top-bar badge (no full positions walk).",
+        "properties": {
+          "count": {
+            "description": "Number of quick checks that found a problem.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "problems": {
+            "description": "Recent background problems not yet dismissed.",
+            "title": "Problems",
+            "type": "integer"
+          },
+          "severity": {
+            "description": "Worst severity of the quick checks: ok, info, warning or error.",
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "count",
+          "problems"
+        ],
+        "title": "DiagnosticsStatusOut",
+        "type": "object"
+      },
+      "DismissOut": {
+        "properties": {
+          "dismissed": {
+            "title": "Dismissed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dismissed"
+        ],
+        "title": "DismissOut",
         "type": "object"
       },
       "DividendHoldingOut": {
@@ -3917,6 +4004,151 @@
         "title": "HoldingsSummary",
         "type": "object"
       },
+      "ImportBatchList": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/ImportBatchOut"
+            },
+            "title": "Batches",
+            "type": "array"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batches",
+          "note"
+        ],
+        "title": "ImportBatchList",
+        "type": "object"
+      },
+      "ImportBatchOut": {
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "integer"
+          },
+          "account_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Label"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "broker": {
+            "title": "Broker",
+            "type": "string"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_rows": {
+            "title": "Current Rows",
+            "type": "integer"
+          },
+          "duplicate_count": {
+            "title": "Duplicate Count",
+            "type": "integer"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "undone"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "undone_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undone At"
+          },
+          "undone_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undone By"
+          },
+          "undone_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undone Rows"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "account_id",
+          "account_label",
+          "broker",
+          "filename",
+          "row_count",
+          "current_rows",
+          "duplicate_count",
+          "status",
+          "actor",
+          "undone_at",
+          "undone_by",
+          "undone_rows",
+          "can_undo"
+        ],
+        "title": "ImportBatchOut",
+        "type": "object"
+      },
       "ImportBroker": {
         "description": "One available importer plugin.",
         "properties": {
@@ -3963,6 +4195,17 @@
             },
             "title": "Fx Missing Dates",
             "type": "array"
+          },
+          "import_batch_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Batch Id"
           },
           "import_id": {
             "title": "Import Id",
@@ -4048,6 +4291,27 @@
           "warnings"
         ],
         "title": "ImportCounts",
+        "type": "object"
+      },
+      "ImportErrorDto": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "object"
+          }
+        },
+        "required": [
+          "detail",
+          "errors"
+        ],
+        "title": "ImportErrorDto",
         "type": "object"
       },
       "ImportIssue": {
@@ -4280,15 +4544,291 @@
         "title": "ImportPreviewRow",
         "type": "object"
       },
-      "InstrumentOut": {
+      "ImportUndoPreview": {
         "properties": {
-          "asset_class": {
-            "title": "Asset Class",
+          "batch": {
+            "$ref": "#/components/schemas/ImportBatchOut"
+          },
+          "confirm_word": {
+            "title": "Confirm Word",
             "type": "string"
+          },
+          "detached": {
+            "title": "Detached",
+            "type": "integer"
+          },
+          "earliest_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earliest Date"
+          },
+          "latest_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Date"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ImportUndoRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "rows_truncated": {
+            "title": "Rows Truncated",
+            "type": "boolean"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch",
+          "rows",
+          "rows_truncated",
+          "total",
+          "detached",
+          "earliest_date",
+          "latest_date",
+          "confirm_word"
+        ],
+        "title": "ImportUndoPreview",
+        "type": "object"
+      },
+      "ImportUndoRequest": {
+        "properties": {
+          "confirm": {
+            "default": "",
+            "title": "Confirm",
+            "type": "string"
+          }
+        },
+        "title": "ImportUndoRequest",
+        "type": "object"
+      },
+      "ImportUndoResult": {
+        "properties": {
+          "backup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup"
+          },
+          "batch": {
+            "$ref": "#/components/schemas/ImportBatchOut"
+          },
+          "deleted": {
+            "title": "Deleted",
+            "type": "integer"
+          },
+          "invalidated_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invalidated From"
+          }
+        },
+        "required": [
+          "batch",
+          "deleted",
+          "backup",
+          "invalidated_from"
+        ],
+        "title": "ImportUndoResult",
+        "type": "object"
+      },
+      "ImportUndoRow": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "net_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Native"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "kind",
+          "symbol",
+          "quantity",
+          "net_native",
+          "description"
+        ],
+        "title": "ImportUndoRow",
+        "type": "object"
+      },
+      "InstrumentDetail": {
+        "description": "One instrument with its effective values and the ledger values underneath.\n\n``name`` / ``asset_class`` / ``expense_ratio`` are the effective values\n(override, else ledger). ``fetch_symbol`` is the ticker sent to the price\nprovider, ``null`` when nothing is fetched (cash, inactive, manual, delisted).\n``native_currency`` is read-only.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "asset_class": {
+            "title": "Asset Class",
+            "type": "string"
+          },
+          "asset_class_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Class Override"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "expense_ratio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fraction as a decimal string (0.0003).",
+            "title": "Expense Ratio"
+          },
+          "expense_ratio_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expense Ratio Override"
+          },
+          "fetch_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetch Symbol"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "latest_price_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Price Date"
+          },
+          "ledger_asset_class": {
+            "title": "Ledger Asset Class",
+            "type": "string"
+          },
+          "ledger_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Name"
           },
           "name": {
             "anyOf": [
@@ -4301,23 +4841,216 @@
             ],
             "title": "Name"
           },
+          "name_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Override"
+          },
           "native_currency": {
             "title": "Native Currency",
             "type": "string"
           },
+          "pricing_mode": {
+            "enum": [
+              "auto",
+              "manual",
+              "delisted"
+            ],
+            "title": "Pricing Mode",
+            "type": "string"
+          },
+          "provider_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Symbol"
+          },
           "symbol": {
             "title": "Symbol",
             "type": "string"
+          },
+          "transaction_count": {
+            "title": "Transaction Count",
+            "type": "integer"
           }
         },
         "required": [
           "id",
           "symbol",
           "name",
+          "ledger_name",
+          "name_override",
           "asset_class",
-          "native_currency"
+          "ledger_asset_class",
+          "asset_class_override",
+          "native_currency",
+          "expense_ratio",
+          "expense_ratio_override",
+          "category",
+          "active",
+          "provider_symbol",
+          "fetch_symbol",
+          "pricing_mode",
+          "transaction_count",
+          "latest_price_date"
         ],
-        "title": "InstrumentOut",
+        "title": "InstrumentDetail",
+        "type": "object"
+      },
+      "InstrumentErrorDto": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "object"
+          }
+        },
+        "required": [
+          "detail",
+          "errors"
+        ],
+        "title": "InstrumentErrorDto",
+        "type": "object"
+      },
+      "InstrumentPatch": {
+        "description": "Only the fields sent are changed; ``null`` clears an override.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "asset_class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "etf",
+                  "mutual_fund",
+                  "stock",
+                  "cash",
+                  "savings",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Class"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "expense_ratio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fraction, e.g. \"0.0003\".",
+            "title": "Expense Ratio"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "pricing_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto",
+                  "manual",
+                  "delisted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing Mode"
+          },
+          "provider_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Symbol"
+          }
+        },
+        "title": "InstrumentPatch",
+        "type": "object"
+      },
+      "InstrumentUpdateResult": {
+        "properties": {
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed",
+            "type": "array"
+          },
+          "instrument": {
+            "$ref": "#/components/schemas/InstrumentDetail"
+          },
+          "redownload_suggested": {
+            "description": "The price mapping changed: offer job prices.redownload for this instrument.",
+            "title": "Redownload Suggested",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "instrument",
+          "changed",
+          "redownload_suggested"
+        ],
+        "title": "InstrumentUpdateResult",
         "type": "object"
       },
       "InvestingPower": {
@@ -8965,6 +9698,93 @@
         "title": "TransactionWriteResult",
         "type": "object"
       },
+      "UnknownAction": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "count"
+        ],
+        "title": "UnknownAction",
+        "type": "object"
+      },
+      "UnknownActionsOut": {
+        "description": "Unknown broker actions in the latest (or given) staged preview.",
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/UnknownAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "broker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Broker"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "import_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Id"
+          },
+          "overrides": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Overrides",
+            "type": "object"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "import_id",
+          "broker",
+          "filename",
+          "actions",
+          "targets",
+          "overrides"
+        ],
+        "title": "UnknownActionsOut",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -10044,6 +10864,92 @@
         ]
       }
     },
+    "/api/diagnostics/problems/dismiss-all": {
+      "post": {
+        "description": "Clear every recent background problem (a new failure shows up again).",
+        "operationId": "dismiss_all_problems_api_diagnostics_problems_dismiss_all_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Dismiss All Problems",
+        "tags": [
+          "diagnostics"
+        ]
+      }
+    },
+    "/api/diagnostics/problems/{problem_id}/dismiss": {
+      "post": {
+        "operationId": "dismiss_problem_api_diagnostics_problems__problem_id__dismiss_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "problem_id",
+            "required": true,
+            "schema": {
+              "title": "Problem Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DismissOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dismiss Problem",
+        "tags": [
+          "diagnostics"
+        ]
+      }
+    },
+    "/api/diagnostics/status": {
+      "get": {
+        "description": "Headline severity + count for the top-bar data-health badge.",
+        "operationId": "get_status_api_diagnostics_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Status",
+        "tags": [
+          "diagnostics"
+        ]
+      }
+    },
     "/api/diagnostics/support-bundle": {
       "get": {
         "description": "Plain-text support bundle (secrets redacted, no raw log) as a download.",
@@ -10600,6 +11506,239 @@
         ]
       }
     },
+    "/api/imports/action-overrides/{broker}": {
+      "get": {
+        "operationId": "get_action_overrides_api_imports_action_overrides__broker__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "broker",
+            "required": true,
+            "schema": {
+              "title": "Broker",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOverridesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Action Overrides",
+        "tags": [
+          "imports"
+        ]
+      },
+      "put": {
+        "description": "Map one broker action to a kind (or ``ignore``); ``kind: null`` removes it.\n\nStored in the setting ``import.action_overrides.<broker>`` (settings history\nkeeps every change). Re-run the preview with ``POST /imports/{id}/reparse``.",
+        "operationId": "put_action_override_api_imports_action_overrides__broker__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "broker",
+            "required": true,
+            "schema": {
+              "title": "Broker",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionOverrideIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOverridesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportErrorDto"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Put Action Override",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/batches": {
+      "get": {
+        "operationId": "list_batches_api_imports_batches_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportBatchList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Batches",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/batches/{batch_id}/undo": {
+      "post": {
+        "description": "Delete the batch's transactions (browser session + typed ``UNDO``; backup first).",
+        "operationId": "undo_batch_api_imports_batches__batch_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportUndoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportUndoResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportErrorDto"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Undo Batch",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/batches/{batch_id}/undo-preview": {
+      "get": {
+        "operationId": "undo_preview_api_imports_batches__batch_id__undo_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportUndoPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Preview",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/api/imports/brokers": {
       "get": {
         "description": "Importer plugins the server can parse (the frontend builds its picker from this).",
@@ -10621,6 +11760,56 @@
           }
         },
         "summary": "List Import Brokers",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/unknown-actions": {
+      "get": {
+        "description": "Unknown actions in the given (or the latest) staged preview, to map in the UI.",
+        "operationId": "unknown_actions_api_imports_unknown_actions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "import_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Import Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownActionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unknown Actions",
         "tags": [
           "imports"
         ]
@@ -10710,6 +11899,49 @@
         ]
       }
     },
+    "/api/imports/{import_id}/reparse": {
+      "post": {
+        "description": "Parse a staged upload again with the current action mapping (new ``import_id``).",
+        "operationId": "reparse_import_api_imports__import_id__reparse_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reparse Import",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/api/instruments": {
       "get": {
         "operationId": "list_instruments_api_instruments_get",
@@ -10719,7 +11951,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/InstrumentOut"
+                    "$ref": "#/components/schemas/InstrumentDetail"
                   },
                   "title": "Response List Instruments Api Instruments Get",
                   "type": "array"
@@ -10731,7 +11963,99 @@
         },
         "summary": "List Instruments",
         "tags": [
-          "accounts"
+          "instruments"
+        ]
+      }
+    },
+    "/api/instruments/{instrument_id}": {
+      "get": {
+        "operationId": "get_instrument_api_instruments__instrument_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstrumentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Instrument",
+        "tags": [
+          "instruments"
+        ]
+      },
+      "patch": {
+        "operationId": "update_instrument_api_instruments__instrument_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstrumentPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstrumentUpdateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstrumentErrorDto"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Update Instrument",
+        "tags": [
+          "instruments"
         ]
       }
     },
