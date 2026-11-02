@@ -41,7 +41,7 @@ def test_secret_keys_are_scrubbed_from_plain_backups() -> None:
             assert any(w in d.key.lower() for w in ops._SECRET_KEY_WORDS), d.key
 
 
-def test_defaults_match_code_constants() -> None:  # noqa: PLR0915 - one list of facts
+def test_defaults_match_code_constants() -> None:
     for cls, ttl in prices_service.REFRESH_TTL_SECONDS.items():
         assert _default(f"prices.ttl_seconds.{cls}") == ttl
     assert _default("prices.ttl_seconds.default") == prices_service._DEFAULT_TTL_SECONDS
@@ -81,7 +81,7 @@ def test_defaults_match_code_constants() -> None:  # noqa: PLR0915 - one list of
 
 
 def test_boot_constants() -> None:
-    from investment_dashboard import boot  # noqa: PLC0415
+    from investment_dashboard import boot
 
     assert _default("boot.backfill_days") == boot._BOOT_BACKFILL_DAYS
     assert _default("boot.warm_force_recent_days") == boot._WARM_FORCE_RECENT_DAYS
