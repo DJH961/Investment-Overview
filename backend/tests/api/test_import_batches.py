@@ -58,6 +58,7 @@ def _as(monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
         return Principal(kind=kind, session_id="0123456789abcdef" if kind == "session" else None)
 
     monkeypatch.setattr(guards, "_principal", principal)
+    monkeypatch.setattr(guards, "require_fresh_session", principal)  # signed in just now
 
 
 def _import(client: TestClient, account_id: int, content: bytes = CSV) -> dict:

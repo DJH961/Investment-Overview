@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from investment_dashboard.api import guards
+from investment_dashboard.api import guards, security
 from investment_dashboard.api.security import Principal
 from investment_dashboard.config import get_settings
 from investment_dashboard.db import ledger_session_scope
@@ -33,6 +33,7 @@ def _as(monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
         return Principal(kind=kind, session_id="0123456789abcdef" if kind == "session" else None)
 
     monkeypatch.setattr(guards, "_principal", principal)
+    monkeypatch.setattr(guards, "require_fresh_session", principal)  # signed in just now
 
 
 def _fake(monkeypatch: pytest.MonkeyPatch, job_id: str, fn: Any) -> None:
@@ -213,6 +214,11 @@ def test_backups_list_and_named_download(
     folder.mkdir()
     (folder / "snapshot-20260101-000000.sealed.json").write_text("{}", encoding="utf-8")
     monkeypatch.setenv("INV_DASHBOARD_BACKUP_DIR", str(folder))
+
+    async def _fresh() -> None:
+        return None
+
+    api_client.app.dependency_overrides[security.require_fresh_session] = _fresh  # type: ignore[attr-defined]
     data = api_client.get("/api/maintenance/backups").json()
     assert [s["name"] for s in data["snapshots"]] == ["snapshot-20260101-000000.sealed.json"]
     ok = api_client.get("/api/backup", params={"name": "snapshot-20260101-000000.sealed.json"})
