@@ -6,6 +6,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { KpiGrid } from "../../components/KpiGrid";
 import { MoversCard } from "../../components/MoversCard";
+import { OverviewHero } from "../../components/OverviewHero";
 import { OverviewWarnings } from "../../components/OverviewWarnings";
 import { PageHeader } from "../../components/PageHeader";
 import { ValueChartCard } from "../../components/ValueChartCard";
@@ -69,6 +70,8 @@ export function Overview() {
         subtitle={data ? `As of ${formatDate(data.as_of)} · ${data.position_count} positions` : undefined}
       />
       {data && <OverviewWarnings warnings={data.warnings} />}
+
+      <OverviewHero data={data} currency={currency} loading={loading} />
 
       <KpiGrid data={data} currency={currency} loading={loading} />
 

@@ -118,3 +118,13 @@ export function chartMoneyFormat(currency: Currency, kind: "axis" | "tooltip" = 
     ? (v) => formatMoney(v, currency, { digits: 0, compact: Math.abs(v) >= 1_000_000 })
     : (v) => formatMoney(v, currency, { digits: 0 });
 }
+
+/** A difference of two returns (fraction, 0.0123 = 1.23 pp) as "+1.23 pp". */
+export function formatPp(ratio: number | null | undefined, digits = 2): string {
+  if (isMissing(ratio)) return "–";
+  return `${new Intl.NumberFormat(LOCALE, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    signDisplay: "exceptZero",
+  }).format(ratio * 100)} pp`;
+}

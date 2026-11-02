@@ -12,10 +12,55 @@
   // into the next tile; KpiTile.tsx shrinks it further via --kpi-tile-fit.
   container-type: inline-size;
 
+  &__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
   &__label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
+  }
+
+  &__info {
+    display: inline-flex;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-full);
+    color: var(--color-faint);
+    cursor: help;
+
+    &:focus-visible {
+      outline: 2px solid var(--color-accent);
+    }
+  }
+
+  &__info-icon {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+  }
+
+  &__corner {
+    flex-shrink: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__secondary {
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   &__value {

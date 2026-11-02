@@ -1,6 +1,8 @@
 import clsx from "clsx";
+import { Info } from "lucide-react";
 import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { Skeleton } from "../Skeleton";
+import { Tooltip } from "../Tooltip";
 import "./KpiTile.scss";
 
 export interface KpiTileProps {
@@ -10,6 +12,12 @@ export interface KpiTileProps {
   /** Usually a DeltaBadge. */
   delta?: ReactNode;
   hint?: ReactNode;
+  /** The same figure in the other currency (small, under the value). */
+  secondary?: ReactNode;
+  /** Top-right stamp, e.g. "live" or "16:00". */
+  corner?: ReactNode;
+  /** Explanation shown from an info button beside the label. */
+  tooltip?: string;
   /** Slot for a small sparkline. */
   sparkline?: ReactNode;
   loading?: boolean;
@@ -51,12 +59,35 @@ function useFitWidth(ref: RefObject<HTMLDivElement | null>, value: ReactNode, lo
   }, [ref, value, loading]);
 }
 
-export function KpiTile({ label, value, delta, hint, sparkline, loading = false, className }: KpiTileProps) {
+export function KpiTile({
+  label,
+  value,
+  delta,
+  hint,
+  secondary,
+  corner,
+  tooltip,
+  sparkline,
+  loading = false,
+  className,
+}: KpiTileProps) {
   const valueRef = useRef<HTMLDivElement>(null);
   useFitWidth(valueRef, value, loading);
   return (
     <div className={clsx("kpi-tile", className)}>
-      <div className="kpi-tile__label">{label}</div>
+      <div className="kpi-tile__head">
+        <div className="kpi-tile__label">
+          {label}
+          {tooltip && (
+            <Tooltip content={tooltip}>
+              <button type="button" className="kpi-tile__info" aria-label={`About ${label}`}>
+                <Info aria-hidden className="kpi-tile__info-icon" />
+              </button>
+            </Tooltip>
+          )}
+        </div>
+        {corner && !loading && <div className="kpi-tile__corner">{corner}</div>}
+      </div>
       {loading ? (
         <>
           <Skeleton height="1.9rem" width="60%" />
@@ -67,6 +98,7 @@ export function KpiTile({ label, value, delta, hint, sparkline, loading = false,
           <div className="kpi-tile__value" ref={valueRef}>
             {value}
           </div>
+          {secondary && <div className="kpi-tile__secondary">{secondary}</div>}
           {(delta || hint) && (
             <div className="kpi-tile__meta">
               {delta}

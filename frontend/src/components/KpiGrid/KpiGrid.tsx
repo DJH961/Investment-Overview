@@ -1,11 +1,14 @@
-import { DeltaBadge } from "../DeltaBadge";
+import clsx from "clsx";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
-import { formatDate, formatMoney, formatPercent } from "../../lib/format";
+import { formatPercent } from "../../lib/format";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
+
+type Kpis = OverviewDto["kpis"];
+type Verdict = OverviewDto["market_verdict"];
 
 export interface KpiGridProps {
   /** Undefined while loading. */
@@ -15,54 +18,158 @@ export interface KpiGridProps {
   loading: boolean;
 }
 
-/** The Overview headline tiles: value, today, gains, XIRR, currency effect. */
+/** Copy for the info buttons (NiceGUI `ui/copy/tooltips.py` wording, shortened). */
+export const KPI_TIPS = {
+  invested: "Money put in minus money taken out, each at its own day's exchange rate.",
+  capitalGain: "Current value minus net invested. Excludes dividends.",
+  totalReturn: "Capital gain plus cash dividends received.",
+  xirr: "Money-weighted annual return: accounts for when each deposit and withdrawal happened.",
+  vsMarket: "Your compounded growth versus the benchmark over the same cashflows.",
+  totalGrowth: "Compounded growth since the first purchase: (1 + XIRR)^years − 1.",
+  ytd: "Growth since 1 January, adjusted for deposits and withdrawals.",
+  mtd: "Growth since the first of this month, adjusted for deposits and withdrawals.",
+} as const;
+
+function VsMarket({ verdict }: { verdict: Verdict | undefined }) {
+  if (!verdict || verdict.beating === null || verdict.beating === undefined) {
+    return <span className="kpi-grid__verdict">Need {verdict?.benchmark_symbol ?? "benchmark"} history</span>;
+  }
+  return (
+    <span className={clsx("kpi-grid__verdict", verdict.beating ? "kpi-grid__verdict--pos" : "kpi-grid__verdict--neg")}>
+      {verdict.beating ? "Beating the market" : "Trailing the market"}
+    </span>
+  );
+}
+
+/**
+ * The Overview KPI grid (NiceGUI's set plus v6's total return): every tile shows
+ * the reporting currency large and the other currency under it (`kpis_secondary`,
+ * computed in that currency, never converted). Today lives in the hero.
+ */
 export function KpiGrid({ data, currency, loading }: KpiGridProps) {
-  const k = data?.kpis;
-  const split = data?.currency.return_split;
+  const k: Kpis | undefined = data?.kpis;
+  const k2: Kpis | undefined = data?.kpis_secondary;
+  const ccy2 = data?.secondary_ccy ?? (currency === "EUR" ? "USD" : "EUR");
+  const money = (v: string | null | undefined, signed = false) => (
+    <Money amount={toNum(v)} currency={currency} signed={signed} colored={signed} />
+  );
+  const money2 = (v: string | null | undefined, signed = false) =>
+    k2 ? <Money amount={toNum(v)} currency={ccy2} signed={signed} /> : undefined;
+  const pct = (v: string | null | undefined) => <Percent ratio={toNum(v)} signed colored />;
+  const pct2 = (v: string | null | undefined) =>
+    k2 ? (
+      <span>
+        <Percent ratio={toNum(v)} signed /> in {ccy2}
+      </span>
+    ) : undefined;
+  const v = data?.market_verdict;
+
+  const expense = toNum(k?.weighted_expense_ratio);
+  const ttm = toNum(k?.dividends_ttm);
+
   return (
     <div className="kpi-grid">
-      <KpiTile
-        label="Portfolio value"
-        loading={loading}
-        value={<Money amount={toNum(k?.total_value)} currency={currency} />}
-      />
-      <KpiTile
-        label="Today"
-        loading={loading}
-        value={<Money amount={toNum(k?.daily_move)} currency={currency} signed colored />}
-        delta={<DeltaBadge value={toNum(k?.daily_growth_pct)} />}
-        hint={k?.daily_growth_as_of ? `as of ${formatDate(k.daily_growth_as_of)}` : undefined}
-      />
-      <KpiTile
-        label="Capital gain (excl. dividends)"
-        loading={loading}
-        value={<Money amount={toNum(k?.capital_gain)} currency={currency} signed colored />}
-        hint={
-          k?.total_invested ? `of ${formatMoney(toNum(k.total_invested), currency, { compact: true })} invested` : undefined
-        }
-      />
-      <KpiTile
-        label="Total return (incl. dividends)"
-        loading={loading}
-        value={<Money amount={toNum(k?.total_return)} currency={currency} signed colored />}
-        delta={<DeltaBadge value={toNum(k?.total_growth_compounded)} />}
-      />
-      <KpiTile
-        label="XIRR"
-        loading={loading}
-        value={<Percent ratio={toNum(k?.xirr)} signed colored />}
-        hint={k?.ytd_xirr ? `YTD ${formatPercent(toNum(k.ytd_xirr), { signed: true })}` : undefined}
-      />
-      <KpiTile
-        label="Currency effect"
-        loading={loading}
-        value={<Percent ratio={toNum(split?.currency_effect_pp)} signed colored />}
-        hint={
-          split?.investment_return == null
-            ? undefined
-            : `Investment ${formatPercent(toNum(split.investment_return), { signed: true })}`
-        }
-      />
+      <div className="kpi-grid__tiles">
+        <KpiTile
+          label="Invested"
+          tooltip={KPI_TIPS.invested}
+          loading={loading}
+          value={money(k?.total_invested)}
+          secondary={money2(k2?.total_invested)}
+        />
+        <KpiTile
+          label="Capital gain"
+          tooltip={KPI_TIPS.capitalGain}
+          loading={loading}
+          value={money(k?.capital_gain, true)}
+          secondary={money2(k2?.capital_gain, true)}
+        />
+        <KpiTile
+          label="XIRR"
+          tooltip={KPI_TIPS.xirr}
+          loading={loading}
+          value={pct(k?.xirr)}
+          secondary={pct2(k2?.xirr)}
+          hint={k?.ytd_xirr ? `YTD ${formatPercent(toNum(k.ytd_xirr), { signed: true })}` : undefined}
+        />
+        <KpiTile
+          label="Vs market"
+          tooltip={KPI_TIPS.vsMarket}
+          loading={loading}
+          value={<VsMarket verdict={v} />}
+          hint={
+            v && v.portfolio_return != null && v.benchmark_return != null
+              ? `You ${formatPercent(toNum(v.portfolio_return), { signed: true })} · ${v.benchmark_symbol} ${formatPercent(toNum(v.benchmark_return), { signed: true })}`
+              : undefined
+          }
+        />
+        <KpiTile
+          label="Total growth"
+          tooltip={KPI_TIPS.totalGrowth}
+          loading={loading}
+          value={pct(k?.total_growth_compounded)}
+          secondary={pct2(k2?.total_growth_compounded)}
+        />
+        <KpiTile
+          label="YTD"
+          tooltip={KPI_TIPS.ytd}
+          loading={loading}
+          value={pct(k?.ytd_growth)}
+          secondary={pct2(k2?.ytd_growth)}
+        />
+        <KpiTile
+          label="MTD"
+          tooltip={KPI_TIPS.mtd}
+          loading={loading}
+          value={pct(k?.mtd_growth)}
+          secondary={pct2(k2?.mtd_growth)}
+        />
+        <KpiTile
+          label="Total return"
+          tooltip={KPI_TIPS.totalReturn}
+          loading={loading}
+          value={money(k?.total_return, true)}
+          secondary={money2(k2?.total_return, true)}
+        />
+      </div>
+      {!loading && k && (
+        <dl className="kpi-grid__strip">
+          <div className="kpi-grid__stat">
+            <dt className="kpi-grid__stat-label">Expense ratio</dt>
+            <dd className="kpi-grid__stat-value">
+              <Percent ratio={expense} />
+              {k.annual_expense_cost != null && (
+                <span className="kpi-grid__stat-sub">
+                  ≈ <Money amount={toNum(k.annual_expense_cost)} currency={currency} digits={0} />
+                  /yr
+                </span>
+              )}
+            </dd>
+          </div>
+          <div className="kpi-grid__stat">
+            <dt className="kpi-grid__stat-label">Dividend return</dt>
+            <dd className="kpi-grid__stat-value">
+              <Percent ratio={toNum(k.dividend_yield_pct)} />
+              {k.dividend_income != null && (
+                <span className="kpi-grid__stat-sub">
+                  <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} /> received
+                </span>
+              )}
+            </dd>
+          </div>
+          <div className="kpi-grid__stat">
+            <dt className="kpi-grid__stat-label">TTM yield</dt>
+            <dd className="kpi-grid__stat-value">
+              <Percent ratio={toNum(k.dividend_yield_ttm_pct)} />
+              {ttm !== null && (
+                <span className="kpi-grid__stat-sub">
+                  <Money amount={ttm} currency={currency} digits={0} /> last 12 mo
+                </span>
+              )}
+            </dd>
+          </div>
+        </dl>
+      )}
     </div>
   );
 }

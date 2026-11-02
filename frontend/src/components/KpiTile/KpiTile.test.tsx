@@ -36,4 +36,11 @@ describe("KpiTile", () => {
     const fitted = container.querySelector<HTMLElement>(".kpi-tile__value");
     expect(Number(fitted?.style.getPropertyValue("--kpi-tile-fit"))).toBeCloseTo(0.66, 2);
   });
+
+  it("renders the other-currency line, corner stamp and info button", () => {
+    render(<KpiTile label="Today" value="+1%" secondary="+1.2% in USD" corner="live" tooltip="Explain" />);
+    expect(screen.getByText("+1.2% in USD")).toBeInTheDocument();
+    expect(screen.getByText("live")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "About Today" })).toBeInTheDocument();
+  });
 });
