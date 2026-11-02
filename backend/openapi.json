@@ -7594,6 +7594,123 @@
         "title": "RebalanceResponse",
         "type": "object"
       },
+      "ReconcileRequest": {
+        "additionalProperties": false,
+        "description": "Quantity x price = total check for the manual-entry form (magnitudes).",
+        "properties": {
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "title": "ReconcileRequest",
+        "type": "object"
+      },
+      "ReconcileResult": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "filled": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filled"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "title": "ReconcileResult",
+        "type": "object"
+      },
       "RefreshOut": {
         "properties": {
           "active": {
@@ -9424,6 +9541,44 @@
         "title": "TransactionKind",
         "type": "string"
       },
+      "TransactionMonth": {
+        "description": "Totals of one month over the whole filter (trade-date FX per row).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fx_incomplete": {
+            "default": false,
+            "description": "Rows without a rate were left out.",
+            "title": "Fx Incomplete",
+            "type": "boolean"
+          },
+          "month": {
+            "description": "YYYY-MM",
+            "title": "Month",
+            "type": "string"
+          },
+          "net_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Net Eur",
+            "type": "string"
+          },
+          "net_usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Net Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "count",
+          "net_eur",
+          "net_usd"
+        ],
+        "title": "TransactionMonth",
+        "type": "object"
+      },
       "TransactionOut": {
         "properties": {
           "account": {
@@ -9440,6 +9595,32 @@
               }
             ],
             "title": "Account Id"
+          },
+          "cash_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Net cash in EUR from net_native at the trade date's rate (null: no rate).",
+            "title": "Cash Eur"
+          },
+          "cash_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Net cash in USD from net_native at the trade date's rate (null: no rate).",
+            "title": "Cash Usd"
           },
           "currency": {
             "description": "Native currency of the account.",
@@ -9630,9 +9811,21 @@
             "title": "Limit",
             "type": "integer"
           },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionMonth"
+            },
+            "title": "Months",
+            "type": "array"
+          },
           "offset": {
             "title": "Offset",
             "type": "integer"
+          },
+          "order": {
+            "default": "desc",
+            "title": "Order",
+            "type": "string"
           },
           "rows": {
             "items": {
@@ -9640,6 +9833,11 @@
             },
             "title": "Rows",
             "type": "array"
+          },
+          "sort": {
+            "default": "date",
+            "title": "Sort",
+            "type": "string"
           },
           "summary": {
             "$ref": "#/components/schemas/TransactionSummary"
@@ -14285,6 +14483,40 @@
               "title": "Offset",
               "type": "integer"
             }
+          },
+          {
+            "description": "Sort key over the whole filtered set (net = native amount).",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "date",
+              "description": "Sort key over the whole filtered set (net = native amount).",
+              "enum": [
+                "date",
+                "symbol",
+                "kind",
+                "account",
+                "quantity",
+                "net"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -14349,6 +14581,48 @@
           }
         },
         "summary": "Create Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/transactions/reconcile": {
+      "post": {
+        "description": "Fill the missing one of quantity / price / total, or flag a mismatch.",
+        "operationId": "reconcile_api_transactions_reconcile_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reconcile",
         "tags": [
           "transactions"
         ]

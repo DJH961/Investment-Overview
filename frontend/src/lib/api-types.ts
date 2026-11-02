@@ -1354,6 +1354,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transactions/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile
+         * @description Fill the missing one of quantity / price / total, or flag a mismatch.
+         */
+        post: operations["reconcile_api_transactions_reconcile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transactions/{txn_id}": {
         parameters: {
             query?: never;
@@ -3835,6 +3855,31 @@ export interface components {
             /** Target Name */
             target_name: string;
         };
+        /**
+         * ReconcileRequest
+         * @description Quantity x price = total check for the manual-entry form (magnitudes).
+         */
+        ReconcileRequest: {
+            /** Price */
+            price?: number | string | null;
+            /** Quantity */
+            quantity?: number | string | null;
+            /** Total */
+            total?: number | string | null;
+        };
+        /** ReconcileResult */
+        ReconcileResult: {
+            /** Error */
+            error?: string | null;
+            /** Filled */
+            filled?: string | null;
+            /** Price */
+            price?: string | null;
+            /** Quantity */
+            quantity?: string | null;
+            /** Total */
+            total?: string | null;
+        };
         /** RefreshOut */
         RefreshOut: {
             /** Active */
@@ -4440,12 +4485,45 @@ export interface components {
          * @enum {string}
          */
         TransactionKind: "buy" | "sell" | "dividend_cash" | "dividend_reinvest" | "deposit" | "withdrawal" | "interest" | "fee" | "transfer_in" | "transfer_out" | "split";
+        /**
+         * TransactionMonth
+         * @description Totals of one month over the whole filter (trade-date FX per row).
+         */
+        TransactionMonth: {
+            /** Count */
+            count: number;
+            /**
+             * Fx Incomplete
+             * @description Rows without a rate were left out.
+             * @default false
+             */
+            fx_incomplete: boolean;
+            /**
+             * Month
+             * @description YYYY-MM
+             */
+            month: string;
+            /** Net Eur */
+            net_eur: string;
+            /** Net Usd */
+            net_usd: string;
+        };
         /** TransactionOut */
         TransactionOut: {
             /** Account */
             account: string;
             /** Account Id */
             account_id?: number | null;
+            /**
+             * Cash Eur
+             * @description Net cash in EUR from net_native at the trade date's rate (null: no rate).
+             */
+            cash_eur?: string | null;
+            /**
+             * Cash Usd
+             * @description Net cash in USD from net_native at the trade date's rate (null: no rate).
+             */
+            cash_usd?: string | null;
             /**
              * Currency
              * @description Native currency of the account.
@@ -4499,10 +4577,22 @@ export interface components {
         TransactionPage: {
             /** Limit */
             limit: number;
+            /** Months */
+            months?: components["schemas"]["TransactionMonth"][];
             /** Offset */
             offset: number;
+            /**
+             * Order
+             * @default desc
+             */
+            order: string;
             /** Rows */
             rows: components["schemas"]["TransactionOut"][];
+            /**
+             * Sort
+             * @default date
+             */
+            sort: string;
             summary: components["schemas"]["TransactionSummary"];
             /** Total */
             total: number;
@@ -7360,6 +7450,9 @@ export interface operations {
                 hide_sweeps?: boolean;
                 limit?: number;
                 offset?: number;
+                /** @description Sort key over the whole filtered set (net = native amount). */
+                sort?: "date" | "symbol" | "kind" | "account" | "quantity" | "net";
+                order?: "asc" | "desc";
             };
             header?: never;
             path?: never;
@@ -7407,6 +7500,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionWriteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_api_transactions_reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconcileResult"];
                 };
             };
             /** @description Validation Error */
