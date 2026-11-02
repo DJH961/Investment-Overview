@@ -58,6 +58,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/allocations/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Builder Plan
+         * @description Plan for an unsaved builder mix (by fund or by category); nothing is stored.
+         */
+        post: operations["post_builder_plan_api_allocations_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/allocations/rebalance": {
         parameters: {
             query?: never;
@@ -1654,6 +1674,55 @@ export interface components {
             /** Value */
             value?: string | null;
         };
+        /** BuilderPlanRowOut */
+        BuilderPlanRowOut: {
+            /** Add Shares */
+            add_shares: string;
+            /**
+             * Add Value
+             * @description Signed: + buy, - sell
+             */
+            add_value?: string | null;
+            /**
+             * After Pct
+             * @description Share of the plan total after the plan (fraction, 0.01 = 1%)
+             */
+            after_pct: string;
+            /**
+             * Before Pct
+             * @description Current value as a share of the plan total after (fraction, 0.01 = 1%)
+             */
+            before_pct: string;
+            /** Category */
+            category: string;
+            /**
+             * Current Pct
+             * @description Share of the whole portfolio today (fraction, 0.01 = 1%)
+             */
+            current_pct: string;
+            /** Current Price */
+            current_price?: string | null;
+            /** Current Value */
+            current_value?: string | null;
+            /**
+             * Held Unticked
+             * @description Held but un-ticked fund credited to its category
+             */
+            held_unticked: boolean;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Name */
+            name: string;
+            /** No Buy */
+            no_buy: boolean;
+            /** Symbol */
+            symbol: string;
+            /**
+             * Target Pct
+             * @description Target weight (fraction, 0.01 = 1%)
+             */
+            target_pct: string;
+        };
         /** CalcCategoryOut */
         CalcCategoryOut: {
             /**
@@ -1704,6 +1773,28 @@ export interface components {
             projection_defaults: components["schemas"]["ProjectionDefaultsOut"];
             /** Total Value */
             total_value: string | null;
+        };
+        /** CategoryWeightIn */
+        CategoryWeightIn: {
+            /** Name */
+            name: string;
+            /**
+             * Selected
+             * @description Ticked member funds
+             */
+            selected?: number[];
+            /**
+             * Split
+             * @description Split across ticked funds: fair by value, or evenly
+             * @default value
+             * @enum {string}
+             */
+            split: "value" | "even";
+            /**
+             * Weight
+             * @description Relative weight; normalised to 100 %
+             */
+            weight: number | string;
         };
         /**
          * CheckAction
@@ -2200,6 +2291,21 @@ export interface components {
             refresh_running: boolean;
             /** Refresh Source */
             refresh_source?: string | null;
+        };
+        /** FundWeightIn */
+        FundWeightIn: {
+            /** Instrument Id */
+            instrument_id: number;
+            /**
+             * No Buy
+             * @default false
+             */
+            no_buy: boolean;
+            /**
+             * Weight
+             * @description Relative weight; normalised to 100 %
+             */
+            weight: number | string;
         };
         /** FxAsOf */
         FxAsOf: {
@@ -3560,6 +3666,84 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["PeriodRowOut"][];
         };
+        /** PlanCategoryOut */
+        PlanCategoryOut: {
+            /** Add Value */
+            add_value?: string | null;
+            /** After Pct */
+            after_pct: string;
+            /** Before Pct */
+            before_pct: string;
+            /** Current Pct */
+            current_pct: string;
+            /** Name */
+            name: string;
+            /** Target Pct */
+            target_pct: string;
+        };
+        /** PlanRequest */
+        PlanRequest: {
+            /**
+             * Allow Sell
+             * @default false
+             */
+            allow_sell: boolean;
+            /**
+             * Amount
+             * @description Cash to invest, in `ccy`.
+             */
+            amount: number | string;
+            /** Category Weights */
+            category_weights?: components["schemas"]["CategoryWeightIn"][];
+            /**
+             * Ccy
+             * @default EUR
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /**
+             * Fractional
+             * @default false
+             */
+            fractional: boolean;
+            /** Fund Weights */
+            fund_weights?: components["schemas"]["FundWeightIn"][];
+            /**
+             * Mode
+             * @default fund
+             * @enum {string}
+             */
+            mode: "fund" | "category";
+        };
+        /** PlanResponse */
+        PlanResponse: {
+            /** Allow Fractional */
+            allow_fractional: boolean;
+            /** Allow Sell */
+            allow_sell: boolean;
+            /** Categories */
+            categories: components["schemas"]["PlanCategoryOut"][];
+            /**
+             * Ccy
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /**
+             * Extras
+             * @description Held but un-ticked funds credited to their category
+             */
+            extras: string[];
+            /** Fx Usd Per Eur */
+            fx_usd_per_eur?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "fund" | "category";
+            /** Rows */
+            rows: components["schemas"]["BuilderPlanRowOut"][];
+            summary: components["schemas"]["PlanSummaryOut"];
+        };
         /** PlanRowOut */
         PlanRowOut: {
             /** Add Shares */
@@ -3583,6 +3767,35 @@ export interface components {
              * @description Target weight (fraction, 0.01 = 1%)
              */
             target_pct: string;
+        };
+        /** PlanSummaryOut */
+        PlanSummaryOut: {
+            /** Buying */
+            buying?: string | null;
+            /** Cash */
+            cash?: string | null;
+            /** Leftover */
+            leftover?: string | null;
+            /** Other Buying */
+            other_buying?: string | null;
+            /** Other Cash */
+            other_cash?: string | null;
+            /**
+             * Other Ccy
+             * @enum {string}
+             */
+            other_ccy: "EUR" | "USD";
+            /** Other Leftover */
+            other_leftover?: string | null;
+            /** Other Selling */
+            other_selling?: string | null;
+            /**
+             * Pct Of Wealth
+             * @description Cash as a share of current portfolio value (fraction, 0.01 = 1%)
+             */
+            pct_of_wealth?: string | null;
+            /** Selling */
+            selling?: string | null;
         };
         /** PoolOut */
         PoolOut: {
@@ -4866,6 +5079,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TargetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_builder_plan_api_allocations_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanResponse"];
                 };
             };
             /** @description Validation Error */

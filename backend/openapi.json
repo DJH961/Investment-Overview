@@ -871,6 +871,116 @@
         "title": "Bucket",
         "type": "object"
       },
+      "BuilderPlanRowOut": {
+        "properties": {
+          "add_shares": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Add Shares",
+            "type": "string"
+          },
+          "add_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Signed: + buy, - sell",
+            "title": "Add Value"
+          },
+          "after_pct": {
+            "description": "Share of the plan total after the plan (fraction, 0.01 = 1%)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "After Pct",
+            "type": "string"
+          },
+          "before_pct": {
+            "description": "Current value as a share of the plan total after (fraction, 0.01 = 1%)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Before Pct",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "current_pct": {
+            "description": "Share of the whole portfolio today (fraction, 0.01 = 1%)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Current Pct",
+            "type": "string"
+          },
+          "current_price": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Price"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "held_unticked": {
+            "description": "Held but un-ticked fund credited to its category",
+            "title": "Held Unticked",
+            "type": "boolean"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "no_buy": {
+            "title": "No Buy",
+            "type": "boolean"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "target_pct": {
+            "description": "Target weight (fraction, 0.01 = 1%)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Target Pct",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "name",
+          "category",
+          "target_pct",
+          "current_pct",
+          "before_pct",
+          "after_pct",
+          "add_shares",
+          "no_buy",
+          "held_unticked"
+        ],
+        "title": "BuilderPlanRowOut",
+        "type": "object"
+      },
       "CalcCategoryOut": {
         "properties": {
           "current_pct": {
@@ -1040,6 +1150,52 @@
           "projection_defaults"
         ],
         "title": "CalculatorInputsOut",
+        "type": "object"
+      },
+      "CategoryWeightIn": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "selected": {
+            "description": "Ticked member funds",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Selected",
+            "type": "array"
+          },
+          "split": {
+            "default": "value",
+            "description": "Split across ticked funds: fair by value, or evenly",
+            "enum": [
+              "value",
+              "even"
+            ],
+            "title": "Split",
+            "type": "string"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "description": "Relative weight; normalised to 100 %",
+            "title": "Weight"
+          }
+        },
+        "required": [
+          "name",
+          "weight"
+        ],
+        "title": "CategoryWeightIn",
         "type": "object"
       },
       "CheckAction": {
@@ -2477,6 +2633,39 @@
           "refresh_running"
         ],
         "title": "Freshness",
+        "type": "object"
+      },
+      "FundWeightIn": {
+        "properties": {
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "no_buy": {
+            "default": false,
+            "title": "No Buy",
+            "type": "boolean"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "description": "Relative weight; normalised to 100 %",
+            "title": "Weight"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "weight"
+        ],
+        "title": "FundWeightIn",
         "type": "object"
       },
       "FxAsOf": {
@@ -6534,6 +6723,197 @@
         "title": "PeriodsOut",
         "type": "object"
       },
+      "PlanCategoryOut": {
+        "properties": {
+          "add_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Value"
+          },
+          "after_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "After Pct",
+            "type": "string"
+          },
+          "before_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Before Pct",
+            "type": "string"
+          },
+          "current_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Current Pct",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "target_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Target Pct",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "target_pct",
+          "current_pct",
+          "before_pct",
+          "after_pct"
+        ],
+        "title": "PlanCategoryOut",
+        "type": "object"
+      },
+      "PlanRequest": {
+        "properties": {
+          "allow_sell": {
+            "default": false,
+            "title": "Allow Sell",
+            "type": "boolean"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "description": "Cash to invest, in `ccy`.",
+            "title": "Amount"
+          },
+          "category_weights": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryWeightIn"
+            },
+            "title": "Category Weights",
+            "type": "array"
+          },
+          "ccy": {
+            "default": "EUR",
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Ccy",
+            "type": "string"
+          },
+          "fractional": {
+            "default": false,
+            "title": "Fractional",
+            "type": "boolean"
+          },
+          "fund_weights": {
+            "items": {
+              "$ref": "#/components/schemas/FundWeightIn"
+            },
+            "title": "Fund Weights",
+            "type": "array"
+          },
+          "mode": {
+            "default": "fund",
+            "enum": [
+              "fund",
+              "category"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount"
+        ],
+        "title": "PlanRequest",
+        "type": "object"
+      },
+      "PlanResponse": {
+        "properties": {
+          "allow_fractional": {
+            "title": "Allow Fractional",
+            "type": "boolean"
+          },
+          "allow_sell": {
+            "title": "Allow Sell",
+            "type": "boolean"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/PlanCategoryOut"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Ccy",
+            "type": "string"
+          },
+          "extras": {
+            "description": "Held but un-ticked funds credited to their category",
+            "items": {
+              "type": "string"
+            },
+            "title": "Extras",
+            "type": "array"
+          },
+          "fx_usd_per_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Usd Per Eur"
+          },
+          "mode": {
+            "enum": [
+              "fund",
+              "category"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/BuilderPlanRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PlanSummaryOut"
+          }
+        },
+        "required": [
+          "ccy",
+          "mode",
+          "allow_sell",
+          "allow_fractional",
+          "summary",
+          "rows",
+          "categories",
+          "extras"
+        ],
+        "title": "PlanResponse",
+        "type": "object"
+      },
       "PlanRowOut": {
         "properties": {
           "add_shares": {
@@ -6609,6 +6989,132 @@
           "no_buy"
         ],
         "title": "PlanRowOut",
+        "type": "object"
+      },
+      "PlanSummaryOut": {
+        "properties": {
+          "buying": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Buying"
+          },
+          "cash": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cash"
+          },
+          "leftover": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leftover"
+          },
+          "other_buying": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Buying"
+          },
+          "other_cash": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Cash"
+          },
+          "other_ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Other Ccy",
+            "type": "string"
+          },
+          "other_leftover": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Leftover"
+          },
+          "other_selling": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Selling"
+          },
+          "pct_of_wealth": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cash as a share of current portfolio value (fraction, 0.01 = 1%)",
+            "title": "Pct Of Wealth"
+          },
+          "selling": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selling"
+          }
+        },
+        "required": [
+          "other_ccy"
+        ],
+        "title": "PlanSummaryOut",
         "type": "object"
       },
       "PoolOut": {
@@ -10398,6 +10904,48 @@
           }
         },
         "summary": "Put Allocation",
+        "tags": [
+          "allocations"
+        ]
+      }
+    },
+    "/api/allocations/plan": {
+      "post": {
+        "description": "Plan for an unsaved builder mix (by fund or by category); nothing is stored.",
+        "operationId": "post_builder_plan_api_allocations_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Builder Plan",
         "tags": [
           "allocations"
         ]
