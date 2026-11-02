@@ -73,6 +73,21 @@ def default_tick_job() -> dict[str, Any] | None:
         # One instant (value now x spot now), so EUR -> USD is a valid conversion.
         "total_value_usd": _dec(total_eur * rate) if rate is not None else None,
         "fx_eur_usd": _dec(rate),
+        **_price_freshness(),
+    }
+
+
+def _price_freshness(now: datetime | None = None) -> dict[str, Any]:
+    """``last_update_at`` + ``prices_live`` for the tick event (Live vs Updated chip)."""
+    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    last = refresh_status.snapshot().last_update_at
+    return {
+        "last_update_at": last.isoformat() if last is not None else None,
+        "prices_live": market_hours.is_live_now(
+            market_open=market_hours.is_us_market_open(now), last_update_at=last, now=now
+        ),
     }
 
 

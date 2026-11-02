@@ -154,3 +154,24 @@ async def test_job_never_overlaps_itself() -> None:
     gate.set()
     await first
     assert r.calls == ["tick"]
+
+
+def test_tick_freshness_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    from investment_dashboard.api.schemas.stream import TickEvent
+    from investment_dashboard.services import refresh_status, scheduler
+
+    refresh_status.reset()
+    try:
+        open_now = et(2026, 10, 28, 11)
+        assert scheduler._price_freshness(open_now) == {
+            "last_update_at": None,
+            "prices_live": False,
+        }
+        refresh_status.finish("t", updated=True)
+        last = refresh_status.snapshot().last_update_at
+        assert last is not None
+        payload = scheduler._price_freshness(last)
+        assert payload["last_update_at"] == last.isoformat()
+        TickEvent.model_validate({"ts": last.isoformat(), "market_state": "open", **payload})
+    finally:
+        refresh_status.reset()
