@@ -12,7 +12,7 @@ PricingMode = Literal["auto", "manual", "delisted"]
 AssetClass = Literal["etf", "mutual_fund", "stock", "cash", "savings", "unknown"]
 
 
-class InstrumentDetail(ApiModel):
+class InstrumentOut(ApiModel):
     """One instrument with its effective values and the ledger values underneath.
 
     ``name`` / ``asset_class`` / ``expense_ratio`` are the effective values
@@ -54,7 +54,7 @@ class InstrumentPatch(ApiModel):
 
 
 class InstrumentUpdateResult(ApiModel):
-    instrument: InstrumentDetail
+    instrument: InstrumentOut
     changed: list[str]
     redownload_suggested: bool = Field(
         description="The price mapping changed: offer job prices.redownload for this instrument."

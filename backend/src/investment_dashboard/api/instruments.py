@@ -10,8 +10,8 @@ from fastapi.responses import JSONResponse
 from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.guards import ActorDep
 from investment_dashboard.api.schemas.instruments import (
-    InstrumentDetail,
     InstrumentErrorDto,
+    InstrumentOut,
     InstrumentPatch,
     InstrumentUpdateResult,
 )
@@ -24,8 +24,8 @@ router = APIRouter(tags=["instruments"])
 _ERRORS: dict[int | str, dict[str, Any]] = {422: {"model": InstrumentErrorDto}}
 
 
-def _out(v: InstrumentView) -> InstrumentDetail:
-    return InstrumentDetail(
+def _out(v: InstrumentView) -> InstrumentOut:
+    return InstrumentOut(
         id=v.id,
         symbol=v.symbol,
         name=v.name,
@@ -47,13 +47,13 @@ def _out(v: InstrumentView) -> InstrumentDetail:
     )
 
 
-@router.get("/instruments", response_model=list[InstrumentDetail])
-def list_instruments(session: SessionDep) -> list[InstrumentDetail]:
+@router.get("/instruments", response_model=list[InstrumentOut])
+def list_instruments(session: SessionDep) -> list[InstrumentOut]:
     return [_out(v) for v in instruments_service.list_instruments(session)]
 
 
-@router.get("/instruments/{instrument_id}", response_model=InstrumentDetail)
-def get_instrument(instrument_id: int, session: SessionDep) -> InstrumentDetail:
+@router.get("/instruments/{instrument_id}", response_model=InstrumentOut)
+def get_instrument(instrument_id: int, session: SessionDep) -> InstrumentOut:
     return _out(instruments_service.get_instrument(session, instrument_id))
 
 
