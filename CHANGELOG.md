@@ -97,6 +97,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Installer source-tarball fallback points pip at `backend/` for releases after 5.3.1.
 
 ### Changed
+- Dependabot runs monthly and groups its PRs (per area: one minor/patch PR, one major PR, grouped security fixes) instead of one PR per package; `web/` gets no major bumps.
 - "Data health" is now "Health & Repair" everywhere; the investing-power dollar amount is computed on the server.
 
 - `legacy/v5` gained `docs/legacy_v5_known_bugs.md`: the v5 bugs fixed only in v6, for anyone rolling back.

@@ -1,27 +1,63 @@
 # Keep pinned GitHub Actions, Python and npm dependencies current. Updates arrive
 # as pull requests; CI must pass before anything is merged (and deployed).
+#
+# To keep the PR list short, each area gets at most two PRs a month: one with all
+# minor/patch bumps (usually safe to merge when CI is green) and one with all major
+# bumps (may need code changes). Security fixes still arrive at once, also grouped.
+# web/ is the v5 companion that v6 replaces, so it only gets minor/patch bumps.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       actions:
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
         patterns: ["*"]
   - package-ecosystem: uv
     directory: /backend
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      backend-minor:
+        update-types: [minor, patch]
+      backend-major:
+        update-types: [major]
+      backend-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      frontend-minor:
+        update-types: [minor, patch]
+      frontend-major:
+        update-types: [major]
+      frontend-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /web
     schedule:
-      interval: weekly
+      interval: monthly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      web-minor:
+        update-types: [minor, patch]
+      web-security:
+        applies-to: security-updates
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      docker:
+        patterns: ["*"]
