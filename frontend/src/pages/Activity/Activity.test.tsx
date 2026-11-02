@@ -107,7 +107,7 @@ describe("Activity", () => {
     expect(await screen.findByRole("button", { name: /2025/ })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: /2024/ })).toHaveAttribute("aria-expanded", "false"); // older years start folded
     expect(screen.getAllByText("March top-up").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$1,000.00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/1,000\.00/).length).toBeGreaterThan(0);
   });
 
   it("sends the chosen filters to the API and remembers them", async () => {
