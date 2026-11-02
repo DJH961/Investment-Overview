@@ -64,3 +64,38 @@ export function signOf(value: number | null | undefined): "pos" | "neg" | "flat"
   if (!value) return "flat";
   return value > 0 ? "pos" : "neg";
 }
+
+function validDate(value: string | number | Date): Date | null {
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** "Fri 22:00" in `timeZone` (default: the browser's). */
+export function formatWeekdayTime(value: string | number | Date, timeZone?: string): string {
+  const d = validDate(value);
+  if (!d) return "–";
+  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, { ...o, timeZone }).format(d);
+  return `${fmt({ weekday: "short" })} ${fmt({ hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** "Mon 26 Oct 14:30" in `timeZone`. */
+export function formatDayTime(value: string | number | Date, timeZone?: string): string {
+  const d = validDate(value);
+  if (!d) return "–";
+  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, { ...o, timeZone }).format(d);
+  return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric", month: "short" })} ${fmt({ hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** A calendar date (ISO "2026-10-30") as "Fri 30 Oct"; `weekday: "long"` gives just "Friday". */
+export function formatDayLabel(value: string, style: "short" | "weekday" = "short"): string {
+  const d = validDate(value.length === 10 ? `${value}T00:00:00Z` : value);
+  if (!d) return "–";
+  if (style === "weekday") return new Intl.DateTimeFormat(LOCALE, { weekday: "long", timeZone: "UTC" }).format(d);
+  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, { ...o, timeZone: "UTC" }).format(d);
+  return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric", month: "short" })}`;
+}
+
+/** Today's calendar date (ISO) in `timeZone`. */
+export function todayIn(timeZone?: string, now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}

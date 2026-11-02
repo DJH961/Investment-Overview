@@ -31,11 +31,22 @@
     box-shadow: 0 0 0 3px var(--color-warn-soft);
   }
 
-  &--loading &__dot {
+  &--live &__dot {
+    animation: freshness-pulse 2.4s ease-in-out infinite;
+  }
+
+  &--updating &__dot {
+    background: var(--color-accent);
+  }
+
+  &--loading &__dot,
+  &--updating &__dot {
     animation: freshness-pulse 1.2s ease-in-out infinite;
   }
 
   @include m.reduced-motion {
+    &--live &__dot,
+    &--updating &__dot,
     &--loading &__dot {
       animation: none;
     }

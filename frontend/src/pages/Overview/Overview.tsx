@@ -9,7 +9,11 @@ import { MoversCard } from "../../components/MoversCard";
 import { OverviewWarnings } from "../../components/OverviewWarnings";
 import { PageHeader } from "../../components/PageHeader";
 import { ValueChartCard } from "../../components/ValueChartCard";
-import { formatDate, formatTime } from "../../lib/format";
+import { describeFreshness, type FreshnessView } from "../../components/Freshness";
+import { formatDate } from "../../lib/format";
+import { useLiveStatus } from "../../lib/live";
+import { useRefreshState } from "../../lib/refresh";
+import { useTimeZone } from "../../lib/timezone";
 import { usePrefs } from "../../lib/prefs";
 import { useOverview } from "../../lib/queries/portfolio";
 import { useShellStatus } from "../../lib/shell";
@@ -24,14 +28,16 @@ export function Overview() {
   const { currency } = usePrefs();
   const overview = useOverview(currency);
 
+  const live = useLiveStatus();
+  const refresh = useRefreshState();
+  const timeZone = useTimeZone();
+
   const data = overview.data;
-  const status = overview.isPending ? "loading" : overview.isError ? "stale" : data?.is_live ? "live" : "closed";
-  const label = data
-    ? `${data.is_live ? "Live" : "Closed"} · ${formatTime(data.generated_at)}`
-    : overview.isPending
-      ? "Loading"
-      : "Offline";
-  useShellStatus(status, label, () => void overview.refetch(), overview.isFetching);
+  let chip: FreshnessView;
+  if (overview.isError) chip = { status: "stale", label: "Offline" };
+  else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone });
+  else chip = { status: "loading", label: "Loading" };
+  useShellStatus(chip.status, chip.label, () => void overview.refetch(), overview.isFetching);
 
   if (overview.isError) {
     return (

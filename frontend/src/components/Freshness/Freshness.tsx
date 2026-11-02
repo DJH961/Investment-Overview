@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import "./Freshness.scss";
 
-export type FreshnessStatus = "live" | "closed" | "stale" | "loading";
+export type FreshnessStatus = "live" | "closed" | "stale" | "loading" | "updating";
 
 export interface FreshnessProps {
   status: FreshnessStatus;

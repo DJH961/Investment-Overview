@@ -1,12 +1,16 @@
+/* The refresh bar is a styled div (native <progress> cannot animate the indeterminate stripe). */
+/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import clsx from "clsx";
 import { useCallback, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { api } from "../../lib/api";
 import { NAV_ITEMS, titleFor } from "../../lib/nav";
+import { useServerRefresh } from "../../lib/refresh";
 import { useShell } from "../../lib/shell";
 import { useShortcuts } from "../../lib/useShortcuts";
 import { useIsDesktop, useIsPhone } from "../../lib/useMediaQuery";
 import { Dialog } from "../Dialog";
+import { updatingView } from "../Freshness";
 import { Sidebar } from "../Sidebar";
 import { TabBar } from "../TabBar";
 import { TopBar } from "../TopBar";
@@ -28,7 +32,14 @@ export function AppShell() {
   const desktop = useIsDesktop();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { freshness, onRefresh, refreshing } = useShell();
+  const { freshness: pageFreshness, refreshing: pageRefreshing } = useShell();
+  // The top-bar refresh is always a real server pull (prices, FX, intraday sample).
+  const server = useServerRefresh();
+  const refresh = server.state;
+  const freshness = refresh.running ? updatingView(refresh) : pageFreshness;
+  const onRefresh = server.start;
+  const refreshing = refresh.running || pageRefreshing;
+  const determinate = refresh.historical && refresh.total > 0;
   const [userRail, setUserRail] = useState(readRail);
   const [helpOpen, setHelpOpen] = useState(false);
   const openHelp = useCallback(() => setHelpOpen(true), []);
@@ -60,6 +71,21 @@ export function AppShell() {
     <div className={clsx("app-shell", phone && "app-shell--phone", rail && "app-shell--rail")}>
       {!phone && <Sidebar collapsed={rail} onToggle={desktop ? toggleRail : undefined} />}
       <div className="app-shell__main">
+        {refresh.running && (
+          <div
+            className={clsx("app-shell__progress", !determinate && "app-shell__progress--indeterminate")}
+            role="progressbar"
+            aria-label={refresh.label ?? "Refreshing prices"}
+            aria-valuemin={determinate ? 0 : undefined}
+            aria-valuemax={determinate ? refresh.total : undefined}
+            aria-valuenow={determinate ? refresh.done : undefined}
+          >
+            <span
+              className="app-shell__progress-bar"
+              style={determinate ? { width: `${Math.min(100, (refresh.done / refresh.total) * 100)}%` } : undefined}
+            />
+          </div>
+        )}
         <TopBar
           title={titleFor(pathname)}
           freshness={freshness}
