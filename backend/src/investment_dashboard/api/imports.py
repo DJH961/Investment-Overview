@@ -19,13 +19,18 @@ from investment_dashboard.api.schemas.imports import (
     ImportPreviewRow,
 )
 from investment_dashboard.readmodels._serialize import dec
-from investment_dashboard.services import import_staging
+from investment_dashboard.services import import_staging, settings_service
 from investment_dashboard.services.importer_service import Broker
 
 router = APIRouter(tags=["imports"])
 
-#: Preview rows returned per upload (counts always cover the whole file).
+#: Preview rows returned per upload (counts always cover the whole file); the
+#: ``import.preview_row_limit`` setting overrides it.
 PREVIEW_ROW_LIMIT = 500
+
+
+def _preview_limit() -> int:
+    return int(settings_service.get_or("import.preview_row_limit", PREVIEW_ROW_LIMIT))
 
 
 def _issues(items: Sequence[RowIssue]) -> list[ImportIssue]:
@@ -34,7 +39,8 @@ def _issues(items: Sequence[RowIssue]) -> list[ImportIssue]:
 
 def _preview(staged: import_staging.StagedImport) -> ImportPreview:
     rows = []
-    for pr in staged.rows[:PREVIEW_ROW_LIMIT]:
+    limit = _preview_limit()
+    for pr in staged.rows[:limit]:
         r = pr.row
         rows.append(
             ImportPreviewRow(
@@ -68,7 +74,7 @@ def _preview(staged: import_staging.StagedImport) -> ImportPreview:
             warnings=len(report.warnings),
         ),
         rows=rows,
-        rows_truncated=len(staged.rows) > PREVIEW_ROW_LIMIT,
+        rows_truncated=len(staged.rows) > limit,
         errors=_issues(report.errors),
         warnings=_issues(report.warnings),
         unknown_actions=list(report.unknown_actions),
@@ -94,8 +100,9 @@ def upload_import(
     broker: Annotated[str | None, Form()] = None,
     account_id: Annotated[int | None, Form()] = None,
 ) -> ImportPreview:
-    content = file.file.read(import_staging.MAX_UPLOAD_BYTES + 1)
-    if len(content) > import_staging.MAX_UPLOAD_BYTES:
+    max_bytes = import_staging.max_upload_bytes()
+    content = file.file.read(max_bytes + 1)
+    if len(content) > max_bytes:
         raise HTTPException(413, "File is too large")
     try:
         staged = import_staging.stage(

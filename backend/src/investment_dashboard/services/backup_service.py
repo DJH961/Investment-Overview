@@ -77,10 +77,7 @@ class SnapshotInfo:
 def _setting(key: str, fallback: Any) -> Any:
     from investment_dashboard.services import settings_service  # noqa: PLC0415
 
-    try:
-        return settings_service.get(key)
-    except Exception:
-        return fallback
+    return settings_service.get_or(key, fallback)
 
 
 def configured_retention() -> Retention:

@@ -34,6 +34,22 @@ TTL = timedelta(minutes=30)
 ALLOWED_EXTENSIONS: tuple[str, ...] = (".csv", ".xlsx")
 
 
+def max_upload_bytes() -> int:
+    """Largest accepted file (setting ``import.max_upload_mb``; default 10 MB)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    mb = settings_service.get_or("import.max_upload_mb", None)
+    return MAX_UPLOAD_BYTES if mb is None else int(mb) * 1024 * 1024
+
+
+def staging_ttl() -> timedelta:
+    """How long an unconfirmed preview is kept (``import.staging_ttl_minutes``)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    minutes = settings_service.get_or("import.staging_ttl_minutes", None)
+    return TTL if minutes is None else timedelta(minutes=int(minutes))
+
+
 class ImportStagingError(ValidationError):
     """The upload can't be staged (bad file, unknown broker/account) -> 422."""
 
@@ -126,8 +142,9 @@ def stage(
         raise ImportStagingError("Only .csv and .xlsx files can be imported")
     if not content:
         raise ImportStagingError("The file is empty")
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise ImportStagingError(f"File is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
+    limit = max_upload_bytes()
+    if len(content) > limit:
+        raise ImportStagingError(f"File is larger than {limit // (1024 * 1024)} MB")
     acct_id = _resolve_account(session, account_id, broker)
     account = accounts_repo.get_account(session, acct_id)
     if account is None:
@@ -161,7 +178,7 @@ def stage(
         report=report,
         rows=rows,
         created_at=moment,
-        expires_at=moment + TTL,
+        expires_at=moment + staging_ttl(),
     )
     with _lock:
         _purge(moment)

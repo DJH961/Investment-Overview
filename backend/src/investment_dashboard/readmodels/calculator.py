@@ -52,11 +52,19 @@ def build(
     months: int = 36,
 ) -> dict[str, Any]:
     """Return the JSON-serializable calculator read-model."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
     ctx = context or build_context(session)
-    yearly = project_from_session(session, years=years, today=ctx.as_of)
-    monthly = project_monthly_from_session(session, months=months, today=ctx.as_of)
+    scenarios = (
+        tuple(settings_service.get_or("projection.scenarios", DEFAULT_SCENARIOS, session))
+        or DEFAULT_SCENARIOS
+    )
+    yearly = project_from_session(session, years=years, scenarios=scenarios, today=ctx.as_of)
+    monthly = project_monthly_from_session(
+        session, months=months, scenarios=scenarios, today=ctx.as_of
+    )
     return {
-        "scenarios": [format(r, "f") for r in DEFAULT_SCENARIOS],
+        "scenarios": [format(r, "f") for r in scenarios],
         "yearly": [_yearly_dict(r) for r in yearly],
         "monthly": [_monthly_dict(r) for r in monthly],
     }

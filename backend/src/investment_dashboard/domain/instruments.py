@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Protocol
 
 from investment_dashboard.domain.money_market import is_money_market
@@ -31,7 +32,13 @@ class _Effective(Protocol):
     name: str | None
 
 
-def is_money_market_effective(instrument: _HasIdentity, effective: _Effective | None) -> bool:
+def is_money_market_effective(
+    instrument: _HasIdentity,
+    effective: _Effective | None,
+    extra_symbols: Collection[str] = (),
+) -> bool:
     """Money-market test using the override-aware asset class and name when present."""
     src: _Effective = effective if effective is not None else instrument
-    return is_money_market(instrument.symbol, asset_class=src.asset_class, name=src.name)
+    return is_money_market(
+        instrument.symbol, asset_class=src.asset_class, name=src.name, extra_symbols=extra_symbols
+    )
