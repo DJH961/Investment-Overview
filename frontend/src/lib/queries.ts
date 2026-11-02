@@ -1,6 +1,6 @@
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
-import { ApiError, api } from "./api";
+import { ApiError, addAuthLostListener, api } from "./api";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -15,10 +15,40 @@ export const queryClient = new QueryClient({
   },
 });
 
+export const QUERY_CACHE_KEY = "iv.query-cache";
+
 export const persister = createSyncStoragePersister({
   storage: typeof window === "undefined" ? undefined : window.localStorage,
-  key: "iv.query-cache",
+  key: QUERY_CACHE_KEY,
 });
+
+/**
+ * Forget every cached server answer: the in-memory query cache, the persisted
+ * copy in localStorage and any `iv.*` sessionStorage entries. UI preferences
+ * (theme, currency, sidebar) stay. Called on logout and on any 401, so
+ * holdings and transactions do not stay readable on a shared or lost device.
+ */
+export function clearClientData(): void {
+  queryClient.clear();
+  try {
+    void persister.removeClient();
+  } catch {
+    /* storage unavailable */
+  }
+  try {
+    window.localStorage.removeItem(QUERY_CACHE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  try {
+    const store = window.sessionStorage;
+    for (const key of Object.keys(store)) if (key.startsWith("iv.")) store.removeItem(key);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+addAuthLostListener(clearClientData);
 
 // Persist report data for instant/offline opens, but never auth state: a
 // restored `authenticated: false` would bounce a logged-in user to /login.

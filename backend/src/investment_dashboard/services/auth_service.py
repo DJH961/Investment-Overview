@@ -7,6 +7,7 @@ replacing :data:`_clock`.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import ipaddress
 import json
@@ -89,15 +90,48 @@ def has_password(session: Session) -> bool:
     return auth_repo.get_credential(session) is not None
 
 
-def verify_password(session: Session, password: str) -> bool:
-    """Constant-effort check; ``False`` when no password is set."""
-    row = auth_repo.get_credential(session)
-    stored = row.password_hash if row is not None else _DUMMY_HASH
+class VerifierBusyError(Exception):
+    """All password-check slots are in use; the caller should retry shortly."""
+
+    retry_after = 1
+
+
+_verify_lock = threading.Lock()
+_verify_slots: threading.BoundedSemaphore | None = None
+_verify_slots_size = 0
+
+
+def _slots(size: int) -> threading.BoundedSemaphore:
+    """The process-wide verify semaphore (rebuilt only if the setting changed)."""
+    global _verify_slots, _verify_slots_size  # noqa: PLW0603
+    size = max(1, size)
+    with _verify_lock:
+        if _verify_slots is None or _verify_slots_size != size:
+            _verify_slots = threading.BoundedSemaphore(size)
+            _verify_slots_size = size
+        return _verify_slots
+
+
+def verify_password(session: Session, password: str, *, max_concurrent: int = 2) -> bool:
+    """Constant-effort check; ``False`` when no password is set.
+
+    argon2 needs ~64 MiB per check, so at most ``max_concurrent`` run at once;
+    a further caller gets :class:`VerifierBusyError` at once instead of queueing
+    (which would also tie up the shared threadpool).
+    """
+    slots = _slots(max_concurrent)
+    if not slots.acquire(blocking=False):
+        raise VerifierBusyError
     try:
-        ok = _hasher.verify(stored, password)
-    except (VerificationError, InvalidHashError):
-        ok = False
-    return ok and row is not None
+        row = auth_repo.get_credential(session)
+        stored = row.password_hash if row is not None else _DUMMY_HASH
+        try:
+            ok = _hasher.verify(stored, password)
+        except (VerificationError, InvalidHashError):
+            ok = False
+        return ok and row is not None
+    finally:
+        slots.release()
 
 
 # --------------------------------------------------------------------------- sessions
@@ -158,6 +192,18 @@ def peek_session(session: Session, settings: Settings, token: str) -> bool:
     return not (t >= row.expires_at or t >= row.last_seen_at + idle)
 
 
+def session_is_fresh(session: Session, settings: Settings, session_id: str) -> bool:
+    """True if the (hashed) session signed in within ``fresh_session_minutes``.
+
+    Every sign-in issues a new session, so ``created_at`` is the last time the
+    user proved who they are.
+    """
+    row = auth_repo.get_session(session, session_id)
+    if row is None:
+        return False
+    return now() - row.created_at < timedelta(minutes=settings.fresh_session_minutes)
+
+
 def delete_session(session: Session, token: str) -> None:
     auth_repo.delete_session_by_id(session, _hash_token(token))
 
@@ -178,6 +224,29 @@ def client_key(host: str | None) -> str:
             return str(addr.ipv4_mapped)
         return str(ipaddress.ip_network(f"{addr}/64", strict=False).network_address) + "/64"
     return str(addr)
+
+
+class RateLimitedError(Exception):
+    """Over the limit; ``retry_after`` is the wait in seconds."""
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__(f"rate limited for {retry_after}s")
+        self.retry_after = retry_after
+
+
+class Reservation:
+    """One attempt counted in advance; :meth:`refund` takes it back on success."""
+
+    def __init__(self, limiter: RateLimiter, key: str, at: float) -> None:
+        self._limiter = limiter
+        self._key = key
+        self._at = at
+        self._done = False
+
+    def refund(self) -> None:
+        if not self._done:
+            self._done = True
+            self._limiter._refund(self._key, self._at)
 
 
 class RateLimiter:
@@ -216,36 +285,83 @@ class RateLimiter:
         limit = max(1, limit)
         t = _ts()
         with self._lock:
-            windows: list[tuple[deque[float], int]] = []
-            q = self._per_key.get(key)
-            if q is not None:
-                self._prune(q, t - 60)
-                if not q:
-                    del self._per_key[key]
-                else:
-                    windows.append((q, limit))
-            if self._global_factor is not None and not bypass_global:
-                self._prune(self._global, t - 60)
-                windows.append((self._global, max(limit * self._global_factor, self._global_min)))
-            for window, cap in windows:
-                if len(window) >= cap:
-                    return max(1, int(window[0] + 60 - t) + 1)
+            return self._over(key, limit, t, bypass_global)
+
+    def _over(self, key: str, limit: int, t: float, bypass_global: bool) -> int | None:
+        """Wait in seconds if over the limit (caller holds the lock)."""
+        windows: list[tuple[deque[float], int]] = []
+        q = self._per_key.get(key)
+        if q is not None:
+            self._prune(q, t - 60)
+            if not q:
+                del self._per_key[key]
+            else:
+                windows.append((q, limit))
+        if self._global_factor is not None and not bypass_global:
+            self._prune(self._global, t - 60)
+            windows.append((self._global, max(limit * self._global_factor, self._global_min)))
+        for window, cap in windows:
+            if len(window) >= cap:
+                return max(1, int(window[0] + 60 - t) + 1)
         return None
+
+    def _append(self, key: str, t: float) -> None:
+        if len(self._per_key) > MAX_RATE_KEYS:
+            self._sweep(t - 60)
+        self._per_key.setdefault(key, deque()).append(t)
+        if self._global_factor is not None:
+            self._global.append(t)
+            self._prune(self._global, t - 60)
 
     def record_failure(self, key: str) -> None:
         t = _ts()
         with self._lock:
-            if len(self._per_key) > MAX_RATE_KEYS:
-                self._sweep(t - 60)
-            self._per_key.setdefault(key, deque()).append(t)
+            self._append(key, t)
+
+    def reserve(self, key: str, limit: int, *, bypass_global: bool = False) -> Reservation:
+        """Check the limit and count this attempt in one atomic step.
+
+        Raises :class:`RateLimitedError` when over the limit. Concurrent
+        attempts can no longer all pass the check before any failure is
+        recorded. Call :meth:`Reservation.refund` when the attempt succeeds.
+        """
+        limit = max(1, limit)
+        t = _ts()
+        with self._lock:
+            wait = self._over(key, limit, t, bypass_global)
+            if wait is not None:
+                raise RateLimitedError(wait)
+            self._append(key, t)
+        return Reservation(self, key, t)
+
+    def _refund(self, key: str, at: float) -> None:
+        with self._lock:
+            q = self._per_key.get(key)
+            if q is not None:
+                with contextlib.suppress(ValueError):
+                    q.remove(at)
+                if not q:
+                    del self._per_key[key]
             if self._global_factor is not None:
-                self._global.append(t)
-                self._prune(self._global, t - 60)
+                with contextlib.suppress(ValueError):
+                    self._global.remove(at)
 
 
+#: Password logins: per IP plus a global cap (the only guessable secret).
 rate_limiter = RateLimiter()
+#: Passkey login verifies: per IP only. A passkey cannot be guessed, so a flood
+#: of bad passkey attempts must not lock everyone out of signing in.
+passkey_limiter = RateLimiter(global_factor=None)
+#: Wrong API tokens: per IP only, kept apart from the password budget.
+token_limiter = RateLimiter(global_factor=None)
 #: Counts every passkey-login-options request (not just failures); no global cap.
 options_limiter = RateLimiter(global_factor=None)
+
+
+def reset_limiters() -> None:
+    """Forget every rate-limit window (tests)."""
+    for limiter in (rate_limiter, passkey_limiter, token_limiter, options_limiter):
+        limiter.reset()
 
 
 # --------------------------------------------------------------------------- passkeys

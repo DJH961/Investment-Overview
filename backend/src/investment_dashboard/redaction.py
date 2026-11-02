@@ -35,7 +35,40 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str | Callable[[re.Match[str]], str]], .
         re.compile(r"(?i)(bearer|token)\s+[A-Za-z0-9._~+/=-]{8,}"),
         lambda m: f"{m.group(1)} {REDACTED}",
     ),
+    # Credential-carrying HTTP headers as they appear in a dumped request or a
+    # traceback repr: ``X-API-Token: abc``, ``Cookie: __Host-session=abc``.
+    (
+        re.compile(
+            r"(?i)\b(x-api-token|authorization|proxy-authorization|cookie|set-cookie)"
+            r"(['\"]?\s*[:=]\s*['\"]?)[^\r\n'\"]+"
+        ),
+        lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}",
+    ),
+    # ``password=...``, ``"passphrase": "..."``, ``?api_key=...`` style pairs.
+    (
+        re.compile(
+            r"(?i)\b(pass(?:word|phrase)|secret|api[_-]?key|api[_-]?token|access[_-]?token"
+            r"|session(?:[_-]?id)?)(['\"]?\s*[:=]\s*['\"]?)[^\s'\",;&)}\]]+"
+        ),
+        lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}",
+    ),
 )
+
+#: Concrete secret values of this process (database/backup passphrases, API and
+#: provider tokens). Registered once at startup by ``configure_logging`` so the
+#: exact value is masked wherever it shows up, even without a known shape.
+_registered: set[str] = set()
+
+
+def register_secrets(*values: str | None) -> None:
+    """Remember concrete secret values to mask in every later log record."""
+    for v in values:
+        if v and v.strip() and len(v) >= 4:
+            _registered.add(v)
+
+
+def registered_secrets() -> frozenset[str]:
+    return frozenset(_registered)
 
 
 def redact_secrets(text: str, *, extra: Iterable[str] = ()) -> str:
@@ -48,6 +81,7 @@ def redact_secrets(text: str, *, extra: Iterable[str] = ()) -> str:
     """
     if not text:
         return text
+    extra = (*extra, *_registered)
     out = text
     # Mask explicit secrets first (longest first) so a token isn't partially
     # rewritten by a shape pattern before we get to it.
@@ -63,8 +97,13 @@ class SecretRedactingFilter(logging.Filter):
 
     Installed process-wide on the root handler. It rewrites the already-formatted
     message (and clears ``args``) so downstream formatters can't re-expand a
-    secret that slipped through interpolation.
+    secret that slipped through interpolation. The exception traceback
+    (``exc_info``) and ``stack_info`` are rendered and scrubbed too: an exception
+    message such as ``ValueError("bad token ghp_...")`` otherwise reaches the sink
+    verbatim through the formatter.
     """
+
+    _formatter = logging.Formatter()
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
@@ -75,4 +114,13 @@ class SecretRedactingFilter(logging.Filter):
         if redacted != message:
             record.msg = redacted
             record.args = None
+        if record.exc_info and not record.exc_text:
+            try:
+                record.exc_text = self._formatter.formatException(record.exc_info)
+            except Exception:  # pragma: no cover - never break logging
+                record.exc_text = None
+        if record.exc_text:
+            record.exc_text = redact_secrets(record.exc_text)
+        if record.stack_info:
+            record.stack_info = redact_secrets(record.stack_info)
         return True

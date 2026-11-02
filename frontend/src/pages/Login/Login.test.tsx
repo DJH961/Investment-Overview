@@ -13,10 +13,10 @@ vi.mock("@simplewebauthn/browser", () => ({
 import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
 import { Login } from "./Login";
 
-function renderLogin() {
+function renderLogin(url = "/login?next=%2Fholdings") {
   return render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/login?next=%2Fholdings"]}>
+      <MemoryRouter initialEntries={[url]}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/holdings" element={<div>holdings page</div>} />
@@ -74,5 +74,15 @@ describe("Login", () => {
     vi.mocked(browserSupportsWebAuthn).mockReturnValue(false);
     renderLogin();
     expect(screen.queryByRole("button", { name: "Sign in with passkey" })).toBeNull();
+  });
+
+  it("explains a forced re-sign-in when ?reauth=1", () => {
+    renderLogin("/login?reauth=1");
+    expect(screen.getByRole("status")).toHaveTextContent("For your security, please sign in again to continue.");
+  });
+
+  it("shows no re-sign-in note by default", () => {
+    renderLogin();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });

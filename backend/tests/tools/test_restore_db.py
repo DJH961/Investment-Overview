@@ -99,7 +99,8 @@ def test_row_count_mismatch_refused(tmp_path: Path, snapshot: tuple[Path, Path])
     env["meta"]["counts"] = {"t": 99}
     snap.write_text(json.dumps(env))
     live = tmp_path / "app.sqlite"
-    with pytest.raises(restore_db.RestoreError, match="row counts"):
+    # v2 snapshots authenticate meta, so the edit already fails decryption.
+    with pytest.raises(restore_db.RestoreError, match=r"row counts|tampered"):
         restore_db.restore_snapshot(snap, live, seal_passphrase="pw")
     assert not live.exists()
 
@@ -129,3 +130,34 @@ def test_cli_empty_dir_explains_how_to_fetch(
     args = ["--latest", "--yes", "--dir", str(tmp_path), "--db", str(tmp_path / "x")]
     assert restore_db.main(args) == 2
     assert "rclone" in capsys.readouterr().err
+
+
+def test_restore_signs_everyone_out(tmp_path: Path) -> None:
+    src = tmp_path / "src.sqlite"
+    conn = sqlite3.connect(src)
+    conn.execute("CREATE TABLE auth_sessions (id TEXT PRIMARY KEY)")
+    conn.execute("CREATE TABLE auth_credential (id INTEGER PRIMARY KEY, password_hash TEXT)")
+    conn.executemany("INSERT INTO auth_sessions VALUES (?)", [("a",), ("b",)])
+    conn.execute("INSERT INTO auth_credential VALUES (1, 'hash')")
+    conn.commit()
+    conn.close()
+    snap = backup_service.seal_database(
+        src, tmp_path / "snapshot-20261101-120000.sealed.json", "pw", iterations=FAST
+    )
+    live = tmp_path / "app.sqlite"
+    result = restore_db.restore_snapshot(snap, live, seal_passphrase="pw", now=NOW)
+    assert result.sessions_cleared == 2
+    conn = sqlite3.connect(live)
+    try:
+        assert conn.execute("SELECT count(*) FROM auth_sessions").fetchone()[0] == 0
+        assert conn.execute("SELECT password_hash FROM auth_credential").fetchone()[0] == "hash"
+    finally:
+        conn.close()
+
+
+def test_restore_without_sessions_table_is_fine(
+    tmp_path: Path, snapshot: tuple[Path, Path]
+) -> None:
+    _, snap = snapshot
+    result = restore_db.restore_snapshot(snap, tmp_path / "a.sqlite", seal_passphrase="pw")
+    assert result.sessions_cleared == 0

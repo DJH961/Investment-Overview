@@ -3,7 +3,9 @@
 # Build context is the repo root.
 
 # --- Stage 1: build the React app ------------------------------------------
-FROM node:22-slim AS frontend
+# Base images are pinned by digest (the tag is kept for readability); Dependabot
+# (docker ecosystem) proposes updates.
+FROM node:22-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS frontend
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -11,8 +13,8 @@ COPY frontend/ ./
 RUN npm run build
 
 # --- Stage 2: runtime ------------------------------------------------------
-FROM python:3.12-slim AS runtime
-COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /usr/local/bin/uv
+FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159 AS runtime
+COPY --from=ghcr.io/astral-sh/uv:0.5@sha256:7bff3c3776ec467fc1437960f2c469d8beb30f536a6465a3350c647ccd260ec2 /uv /usr/local/bin/uv
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

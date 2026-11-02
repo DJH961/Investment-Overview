@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,6 +32,7 @@ from investment_dashboard.config import get_settings
 from investment_dashboard.services import backup_service
 from investment_dashboard.storage.encryption import (
     EncryptionConfig,
+    connect_sqlite,
     resolve_encryption,
 )
 from investment_dashboard.storage.integrity import IntegrityCheckError, integrity_check
@@ -53,6 +55,7 @@ class RestoreResult:
     db_path: Path
     aside: Path | None
     counts: dict[str, int]
+    sessions_cleared: int = 0
 
 
 def restore_snapshot(
@@ -84,10 +87,30 @@ def restore_snapshot(
             ) from exc
         if counts != meta.get("counts"):
             raise RestoreError("row counts differ from the counts recorded when it was sealed")
+        sessions_cleared = _clear_sessions(staged, encryption)
         aside = _swap(staged, db_path, now or datetime.now(UTC))
     finally:
         staged.unlink(missing_ok=True)
-    return RestoreResult(db_path, aside, counts)
+    return RestoreResult(db_path, aside, counts, sessions_cleared)
+
+
+def _clear_sessions(staged: Path, encryption: EncryptionConfig | None) -> int:
+    """Sign everyone out: a snapshot carries the login sessions of the day it was taken.
+
+    Done on the staged copy, before the swap, so the live database never holds
+    revived sessions. The password hash and passkeys in the snapshot are kept
+    (they may be older than the ones in use now: see the RUNBOOK, Restore).
+    """
+    with closing(connect_sqlite(staged, encryption)) as conn:
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='auth_sessions'"
+        ).fetchone()
+        if has_table is None:
+            return 0
+        n = int(conn.execute("SELECT count(*) FROM auth_sessions").fetchone()[0])
+        conn.execute("DELETE FROM auth_sessions")
+        conn.commit()
+        return n
 
 
 def _swap(staged: Path, db_path: Path, now: datetime) -> Path | None:
@@ -211,6 +234,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     )
     if result.aside:
         print(f"The previous database was kept as {result.aside}.")
+    print(
+        f"All login sessions were signed out ({result.sessions_cleared} removed). The snapshot "
+        "also brought back the password and passkeys it had; if you changed the password "
+        "since, run inv-dashboard-set-password again (see RUNBOOK, Restore)."
+    )
     print("Start the app again:  docker compose up -d app")
     return 0
 

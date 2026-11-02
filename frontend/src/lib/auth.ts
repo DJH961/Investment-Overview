@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { api } from "./api";
+import { clearClientData } from "./queries";
 
 export interface PasskeyInfo {
   id: string | number;
@@ -13,8 +14,13 @@ export function login(password: string): Promise<void> {
   return api<void>("/api/auth/login", { method: "POST", body: { password }, skipAuthRedirect: true });
 }
 
-export function logout(): Promise<void> {
-  return api<void>("/api/auth/logout", { method: "POST", skipAuthRedirect: true });
+/** Sign out and wipe cached portfolio data, even when the request fails. */
+export async function logout(): Promise<void> {
+  try {
+    await api<void>("/api/auth/logout", { method: "POST", skipAuthRedirect: true });
+  } finally {
+    clearClientData();
+  }
 }
 
 /**
@@ -53,7 +59,9 @@ export function deletePasskey(id: string | number): Promise<void> {
 /** Only same-app absolute paths are allowed as a post-login target. */
 export function safeNext(search: string): string {
   const next = new URLSearchParams(search).get("next");
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/login")) return "/";
+  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\") || next.startsWith("/login")) {
+    return "/";
+  }
   return next;
 }
 

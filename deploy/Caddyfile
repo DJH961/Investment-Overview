@@ -7,20 +7,41 @@ investments.daniel-henke.de {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Robots-Tag "noindex, nofollow"
 		-Server
+		-Via
 	}
 
+	# Access log without credentials: the session cookie, the bearer token and the
+	# X-API-Token header never reach the log (or `docker compose logs`).
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			request>headers>Authorization delete
+			request>headers>Proxy-Authorization delete
+			request>headers>Cookie delete
+			request>headers>X-Api-Token delete
+			resp_headers>Set-Cookie delete
+		}
 	}
 
-	# Largest legitimate upload is a broker import (<= 20 MB).
+	# Largest legitimate upload is a broker import: the app accepts files up to
+	# 10 MiB (services/import_staging.py MAX_UPLOAD_BYTES) plus multipart framing.
+	# Keep this just above that; everything else is far smaller.
 	request_body {
-		max_size 20MB
+		max_size 12MB
 	}
 
-	# flush_interval -1: stream responses immediately (Server-Sent Events).
-	reverse_proxy app:8000 {
-		flush_interval -1
+	# The interactive API docs are not for the public internet. The app turns them
+	# off in server mode too; this is the second lock.
+	@apidocs path /docs /docs/* /redoc /redoc/* /openapi.json
+	handle @apidocs {
+		respond "Not Found" 404
+	}
+
+	handle {
+		# flush_interval -1: stream responses immediately (Server-Sent Events).
+		reverse_proxy app:8000 {
+			flush_interval -1
+		}
 	}
 }

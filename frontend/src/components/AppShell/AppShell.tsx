@@ -1,7 +1,8 @@
 import clsx from "clsx";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { api } from "../../lib/api";
+import { reauthLoginPath, setReauthHandler } from "../../lib/api";
+import { logout as signOut } from "../../lib/auth";
 import { NAV_ITEMS, titleFor } from "../../lib/nav";
 import { useShell } from "../../lib/shell";
 import { useShortcuts } from "../../lib/useShortcuts";
@@ -48,10 +49,15 @@ export function AppShell() {
 
   const logout = useCallback(async () => {
     try {
-      await api("/api/auth/logout", { method: "POST", skipAuthRedirect: true });
+      await signOut();
     } finally {
       navigate("/login");
     }
+  }, [navigate]);
+
+  // A sensitive action on an old session: sign in again, then come back here.
+  useEffect(() => {
+    setReauthHandler(() => navigate(reauthLoginPath(window.location.pathname + window.location.search)));
   }, [navigate]);
 
   const rail = !phone && (!desktop || userRail);

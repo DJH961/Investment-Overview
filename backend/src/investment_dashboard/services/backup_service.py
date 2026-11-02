@@ -10,6 +10,13 @@ The seal passphrase comes from ``INV_DASHBOARD_BACKUP_PASSPHRASE`` and falls bac
 to the database passphrase. The snapshot also contains the SQLCipher-encrypted
 database file, so a restore needs the database passphrase as well.
 
+Format v2 (``"snapshot_format": 2``) binds the plain ``kind``/``meta`` fields
+(created, sha256, size, row counts) to the ciphertext as AES-GCM additional
+authenticated data, so swapping or editing the metadata fails decryption, and a
+file renamed to another snapshot time is refused. v1 files (no
+``snapshot_format``, unauthenticated meta) are still read. The PBKDF2 count read
+from a file is capped at :data:`blob_crypto.MAX_PBKDF2_ITERATIONS`.
+
 Snapshots are taken ~1 minute after the first durable write (see the dirty flag
 in :mod:`db`) and at least nightly. Retention keeps the newest snapshot of each of
 the last N hours / days / months.
@@ -47,6 +54,9 @@ ENV_BACKUP_DIR = "INV_DASHBOARD_BACKUP_DIR"
 
 SNAPSHOT_KIND = "inv-dashboard-snapshot"
 SNAPSHOT_SUFFIX = ".sealed.json"
+#: Written by :func:`seal_database`; :func:`unseal_snapshot` reads 1 and 2.
+SNAPSHOT_FORMAT = 2
+_READABLE_FORMATS = (1, 2)
 _NAME_RE = re.compile(r"^snapshot-(\d{8}-\d{6})\.sealed\.json$")
 
 #: Wait this long after the first unbacked-up write (coalesces bursts).
@@ -154,6 +164,17 @@ def prune(directory: Path, policy: Retention | None = None) -> list[Path]:
 # -- create --------------------------------------------------------------------
 
 
+def _aad(kind: str, fmt: int, meta: dict[str, Any]) -> bytes:
+    """Canonical bytes of the plain envelope fields bound to the ciphertext (v2)."""
+    doc = {"kind": kind, "meta": meta, "snapshot_format": fmt}
+    return json.dumps(doc, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+
+
+def _name_stamp(path: Path) -> str | None:
+    m = _NAME_RE.match(path.name)
+    return m.group(1) if m else None
+
+
 def seal_database(
     db_path: Path,
     dest: Path,
@@ -163,22 +184,39 @@ def seal_database(
     created: datetime | None = None,
     iterations: int = blob_crypto.PBKDF2_ITERATIONS,
 ) -> Path:
-    """Consistent copy of ``db_path`` sealed into ``dest`` (atomic write)."""
-    created = created or datetime.now(UTC)
+    """Consistent copy of ``db_path`` sealed into ``dest`` (atomic write).
+
+    Without ``created``, a ``snapshot-<stamp>`` file name supplies the time (so
+    the name and the authenticated metadata agree), else the current time.
+    """
+    if created is None:
+        stamp = _name_stamp(dest)
+        created = (
+            datetime.strptime(stamp, "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
+            if stamp
+            else datetime.now(UTC)
+        )
     with tempfile.TemporaryDirectory(prefix="inv-snap-") as tmp:
         copy = Path(tmp) / "copy.sqlite"
         backup_database(db_path, copy, encryption=encryption)
         integrity_check(copy, encryption=encryption)
         counts = row_counts(copy, encryption)
         raw = copy.read_bytes()
-    envelope = blob_crypto.encrypt_bytes(raw, passphrase, iterations=iterations)
-    envelope["kind"] = SNAPSHOT_KIND
-    envelope["meta"] = {
+    meta = {
         "created": created.isoformat(),
         "sha256": hashlib.sha256(raw).hexdigest(),
         "size": len(raw),
         "counts": counts,
     }
+    envelope = blob_crypto.encrypt_bytes(
+        raw,
+        passphrase,
+        iterations=iterations,
+        aad=_aad(SNAPSHOT_KIND, SNAPSHOT_FORMAT, meta),
+    )
+    envelope["kind"] = SNAPSHOT_KIND
+    envelope["snapshot_format"] = SNAPSHOT_FORMAT
+    envelope["meta"] = meta
     dest.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(dest, json.dumps(envelope))
     return dest
@@ -231,15 +269,41 @@ def unseal_snapshot(path: Path, passphrase: str, out: Path) -> dict[str, Any]:
     mismatch. ``out`` is only written when everything matched.
     """
     envelope = read_envelope(path)
+    fmt = envelope.get("snapshot_format", 1)
+    if isinstance(fmt, bool) or fmt not in _READABLE_FORMATS:
+        raise SnapshotError(f"{path.name}: unsupported snapshot format {fmt!r}")
+    meta = envelope.get("meta")
+    if fmt >= 2 and not isinstance(meta, dict):
+        raise SnapshotError(f"{path.name}: snapshot metadata is missing")
+    aad = _aad(SNAPSHOT_KIND, fmt, meta) if fmt >= 2 and isinstance(meta, dict) else None
     try:
-        raw = blob_crypto.decrypt_bytes(envelope, passphrase)
+        raw = blob_crypto.decrypt_bytes(envelope, passphrase, aad=aad)
     except blob_crypto.EnvelopeError as exc:
         raise SnapshotError(f"{path.name}: {exc}") from exc
-    meta = envelope.get("meta") or {}
+    meta = meta if isinstance(meta, dict) else {}
     if hashlib.sha256(raw).hexdigest() != meta.get("sha256"):
         raise SnapshotError(f"{path.name}: checksum mismatch")
+    if fmt >= 2:
+        _check_name_matches(path, meta)
     out.write_bytes(raw)
     return dict(meta)
+
+
+def _check_name_matches(path: Path, meta: dict[str, Any]) -> None:
+    """A ``snapshot-<stamp>`` name must match the authenticated creation time."""
+    stamp = _name_stamp(path)
+    if stamp is None:
+        return
+    try:
+        created = datetime.fromisoformat(str(meta.get("created")))
+    except ValueError as exc:
+        raise SnapshotError(f"{path.name}: invalid creation time") from exc
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    if created.astimezone(UTC).strftime("%Y%m%d-%H%M%S") != stamp:
+        raise SnapshotError(
+            f"{path.name}: file name does not match the snapshot's time ({meta.get('created')})"
+        )
 
 
 # -- scheduler hooks -----------------------------------------------------------

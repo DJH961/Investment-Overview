@@ -21,11 +21,12 @@ app runs with no console window to watch.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 
 from investment_dashboard.config import Settings, get_settings
-from investment_dashboard.redaction import SecretRedactingFilter
+from investment_dashboard.redaction import SecretRedactingFilter, register_secrets
 
 _FORMAT = "%(asctime)s %(levelname)-7s %(name)s — %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
@@ -99,6 +100,13 @@ def configure_logging() -> None:
     # accidental ``log.exception(resp.text)`` can't leak a credential — to the
     # console *or* the on-disk log file.
     redactor = SecretRedactingFilter()
+    register_secrets(
+        settings.db_passphrase,
+        settings.api_token,
+        settings.tiingo_token,
+        settings.mobile_passphrase,
+        os.environ.get("INV_DASHBOARD_BACKUP_PASSPHRASE"),
+    )
 
     stream_handler = logging.StreamHandler(stream=sys.stderr)
     stream_handler.setFormatter(formatter)
