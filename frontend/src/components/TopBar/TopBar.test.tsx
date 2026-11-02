@@ -57,12 +57,12 @@ describe("TopBar on a phone", () => {
 
   it("hides the health badge when all checks are OK", () => {
     renderBar({ health: { severity: "ok", count: 0 } });
-    expect(screen.queryByRole("link", { name: /Data health/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Health & Repair/ })).not.toBeInTheDocument();
   });
 
-  it("shows a tinted health badge linking to Data health", () => {
+  it("shows a tinted health badge linking to Health & Repair", () => {
     renderBar({ health: { severity: "warn", count: 2 } });
-    const link = screen.getByRole("link", { name: "Data health: 2 warnings" });
+    const link = screen.getByRole("link", { name: "Health & Repair: 2 warnings" });
     expect(link).toHaveAttribute("href", "/diagnostics");
     expect(link).toHaveClass("top-bar__health--warn");
   });
@@ -76,7 +76,7 @@ describe("TopBar on a phone", () => {
 describe("TopBar on desktop", () => {
   it("always shows the health link and a separate theme button", () => {
     renderBar({ compact: false });
-    expect(screen.getByRole("link", { name: "Data health" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Health & Repair" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Theme:/ })).toBeInTheDocument();
   });
 });

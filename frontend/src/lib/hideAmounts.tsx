@@ -30,3 +30,20 @@ export function HideAmountsProvider({ children }: { children: ReactNode }) {
 export function useHideAmounts(): HideCtx {
   return useContext(HideContext) ?? { hide: false, setHide: () => undefined, toggle: () => undefined };
 }
+
+/**
+ * Hide-mode chart mapping: every line divided by one shared base (so shapes and
+ * the gaps between lines survive) and plotted as a ratio — pair with a percent
+ * axis. `base` is the first (or last) usable value of the series `baseId`.
+ */
+export function relativeSeries<S extends { id: string; points: { t: number | string; v: number | null }[] }>(
+  series: S[],
+  baseId: string,
+  at: "first" | "last" = "first",
+): S[] {
+  const ref = series.find((s) => s.id === baseId);
+  const vals = (ref?.points ?? []).map((p) => p.v).filter((v): v is number => v !== null && v !== 0);
+  const base = at === "first" ? vals[0] : vals[vals.length - 1];
+  if (base === undefined) return series.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p, v: null })) }));
+  return series.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p, v: p.v === null ? null : p.v / base })) }));
+}

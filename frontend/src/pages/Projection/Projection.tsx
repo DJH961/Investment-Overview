@@ -12,8 +12,8 @@ import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
-import { useHideAmounts } from "../../lib/hideAmounts";
-import { MASK, formatMoney, formatNumber } from "../../lib/format";
+import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
+import { MASK, formatMoney, formatNumber, formatPercent } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { type ProjectionOut, type ProjectionRequest, toNum, useCalculatorInputs, useProjectionMutation } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -148,12 +148,14 @@ export function Projection() {
         t: toNum(p.years) ?? i,
         v: toNum(out.real ? p[`${name}_real`] : p[name]),
       }));
-    return [
+    const all: ChartSeries[] = [
       { id: "expected", label: "Expected", tone: "primary", points: pick("expected") },
       { id: "optimistic", label: "Optimistic", tone: "benchmark", points: pick("optimistic") },
       { id: "pessimistic", label: "Pessimistic", tone: "muted", points: pick("pessimistic") },
     ];
-  }, [out]);
+    // Hide numbers: plot as % of today's value (100% = now).
+    return hide ? relativeSeries(all, "expected", "first") : all;
+  }, [out, hide]);
 
   const detailColumns = useMemo<Column<ProjectionOut["points"][number]>[]>(() => {
     const real = out?.real ?? false;
@@ -279,7 +281,9 @@ export function Projection() {
               <Card title={`Next ${out.inputs.horizon} ${out.monthly ? "months" : "years"}`}>
                 <Chart
                   series={series}
-                  valueFormat={(v) => formatMoney(v, currency, { compact: true })}
+                  valueFormat={(v) =>
+                    hide ? formatPercent(v, { digits: 0 }) : formatMoney(v, currency, { compact: true })
+                  }
                   timeFormat={(t) => axisLabel(t, out.monthly)}
                   ariaLabel="Projected value scenarios"
                 />

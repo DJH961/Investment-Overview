@@ -33,7 +33,7 @@ function overview(ccy: "EUR" | "USD", today: Record<string, unknown>): OverviewD
         since: { pct: "-0.001", kind: "open" },
         since_phrase: { kind: "since_yesterday", session_date: "2026-10-30" },
         effect_eur: { net: "-120", market_hours: "-150", overnight: "30" },
-        investing_power_usd: { amount_eur: "500", net: "1.25", market_hours: "1", overnight: "0.25" },
+        investing_power_usd: { amount_eur: "500", amount_usd: "540", net: "1.25", market_hours: "1", overnight: "0.25" },
         ...today,
       },
     },

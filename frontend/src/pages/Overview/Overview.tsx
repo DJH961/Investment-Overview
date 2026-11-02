@@ -14,6 +14,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { ValueChartCard } from "../../components/ValueChartCard";
 import { describeFreshness, type FreshnessView } from "../../components/Freshness";
 import { formatDate } from "../../lib/format";
+import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { useLiveStatus } from "../../lib/live";
 import { useRefreshState } from "../../lib/refresh";
 import { useTimeZone } from "../../lib/timezone";
@@ -30,6 +31,7 @@ import "./Overview.scss";
 export function Overview() {
   const { currency } = usePrefs();
   const overview = useOverview(currency);
+  const { overviewRange } = useDisplayPrefs();
 
   const live = useLiveStatus();
   const refresh = useRefreshState();
@@ -83,6 +85,7 @@ export function Overview() {
         <ValueChartCard
           currency={currency}
           defaultRange={data?.default_range}
+          configuredRange={overviewRange}
           marketOpen={data?.freshness?.market_state === "open"}
         />
         <MoversCard movers={data?.movers} currency={currency} loading={loading} />

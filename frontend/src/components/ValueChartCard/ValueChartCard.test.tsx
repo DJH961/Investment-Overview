@@ -56,6 +56,8 @@ describe("initialRange", () => {
     expect(initialRange({ serverDefault: "1d", marketOpen: true, remembered: "1y" })).toBe("1d");
     expect(initialRange({ serverDefault: "1m", marketOpen: false, remembered: "1y" })).toBe("1y");
     expect(initialRange({ serverDefault: "3m", marketOpen: false, remembered: null })).toBe("3m");
+    expect(initialRange({ serverDefault: "3m", marketOpen: false, remembered: null, configured: "6m" })).toBe("6m");
+    expect(initialRange({ serverDefault: "1d", marketOpen: true, remembered: null, configured: "6m" })).toBe("1d");
     expect(initialRange({ marketOpen: false, remembered: null })).toBe("1m");
   });
 });

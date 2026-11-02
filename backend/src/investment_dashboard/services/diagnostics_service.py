@@ -263,7 +263,9 @@ def _check_prices(session: Session) -> list[HealthItem]:
             return mutual_fund_cutoff
         return general_cutoff
 
-    have_price = set(have_price_ids)
+    # Manual / delisted instruments are never fetched: their last close is the
+    # intended value, so an old date is not a fault to flag.
+    have_price = set(have_price_ids) - instrument_overrides_repo.not_fetched_ids(session)
     stale = sorted(
         instr.symbol
         for instr in actives

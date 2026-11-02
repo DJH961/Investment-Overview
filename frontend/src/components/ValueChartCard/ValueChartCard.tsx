@@ -43,15 +43,16 @@ const isRange = (v: unknown): v is GraphRange | null => v === null || GRAPH_RANG
 /**
  * The range to open with: the server's market-aware default while the market
  * is open (1D during the session), otherwise this device's last choice, then
- * the server default.
+ * the configured Overview default (Settings → Display), then the server default.
  */
 export function initialRange(opts: {
   serverDefault?: GraphRange;
   marketOpen: boolean;
   remembered: GraphRange | null;
+  configured?: GraphRange;
 }): GraphRange {
   if (opts.marketOpen && opts.serverDefault) return opts.serverDefault;
-  return opts.remembered ?? opts.serverDefault ?? "1m";
+  return opts.remembered ?? opts.configured ?? opts.serverDefault ?? "1m";
 }
 
 export interface ValueChartCardProps {
@@ -59,6 +60,8 @@ export interface ValueChartCardProps {
   currency: ReportingCurrency;
   /** `GET /api/overview` `default_range` (undefined while loading). */
   defaultRange?: GraphRange;
+  /** Settings → Display "Overview default range" (used when this device has no choice). */
+  configuredRange?: GraphRange;
   marketOpen?: boolean;
   className?: string;
 }
@@ -66,11 +69,22 @@ export interface ValueChartCardProps {
 const pctFormat = (v: number) => formatPercent(v, { signed: true, digits: 1 });
 
 /** Overview value chart: live 1D, range picker remembered per device, optional second-currency line. */
-export function ValueChartCard({ currency, defaultRange, marketOpen = false, className }: ValueChartCardProps) {
+export function ValueChartCard({
+  currency,
+  defaultRange,
+  configuredRange,
+  marketOpen = false,
+  className,
+}: ValueChartCardProps) {
   const timeZone = useTimeZone();
   const [remembered, setRemembered] = usePersistentState<GraphRange | null>(RANGE_KEY, null, isRange);
   const [picked, setPicked] = useState<GraphRange | null>(null);
-  const range = picked ?? initialRange({ serverDefault: defaultRange, marketOpen, remembered });
+  const range = picked ?? initialRange({
+    serverDefault: defaultRange,
+    marketOpen,
+    remembered,
+    configured: configuredRange,
+  });
   // Other-currency line: on by default, remembered per device.
   const [showSecondary, setShowSecondary] = usePersistentState<boolean>(SECONDARY_KEY, true);
   const graph = useGraph(range, currency);

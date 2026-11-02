@@ -80,12 +80,12 @@ const SETTINGS_GUIDE: { id: string; title: string; body: string }[] = [
   {
     id: "repair",
     title: "Repair jobs",
-    body: "On Data health you can run repair jobs such as refetching prices or rebuilding history. Each job explains what it does and asks for confirmation. Most can be re-run safely.",
+    body: "On Health & Repair you can run repair jobs such as refetching prices or rebuilding history. Each job explains what it does and asks for confirmation. Most can be re-run safely.",
   },
   {
     id: "price-fix",
     title: "Manual price fixes",
-    body: "If a provider returns a wrong or missing price, enter the correct one for that instrument and date on Data health. Your value is kept and used instead of the provider's.",
+    body: "If a provider returns a wrong or missing price, enter the correct one for that instrument and date on Health & Repair. Your value is kept and used instead of the provider's.",
   },
   {
     id: "undo-import",
@@ -98,7 +98,7 @@ const PHONE_TIPS: { id: string; title: string; body: string }[] = [
   {
     id: "topbar",
     title: "Phone top bar",
-    body: "The top bar shows the page title, the data-health badge and a refresh action. Tap the badge to open Data health. Pages not on the bottom tabs are under More.",
+    body: "The top bar shows the page title, the data-health badge and a refresh action. Tap the badge to open Health & Repair. Pages not on the bottom tabs are under More.",
   },
   {
     id: "pull",
@@ -116,7 +116,7 @@ const FAQ: { id: string; title: string; body: string }[] = [
   {
     id: "wrong",
     title: "A number looks wrong or out of date",
-    body: "Open Data health: it lists missing prices, stale data and failed providers, and lets you refresh now or fix a price by hand.",
+    body: "Open Health & Repair: it lists missing prices, stale data and failed providers, and lets you refresh now or fix a price by hand.",
   },
   {
     id: "start-over",

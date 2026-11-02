@@ -95,6 +95,10 @@ class FxLegs(ApiModel):
 
 class InvestingPower(FxLegs):
     amount_eur: DecStr | None = None
+    amount_usd: DecStr | None = Field(
+        default=None,
+        description="``amount_eur`` valued at the live EUR/USD rate (USD).",
+    )
 
 
 class FxMove(ApiModel):

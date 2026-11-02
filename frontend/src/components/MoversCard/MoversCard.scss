@@ -40,8 +40,17 @@
     min-width: 0;
   }
 
+  // Phone width: the name side gives way (clipped); the nowrap Money / % atoms
+  // keep their line and never push the row wider than the card.
+  &__who {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
   &__figures {
+    flex: 0 1 auto;
     align-items: flex-end;
+    max-width: 65%;
     font-variant-numeric: tabular-nums;
   }
 

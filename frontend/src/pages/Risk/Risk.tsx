@@ -12,7 +12,8 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
-import { formatDate, formatMoney, formatNumber } from "../../lib/format";
+import { formatDate, formatMoney, formatNumber, formatPercent } from "../../lib/format";
+import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
 import { glossaryText } from "../../lib/glossary";
 import { usePrefs } from "../../lib/prefs";
 import { usePersistentState } from "../../lib/usePersistentState";
@@ -104,9 +105,10 @@ export function Risk() {
   );
 
   const d = q.data;
+  const { hide } = useHideAmounts();
   const series = useMemo<ChartSeries[]>(() => {
     if (!d) return [];
-    return [
+    const all: ChartSeries[] = [
       { id: "portfolio", label: "Portfolio", tone: "primary", points: d.curve.map((p) => ({ t: p.date, v: toNum(p.portfolio_value) })) },
       {
         id: "benchmark",
@@ -116,7 +118,9 @@ export function Risk() {
       },
       { id: "contrib", label: "Net invested", tone: "muted", points: d.curve.map((p) => ({ t: p.date, v: toNum(p.cumulative_contributions) })) },
     ];
-  }, [d]);
+    // Hide numbers: plot as % of today's net invested (shapes kept, amounts not).
+    return hide ? relativeSeries(all, "contrib", "last") : all;
+  }, [d, hide]);
 
   const ccy = d?.ccy ?? currency;
   const money = (v: string | null | undefined, colored = false) => (
@@ -247,9 +251,11 @@ export function Risk() {
           <Card title="Equity curve" subtitle={`Since ${formatDate(d.curve_start)}`} collapsibleId="risk.curve">
             <Chart
               series={series}
-              valueFormat={(v) => formatMoney(v, d.currency, { compact: true })}
+              valueFormat={(v) =>
+                hide ? formatPercent(v, { digits: 0 }) : formatMoney(v, d.currency, { compact: true })
+              }
               timeFormat={(t) => formatDate(new Date(t))}
-              ariaLabel="Equity curve"
+              ariaLabel={hide ? "Equity curve, as a share of net invested" : "Equity curve"}
             />
             {d.portfolio_last_value !== null ? (
               <p className="risk-page__note">

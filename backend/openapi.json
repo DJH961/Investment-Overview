@@ -5390,6 +5390,19 @@
             ],
             "title": "Amount Eur"
           },
+          "amount_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "``amount_eur`` valued at the live EUR/USD rate (USD).",
+            "title": "Amount Usd"
+          },
           "market_hours": {
             "anyOf": [
               {

@@ -3227,6 +3227,11 @@ export interface components {
         InvestingPower: {
             /** Amount Eur */
             amount_eur?: string | null;
+            /**
+             * Amount Usd
+             * @description ``amount_eur`` valued at the live EUR/USD rate (USD).
+             */
+            amount_usd?: string | null;
             /** Market Hours */
             market_hours?: string | null;
             /** Net */

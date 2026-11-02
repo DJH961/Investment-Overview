@@ -323,6 +323,7 @@ def _currency_block(
             if power is not None:
                 today["investing_power_usd"] = {
                     "amount_eur": dec(amount_eur),
+                    "amount_usd": dec(amount_eur * live_fx),
                     "net": dec(power.net_usd),
                     "market_hours": dec(power.market_hours_usd),
                     "overnight": dec(power.overnight_usd),

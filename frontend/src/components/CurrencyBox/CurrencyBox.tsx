@@ -93,7 +93,7 @@ function EffectPanel({ data }: { data: OverviewDto }) {
     const digits = Math.abs(net) < 100 ? 2 : 0;
     const fmt = (v: number) => <Money amount={v} currency="USD" signed colored digits={digits} />;
     const amount = toNum(ip.amount_eur);
-    const spot = toNum(today.spot);
+    const amountUsd = toNum(ip.amount_usd);
     const title = `Investing power ${phrase}`;
     return (
       <section className="currency-box__effect" aria-label={title}>
@@ -107,10 +107,9 @@ function EffectPanel({ data }: { data: OverviewDto }) {
             <span>
               Regular <Money amount={amount} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
             </span>
-            {spot !== null && (
+            {amountUsd !== null && (
               <span>
-                {/* Single-instant valuation of the regular amount at today's spot (display only). */}
-                <Money amount={amount * spot} currency="USD" /> today
+                <Money amount={amountUsd} currency="USD" /> today
               </span>
             )}
           </p>

@@ -108,6 +108,20 @@ class TestHealthReportAggregation:
         assert stale.severity == "warning"
         assert "VTI" in stale.examples
 
+    def test_manual_and_delisted_prices_are_never_stale(self, session: Session) -> None:
+        from investment_dashboard.repositories import instrument_overrides_repo
+
+        for sym, mode in (("OLD1", "manual"), ("OLD2", "delisted")):
+            instr = instruments_repo.get_or_create(session, symbol=sym, asset_class="etf")
+            prices_repo.upsert_closes(session, instr.id, {date(2020, 1, 6): Decimal("100")})
+            instrument_overrides_repo.upsert(session, instr.id, pricing_mode=mode)
+        session.commit()
+
+        report = diagnostics_service.check_health(session)
+
+        stale = next((i for i in report.items if i.key == "prices_stale"), None)
+        assert stale is None or not {"OLD1", "OLD2"} & set(stale.examples)
+
     def test_price_two_trading_days_back_absorbs_a_holiday(self, session: Session) -> None:
         # An equity whose newest close is two trading days behind is not flagged:
         # the extra grace day absorbs a single exchange holiday (which our

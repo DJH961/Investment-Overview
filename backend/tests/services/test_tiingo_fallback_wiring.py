@@ -123,6 +123,38 @@ def test_yfinance_failure_recovers_via_tiingo(
     assert "Tiingo" in note.message
 
 
+def test_tiingo_is_asked_for_the_provider_symbol(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from investment_dashboard.repositories import instrument_overrides_repo
+
+    instr_id = _due_etf(session)
+    instrument_overrides_repo.upsert(session, instr_id, provider_symbol="VTI-X")
+    session.flush()
+    from investment_dashboard.repositories import tiingo_state_repo as state_repo
+
+    state = state_repo.load(session, _NOW)
+    state.stale_since["VTI"] = _NOW - timedelta(hours=2)
+    state_repo.save(session, state)
+    monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")
+    monkeypatch.setattr(
+        prices_service,
+        "fetch_closes",
+        lambda *a, **k: (_ for _ in ()).throw(prices_service.YFinanceError("down")),
+    )
+    asked: list[str] = []
+
+    def _fake_tiingo(symbols, start, end, *, token):
+        asked.extend(symbols)
+        return {s: {_TODAY: Decimal("123.45")} for s in symbols}
+
+    monkeypatch.setattr(wiring.tiingo_client, "fetch_closes", _fake_tiingo)
+    prices_service.refresh_due_prices(session, today=_TODAY, now=_NOW)
+    assert "VTI-X" in asked
+    assert "VTI" not in asked
+    assert prices_repo.latest_price_dates(session, [instr_id]).get(instr_id) == _TODAY
+
+
 def test_rate_limit_exhausts_the_hourly_budget(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

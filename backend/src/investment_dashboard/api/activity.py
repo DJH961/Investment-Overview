@@ -70,6 +70,14 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
         "support bundle failed",
     ),
     ("GET", "/api/maintenance/logs"): ("log viewer opened", "log viewer refused"),
+    ("POST", "/api/diagnostics/problems/dismiss-all"): (
+        "problems dismissed",
+        "problem dismiss failed",
+    ),
+    ("POST", "/api/diagnostics/problems/{problem_id}/dismiss"): (
+        "problem dismissed",
+        "problem dismiss failed",
+    ),
     ("GET", "/api/settings/export"): ("settings exported", "settings export failed"),
     ("PATCH", "/api/settings/values"): ("settings changed", "settings change rejected"),
     ("POST", "/api/settings/reset"): ("settings reset", "settings reset rejected"),

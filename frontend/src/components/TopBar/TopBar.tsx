@@ -41,11 +41,11 @@ const CURRENCIES = [
 ] as const;
 
 function healthLabel(h: HealthSummary | undefined): string {
-  if (!h) return "Data health";
+  if (!h) return "Health & Repair";
   if (h.label) return h.label;
-  if (h.severity === "ok") return "Data health: all checks OK";
+  if (h.severity === "ok") return "Health & Repair: all checks OK";
   const kind = h.severity === "error" ? "problem" : "warning";
-  return `Data health: ${h.count} ${kind}${h.count === 1 ? "" : "s"}`;
+  return `Health & Repair: ${h.count} ${kind}${h.count === 1 ? "" : "s"}`;
 }
 
 function HealthBadge({ health }: { health?: HealthSummary }) {

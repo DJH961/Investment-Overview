@@ -5,13 +5,9 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
+import type { components } from "./api-types";
 
-// TODO(orchestrator): switch to components["schemas"]["DiagnosticsStatusOut"] after `npm run gen:api`.
-export interface HealthStatusDto {
-  severity: string;
-  count: number;
-  problems: number;
-}
+export type HealthStatusDto = components["schemas"]["DiagnosticsStatusOut"];
 
 export type HealthSeverity = "ok" | "info" | "warning" | "error";
 
