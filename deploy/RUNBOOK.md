@@ -272,12 +272,23 @@ previous version back and the run turns red.
   -> Variables**, `DEPLOY_ENABLED` = `true` (anything else, or missing, = nothing
   deploys).
 - **Deploy by hand:** repo **Actions** tab -> **Deploy** -> **Run workflow**.
+- **Who can trigger it:** only a CI run that was a *push* to `main` of this repository
+  (pull requests, forks and other branches never deploy), or a manual run started on
+  `main`. The job runs in the GitHub environment `production`, which holds the deploy
+  secrets.
 - **What runs where:** the version in use is the line `APP_TAG=<git sha>` in
-  `/opt/investments/.env` on the server; the compose file reads it. Before each
-  `docker compose pull` the workflow copies `docker-compose.yml`, `Caddyfile`,
-  `restore.sh` and `first_install.sh` from the commit into `/opt/investments`, so the
-  server never needs a git checkout. Secrets (`app.env`, `rclone.conf`, `.env`) are never
-  touched by it.
+  `/opt/investments/.env` on the server; the compose file reads it. The deploy key can
+  only run `/opt/investments/deploy.sh` (a forced command, see Secrets B). The workflow
+  sends it the commit's `docker-compose.yml`, `Caddyfile`, `restore.sh` and
+  `first_install.sh` as a tar stream plus the 40-character git sha; the script installs
+  exactly those four names, pulls and starts the new app image and rolls back when the
+  health check fails. The server never needs a git checkout. Secrets (`app.env`,
+  `rclone.conf`, `.env`) are never touched. `deploy.sh` itself is **not** replaced by a
+  deploy: when it changes in the repo, install it again by hand (Secrets B).
+- **Changed compose file or Caddyfile:** a deploy only restarts `app` and reloads
+  Caddy's config. A change to `docker-compose.yml` (for example the hardening of the
+  `caddy` and `backup` services) takes effect after you run `docker compose up -d` on
+  the server once.
 - **Look at it:** `ssh daniel@hetzner-djh-v1 'cd /opt/investments && docker compose ps && docker compose logs --tail 50 app'`
 
 ## Rolling back
@@ -318,11 +329,26 @@ paste any of it into chat, an issue or a file in the repo.
 
 1. On the laptop, PowerShell: `ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\inv_deploy -N '""'`
    (a key without passphrase, used only for this).
-2. Add the public half on the server (owner types this on the server):
-   `ssh daniel@hetzner-djh-v1` then
-   `echo '<contents of inv_deploy.pub>' >> ~/.ssh/authorized_keys`.
-3. GitHub secret `DEPLOY_SSH_KEY` = the full contents of the private file `inv_deploy`
-   (including the `BEGIN`/`END` lines). Then delete the private file from the laptop.
+2. Install the forced-command script on the server (owner types this on the server,
+   after copying `deploy/deploy.sh` there):
+   `sudo install -o root -g root -m 755 deploy.sh /opt/investments/deploy.sh`.
+   It is owned by root so the deploy key cannot rewrite it.
+3. Add the public half on the server, **restricted to that script**:
+   `ssh daniel@hetzner-djh-v1` then add one line to `~/.ssh/authorized_keys`:
+
+   ```
+   restrict,command="/opt/investments/deploy.sh" ssh-ed25519 AAAA... inv-deploy
+   ```
+
+   (the key type and base64 from `inv_deploy.pub`). With this line the key cannot open a
+   shell, forward ports or copy files; it can only run `deploy <git sha>`.
+4. GitHub environment **production** (repo **Settings -> Environments**): limit it to
+   the `main` branch and put the secrets of A and B in it. `DEPLOY_SSH_KEY` = the full
+   contents of the private file `inv_deploy` (including the `BEGIN`/`END` lines). Then
+   delete the private file from the laptop.
+5. Pin the server's host key: from a trusted machine on the tailnet run
+   `ssh-keyscan -t ed25519 hetzner-djh-v1` and store its output line as the secret
+   `DEPLOY_KNOWN_HOSTS`. The workflow refuses to connect to any other host key.
 
 **C. Let the server pull the image from GHCR (owner types this on the server)**
 
@@ -343,7 +369,7 @@ only after "First install" has worked once by hand.
 
 | GitHub item | Kind |
 | --- | --- |
-| `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY` | secrets |
+| `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` | secrets of the `production` environment |
 | `DEPLOY_ENABLED` | variable |
 
 ## First install
@@ -368,7 +394,10 @@ A-E are in the "Secrets" section further down.
    /c/Windows/System32/OpenSSH/scp.exe deploy/docker-compose.yml deploy/Caddyfile deploy/restore.sh deploy/first_install.sh daniel@hetzner-djh-v1:/opt/investments/
    ```
 
-   (After secret E the deploy workflow does this by itself on every deploy.)
+   (After secret E the deploy workflow does this by itself on every deploy.) Also copy
+   `deploy/deploy.sh` and install it as described in Secrets B. Create the backups
+   folder once, because the `backup` sidecar mounts only that sub-folder of the data
+   volume: `docker compose run --rm --no-deps --entrypoint mkdir app -p /data/backups`.
 5. **Run the installer, on the server:**
 
    ```bash
@@ -596,6 +625,13 @@ cd /opt/investments
 Anything entered after that snapshot is lost; the state just before the restore is
 still in `app.sqlite.before-restore-<time>` if you need to look at it.
 
+**After any restore:** `inv-dashboard-restore` signs every login session out (the
+snapshot would otherwise bring back the sessions of its day), but the password hash and
+passkeys come back as they were when the snapshot was taken. If you changed the
+password or removed a passkey since, or you restore because of a suspected break-in,
+run `docker compose exec app inv-dashboard-set-password` right away (it also signs
+everything out) and re-check the passkeys on the Settings page.
+
 **If the restore refuses:** "wrong passphrase / tampered" means the backup passphrase
 differs from the one the snapshot was sealed with; "database cannot be read" means the
 database passphrase is wrong; "row counts differ" or "integrity" means that file is
@@ -616,9 +652,9 @@ scratch folder, restore there, compare, delete it.
 
 ```bash
 cd /opt/investments
-docker compose run --rm --no-deps --entrypoint rclone backup copy b2:Investment-Overview/snapshots /data/drill/backups --include "snapshot-*.sealed.json" --cache-dir /tmp/rclone
-docker compose exec app inv-dashboard-restore --dir /data/drill/backups --latest --db /data/drill/app.sqlite --yes
-docker compose exec app rm -rf /data/drill
+docker compose run --rm --no-deps --entrypoint rclone backup copy b2:Investment-Overview/snapshots /data/backups/drill --include "snapshot-*.sealed.json" --cache-dir /tmp/rclone
+docker compose exec app inv-dashboard-restore --dir /data/backups/drill --latest --db /data/drill/app.sqlite --yes
+docker compose exec app rm -rf /data/drill /data/backups/drill
 ```
 
 **Drill log**
@@ -647,3 +683,67 @@ Docker-published ports bypass `ufw`. Only the Caddy container publishes ports
   `sudo systemctl disable --now yf-spike.timer && sudo rm /etc/systemd/system/yf-spike.* && sudo systemctl daemon-reload && rm -rf /opt/investments/spike && docker rmi yf-spike:1`.
 - B2 (2026-10-31): a bucket-scoped key in `~/b2.env` (mode 600) can upload, list,
   download and delete in `Investment-Overview`, and is refused when listing other buckets.
+  Replace it, see "Security checklist" item 5.
+
+## Security checklist (owner)
+
+Steps only you can do (they need your accounts or root on the server). Tick them off and
+re-run `bash deploy/check.sh` from the laptop afterwards. Background: `SECURITY.md`.
+
+**Now, before anything else**
+
+- [ ] GitHub variable `DEPLOY_ENABLED` = `false` until the hardened deploy workflow is
+      merged and the items under "GitHub" below are done; then set it to `true` again.
+- [ ] Repo **Settings -> Actions -> General**: *Fork pull request workflows* ->
+      **Require approval for all outside collaborators**.
+
+**GitHub**
+
+- [ ] Ruleset on `main`: pull request required, required status checks (CI), no force
+      push, no deletion. Tag protection for `v*`.
+- [ ] Environment `production` limited to the `main` branch, holding the deploy secrets
+      (Secrets A and B). Secret `DEPLOY_KNOWN_HOSTS` set (Secrets B, step 5).
+- [ ] Dependabot alerts and security updates on (`.github/dependabot.yml` already asks
+      for weekly action, Python, npm and Docker updates; merge them only when CI is green).
+- [ ] Secret scanning with push protection on; private vulnerability reporting on.
+
+**Server**
+
+- [ ] `deploy.sh` installed as root (Secrets B, step 2) and the deploy key restricted to it
+      (step 3). Test with a manual run of the **Deploy** workflow.
+- [ ] `docker compose up -d` run once after the hardened `docker-compose.yml` arrived:
+      Caddy now drops all capabilities except binding 80/443 and has a read-only root
+      filesystem; the backup sidecar sees only the `backups` folder. Needs Docker
+      Compose >= 2.23 for the sidecar (`docker compose version`). If Caddy fails to
+      start, `docker compose logs caddy` says why; put the old file back to restore the
+      site while you look.
+- [ ] A login password really is set (`docker compose exec app inv-dashboard-set-password`;
+      works on the encrypted database).
+- [ ] Optional: mount `/proc` with `hidepid=2` so other accounts on the host cannot see
+      process command lines. The 1 GB host also runs development work; consider 2 GB.
+
+**Backups (B2)**
+
+- [ ] Replace the application key in `rclone.conf` by one **without** delete rights
+      (`deleteFiles` off) for the bucket, turn on **Object Lock** with a default retention
+      on the bucket, and keep a separate read-only key for restores offline (password
+      manager). Decide whether `~/b2.env` (the old delete-capable key) is still needed;
+      if not, delete the key in Backblaze and the file.
+
+**Images**
+
+- [ ] Base images in `Dockerfile` and `docker-compose.yml` are pinned by digest
+      (resolved from the registries on 2026-11-01 for the tags `node:22-slim`,
+      `python:3.12-slim`, `uv:0.5`, `caddy:2.11`, `rclone:1.68`). Dependabot proposes
+      digest updates. The `caddy` and `rclone` digests may be newer than the image
+      currently running: the first `docker compose up -d` pulls them. Note that this
+      repository does not pin by digest the images it never builds itself except via
+      these lines.
+
+**Rotating secrets (not automated yet)**
+
+- The SQLCipher key and the backup passphrase have no rotation tool. Until one exists a
+  rotation means: restore a snapshot into a new database with the new keys by hand. Do
+  not change `INV_DASHBOARD_DB_PASSPHRASE` or `INV_DASHBOARD_BACKUP_PASSPHRASE` in
+  `app.env` without that, or the app cannot open its data and old snapshots cannot be
+  unsealed.

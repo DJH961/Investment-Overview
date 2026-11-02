@@ -6,7 +6,8 @@
 #   bash deploy/check.sh                       # the production address
 #   bash deploy/check.sh my-host.example.com   # another host
 #
-# Checks: /api/health answers, /api/overview is refused (401) without a login, the
+# Checks: /api/health answers, /api/overview is refused (401) without a login,
+# /docs, /redoc and /openapi.json are 404, the
 # security headers and HSTS are present, the TLS certificate is valid and, when
 # nmap is installed, only ports 80 and 443 are open. Changes nothing, sends no secrets.
 set -euo pipefail
@@ -39,6 +40,16 @@ if [ "$code" = "401" ]; then
 else
   bad "/api/overview returned $code without a session, expected 401"
 fi
+
+# The interactive API docs and the schema must not be public (404 from Caddy and the app).
+for path in /docs /redoc /openapi.json; do
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "${BASE}${path}" 2>/dev/null || echo 000)"
+  if [ "$code" = "404" ]; then
+    pass "${path} is not exposed (404)"
+  else
+    bad "${path} returned $code, expected 404"
+  fi
+done
 
 headers="$(curl -sSI --max-time 15 "${BASE}/api/health" 2>/dev/null | tr -d '\r' || true)"
 has_header() { printf '%s\n' "$headers" | grep -iq "^$1:"; }
