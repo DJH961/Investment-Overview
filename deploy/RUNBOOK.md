@@ -155,6 +155,11 @@ same setting in `app.env`; Settings shows where each value comes from, and
 **Settings → System** lists in-app values that hide an `app.env` value. Every change
 is kept in the settings history (secrets only as `<redacted>`).
 
+Sign-in limits (idle sign-out, maximum session age, re-sign-in window for sensitive
+actions, failed sign-ins per minute) are **ceilings**: the app can only make them
+stricter than `app.env` (or its default), never looser. Request body caps stay in
+`app.env` only.
+
 If a setting made the app unusable, reset it from the server:
 
 ```bash
