@@ -41,6 +41,7 @@ EXPECTED_TABLES = {
     "auth_passkeys",
     "auth_sessions",
     "fx_conversions",
+    "app_config_audit",
 }
 
 

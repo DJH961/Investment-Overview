@@ -11,7 +11,8 @@ rebuilds prices/FX itself) -> check both files open with v5's schema -> write
 them to ``--out``. The input file is never modified and existing files in
 ``--out`` are never overwritten.
 
-Data that only exists in v6 (``fx_conversions``, login credentials) is dropped
+Data that only exists in v6 (``fx_conversions``, login credentials, the settings
+change history ``app_config_audit``) is dropped
 by the downgrade: v5 has no place for it.
 
 The key comes from ``INV_DASHBOARD_DB_PASSPHRASE`` or a hidden prompt.

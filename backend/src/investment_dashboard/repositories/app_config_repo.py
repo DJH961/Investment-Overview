@@ -7,7 +7,7 @@ parsed/serialised by the caller.
 
 from __future__ import annotations
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import AppConfig
@@ -45,3 +45,11 @@ def delete_by_prefix(session: Session, prefix: str) -> int:
     result = session.execute(delete(AppConfig).where(AppConfig.key.startswith(prefix)))
     session.flush()
     return int(result.rowcount or 0)
+
+
+def get_many(session: Session, keys: list[str]) -> dict[str, str | None]:
+    """Raw values for ``keys`` in one query (absent keys are omitted)."""
+    if not keys:
+        return {}
+    rows = session.execute(select(AppConfig.key, AppConfig.value).where(AppConfig.key.in_(keys)))
+    return dict(rows.tuples().all())
