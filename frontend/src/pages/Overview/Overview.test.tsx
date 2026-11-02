@@ -52,7 +52,7 @@ describe("Overview page", () => {
   it("renders every section as a collapsible card that remembers its state", async () => {
     overview = populated;
     const { unmount } = render(<Overview />);
-    for (const name of ["Return split", "Value", "Top movers", "Allocation", "Asset classes"]) {
+    for (const name of ["Currency · EUR ↔ USD", "Value", "Top movers", "Allocation", "Asset classes"]) {
       expect(screen.getByRole("button", { name })).toHaveAttribute("aria-expanded", "true");
     }
     expect(screen.getByText("Portfolio value")).toBeInTheDocument();
