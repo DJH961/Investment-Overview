@@ -292,6 +292,9 @@ previous version back and the run turns red.
   health check fails. The server never needs a git checkout. Secrets (`app.env`,
   `rclone.conf`, `.env`) are never touched. `deploy.sh` itself is **not** replaced by a
   deploy: when it changes in the repo, install it again by hand (Secrets B).
+- **Disk space:** after a healthy deploy the script deletes the server's local copies
+  of older app images and keeps only the running one and the previous one (the
+  rollback target). Older versions stay in GHCR and are pulled again when needed.
 - **Changed compose file or Caddyfile:** a deploy only restarts `app` and reloads
   Caddy's config. A change to `docker-compose.yml` (for example the hardening of the
   `caddy` and `backup` services) takes effect after you run `docker compose up -d` on
@@ -347,8 +350,9 @@ paste any of it into chat, an issue or a file in the repo.
    restrict,command="/opt/investments/deploy.sh" ssh-ed25519 AAAA... inv-deploy
    ```
 
-   (the key type and base64 from `inv_deploy.pub`). With this line the key cannot open a
-   shell, forward ports or copy files; it can only run `deploy <git sha>`.
+   (the key type and base64 from `inv_deploy.pub`; the last word is only a label, and
+   the key installed today is labelled `github-deploy`). With this line the key cannot
+   open a shell, forward ports or copy files; it can only run `deploy <git sha>`.
 4. GitHub environment **production** (repo **Settings -> Environments**): limit it to
    the `main` branch and put the secrets of A and B in it. `DEPLOY_SSH_KEY` = the full
    contents of the private file `inv_deploy` (including the `BEGIN`/`END` lines). Then
@@ -356,6 +360,9 @@ paste any of it into chat, an issue or a file in the repo.
 5. Pin the server's host key: from a trusted machine on the tailnet run
    `ssh-keyscan -t ed25519 hetzner-djh-v1` and store its output line as the secret
    `DEPLOY_KNOWN_HOSTS`. The workflow refuses to connect to any other host key.
+   The Windows `ssh-keyscan.exe` is too old for the server ("unsupported KEX method");
+   instead take the laptop's already-trusted entry, `ssh-keygen -F hetzner-djh-v1`,
+   and store its `hetzner-djh-v1 ssh-ed25519 AAAA...` line.
 
 **C. Let the server pull the image from GHCR (owner types this on the server)**
 
