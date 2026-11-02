@@ -387,6 +387,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/graphs/range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Graph Range */
+        put: operations["put_graph_range_api_graphs_range_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/graphs/{range_key}": {
         parameters: {
             query?: never;
@@ -398,6 +415,23 @@ export interface paths {
         get: operations["get_graph_api_graphs__range_key__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graphs/{range_key}/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reload Graph */
+        post: operations["reload_graph_api_graphs__range_key__reload_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1005,20 +1039,33 @@ export interface components {
         };
         /** CurrencyToday */
         CurrencyToday: {
+            /**
+             * Anchor Missing
+             * @default false
+             */
+            anchor_missing: boolean;
+            as_of?: components["schemas"]["FxAsOf"] | null;
             effect_eur?: components["schemas"]["FxLegs"] | null;
             investing_power_usd?: components["schemas"]["InvestingPower"] | null;
+            move?: components["schemas"]["FxMove"] | null;
+            /** Pair */
+            pair?: string | null;
             /** Prev */
             prev?: string | null;
             /**
              * Rate Move Pct
-             * @description EUR/USD move vs previous close (fraction, 0.01 = 1%)
+             * @description Deprecated: naive EUR/USD move vs previous close (fraction, 0.01 = 1%). Use ``move.pct``.
              */
             rate_move_pct?: string | null;
             regime: components["schemas"]["FxRegime"];
             /** Reopen At */
             reopen_at?: string | null;
+            since?: components["schemas"]["FxSince"] | null;
+            since_phrase?: components["schemas"]["FxSincePhrase"] | null;
             /** Spot */
             spot?: string | null;
+            /** Spot Display */
+            spot_display?: string | null;
             /** Spot Observed At */
             spot_observed_at?: string | null;
         };
@@ -1032,6 +1079,22 @@ export interface components {
             date: string;
             /** Portfolio Value */
             portfolio_value: string | null;
+        };
+        /**
+         * DailyCaption
+         * @description The day the "Today" move lands on (NiceGUI ``build_daily_growth_caption``).
+         */
+        DailyCaption: {
+            /** As Of Text */
+            as_of_text: string;
+            /** Corner Text */
+            corner_text?: string | null;
+            /** Live */
+            live: boolean;
+            /** Title */
+            title: string;
+            /** Updated Text */
+            updated_text?: string | null;
         };
         /** DepositMatchOut */
         DepositMatchOut: {
@@ -1169,6 +1232,58 @@ export interface components {
              */
             target_pct: string;
         };
+        /**
+         * Freshness
+         * @description How fresh the figures are (drives the Live / Updated / Updating... chip).
+         */
+        Freshness: {
+            /**
+             * Historical
+             * @default false
+             */
+            historical: boolean;
+            /** Last Price Update At */
+            last_price_update_at?: string | null;
+            /**
+             * Market State
+             * @enum {string}
+             */
+            market_state: "open" | "closed" | "holiday";
+            /** Price Market At */
+            price_market_at?: string | null;
+            /** Price Observed At */
+            price_observed_at?: string | null;
+            /** Prices Live */
+            prices_live: boolean;
+            /**
+             * Progress Done
+             * @default 0
+             */
+            progress_done: number;
+            /** Progress Label */
+            progress_label?: string | null;
+            /**
+             * Progress Total
+             * @default 0
+             */
+            progress_total: number;
+            /** Refresh Running */
+            refresh_running: boolean;
+            /** Refresh Source */
+            refresh_source?: string | null;
+        };
+        /** FxAsOf */
+        FxAsOf: {
+            /** As Of */
+            as_of: string;
+            /** Observed At */
+            observed_at?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "live" | "eod";
+        };
         /** FxConversionIn */
         FxConversionIn: {
             /**
@@ -1214,6 +1329,29 @@ export interface components {
             /** Overnight */
             overnight?: string | null;
         };
+        /**
+         * FxMove
+         * @description The box's headline rate move, regime-aware (as the NiceGUI currency box).
+         */
+        FxMove: {
+            /**
+             * Anchor Kind
+             * @enum {string}
+             */
+            anchor_kind: "prev_close" | "overnight" | "session_open";
+            /**
+             * Label Kind
+             * @enum {string}
+             */
+            label_kind: "today" | "yesterday" | "weekday";
+            /**
+             * Pct
+             * @description Move of the pair shown in ``pair`` (fraction, 0.01 = 1%); positive = the foreign currency (EUR in USD display, USD in EUR display) got stronger
+             */
+            pct?: string | null;
+            /** Session Date */
+            session_date: string;
+        };
         /** FxRegime */
         FxRegime: {
             /** Forex Frozen */
@@ -1231,12 +1369,105 @@ export interface components {
             /** Weekend Overnight */
             weekend_overnight: boolean;
         };
+        /** FxSince */
+        FxSince: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "open" | "close";
+            /**
+             * Pct
+             * @description Same convention as move (fraction, 0.01 = 1%)
+             */
+            pct?: string | null;
+        };
+        /**
+         * FxSincePhrase
+         * @description The "Currency effect …" / "Investing power …" title phrase.
+         *
+         *     since_yesterday -> "since yesterday"; yesterday -> "yesterday" (frozen weekend,
+         *     one day on); on_day -> "on <weekday of session_date>" (frozen weekend);
+         *     since_day -> "since <weekday of session_date>" (Sunday-evening spill-over).
+         */
+        FxSincePhrase: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "since_yesterday" | "yesterday" | "on_day" | "since_day";
+            /** Session Date */
+            session_date: string;
+        };
+        /**
+         * GraphCoverage
+         * @description How many of the window's finished sessions reached their intraday target.
+         */
+        GraphCoverage: {
+            /** Complete */
+            complete: boolean;
+            /** Covered */
+            covered: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * GraphGrowth
+         * @description Growth over the drawn window, computed in this line's own currency.
+         */
+        GraphGrowth: {
+            /**
+             * Mode
+             * @description reference: move vs the previous close (1d); simple: Modified Dietz (1w); xirr: window XIRR compounded over the window (1m..1y); total: lifetime compounded growth (all)
+             * @enum {string}
+             */
+            mode: "reference" | "simple" | "xirr" | "total";
+            /**
+             * Pct
+             * @description Growth over the window (fraction, 0.01 = 1%)
+             */
+            pct: string;
+        };
         /** GraphPoint */
         GraphPoint: {
             /** T */
             t: string;
             /** V */
             v?: string | null;
+        };
+        /** GraphRangePref */
+        GraphRangePref: {
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+        };
+        /** GraphRangePrefResponse */
+        GraphRangePrefResponse: {
+            /**
+             * Default Range
+             * @enum {string}
+             */
+            default_range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+        };
+        /** GraphReloadResponse */
+        GraphReloadResponse: {
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            /**
+             * Status
+             * @constant
+             */
+            status: "started";
         };
         /** GraphResponse */
         GraphResponse: {
@@ -1247,8 +1478,17 @@ export interface components {
              * @enum {string}
              */
             ccy: "EUR" | "USD";
+            coverage?: components["schemas"]["GraphCoverage"] | null;
+            /** Direction */
+            direction?: ("up" | "down" | "flat") | null;
+            growth?: components["schemas"]["GraphGrowth"] | null;
             /** Intraday */
             intraday: boolean;
+            /**
+             * Market Open
+             * @default false
+             */
+            market_open: boolean;
             /** Points */
             points: components["schemas"]["GraphPoint"][];
             /**
@@ -1259,16 +1499,46 @@ export interface components {
             /** Reference */
             reference?: string | null;
             secondary?: components["schemas"]["GraphSecondary"] | null;
+            /** Session Date */
+            session_date?: string | null;
+            /**
+             * Sessions
+             * @default []
+             */
+            sessions: components["schemas"]["GraphSession"][];
         };
-        /** GraphSecondary */
+        /**
+         * GraphSecondary
+         * @description The other currency's line, built independently (never converted).
+         */
         GraphSecondary: {
+            /** Anchor T */
+            anchor_t?: string | null;
             /**
              * Ccy
              * @enum {string}
              */
             ccy: "EUR" | "USD";
+            growth?: components["schemas"]["GraphGrowth"] | null;
             /** Points */
             points: components["schemas"]["GraphPoint"][];
+            /**
+             * Scale
+             * @description Display factor secondary/primary at the window's first shared point. Plot secondary at v/scale on the primary axis so both lines start at the same pixel; right-axis ticks = left ticks x scale. Not a conversion.
+             */
+            scale?: string | null;
+        };
+        /**
+         * GraphSession
+         * @description One exchange session inside an intraday window (UTC instants).
+         */
+        GraphSession: {
+            /** Close */
+            close: string;
+            /** Date */
+            date: string;
+            /** Open */
+            open: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1806,6 +2076,13 @@ export interface components {
              */
             ccy: "EUR" | "USD";
             currency: components["schemas"]["CurrencyBlock"];
+            daily_caption: components["schemas"]["DailyCaption"];
+            /**
+             * Default Range
+             * @enum {string}
+             */
+            default_range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            freshness: components["schemas"]["Freshness"];
             /** Fx Eur Usd */
             fx_eur_usd?: string | null;
             /** Generated At */
@@ -1813,10 +2090,18 @@ export interface components {
             /** Is Live */
             is_live: boolean;
             kpis: components["schemas"]["OverviewKpis"];
+            kpis_secondary: components["schemas"]["OverviewKpis"];
             market_verdict: components["schemas"]["MarketVerdict"];
             movers: components["schemas"]["Movers"];
             /** Position Count */
             position_count: number;
+            /**
+             * Secondary Ccy
+             * @enum {string}
+             */
+            secondary_ccy: "EUR" | "USD";
+            /** Total Value Complete */
+            total_value_complete: boolean;
             warnings: components["schemas"]["OverviewWarnings"];
         };
         /** OverviewWarnings */
@@ -3344,12 +3629,45 @@ export interface operations {
             };
         };
     };
+    put_graph_range_api_graphs_range_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GraphRangePref"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphRangePrefResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_graph_api_graphs__range_key__get: {
         parameters: {
             query?: {
                 /** @description Reporting currency. */
                 ccy?: "EUR" | "USD";
-                /** @description Also return the other currency line. */
+                /** @description Also return the other currency line (default on). */
                 compare?: boolean;
             };
             header?: never;
@@ -3368,6 +3686,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GraphResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_graph_api_graphs__range_key__reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                range_key: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphReloadResponse"];
+                };
+            };
+            /** @description A graph reload is already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -3854,11 +4210,15 @@ export interface operations {
                     } | {
                         /** Fx Eur Usd */
                         fx_eur_usd?: string | null;
+                        /** Last Update At */
+                        last_update_at?: string | null;
                         /**
                          * Market State
                          * @enum {string}
                          */
                         market_state: "open" | "closed" | "holiday";
+                        /** Prices Live */
+                        prices_live?: boolean | null;
                         /** Total Value Eur */
                         total_value_eur?: string | null;
                         /** Total Value Usd */
@@ -3901,6 +4261,84 @@ export interface operations {
                          * @constant
                          */
                         type: "fx";
+                    } | {
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /** Source */
+                        source: string;
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default refresh_started
+                         * @constant
+                         */
+                        type: "refresh_started";
+                    } | {
+                        /** Historical */
+                        historical: boolean;
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /** Progress Done */
+                        progress_done: number;
+                        /** Progress Label */
+                        progress_label?: string | null;
+                        /** Progress Total */
+                        progress_total: number;
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default refresh_progress
+                         * @constant
+                         */
+                        type: "refresh_progress";
+                    } | {
+                        /** Last Update At */
+                        last_update_at?: string | null;
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /** Source */
+                        source: string;
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default refresh_finished
+                         * @constant
+                         */
+                        type: "refresh_finished";
+                        /** Updated */
+                        updated: boolean;
+                    } | {
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /** Ok */
+                        ok: boolean;
+                        /** Points */
+                        points?: number | null;
+                        /** Range */
+                        range: string;
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default graphs
+                         * @constant
+                         */
+                        type: "graphs";
                     };
                 };
             };

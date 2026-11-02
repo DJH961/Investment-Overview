@@ -968,6 +968,21 @@
       },
       "CurrencyToday": {
         "properties": {
+          "anchor_missing": {
+            "default": false,
+            "title": "Anchor Missing",
+            "type": "boolean"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FxAsOf"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "effect_eur": {
             "anyOf": [
               {
@@ -987,6 +1002,27 @@
                 "type": "null"
               }
             ]
+          },
+          "move": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FxMove"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pair": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair"
           },
           "prev": {
             "anyOf": [
@@ -1010,7 +1046,7 @@
                 "type": "null"
               }
             ],
-            "description": "EUR/USD move vs previous close (fraction, 0.01 = 1%)",
+            "description": "Deprecated: naive EUR/USD move vs previous close (fraction, 0.01 = 1%). Use ``move.pct``.",
             "title": "Rate Move Pct"
           },
           "regime": {
@@ -1027,6 +1063,26 @@
             ],
             "title": "Reopen At"
           },
+          "since": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FxSince"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "since_phrase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FxSincePhrase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "spot": {
             "anyOf": [
               {
@@ -1038,6 +1094,18 @@
               }
             ],
             "title": "Spot"
+          },
+          "spot_display": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot Display"
           },
           "spot_observed_at": {
             "anyOf": [
@@ -1107,6 +1175,52 @@
           "benchmark_value"
         ],
         "title": "CurvePointOut",
+        "type": "object"
+      },
+      "DailyCaption": {
+        "description": "The day the \"Today\" move lands on (NiceGUI ``build_daily_growth_caption``).",
+        "properties": {
+          "as_of_text": {
+            "title": "As Of Text",
+            "type": "string"
+          },
+          "corner_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corner Text"
+          },
+          "live": {
+            "title": "Live",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated Text"
+          }
+        },
+        "required": [
+          "title",
+          "live",
+          "as_of_text"
+        ],
+        "title": "DailyCaption",
         "type": "object"
       },
       "DepositMatchOut": {
@@ -1524,6 +1638,138 @@
         "title": "DriftRow",
         "type": "object"
       },
+      "Freshness": {
+        "description": "How fresh the figures are (drives the Live / Updated / Updating... chip).",
+        "properties": {
+          "historical": {
+            "default": false,
+            "title": "Historical",
+            "type": "boolean"
+          },
+          "last_price_update_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Price Update At"
+          },
+          "market_state": {
+            "enum": [
+              "open",
+              "closed",
+              "holiday"
+            ],
+            "title": "Market State",
+            "type": "string"
+          },
+          "price_market_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Market At"
+          },
+          "price_observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Observed At"
+          },
+          "prices_live": {
+            "title": "Prices Live",
+            "type": "boolean"
+          },
+          "progress_done": {
+            "default": 0,
+            "title": "Progress Done",
+            "type": "integer"
+          },
+          "progress_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress Label"
+          },
+          "progress_total": {
+            "default": 0,
+            "title": "Progress Total",
+            "type": "integer"
+          },
+          "refresh_running": {
+            "title": "Refresh Running",
+            "type": "boolean"
+          },
+          "refresh_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Source"
+          }
+        },
+        "required": [
+          "market_state",
+          "prices_live",
+          "refresh_running"
+        ],
+        "title": "Freshness",
+        "type": "object"
+      },
+      "FxAsOf": {
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "source": {
+            "enum": [
+              "live",
+              "eod"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "as_of",
+          "source"
+        ],
+        "title": "FxAsOf",
+        "type": "object"
+      },
       "FxConversionIn": {
         "properties": {
           "date": {
@@ -1698,6 +1944,53 @@
         "title": "FxLegs",
         "type": "object"
       },
+      "FxMove": {
+        "description": "The box's headline rate move, regime-aware (as the NiceGUI currency box).",
+        "properties": {
+          "anchor_kind": {
+            "enum": [
+              "prev_close",
+              "overnight",
+              "session_open"
+            ],
+            "title": "Anchor Kind",
+            "type": "string"
+          },
+          "label_kind": {
+            "enum": [
+              "today",
+              "yesterday",
+              "weekday"
+            ],
+            "title": "Label Kind",
+            "type": "string"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Move of the pair shown in ``pair`` (fraction, 0.01 = 1%); positive = the foreign currency (EUR in USD display, USD in EUR display) got stronger",
+            "title": "Pct"
+          },
+          "session_date": {
+            "title": "Session Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "anchor_kind",
+          "label_kind",
+          "session_date"
+        ],
+        "title": "FxMove",
+        "type": "object"
+      },
       "FxRegime": {
         "properties": {
           "forex_frozen": {
@@ -1741,6 +2034,113 @@
         "title": "FxRegime",
         "type": "object"
       },
+      "FxSince": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "open",
+              "close"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Same convention as move (fraction, 0.01 = 1%)",
+            "title": "Pct"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "FxSince",
+        "type": "object"
+      },
+      "FxSincePhrase": {
+        "description": "The \"Currency effect \u2026\" / \"Investing power \u2026\" title phrase.\n\nsince_yesterday -> \"since yesterday\"; yesterday -> \"yesterday\" (frozen weekend,\none day on); on_day -> \"on <weekday of session_date>\" (frozen weekend);\nsince_day -> \"since <weekday of session_date>\" (Sunday-evening spill-over).",
+        "properties": {
+          "kind": {
+            "enum": [
+              "since_yesterday",
+              "yesterday",
+              "on_day",
+              "since_day"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "session_date": {
+            "title": "Session Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "session_date"
+        ],
+        "title": "FxSincePhrase",
+        "type": "object"
+      },
+      "GraphCoverage": {
+        "description": "How many of the window's finished sessions reached their intraday target.",
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "covered": {
+            "title": "Covered",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "covered",
+          "total",
+          "complete"
+        ],
+        "title": "GraphCoverage",
+        "type": "object"
+      },
+      "GraphGrowth": {
+        "description": "Growth over the drawn window, computed in this line's own currency.",
+        "properties": {
+          "mode": {
+            "description": "reference: move vs the previous close (1d); simple: Modified Dietz (1w); xirr: window XIRR compounded over the window (1m..1y); total: lifetime compounded growth (all)",
+            "enum": [
+              "reference",
+              "simple",
+              "xirr",
+              "total"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "pct": {
+            "description": "Growth over the window (fraction, 0.01 = 1%)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Pct",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pct",
+          "mode"
+        ],
+        "title": "GraphGrowth",
+        "type": "object"
+      },
       "GraphPoint": {
         "properties": {
           "t": {
@@ -1766,6 +2166,96 @@
         "title": "GraphPoint",
         "type": "object"
       },
+      "GraphRangePref": {
+        "properties": {
+          "range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          }
+        },
+        "required": [
+          "range"
+        ],
+        "title": "GraphRangePref",
+        "type": "object"
+      },
+      "GraphRangePrefResponse": {
+        "properties": {
+          "default_range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y",
+              "all"
+            ],
+            "title": "Default Range",
+            "type": "string"
+          },
+          "range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          }
+        },
+        "required": [
+          "range",
+          "default_range"
+        ],
+        "title": "GraphRangePrefResponse",
+        "type": "object"
+      },
+      "GraphReloadResponse": {
+        "properties": {
+          "range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "status": {
+            "const": "started",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "range",
+          "status"
+        ],
+        "title": "GraphReloadResponse",
+        "type": "object"
+      },
       "GraphResponse": {
         "properties": {
           "as_of": {
@@ -1780,8 +2270,49 @@
             "title": "Ccy",
             "type": "string"
           },
+          "coverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphCoverage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "up",
+                  "down",
+                  "flat"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "growth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphGrowth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "intraday": {
             "title": "Intraday",
+            "type": "boolean"
+          },
+          "market_open": {
+            "default": false,
+            "title": "Market Open",
             "type": "boolean"
           },
           "points": {
@@ -1826,6 +2357,25 @@
                 "type": "null"
               }
             ]
+          },
+          "session_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Date"
+          },
+          "sessions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphSession"
+            },
+            "title": "Sessions",
+            "type": "array"
           }
         },
         "required": [
@@ -1839,7 +2389,19 @@
         "type": "object"
       },
       "GraphSecondary": {
+        "description": "The other currency's line, built independently (never converted).",
         "properties": {
+          "anchor_t": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor T"
+          },
           "ccy": {
             "enum": [
               "EUR",
@@ -1848,12 +2410,35 @@
             "title": "Ccy",
             "type": "string"
           },
+          "growth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GraphGrowth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "points": {
             "items": {
               "$ref": "#/components/schemas/GraphPoint"
             },
             "title": "Points",
             "type": "array"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display factor secondary/primary at the window's first shared point. Plot secondary at v/scale on the primary axis so both lines start at the same pixel; right-axis ticks = left ticks x scale. Not a conversion.",
+            "title": "Scale"
           }
         },
         "required": [
@@ -1861,6 +2446,30 @@
           "points"
         ],
         "title": "GraphSecondary",
+        "type": "object"
+      },
+      "GraphSession": {
+        "description": "One exchange session inside an intraday window (UTC instants).",
+        "properties": {
+          "close": {
+            "title": "Close",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "open": {
+            "title": "Open",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "open",
+          "close"
+        ],
+        "title": "GraphSession",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -3431,6 +4040,26 @@
           "currency": {
             "$ref": "#/components/schemas/CurrencyBlock"
           },
+          "daily_caption": {
+            "$ref": "#/components/schemas/DailyCaption"
+          },
+          "default_range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y",
+              "all"
+            ],
+            "title": "Default Range",
+            "type": "string"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
           "fx_eur_usd": {
             "anyOf": [
               {
@@ -3454,6 +4083,9 @@
           "kpis": {
             "$ref": "#/components/schemas/OverviewKpis"
           },
+          "kpis_secondary": {
+            "$ref": "#/components/schemas/OverviewKpis"
+          },
           "market_verdict": {
             "$ref": "#/components/schemas/MarketVerdict"
           },
@@ -3463,6 +4095,18 @@
           "position_count": {
             "title": "Position Count",
             "type": "integer"
+          },
+          "secondary_ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Secondary Ccy",
+            "type": "string"
+          },
+          "total_value_complete": {
+            "title": "Total Value Complete",
+            "type": "boolean"
           },
           "warnings": {
             "$ref": "#/components/schemas/OverviewWarnings"
@@ -3475,6 +4119,12 @@
           "is_live",
           "position_count",
           "kpis",
+          "secondary_ccy",
+          "kpis_secondary",
+          "freshness",
+          "daily_caption",
+          "default_range",
+          "total_value_complete",
           "currency",
           "market_verdict",
           "movers",
@@ -6987,6 +7637,47 @@
         ]
       }
     },
+    "/api/graphs/range": {
+      "put": {
+        "operationId": "put_graph_range_api_graphs_range_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphRangePref"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphRangePrefResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Graph Range",
+        "tags": [
+          "graphs"
+        ]
+      }
+    },
     "/api/graphs/{range_key}": {
       "get": {
         "operationId": "get_graph_api_graphs__range_key__get",
@@ -7027,13 +7718,13 @@
             }
           },
           {
-            "description": "Also return the other currency line.",
+            "description": "Also return the other currency line (default on).",
             "in": "query",
             "name": "compare",
             "required": false,
             "schema": {
-              "default": false,
-              "description": "Also return the other currency line.",
+              "default": true,
+              "description": "Also return the other currency line (default on).",
               "title": "Compare",
               "type": "boolean"
             }
@@ -7062,6 +7753,61 @@
           }
         },
         "summary": "Get Graph",
+        "tags": [
+          "graphs"
+        ]
+      }
+    },
+    "/api/graphs/{range_key}/reload": {
+      "post": {
+        "operationId": "reload_graph_api_graphs__range_key__reload_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "range_key",
+            "required": true,
+            "schema": {
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "6m",
+                "ytd",
+                "1y",
+                "all"
+              ],
+              "title": "Range Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphReloadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "A graph reload is already running"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reload Graph",
         "tags": [
           "graphs"
         ]
@@ -7730,6 +8476,17 @@
                           ],
                           "title": "Fx Eur Usd"
                         },
+                        "last_update_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Last Update At"
+                        },
                         "market_state": {
                           "enum": [
                             "open",
@@ -7738,6 +8495,17 @@
                           ],
                           "title": "Market State",
                           "type": "string"
+                        },
+                        "prices_live": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Prices Live"
                         },
                         "total_value_eur": {
                           "anyOf": [
@@ -7851,6 +8619,199 @@
                         "market_state"
                       ],
                       "title": "FxEvent",
+                      "type": "object"
+                    },
+                    {
+                      "description": "A price refresh (scheduled tick, manual or historic download) started.",
+                      "properties": {
+                        "market_state": {
+                          "enum": [
+                            "open",
+                            "closed",
+                            "holiday"
+                          ],
+                          "title": "Market State",
+                          "type": "string"
+                        },
+                        "source": {
+                          "title": "Source",
+                          "type": "string"
+                        },
+                        "ts": {
+                          "title": "Ts",
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "refresh_started",
+                          "default": "refresh_started",
+                          "title": "Type",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ts",
+                        "market_state",
+                        "source"
+                      ],
+                      "title": "RefreshStartedEvent",
+                      "type": "object"
+                    },
+                    {
+                      "description": "A historic-data download advanced one stage.",
+                      "properties": {
+                        "historical": {
+                          "title": "Historical",
+                          "type": "boolean"
+                        },
+                        "market_state": {
+                          "enum": [
+                            "open",
+                            "closed",
+                            "holiday"
+                          ],
+                          "title": "Market State",
+                          "type": "string"
+                        },
+                        "progress_done": {
+                          "title": "Progress Done",
+                          "type": "integer"
+                        },
+                        "progress_label": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Progress Label"
+                        },
+                        "progress_total": {
+                          "title": "Progress Total",
+                          "type": "integer"
+                        },
+                        "ts": {
+                          "title": "Ts",
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "refresh_progress",
+                          "default": "refresh_progress",
+                          "title": "Type",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ts",
+                        "market_state",
+                        "historical",
+                        "progress_done",
+                        "progress_total"
+                      ],
+                      "title": "RefreshProgressEvent",
+                      "type": "object"
+                    },
+                    {
+                      "description": "Every running price refresh finished (``updated``: new data landed).",
+                      "properties": {
+                        "last_update_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Last Update At"
+                        },
+                        "market_state": {
+                          "enum": [
+                            "open",
+                            "closed",
+                            "holiday"
+                          ],
+                          "title": "Market State",
+                          "type": "string"
+                        },
+                        "source": {
+                          "title": "Source",
+                          "type": "string"
+                        },
+                        "ts": {
+                          "title": "Ts",
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "refresh_finished",
+                          "default": "refresh_finished",
+                          "title": "Type",
+                          "type": "string"
+                        },
+                        "updated": {
+                          "title": "Updated",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "ts",
+                        "market_state",
+                        "source",
+                        "updated"
+                      ],
+                      "title": "RefreshFinishedEvent",
+                      "type": "object"
+                    },
+                    {
+                      "description": "A ``POST /api/graphs/{range}/reload`` finished: refetch that graph.",
+                      "properties": {
+                        "market_state": {
+                          "enum": [
+                            "open",
+                            "closed",
+                            "holiday"
+                          ],
+                          "title": "Market State",
+                          "type": "string"
+                        },
+                        "ok": {
+                          "title": "Ok",
+                          "type": "boolean"
+                        },
+                        "points": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Points"
+                        },
+                        "range": {
+                          "title": "Range",
+                          "type": "string"
+                        },
+                        "ts": {
+                          "title": "Ts",
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "graphs",
+                          "default": "graphs",
+                          "title": "Type",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ts",
+                        "market_state",
+                        "range",
+                        "ok"
+                      ],
+                      "title": "GraphsEvent",
                       "type": "object"
                     }
                   ]
