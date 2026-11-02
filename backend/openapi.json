@@ -472,6 +472,22 @@
         "title": "AnalyticsOut",
         "type": "object"
       },
+      "AnomaliesDto": {
+        "properties": {
+          "instrument_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Instrument Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "instrument_ids"
+        ],
+        "title": "AnomaliesDto",
+        "type": "object"
+      },
       "AttributionOut": {
         "properties": {
           "absolute_pnl": {
@@ -554,6 +570,56 @@
           "pct_of_total_return"
         ],
         "title": "AttributionOut",
+        "type": "object"
+      },
+      "BackupInfo": {
+        "properties": {
+          "created": {
+            "format": "date-time",
+            "title": "Created",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "created",
+          "size_bytes"
+        ],
+        "title": "BackupInfo",
+        "type": "object"
+      },
+      "BackupsDto": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "directory": {
+            "title": "Directory",
+            "type": "string"
+          },
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/BackupInfo"
+            },
+            "title": "Snapshots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configured",
+          "directory",
+          "snapshots"
+        ],
+        "title": "BackupsDto",
         "type": "object"
       },
       "Body_upload_import_api_imports_post": {
@@ -834,6 +900,31 @@
           "examples"
         ],
         "title": "CheckOut",
+        "type": "object"
+      },
+      "ClosePoint": {
+        "properties": {
+          "close": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Close",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "close",
+          "source"
+        ],
+        "title": "ClosePoint",
         "type": "object"
       },
       "ConversionBatchOut": {
@@ -1333,6 +1424,19 @@
             "title": "Amount Native",
             "type": "string"
           },
+          "amount_other": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Same cashflow in the other reporting currency, trade-date rate",
+            "title": "Amount Other"
+          },
           "conversion_batches": {
             "items": {
               "$ref": "#/components/schemas/ConversionBatchOut"
@@ -1466,11 +1570,50 @@
         "title": "DepositSummaryOut",
         "type": "object"
       },
+      "DepositYearOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Net contributions that year in ccy (sum of trade-date legs)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total",
+            "type": "string"
+          },
+          "total_other": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total Other",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "count",
+          "total",
+          "total_other"
+        ],
+        "title": "DepositYearOut",
+        "type": "object"
+      },
       "DepositsOut": {
         "properties": {
           "as_of": {
             "title": "As Of",
             "type": "string"
+          },
+          "by_year": {
+            "description": "Of the filtered rows, newest year first",
+            "items": {
+              "$ref": "#/components/schemas/DepositYearOut"
+            },
+            "title": "By Year",
+            "type": "array"
           },
           "ccy": {
             "enum": [
@@ -1478,6 +1621,14 @@
               "USD"
             ],
             "title": "Ccy",
+            "type": "string"
+          },
+          "other_ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Other Ccy",
             "type": "string"
           },
           "rows": {
@@ -1488,13 +1639,29 @@
             "type": "array"
           },
           "summary": {
+            "$ref": "#/components/schemas/DepositSummaryOut",
+            "description": "Whole ledger; ignores the row filters"
+          },
+          "summary_other": {
             "$ref": "#/components/schemas/DepositSummaryOut"
+          },
+          "years": {
+            "description": "Years with cash flows (unfiltered), newest first",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Years",
+            "type": "array"
           }
         },
         "required": [
           "ccy",
+          "other_ccy",
           "as_of",
           "summary",
+          "summary_other",
+          "years",
+          "by_year",
           "rows"
         ],
         "title": "DepositsOut",
@@ -1558,6 +1725,296 @@
           "refresh"
         ],
         "title": "DiagnosticsOut",
+        "type": "object"
+      },
+      "DividendHoldingOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "last_date": {
+            "title": "Last Date",
+            "type": "string"
+          },
+          "lifetime": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Lifetime",
+            "type": "string"
+          },
+          "lifetime_other": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Lifetime Other",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "ttm": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Ttm",
+            "type": "string"
+          },
+          "ttm_other": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Ttm Other",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "name",
+          "count",
+          "lifetime",
+          "ttm",
+          "lifetime_other",
+          "ttm_other",
+          "last_date"
+        ],
+        "title": "DividendHoldingOut",
+        "type": "object"
+      },
+      "DividendRowOut": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "In ccy at the payment date's rate",
+            "title": "Amount"
+          },
+          "amount_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Native"
+          },
+          "amount_other": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Other"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "enum": [
+              "cash",
+              "reinvest",
+              "interest"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "symbol",
+          "account",
+          "kind",
+          "amount_native",
+          "currency",
+          "amount",
+          "amount_other"
+        ],
+        "title": "DividendRowOut",
+        "type": "object"
+      },
+      "DividendYearOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "dividends": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Dividends",
+            "type": "string"
+          },
+          "dividends_other": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Dividends Other",
+            "type": "string"
+          },
+          "interest": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Interest",
+            "type": "string"
+          },
+          "interest_other": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Interest Other",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "count",
+          "dividends",
+          "interest",
+          "dividends_other",
+          "interest_other"
+        ],
+        "title": "DividendYearOut",
+        "type": "object"
+      },
+      "DividendsOut": {
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "by_holding": {
+            "items": {
+              "$ref": "#/components/schemas/DividendHoldingOut"
+            },
+            "title": "By Holding",
+            "type": "array"
+          },
+          "by_year": {
+            "items": {
+              "$ref": "#/components/schemas/DividendYearOut"
+            },
+            "title": "By Year",
+            "type": "array"
+          },
+          "ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Ccy",
+            "type": "string"
+          },
+          "lifetime_total": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Lifetime Total",
+            "type": "string"
+          },
+          "lifetime_total_other": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Lifetime Total Other",
+            "type": "string"
+          },
+          "other_ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Other Ccy",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/DividendRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "ttm_total": {
+            "description": "Dividends dated in the last 12 months (no interest)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Ttm Total",
+            "type": "string"
+          },
+          "ttm_total_other": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Ttm Total Other",
+            "type": "string"
+          },
+          "yield_lifetime": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lifetime dividends / value, fraction",
+            "title": "Yield Lifetime"
+          },
+          "yield_ttm": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trailing-12-month yield, fraction (same as the Overview)",
+            "title": "Yield Ttm"
+          }
+        },
+        "required": [
+          "ccy",
+          "other_ccy",
+          "as_of",
+          "lifetime_total",
+          "lifetime_total_other",
+          "ttm_total",
+          "ttm_total_other",
+          "by_year",
+          "by_holding",
+          "rows"
+        ],
+        "title": "DividendsOut",
         "type": "object"
       },
       "DriftRow": {
@@ -2529,6 +2986,107 @@
         "title": "HistoryPoint",
         "type": "object"
       },
+      "HoldingGroup": {
+        "description": "Subtotals of one group, in the reporting ccy (``null`` when a member lacks the leg).",
+        "properties": {
+          "capital_gain": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capital Gain"
+          },
+          "cost_basis": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Basis"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "dividends": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividends"
+          },
+          "instrument_ids": {
+            "description": "Members, in the order of ``holdings``",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Instrument Ids",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "weight_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Summed weight (fraction, 0.01 = 1%)",
+            "title": "Weight Pct"
+          }
+        },
+        "required": [
+          "key",
+          "count",
+          "instrument_ids"
+        ],
+        "title": "HoldingGroup",
+        "type": "object"
+      },
       "HoldingHistoryResponse": {
         "description": "Daily closes of one instrument in its native currency (never converted).",
         "properties": {
@@ -2877,8 +3435,91 @@
         "title": "HoldingRow",
         "type": "object"
       },
+      "HoldingsFx": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "move_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Move vs the previous close (fraction, 0.01 = 1%)",
+            "title": "Move Pct"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "pair": {
+            "description": "\"USD/EUR\" (EUR reporting) or \"EUR/USD\" (USD reporting)",
+            "title": "Pair",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "live",
+                  "eod"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "spot": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spot",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pair",
+          "spot"
+        ],
+        "title": "HoldingsFx",
+        "type": "object"
+      },
       "HoldingsResponse": {
         "properties": {
+          "annual_expense_cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated yearly fees in ccy (spot-converted)",
+            "title": "Annual Expense Cost"
+          },
           "as_of": {
             "title": "As Of",
             "type": "string"
@@ -2891,6 +3532,69 @@
             "title": "Ccy",
             "type": "string"
           },
+          "dividend_income": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lifetime cash dividends received",
+            "title": "Dividend Income"
+          },
+          "dividend_yield_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lifetime dividends / value (fraction, 0.01 = 1%)",
+            "title": "Dividend Yield Pct"
+          },
+          "dividend_yield_ttm_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trailing-12-month yield (fraction, 0.01 = 1%)",
+            "title": "Dividend Yield Ttm Pct"
+          },
+          "dividends_ttm": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dividends, last 12 months",
+            "title": "Dividends Ttm"
+          },
+          "fx": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldingsFx"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current FX; null when every holding is in ccy"
+          },
           "fx_eur_usd": {
             "anyOf": [
               {
@@ -2902,6 +3606,25 @@
               }
             ],
             "title": "Fx Eur Usd"
+          },
+          "group_by": {
+            "default": "none",
+            "enum": [
+              "none",
+              "account",
+              "asset_class",
+              "currency",
+              "category"
+            ],
+            "title": "Group By",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingGroup"
+            },
+            "title": "Groups",
+            "type": "array"
           },
           "holdings": {
             "items": {
@@ -2952,6 +3675,19 @@
             "description": "Sum of dividends",
             "title": "Total Dividends"
           },
+          "total_growth": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Portfolio compounded growth (fraction, 0.01 = 1%)",
+            "title": "Total Growth"
+          },
           "total_return": {
             "anyOf": [
               {
@@ -2976,6 +3712,32 @@
               }
             ],
             "title": "Total Value"
+          },
+          "weighted_expense_ratio": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fraction, 0.01 = 1%",
+            "title": "Weighted Expense Ratio"
+          },
+          "xirr": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Portfolio XIRR (fraction, 0.01 = 1%)",
+            "title": "Xirr"
           }
         },
         "required": [
@@ -3548,6 +4310,355 @@
         "title": "InvestingPower",
         "type": "object"
       },
+      "JobCatalogue": {
+        "properties": {
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/JobGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "heavy_job": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heavy Job"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobInfo"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/JobRun"
+            },
+            "title": "Recent",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups",
+          "jobs",
+          "recent",
+          "heavy_job",
+          "generated_at"
+        ],
+        "title": "JobCatalogue",
+        "type": "object"
+      },
+      "JobGroup": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "JobGroup",
+        "type": "object"
+      },
+      "JobInfo": {
+        "properties": {
+          "backup_first": {
+            "title": "Backup First",
+            "type": "boolean"
+          },
+          "confirm_word": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Word"
+          },
+          "danger": {
+            "description": "none: run; confirm: send confirm='yes'; typed: send confirm=confirm_word.",
+            "enum": [
+              "none",
+              "confirm",
+              "typed"
+            ],
+            "title": "Danger",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "heavy": {
+            "description": "Shares the one-at-a-time lock with other heavy jobs.",
+            "title": "Heavy",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "params": {
+            "items": {
+              "$ref": "#/components/schemas/JobParam"
+            },
+            "title": "Params",
+            "type": "array"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "group",
+          "description",
+          "danger",
+          "confirm_word",
+          "heavy",
+          "backup_first",
+          "params",
+          "running",
+          "last_run"
+        ],
+        "title": "JobInfo",
+        "type": "object"
+      },
+      "JobParam": {
+        "properties": {
+          "choices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "default": {
+            "title": "Default"
+          },
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "enum": [
+              "bool",
+              "int",
+              "date",
+              "enum",
+              "string"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "label",
+          "required",
+          "choices",
+          "help"
+        ],
+        "title": "JobParam",
+        "type": "object"
+      },
+      "JobRun": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exception message only (no traceback).",
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job": {
+            "title": "Job",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "job",
+          "params",
+          "actor",
+          "status",
+          "started_at",
+          "finished_at",
+          "result",
+          "error"
+        ],
+        "title": "JobRun",
+        "type": "object"
+      },
+      "JobStart": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "title": "JobStart",
+        "type": "object"
+      },
+      "LogLine": {
+        "properties": {
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "logger": {
+            "title": "Logger",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traceback"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "level",
+          "logger",
+          "message",
+          "traceback"
+        ],
+        "title": "LogLine",
+        "type": "object"
+      },
       "LoginBody": {
         "properties": {
           "password": {
@@ -3560,6 +4671,101 @@
           "password"
         ],
         "title": "LoginBody",
+        "type": "object"
+      },
+      "LogsDto": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source",
+          "sources",
+          "entries"
+        ],
+        "title": "LogsDto",
+        "type": "object"
+      },
+      "MaintenanceErrorDto": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "object"
+          }
+        },
+        "required": [
+          "detail",
+          "errors"
+        ],
+        "title": "MaintenanceErrorDto",
+        "type": "object"
+      },
+      "ManualClose": {
+        "additionalProperties": false,
+        "properties": {
+          "close": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Close",
+            "type": "string"
+          }
+        },
+        "required": [
+          "close"
+        ],
+        "title": "ManualClose",
+        "type": "object"
+      },
+      "ManualRate": {
+        "additionalProperties": false,
+        "properties": {
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rate"
+        ],
+        "title": "ManualRate",
+        "type": "object"
+      },
+      "ManualSplit": {
+        "additionalProperties": false,
+        "properties": {
+          "ratio": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Ratio",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ratio"
+        ],
+        "title": "ManualSplit",
         "type": "object"
       },
       "MarketVerdict": {
@@ -4518,6 +5724,117 @@
         "title": "PoolOut",
         "type": "object"
       },
+      "PricesDto": {
+        "properties": {
+          "closes": {
+            "items": {
+              "$ref": "#/components/schemas/ClosePoint"
+            },
+            "title": "Closes",
+            "type": "array"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "closes"
+        ],
+        "title": "PricesDto",
+        "type": "object"
+      },
+      "ProbeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "enum": [
+              "yfinance",
+              "tiingo"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "symbol": {
+            "maxLength": 20,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9^.\\-=]+$",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "symbol"
+        ],
+        "title": "ProbeRequest",
+        "type": "object"
+      },
+      "ProbeResult": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_label": {
+            "title": "Provider Label",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "provider_label",
+          "symbol",
+          "price",
+          "as_of",
+          "duration_ms",
+          "verdict",
+          "detail"
+        ],
+        "title": "ProbeResult",
+        "type": "object"
+      },
       "ProblemOut": {
         "properties": {
           "at": {
@@ -5214,6 +6531,57 @@
         "title": "ProviderOut",
         "type": "object"
       },
+      "RatePoint": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "rate",
+          "source"
+        ],
+        "title": "RatePoint",
+        "type": "object"
+      },
+      "RatesDto": {
+        "properties": {
+          "base": {
+            "title": "Base",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "rates": {
+            "items": {
+              "$ref": "#/components/schemas/RatePoint"
+            },
+            "title": "Rates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "base",
+          "quote",
+          "rates"
+        ],
+        "title": "RatesDto",
+        "type": "object"
+      },
       "RebalanceResponse": {
         "properties": {
           "allow_fractional": {
@@ -5497,6 +6865,171 @@
         "title": "ReturnSplit",
         "type": "object"
       },
+      "SchedulerJob": {
+        "properties": {
+          "last_failed": {
+            "title": "Last Failed",
+            "type": "boolean"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "name": {
+            "enum": [
+              "tick",
+              "fx",
+              "eod",
+              "backup"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "paused_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Until"
+          },
+          "requested": {
+            "title": "Requested",
+            "type": "boolean"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "running",
+          "requested",
+          "last_run_at",
+          "last_failed",
+          "paused_until"
+        ],
+        "title": "SchedulerJob",
+        "type": "object"
+      },
+      "SchedulerPause": {
+        "additionalProperties": false,
+        "properties": {
+          "hours": {
+            "anyOf": [
+              {
+                "maximum": 168.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default: scheduler.pause_default_hours.",
+            "title": "Hours"
+          },
+          "jobs": {
+            "items": {
+              "enum": [
+                "tick",
+                "fx",
+                "eod",
+                "backup"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Jobs",
+            "type": "array"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "jobs",
+          "paused"
+        ],
+        "title": "SchedulerPause",
+        "type": "object"
+      },
+      "SchedulerState": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "heavy_job": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heavy Job"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/SchedulerJob"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "last_eod_session": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Eod Session"
+          },
+          "market_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market State"
+          },
+          "now": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Now"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SchedulerState",
+        "type": "object"
+      },
       "SeedOut": {
         "properties": {
           "as_of": {
@@ -5581,6 +7114,428 @@
         "title": "SeedOut",
         "type": "object"
       },
+      "SettingField": {
+        "properties": {
+          "choices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "danger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Danger"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default value (null for secrets).",
+            "title": "Default"
+          },
+          "env_bound": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ceiling",
+                  "floor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Env value bounds the app value (security settings).",
+            "title": "Env Bound"
+          },
+          "env_var": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Env var that supplies a fallback value.",
+            "title": "Env Var"
+          },
+          "help": {
+            "title": "Help",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "user",
+              "advanced"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "nullable": {
+            "title": "Nullable",
+            "type": "boolean"
+          },
+          "restart_required": {
+            "title": "Restart Required",
+            "type": "boolean"
+          },
+          "secret": {
+            "description": "Write-only: the value is never returned.",
+            "title": "Secret",
+            "type": "boolean"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "bool",
+              "int",
+              "decimal",
+              "percent",
+              "string",
+              "enum",
+              "symbol",
+              "symbol_list",
+              "percent_list",
+              "time_hm",
+              "duration_s",
+              "json_map"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "section",
+          "label",
+          "help",
+          "default",
+          "choices",
+          "level",
+          "secret",
+          "nullable",
+          "restart_required",
+          "env_var",
+          "env_bound",
+          "danger",
+          "unit",
+          "since"
+        ],
+        "title": "SettingField",
+        "type": "object"
+      },
+      "SettingSection": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "SettingSection",
+        "type": "object"
+      },
+      "SettingValueDto": {
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "env_value_present": {
+            "title": "Env Value Present",
+            "type": "boolean"
+          },
+          "is_set": {
+            "description": "A value is in effect (the only info for secrets).",
+            "title": "Is Set",
+            "type": "boolean"
+          },
+          "modified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified At"
+          },
+          "source": {
+            "enum": [
+              "db",
+              "env",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "stored_invalid": {
+            "description": "The stored value was unreadable and is ignored.",
+            "title": "Stored Invalid",
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Effective value; always null for secrets.",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "source",
+          "default",
+          "env_value_present",
+          "modified_at",
+          "is_set",
+          "stored_invalid"
+        ],
+        "title": "SettingValueDto",
+        "type": "object"
+      },
+      "SettingsAuditRow": {
+        "properties": {
+          "action": {
+            "enum": [
+              "set",
+              "reset",
+              "import",
+              "revert"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "changed_at": {
+            "format": "date-time",
+            "title": "Changed At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "new_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          },
+          "old_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stored text; '<redacted>' for secrets.",
+            "title": "Old Value"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "old_value",
+          "new_value",
+          "changed_at",
+          "actor",
+          "action",
+          "request_id"
+        ],
+        "title": "SettingsAuditRow",
+        "type": "object"
+      },
+      "SettingsChangedDto": {
+        "properties": {
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed",
+            "type": "array"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SettingValueDto"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "changed",
+          "values"
+        ],
+        "title": "SettingsChangedDto",
+        "type": "object"
+      },
       "SettingsDto": {
         "properties": {
           "auto_refresh_seconds": {
@@ -5650,6 +7605,194 @@
           "options"
         ],
         "title": "SettingsDto",
+        "type": "object"
+      },
+      "SettingsErrorDto": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Per-key messages.",
+            "title": "Errors",
+            "type": "object"
+          }
+        },
+        "required": [
+          "detail",
+          "errors"
+        ],
+        "title": "SettingsErrorDto",
+        "type": "object"
+      },
+      "SettingsExportDto": {
+        "properties": {
+          "exported_at": {
+            "title": "Exported At",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Settings",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "version",
+          "exported_at",
+          "settings"
+        ],
+        "title": "SettingsExportDto",
+        "type": "object"
+      },
+      "SettingsHistoryDto": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SettingsAuditRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "SettingsHistoryDto",
+        "type": "object"
+      },
+      "SettingsImportDiff": {
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "new": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New"
+          }
+        },
+        "required": [
+          "key",
+          "current",
+          "new"
+        ],
+        "title": "SettingsImportDiff",
+        "type": "object"
+      },
+      "SettingsImportResult": {
+        "properties": {
+          "diff": {
+            "items": {
+              "$ref": "#/components/schemas/SettingsImportDiff"
+            },
+            "title": "Diff",
+            "type": "array"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dry_run",
+          "diff"
+        ],
+        "title": "SettingsImportResult",
         "type": "object"
       },
       "SettingsOptions": {
@@ -5731,6 +7874,110 @@
           "chart_pref_keys"
         ],
         "title": "SettingsOptions",
+        "type": "object"
+      },
+      "SettingsPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "key -> new value; null clears a nullable setting.",
+            "title": "Changes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "title": "SettingsPatch",
+        "type": "object"
+      },
+      "SettingsReset": {
+        "additionalProperties": false,
+        "properties": {
+          "all": {
+            "default": false,
+            "title": "All",
+            "type": "boolean"
+          },
+          "keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keys"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          }
+        },
+        "title": "SettingsReset",
+        "type": "object"
+      },
+      "SettingsSchemaDto": {
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/SettingField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/SettingSection"
+            },
+            "title": "Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sections",
+          "fields"
+        ],
+        "title": "SettingsSchemaDto",
         "type": "object"
       },
       "SettingsUpdate": {
@@ -5838,6 +8085,22 @@
         "title": "SettingsUpdate",
         "type": "object"
       },
+      "SettingsValuesDto": {
+        "properties": {
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SettingValueDto"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
+        ],
+        "title": "SettingsValuesDto",
+        "type": "object"
+      },
       "SliceOut": {
         "properties": {
           "conversion_id": {
@@ -5861,6 +8124,167 @@
           "eur"
         ],
         "title": "SliceOut",
+        "type": "object"
+      },
+      "SplitPoint": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "ratio": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Ratio",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "ratio",
+          "source"
+        ],
+        "title": "SplitPoint",
+        "type": "object"
+      },
+      "SplitsDto": {
+        "properties": {
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "splits": {
+            "items": {
+              "$ref": "#/components/schemas/SplitPoint"
+            },
+            "title": "Splits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "splits"
+        ],
+        "title": "SplitsDto",
+        "type": "object"
+      },
+      "SystemInfo": {
+        "properties": {
+          "api_token_enabled": {
+            "title": "Api Token Enabled",
+            "type": "boolean"
+          },
+          "backup_falls_back_to_db_key": {
+            "title": "Backup Falls Back To Db Key",
+            "type": "boolean"
+          },
+          "backup_passphrase_set": {
+            "title": "Backup Passphrase Set",
+            "type": "boolean"
+          },
+          "db_size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Size Bytes"
+          },
+          "encrypted": {
+            "title": "Encrypted",
+            "type": "boolean"
+          },
+          "env_shadowed_by_app": {
+            "description": "Settings whose in-app value overrides an env value.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Env Shadowed By App",
+            "type": "array"
+          },
+          "image_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Tag"
+          },
+          "migrations": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "{current, head} Alembic revisions.",
+            "title": "Migrations",
+            "type": "object"
+          },
+          "paths": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Paths",
+            "type": "object"
+          },
+          "scheduler_enabled": {
+            "title": "Scheduler Enabled",
+            "type": "boolean"
+          },
+          "server_mode": {
+            "title": "Server Mode",
+            "type": "boolean"
+          },
+          "split_db": {
+            "title": "Split Db",
+            "type": "boolean"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "uptime_seconds": {
+            "title": "Uptime Seconds",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "image_tag",
+          "started_at",
+          "uptime_seconds",
+          "server_mode",
+          "scheduler_enabled",
+          "encrypted",
+          "split_db",
+          "api_token_enabled",
+          "backup_passphrase_set",
+          "backup_falls_back_to_db_key",
+          "paths",
+          "db_size_bytes",
+          "migrations",
+          "env_shadowed_by_app"
+        ],
+        "title": "SystemInfo",
         "type": "object"
       },
       "TargetHitOut": {
@@ -7229,6 +9653,25 @@
               "title": "Kind",
               "type": "string"
             }
+          },
+          {
+            "description": "A stored sealed snapshot to download instead of a fresh one.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A stored sealed snapshot to download instead of a fresh one.",
+              "title": "Name"
+            }
           }
         ],
         "responses": {
@@ -7394,6 +9837,49 @@
               ],
               "title": "Account Id"
             }
+          },
+          {
+            "description": "Row filter; transfer = in + out.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "deposit",
+                    "withdrawal",
+                    "transfer"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Row filter; transfer = in + out.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Row filter.",
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2200,
+                  "minimum": 1900,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Row filter.",
+              "title": "Year"
+            }
           }
         ],
         "responses": {
@@ -7419,6 +9905,55 @@
           }
         },
         "summary": "Get Deposits",
+        "tags": [
+          "deposits"
+        ]
+      }
+    },
+    "/api/deposits/dividends": {
+      "get": {
+        "operationId": "get_dividends_api_deposits_dividends_get",
+        "parameters": [
+          {
+            "description": "Reporting currency.",
+            "in": "query",
+            "name": "ccy",
+            "required": false,
+            "schema": {
+              "default": "EUR",
+              "description": "Reporting currency.",
+              "enum": [
+                "EUR",
+                "USD"
+              ],
+              "title": "Ccy",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DividendsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Dividends",
         "tags": [
           "deposits"
         ]
@@ -7853,6 +10388,23 @@
               "title": "Ccy",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "none",
+              "enum": [
+                "none",
+                "account",
+                "asset_class",
+                "currency",
+                "category"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -8116,6 +10668,914 @@
         "summary": "List Instruments",
         "tags": [
           "accounts"
+        ]
+      }
+    },
+    "/api/maintenance/backups": {
+      "get": {
+        "operationId": "get_backups_api_maintenance_backups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupsDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Backups",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/fx/{quote}": {
+      "get": {
+        "operationId": "get_rates_api_maintenance_fx__quote__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "quote",
+            "required": true,
+            "schema": {
+              "title": "Quote",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatesDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Rates",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/fx/{quote}/{on}": {
+      "delete": {
+        "operationId": "delete_rate_api_maintenance_fx__quote___on__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "quote",
+            "required": true,
+            "schema": {
+              "title": "Quote",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "on",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "On",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Rate",
+        "tags": [
+          "maintenance"
+        ]
+      },
+      "put": {
+        "operationId": "put_rate_api_maintenance_fx__quote___on__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "quote",
+            "required": true,
+            "schema": {
+              "title": "Quote",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "on",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "On",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualRate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatesDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Rate",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/jobs": {
+      "get": {
+        "operationId": "get_jobs_api_maintenance_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCatalogue"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Jobs",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/jobs/{job_id}": {
+      "post": {
+        "operationId": "start_job_api_maintenance_jobs__job_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceErrorDto"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Start Job",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/logs": {
+      "get": {
+        "operationId": "get_logs_api_maintenance_logs_get",
+        "parameters": [
+          {
+            "description": "'main' or an activity subject.",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "main",
+              "description": "'main' or an activity subject.",
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "default": "INFO",
+              "pattern": "^(DEBUG|INFO|WARNING|ERROR)$",
+              "title": "Level",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "contains",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Contains"
+            }
+          },
+          {
+            "description": "Include tracebacks (browser session only).",
+            "in": "query",
+            "name": "tracebacks",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include tracebacks (browser session only).",
+              "title": "Tracebacks",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogsDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Logs",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/prices/anomalies": {
+      "get": {
+        "operationId": "get_anomalies_api_maintenance_prices_anomalies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnomaliesDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Anomalies",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/prices/{instrument_id}": {
+      "get": {
+        "operationId": "get_prices_api_maintenance_prices__instrument_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricesDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Prices",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/prices/{instrument_id}/{on}": {
+      "delete": {
+        "operationId": "delete_price_api_maintenance_prices__instrument_id___on__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "on",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "On",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Price",
+        "tags": [
+          "maintenance"
+        ]
+      },
+      "put": {
+        "operationId": "put_price_api_maintenance_prices__instrument_id___on__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "on",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "On",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualClose"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricesDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Price",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/probe": {
+      "post": {
+        "operationId": "probe_api_maintenance_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Probe",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_maintenance_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/scheduler": {
+      "get": {
+        "operationId": "get_scheduler_api_maintenance_scheduler_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchedulerState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Scheduler",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/scheduler/pause": {
+      "put": {
+        "operationId": "pause_scheduler_api_maintenance_scheduler_pause_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SchedulerPause"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchedulerState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Scheduler",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/scheduler/{job}/run": {
+      "post": {
+        "operationId": "run_scheduler_job_api_maintenance_scheduler__job__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job",
+            "required": true,
+            "schema": {
+              "title": "Job",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchedulerState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Scheduler Job",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/splits/{instrument_id}": {
+      "get": {
+        "operationId": "get_splits_api_maintenance_splits__instrument_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SplitsDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Splits",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/splits/{instrument_id}/{on}": {
+      "delete": {
+        "operationId": "delete_split_api_maintenance_splits__instrument_id___on__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "on",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "On",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Split",
+        "tags": [
+          "maintenance"
+        ]
+      },
+      "put": {
+        "operationId": "put_split_api_maintenance_splits__instrument_id___on__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "on",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "On",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualSplit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SplitsDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Split",
+        "tags": [
+          "maintenance"
         ]
       }
     },
@@ -8418,6 +11878,309 @@
           }
         },
         "summary": "Update Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/export": {
+      "get": {
+        "operationId": "export_settings_api_settings_export_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsExportDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/history": {
+      "get": {
+        "operationId": "get_history_api_settings_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsHistoryDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get History",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/history/{audit_id}/revert": {
+      "post": {
+        "operationId": "revert_change_api_settings_history__audit_id__revert_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "audit_id",
+            "required": true,
+            "schema": {
+              "title": "Audit Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsChangedDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsErrorDto"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Revert Change",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/import": {
+      "post": {
+        "operationId": "import_settings_api_settings_import_post",
+        "parameters": [
+          {
+            "description": "Only show the diff.",
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Only show the diff.",
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsImportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsErrorDto"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Import Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/reset": {
+      "post": {
+        "operationId": "reset_values_api_settings_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsChangedDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsErrorDto"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Reset Values",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/schema": {
+      "get": {
+        "operationId": "get_schema_api_settings_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsSchemaDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Schema",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/values": {
+      "get": {
+        "operationId": "get_values_api_settings_values_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsValuesDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Values",
+        "tags": [
+          "settings"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_values_api_settings_values_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsChangedDto"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsErrorDto"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Patch Values",
         "tags": [
           "settings"
         ]
@@ -8824,6 +12587,27 @@
         "summary": "Live event stream (SSE)",
         "tags": [
           "stream"
+        ]
+      }
+    },
+    "/api/system": {
+      "get": {
+        "operationId": "get_system_api_system_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get System",
+        "tags": [
+          "system"
         ]
       }
     },
