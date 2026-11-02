@@ -118,3 +118,6 @@ networks:
     ipam:
       config:
         - subnet: 172.29.84.0/24
+          # Other containers get addresses from .128 up only, so none of them can
+          # take caddy's fixed 172.29.84.2 (the app trusts X-Forwarded-For from it).
+          ip_range: 172.29.84.128/25

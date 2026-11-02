@@ -74,6 +74,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Overview/KPI tiles and movers rows no longer overflow on 390 px phones; the Overview chart opens on the configured default range.
 - Diagnostics no longer flags manual or delisted instruments as stale; the Tiingo fallback asks for the mapped provider symbol.
 
+- Caddy could not start ("Address already in use"): another container could take its fixed address `172.29.84.2`. The compose network now hands out dynamic addresses from `.128` up only.
+- A deploy that changed the compose file stopped the app and exited without rolling back. `deploy.sh` now starts all services (so compose changes apply) and rolls back when that fails.
+- Deploys no longer fill the server's disk: `deploy/deploy.sh` now deletes old app images after a healthy deploy and keeps only the running and the previous one (`docker image prune` alone never removed tagged images). RUNBOOK notes that the Windows `ssh-keyscan` cannot read the server's host key and gives the working alternative.
 - The server could not start with an encrypted (SQLCipher) database: the startup migration opened the file without its key. Migrations now run through the app's keyed connection; CI restarts the image on an existing encrypted database.
 - `inv-dashboard-set-password` failed on an encrypted database with "file is not a database": it ran without the app's boot, which loads the SQLCipher key. It now loads the key itself; the CI image test sets a password on the encrypted database.
 - Re-running `bootstrap.sh` overwrote the admin user's `authorized_keys` with root's, deleting the GitHub deploy key so every Deploy failed with "Permission denied (publickey)". It now adds root's keys and keeps the others.
