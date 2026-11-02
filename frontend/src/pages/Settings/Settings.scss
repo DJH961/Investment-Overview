@@ -439,3 +439,10 @@
   color: var(--color-neg);
   font-size: var(--font-size-sm);
 }
+
+.settings__switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  cursor: pointer;
+}

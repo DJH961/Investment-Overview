@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "./api";
 import { DisplayPrefsProvider } from "./displayPrefs";
+import { HideAmountsProvider } from "./hideAmounts";
 import { subscribeLiveEvents } from "./live";
 import { useAuthMe } from "./queries";
 import { SETTINGS_VALUES_KEY, useSettingsValues, type SettingsChanged } from "./queries/settings";
@@ -136,7 +137,9 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
   );
   return (
     <PrefsContext.Provider value={value}>
-      <DisplayPrefsProvider values={values}>{children}</DisplayPrefsProvider>
+      <DisplayPrefsProvider values={values}>
+        <HideAmountsProvider>{children}</HideAmountsProvider>
+      </DisplayPrefsProvider>
     </PrefsContext.Provider>
   );
 }

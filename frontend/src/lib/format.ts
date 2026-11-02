@@ -30,17 +30,33 @@ export function getFormatPrefs(): FormatPrefs {
   return { locale: LOCALE, timeZone: TIME_ZONE, hour12: HOUR12 };
 }
 
-/*
- * Hook point for the per-device "Hide numbers" switch (a later package): add a
- * module flag here next to LOCALE, set it from `lib/displayPrefs.tsx`, and make
- * formatMoney / chartMoneyFormat return a mask while it is on.
- */
+// Per-device "Hide numbers" mode: absolute amounts and quantities render as a mask.
+let HIDE_AMOUNTS = false;
+
+/** Mask shown in place of a hidden figure. */
+export const MASK = "•••••";
+
+/** Called by `lib/hideAmounts.tsx`; tests may call it directly. */
+export function setHideAmounts(on: boolean): void {
+  HIDE_AMOUNTS = on;
+}
+
+export function isHidingAmounts(): boolean {
+  return HIDE_AMOUNTS;
+}
+
+function currencySymbol(currency: Currency): string {
+  const part = new Intl.NumberFormat(LOCALE, { style: "currency", currency }).formatToParts(0).find((p) => p.type === "currency");
+  return part?.value ?? currency;
+}
 
 export interface MoneyOptions {
   signed?: boolean;
   compact?: boolean;
   /** Override fraction digits (default 2, 1 when compact). */
   digits?: number;
+  /** Public market data (a unit price): never masked in hide mode. */
+  unmasked?: boolean;
 }
 
 const isMissing = (v: number | null | undefined): v is null | undefined =>
@@ -48,6 +64,7 @@ const isMissing = (v: number | null | undefined): v is null | undefined =>
 
 export function formatMoney(amount: number | null | undefined, currency: Currency, opts: MoneyOptions = {}): string {
   if (isMissing(amount)) return "–";
+  if (HIDE_AMOUNTS && !opts.unmasked) return `${currencySymbol(currency)} ${MASK}`;
   const digits = opts.digits ?? (opts.compact ? 1 : 2);
   return new Intl.NumberFormat(LOCALE, {
     style: "currency",
@@ -72,6 +89,12 @@ export function formatPercent(
     maximumFractionDigits: digits,
     signDisplay: opts.signed ? "exceptZero" : "auto",
   }).format(ratio);
+}
+
+/** A share count / quantity: masked in hide mode (it reveals value next to public prices). */
+export function formatQuantity(value: number | null | undefined, digits = 2): string {
+  if (isMissing(value)) return "–";
+  return HIDE_AMOUNTS ? MASK : formatNumber(value, digits);
 }
 
 export function formatNumber(value: number | null | undefined, digits = 2): string {
@@ -172,8 +195,8 @@ export function formatShortDay(value: string | number | Date, timeZone?: string)
 
 /**
  * The one place charts format money (axis ticks, tooltips, reference labels).
- * Keep every chart going through this so a later "hide numbers" / "% from
- * start" mode can swap the formatter in one spot.
+ * Keep every chart going through this; formatMoney masks in hide mode, and
+ * value charts plot "% from range start" instead (see ValueChartCard).
  */
 export function chartMoneyFormat(currency: Currency, kind: "axis" | "tooltip" = "tooltip"): (v: number) => string {
   return kind === "axis"

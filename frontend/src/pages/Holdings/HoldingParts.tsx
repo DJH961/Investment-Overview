@@ -1,6 +1,6 @@
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
-import { formatMoney, formatNumber } from "../../lib/format";
+import { formatMoney, formatQuantity } from "../../lib/format";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
 
@@ -28,11 +28,11 @@ export function HoldingDetails({ id, row, ccy }: { id?: string; row: HoldingRowD
     <dl id={id} className="holdings-page__detail">
       <div>
         <dt>Price</dt>
-        <dd>{formatMoney(toNum(row.price_native), row.native_currency)}</dd>
+        <dd>{formatMoney(toNum(row.price_native), row.native_currency, { unmasked: true })}</dd>
       </div>
       <div>
         <dt>Shares</dt>
-        <dd>{formatNumber(toNum(row.shares), 4)}</dd>
+        <dd>{formatQuantity(toNum(row.shares), 4)}</dd>
       </div>
       <div>
         <dt>Cost basis</dt>

@@ -36,6 +36,7 @@ vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
 import { ToastProvider } from "../../components/Toast";
+import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { Overview } from "./Overview";
 
 const render = (ui: ReactElement) =>
@@ -72,5 +73,18 @@ describe("Overview page", () => {
     render(<Overview />);
     expect(screen.getByRole("button", { name: "Top movers" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Value" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("hide mode masks the total and the day move", () => {
+    overview = populated;
+    localStorage.setItem("iv.privacy.hideAmounts", "true");
+    const { container } = render(
+      <HideAmountsProvider>
+        <Overview />
+      </HideAmountsProvider>,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("•••••");
+    expect(text).not.toMatch(/1,234,567|1\.2M|1234567|12\.50/);
   });
 });

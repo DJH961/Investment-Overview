@@ -103,6 +103,7 @@ vi.mock("../../lib/queries/holdings", async (orig) => ({
 vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 
+import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { Holdings } from "./Holdings";
 
 beforeEach(() => {
@@ -170,5 +171,18 @@ describe("Holdings page", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByLabelText("VWCE price against cost basis")).toBeInTheDocument();
     expect(screen.getByText("Cost basis", { selector: "text" })).toBeInTheDocument();
+  });
+
+  it("hide mode leaves no amount or share count in the DOM", () => {
+    localStorage.setItem("iv.privacy.hideAmounts", "true");
+    const { container } = render(
+      <HideAmountsProvider>
+        <Holdings />
+      </HideAmountsProvider>,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("•••••");
+    expect(text).toContain("VWCE");
+    expect(text).not.toMatch(/1,000|1000|200\.00|120\.00|220\.00|10\.0000|€\s?10\.00/);
   });
 });

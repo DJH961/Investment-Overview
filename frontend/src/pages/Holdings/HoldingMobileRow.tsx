@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "../../components/Button";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
-import { formatDate, formatMoney, formatNumber, formatTime } from "../../lib/format";
+import { formatDate, formatMoney, formatTime, formatQuantity } from "../../lib/format";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
 import { Flags, HoldingDetails, tintClass } from "./HoldingParts";
@@ -46,9 +46,9 @@ export function HoldingMobileRow({ row, ccy, onOpenChart }: Props) {
           <span className="holdings-page__muted holdings-page__item-name">{row.name}</span>
           <span className="holdings-page__chips">
             <span className="holdings-page__chip">
-              Px {formatMoney(toNum(row.price_native), row.native_currency)}
+              Px {formatMoney(toNum(row.price_native), row.native_currency, { unmasked: true })}
             </span>
-            <span className="holdings-page__chip">{formatNumber(toNum(row.shares), 4)} sh</span>
+            <span className="holdings-page__chip">{formatQuantity(toNum(row.shares), 4)} sh</span>
             <span className="holdings-page__chip">
               Growth <Percent ratio={toNum(row.total_growth)} signed colored />
             </span>

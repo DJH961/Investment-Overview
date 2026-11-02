@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Chart, type ChartSeries } from "../../components/Chart";
@@ -12,7 +12,8 @@ import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
-import { formatMoney, formatNumber } from "../../lib/format";
+import { useHideAmounts } from "../../lib/hideAmounts";
+import { MASK, formatMoney, formatNumber } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { type ProjectionOut, type ProjectionRequest, toNum, useCalculatorInputs, useProjectionMutation } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -111,6 +112,11 @@ export function Projection() {
   const [stored, setStored] = usePersistentState<Stored>("projection.form", { ccy: currency, form: INITIAL }, isStored);
   // Money typed in another currency would be misread, so it is dropped on a currency switch.
   const form: Form = stored.ccy === currency ? stored.form : { ...stored.form, contribution: "", target: "0" };
+  // Hide mode: money inputs show a mask until focused.
+  const { hide } = useHideAmounts();
+  const [focused, setFocused] = useState<string | null>(null);
+  const maskMoney = (key: string, v: string) => (hide && focused !== key && v !== "" ? MASK : v);
+  const masked = (key: string) => ({ onFocus: () => setFocused(key), onBlur: () => setFocused(null) });
   const inputs = useCalculatorInputs(currency);
   const mutation = useProjectionMutation(currency);
   const { mutate } = mutation;
@@ -217,7 +223,8 @@ export function Projection() {
                 <Input
                   {...c}
                   inputMode="decimal"
-                  value={form.contribution !== "" ? form.contribution : fmtInput(seed?.avg_contribution)}
+                  {...masked("contribution")}
+                  value={maskMoney("contribution", form.contribution !== "" ? form.contribution : fmtInput(seed?.avg_contribution))}
                   onChange={(e) => set("contribution", e.target.value)}
                 />
               )}
@@ -231,7 +238,15 @@ export function Projection() {
               )}
             </Field>
             <Field label={`Target value (${currency})`}>
-              {(c) => <Input {...c} inputMode="decimal" value={form.target} onChange={(e) => set("target", e.target.value)} />}
+              {(c) => (
+                <Input
+                  {...c}
+                  inputMode="decimal"
+                  {...masked("target")}
+                  value={maskMoney("target", form.target)}
+                  onChange={(e) => set("target", e.target.value)}
+                />
+              )}
             </Field>
             <Field label={`Horizon (${unitPlural})`}>
               {(c) => (

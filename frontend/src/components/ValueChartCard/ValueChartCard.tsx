@@ -12,12 +12,14 @@ import {
   formatDate,
   formatDayLabel,
   formatDayTime,
+  formatPercent,
   formatShortDay,
   formatTime,
   todayIn,
 } from "../../lib/format";
 import { GRAPH_RANGES, rememberGraphRange, toNum, useGraph, type GraphRange } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import { useTimeZone } from "../../lib/timezone";
 import { usePersistentState } from "../../lib/usePersistentState";
 import { useGraphReload } from "./useGraphReload";
@@ -61,6 +63,8 @@ export interface ValueChartCardProps {
   className?: string;
 }
 
+const pctFormat = (v: number) => formatPercent(v, { signed: true, digits: 1 });
+
 /** Overview value chart: live 1D, range picker remembered per device, optional second-currency line. */
 export function ValueChartCard({ currency, defaultRange, marketOpen = false, className }: ValueChartCardProps) {
   const timeZone = useTimeZone();
@@ -95,8 +99,35 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
     rememberGraphRange(next);
   };
 
+  const { hide } = useHideAmounts();
+  // Hide mode plots "% from range start" (the 1D previous close when known) on both lines.
+  const base = (pts: { v?: string | null }[], ref: number | null): number | null => {
+    const first = pts.map((p) => toNum(p.v)).find((v) => v !== null && v !== 0) ?? null;
+    return ref !== null && ref !== 0 ? ref : first;
+  };
   const series = useMemo<ChartSeries[]>(() => {
     if (!g) return [];
+    if (hide) {
+      const rel = (pts: typeof g.points, b: number | null) =>
+        pts.map((p) => {
+          const v = toNum(p.v);
+          return { t: p.t, v: v === null || b === null ? null : v / b - 1 };
+        });
+      const ref = g.range === "1d" ? toNum(g.reference) : null;
+      const out: ChartSeries[] = [{ id: "primary", label: g.ccy, points: rel(g.points, base(g.points, ref)) }];
+      const sec = g.secondary;
+      if (sec && sec.points.length) {
+        out.push({
+          id: "secondary",
+          label: sec.ccy,
+          points: rel(sec.points, base(sec.points, null)),
+          axis: "right",
+          valueFormat: pctFormat,
+          hidden: !showSecondary,
+        });
+      }
+      return out;
+    }
     const out: ChartSeries[] = [
       { id: "primary", label: g.ccy, points: g.points.map((p) => ({ t: p.t, v: toNum(p.v) })) },
     ];
@@ -116,19 +147,21 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
       });
     }
     return out;
-  }, [g, showSecondary]);
+  }, [g, showSecondary, hide]);
 
   const intraday = shown === "1d" || shown === "1w";
   const sessions = shown === "1w" ? (g?.sessions ?? []) : [];
   const xMode: ChartXMode = shown === "1d" ? "time" : sessions.length ? "session" : "date";
-  const axisFormat = chartMoneyFormat(currency, "axis");
-  const tipFormat = chartMoneyFormat(currency, "tooltip");
+  const axisFormat = hide ? pctFormat : chartMoneyFormat(currency, "axis");
+  const tipFormat = hide ? pctFormat : chartMoneyFormat(currency, "tooltip");
   const timeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatShortDay(t, timeZone) : formatDate(new Date(t), "short");
   const tooltipTimeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatDayTime(t, timeZone) : formatDate(new Date(t), "medium");
 
-  const prevClose = shown === "1d" ? toNum(g?.reference) : null;
+  const prevCloseRaw = shown === "1d" ? toNum(g?.reference) : null;
+  // Hide mode: the previous close is the 0% baseline.
+  const prevClose = hide && prevCloseRaw !== null ? 0 : prevCloseRaw;
   const trend = shown === "1d" && g?.direction ? g.direction : undefined;
   let subtitle: string | undefined;
   if (shown === "1d" && g?.session_date) {
@@ -173,10 +206,10 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
               ) : undefined
             }
             referenceLine={
-              prevClose !== null ? { value: prevClose, label: `Prev close ${tipFormat(prevClose)}` } : undefined
+              prevClose !== null ? { value: prevClose, label: hide ? "Prev close" : `Prev close ${tipFormat(prevClose)}` } : undefined
             }
             trend={trend}
-            rightAxisFormat={chartMoneyFormat(other, "axis")}
+            rightAxisFormat={hide ? pctFormat : chartMoneyFormat(other, "axis")}
             onToggleSeries={(id) => {
               if (id === "secondary") setShowSecondary((v) => !v);
             }}

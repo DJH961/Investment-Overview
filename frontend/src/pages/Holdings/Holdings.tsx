@@ -13,7 +13,7 @@ import { Select } from "../../components/Select";
 import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
-import { formatDate, formatMoney, formatNumber, formatTime } from "../../lib/format";
+import { formatDate, formatMoney, formatTime, formatQuantity } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import {
   type HistoryRange,
@@ -261,7 +261,7 @@ export function Holdings() {
         header: "Shares",
         align: "right",
         sortValue: (r) => toNum(r.shares),
-        cell: (r) => formatNumber(toNum(r.shares), 4),
+        cell: (r) => formatQuantity(toNum(r.shares), 4),
       },
       {
         key: "avg",
@@ -275,7 +275,7 @@ export function Holdings() {
         header: "Price",
         align: "right",
         sortValue: (r) => toNum(r.price_native),
-        cell: (r) => formatMoney(toNum(r.price_native), r.native_currency),
+        cell: (r) => formatMoney(toNum(r.price_native), r.native_currency, { unmasked: true }),
       },
       {
         key: "asof",

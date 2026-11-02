@@ -13,6 +13,7 @@ import { SegmentedControl } from "../../components/SegmentedControl";
 import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import { invalidateAuth, logout } from "../../lib/auth";
 import { BACKUP_URL } from "../../lib/queries/manage";
 import {
@@ -81,7 +82,20 @@ function BackupCard() {
   );
 }
 
+function HideNumbersCard() {
+  const { hide, setHide } = useHideAmounts();
+  return (
+    <Card title="Hide numbers" subtitle="This device only">
+      <label className="settings__switch">
+        <input type="checkbox" role="switch" aria-checked={hide} checked={hide} onChange={(e) => setHide(e.target.checked)} />
+        <span>Hide amounts and share counts (percentages, names and weights stay visible).</span>
+      </label>
+    </Card>
+  );
+}
+
 const EXTRA_CARDS: Record<string, () => ReactNode> = {
+  display: () => <HideNumbersCard />,
   accounts: () => <AccountsCard />,
   security: () => <SecurityCards />,
   backups: () => <BackupCard />,

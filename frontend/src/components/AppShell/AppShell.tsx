@@ -1,9 +1,10 @@
 /* The refresh bar is a styled div (native <progress> cannot animate the indeterminate stripe). */
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import clsx from "clsx";
-import { RefreshCw } from "lucide-react";
+import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import { api } from "../../lib/api";
 import { NAV_ITEMS, titleFor } from "../../lib/nav";
 import { useServerRefresh } from "../../lib/refresh";
@@ -11,6 +12,7 @@ import { useShell } from "../../lib/shell";
 import { PULL_THRESHOLD, usePullToRefresh } from "../../lib/usePullToRefresh";
 import { useShortcuts } from "../../lib/useShortcuts";
 import { useIsDesktop, useIsPhone, useMediaQuery } from "../../lib/useMediaQuery";
+import { IconButton } from "../IconButton";
 import { Dialog } from "../Dialog";
 import { updatingView } from "../Freshness";
 import { Sidebar } from "../Sidebar";
@@ -62,6 +64,7 @@ export function AppShell() {
   // Always enabled, on every page: it never depends on a page registering a handler.
   const onRefresh = server.start;
   const health = useShellHealth();
+  const { hide, toggle: toggleHide } = useHideAmounts();
   const refreshing = refresh.running || pageRefreshing;
   const determinate = refresh.historical && refresh.total > 0;
   const [userRail, setUserRail] = useState(readRail);
@@ -118,9 +121,17 @@ export function AppShell() {
           refreshing={refreshing}
           onLogout={logout}
           health={health}
-          // privacyToggle: the "hide numbers" eye button goes here (see plans/4_hide_numbers.md).
+          privacyToggle={
+            <IconButton
+              label={hide ? "Show numbers" : "Hide numbers"}
+              icon={hide ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+              active={hide}
+              aria-pressed={hide}
+              onClick={toggleHide}
+            />
+          }
         />
-        <main className="app-shell__content" id="main">
+        <main className="app-shell__content" id="main" key={hide ? "hidden" : "shown"}>
           <Outlet />
         </main>
       </div>
