@@ -18,7 +18,12 @@ from investment_dashboard.activity_log import activity
 _WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 #: Writes that change nothing (they only compute a result).
 _READ_ONLY_WRITES = frozenset(
-    {"/api/calculator", "/api/auth/passkey/login/options", "/api/maintenance/probe"}
+    {
+        "/api/calculator",
+        "/api/allocations/plan",
+        "/api/auth/passkey/login/options",
+        "/api/maintenance/probe",
+    }
 )
 #: Reads worth recording because they take data off the server.
 _DOWNLOADS = {
