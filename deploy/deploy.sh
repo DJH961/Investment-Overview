@@ -80,8 +80,9 @@ prune_old_images() {
 
 set_tag "$NEW_TAG"
 docker compose pull app
-docker compose up -d app
-if healthy; then
+# Start every service, not just app: a changed compose file (network, caddy,
+# backup) is then applied too, and a failed start rolls back instead of exiting.
+if docker compose up -d && healthy; then
   echo "Deployed $NEW_TAG (previous: $PREV_TAG)"
   # Pick up a changed Caddyfile (no-op when caddy is not running yet).
   docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
@@ -92,6 +93,6 @@ fi
 echo "Health check failed; rolling back to $PREV_TAG" >&2
 docker compose logs --tail 50 app >&2 || true
 set_tag "$PREV_TAG"
-docker compose up -d app
+docker compose up -d
 healthy || echo "Rollback target is also unhealthy" >&2
 exit 1

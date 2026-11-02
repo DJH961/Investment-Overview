@@ -318,10 +318,11 @@ previous version back and the run turns red.
 - **Disk space:** after a healthy deploy the script deletes the server's local copies
   of older app images and keeps only the running one and the previous one (the
   rollback target). Older versions stay in GHCR and are pulled again when needed.
-- **Changed compose file or Caddyfile:** a deploy only restarts `app` and reloads
-  Caddy's config. A change to `docker-compose.yml` (for example the hardening of the
-  `caddy` and `backup` services) takes effect after you run `docker compose up -d` on
-  the server once.
+- **Changed compose file or Caddyfile:** a deploy runs `docker compose up -d`, which
+  recreates any service whose compose settings changed, and reloads Caddy's config.
+  A changed network definition cannot be applied to running containers; if a deploy
+  fails on that, run `docker compose down && docker compose up -d` on the server once
+  (the data volumes are kept).
 - **Look at it:** `ssh daniel@hetzner-djh-v1 'cd /opt/investments && docker compose ps && docker compose logs --tail 50 app'`
 
 ## Rolling back
