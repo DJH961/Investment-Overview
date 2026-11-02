@@ -6,6 +6,7 @@ import { Card } from "../../components/Card";
 import { DataTable, type Column } from "../../components/DataTable";
 import { ErrorState } from "../../components/ErrorState";
 import { Field } from "../../components/Field";
+import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { Select, type SelectOption } from "../../components/Select";
 import { useToast } from "../../components/Toast";
@@ -17,8 +18,12 @@ import {
   type ImportPreview,
 } from "../../lib/queries/ledger";
 import { useAccounts, useImportBrokers } from "../../lib/queries/accounts";
+import { formatDate } from "../../lib/format";
 import { useShellStatus } from "../../lib/shell";
+import { formatPrice, formatQuantity, num } from "../Transactions/numbers";
 import { AccountEditor } from "../Settings/AccountsCard";
+import { ImportHistory } from "./ImportHistory";
+import { UnknownActions } from "./UnknownActions";
 import "./Import.scss";
 
 type PreviewRow = ImportPreview["rows"][number];
@@ -28,13 +33,24 @@ const NEW_ACCOUNT = "__new__";
 const dash = (v: string | null | undefined) => (v === null || v === undefined || v === "" ? "—" : v);
 
 const columns: Column<PreviewRow>[] = [
-  { key: "index", header: "#", cell: (r) => r.index, sortValue: (r) => r.index },
-  { key: "date", header: "Date", cell: (r) => r.date, sortValue: (r) => r.date },
+  { key: "index", header: "#", cell: (r) => r.index, sortValue: (r) => r.index, phone: "hide" },
+  { key: "date", header: "Date", cell: (r) => formatDate(r.date, "short"), sortValue: (r) => r.date, nowrap: true },
   { key: "symbol", header: "Symbol", primary: true, cell: (r) => dash(r.symbol), sortValue: (r) => r.symbol },
   { key: "kind", header: "Kind", cell: (r) => r.kind },
-  { key: "quantity", header: "Qty", align: "right", cell: (r) => dash(r.quantity) },
-  { key: "price", header: "Price", align: "right", cell: (r) => dash(r.price_native) },
-  { key: "net", header: "Net", align: "right", cell: (r) => `${dash(r.net_native)} ${r.currency}` },
+  { key: "quantity", header: "Qty", align: "right", cell: (r) => (r.quantity ? formatQuantity(r.quantity) : "–") },
+  {
+    key: "price",
+    header: "Price",
+    align: "right",
+    cell: (r) => <span className="money">{formatPrice(r.price_native, r.currency)}</span>,
+  },
+  {
+    key: "net",
+    header: "Net",
+    align: "right",
+    cell: (r) => <Money amount={num(r.net_native)} currency={r.currency} signed colored />,
+    sortValue: (r) => num(r.net_native),
+  },
   {
     key: "status",
     header: "Status",
@@ -225,6 +241,7 @@ export function Import() {
               {preview.unknown_actions.length > 0 && <li>Unknown actions: {preview.unknown_actions.join(", ")}</li>}
             </ul>
           )}
+          {preview.unknown_actions.length > 0 && <UnknownActions preview={preview} onReparsed={setPreview} />}
           {confirm.isError && <p className="import-page__error" role="alert">{confirm.error.message}</p>}
           <DataTable
             caption="Parsed rows"
@@ -250,6 +267,11 @@ export function Import() {
           <p className="import-page__done">
             <CheckCircle2 aria-hidden /> Imported {result.inserted} transactions ({result.duplicates} duplicates skipped).
           </p>
+          {result.import_batch_id != null && (
+            <p className="import-page__note">
+              Saved as import #{result.import_batch_id} - it is highlighted in Import history below, where you can undo it.
+            </p>
+          )}
           <ul className="import-page__summary">
             {result.sweeps_dropped > 0 && <li>{result.sweeps_dropped} settlement sweeps dropped</li>}
             {result.unresolved_symbols.length > 0 && <li>Unresolved symbols: {result.unresolved_symbols.join(", ")}</li>}
@@ -272,6 +294,8 @@ export function Import() {
           </div>
         </Card>
       )}
+
+      <ImportHistory highlight={result?.import_batch_id ?? null} />
     </div>
   );
 }

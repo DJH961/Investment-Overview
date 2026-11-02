@@ -32,6 +32,7 @@ import {
 import { useShellStatus } from "../../lib/shell";
 import { useIsPhone } from "../../lib/useMediaQuery";
 import { usePersistentState } from "../../lib/usePersistentState";
+import { formatPrice, formatQuantity, num } from "./numbers";
 import { KIND_OPTIONS, TransactionForm } from "./TransactionForm";
 import "./Transactions.scss";
 
@@ -116,20 +117,6 @@ function monthLabel(month: string): string {
   return new Intl.DateTimeFormat(getFormatPrefs().locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(
     new Date(`${month}-01T00:00:00Z`),
   );
-}
-
-const num = (v: string | null | undefined): number | null => (v === null || v === undefined || v === "" ? null : Number(v));
-
-/** Quantity: up to 6 decimals, no trailing zeros. */
-export function formatQuantity(v: string | null | undefined): string {
-  const n = num(v);
-  if (n === null || Number.isNaN(n)) return "–";
-  return new Intl.NumberFormat(getFormatPrefs().locale, { maximumFractionDigits: 6 }).format(n);
-}
-
-function priceDigits(v: string | null | undefined): number {
-  const n = Math.abs(num(v) ?? 0);
-  return n > 0 && n < 1 ? 4 : 2;
 }
 
 /** Net in the reporting currency (trade-date FX, from the server) with the other legs beneath. */
@@ -245,8 +232,7 @@ export function Transactions() {
       key: "price",
       header: "Price",
       align: "right",
-      cell: (r) =>
-        r.price_native ? <Money amount={num(r.price_native)} currency={r.currency} digits={priceDigits(r.price_native)} /> : "–",
+      cell: (r) => <span className="money">{formatPrice(r.price_native, r.currency)}</span>,
     },
     {
       key: "fees",
