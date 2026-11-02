@@ -4,7 +4,6 @@ import { Card } from "../Card";
 import { Chart, type ChartSeries, type ChartXMode } from "../Chart";
 import { ErrorState } from "../ErrorState";
 import { Percent } from "../Percent";
-import { SegmentedControl } from "../SegmentedControl";
 import {
   chartMoneyFormat,
   formatDate,
@@ -32,6 +31,7 @@ export const RANGE_LABELS: Record<GraphRange, string> = {
 };
 
 const RANGE_KEY = "chart.overview.range";
+const SECONDARY_KEY = "chart.overview.secondary";
 const isRange = (v: unknown): v is GraphRange | null => v === null || GRAPH_RANGES.includes(v as GraphRange);
 
 /**
@@ -63,7 +63,8 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
   const [remembered, setRemembered] = usePersistentState<GraphRange | null>(RANGE_KEY, null, isRange);
   const [picked, setPicked] = useState<GraphRange | null>(null);
   const range = picked ?? initialRange({ serverDefault: defaultRange, marketOpen, remembered });
-  const [compare, setCompare] = useState(false);
+  // Other-currency line: on by default, remembered per device.
+  const [showSecondary, setShowSecondary] = usePersistentState<boolean>(SECONDARY_KEY, true);
   const graph = useGraph(range, currency);
   const g = graph.data;
   // Format by the range actually drawn (a placeholder may still be the previous range).
@@ -81,15 +82,23 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
     const out: ChartSeries[] = [
       { id: "primary", label: g.ccy, points: g.points.map((p) => ({ t: p.t, v: toNum(p.v) })) },
     ];
-    if (compare && g.secondary) {
+    const sec = g.secondary;
+    const scale = toNum(sec?.scale);
+    if (sec && scale !== null && scale > 0 && sec.points.length) {
+      // Shared start point: the server's scale maps the other currency onto the
+      // primary axis; the right axis and tooltip show its true values.
       out.push({
         id: "secondary",
-        label: g.secondary.ccy,
-        points: g.secondary.points.map((p) => ({ t: p.t, v: toNum(p.v) })),
+        label: sec.ccy,
+        points: sec.points.map((p) => ({ t: p.t, v: toNum(p.v) })),
+        scale,
+        axis: "right",
+        valueFormat: chartMoneyFormat(sec.ccy, "tooltip"),
+        hidden: !showSecondary,
       });
     }
     return out;
-  }, [g, compare]);
+  }, [g, showSecondary]);
 
   const intraday = shown === "1d" || shown === "1w";
   const xMode: ChartXMode = shown === "1d" ? "time" : "date";
@@ -108,7 +117,7 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
   }
   const growth = g?.growth ? toNum(g.growth.pct) : null;
   const coverage = intraday && g?.coverage && !g.coverage.complete ? g.coverage : null;
-  const other = currency === "EUR" ? "USD" : "EUR";
+  const other = g?.secondary?.ccy ?? (currency === "EUR" ? "USD" : "EUR");
 
   return (
     <Card
@@ -116,18 +125,6 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
       title="Value"
       collapsibleId="overview.chart"
       subtitle={subtitle}
-      actions={
-        <SegmentedControl
-          ariaLabel="Chart lines"
-          size="sm"
-          value={compare ? "both" : "one"}
-          onChange={(v) => setCompare(v === "both")}
-          options={[
-            { value: "one", label: currency },
-            { value: "both", label: `+ ${other}` },
-          ]}
-        />
-      }
     >
       {graph.isError && !g ? (
         <ErrorState message={graph.error.message} onRetry={() => void graph.refetch()} />
@@ -151,6 +148,10 @@ export function ValueChartCard({ currency, defaultRange, marketOpen = false, cla
               prevClose !== null ? { value: prevClose, label: `Prev close ${tipFormat(prevClose)}` } : undefined
             }
             trend={trend}
+            rightAxisFormat={chartMoneyFormat(other, "axis")}
+            onToggleSeries={(id) => {
+              if (id === "secondary") setShowSecondary((v) => !v);
+            }}
             xMode={xMode}
             valueFormat={axisFormat}
             timeFormat={timeFormat}

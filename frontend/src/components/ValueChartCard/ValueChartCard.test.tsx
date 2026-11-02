@@ -77,4 +77,27 @@ describe("ValueChartCard", () => {
     const xs = [...container.querySelectorAll(".chart__axis-label--x")].map((n) => n.textContent);
     expect(xs.every((x) => /^\d\d:\d\d$/.test(x ?? ""))).toBe(true);
   });
+
+  it("draws the other currency by default on a right axis and remembers the toggle", () => {
+    graphData = {
+      ...day,
+      secondary: {
+        ccy: "USD",
+        scale: "1.08",
+        points: [
+          { t: "2026-11-02T14:30:00Z", v: "1080" },
+          { t: "2026-11-02T15:30:00Z", v: "1075" },
+        ],
+      },
+    };
+    const { container, unmount } = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
+    expect(container.querySelector('[data-series="secondary"]')).not.toBeNull();
+    expect(container.querySelector(".chart__axis-label--right")?.textContent).toMatch(/US\$/);
+    fireEvent.click(screen.getByRole("button", { name: "USD" }));
+    expect(container.querySelector('[data-series="secondary"]')).toBeNull();
+    expect(localStorage.getItem("iv.chart.overview.secondary")).toBe("false");
+    unmount();
+    const again = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
+    expect(again.container.querySelector('[data-series="secondary"]')).toBeNull();
+  });
 });

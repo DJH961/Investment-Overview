@@ -36,6 +36,17 @@ export interface ChartSeries {
   label: string;
   points: ChartPoint[];
   tone?: ChartTone;
+  /**
+   * Plot at `v / scale` so this line starts at the same pixel as the primary
+   * (server `secondary.scale`). Pure display mapping; the tooltip shows `v`.
+   */
+  scale?: number;
+  /** "right": label the right axis as left ticks × `scale` (needs `rightAxisFormat`). */
+  axis?: "left" | "right";
+  /** Tooltip formatter for this series' true values (default: chart `valueFormat`). */
+  valueFormat?: (v: number) => string;
+  /** Not drawn; the legend still lists it so it can be switched back on. */
+  hidden?: boolean;
 }
 
 /** A horizontal guide at a fixed value (e.g. cost basis). It is part of the y range. */
@@ -64,6 +75,10 @@ export interface ChartProps {
   trend?: ChartTrend;
   /** Keep the drawn curve but dim it while new data loads. */
   busy?: boolean;
+  /** Right-axis tick labels for a scaled `axis: "right"` series (true values in its currency). */
+  rightAxisFormat?: (v: number) => string;
+  /** Makes legend entries toggle buttons. */
+  onToggleSeries?: (id: string) => void;
   height?: number;
   loading?: boolean;
   emptyMessage?: string;
@@ -71,7 +86,8 @@ export interface ChartProps {
   className?: string;
 }
 
-const PAD = { top: 12, right: 12, bottom: 24, left: 56 };
+const BASE_PAD = { top: 12, right: 12, bottom: 24, left: 56 };
+const RIGHT_AXIS_PAD = 60;
 
 export function toTime(t: string | number): number {
   return typeof t === "number" ? t : Date.parse(t);
@@ -126,6 +142,8 @@ export function Chart({
   xMode = "date",
   trend,
   busy = false,
+  rightAxisFormat,
+  onToggleSeries,
   height = 280,
   loading = false,
   emptyMessage = "No data for this range.",
@@ -149,21 +167,29 @@ export function Chart({
   }, [loading, series.length]);
 
   const model = useMemo(() => {
-    const prepared = series.map((s) => ({
-      ...s,
-      pts: s.points
-        .map((p) => ({ x: toTime(p.t), y: p.v }))
-        .filter((p) => Number.isFinite(p.x))
-        .sort((a, b) => a.x - b.x),
-    }));
+    const all = series.map((s, i) => {
+      const k = s.scale && Number.isFinite(s.scale) && s.scale !== 0 ? s.scale : 1;
+      return {
+        ...s,
+        toneCls: toneClass(s.tone, i),
+        pts: s.points
+          .map((p) => ({ x: toTime(p.t), y: p.v === null ? null : p.v / k, raw: p.v }))
+          .filter((p) => Number.isFinite(p.x))
+          .sort((a, b) => a.x - b.x),
+      };
+    });
+    const prepared = all.filter((s) => !s.hidden);
     const times = [...new Set(prepared.flatMap((s) => s.pts.map((p) => p.x)))].sort((a, b) => a - b);
     const values = prepared
       .flatMap((s) => s.pts.map((p) => p.y))
       .filter((v): v is number => v !== null && Number.isFinite(v));
-    return { prepared, times, values };
+    return { all, prepared, times, values };
   }, [series]);
 
-  const { prepared, times, values } = model;
+  const { all, prepared, times, values } = model;
+  const rightSeries = rightAxisFormat ? prepared.find((s) => s.axis === "right") : undefined;
+  const rightScale = rightSeries?.scale && Number.isFinite(rightSeries.scale) ? rightSeries.scale : 1;
+  const PAD = rightSeries ? { ...BASE_PAD, right: RIGHT_AXIS_PAD } : BASE_PAD;
   const innerW = Math.max(width - PAD.left - PAD.right, 10);
   const innerH = Math.max(height - PAD.top - PAD.bottom, 10);
 
@@ -184,7 +210,7 @@ export function Chart({
     const x = (t: number) => PAD.left + (tMax === tMin ? innerW / 2 : ((t - tMin) / (tMax - tMin)) * innerW);
     const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * innerH;
     return { x, y, lo, hi, tMin, tMax };
-  }, [values, times, innerW, innerH, referenceLine]);
+  }, [values, times, innerW, innerH, referenceLine, PAD.left, PAD.top]);
 
   const setFromClientX = useCallback(
     (clientX: number) => {
@@ -274,21 +300,21 @@ export function Chart({
       : Array.from({ length: xCount }, (_, i) => scales.tMin + ((scales.tMax - scales.tMin) * i) / (xCount - 1));
   const tipTime = tooltipTimeFormat ?? timeFormat;
   // End marker: last drawn point of the primary series.
-  const primaryPts = prepared[0]?.pts.filter((p): p is { x: number; y: number } => p.y !== null) ?? [];
+  const primaryPts = (prepared[0]?.pts ?? []).flatMap((p) => (p.y === null ? [] : [{ x: p.x, y: p.y }]));
   const endPt = trend && primaryPts.length ? primaryPts[primaryPts.length - 1] : null;
   const cursorT = cursor !== null ? (times[cursor] ?? null) : null;
   const cursorX = cursorT !== null ? scales.x(cursorT) : null;
   const tipRows =
     cursorT !== null
-      ? prepared.flatMap((s, i) => {
+      ? prepared.flatMap((s) => {
           const p = s.pts.find((q) => q.x === cursorT);
-          return p && p.y !== null
+          return p && p.y !== null && p.raw !== null
             ? [
                 {
                   id: s.id,
                   label: s.label,
-                  tone: toneClass(s.tone, i),
-                  value: valueFormat(p.y),
+                  tone: s.toneCls,
+                  value: (s.valueFormat ?? valueFormat)(p.raw),
                   y: scales.y(p.y),
                 },
               ]
@@ -329,6 +355,16 @@ export function Chart({
               <text className="chart__axis-label chart__axis-label--y" x={PAD.left - 8} y={scales.y(v)} dy="0.32em">
                 {valueFormat(v)}
               </text>
+              {rightSeries && rightAxisFormat && (
+                <text
+                  className={clsx("chart__axis-label", "chart__axis-label--right", `chart__axis-label--${rightSeries.toneCls}`)}
+                  x={width - PAD.right + 8}
+                  y={scales.y(v)}
+                  dy="0.32em"
+                >
+                  {rightAxisFormat(v * rightScale)}
+                </text>
+              )}
             </g>
           ))}
           {xTicks.map((t, i) => (
@@ -365,14 +401,14 @@ export function Chart({
               )}
             </g>
           )}
-          {prepared.map((s, i) => {
+          {prepared.map((s) => {
             const runs = segments(
               s.pts.map((p) => ({
                 x: scales.x(p.x),
                 y: p.y === null ? null : scales.y(p.y),
               })),
             );
-            const tone = toneClass(s.tone, i);
+            const tone = s.toneCls;
             return (
               <g key={s.id} className={clsx("chart__series", `chart__series--${tone}`)} data-series={s.id}>
                 {tone === "primary" &&
@@ -444,14 +480,31 @@ export function Chart({
           </output>
         )}
       </div>
-      {prepared.length > 1 && (
+      {all.length > 1 && (
         <ul className="chart__legend">
-          {prepared.map((s, i) => (
-            <li key={s.id} className="chart__legend-item">
-              <span className={clsx("chart__swatch", `chart__swatch--${toneClass(s.tone, i)}`)} aria-hidden />
-              {s.label}
-            </li>
-          ))}
+          {all.map((s) => {
+            const swatch = <span className={clsx("chart__swatch", `chart__swatch--${s.toneCls}`)} aria-hidden />;
+            return (
+              <li key={s.id} className={clsx("chart__legend-item", s.hidden && "chart__legend-item--off")}>
+                {onToggleSeries ? (
+                  <button
+                    type="button"
+                    className="chart__legend-toggle"
+                    aria-pressed={!s.hidden}
+                    onClick={() => onToggleSeries(s.id)}
+                  >
+                    {swatch}
+                    {s.label}
+                  </button>
+                ) : (
+                  <>
+                    {swatch}
+                    {s.label}
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

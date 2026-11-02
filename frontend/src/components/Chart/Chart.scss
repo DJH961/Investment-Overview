@@ -102,6 +102,16 @@
     &--y {
       text-anchor: end;
     }
+
+    &--right {
+      text-anchor: start;
+    }
+
+    @each $i in 1, 2, 3, 4 {
+      &--n#{$i} {
+        fill: var(--chart-#{$i + 1});
+      }
+    }
   }
 
   &__grad-stop--top {
@@ -264,5 +274,31 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+
+    &--off {
+      opacity: 0.5;
+    }
+  }
+
+  &__legend-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-2);
+    background: none;
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-sm);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--color-border);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-accent);
+    }
   }
 }

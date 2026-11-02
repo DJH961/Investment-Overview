@@ -139,4 +139,67 @@ describe("Chart", () => {
     expect(container.firstElementChild).toHaveAttribute("aria-busy", "true");
     expect(container.querySelectorAll(".chart__line").length).toBeGreaterThan(0);
   });
+
+  describe("secondary currency on a right axis", () => {
+    const eur: ChartSeries = {
+      id: "primary",
+      label: "EUR",
+      points: [
+        { t: 1000, v: 100 },
+        { t: 2000, v: 110 },
+      ],
+    };
+    const usd: ChartSeries = {
+      id: "secondary",
+      label: "USD",
+      axis: "right",
+      scale: 1.1,
+      valueFormat: (v) => `U${v.toFixed(1)}`,
+      points: [
+        { t: 1000, v: 110 },
+        { t: 2000, v: 115.5 },
+      ],
+    };
+    const firstY = (container: HTMLElement, id: string) =>
+      /M[\d.]+,([\d.]+)/.exec(container.querySelector(`[data-series="${id}"] .chart__line`)?.getAttribute("d") ?? "")?.[1];
+
+    it("starts both lines at the same pixel and labels the right axis as left x scale", () => {
+      const { container } = render(
+        <Chart {...props} series={[eur, usd]} rightAxisFormat={(v) => `R${Math.round(v)}`} />,
+      );
+      expect(firstY(container, "primary")).toBeDefined();
+      expect(Number(firstY(container, "secondary"))).toBeCloseTo(Number(firstY(container, "primary")), 6);
+      const left = [...container.querySelectorAll(".chart__axis-label--y")].map((n) => Number(n.textContent?.slice(1)));
+      const right = [...container.querySelectorAll(".chart__axis-label--right")].map((n) =>
+        Number(n.textContent?.slice(1)),
+      );
+      expect(right).toHaveLength(left.length);
+      right.forEach((r, i) => expect(Math.abs(r - left[i] * 1.1)).toBeLessThanOrEqual(1));
+    });
+
+    it("shows the true secondary value in the tooltip", () => {
+      render(<Chart {...props} series={[eur, usd]} rightAxisFormat={(v) => `R${v}`} />);
+      fireEvent.pointerMove(screen.getByRole("img"), { clientX: 0 });
+      expect(screen.getByRole("status")).toHaveTextContent("U110.0");
+      expect(screen.getByRole("status")).toHaveTextContent("V100");
+    });
+
+    it("hides a series but keeps a legend toggle for it", () => {
+      let toggled = "";
+      const { container } = render(
+        <Chart
+          {...props}
+          series={[eur, { ...usd, hidden: true }]}
+          rightAxisFormat={(v) => `R${v}`}
+          onToggleSeries={(id) => (toggled = id)}
+        />,
+      );
+      expect(container.querySelector('[data-series="secondary"]')).toBeNull();
+      expect(container.querySelector(".chart__axis-label--right")).toBeNull();
+      const btn = screen.getByRole("button", { name: "USD" });
+      expect(btn).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(btn);
+      expect(toggled).toBe("secondary");
+    });
+  });
 });
