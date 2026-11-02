@@ -221,3 +221,70 @@ def test_money_market_without_fund_warns(api_client: TestClient, account_id: int
 
 def test_requires_auth(anon_client: TestClient) -> None:
     assert anon_client.get("/api/transactions").status_code == 401
+
+
+def test_cash_legs_use_trade_date_fx_not_frozen_legs(
+    api_client: TestClient, account_id: int
+) -> None:
+    resp = api_client.post("/api/transactions", json=_buy(account_id))
+    txn_id = resp.json()["transaction"]["id"]
+    # Corrupt the frozen legs: the derived cash legs must not read them.
+    with ledger_session_scope() as s:
+        row = s.get(Transaction, txn_id)
+        assert row is not None
+        row.net_eur = Decimal("-999")
+        row.net_usd = Decimal("-999")
+    page = api_client.get("/api/transactions").json()
+    row_out = page["rows"][0]
+    assert Decimal(row_out["cash_usd"]) == Decimal("-201")
+    # -201 USD / 1.10 (EUR->USD on 2024-01-05)
+    assert Decimal(row_out["cash_eur"]).quantize(Decimal("0.01")) == Decimal("-182.73")
+    month = page["months"][0]
+    assert month["month"] == "2024-01"
+    assert month["count"] == 1
+    assert Decimal(month["net_usd"]) == Decimal("-201")
+    assert month["fx_incomplete"] is False
+
+
+def test_server_side_sort_spans_pages(api_client: TestClient, account_id: int) -> None:
+    for day, sym in (("2024-01-05", "BBB"), ("2024-01-06", "AAA"), ("2024-01-07", "CCC")):
+        assert api_client.post(
+            "/api/transactions", json=_buy(account_id, date=day, symbol=sym)
+        ).is_success
+    first = api_client.get("/api/transactions?order=asc&limit=1").json()
+    assert first["rows"][0]["date"] == "2024-01-05"
+    assert first["total"] == 3
+    assert first["order"] == "asc"
+    by_symbol = api_client.get("/api/transactions?sort=symbol&order=asc&limit=1&offset=2").json()
+    assert by_symbol["rows"][0]["symbol"] == "CCC"
+    assert by_symbol["months"][0]["count"] == 3
+    assert api_client.get("/api/transactions?sort=bogus").status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ({"quantity": "2", "price": "100"}, {"total": "200", "filled": "total", "error": None}),
+        ({"quantity": "3", "total": "100"}, {"price": "33.333333", "filled": "price"}),
+        ({"price": "50", "total": "100"}, {"quantity": "2", "filled": "quantity"}),
+        ({"quantity": "2", "price": "100", "total": "200"}, {"filled": None, "error": None}),
+        ({"quantity": "0", "total": "100"}, {"filled": None}),
+        ({"price": "1"}, {"filled": None, "error": None}),
+    ],
+)
+def test_reconcile(
+    api_client: TestClient, body: dict[str, str], expected: dict[str, object]
+) -> None:
+    resp = api_client.post("/api/transactions/reconcile", json=body)
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    for key, value in expected.items():
+        assert out[key] == value, (key, out)
+
+
+def test_reconcile_flags_mismatch(api_client: TestClient) -> None:
+    out = api_client.post(
+        "/api/transactions/reconcile", json={"quantity": "2", "price": "100", "total": "250"}
+    ).json()
+    assert out["error"]
+    assert "doesn't match" in out["error"]

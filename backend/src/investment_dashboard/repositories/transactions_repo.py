@@ -157,6 +157,44 @@ def list_all_with_account(session: Session) -> Sequence[Transaction]:
     return session.scalars(select(Transaction).options(joinedload(Transaction.account))).all()
 
 
+#: Sort keys accepted by :func:`list_ledger` (``date`` is the default).
+LEDGER_SORT_KEYS = ("date", "symbol", "kind", "account", "quantity", "net")
+
+
+def _ledger_order(sort: str, order: str) -> list[Any]:
+    """ORDER BY clauses for the ledger: the chosen key, then date + id as tiebreak."""
+    asc = order == "asc"
+    key: Any
+    if sort == "symbol":
+        key = (
+            select(Instrument.symbol)
+            .where(Instrument.id == Transaction.instrument_id)
+            .scalar_subquery()
+        )
+    elif sort == "account":
+        key = (
+            select(Account.account_label)
+            .where(Account.id == Transaction.account_id)
+            .scalar_subquery()
+        )
+    elif sort == "kind":
+        key = Transaction.kind
+    elif sort == "quantity":
+        key = Transaction.quantity
+    elif sort == "net":
+        key = Transaction.net_native
+    else:
+        key = None
+    tiebreak = (
+        [Transaction.date.asc(), Transaction.id.asc()]
+        if asc
+        else [Transaction.date.desc(), Transaction.id.desc()]
+    )
+    if key is None:
+        return tiebreak
+    return [(key.asc() if asc else key.desc()).nulls_last(), *tiebreak]
+
+
 def _ledger_stmt(
     *,
     account_id: int | None,
@@ -167,11 +205,13 @@ def _ledger_stmt(
     end: date | None,
     text: str | None,
     hide_settlement_sweeps: bool,
+    sort: str = "date",
+    order: str = "desc",
 ) -> Any:
     stmt = (
         select(Transaction)
         .options(joinedload(Transaction.account), joinedload(Transaction.instrument))
-        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .order_by(*_ledger_order(sort, order))
     )
     if account_id is not None:
         stmt = stmt.where(Transaction.account_id == account_id)
@@ -221,8 +261,14 @@ def list_ledger(
     hide_settlement_sweeps: bool = True,
     limit: int | None = None,
     offset: int = 0,
+    sort: str = "date",
+    order: str = "desc",
 ) -> Sequence[Transaction]:
-    """Filtered ledger page (account + instrument eagerly loaded), newest first."""
+    """Filtered ledger page (account + instrument eagerly loaded).
+
+    Newest first by default; ``sort`` (see :data:`LEDGER_SORT_KEYS`) and
+    ``order`` (``asc`` / ``desc``) apply across the whole filtered set.
+    """
     stmt = _ledger_stmt(
         account_id=account_id,
         instrument_symbol=instrument_symbol,
@@ -232,6 +278,8 @@ def list_ledger(
         end=end,
         text=text,
         hide_settlement_sweeps=hide_settlement_sweeps,
+        sort=sort,
+        order=order,
     )
     if limit is not None:
         stmt = stmt.limit(limit)
