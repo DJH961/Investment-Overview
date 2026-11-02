@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 from datetime import datetime, timedelta
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -34,8 +37,7 @@ class Clock:
 def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
     c = Clock()
     monkeypatch.setattr(svc, "_clock", c)
-    svc.rate_limiter.reset()
-    svc.options_limiter.reset()
+    svc.reset_limiters()
     svc.challenges.reset()
     return c
 
@@ -174,3 +176,109 @@ def test_peek_session_does_not_slide_idle_timeout(
     assert svc.peek_session(db, settings, token) is False
     assert svc.peek_session(db, settings, "bogus") is False
     assert svc.peek_session(db, settings, "") is False
+
+
+# --------------------------------------------------------------------------- hardening
+
+
+def test_reserve_counts_before_the_check_and_refund_takes_it_back(clock: Clock) -> None:
+    lim = svc.RateLimiter(global_factor=None)
+    first = lim.reserve("a", 2)
+    lim.reserve("a", 2)
+    with pytest.raises(svc.RateLimitedError) as exc:
+        lim.reserve("a", 2)
+    assert exc.value.retry_after >= 1
+    first.refund()
+    first.refund()  # idempotent
+    lim.reserve("a", 2)  # the refunded slot is free again
+    with pytest.raises(svc.RateLimitedError):
+        lim.reserve("a", 2)
+
+
+def test_reserve_is_atomic_under_concurrency(clock: Clock) -> None:
+    lim = svc.RateLimiter(global_factor=None)
+    barrier = threading.Barrier(5)
+    results: list[bool] = []
+    lock = threading.Lock()
+
+    def attempt() -> None:
+        barrier.wait()
+        try:
+            lim.reserve("ip", 2)
+            ok = True
+        except svc.RateLimitedError:
+            ok = False
+        with lock:
+            results.append(ok)
+
+    threads = [threading.Thread(target=attempt) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(results) == [False, False, False, True, True]
+
+
+def test_refund_also_frees_the_global_window(clock: Clock) -> None:
+    lim = svc.RateLimiter(global_factor=1, global_min=2)
+    slot = lim.reserve("a", 1)  # global cap: max(1 * 1, 2) == 2
+    lim.reserve("b", 1)
+    with pytest.raises(svc.RateLimitedError):
+        lim.reserve("c", 1)
+    slot.refund()
+    lim.reserve("c", 1)
+
+
+def test_passkey_and_token_limiters_have_no_global_cap(clock: Clock) -> None:
+    for i in range(500):
+        svc.passkey_limiter.record_failure(f"ip{i}")
+        svc.token_limiter.record_failure(f"ip{i}")
+    assert svc.passkey_limiter.retry_after("fresh-ip", 5) is None
+    assert svc.token_limiter.retry_after("fresh-ip", 5) is None
+    assert svc.rate_limiter.retry_after("fresh-ip", 5) is None  # untouched
+
+
+def test_verify_password_refuses_when_slots_are_full(
+    db: Session, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc.set_password(db, "a-good-long-password")
+    entered = threading.Barrier(3)
+    release = threading.Event()
+
+    def slow_verify(stored: str, password: str) -> bool:
+        entered.wait(timeout=5)
+        release.wait(timeout=5)
+        return True
+
+    monkeypatch.setattr(svc, "_hasher", SimpleNamespace(verify=slow_verify))
+    results: list[Any] = []
+
+    def run() -> None:
+        results.append(svc.verify_password(db, "a-good-long-password", max_concurrent=2))
+
+    workers = [threading.Thread(target=run) for _ in range(2)]
+    for w in workers:
+        w.start()
+    entered.wait(timeout=5)  # both slots are now taken
+    with pytest.raises(svc.VerifierBusyError):
+        svc.verify_password(db, "a-good-long-password", max_concurrent=2)
+    release.set()
+    for w in workers:
+        w.join()
+    assert results == [True, True]
+    monkeypatch.setattr(svc, "_hasher", SimpleNamespace(verify=lambda stored, password: True))
+    assert svc.verify_password(db, "a-good-long-password", max_concurrent=2)  # slots freed
+
+
+def test_session_is_fresh_window(db: Session, clock: Clock) -> None:
+    settings = Settings(fresh_session_minutes=10)
+    token = svc.create_session(db, settings, None)
+    sid = svc.validate_session(db, settings, token)
+    assert sid is not None
+    assert svc.session_is_fresh(db, settings, sid)
+    clock.advance(minutes=9)
+    svc.validate_session(db, settings, token)  # activity does not refresh "fresh"
+    assert svc.session_is_fresh(db, settings, sid)
+    clock.advance(minutes=2)
+    assert not svc.session_is_fresh(db, settings, sid)
+    assert not svc.session_is_fresh(db, settings, "unknown")

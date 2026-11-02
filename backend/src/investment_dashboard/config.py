@@ -153,6 +153,24 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = False
     #: Dev-only CORS origins (production is same-origin: leave empty).
     dev_cors_origins: list[str] = Field(default_factory=list)
+    #: Serve ``/docs``, ``/redoc`` and ``/openapi.json``. Always on outside server
+    #: mode; in server mode only when this is ``True``.
+    expose_api_docs: bool = False
+    #: Proxies whose ``X-Forwarded-For``/``-Proto`` headers uvicorn trusts
+    #: (comma-separated IPs/CIDRs). Set it to the reverse proxy's network.
+    forwarded_allow_ips: str = "127.0.0.1"
+    #: Max concurrent connections/tasks uvicorn accepts before answering 503.
+    limit_concurrency: int = Field(default=64, ge=4)
+    #: Largest request body accepted by default (bytes); larger gets 413.
+    max_body_bytes: int = Field(default=64 * 1024, ge=1024)
+    #: Largest request body for ``POST /api/imports`` (a file upload).
+    max_upload_body_bytes: int = Field(default=11 * 1024 * 1024, ge=1024)
+    #: Password checks (argon2, ~64 MiB each) allowed to run at the same time;
+    #: further attempts get 503 + ``Retry-After`` instead of queueing.
+    login_max_concurrent_verifies: int = Field(default=2, ge=1)
+    #: Sensitive actions (passkey add/remove, backup download) need a session
+    #: that signed in within this many minutes; otherwise 403 ``reauth_required``.
+    fresh_session_minutes: int = Field(default=10, ge=1)
 
     @field_validator("api_token")
     @classmethod
@@ -263,6 +281,68 @@ class Settings(BaseSettings):
             return self.snapshot_path
         base = self.config_path if self.config_path is not None else self.db_path
         return base.parent / "mobile_snapshot.json"
+
+
+#: Values that are never a real secret (``first_install.sh`` uses the same words).
+_PLACEHOLDER_SECRETS = frozenset(
+    {"changeme", "changeme-too", "change-me", "placeholder", "secret", "password", "example"}
+)
+#: Shortest acceptable database / backup passphrase in server mode.
+MIN_SERVER_PASSPHRASE_LENGTH = 20
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+
+class ServerConfigError(RuntimeError):
+    """The server-mode configuration is unsafe; the server refuses to start."""
+
+
+def server_config_problems(settings: Settings, env: dict[str, str] | None = None) -> list[str]:
+    """Unsafe server-mode settings, as human-readable lines (empty when fine).
+
+    A plain-http loopback origin (``http://localhost`` / ``http://127.0.0.1``)
+    is treated as a local dev/test run: cookies and RP ID are not checked
+    there, because a browser on any other host could not use such a server.
+    """
+    from urllib.parse import urlsplit  # noqa: PLC0415
+
+    env = dict(os.environ) if env is None else env
+    problems: list[str] = []
+    origin = urlsplit(settings.webauthn_origin.strip())
+    host = (origin.hostname or "").lower()
+    local_dev = origin.scheme == "http" and host in _LOOPBACK_HOSTS
+    if not local_dev:
+        if origin.scheme != "https" or not host:
+            problems.append("webauthn_origin must be an https:// origin")
+        rp_id = settings.webauthn_rp_id.strip().lower()
+        if host and not (host == rp_id or host.endswith("." + rp_id)):
+            problems.append("webauthn_rp_id must be the origin's host (or a parent domain)")
+        if not settings.cookie_secure:
+            problems.append("cookie_secure must be true")
+        if settings.dev_cors_origins:
+            problems.append("dev_cors_origins must be empty")
+    secrets_to_check = {
+        "INV_DASHBOARD_DB_PASSPHRASE": settings.db_passphrase,
+        "INV_DASHBOARD_BACKUP_PASSPHRASE": env.get("INV_DASHBOARD_BACKUP_PASSPHRASE"),
+    }
+    for name, value in secrets_to_check.items():
+        if not value:
+            continue
+        if value.strip().lower() in _PLACEHOLDER_SECRETS:
+            problems.append(f"{name} is still a placeholder")
+        elif len(value) < MIN_SERVER_PASSPHRASE_LENGTH:
+            problems.append(f"{name} must be at least {MIN_SERVER_PASSPHRASE_LENGTH} characters")
+    return problems
+
+
+def validate_server_config(settings: Settings) -> None:
+    """Raise :class:`ServerConfigError` when server mode is configured unsafely."""
+    if not settings.server_mode:
+        return
+    problems = server_config_problems(settings)
+    if problems:
+        raise ServerConfigError(
+            "Refusing to start: unsafe server configuration: " + "; ".join(problems)
+        )
 
 
 @lru_cache(maxsize=1)

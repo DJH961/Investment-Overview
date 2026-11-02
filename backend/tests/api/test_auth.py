@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import threading
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -51,12 +52,10 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
 
 @pytest.fixture(autouse=True)
 def _reset_state() -> Iterator[None]:
-    svc.rate_limiter.reset()
-    svc.options_limiter.reset()
+    svc.reset_limiters()
     svc.challenges.reset()
     yield
-    svc.rate_limiter.reset()
-    svc.options_limiter.reset()
+    svc.reset_limiters()
     svc.challenges.reset()
 
 
@@ -398,6 +397,99 @@ def test_short_api_token_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValidationError):
         Settings(api_token="too-short")
     assert Settings(api_token=TOKEN).api_token == TOKEN
+
+
+# ------------------------------------------------------------------ login hardening
+
+
+def test_login_busy_verifier_is_503_and_not_counted(
+    client: TestClient, with_password: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    full = threading.BoundedSemaphore(1)
+    full.acquire()
+    monkeypatch.setattr(svc, "_slots", lambda size: full)
+    for _ in range(get_settings().login_rate_limit_per_minute + 2):
+        r = _login(client)
+        assert r.status_code == 503 and r.headers["Retry-After"] == "1"
+    full.release()
+    assert _login(client).status_code == 204  # busy answers used no rate budget
+
+
+def test_concurrent_wrong_logins_cannot_beat_the_limit(
+    client: TestClient, with_password: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """4 parallel wrong guesses, limit 2: the slot is reserved before verifying."""
+    monkeypatch.setenv("INV_DASHBOARD_LOGIN_RATE_LIMIT_PER_MINUTE", "2")
+    get_settings.cache_clear()
+    gate = threading.Event()
+
+    def slow_wrong(stored: str, password: str) -> bool:
+        gate.wait(timeout=5)  # hold the verify so all requests overlap
+        raise svc.VerificationError("wrong")
+
+    monkeypatch.setattr(svc, "_hasher", SimpleNamespace(verify=slow_wrong))
+    codes: list[int] = []
+    lock = threading.Lock()
+
+    def attempt() -> None:
+        r = _other(client, Origin=ORIGIN).post("/api/auth/login", json={"password": "nope"})
+        with lock:
+            codes.append(r.status_code)
+
+    threads = [threading.Thread(target=attempt) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for _ in range(100):  # wait until the two others were refused
+        with lock:
+            if len(codes) >= 2:
+                break
+        threading.Event().wait(0.05)
+    gate.set()
+    for t in threads:
+        t.join(timeout=10)
+    assert sorted(codes) == [401, 401, 429, 429]
+
+
+def test_passkey_login_ignores_the_password_global_cap(client: TestClient) -> None:
+    for i in range(200):  # password failures from many IPs: global cap hit
+        svc.rate_limiter.record_failure(f"ip{i}")
+    anon = _other(client, Origin=ORIGIN)
+    assert anon.post("/api/auth/login", json={"password": "x"}).status_code in (429, 503)
+    assert anon.post("/api/auth/passkey/login/verify", json=CRED).status_code == 401
+    assert anon.post("/api/auth/passkey/login/options").status_code == 200
+
+
+def test_api_token_cannot_manage_passkeys(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("INV_DASHBOARD_API_TOKEN", TOKEN)
+    get_settings.cache_clear()
+    bare = _other(client)
+    tok = {"Authorization": f"Bearer {TOKEN}"}
+    r = bare.post("/api/auth/passkey/register/options", headers=tok, json={})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "session_required"
+    assert bare.delete("/api/auth/passkeys/1", headers=tok).status_code == 403
+    assert bare.get("/api/auth/passkeys", headers=tok).status_code == 200  # reading is fine
+
+
+def test_stale_session_must_sign_in_again_for_passkeys(
+    client: TestClient, with_password: None, monkeypatch: pytest.MonkeyPatch, clock: Clock
+) -> None:
+    _login(client)
+    _fake_registration(monkeypatch, {})
+    assert _register(client)[1].status_code == 204
+    pid = client.get("/api/auth/passkeys").json()[0]["id"]
+    clock.advance(minutes=get_settings().fresh_session_minutes + 1)
+    assert client.get("/api/_guarded").status_code == 200  # still signed in
+    for r in (
+        client.post("/api/auth/passkey/register/options", json={}),
+        client.post("/api/auth/passkey/register/verify", json=CRED),
+        client.delete(f"/api/auth/passkeys/{pid}"),
+    ):
+        assert r.status_code == 403
+        assert r.json()["detail"]["code"] == "reauth_required"
+    _login(client)  # a new sign-in is fresh again
+    assert client.delete(f"/api/auth/passkeys/{pid}").status_code == 204
 
 
 # ------------------------------------------------------------------ migration
