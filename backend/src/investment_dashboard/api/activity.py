@@ -32,6 +32,11 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ("POST", "/api/imports/{import_id}/confirm"): ("import confirmed", "import confirm failed"),
     ("DELETE", "/api/imports/{import_id}"): ("import discarded", "import discard failed"),
     ("POST", "/api/refresh"): ("manual refresh requested", "manual refresh refused"),
+    ("POST", "/api/graphs/{range_key}/reload"): (
+        "graph reload requested",
+        "graph reload refused",
+    ),
+    ("PUT", "/api/graphs/range"): ("graph range remembered", "graph range refused"),
     ("GET", "/api/backup"): ("backup downloaded", "backup download failed"),
     ("GET", "/api/diagnostics/support-bundle"): (
         "support bundle downloaded",
@@ -49,7 +54,7 @@ def subject_for(method: str, path: str) -> str | None:
             return "auth"
         if path.startswith("/api/imports"):
             return "imports"
-        if path == "/api/refresh":
+        if path == "/api/refresh" or (path.startswith("/api/graphs/") and path.endswith("/reload")):
             return "market_data"
         return "changes"
     return _DOWNLOADS.get(path) if method == "GET" else None

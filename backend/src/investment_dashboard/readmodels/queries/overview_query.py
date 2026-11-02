@@ -119,8 +119,14 @@ _RANGE_MARKET_SESSION_KEY = "overview_value_range_market_session"
 _RANGE_MARKET_DEFAULT = "Day"
 
 
+#: Extra range labels only the v6 app offers (3M / 6M). Accepted as stored
+#: selections so ``PUT /api/graphs/range`` can remember them; the NiceGUI page
+#: resolves an unknown label to its default range.
+EXTRA_RANGE_LABELS: tuple[str, ...] = ("3M", "6M")
+
+
 def _range_allowed() -> list[str]:
-    return [name for name, _ in VALUE_RANGES]
+    return [name for name, _ in VALUE_RANGES] + list(EXTRA_RANGE_LABELS)
 
 
 def _range_session_token(now: datetime | None) -> str:
