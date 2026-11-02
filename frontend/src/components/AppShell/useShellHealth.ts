@@ -1,12 +1,10 @@
+import { useHealthStatus } from "../../lib/health";
 import type { HealthSummary } from "../TopBar";
 
-/**
- * Data-health summary for the top-bar badge.
- *
- * TODO(WP-9): return the result of `useHealthStatus()` from `lib/` (backed by
- * `GET /api/diagnostics/status`) once that hook lands. Until then the badge
- * shows the neutral "Data health" link on desktop and nothing on phone.
- */
+/** Data-health summary for the top-bar badge (cheap `GET /api/diagnostics/status`, refetched every 5 min). */
 export function useShellHealth(): HealthSummary | undefined {
-  return undefined;
+  const h = useHealthStatus();
+  if (h.isLoading) return undefined;
+  if (!h.attention) return { severity: "ok", count: 0, label: h.label };
+  return { severity: h.severity === "error" ? "error" : "warn", count: h.count, label: h.label };
 }
