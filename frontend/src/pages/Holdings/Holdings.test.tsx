@@ -1,12 +1,26 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import type { HoldingsDto } from "../../lib/queries/portfolio";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { HoldingsDto } from "../../lib/queries/holdings";
+
+const phone = vi.hoisted(() => ({ value: false }));
 
 const holdings: HoldingsDto = {
   as_of: "2026-10-30",
   ccy: "EUR",
   total_value: "1000",
   total_capital_gain: "100",
+  total_return: "120",
+  total_growth: "0.25",
+  xirr: "0.1",
+  dividend_income: "20",
+  dividends_ttm: "5",
+  dividend_yield_pct: "0.02",
+  dividend_yield_ttm_pct: "0.005",
+  weighted_expense_ratio: "0.002",
+  annual_expense_cost: "2",
+  fx: { pair: "USD/EUR", spot: "0.9234", move_pct: "-0.001", as_of: "2026-10-30", source: "eod" },
+  group_by: "none",
+  groups: [],
   holdings: [
     {
       instrument_id: 1,
@@ -26,6 +40,11 @@ const holdings: HoldingsDto = {
       price_as_of: "2026-10-30",
       avg_price_native: "80",
       today_pct: "0.01",
+      today_move: "10",
+      capital_gain: "200",
+      total_growth: "0.25",
+      xirr: "0.1",
+      updated_at: "2026-10-30T15:05:00Z",
       value_warning: true,
       price_data_warning: false,
     },
@@ -33,8 +52,31 @@ const holdings: HoldingsDto = {
   summary: { in_profit: 1, in_loss: 0, gainers: 1, losers: 0 },
 };
 
-vi.mock("../../lib/queries/portfolio", async (orig) => ({
-  ...(await orig<typeof import("../../lib/queries/portfolio")>()),
+const accountGroups = (): HoldingsDto => ({
+  ...holdings,
+  group_by: "account",
+  groups: [
+    {
+      key: "A",
+      count: 1,
+      instrument_ids: [1],
+      value: "1000",
+      cost_basis: "800",
+      capital_gain: "200",
+      dividends: "20",
+      total_return: "220",
+      weight_pct: "1",
+    },
+  ],
+});
+
+vi.mock("../../lib/useMediaQuery", async (orig) => ({
+  ...(await orig<typeof import("../../lib/useMediaQuery")>()),
+  useMediaQuery: () => phone.value,
+}));
+
+vi.mock("../../lib/queries/holdings", async (orig) => ({
+  ...(await orig<typeof import("../../lib/queries/holdings")>()),
   useHoldingHistory: () => ({
     data: {
       instrument_id: 1,
@@ -50,12 +92,23 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
     isPending: false,
     isError: false,
   }),
-  useHoldings: () => ({ data: holdings, isPending: false, isError: false, isFetching: false, refetch: vi.fn() }),
+  useHoldings: (_ccy: string, by: string) => ({
+    data: by === "account" ? accountGroups() : holdings,
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  }),
 }));
 vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 
-import { Holdings, groupHoldings } from "./Holdings";
+import { Holdings } from "./Holdings";
+
+beforeEach(() => {
+  phone.value = false;
+  localStorage.clear();
+});
 
 describe("Holdings page", () => {
   it("renders the table with row flags and a search box", () => {
@@ -65,26 +118,50 @@ describe("Holdings page", () => {
     expect(screen.getByLabelText("Search holdings")).toHaveAttribute("data-search");
   });
 
-  it("sums subtotals per group, largest first", () => {
-    const base = holdings.holdings[0];
-    const rows = [
-      { ...base, instrument_id: 1, account: "A", value: "100", capital_gain: "10" },
-      { ...base, instrument_id: 2, account: "B", value: "500", capital_gain: "-5" },
-      { ...base, instrument_id: 3, account: "A", value: "50", capital_gain: "5" },
-    ];
-    const groups = groupHoldings(rows, "account");
-    expect(groups.map((g) => g.key)).toEqual(["B", "A"]);
-    expect(groups[1].value).toBe(150);
-    expect(groups[1].gain).toBe(15);
-    expect(groupHoldings(rows, "none")).toHaveLength(1);
-  });
-
   it("shows group subtotals when grouped", () => {
     render(<Holdings />);
     expect(screen.queryByLabelText(/^Subtotal/)).toBeNull();
     fireEvent.click(screen.getByRole("combobox", { name: "Group by" }));
     fireEvent.click(screen.getByRole("option", { name: "By account" }));
     expect(screen.getByLabelText("Subtotal A")).toBeInTheDocument();
+    expect(localStorage.getItem("iv.holdings.group")).toBe('"account"');
+  });
+
+  it("shows the income, expense and FX tiles of the second KPI row", () => {
+    render(<Holdings />);
+    expect(screen.getByText("Dividend return")).toBeInTheDocument();
+    expect(screen.getByText("Dividend yield (TTM)")).toBeInTheDocument();
+    expect(screen.getByText("Weighted expense")).toBeInTheDocument();
+    expect(screen.getByText("Current FX (USD/EUR)")).toBeInTheDocument();
+    expect(screen.getByText(/EOD · /)).toBeInTheDocument();
+  });
+
+  it("tints profitable rows and lists flagged symbols in one notice", () => {
+    const { container } = render(<Holdings />);
+    expect(container.querySelector(".holdings-page__row--gain")).not.toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("Stale or zero value: VWCE");
+  });
+
+  it("on a phone shows the as-of stamp, today in money and the price chart button", () => {
+    phone.value = true;
+    const { container } = render(<Holdings />);
+    expect(screen.getByText(/as of /)).toBeInTheDocument();
+    expect(container.querySelector(".holdings-page__today")).toHaveTextContent("+€10.00"); // money move
+    expect(container.querySelector(".holdings-page__today--stale")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /VWCE/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Price chart" }));
+    expect(screen.getByLabelText("VWCE price against cost basis")).toBeInTheDocument();
+  });
+
+  it("greys the today move when the daily move is stale", () => {
+    phone.value = true;
+    holdings.holdings[0].daily_is_stale = true;
+    try {
+      const { container } = render(<Holdings />);
+      expect(container.querySelector(".holdings-page__today--stale")).not.toBeNull();
+    } finally {
+      holdings.holdings[0].daily_is_stale = false;
+    }
   });
 
   it("opens the detail drawer with a cost-basis line", () => {

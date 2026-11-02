@@ -29,6 +29,8 @@ export interface DataTableProps<Row> {
   loading?: boolean;
   emptyMessage?: string;
   className?: string;
+  /** Extra class for a body row (e.g. a gain/loss tint). */
+  rowClassName?: (row: Row) => string | false | undefined;
 }
 
 type Direction = "asc" | "desc";
@@ -50,6 +52,7 @@ export function DataTable<Row>({
   loading = false,
   emptyMessage = "Nothing to show yet.",
   className,
+  rowClassName,
 }: DataTableProps<Row>) {
   const [sort, setSort] = useState<{ key: string; direction: Direction } | undefined>(defaultSort);
 
@@ -124,7 +127,7 @@ export function DataTable<Row>({
             ))}
           {!loading &&
             sorted.map((row) => (
-              <tr key={rowKey(row)} className="data-table__row">
+              <tr key={rowKey(row)} className={clsx("data-table__row", rowClassName?.(row))}>
                 {columns.map((col) => (
                   <td
                     key={col.key}
