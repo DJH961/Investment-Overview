@@ -139,8 +139,37 @@ export interface ChartProps {
   className?: string;
 }
 
-const BASE_PAD = { top: 12, right: 12, bottom: 24, left: 56 };
-const RIGHT_AXIS_PAD = 60;
+const BASE_PAD = { top: 12, right: 8, bottom: 24, left: 8 };
+/** Approximate width of one axis-label character (12px tabular digits); jsdom has no text metrics. */
+const CHAR_W = 7.6;
+/** Space between a y label and the plot. */
+const LABEL_GAP = 8;
+
+/** Estimated pixel width of an axis label. */
+export function labelWidth(text: string): number {
+  return Math.ceil(text.length * CHAR_W);
+}
+
+/**
+ * Round y ticks (1 / 2 / 2.5 / 5 x 10^n steps) inside `[lo, hi]`, so labels
+ * read "€96k, €98k, €100k" rather than "€96,378, €97,388".
+ */
+export function niceTicks(lo: number, hi: number, maxTicks = 5): number[] {
+  const span = hi - lo;
+  if (!(span > 0) || !Number.isFinite(span)) return [lo];
+  const ticksFor = (step: number) => {
+    const out: number[] = [];
+    for (let k = Math.ceil(lo / step); k * step <= hi + step * 1e-9; k++) out.push(Number((k * step).toPrecision(12)));
+    return out;
+  };
+  const mag = 10 ** Math.floor(Math.log10(span));
+  // Largest round step that still gives at least three ticks.
+  for (const f of [5, 2.5, 2, 1, 0.5, 0.25, 0.2, 0.1, 0.05]) {
+    const ticks = ticksFor(f * mag);
+    if (ticks.length >= 3 && ticks.length <= maxTicks) return ticks;
+  }
+  return [lo, hi];
+}
 
 export function toTime(t: string | number): number {
   return typeof t === "number" ? t : Date.parse(t);
@@ -243,11 +272,7 @@ export function Chart({
   const { all, prepared, times, values } = model;
   const rightSeries = rightAxisFormat ? prepared.find((s) => s.axis === "right") : undefined;
   const rightScale = rightSeries?.scale && Number.isFinite(rightSeries.scale) ? rightSeries.scale : 1;
-  const PAD = rightSeries ? { ...BASE_PAD, right: RIGHT_AXIS_PAD } : BASE_PAD;
-  const innerW = Math.max(width - PAD.left - PAD.right, 10);
-  const innerH = Math.max(height - PAD.top - PAD.bottom, 10);
-
-  const scales = useMemo(() => {
+  const bounds = useMemo(() => {
     if (!values.length) return null;
     const tMin = times[0];
     const tMax = times[times.length - 1];
@@ -261,13 +286,33 @@ export function Chart({
     const pad = (hi - lo) * 0.08;
     lo -= pad;
     hi += pad;
+    return { lo, hi, tMin, tMax };
+  }, [values, times, referenceLine]);
+
+  // Margins fit the widest tick label, so labels are never clipped and the plot
+  // gets every remaining pixel (narrow phones especially).
+  const yTicks = bounds ? niceTicks(bounds.lo, bounds.hi, height < 200 ? 4 : 5) : [];
+  const leftW = Math.max(0, ...yTicks.map((v) => labelWidth(valueFormat(v))));
+  const rightW =
+    rightSeries && rightAxisFormat ? Math.max(0, ...yTicks.map((v) => labelWidth(rightAxisFormat(v * rightScale)))) : 0;
+  const PAD = {
+    ...BASE_PAD,
+    left: leftW + LABEL_GAP,
+    right: rightW ? rightW + LABEL_GAP : BASE_PAD.right,
+  };
+  const innerW = Math.max(width - PAD.left - PAD.right, 10);
+  const innerH = Math.max(height - PAD.top - PAD.bottom, 10);
+
+  const scales = useMemo(() => {
+    if (!bounds) return null;
+    const { lo, hi, tMin, tMax } = bounds;
     const layout = xMode === "session" && sessions?.length ? sessionLayout(sessions, PAD.left, innerW) : null;
     const x = layout
       ? layout.x
       : (t: number) => PAD.left + (tMax === tMin ? innerW / 2 : ((t - tMin) / (tMax - tMin)) * innerW);
     const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * innerH;
     return { x, y, lo, hi, tMin, tMax, layout };
-  }, [values, times, innerW, innerH, referenceLine, PAD.left, PAD.top, xMode, sessions]);
+  }, [bounds, innerW, innerH, PAD.left, PAD.top, xMode, sessions]);
 
   const setFromClientX = useCallback(
     (clientX: number) => {
@@ -349,13 +394,14 @@ export function Chart({
     );
   }
 
-  const yTicks = Array.from({ length: 5 }, (_, i) => scales.lo + ((scales.hi - scales.lo) * i) / 4);
-  const xCount = width < 420 ? 3 : 5;
+  // As many x labels as fit side by side (at least the two ends).
+  const xLabelW = Math.max(labelWidth(timeFormat(scales.tMin)), labelWidth(timeFormat(scales.tMax)));
+  const xCount = Math.min(6, Math.max(2, Math.floor(innerW / (xLabelW + 24))));
   const layout = scales.layout;
   const xTicks = layout
     ? []
     : xMode === "time"
-      ? timeTicks(scales.tMin, scales.tMax, width < 420 ? 4 : 7)
+      ? timeTicks(scales.tMin, scales.tMax, xCount + 1)
       : Array.from({ length: xCount }, (_, i) => scales.tMin + ((scales.tMax - scales.tMin) * i) / (xCount - 1));
   const tipTime = tooltipTimeFormat ?? timeFormat;
   // End marker: last drawn point of the primary series.

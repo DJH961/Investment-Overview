@@ -97,7 +97,7 @@ export function TopBar({
       {leading}
       <div className="top-bar__title-block">
         <p className="top-bar__title">{title}</p>
-        <Freshness className="top-bar__freshness" status={freshness.status} label={freshness.label} />
+        {freshness.label && <Freshness className="top-bar__freshness" status={freshness.status} label={freshness.label} />}
       </div>
       <div className="top-bar__actions">
         {showHealth && <HealthBadge health={health} />}

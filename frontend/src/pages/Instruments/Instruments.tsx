@@ -307,7 +307,7 @@ export function Instruments() {
 
   const columns: Column<Instrument>[] = [
     { key: "symbol", header: "Symbol", primary: true, cell: (i) => i.symbol, sortValue: (i) => i.symbol },
-    { key: "name", header: "Name", cell: (i) => i.name ?? "—", sortValue: (i) => i.name },
+    { key: "name", header: "Name", phone: "sub", cell: (i) => i.name ?? "—", sortValue: (i) => i.name },
     {
       key: "class",
       header: "Asset class",

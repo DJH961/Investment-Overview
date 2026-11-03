@@ -6,6 +6,10 @@
   flex-direction: column;
   gap: var(--space-4);
 
+  @include m.phone {
+    gap: var(--space-3);
+  }
+
   &__row {
     display: grid;
     gap: var(--space-4);

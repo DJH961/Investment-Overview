@@ -7,11 +7,13 @@ import { Card } from "../../components/Card";
 import { type Column, DataTable } from "../../components/DataTable";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
+import { GrowthBars } from "../../components/GrowthBars";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
+import { formatDate } from "../../lib/format";
 import { type ReportingCurrency, usePrefs } from "../../lib/prefs";
 import { type PeriodRowOut, toNum, usePeriods } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -29,6 +31,17 @@ const VIEWS = [
 ] as const;
 
 const isView: Validator<View> = (v): v is View => v === "year" || v === "monthly" || v === "yearly";
+
+/** "2026-10" -> "Oct 2026"; years and other labels pass through. */
+export function periodLabel(label: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(label);
+  if (!m) return label;
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)).toLocaleDateString("en-GB", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 const otherCcy = (c: ReportingCurrency): ReportingCurrency => (c === "EUR" ? "USD" : "EUR");
 
@@ -56,7 +69,7 @@ function buildColumns(
       sortValue: (r) => r.label,
       cell: (r) => (
         <>
-          {r.label}
+          {periodLabel(r.label)}
           {r.is_current && <span className="periods-page__pill"> live</span>}
         </>
       ),
@@ -65,6 +78,7 @@ function buildColumns(
       key: "closing",
       header: "Value",
       align: "right",
+      phone: "sub",
       sortValue: (r) => toNum(r.closing_value),
       cell: (r) => {
         const o = toNum(other.get(r.label)?.closing_value);
@@ -84,6 +98,7 @@ function buildColumns(
       key: "growth",
       header: opts.yearly ? "Growth (TWR)" : "Growth",
       align: "right",
+      phone: "headline",
       sortValue: (r) => toNum(r.growth_pct),
       cell: (r) => pct(r.growth_pct),
     },
@@ -158,7 +173,7 @@ export function Periods() {
     void refetchM();
     void refetchY();
   }, [refetchM, refetchY]);
-  useShellStatus(failed ? "stale" : pending ? "loading" : "closed", asOf ? `As of ${asOf}` : "Loading", refetch, fetching);
+  useShellStatus(failed ? "stale" : pending ? "loading" : "closed", asOf ? `As of ${formatDate(asOf)}` : "Loading", refetch, fetching);
 
   const mRows = monthly.data?.rows ?? [];
   const yRows = yearly.data?.rows ?? [];
@@ -168,8 +183,8 @@ export function Periods() {
   const yOther = index(yearly2.data?.rows);
   const empty = view === "year" ? mRows.length === 0 && yRows.length === 0 : flat.length === 0;
 
-  const growths = flat.map((r) => toNum(r.growth_pct));
-  const maxAbs = Math.max(0, ...growths.map((g) => Math.abs(g ?? 0)));
+  // By-year view: the last two years of months as a bar strip on top.
+  const recent = mRows.slice(-24);
 
   return (
     <div className="periods-page">
@@ -196,6 +211,14 @@ export function Periods() {
         <EmptyState icon={<Inbox aria-hidden />} title="No periods yet" description="Import transactions to see returns." />
       ) : (
         <div className="periods-page__grid">
+          {view === "year" && recent.length > 1 && (
+            <Card title="Growth per month" subtitle="Last 24 months" collapsibleId="periods.bars">
+              <GrowthBars
+                ariaLabel="Monthly growth, last 24 months"
+                bars={recent.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
+              />
+            </Card>
+          )}
           {view === "year" ? (
             groups.map((g) => (
               <Card
@@ -221,21 +244,11 @@ export function Periods() {
             ))
           ) : (
             <>
-              <Card title="Return per period">
-                <div className="periods-page__bars" role="img" aria-label={`${view} growth bar chart`}>
-                  {flat.map((r, i) => {
-                    const g = growths[i];
-                    const h = g === null || maxAbs === 0 ? 0 : (Math.abs(g) / maxAbs) * 100;
-                    return (
-                      <div key={r.label} className="periods-page__bar-slot" title={r.label}>
-                        <div
-                          className={`periods-page__bar periods-page__bar--${(g ?? 0) < 0 ? "neg" : "pos"}`}
-                          style={{ height: `${h}%` }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
+              <Card title={view === "monthly" ? "Growth per month" : "Growth per year"}>
+                <GrowthBars
+                  ariaLabel={`${view} growth bar chart`}
+                  bars={flat.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
+                />
               </Card>
               <Card title={view === "monthly" ? "Monthly" : "Yearly"} flush>
                 <DataTable
@@ -279,35 +292,30 @@ function YearSummary({
   const o = toNum(other?.closing_value);
   return (
     <span className="periods-page__summary" data-year={yearOf(row.label)}>
-      <span>
-        {amt(row.closing_value)}
-        {o !== null && (
-          <span className="periods-page__second">
-            <Money amount={o} currency={second} />
+      <span className="periods-page__summary-main">
+        <span className="periods-page__summary-value">
+          {amt(row.closing_value)}
+          {o !== null && (
+            <span className="periods-page__second">
+              <Money amount={o} currency={second} />
+            </span>
+          )}
+        </span>
+        <span className="periods-page__summary-growth">
+          <Percent ratio={toNum(row.growth_pct)} signed colored />
+          <span className="periods-page__chip-label"> TWR</span>
+        </span>
+      </span>
+      <span className="periods-page__chips">
+        {toNum(row.period_growth_xirr) !== null && (
+          <span className="periods-page__chip">
+            <span className="periods-page__chip-label">XIRR</span> <Percent ratio={toNum(row.period_growth_xirr)} signed colored />
           </span>
         )}
-      </span>
-      <span>
-        <Percent ratio={toNum(row.growth_pct)} signed colored />
-        <span className="periods-page__chip-label"> TWR</span>
-      </span>
-      {toNum(row.period_growth_xirr) !== null && (
-        <span>
-          <Percent ratio={toNum(row.period_growth_xirr)} signed colored />
-          <span className="periods-page__chip-label"> XIRR</span>
-        </span>
-      )}
-      <span className="periods-page__chip">
-        Net flow {amt(row.net_flow)}
-      </span>
-      <span className="periods-page__chip">
-        Contrib {amt(row.contributions)}
-      </span>
-      <span className="periods-page__chip">
-        Div {amt(row.dividends)}
-      </span>
-      <span className="periods-page__chip">
-        Int {amt(row.interest)}
+        <span className="periods-page__chip"><span className="periods-page__chip-label">Net flow</span> {amt(row.net_flow)}</span>
+        <span className="periods-page__chip"><span className="periods-page__chip-label">Contrib</span> {amt(row.contributions)}</span>
+        {toNum(row.dividends) ? <span className="periods-page__chip"><span className="periods-page__chip-label">Div</span> {amt(row.dividends)}</span> : null}
+        {toNum(row.interest) ? <span className="periods-page__chip"><span className="periods-page__chip-label">Int</span> {amt(row.interest)}</span> : null}
       </span>
     </span>
   );

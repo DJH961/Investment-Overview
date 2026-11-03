@@ -60,10 +60,13 @@ function Row({
       </span>
       <span className="overview-holdings__value">
         <Money amount={toNum(row.value)} currency={ccy} />
-        <span className="overview-holdings__fresh">
-          {row.market_open && !stale ? "LIVE" : "updated"}
-          {row.updated_at ? ` · ${formatTime(row.updated_at, timeZone)}` : ""}
-        </span>
+        {(row.market_open && !stale) || row.updated_at ? (
+          <span className="overview-holdings__fresh">
+            {[row.market_open && !stale ? "LIVE" : null, row.updated_at ? formatTime(row.updated_at, timeZone) : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        ) : null}
       </span>
       <span className={clsx("overview-holdings__today", stale && "overview-holdings__today--stale")}>
         <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />

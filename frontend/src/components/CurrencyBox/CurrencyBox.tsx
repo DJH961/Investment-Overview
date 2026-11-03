@@ -2,7 +2,7 @@ import { Card } from "../Card";
 import { DivergingBar, type DivergingBarRow } from "../DivergingBar";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
-import { formatDate, formatDayLabel, formatNumber, formatTime, formatWeekdayTime, todayIn } from "../../lib/format";
+import { formatAxisDate, formatDayLabel, formatNumber, formatTime, formatWeekdayTime, todayIn } from "../../lib/format";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
 import "./CurrencyBox.scss";
@@ -70,7 +70,7 @@ function AsOfStamp({ asOf, timeZone }: { asOf: Today["as_of"]; timeZone?: string
   let label: string;
   if (asOf.source === "live" && asOf.observed_at) label = formatTime(asOf.observed_at, timeZone);
   else if (asOf.source === "live" || asOf.as_of === todayIn(timeZone)) label = "Today";
-  else label = formatDate(asOf.as_of);
+  else label = formatAxisDate(Date.parse(asOf.as_of), 0);
   return (
     <span className="currency-box__sub">
       as of {label}

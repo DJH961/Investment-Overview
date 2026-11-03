@@ -120,7 +120,7 @@ function UndoPreviewBody({ preview }: { preview: ImportUndoPreview }) {
       <p className="import-page__note">
         {preview.total} transactions in {b.account_label ?? `account ${b.account_id}`} from {b.filename}
         {preview.earliest_date &&
-          ` (${formatDate(preview.earliest_date, "short")} - ${formatDate(preview.latest_date ?? preview.earliest_date, "short")})`}
+          ` (${formatDate(preview.earliest_date)} - ${formatDate(preview.latest_date ?? preview.earliest_date, "short")})`}
         .
         {preview.detached > 0 && ` ${preview.detached} rows were edited since and are removed too.`}
       </p>
@@ -128,7 +128,7 @@ function UndoPreviewBody({ preview }: { preview: ImportUndoPreview }) {
       <ul className="import-page__undo-rows" aria-label="Rows to delete">
         {preview.rows.map((r) => (
           <li key={r.id} className="import-page__undo-row">
-            <span>{formatDate(r.date, "short")}</span>
+            <span>{formatDate(r.date)}</span>
             <span>{r.kind}</span>
             <span>{r.symbol || "—"}</span>
             <span className="import-page__num">{r.quantity ? formatQuantity(r.quantity) : ""}</span>

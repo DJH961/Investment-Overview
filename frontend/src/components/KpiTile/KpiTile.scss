@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .kpi-tile {
   display: flex;
   flex-direction: column;
@@ -12,6 +14,13 @@
   // into the next tile; KpiTile.tsx shrinks it further via --kpi-tile-fit.
   container-type: inline-size;
 
+  // Phone: tighter tiles so two columns breathe and more fits on screen (v5 density).
+  @include m.phone {
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+  }
+
   &__head {
     display: flex;
     align-items: flex-start;
@@ -25,9 +34,11 @@
     align-items: center;
     gap: var(--space-1);
     min-width: 0;
-    color: var(--color-muted);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
+    @include m.eyebrow(var(--font-size-xs));
+
+    @include m.phone {
+      font-size: var(--font-size-2xs);
+    }
   }
 
   &__info {
@@ -47,6 +58,11 @@
   &__info-icon {
     width: var(--icon-sm);
     height: var(--icon-sm);
+
+    @include m.phone {
+      width: var(--font-size-sm);
+      height: var(--font-size-sm);
+    }
   }
 
   &__corner {
@@ -68,6 +84,10 @@
     overflow: hidden;
     color: var(--color-muted);
     font-size: calc(var(--font-size-sm) * var(--kpi-tile-fit, 1));
+
+    @include m.phone {
+      font-size: calc(var(--font-size-xs) * var(--kpi-tile-fit, 1));
+    }
     font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
   }
@@ -76,6 +96,11 @@
     min-width: 0;
     max-width: 100%;
     font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-2xl)) * var(--kpi-tile-fit, 1));
+
+    // Phone: the same size in every tile, even one spanning the full row.
+    @include m.phone {
+      font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-xl)) * var(--kpi-tile-fit, 1));
+    }
     white-space: nowrap;
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.02em;

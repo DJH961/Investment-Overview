@@ -9,6 +9,7 @@ import { Percent } from "../Percent";
 import { useToast } from "../Toast";
 import {
   chartMoneyFormat,
+  formatAxisDate,
   formatDate,
   formatDayLabel,
   formatDayTime,
@@ -169,7 +170,9 @@ export function ValueChartCard({
   const axisFormat = hide ? pctFormat : chartMoneyFormat(currency, "axis");
   const tipFormat = hide ? pctFormat : chartMoneyFormat(currency, "tooltip");
   const timeFormat = (t: number) =>
-    shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatShortDay(t, timeZone) : formatDate(new Date(t), "short");
+    shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w"
+        ? formatShortDay(t, timeZone)
+        : formatAxisDate(t, shown === "1y" || shown === "all" ? Infinity : 0);
   const tooltipTimeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatDayTime(t, timeZone) : formatDate(new Date(t), "medium");
 

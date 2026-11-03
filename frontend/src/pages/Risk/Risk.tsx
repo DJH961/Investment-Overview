@@ -12,7 +12,7 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
-import { formatDate, formatMoney, formatNumber, formatPercent } from "../../lib/format";
+import { formatAxisDate, formatDate, formatMoney, formatNumber, formatPercent } from "../../lib/format";
 import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
 import { glossaryText } from "../../lib/glossary";
 import { usePrefs } from "../../lib/prefs";
@@ -99,7 +99,7 @@ export function Risk() {
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
   useShellStatus(
     q.isError ? "stale" : q.isPending ? "loading" : "closed",
-    q.data ? `As of ${q.data.as_of}` : "Loading",
+    q.data ? `As of ${formatDate(q.data.as_of)}` : "Loading",
     refetch,
     q.isFetching,
   );
@@ -157,6 +157,7 @@ export function Risk() {
       key: "pnl",
       header: "P&L",
       align: "right",
+      phone: "headline",
       sortValue: (r) => toNum(r.absolute_pnl),
       cell: (r) => money(r.absolute_pnl, true),
     },
@@ -254,7 +255,8 @@ export function Risk() {
               valueFormat={(v) =>
                 hide ? formatPercent(v, { digits: 0 }) : formatMoney(v, d.currency, { compact: true })
               }
-              timeFormat={(t) => formatDate(new Date(t))}
+              timeFormat={(t) => formatAxisDate(t, Infinity)}
+              tooltipTimeFormat={(t) => formatDate(new Date(t))}
               ariaLabel={hide ? "Equity curve, as a share of net invested" : "Equity curve"}
             />
             {d.portfolio_last_value !== null ? (
@@ -271,6 +273,7 @@ export function Risk() {
           </Card>
           <Card title="Attribution" subtitle="What each holding added to the return" collapsibleId="risk.attribution">
             <DataTable
+              className="risk-page__attribution"
               caption="Return attribution"
               columns={attrColumns}
               rows={d.attribution}

@@ -217,11 +217,18 @@ export function Transactions() {
   };
 
   const columns: Column<TransactionOut>[] = [
-    { key: "date", header: "Date", cell: (r) => formatDate(r.date, "short"), nowrap: true },
-    { key: "symbol", header: "Symbol", primary: true, cell: (r) => r.symbol || "—" },
+    { key: "date", header: "Date", phone: "sub", cell: (r) => formatDate(r.date), nowrap: true },
+    {
+      key: "symbol",
+      header: "Symbol",
+      primary: true,
+      // Cash rows (deposits, fees) have no symbol: the account names the row.
+      cell: (r) => r.symbol || <span className="transactions-page__no-symbol">{r.account}</span>,
+    },
     {
       key: "kind",
       header: "Kind",
+      phone: "inline",
       cell: (r) => (
         <span className={`transactions-page__kind transactions-page__kind--${r.kind}`}>{KIND_LABEL[r.kind] ?? r.kind}</span>
       ),
@@ -232,7 +239,7 @@ export function Transactions() {
       key: "price",
       header: "Price",
       align: "right",
-      cell: (r) => <span className="money">{formatPrice(r.price_native, r.currency)}</span>,
+      cell: (r) => (r.price_native == null ? "–" : <span className="money">{formatPrice(r.price_native, r.currency)}</span>),
     },
     {
       key: "fees",
@@ -241,7 +248,7 @@ export function Transactions() {
       phone: "hide",
       cell: (r) => (num(r.fees_native) ? <Money amount={num(r.fees_native)} currency={r.currency} /> : "–"),
     },
-    { key: "net", header: `Net (${currency})`, align: "right", cell: (r) => <NetCell row={r} currency={currency} /> },
+    { key: "net", header: `Net (${currency})`, align: "right", phone: "headline", cell: (r) => <NetCell row={r} currency={currency} /> },
     { key: "source", header: "Source", phone: "hide", cell: (r) => r.source ?? "—" },
     {
       key: "edit",

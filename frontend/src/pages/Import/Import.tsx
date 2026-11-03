@@ -34,7 +34,7 @@ const dash = (v: string | null | undefined) => (v === null || v === undefined ||
 
 const columns: Column<PreviewRow>[] = [
   { key: "index", header: "#", cell: (r) => r.index, sortValue: (r) => r.index, phone: "hide" },
-  { key: "date", header: "Date", cell: (r) => formatDate(r.date, "short"), sortValue: (r) => r.date, nowrap: true },
+  { key: "date", header: "Date", cell: (r) => formatDate(r.date), sortValue: (r) => r.date, nowrap: true },
   { key: "symbol", header: "Symbol", primary: true, cell: (r) => dash(r.symbol), sortValue: (r) => r.symbol },
   { key: "kind", header: "Kind", cell: (r) => r.kind },
   { key: "quantity", header: "Qty", align: "right", cell: (r) => (r.quantity ? formatQuantity(r.quantity) : "–") },

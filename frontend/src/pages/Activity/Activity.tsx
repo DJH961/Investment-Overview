@@ -74,7 +74,7 @@ export function Activity() {
   const refetch = useCallback(() => void activeRefetch(), [activeRefetch]);
   useShellStatus(
     active.isError ? "stale" : active.isPending ? "loading" : "closed",
-    active.data ? `As of ${active.data.as_of}` : "Loading",
+    active.data ? `As of ${formatDate(active.data.as_of)}` : "Loading",
     refetch,
     active.isFetching,
   );
@@ -105,8 +105,14 @@ export function Activity() {
 
   const depositColumns: Column<DepositRowDto>[] = [
     { key: "date", header: "Date", primary: true, sortValue: (r) => r.date, cell: (r) => formatDate(r.date) },
-    { key: "kind", header: "Kind", sortValue: (r) => r.kind, cell: (r) => r.kind.replace("_", " ") },
-    { key: "account", header: "Account", sortValue: (r) => r.account, cell: (r) => r.account },
+    {
+      key: "kind",
+      header: "Kind",
+      phone: "inline",
+      sortValue: (r) => r.kind,
+      cell: (r) => <span className="activity-page__kind">{r.kind.replace("_", " ")}</span>,
+    },
+    { key: "account", header: "Account", phone: "sub", sortValue: (r) => r.account, cell: (r) => r.account },
     {
       key: "description",
       header: "Description",
@@ -117,6 +123,7 @@ export function Activity() {
       key: "native",
       header: "Native",
       align: "right",
+      phone: "hide",
       sortValue: (r) => toNum(r.amount_native),
       cell: (r) => <Money amount={toNum(r.amount_native)} currency={r.currency} />,
     },
@@ -124,6 +131,7 @@ export function Activity() {
       key: "amount",
       header: "Amount",
       align: "right",
+      phone: "headline",
       sortValue: (r) => toNum(r.amount),
       cell: (r) => money(r.amount, r.amount_other),
     },
@@ -222,6 +230,7 @@ export function Activity() {
         key: "life",
         header: "Lifetime",
         align: "right",
+        phone: "headline",
         sortValue: (r) => toNum(r.lifetime),
         cell: (r) => money(r.lifetime, r.lifetime_other),
       },
@@ -247,6 +256,7 @@ export function Activity() {
         key: "div",
         header: "Dividends",
         align: "right",
+        phone: "headline",
         sortValue: (r) => toNum(r.dividends),
         cell: (r) => money(r.dividends, r.dividends_other),
       },
@@ -254,13 +264,14 @@ export function Activity() {
     ];
     const paymentColumns: Column<DividendRowDto>[] = [
       { key: "date", header: "Date", primary: true, sortValue: (r) => r.date, cell: (r) => formatDate(r.date) },
-      { key: "symbol", header: "Holding", sortValue: (r) => r.symbol, cell: (r) => r.symbol || "–" },
+      { key: "symbol", header: "Holding", phone: "sub", sortValue: (r) => r.symbol, cell: (r) => r.symbol || "–" },
       { key: "kind", header: "Type", cell: (r) => KIND_LABEL[r.kind] ?? r.kind },
       { key: "account", header: "Account", phone: "hide", cell: (r) => r.account },
       {
         key: "native",
         header: "Native",
         align: "right",
+        phone: "hide",
         sortValue: (r) => toNum(r.amount_native),
         cell: (r) => <Money amount={toNum(r.amount_native)} currency={r.currency} />,
       },
@@ -268,6 +279,7 @@ export function Activity() {
         key: "amount",
         header: "Amount",
         align: "right",
+        phone: "headline",
         sortValue: (r) => toNum(r.amount),
         cell: (r) => money(r.amount, r.amount_other),
       },

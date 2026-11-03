@@ -89,9 +89,11 @@
     }
   }
 
-  // Phone: each row becomes a list item. The primary column is the title on top;
-  // every other cell is its own "label ........ value" line. Columns marked
-  // `phone: "hide"` are dropped.
+  // Phone: each row becomes a compact card (as in the v5 web app):
+  //   Title ........................ Headline
+  //   sub line (name / account / date)
+  //   [Label value] [Label value] [Label value]   <- chips, wrapping
+  // Columns marked `phone: "hide"` and empty cells are dropped.
   @include m.phone {
     overflow-x: visible;
 
@@ -106,53 +108,80 @@
 
     &__row {
       display: flex;
-      flex-direction: column;
-      gap: var(--space-1);
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2);
       padding: var(--space-3) var(--space-4);
       border-bottom: var(--border-width) solid var(--color-border);
     }
 
-    &__th--phone-hidden,
-    &__td--phone-hidden {
-      display: none;
-    }
-
     &__td {
-      display: flex;
-      flex-wrap: wrap;
+      display: inline-flex;
       align-items: baseline;
-      justify-content: space-between;
-      gap: 0 var(--space-3);
+      gap: var(--space-1);
       min-width: 0;
       padding: 0;
       border: 0;
-      text-align: right;
+      text-align: left;
 
+      // Order: title, headline, sub line, then chips in column order.
       &--primary {
-        order: -1;
-        margin-bottom: var(--space-1);
+        order: -4;
+        flex: 1 1 auto;
         font-size: var(--font-size-md);
         font-weight: var(--font-weight-semibold);
-        text-align: left;
+      }
+
+      &--headline {
+        display: block;
+        order: -2;
+        font-size: var(--font-size-md);
+        font-weight: var(--font-weight-semibold);
+        text-align: right;
+      }
+
+      &--sub {
+        display: block;
+        order: -1;
+        flex: 1 0 100%;
+        margin-top: calc(-1 * var(--space-2));
+        color: var(--color-muted);
+        font-size: var(--font-size-xs);
+      }
+
+      &--chip {
+        padding: 2px var(--space-2);
+        border: var(--border-width) solid var(--color-border);
+        border-radius: var(--radius-full);
+        background: var(--color-surface-2);
+        font-size: var(--font-size-xs);
+      }
+
+      // Trailing actions (edit icons) join the title line, left of the
+      // headline figure, instead of taking a line of their own.
+      &--bare:last-child {
+        order: -3;
+        margin-left: auto;
+      }
+
+      // Last, so they win over the display values above.
+      &--empty,
+      &--phone-hidden {
+        display: none;
       }
     }
 
+    &__row:last-child {
+      border-bottom: 0;
+    }
+
+    &__th--phone-hidden {
+      display: none;
+    }
+
     &__label {
-      display: block;
-      flex: 0 1 auto;
-      min-width: 0;
+      display: inline;
       color: var(--color-muted);
-      font-size: var(--font-size-xs);
-      text-align: left;
-    }
-
-    // Wraps below the label (still right-aligned) only when both cannot share a line.
-    &__value {
-      margin-left: auto;
-    }
-
-    &__td--primary &__value {
-      margin-left: 0;
     }
   }
 }

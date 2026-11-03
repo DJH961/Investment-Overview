@@ -183,6 +183,7 @@ export function CurrencyConversions() {
       key: "usd",
       header: "USD received",
       align: "right",
+      phone: "headline",
       cell: (r) => <Money amount={Number(r.usd_received)} currency="USD" />,
       sortValue: (r) => Number(r.usd_received),
     },

@@ -21,6 +21,8 @@ export type NavGroup = "Portfolio" | "Manage" | "System";
 export interface NavItem {
   to: string;
   label: string;
+  /** Top-bar title when the label is too long for a phone (default: label). */
+  short?: string;
   icon: LucideIcon;
   group: NavGroup;
   /** Shown as a bottom tab on phones (the rest go into the More sheet). */
@@ -35,11 +37,11 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/periods", label: "Periods", icon: CalendarRange, group: "Portfolio", tab: true, shortcut: "p" },
   { to: "/activity", label: "Activity", icon: Banknote, group: "Portfolio", shortcut: "a" },
   { to: "/risk", label: "Risk & analytics", icon: ShieldAlert, group: "Portfolio", shortcut: "r" },
-  { to: "/projection", label: "Projection & calculator", icon: Calculator, group: "Portfolio", shortcut: "c" },
+  { to: "/projection", label: "Projection & calculator", short: "Projection", icon: Calculator, group: "Portfolio", shortcut: "c" },
   { to: "/transactions", label: "Transactions", icon: Receipt, group: "Manage", tab: true, shortcut: "t" },
   { to: "/import", label: "Import", icon: Upload, group: "Manage", shortcut: "i" },
   { to: "/instruments", label: "Instruments", icon: Tags, group: "Manage" },
-  { to: "/conversions", label: "Currency conversions", icon: ArrowLeftRight, group: "Manage" },
+  { to: "/conversions", label: "Currency conversions", short: "Conversions", icon: ArrowLeftRight, group: "Manage" },
   { to: "/allocations", label: "Allocations", icon: PieChart, group: "Manage", shortcut: "l" },
   { to: "/diagnostics", label: "Health & Repair", icon: HeartPulse, group: "System", shortcut: "d" },
   { to: "/settings", label: "Settings", icon: Settings, group: "System", shortcut: "s" },
@@ -59,5 +61,6 @@ export function moreSections(): { group: NavGroup; items: NavItem[] }[] {
 }
 
 export function titleFor(pathname: string): string {
-  return NAV_ITEMS.find((i) => pathname === i.to || pathname.startsWith(`${i.to}/`))?.label ?? "Investment Overview";
+  const item = NAV_ITEMS.find((i) => pathname === i.to || pathname.startsWith(`${i.to}/`));
+  return item ? (item.short ?? item.label) : "Investment Overview";
 }

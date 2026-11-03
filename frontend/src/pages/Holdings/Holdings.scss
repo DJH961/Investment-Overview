@@ -15,6 +15,7 @@
     display: grid;
     gap: var(--space-3);
     grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    @include m.phone-tile-grid;
   }
 
   &__notice {
@@ -61,6 +62,36 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     align-items: center;
+
+    // Phone: two compact rows (search + sort, category + grouping) instead of
+    // four full-width controls.
+    @include m.phone {
+      display: grid;
+      grid-template-areas:
+        "search sort"
+        "category group";
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+
+  &__tool {
+    min-width: 0;
+
+    &--search {
+      grid-area: search;
+    }
+
+    &--sort {
+      grid-area: sort;
+    }
+
+    &--category {
+      grid-area: category;
+    }
+
+    &--group {
+      grid-area: group;
+    }
   }
 
   &__muted {
@@ -93,30 +124,50 @@
     }
   }
 
+  // Lives in a flush card: no box of its own (it doubled the card's border);
+  // the bottom corners follow the card so row tints don't poke out.
   &__list {
     display: flex;
     flex-direction: column;
-    margin: 0;
+    margin: var(--space-3) 0 0;
     padding: 0;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
+    overflow: hidden;
+    border-top: var(--border-width) solid var(--color-border);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     list-style: none;
   }
 
+  // Gain / loss as an accent edge (v5 web and desktop holding cards), not a
+  // tint over the whole card; the tint stays on the desktop table rows.
   &__item {
     border-bottom: var(--border-width) solid var(--color-border);
+    box-shadow: inset 3px 0 0 var(--color-border-strong);
+
+    &.holdings-page__row--gain {
+      background: none;
+      box-shadow: inset 3px 0 0 var(--color-pos);
+    }
+
+    &.holdings-page__row--loss {
+      background: none;
+      box-shadow: inset 3px 0 0 var(--color-neg);
+    }
 
     &:last-child {
       border-bottom: 0;
     }
   }
 
+  // Symbol + name left, value + today's move right, then the chips across the
+  // full width (v5 holding card).
   &__item-head {
-    display: flex;
-    gap: var(--space-3);
+    display: grid;
+    grid-template-areas:
+      "title figures chevron"
+      "chips chips chips";
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: var(--space-2) var(--space-3);
     align-items: center;
-    justify-content: space-between;
     width: 100%;
     min-height: var(--tap-min);
     padding: var(--space-3);
@@ -137,6 +188,8 @@
 
   &__asof {
     margin-left: auto;
+    color: var(--color-faint);
+    font-size: var(--font-size-xs);
     white-space: nowrap;
   }
 
@@ -148,12 +201,17 @@
 
   &__chips {
     display: flex;
+    grid-area: chips;
     flex-wrap: wrap;
+    align-items: center;
     gap: var(--space-1) var(--space-2);
-    margin-top: var(--space-1);
   }
 
   &__chip {
+    padding: 2px var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     white-space: nowrap;
@@ -177,18 +235,21 @@
 
   &__item-title {
     display: flex;
-    flex: 1;
+    grid-area: title;
     flex-direction: column;
     min-width: 0;
   }
 
   &__item-figures {
     display: flex;
+    grid-area: figures;
+    font-weight: var(--font-weight-semibold);
     flex-direction: column;
     align-items: flex-end;
   }
 
   &__chevron {
+    grid-area: chevron;
     color: var(--color-muted);
   }
 

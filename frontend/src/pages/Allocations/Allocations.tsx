@@ -9,7 +9,7 @@ import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { Skeleton } from "../../components/Skeleton";
-import { formatNumber } from "../../lib/format";
+import { assetClassLabel, formatNumber } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { useAllocations, type AllocationsData } from "../../lib/queries/allocations";
 import { useCalculatorInputs } from "../../lib/queries/reports";
@@ -35,7 +35,7 @@ export function Allocations() {
             actual: Number(d.current_pct),
             target: Number(d.target_pct),
           }))
-        : (q.data?.current_by_asset_class ?? []).map((b) => ({ id: b.label, label: b.label, actual: Number(b.pct) })),
+        : (q.data?.current_by_asset_class ?? []).map((b) => ({ id: b.label, label: assetClassLabel(b.label), actual: Number(b.pct) })),
     [q.data, hasDrift],
   );
 
