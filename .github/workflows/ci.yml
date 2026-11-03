@@ -100,8 +100,10 @@ jobs:
       - name: Import layering (import-linter)
         run: uv run lint-imports
 
+      # One worker per runner core; whole test files stay on one worker
+      # (--dist loadfile), so module-level fixtures and state behave as in a serial run.
       - name: Pytest
-        run: uv run pytest -q --cov --cov-report=term-missing
+        run: uv run pytest -q -n auto --dist loadfile --cov --cov-report=term-missing
 
   web:
     needs: pr-gate
@@ -224,9 +226,30 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # The Chromium download is most of this job's time: keep it in the Actions cache,
+      # keyed on the exact installed Playwright version. The OS packages it needs are
+      # still installed every run (install-deps), so a cache hit can't leave them missing.
+      - name: Playwright version
+        id: pw
+        working-directory: frontend
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
       - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: frontend
         run: npx playwright install --with-deps chromium
+
+      - name: Install Chromium system packages (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        working-directory: frontend
+        run: npx playwright install-deps chromium
 
       - name: Playwright smoke test
         working-directory: frontend

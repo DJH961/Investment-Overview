@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Faster CI.** The Python tests run on all runner cores (`pytest-xdist`, whole
+  files per worker), and the e2e job keeps Playwright's Chromium in the Actions cache
+  instead of downloading it on every run. CI only; no change to the app.
+
 ## [6.2.0] — 2026-11-03
 
 ### Added
