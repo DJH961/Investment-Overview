@@ -18,7 +18,7 @@ export function Allocations() {
   const inputs = useCalculatorInputs(currency);
 
   const failed = (q.isError && !q.data) || (inputs.isError && !inputs.data);
-  const loading = q.isPending || inputs.isPending;
+  const noFunds = inputs.data !== undefined && inputs.data.instruments.length === 0;
 
   return (
     <div className="allocations">
@@ -30,9 +30,7 @@ export function Allocations() {
             void inputs.refetch();
           }}
         />
-      ) : loading ? (
-        <Skeleton height="260px" />
-      ) : inputs.data.instruments.length === 0 ? (
+      ) : noFunds ? (
         <EmptyState
           icon={<PieChart aria-hidden />}
           title="No funds yet"
@@ -40,14 +38,19 @@ export function Allocations() {
         />
       ) : (
         <>
+          {/* Each section renders as soon as its own data is there; only the rest shows a skeleton. */}
           {/* Always shown: with no target yet this is where the first one is made. */}
-          <Builder
-            key={q.data.active_target_id ?? "none"}
-            inputs={inputs.data}
-            allocations={q.data}
-            defaultCcy={currency}
-          />
-          <DriftCard data={q.data} ccy={currency} />
+          {inputs.data && q.data ? (
+            <Builder
+              key={q.data.active_target_id ?? "none"}
+              inputs={inputs.data}
+              allocations={q.data}
+              defaultCcy={currency}
+            />
+          ) : (
+            <Skeleton height="260px" />
+          )}
+          {q.data ? <DriftCard data={q.data} ccy={currency} /> : <Skeleton height="260px" />}
         </>
       )}
     </div>

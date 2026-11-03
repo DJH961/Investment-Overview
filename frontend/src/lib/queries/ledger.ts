@@ -1,6 +1,7 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../api";
 import type { components } from "../api-types";
+import { invalidateFor, type InvalidationKind } from "./invalidation";
 
 type Schemas = components["schemas"];
 export type TransactionOut = Schemas["TransactionOut"];
@@ -35,18 +36,29 @@ export function transactionsQueryString(filters: TransactionFilters): string {
   return params.toString();
 }
 
-/** Refetch everything except the auth probe after a ledger write. */
-export function useInvalidateAfterWrite() {
+/** Refetch only what a write changed (the key sets live in ./invalidation). */
+export function useInvalidateAfterWrite(kind: InvalidationKind = "transactionWrite") {
   const client = useQueryClient();
-  return () => client.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
+  return () => invalidateFor(client, kind);
 }
 
-export function useTransactions(filters: TransactionFilters) {
-  return useQuery({
+export const transactionsQuery = (filters: TransactionFilters) =>
+  queryOptions({
     queryKey: ["transactions", filters],
     queryFn: ({ signal }) => api<TransactionPage>(`/api/transactions?${transactionsQueryString(filters)}`, { signal }),
-    placeholderData: keepPreviousData,
   });
+
+/** The Transactions page's default first page (prefetched). */
+export const DEFAULT_TRANSACTION_FILTERS: TransactionFilters = {
+  hide_sweeps: true,
+  sort: "date",
+  order: "desc",
+  limit: 50,
+  offset: 0,
+};
+
+export function useTransactions(filters: TransactionFilters) {
+  return useQuery({ ...transactionsQuery(filters), placeholderData: keepPreviousData });
 }
 
 export function useTransaction(id: number | null) {
@@ -142,7 +154,7 @@ export function useUploadImport() {
 }
 
 export function useConfirmImport() {
-  const invalidate = useInvalidateAfterWrite();
+  const invalidate = useInvalidateAfterWrite("importWrite");
   return useMutation({
     mutationFn: (importId: string) => api<ImportConfirmResult>(`/api/imports/${importId}/confirm`, { method: "POST" }),
     onSuccess: invalidate,

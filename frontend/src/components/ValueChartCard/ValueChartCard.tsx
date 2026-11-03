@@ -64,6 +64,8 @@ export interface ValueChartCardProps {
   /** Settings → Display "Overview default range" (used when this device has no choice). */
   configuredRange?: GraphRange;
   marketOpen?: boolean;
+  /** Plot height in px (default: the chart's own); the Overview matches it to the side column. */
+  chartHeight?: number;
   className?: string;
 }
 
@@ -75,6 +77,7 @@ export function ValueChartCard({
   defaultRange,
   configuredRange,
   marketOpen = false,
+  chartHeight,
   className,
 }: ValueChartCardProps) {
   const timeZone = useTimeZone();
@@ -214,6 +217,7 @@ export function ValueChartCard({
       ) : (
         <>
           <Chart
+            height={chartHeight}
             series={series}
             range={range}
             ranges={GRAPH_RANGES}

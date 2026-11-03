@@ -7976,6 +7976,37 @@ export interface operations {
                          * @constant
                          */
                         type: "graphs";
+                    } | {
+                        /** At */
+                        at?: string | null;
+                        /** Eta S */
+                        eta_s?: number | null;
+                        /**
+                         * Market State
+                         * @enum {string}
+                         */
+                        market_state: "open" | "closed" | "holiday";
+                        /**
+                         * Reason
+                         * @default deploy
+                         * @constant
+                         */
+                        reason: "deploy";
+                        /**
+                         * State
+                         * @enum {string}
+                         */
+                        state: "restarting" | "restart_planned";
+                        /** Ts */
+                        ts: string;
+                        /**
+                         * Type
+                         * @default server
+                         * @constant
+                         */
+                        type: "server";
+                        /** Version */
+                        version?: string | null;
                     };
                 };
             };

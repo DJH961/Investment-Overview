@@ -26,6 +26,8 @@ services:
     expose:
       - "8000"
     restart: unless-stopped
+    # Short stop: clients were told about the restart and reconnect by themselves.
+    stop_grace_period: 5s
     read_only: true
     tmpfs:
       - /tmp

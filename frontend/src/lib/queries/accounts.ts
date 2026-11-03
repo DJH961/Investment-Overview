@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 
@@ -10,11 +10,14 @@ export type ImportBroker = S["ImportBroker"];
 export const ACCOUNT_BROKERS: AccountInput["broker"][] = ["vanguard", "fidelity", "savings_bank"];
 export const ACCOUNT_TYPES: NonNullable<AccountInput["account_type"]>[] = ["brokerage", "savings", "cash"];
 
-export function useAccounts() {
-  return useQuery({
+export const accountsQuery = () =>
+  queryOptions({
     queryKey: ["accounts"],
     queryFn: ({ signal }) => api<Account[]>("/api/accounts", { signal }),
   });
+
+export function useAccounts() {
+  return useQuery(accountsQuery());
 }
 
 export function useImportBrokers() {

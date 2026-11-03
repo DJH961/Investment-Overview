@@ -11,6 +11,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from investment_dashboard.db import memo
 from investment_dashboard.domain.money_market import (
     MANUAL_SETTLEMENT_DESCRIPTION_PREFIX,
     SETTLEMENT_EXTERNAL_ID_SUFFIX,
@@ -102,7 +103,46 @@ def list_transactions(
     start: date | None = None,
     end: date | None = None,
 ) -> Sequence[Transaction]:
-    """Filtered ledger listing, ordered by date asc then id asc."""
+    """Filtered ledger listing, ordered by date asc then id asc.
+
+    Memoized per session (see :mod:`services.session_memo`); each call returns a
+    fresh list so callers may reorder it, the rows themselves are shared.
+    """
+    key = (
+        "list_transactions",
+        account_id,
+        instrument_id,
+        None if kinds is None else tuple(kinds),
+        start,
+        end,
+    )
+    return list(
+        memo(
+            session,
+            key,
+            lambda: tuple(
+                _query_transactions(
+                    session,
+                    account_id=account_id,
+                    instrument_id=instrument_id,
+                    kinds=kinds,
+                    start=start,
+                    end=end,
+                )
+            ),
+        )
+    )
+
+
+def _query_transactions(
+    session: Session,
+    *,
+    account_id: int | None,
+    instrument_id: int | None,
+    kinds: Sequence[str] | None,
+    start: date | None,
+    end: date | None,
+) -> Sequence[Transaction]:
     stmt = select(Transaction)
     conds: list[Any] = []
     if account_id is not None:

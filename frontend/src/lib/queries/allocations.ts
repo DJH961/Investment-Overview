@@ -1,5 +1,5 @@
 /** Allocations: current mix, saved targets, drift, saved-target and builder plans. */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 
@@ -13,12 +13,8 @@ export type BuilderPlan = S["PlanResponse"];
 export type BuilderPlanRow = S["BuilderPlanRowOut"];
 export type PlanCategory = S["PlanCategoryOut"];
 
-export function useAllocations(ccy: "EUR" | "USD") {
-  return useQuery({
-    queryKey: ["allocations", ccy],
-    queryFn: ({ signal }) => api<AllocationsData>(`/api/allocations?ccy=${ccy}`, { signal }),
-  });
-}
+// One hook per key: `["allocations", ccy]` is defined in ./portfolio.
+export { useAllocations } from "./portfolio";
 
 export function useSaveTarget() {
   const qc = useQueryClient();

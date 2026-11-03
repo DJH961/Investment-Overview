@@ -1,4 +1,4 @@
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 import type { ReportingCurrency } from "../prefs";
@@ -15,6 +15,8 @@ export const holdingsQuery = (ccy: ReportingCurrency, groupBy: HoldingsGroupBy =
   queryOptions({
     queryKey: ["holdings", ccy, groupBy],
     queryFn: ({ signal }) => api<HoldingsDto>(`/api/holdings?ccy=${ccy}&group_by=${groupBy}`, { signal }),
+    // Group-by and currency switches keep the old rows on screen.
+    placeholderData: keepPreviousData,
   });
 
 export function useHoldings(ccy: ReportingCurrency, groupBy: HoldingsGroupBy = "none") {
@@ -23,9 +25,12 @@ export function useHoldings(ccy: ReportingCurrency, groupBy: HoldingsGroupBy = "
 
 /** Daily closes of one instrument in its native currency (drawer chart). */
 export function useHoldingHistory(instrumentId: number | null, range: HistoryRange) {
-  return useQuery({
+  return useQuery<HoldingHistoryDto>({
     queryKey: ["holdings", "history", instrumentId, range],
     enabled: instrumentId !== null,
+    // A new range keeps the old chart; another instrument starts clean.
+    placeholderData: (prev: HoldingHistoryDto | undefined, prevQuery) =>
+      prevQuery?.queryKey[2] === instrumentId ? prev : undefined,
     queryFn: ({ signal }) =>
       api<HoldingHistoryDto>(`/api/holdings/${instrumentId}/history?range=${range}`, { signal }),
   });

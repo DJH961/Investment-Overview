@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from investment_dashboard.db import memo
 from investment_dashboard.models import FxHistory
 
 #: ``source`` of a rate the user entered by hand; refreshes never overwrite it.
@@ -21,7 +22,10 @@ def get_rates(session: Session, *, base: str = "EUR", quote: str = "USD") -> dic
     stmt = select(FxHistory.date, FxHistory.rate).where(
         FxHistory.base == base, FxHistory.quote == quote
     )
-    return {d: r for d, r in session.execute(stmt).all()}
+    # Memoized per session; the copy keeps callers free to mutate their dict.
+    return dict(
+        memo(session, ("fx_get_rates", base, quote), lambda: dict(session.execute(stmt).all()))
+    )
 
 
 def latest_rate_date(

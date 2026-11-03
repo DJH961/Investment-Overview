@@ -2,6 +2,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { ApiError, api } from "./api";
 import type { components } from "./api-types";
+import { markStaleAndRefetch } from "./queries/invalidation";
 
 type RefreshStatusDto = components["schemas"]["RefreshStatus"];
 
@@ -62,9 +63,9 @@ export function useRefreshState(): RefreshState {
   );
 }
 
-/** Refetch every report query once a refresh finished (auth stays untouched). */
+/** A refresh finished: mark the report queries stale and refetch the open ones once (staggered). */
 export function invalidateReports(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
+  markStaleAndRefetch(queryClient, "refresh");
 }
 
 function fromStatus(s: RefreshStatusDto): Partial<RefreshState> {

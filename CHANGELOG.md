@@ -17,10 +17,80 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.3.0] — 2026-11-03
+
+### Added
+- **Fix import rows that don't add up, right in the preview.** The top of the preview
+  now only says *that* rows don't add up; each flagged row shows its warning in the
+  table with **Keep as is**, **Fix price** (work the price out from amount and
+  quantity) or **Skip row**, plus "Fix all prices", "Keep all" and a "show only these
+  rows" filter. Choices are applied on confirm (new
+  `POST /api/imports/{import_id}/resolve`, logged in `imports.log`).
+- **Overview allocation by category.** The Allocation treemap on the Overview has a
+  Category / Fund switch; Category is the default.
+- **Allocations: targets & drift by category.** The drift overview has a Category /
+  Fund switch (Category by default; categories open to show their funds) and lists
+  the largest drifts first with "Show all". The API adds `drift_by_category`.
+
+### Changed
+- **Allocation calculator redesign (phone and laptop).** Funds are grouped by
+  category with a now-vs-target bar per row and per-category totals, in two columns
+  on wide screens; the total and Compute / Save buttons stick to the bottom of the
+  screen; the plan summary is a 2 × 2 grid on phones and the buy plan uses columns
+  on wide screens. The drift list replaces the 14-colour bar and wide table.
+- **Better use of desktop width.** Overview: movers and holdings sit beside the value
+  chart, which grows to end level with them (no empty page under either column); the
+  lifetime currency effect is a compact card under asset classes, next to the
+  treemap. Phones keep one column.
+  Risk: metric groups share rows instead of leaving half of each row empty.
+
+### Fixed
+- The Allocations page failed to load in the Windows dev server (`builder.ts` and
+  `Builder.tsx` differed only in case; renamed to `builderState.ts`).
+- The Risk attribution table's phone margin rule never applied (mis-nested selector).
+
+## [6.2.1] — 2026-11-03
+
+Phase 1 of the speed plan (`docs/v6_speed_plan.md`).
+
+### Fixed
+- **Pages load much faster.** One Overview build read the whole transaction list 14
+  times and worked out positions 7 times. Repeated reads within one request are now
+  served from memory (transactions, positions, latest closes, FX rates), with the
+  same results (golden test: memo on vs. off).
+- **Price ticks no longer make every device reload everything at once.** A tick
+  updates the totals on screen directly, then refreshes only what's visible, once,
+  spread over a few seconds. The server cache now drops only what depends on the
+  data that changed.
+- **Nothing blanks while you click around.** A currency switch, holdings grouping,
+  risk lookback, holding-history range, log filter or projection change keeps the old
+  numbers on screen until the new ones arrive. The projection chart never disappears.
+  Allocations and Settings show each section as soon as its data is there.
+- **Every page is warm before you open it:** all pages are preloaded in idle time,
+  in both currencies.
+- **Typing doesn't flood the server.** Transaction search/symbol and the log filter
+  wait until you pause.
+- **Saving something refreshes only what it touched**, not the whole app.
+- **Deploys say what's happening.** Right before an update restarts the server,
+  every open device shows "Updating to <version>, back in about 20 s" and keeps
+  showing its cached numbers. Requests during the gap retry quietly, and it says
+  "Updated" when the server is back. A lost connection without a deploy shows
+  "Connection to the server lost, retrying". The restart gap is shorter (3 s
+  graceful shutdown, 5 s stop grace).
+- **Less memory pressure on the 1 GB server:** `MALLOC_ARENA_MAX=2`, compressed
+  zram swap in `bootstrap.sh`, and app memory/swap shown in Diagnostics, with a
+  warning in the system log above 400 MB.
+
+### Added
+- **Optional scheduled deploys.** Repo variable `DEPLOY_MODE=scheduled` deploys the
+  latest green `main` after the US close (weekdays) or every 4 h (weekends) instead
+  of on every merge. `Deploy: now` in a commit message deploys immediately. The default
+  stays `immediate`. See the RUNBOOK.
+
 ### Changed
 - **Faster CI.** The Python tests run on all runner cores (`pytest-xdist`, whole
   files per worker), and the e2e job keeps Playwright's Chromium in the Actions cache
-  instead of downloading it on every run. CI only; no change to the app.
+  instead of downloading it on every run.
 
 ## [6.2.0] — 2026-11-03
 

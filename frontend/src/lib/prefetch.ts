@@ -19,7 +19,17 @@ import {
   overviewQuery,
   type GraphRange,
 } from "./queries/portfolio";
-import { periodsQuery } from "./queries/reports";
+import { accountsQuery } from "./queries/accounts";
+import { dividendsQuery, depositsQuery } from "./queries/activity";
+import { instrumentsQuery } from "./queries/instruments";
+import { DEFAULT_TRANSACTION_FILTERS, transactionsQuery } from "./queries/ledger";
+import {
+  analyticsQuery,
+  calculatorInputsQuery,
+  DEFAULT_LOOKBACK_DAYS,
+  periodsQuery,
+} from "./queries/reports";
+import { settingsSchemaQuery, settingsValuesQuery } from "./queries/settings";
 
 function stored<T>(key: string): T | null {
   try {
@@ -30,11 +40,23 @@ function stored<T>(key: string): T | null {
   }
 }
 
-/** The jobs in priority order (exported for tests). */
-export function prefetchPlan(ccy: ReportingCurrency) {
+/** Queries that do not depend on the reporting currency (fetched once). */
+function currencyFreeJobs() {
+  return [
+    instrumentsQuery(),
+    accountsQuery(),
+    transactionsQuery(DEFAULT_TRANSACTION_FILTERS),
+    settingsSchemaQuery(),
+    settingsValuesQuery(),
+  ];
+}
+
+/** Every nav page's default queries for one currency, most likely first. */
+function jobsFor(ccy: ReportingCurrency) {
   const range = stored<GraphRange>("chart.overview.range");
   const first = range && GRAPH_RANGES.includes(range) ? range : null;
   const groupBy = stored<HoldingsGroupBy>("holdings.group") ?? "none";
+  const lookback = Number(stored<string>("risk.lookback") ?? DEFAULT_LOOKBACK_DAYS);
   const ranges = first ? [first, ...GRAPH_RANGES.filter((r) => r !== first)] : GRAPH_RANGES;
   return [
     overviewQuery(ccy),
@@ -44,14 +66,38 @@ export function prefetchPlan(ccy: ReportingCurrency) {
     periodsQuery("yearly", ccy),
     ...ranges.filter((r) => r !== first).map((r) => graphQuery(r, ccy)),
     allocationsQuery(ccy),
+    calculatorInputsQuery(ccy),
+    analyticsQuery(ccy, Number.isFinite(lookback) && lookback > 0 ? lookback : DEFAULT_LOOKBACK_DAYS),
+    depositsQuery(ccy),
+    dividendsQuery(ccy),
   ];
 }
 
-/** Run the plan sequentially; stops early when `signal` aborts (sign-out, unmount). */
+/**
+ * The jobs in priority order (exported for tests): everything reachable from the
+ * nav for the current currency, then the shared (currency-free) pages, then the
+ * same set for the other currency, so a currency switch is a cache hit (G6).
+ */
+export function prefetchPlan(ccy: ReportingCurrency) {
+  const other: ReportingCurrency = ccy === "EUR" ? "USD" : "EUR";
+  return [...jobsFor(ccy), ...currencyFreeJobs(), ...jobsFor(other)];
+}
+
+/** Wait for the browser to be idle (max 2 s), so prefetching never competes with taps. */
+function idle(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestIdleCallback === "function") requestIdleCallback(() => resolve(), { timeout: 2000 });
+    else setTimeout(resolve, 0);
+  });
+}
+
+/** Run the plan sequentially in idle time; stops early when `signal` aborts (sign-out, unmount). */
 export async function prefetchKeyData(qc: QueryClient, ccy: ReportingCurrency, signal?: AbortSignal): Promise<void> {
   for (const options of prefetchPlan(ccy)) {
     if (signal?.aborted) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    await idle();
+    if (signal?.aborted) return;
     // Errors are fine here: the page retries when it actually opens.
     await qc.prefetchQuery(options as Parameters<QueryClient["prefetchQuery"]>[0]).catch(() => undefined);
   }

@@ -54,6 +54,19 @@ if ! swapon --show | grep -q /swapfile; then
   swapon /swapfile
   grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >>/etc/fstab
 fi
+
+log "zram swap (compressed RAM, ~25% of memory, used before the swap file)"
+apt-get -y -qq install systemd-zram-generator
+mkdir -p /etc/systemd
+cat >/etc/systemd/zram-generator.conf <<'EOF'
+[zram0]
+zram-size = ram / 4
+compression-algorithm = zstd
+swap-priority = 100
+EOF
+systemctl daemon-reload
+systemctl start systemd-zram-setup@zram0.service 2>/dev/null || true
+# The swap file keeps its default (low) priority, so zram is filled first.
 echo 'vm.swappiness=10' >/etc/sysctl.d/90-swappiness.conf
 sysctl -q -p /etc/sysctl.d/90-swappiness.conf
 

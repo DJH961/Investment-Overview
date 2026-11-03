@@ -1,4 +1,5 @@
 import { Inbox } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { AllocationCard } from "../../components/AllocationCard";
 import { AssetClassCard } from "../../components/AssetClassCard";
 import { CurrencyBox } from "../../components/CurrencyBox";
@@ -21,7 +22,43 @@ import { useTimeZone } from "../../lib/timezone";
 import { usePrefs } from "../../lib/prefs";
 import { useOverview } from "../../lib/queries/portfolio";
 import { useShellStatus } from "../../lib/shell";
+import { useIsDesktop } from "../../lib/useMediaQuery";
 import "./Overview.scss";
+
+/** Smallest plot height (the chart's default). */
+const MIN_CHART = 280;
+
+/**
+ * Desktop: grow the value chart so its card ends level with the side column
+ * (movers + holdings) instead of leaving empty page under one of them.
+ */
+function useMatchedChartHeight(active: boolean) {
+  const desktop = useIsDesktop();
+  const chartSlot = useRef<HTMLDivElement>(null);
+  const side = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const slot = chartSlot.current;
+    const col = side.current;
+    if (!desktop || !active || !slot || !col || typeof ResizeObserver === "undefined") {
+      setHeight(undefined);
+      return;
+    }
+    const fit = () => {
+      const plot = slot.querySelector<HTMLElement>(".chart__wrap");
+      if (!plot) return;
+      const chrome = slot.offsetHeight - plot.offsetHeight;
+      const next = Math.max(MIN_CHART, Math.round(col.offsetHeight - chrome));
+      setHeight((h) => (h === next ? h : next));
+    };
+    const ro = new ResizeObserver(fit);
+    ro.observe(slot);
+    ro.observe(col);
+    fit();
+    return () => ro.disconnect();
+  }, [desktop, active]);
+  return { chartSlot, side, height };
+}
 
 /**
  * Overview page: composes one component per section so each later package
@@ -38,6 +75,7 @@ export function Overview() {
   const timeZone = useTimeZone();
 
   const data = overview.data;
+  const fit = useMatchedChartHeight(Boolean(data));
   let chip: FreshnessView;
   if (overview.isError) chip = { status: "stale", label: "Offline" };
   else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone });
@@ -81,37 +119,30 @@ export function Overview() {
 
       {data && <CurrencyBox data={data} />}
 
-      {/* Desktop: chart and lifetime FX on the left, movers and holdings beside
-          them. Narrower screens keep one column in the old order. */}
+      {/* Desktop: the value chart beside movers + holdings (the chart grows to end
+          level with them); lifetime FX sits under asset classes, next to the
+          treemap. Narrower screens: one column in this order. */}
       <div className="overview-page__main">
-        <div className="overview-page__col">
-          <div className="overview-page__slot overview-page__slot--chart">
-            <ValueChartCard
-              currency={currency}
-              defaultRange={data?.default_range}
-              configuredRange={overviewRange}
-              marketOpen={data?.freshness?.market_state === "open"}
-            />
-          </div>
-          {data && (
-            <div className="overview-page__slot overview-page__slot--lifetime">
-              <CurrencyLifetime data={data} />
-            </div>
-          )}
-          <div className="overview-page__slot overview-page__slot--alloc">
-            <AllocationCard currency={currency} />
-          </div>
+        <div ref={fit.chartSlot} className="overview-page__chart">
+          <ValueChartCard
+            currency={currency}
+            defaultRange={data?.default_range}
+            configuredRange={overviewRange}
+            marketOpen={data?.freshness?.market_state === "open"}
+            chartHeight={fit.height}
+          />
         </div>
-        <div className="overview-page__col">
-          <div className="overview-page__slot overview-page__slot--movers">
-            <MoversCard movers={data?.movers} currency={currency} loading={loading} />
-          </div>
-          <div className="overview-page__slot overview-page__slot--holdings">
-            <OverviewHoldings currency={currency} movers={data?.movers} />
-          </div>
-          <div className="overview-page__slot overview-page__slot--classes">
-            <AssetClassCard currency={currency} />
-          </div>
+        <div ref={fit.side} className="overview-page__side">
+          <MoversCard movers={data?.movers} currency={currency} loading={loading} />
+          <OverviewHoldings currency={currency} movers={data?.movers} />
+        </div>
+      </div>
+
+      <div className="overview-page__row overview-page__row--alloc">
+        <AllocationCard currency={currency} />
+        <div className="overview-page__side">
+          <AssetClassCard currency={currency} />
+          {data && <CurrencyLifetime data={data} />}
         </div>
       </div>
     </div>

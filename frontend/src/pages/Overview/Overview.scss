@@ -10,8 +10,8 @@
     gap: var(--space-3);
   }
 
-  // Chart, lifetime FX, treemap | movers, holdings, asset classes. Below desktop the columns dissolve
-  // (display: contents) and `order` keeps the phone reading order.
+  // Desktop: value chart | movers + holdings. The chart's height is matched to
+  // the side column in Overview.tsx, so both end level with real content.
   &__main {
     display: flex;
     flex-direction: column;
@@ -28,42 +28,34 @@
     }
   }
 
-  &__col {
-    display: contents;
+  &__chart {
+    min-width: 0;
+  }
 
-    @include m.desktop {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-4);
-      min-width: 0;
+  // A stack of cards in a side column (and in one column below desktop).
+  &__side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-width: 0;
+
+    @include m.phone {
+      gap: var(--space-3);
     }
   }
 
-  &__slot {
-    min-width: 0;
+  &__row {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
 
-    &--chart {
-      order: 1;
+    @include m.phone {
+      gap: var(--space-3);
     }
 
-    &--movers {
-      order: 2;
-    }
-
-    &--holdings {
-      order: 3;
-    }
-
-    &--lifetime {
-      order: 4;
-    }
-
-    &--alloc {
-      order: 5;
-    }
-
-    &--classes {
-      order: 6;
+    @include m.desktop {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
   }
 }

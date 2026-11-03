@@ -1,0 +1,95 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`write -> invalidated keys > fxConversionWrite 1`] = `
+[
+  "analytics/EUR",
+  "calculator/inputs",
+  "deposits/EUR",
+  "deposits/dividends",
+  "fx-conversions",
+  "graphs/1d",
+  "holdings/EUR",
+  "holdings/history",
+  "overview/EUR",
+  "periods/monthly",
+]
+`;
+
+exports[`write -> invalidated keys > importWrite 1`] = `
+[
+  "allocations/EUR",
+  "analytics/EUR",
+  "calculator/inputs",
+  "deposits/EUR",
+  "deposits/dividends",
+  "diagnostics/status",
+  "graphs/1d",
+  "holdings/EUR",
+  "holdings/history",
+  "import-batches/50",
+  "instruments",
+  "overview/EUR",
+  "periods/monthly",
+  "transaction/1",
+  "transactions/[object Object]",
+]
+`;
+
+exports[`write -> invalidated keys > instrumentEdit 1`] = `
+[
+  "allocations/EUR",
+  "analytics/EUR",
+  "calculator/inputs",
+  "deposits/EUR",
+  "deposits/dividends",
+  "holdings/EUR",
+  "holdings/history",
+  "instruments",
+  "overview/EUR",
+  "transactions/[object Object]",
+]
+`;
+
+exports[`write -> invalidated keys > refresh 1`] = `
+[
+  "allocations/EUR",
+  "analytics/EUR",
+  "calculator/inputs",
+  "deposits/EUR",
+  "deposits/dividends",
+  "diagnostics/status",
+  "graphs/1d",
+  "holdings/EUR",
+  "holdings/history",
+  "overview/EUR",
+  "periods/monthly",
+]
+`;
+
+exports[`write -> invalidated keys > tick 1`] = `
+[
+  "allocations/EUR",
+  "graphs/1d",
+  "holdings/EUR",
+  "holdings/history",
+  "overview/EUR",
+]
+`;
+
+exports[`write -> invalidated keys > transactionWrite 1`] = `
+[
+  "allocations/EUR",
+  "analytics/EUR",
+  "calculator/inputs",
+  "deposits/EUR",
+  "deposits/dividends",
+  "diagnostics/status",
+  "graphs/1d",
+  "holdings/EUR",
+  "holdings/history",
+  "overview/EUR",
+  "periods/monthly",
+  "transaction/1",
+  "transactions/[object Object]",
+]
+`;

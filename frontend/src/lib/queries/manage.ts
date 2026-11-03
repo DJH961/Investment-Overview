@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
+import { invalidateFor } from "./invalidation";
 
 type S = components["schemas"];
 export type FxConversion = S["FxConversionOut"];
@@ -41,8 +42,8 @@ export function useSaveConversion() {
       id === undefined
         ? api<FxConversion>("/api/fx-conversions", { method: "POST", body })
         : api<FxConversion>(`/api/fx-conversions/${id}`, { method: "PUT", body }),
-    // EUR returns are recomputed server-side: every currency-dependent view is stale.
-    onSuccess: () => qc.invalidateQueries(),
+    // EUR returns are recomputed server-side: only the return-bearing views are stale.
+    onSuccess: () => invalidateFor(qc, "fxConversionWrite"),
   });
 }
 
@@ -50,7 +51,7 @@ export function useDeleteConversion() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => api<void>(`/api/fx-conversions/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: () => invalidateFor(qc, "fxConversionWrite"),
   });
 }
 
