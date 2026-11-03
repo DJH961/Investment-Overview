@@ -137,8 +137,21 @@
     list-style: none;
   }
 
+  // Gain / loss as an accent edge (v5 web and desktop holding cards), not a
+  // tint over the whole card; the tint stays on the desktop table rows.
   &__item {
     border-bottom: var(--border-width) solid var(--color-border);
+    box-shadow: inset 3px 0 0 var(--color-border-strong);
+
+    &.holdings-page__row--gain {
+      background: none;
+      box-shadow: inset 3px 0 0 var(--color-pos);
+    }
+
+    &.holdings-page__row--loss {
+      background: none;
+      box-shadow: inset 3px 0 0 var(--color-neg);
+    }
 
     &:last-child {
       border-bottom: 0;

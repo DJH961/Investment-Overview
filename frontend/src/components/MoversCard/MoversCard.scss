@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .movers-card {
   &__grid {
     display: grid;
@@ -9,9 +11,7 @@
 
   &__title {
     margin: 0 0 var(--space-2);
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
+    @include m.eyebrow;
   }
 
   &__list {
@@ -91,12 +91,9 @@
   }
 
   &__tag {
-    color: var(--color-muted);
-    font-weight: var(--font-weight-semibold);
+    @include m.eyebrow;
+
     white-space: nowrap;
-    font-size: var(--font-size-2xs);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
 
   &__muted {

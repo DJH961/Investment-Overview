@@ -69,3 +69,13 @@ $bp-desktop: 1024px;
     }
   }
 }
+
+// Small uppercase, letter-spaced label (KPI names, stat labels, tags), the
+// label style of the v5 web and desktop apps.
+@mixin eyebrow($size: var(--font-size-2xs)) {
+  color: var(--color-muted);
+  font-size: $size;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}

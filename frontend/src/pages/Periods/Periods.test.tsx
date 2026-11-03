@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrefsProvider } from "../../lib/prefs";
@@ -100,17 +100,20 @@ describe("Periods by year", () => {
   it("opens the current year only and remembers folds", async () => {
     stubPeriods();
     wrap(<Periods />);
-    expect(await screen.findByText("Feb 2026")).toBeInTheDocument();
-    expect(screen.queryByText("Dec 2025")).not.toBeInTheDocument();
+    // Month names also label the growth chart's axis: look inside the year tables.
+    const y2026 = await screen.findByRole("table", { name: "2026 months" });
+    expect(within(y2026).getByText("Feb 2026")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "2025 months" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /2025/ }));
-    expect(await screen.findByText("Dec 2025")).toBeInTheDocument();
+    const y2025 = await screen.findByRole("table", { name: "2025 months" });
+    expect(within(y2025).getByText("Dec 2025")).toBeInTheDocument();
     expect(window.localStorage.getItem("iv.fold.periods.year.2025")).toBe("true");
   });
 
   it("requests padded months and shows Total growth and XIRR on the yearly view", async () => {
     stubPeriods();
     wrap(<Periods />);
-    await screen.findByText("Feb 2026");
+    await screen.findByRole("table", { name: "2026 months" });
     const urls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
     expect(urls.some((u) => u.includes("/monthly") && u.includes("fill_gaps=true"))).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "Yearly" }));

@@ -27,10 +27,10 @@
   gap: var(--space-2);
 }
 
+// Section label above each metric group ("RETURNS", "RISK AND VOLATILITY").
 .risk-page__group-title {
-  margin: 0;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
+  margin: var(--space-2) 0 0;
+  @include m.eyebrow(var(--font-size-xs));
 }
 
 .risk-page__total {

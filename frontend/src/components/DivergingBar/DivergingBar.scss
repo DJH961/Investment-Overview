@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .diverging-bar {
   display: flex;
   flex-direction: column;
@@ -15,13 +17,13 @@
   }
 
   &__label {
-    color: var(--color-muted);
+    font-weight: var(--font-weight-semibold);
     white-space: nowrap;
   }
 
   &__track {
     position: relative;
-    height: 8px;
+    height: var(--space-2);
     background: var(--color-surface-2);
     border-radius: var(--radius-full);
 
@@ -70,11 +72,13 @@
     gap: var(--space-2);
     justify-content: flex-end;
     font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
     white-space: nowrap;
   }
 
   &__tag {
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
+    @include m.eyebrow;
+
+    min-width: 2.5em;
   }
 }

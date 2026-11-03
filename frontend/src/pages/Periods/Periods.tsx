@@ -7,6 +7,7 @@ import { Card } from "../../components/Card";
 import { type Column, DataTable } from "../../components/DataTable";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
+import { GrowthBars } from "../../components/GrowthBars";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
@@ -182,8 +183,8 @@ export function Periods() {
   const yOther = index(yearly2.data?.rows);
   const empty = view === "year" ? mRows.length === 0 && yRows.length === 0 : flat.length === 0;
 
-  const growths = flat.map((r) => toNum(r.growth_pct));
-  const maxAbs = Math.max(0, ...growths.map((g) => Math.abs(g ?? 0)));
+  // By-year view: the last two years of months as a bar strip on top.
+  const recent = mRows.slice(-24);
 
   return (
     <div className="periods-page">
@@ -210,6 +211,14 @@ export function Periods() {
         <EmptyState icon={<Inbox aria-hidden />} title="No periods yet" description="Import transactions to see returns." />
       ) : (
         <div className="periods-page__grid">
+          {view === "year" && recent.length > 1 && (
+            <Card title="Growth per month" subtitle="Last 24 months" collapsibleId="periods.bars">
+              <GrowthBars
+                ariaLabel="Monthly growth, last 24 months"
+                bars={recent.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
+              />
+            </Card>
+          )}
           {view === "year" ? (
             groups.map((g) => (
               <Card
@@ -235,21 +244,11 @@ export function Periods() {
             ))
           ) : (
             <>
-              <Card title="Return per period">
-                <div className="periods-page__bars" role="img" aria-label={`${view} growth bar chart`}>
-                  {flat.map((r, i) => {
-                    const g = growths[i];
-                    const h = g === null || maxAbs === 0 ? 0 : (Math.abs(g) / maxAbs) * 100;
-                    return (
-                      <div key={r.label} className="periods-page__bar-slot" title={r.label}>
-                        <div
-                          className={`periods-page__bar periods-page__bar--${(g ?? 0) < 0 ? "neg" : "pos"}`}
-                          style={{ height: `${h}%` }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
+              <Card title={view === "monthly" ? "Growth per month" : "Growth per year"}>
+                <GrowthBars
+                  ariaLabel={`${view} growth bar chart`}
+                  bars={flat.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
+                />
               </Card>
               <Card title={view === "monthly" ? "Monthly" : "Yearly"} flush>
                 <DataTable
