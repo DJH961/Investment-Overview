@@ -3,7 +3,7 @@ import type { FreshnessStatus } from "../components/Freshness";
 
 /** Lets pages tell the shell their data freshness and how to refresh. */
 export interface ShellState {
-  freshness: { status: FreshnessStatus; label: string };
+  freshness: { status: FreshnessStatus; label: string; short?: string };
   onRefresh?: () => void;
   refreshing: boolean;
 }
@@ -33,7 +33,13 @@ export function useShell(): ShellApi {
 }
 
 /** Page hook: publish freshness (and optionally a refresh handler) to the top bar. */
-export function useShellStatus(status: FreshnessStatus, label: string, onRefresh?: () => void, refreshing = false) {
+export function useShellStatus(
+  status: FreshnessStatus,
+  label: string,
+  onRefresh?: () => void,
+  refreshing = false,
+  short?: string,
+) {
   const { setShell } = useShell();
   // Keep the latest handler in a ref so inline callbacks don't retrigger the effect.
   const refreshRef = useRef(onRefresh);
@@ -43,11 +49,11 @@ export function useShellStatus(status: FreshnessStatus, label: string, onRefresh
   const hasRefresh = onRefresh !== undefined;
   useEffect(() => {
     setShell({
-      freshness: { status, label },
+      freshness: { status, label, short },
       onRefresh: hasRefresh ? () => refreshRef.current?.() : undefined,
       refreshing,
     });
-  }, [setShell, status, label, hasRefresh, refreshing]);
+  }, [setShell, status, label, short, hasRefresh, refreshing]);
   // Leaving the page: drop its status so the next page does not inherit it.
   useEffect(() => () => setShell(DEFAULT_STATE), [setShell]);
 }

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Chart, segments, sessionLayout, timeTicks, type ChartSeries } from "./Chart";
+import { Chart, fitLabel, segments, sessionLayout, timeTicks, type ChartSeries } from "./Chart";
 
 const series: ChartSeries[] = [
   {
@@ -243,5 +243,12 @@ describe("Chart", () => {
       const labels = [...container.querySelectorAll(".chart__axis-label--x")].map((n) => n.textContent);
       expect(labels).toEqual(["D26", "D27", "D28"]);
     });
+  });
+});
+
+describe("fitLabel", () => {
+  it("keeps a label that fits and falls back to its first word", () => {
+    expect(fitLabel("Tue 27", 200)).toBe("Tue 27");
+    expect(fitLabel("Tue 27", 30)).toBe("Tue");
   });
 });

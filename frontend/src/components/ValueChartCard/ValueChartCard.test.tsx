@@ -79,7 +79,8 @@ describe("ValueChartCard", () => {
     const { container } = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
     expect(screen.getByText("Prev close €1,005")).toBeInTheDocument();
     expect(container.querySelector(".chart--down")).not.toBeNull();
-    expect(screen.getByText("Fri 30 Oct")).toBeInTheDocument();
+    // The day label shares the growth line, so ranges never shift the layout.
+    expect(screen.getByTestId("range-growth")).toHaveTextContent("1D · Fri 30 Oct");
     expect(screen.getByTestId("range-growth")).toHaveTextContent("-1.50%");
     expect(screen.getByText(/complete for 3 of 5 sessions/)).toBeInTheDocument();
     // axis ticks are clock times

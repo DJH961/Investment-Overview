@@ -112,6 +112,21 @@
       text-anchor: start;
     }
 
+    // Phone: inside the plot, just above its grid line, with a halo in the
+    // card colour so a line passing underneath never makes it unreadable.
+    &--inset {
+      font-size: var(--font-size-2xs);
+      paint-order: stroke;
+      stroke: var(--color-surface);
+      stroke-linejoin: round;
+      stroke-width: 3px;
+      text-anchor: start;
+    }
+
+    &--inset-end {
+      text-anchor: end;
+    }
+
     @each $i in 1, 2, 3, 4 {
       &--n#{$i} {
         fill: var(--chart-#{$i + 1});
@@ -267,6 +282,8 @@
   &__legend {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    min-height: var(--control-height-sm);
     gap: var(--space-4);
     margin: 0;
     padding: 0;
@@ -305,5 +322,35 @@
     &:focus-visible {
       outline: 2px solid var(--color-accent);
     }
+  }
+
+  // Phone scrub readout: replaces the legend line while a finger is on the
+  // chart (same height), so nothing covers the lines.
+  &__readout {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--control-height-sm);
+    margin: 0;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__readout-time {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__readout-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  &__readout-value {
+    color: var(--color-fg);
   }
 }

@@ -20,7 +20,7 @@ export interface HealthSummary {
 
 export interface TopBarProps {
   title: string;
-  freshness: { status: FreshnessStatus; label: string };
+  freshness: { status: FreshnessStatus; label: string; short?: string };
   /** Phone layout: title + freshness on the left, the essential actions on the right. */
   compact?: boolean;
   /** Server refresh; always available (disabled only while one runs). */
@@ -97,7 +97,14 @@ export function TopBar({
       {leading}
       <div className="top-bar__title-block">
         <p className="top-bar__title">{title}</p>
-        {freshness.label && <Freshness className="top-bar__freshness" status={freshness.status} label={freshness.label} />}
+        {freshness.label && (
+          <Freshness
+            className="top-bar__freshness"
+            status={freshness.status}
+            label={compact && freshness.short ? freshness.short : freshness.label}
+            title={compact && freshness.short ? freshness.label : undefined}
+          />
+        )}
       </div>
       <div className="top-bar__actions">
         {showHealth && <HealthBadge health={health} />}

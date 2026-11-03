@@ -192,7 +192,8 @@ export function Holdings() {
   const data = query.data;
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
   const label = data ? `Prices as of ${formatDate(data.as_of)}` : query.isPending ? "Loading" : "Offline";
-  useShellStatus(status, label, () => void query.refetch(), query.isFetching);
+  const short = data ? `Prices ${formatAxisDate(Date.parse(data.as_of), 0)}` : undefined;
+  useShellStatus(status, label, () => void query.refetch(), query.isFetching, short);
 
   const categories = useMemo(
     () => [...new Set((data?.holdings ?? []).map((h) => h.category))].sort((a, b) => a.localeCompare(b)),
