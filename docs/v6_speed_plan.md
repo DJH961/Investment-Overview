@@ -727,6 +727,23 @@ build < 300 ms in-container, no 499s in a trading day, banner seen on one deploy
 
 ### 8.3 Phase 2: snapshot, rich tick, dual currency (minor)
 
+> **Changed when building (2026-11-03): cheaper design.** Turning every money field
+> into a `Dual {EUR, USD}` pair would touch ~2,300 lines of response schemas and every
+> component that reads them. Instead:
+> - Each read gets a sibling `GET …/both` route that returns
+>   `ByCurrency[<existing response>]`: two complete responses, built in one session.
+>   The ledger memo makes the second cheap, and existing shapes stay unchanged.
+> - The frontend fetches `/both` once with a currency-free key and picks a side with
+>   TanStack `select`, so a currency switch makes zero requests (R3).
+> - `/api/snapshot` is dropped. Instead, the `/both` routes answer `If-None-Match` with
+>   `304` from the read-cache generations (a reload re-validates without recomputing).
+> - The projection POST stays per currency (its typed inputs are in one currency);
+>   `keepPreviousData` keeps its chart up.
+> - Workers: A (backend `/both` + ETag) and B (rich tick + `/api/live`) run in parallel.
+>   C (frontend) follows once the contract is regenerated.
+>
+> The original plan text below is kept for the record.
+
 **Wave 0, orchestrator contracts:**
 - pydantic `Dual` money type (`{EUR, USD}`, `DecStr | None`) in `api/schemas/common.py`.
 - Final shapes of the Overview/Holdings/Graph/Periods/Allocations/Projection responses with

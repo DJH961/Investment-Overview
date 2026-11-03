@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from investment_dashboard.api.deps import ReportCcy, SessionDep
 from investment_dashboard.api.schemas.allocations import (
@@ -16,9 +16,10 @@ from investment_dashboard.api.schemas.allocations import (
     TargetIn,
     TargetOut,
 )
+from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.readmodels import allocations as allocations_readmodel
 from investment_dashboard.readmodels import rebalance
-from investment_dashboard.services.read_cache import cached_read
+from investment_dashboard.services.read_cache import cached_read, conditional_both
 
 router = APIRouter(tags=["allocations"])
 
@@ -27,6 +28,20 @@ router = APIRouter(tags=["allocations"])
 @cached_read
 def get_allocations(session: SessionDep, ccy: ReportCcy = "EUR") -> AllocationsResponse:
     return AllocationsResponse.model_validate(allocations_readmodel.build(session, ccy=ccy))
+
+
+@router.get("/allocations/both", response_model=ByCurrency[AllocationsResponse])
+@conditional_both("allocations")
+@cached_read
+def get_allocations_both(
+    request: Request, response: Response, session: SessionDep
+) -> ByCurrency[AllocationsResponse]:
+    return ByCurrency[AllocationsResponse].model_validate(
+        {
+            c: AllocationsResponse.model_validate(allocations_readmodel.build(session, ccy=c))
+            for c in ("EUR", "USD")
+        }
+    )
 
 
 @router.put("/allocations", response_model=TargetOut)

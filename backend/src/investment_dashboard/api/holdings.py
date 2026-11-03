@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from investment_dashboard.api.deps import ReportCcy, SessionDep
+from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.api.schemas.holdings import (
     GroupBy,
     HistoryRange,
@@ -12,7 +13,7 @@ from investment_dashboard.api.schemas.holdings import (
     HoldingsResponse,
 )
 from investment_dashboard.readmodels import holdings as holdings_readmodel
-from investment_dashboard.services.read_cache import cached_read
+from investment_dashboard.services.read_cache import cached_read, conditional_both
 
 router = APIRouter(tags=["holdings"])
 
@@ -24,6 +25,22 @@ def get_holdings(
 ) -> HoldingsResponse:
     return HoldingsResponse.model_validate(
         holdings_readmodel.build(session, ccy=ccy, group_by=group_by)
+    )
+
+
+@router.get("/holdings/both", response_model=ByCurrency[HoldingsResponse])
+@conditional_both("holdings")
+@cached_read
+def get_holdings_both(
+    request: Request, response: Response, session: SessionDep, group_by: GroupBy = "none"
+) -> ByCurrency[HoldingsResponse]:
+    return ByCurrency[HoldingsResponse].model_validate(
+        {
+            c: HoldingsResponse.model_validate(
+                holdings_readmodel.build(session, ccy=c, group_by=group_by)
+            )
+            for c in ("EUR", "USD")
+        }
     )
 
 

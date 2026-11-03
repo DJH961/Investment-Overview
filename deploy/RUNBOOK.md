@@ -271,8 +271,23 @@ from B2".
 `https://investments.daniel-henke.de` loads, `ssh daniel@hetzner-djh-v1` works, and
 `ssh root@<public-ip>` is refused.
 
-`bootstrap.sh` is safe to re-run at any time; each step checks before it changes
-anything.
+`bootstrap.sh` can be re-run (each step checks before it changes anything), but
+**only with `CLOSE_PUBLIC_SSH=1`**: a re-run without it runs `ufw allow 22/tcp` and
+reopens public SSH. The re-run command on the finished server is:
+
+```bash
+ssh daniel@hetzner-djh-v1 'sudo CLOSE_PUBLIC_SSH=1 bash /root/bootstrap.sh'
+```
+
+(Windows Git Bash: use `/c/Windows/System32/OpenSSH/ssh.exe`.) To put a new
+`bootstrap.sh` on the server first, copy it to `/tmp` and install it as root:
+
+```bash
+scp deploy/bootstrap.sh daniel@hetzner-djh-v1:/tmp/bootstrap.sh
+ssh daniel@hetzner-djh-v1 'sudo install -o root -g root -m 700 /tmp/bootstrap.sh /root/bootstrap.sh'
+```
+
+(Windows: `scp.exe` from the same OpenSSH folder.)
 
 ## Updates
 
@@ -354,6 +369,13 @@ when zram is full. Check with `swapon --show` (two lines: `/dev/zram0` first) an
 memory arena per thread. The Data Health page shows the app's resident memory and
 swap; above 400 MB the app writes a "memory high" warning (at most once an hour) to
 `system.log`.
+
+zram is enabled by (re-)running `bootstrap.sh` once on the existing server. Always
+run it as `sudo CLOSE_PUBLIC_SSH=1 bash /root/bootstrap.sh`; without
+`CLOSE_PUBLIC_SSH=1` it reopens public SSH (see "Rebuild from scratch" for copying a
+new `bootstrap.sh` to `/root` first):
+`ssh daniel@hetzner-djh-v1 'sudo CLOSE_PUBLIC_SSH=1 bash /root/bootstrap.sh'`
+(Windows: `/c/Windows/System32/OpenSSH/ssh.exe`).
 
 ## Rolling back
 

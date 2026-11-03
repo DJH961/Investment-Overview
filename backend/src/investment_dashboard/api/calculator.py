@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, Response
 
 from investment_dashboard.api.deps import ReportCcy, SessionDep
 from investment_dashboard.api.schemas.calculator import (
@@ -13,8 +13,10 @@ from investment_dashboard.api.schemas.calculator import (
     ProjectionOut,
     ProjectionRequest,
 )
+from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.readmodels import calculator as calculator_rm
 from investment_dashboard.readmodels import projection as projection_rm
+from investment_dashboard.services.read_cache import cached_read, conditional_both
 
 router = APIRouter(prefix="/calculator", tags=["calculator"])
 
@@ -24,6 +26,20 @@ _PCT = Decimal(100)
 @router.get("", response_model=CalculatorInputsOut)
 def get_inputs(session: SessionDep, ccy: ReportCcy = "EUR") -> dict[str, Any]:
     return calculator_rm.build_inputs(session, ccy=ccy)
+
+
+@router.get("/both", response_model=ByCurrency[CalculatorInputsOut])
+@conditional_both("calculator")
+@cached_read
+def get_inputs_both(
+    request: Request, response: Response, session: SessionDep
+) -> ByCurrency[CalculatorInputsOut]:
+    return ByCurrency[CalculatorInputsOut].model_validate(
+        {
+            c: CalculatorInputsOut.model_validate(calculator_rm.build_inputs(session, ccy=c))
+            for c in ("EUR", "USD")
+        }
+    )
 
 
 @router.post("", response_model=ProjectionOut)

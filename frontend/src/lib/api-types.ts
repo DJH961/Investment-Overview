@@ -58,6 +58,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/allocations/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Allocations Both */
+        get: operations["get_allocations_both_api_allocations_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/allocations/plan": {
         parameters: {
             query?: never;
@@ -104,6 +121,23 @@ export interface paths {
         };
         /** Get Analytics */
         get: operations["get_analytics_api_analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Analytics Both */
+        get: operations["get_analytics_both_api_analytics_both_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -300,6 +334,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/calculator/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Inputs Both */
+        get: operations["get_inputs_both_api_calculator_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/deposits": {
         parameters: {
             query?: never;
@@ -317,6 +368,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/deposits/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Deposits Both */
+        get: operations["get_deposits_both_api_deposits_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/deposits/dividends": {
         parameters: {
             query?: never;
@@ -326,6 +394,23 @@ export interface paths {
         };
         /** Get Dividends */
         get: operations["get_dividends_api_deposits_dividends_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deposits/dividends/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dividends Both */
+        get: operations["get_dividends_both_api_deposits_dividends_both_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -515,6 +600,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/graphs/{range_key}/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Graph Both */
+        get: operations["get_graph_both_api_graphs__range_key__both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/graphs/{range_key}/reload": {
         parameters: {
             query?: never;
@@ -558,6 +660,23 @@ export interface paths {
         };
         /** Get Holdings */
         get: operations["get_holdings_api_holdings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/holdings/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Holdings Both */
+        get: operations["get_holdings_both_api_holdings_both_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1156,6 +1275,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/overview/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Overview Both
+         * @description EUR and USD overview built in one session (loads are reused).
+         */
+        get: operations["get_overview_both_api_overview_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/periods/monthly": {
         parameters: {
             query?: never;
@@ -1182,6 +1321,23 @@ export interface paths {
         };
         /** Yearly */
         get: operations["yearly_api_periods_yearly_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/periods/{kind}/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Periods Both */
+        get: operations["periods_both_api_periods__kind__both_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1762,6 +1918,69 @@ export interface components {
              * @description Target weight (fraction, 0.01 = 1%)
              */
             target_pct: string;
+        };
+        /** ByCurrency[AllocationsResponse] */
+        ByCurrency_AllocationsResponse_: {
+            EUR: components["schemas"]["AllocationsResponse"];
+            USD: components["schemas"]["AllocationsResponse"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[AnalyticsOut] */
+        ByCurrency_AnalyticsOut_: {
+            EUR: components["schemas"]["AnalyticsOut"];
+            USD: components["schemas"]["AnalyticsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[CalculatorInputsOut] */
+        ByCurrency_CalculatorInputsOut_: {
+            EUR: components["schemas"]["CalculatorInputsOut"];
+            USD: components["schemas"]["CalculatorInputsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[DepositsOut] */
+        ByCurrency_DepositsOut_: {
+            EUR: components["schemas"]["DepositsOut"];
+            USD: components["schemas"]["DepositsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[DividendsOut] */
+        ByCurrency_DividendsOut_: {
+            EUR: components["schemas"]["DividendsOut"];
+            USD: components["schemas"]["DividendsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[GraphResponse] */
+        ByCurrency_GraphResponse_: {
+            EUR: components["schemas"]["GraphResponse"];
+            USD: components["schemas"]["GraphResponse"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[HoldingsResponse] */
+        ByCurrency_HoldingsResponse_: {
+            EUR: components["schemas"]["HoldingsResponse"];
+            USD: components["schemas"]["HoldingsResponse"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[OverviewResponse] */
+        ByCurrency_OverviewResponse_: {
+            EUR: components["schemas"]["OverviewResponse"];
+            USD: components["schemas"]["OverviewResponse"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[PeriodsOut] */
+        ByCurrency_PeriodsOut_: {
+            EUR: components["schemas"]["PeriodsOut"];
+            USD: components["schemas"]["PeriodsOut"];
+            /** Detail */
+            detail?: string | null;
         };
         /** CalcCategoryOut */
         CalcCategoryOut: {
@@ -5335,6 +5554,26 @@ export interface operations {
             };
         };
     };
+    get_allocations_both_api_allocations_both_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_AllocationsResponse_"];
+                };
+            };
+        };
+    };
     post_builder_plan_api_allocations_plan_post: {
         parameters: {
             query?: never;
@@ -5427,6 +5666,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalyticsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_analytics_both_api_analytics_both_get: {
+        parameters: {
+            query?: {
+                lookback_days?: number;
+                /** @description Draw the curve from inception. */
+                full_curve?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_AnalyticsOut_"];
                 };
             };
             /** @description Validation Error */
@@ -5777,6 +6049,26 @@ export interface operations {
             };
         };
     };
+    get_inputs_both_api_calculator_both_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_CalculatorInputsOut_"];
+                };
+            };
+        };
+    };
     get_deposits_api_deposits_get: {
         parameters: {
             query?: {
@@ -5801,6 +6093,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DepositsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_deposits_both_api_deposits_both_get: {
+        parameters: {
+            query?: {
+                account_id?: number | null;
+                /** @description Row filter; transfer = in + out. */
+                kind?: ("deposit" | "withdrawal" | "transfer") | null;
+                /** @description Row filter. */
+                year?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_DepositsOut_"];
                 };
             };
             /** @description Validation Error */
@@ -5842,6 +6169,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dividends_both_api_deposits_dividends_both_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_DividendsOut_"];
                 };
             };
         };
@@ -6163,6 +6510,40 @@ export interface operations {
             };
         };
     };
+    get_graph_both_api_graphs__range_key__both_get: {
+        parameters: {
+            query?: {
+                /** @description Also return the other currency line (default on). */
+                compare?: boolean;
+            };
+            header?: never;
+            path: {
+                range_key: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_GraphResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reload_graph_api_graphs__range_key__reload_post: {
         parameters: {
             query?: never;
@@ -6241,6 +6622,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HoldingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_holdings_both_api_holdings_both_get: {
+        parameters: {
+            query?: {
+                group_by?: "none" | "account" | "asset_class" | "currency" | "category";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_HoldingsResponse_"];
                 };
             };
             /** @description Validation Error */
@@ -7409,6 +7821,26 @@ export interface operations {
             };
         };
     };
+    get_overview_both_api_overview_both_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_OverviewResponse_"];
+                };
+            };
+        };
+    };
     monthly_api_periods_monthly_get: {
         parameters: {
             query?: {
@@ -7462,6 +7894,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PeriodsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    periods_both_api_periods__kind__both_get: {
+        parameters: {
+            query?: {
+                /** @description Pad empty months (monthly only). */
+                fill_gaps?: boolean;
+            };
+            header?: never;
+            path: {
+                kind: "monthly" | "yearly";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_PeriodsOut_"];
                 };
             };
             /** @description Validation Error */

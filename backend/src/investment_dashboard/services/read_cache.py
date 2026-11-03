@@ -20,6 +20,8 @@ such as the DB session are ignored.
 from __future__ import annotations
 
 import functools
+import hashlib
+import secrets
 import threading
 import time
 from collections import OrderedDict
@@ -112,6 +114,52 @@ def cached_read[**P, R](
         return value
 
     return wrapper
+
+
+#: Changes on every process start so a restarted server (generations back at 0)
+#: never matches an ETag a client got from the previous process.
+_BOOT_NONCE = secrets.token_hex(4)
+
+
+def generations(deps: tuple[str, ...] = ALL_DEPS) -> tuple[tuple[str, int], ...]:
+    """Current generation counters of ``deps``."""
+    with _lock:
+        return tuple((d, _gens[d]) for d in deps)
+
+
+def conditional_both[**P, R](route: str, *, deps: tuple[str, ...] = ALL_DEPS) -> Any:
+    """Weak-ETag conditional GET for the ``/both`` routes.
+
+    The ETag is built from the route name, its plain parameters and the generations
+    of ``deps``. On a matching ``If-None-Match`` the wrapper answers 304 **without**
+    calling the endpoint. The endpoint must take ``request: Request`` and
+    ``response: Response`` (so the ETag header is set on a fresh answer); put this
+    decorator outside :func:`cached_read`.
+    """
+
+    def decorate(func: Callable[P, R]) -> Callable[P, Any]:
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> Any:
+            from fastapi import Response  # noqa: PLC0415
+
+            request = kwargs["request"]
+            plain = sorted((k, str(v)) for k, v in kwargs.items() if isinstance(v, _KEYABLE))
+            gens = ",".join(f"{d}={g}" for d, g in generations(deps))
+            digest = hashlib.sha1(
+                f"{_BOOT_NONCE}|{route}|{plain}|{gens}".encode(), usedforsecurity=False
+            ).hexdigest()[:20]
+            etag = f'W/"{digest}"'
+            sent = request.headers.get("if-none-match", "")  # type: ignore[attr-defined]
+            candidates = {c.strip() for c in sent.split(",")}
+            if etag in candidates or "*" in candidates:
+                return Response(status_code=304, headers={"ETag": etag})
+            value = func(*args, **kwargs)
+            kwargs["response"].headers["ETag"] = etag  # type: ignore[attr-defined]
+            return value
+
+        return wrapper
+
+    return decorate
 
 
 def size() -> int:

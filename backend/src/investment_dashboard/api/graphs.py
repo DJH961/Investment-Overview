@@ -15,10 +15,11 @@ import time
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 
 from investment_dashboard.activity_log import activity
 from investment_dashboard.api.deps import ReportCcy, SessionDep
+from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.api.schemas.graphs import (
     GraphRange,
     GraphRangePref,
@@ -28,7 +29,7 @@ from investment_dashboard.api.schemas.graphs import (
 )
 from investment_dashboard.readmodels import live_graphs
 from investment_dashboard.services import live_bus
-from investment_dashboard.services.read_cache import cached_read
+from investment_dashboard.services.read_cache import cached_read, conditional_both
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,28 @@ def get_graph(
 ) -> GraphResponse:
     return GraphResponse.model_validate(
         live_graphs.build_graph(session, range_key=range_key, ccy=ccy, compare=compare)
+    )
+
+
+@router.get("/graphs/{range_key}/both", response_model=ByCurrency[GraphResponse])
+@conditional_both("graphs")
+@cached_read
+def get_graph_both(
+    range_key: GraphRange,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    compare: Annotated[
+        bool, Query(description="Also return the other currency line (default on).")
+    ] = True,
+) -> ByCurrency[GraphResponse]:
+    return ByCurrency[GraphResponse].model_validate(
+        {
+            c: GraphResponse.model_validate(
+                live_graphs.build_graph(session, range_key=range_key, ccy=c, compare=compare)
+            )
+            for c in ("EUR", "USD")
+        }
     )
 
 
