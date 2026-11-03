@@ -20,14 +20,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [6.0.2] — 2026-11-03
 
 ### Fixed
-- Colour-blind safety (red-green deutan/protan, checked with CIEDE2000): the
-  main graph's second-currency line was the same colour as the up-day gain line
-  on the 1D range, and several other chart and status colours collapsed together
-  (warn vs neg, chart-3 vs chart-4, chart-1 vs chart-6). The `--chart-*` series
-  colours are re-derived so every pair that can share a chart stays distinct from
-  each other and from pos/neg in both themes; `--color-warn` and `--color-neg`
-  are re-tuned (warn vs neg differ by lightness); secondary chart series now also
-  use distinct dash patterns, with matching dashed legend and tooltip swatches.
+- Colour-blind safety (the owner is protan): the main graph's second-currency
+  line was nearly the same colour as the up-day gain line on the 1D range, and
+  warn vs loss, chart-3 vs chart-4 and chart-1 vs chart-6 collapsed for red-green
+  colour-blind vision. Gain/loss/warn and the `--chart-*` series colours are
+  re-tuned (CIEDE2000 ≥ 20 under protan for every pair shown together, both
+  themes); secondary chart series are dashed, with dashed legend and tooltip
+  swatches. A new frontend test (`tokens.cvd.test.ts`) fails CI if a colour
+  collision comes back; the rule is in AGENTS.md and the docs.
 
 ## [6.0.1] — 2026-11-03
 

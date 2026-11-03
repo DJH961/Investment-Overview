@@ -146,6 +146,13 @@ on demand. Failures are non-fatal — stale prices/FX still render, with a
 
 ## Accessibility
 
-The owner is red-green colorblind. The UI never uses red/green as the only gain/loss
-signal: it uses the Wong (2011) palette (blue `#0072B2` gain, orange `#E69F00` loss)
-plus directional arrows.
+The owner is **protan** (red-green) colour-blind. The UI never uses red/green for
+gain/loss: gains are blue (`--color-pos`), losses orange (`--color-neg`), with
+signs and arrows as well. Every colour pair that is on screen together with
+different meanings (chart series, the 1D trend-coloured primary line vs the
+second-currency line, status dots, warn vs neg) is checked in a Machado 2009 protan
+simulation with CIEDE2000 (≥ 20; ≥ 15 for deutan and normal vision), in light and
+dark themes, plus text and line contrast as a protan sees it. Secondary chart series
+are dashed, so they never depend on colour alone. The check is the frontend test
+`frontend/src/styles/tokens.cvd.test.ts` (helpers in `frontend/src/lib/cvd.ts`);
+the rule lives in `AGENTS.md` › "Colour accessibility".

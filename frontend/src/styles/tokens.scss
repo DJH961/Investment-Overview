@@ -1,11 +1,13 @@
 // Design tokens. Palette ported from the v5 web companion (web/src/styles.css).
 // Gains/losses use the colour-blind-safe blue/orange pair, never red/green.
-// Rule: series colours (--chart-*) must stay distinct from pos/neg (the main chart
-// recolours its primary line to them), and warn must stay distinct from neg. Every
-// co-displayed pair is validated for deutan/protan (Machado 2009) with CIEDE2000:
-// >= 15 minimum, >= 20 preferred, in both themes. Under deutan only lightness
-// separates warn from neg, so never nudge one without re-checking the other.
-// Secondary chart series also carry a dash pattern (non-colour cue).
+// The owner is protan (red-green) colour-blind. Rule: series colours (--chart-*) must
+// stay distinct from pos/neg (the main chart recolours its primary line to them), and
+// warn must stay distinct from neg. Every co-displayed pair is validated with CIEDE2000
+// under protan (the binding case, ~20) plus deutan and normal vision (>= 15), in both
+// themes, and text/line tokens keep their contrast in the protan simulation too.
+// Without a hue axis only lightness separates warn from neg, so never nudge one without
+// re-checking the other. Secondary chart series also carry a dash pattern (non-colour
+// cue). New or changed colour tokens go into the pair list in tokens.cvd.test.ts.
 // Theme: [data-theme="light"|"dark"] on <html>; without it, prefers-color-scheme.
 
 @mixin dark-tokens {
@@ -24,21 +26,21 @@
   --color-surface-2: #1d2433;
   --color-border: #232b3b;
   --color-border-strong: #33405a;
-  --color-pos: #5fb3c9;
-  --color-neg: #d9703f;
-  --color-pos-soft: rgba(95, 179, 201, 0.16);
-  --color-neg-soft: rgba(217, 112, 63, 0.16);
-  --color-warn: #f8e820;
-  --color-warn-soft: rgba(248, 232, 32, 0.16);
+  --color-pos: #4eb0cd;
+  --color-neg: #d0784e;
+  --color-pos-soft: rgba(78, 176, 205, 0.16);
+  --color-neg-soft: rgba(208, 120, 78, 0.16);
+  --color-warn: #eacb5d;
+  --color-warn-soft: rgba(234, 203, 93, 0.16);
   --color-overlay: rgba(4, 6, 10, 0.62);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
-  --chart-1: #6a62e0;
-  --chart-2: #a8f8c8;
-  --chart-3: #d0f828;
-  --chart-4: #a04870;
-  --chart-5: #a89890;
-  --chart-6: #f84810;
+  --chart-1: #887eff;
+  --chart-2: #9efeff;
+  --chart-3: #e4bf49;
+  --chart-4: #ebbaa6;
+  --chart-5: #447c7e;
+  --chart-6: #77b3b6;
 }
 
 :root {
@@ -64,21 +66,21 @@
   --color-surface-2: #eef1f7;
   --color-border: #e6eaf2;
   --color-border-strong: #cfd6e4;
-  --color-pos: #1f6f8b;
-  --color-neg: #6e1a0a;
-  --color-pos-soft: rgba(31, 111, 139, 0.12);
-  --color-neg-soft: rgba(110, 26, 10, 0.12);
-  --color-warn: #8a6d00;
-  --color-warn-soft: rgba(138, 109, 0, 0.12);
+  --color-pos: #2a6181;
+  --color-neg: #74210c;
+  --color-pos-soft: rgba(42, 97, 129, 0.12);
+  --color-neg-soft: rgba(116, 33, 12, 0.12);
+  --color-warn: #806912;
+  --color-warn-soft: rgba(128, 105, 18, 0.12);
   --color-overlay: rgba(15, 22, 35, 0.4);
   --shadow-1: 0 1px 2px rgba(16, 22, 35, 0.05);
   --shadow-2: 0 12px 32px rgba(16, 22, 35, 0.14), 0 2px 6px rgba(16, 22, 35, 0.08);
-  --chart-1: #9078f8;
-  --chart-2: #c08000;
-  --chart-3: #809080;
-  --chart-4: #406850;
-  --chart-5: #1c10f0;
-  --chart-6: #783800;
+  --chart-1: #414df3;
+  --chart-2: #319790;
+  --chart-3: #8a6d00;
+  --chart-4: #b88365;
+  --chart-5: #356c62;
+  --chart-6: #691586;
 
   // Spacing (4px scale)
   --space-1: 4px;

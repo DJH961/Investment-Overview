@@ -35,6 +35,15 @@ namespaced custom properties: `--color-fg`, `--color-muted`, `--color-faint`,
 `--z-*`. Theme via `[data-theme="dark"|"light"]` on `<html>`, defaulting to
 `prefers-color-scheme`. Chart series colours as tokens too (`--chart-1..6`).
 
+**Colour-blind safety (owner is protan).** On the 1D range the main chart recolours
+its primary line to `--color-pos`/`--color-neg`, so `--chart-2` (second currency)
+and `--chart-3` (benchmark) must differ from both, and from `--chart-1` and
+`--color-muted`. Warn and neg differ mainly by lightness, because protans have no
+red-green hue axis left. Secondary series (`n1..n4`) use distinct dash patterns with
+dashed legend/tooltip swatches. `src/styles/tokens.cvd.test.ts` enforces CIEDE2000
+≥ 20 under protan for co-displayed pairs (≥ 15 for deutan/normal and rare
+multi-series pairs) and text/line contrast; add any new colour pair to its list.
+
 ## Layout shell (`components/AppShell`)
 
 - **Desktop ≥ 1024px** (NiceGUI feel): fixed left sidebar (`--sidebar-width` 240px,
