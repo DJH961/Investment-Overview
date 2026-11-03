@@ -234,3 +234,27 @@ async def test_fx_interval_comes_from_jobs(no_pauses: Any) -> None:
     r.sched.jobs.fx_interval = lambda: timedelta(minutes=5)
     r.now += timedelta(minutes=6)
     assert await r.sched.step() == ["fx"]
+
+
+def test_eod_job_fetches_the_live_spot_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The eod job stamps ``last_fx``, so it must really refresh the live EUR/USD
+    (it used to refresh only the ECB history, leaving the app on the end-of-day
+    rate for a full FX interval after every restart)."""
+    from investment_dashboard import boot
+    from investment_dashboard.services import scheduler
+
+    calls: list[str] = []
+    for name in (
+        "_refresh_live_fx",
+        "_refresh_fx",
+        "_refresh_prices",
+        "_refresh_splits",
+        "_refresh_benchmark",
+        "_refresh_intraday_day",
+        "_warm_snapshots",
+        "_run_cache_janitor",
+    ):
+        monkeypatch.setattr(boot, name, lambda n=name: calls.append(n))
+    scheduler.default_eod_job()
+    assert calls[0] == "_refresh_live_fx"
+    assert "_refresh_fx" in calls
