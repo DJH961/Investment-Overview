@@ -130,7 +130,7 @@ class TestHealthReportAggregation:
         from investment_dashboard.domain import market_hours
 
         instr = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-        two_back = market_hours.trading_days_before(date.today(), 2)
+        two_back = market_hours.trading_days_before(market_hours.exchange_today(), 2)
         prices_repo.upsert_closes(session, instr.id, {two_back: Decimal("100")})
         session.commit()
 
@@ -146,7 +146,7 @@ class TestHealthReportAggregation:
 
         fund = instruments_repo.get_or_create(session, symbol="VTSAX", asset_class="mutual_fund")
         etf = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-        three_back = market_hours.trading_days_before(date.today(), 3)
+        three_back = market_hours.trading_days_before(market_hours.exchange_today(), 3)
         prices_repo.upsert_closes(session, fund.id, {three_back: Decimal("100")})
         prices_repo.upsert_closes(session, etf.id, {three_back: Decimal("100")})
         session.commit()

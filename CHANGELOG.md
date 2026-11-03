@@ -72,6 +72,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 - Overview/KPI tiles and movers rows no longer overflow on 390 px phones; the Overview chart opens on the configured default range.
+- Two diagnostics tests failed every evening (US time) on CI: they took "today" from the UTC clock while the service uses the New York trading date. They now use `exchange_today()` too.
 - Diagnostics no longer flags manual or delisted instruments as stale; the Tiingo fallback asks for the mapped provider symbol.
 
 - Caddy could not start ("Address already in use"): another container could take its fixed address `172.29.84.2`. The compose network now hands out dynamic addresses from `.128` up only.
