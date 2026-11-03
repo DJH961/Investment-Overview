@@ -15143,78 +15143,6 @@
                       "type": "object"
                     },
                     {
-                      "$defs": {
-                        "TickPoint": {
-                          "description": "The new intraday portfolio sample, in both currencies (single instant).",
-                          "properties": {
-                            "EUR": {
-                              "anyOf": [
-                                {
-                                  "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ],
-                              "title": "Eur"
-                            },
-                            "USD": {
-                              "anyOf": [
-                                {
-                                  "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ],
-                              "title": "Usd"
-                            },
-                            "t": {
-                              "title": "T",
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "t"
-                          ],
-                          "title": "TickPoint",
-                          "type": "object"
-                        },
-                        "TickPrice": {
-                          "description": "One instrument's latest price in its native currency.",
-                          "properties": {
-                            "ccy": {
-                              "title": "Ccy",
-                              "type": "string"
-                            },
-                            "prev_close": {
-                              "anyOf": [
-                                {
-                                  "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ],
-                              "title": "Prev Close"
-                            },
-                            "px": {
-                              "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
-                              "title": "Px",
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "px",
-                            "ccy"
-                          ],
-                          "title": "TickPrice",
-                          "type": "object"
-                        }
-                      },
                       "description": "A market-hours poll finished: prices, FX and the intraday sample are fresh.",
                       "properties": {
                         "fx_eur_usd": {
@@ -15252,7 +15180,42 @@
                         "point": {
                           "anyOf": [
                             {
-                              "$ref": "#/$defs/TickPoint"
+                              "description": "The new intraday portfolio sample, in both currencies (single instant).",
+                              "properties": {
+                                "EUR": {
+                                  "anyOf": [
+                                    {
+                                      "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Eur"
+                                },
+                                "USD": {
+                                  "anyOf": [
+                                    {
+                                      "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Usd"
+                                },
+                                "t": {
+                                  "title": "T",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "t"
+                              ],
+                              "title": "TickPoint",
+                              "type": "object"
                             },
                             {
                               "type": "null"
@@ -15263,7 +15226,36 @@
                           "anyOf": [
                             {
                               "additionalProperties": {
-                                "$ref": "#/$defs/TickPrice"
+                                "description": "One instrument's latest price in its native currency.",
+                                "properties": {
+                                  "ccy": {
+                                    "title": "Ccy",
+                                    "type": "string"
+                                  },
+                                  "prev_close": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Prev Close"
+                                  },
+                                  "px": {
+                                    "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                    "title": "Px",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "px",
+                                  "ccy"
+                                ],
+                                "title": "TickPrice",
+                                "type": "object"
                               },
                               "type": "object"
                             },

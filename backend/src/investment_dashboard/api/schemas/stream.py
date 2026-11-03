@@ -155,6 +155,27 @@ EVENT_MODELS: tuple[type[ApiModel], ...] = (
 )
 
 
+def _inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Replace local ``#/$defs/X`` refs with the definitions themselves.
+
+    The event schemas are embedded inline in the OpenAPI document, where a model's
+    own ``$defs`` (nested models such as :class:`TickPrice`) can't be resolved.
+    """
+    defs = schema.pop("$defs", {})
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                return walk(defs[ref.removeprefix("#/$defs/")])
+            return {k: walk(v) for k, v in node.items()}
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        return node
+
+    return walk(schema)  # type: ignore[no-any-return]
+
+
 def event_schema() -> dict[str, Any]:
     """OpenAPI schema (``anyOf``) of every event, for the stream route docs."""
-    return {"anyOf": [m.model_json_schema() for m in EVENT_MODELS]}
+    return {"anyOf": [_inline_defs(m.model_json_schema()) for m in EVENT_MODELS]}

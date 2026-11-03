@@ -830,6 +830,23 @@ export interface paths {
         patch: operations["update_instrument_api_instruments__instrument_id__patch"];
         trace?: never;
     };
+    "/api/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Live */
+        get: operations["get_live_api_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/maintenance/backups": {
         parameters: {
             query?: never;
@@ -3505,6 +3522,14 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** LiveResponse */
+        LiveResponse: {
+            /** Missed Points */
+            missed_points?: components["schemas"]["TickPoint"][];
+            /** Seq */
+            seq: number;
+            tick?: components["schemas"]["TickEvent"] | null;
+        };
         /** LogLine */
         LogLine: {
             /** Level */
@@ -3609,8 +3634,6 @@ export interface components {
         };
         /** OkResponse */
         OkResponse: {
-            /** Detail */
-            detail?: string | null;
             /**
              * Ok
              * @default true
@@ -4851,6 +4874,66 @@ export interface components {
             items: components["schemas"]["TargetItem"][];
             /** Name */
             name: string;
+        };
+        /**
+         * TickEvent
+         * @description A market-hours poll finished: prices, FX and the intraday sample are fresh.
+         */
+        TickEvent: {
+            /** Fx Eur Usd */
+            fx_eur_usd?: string | null;
+            /** Last Update At */
+            last_update_at?: string | null;
+            /**
+             * Market State
+             * @enum {string}
+             */
+            market_state: "open" | "closed" | "holiday";
+            point?: components["schemas"]["TickPoint"] | null;
+            /** Prices */
+            prices?: {
+                [key: string]: components["schemas"]["TickPrice"];
+            } | null;
+            /** Prices Live */
+            prices_live?: boolean | null;
+            /** Seq */
+            seq?: number | null;
+            /** Total Value Eur */
+            total_value_eur?: string | null;
+            /** Total Value Usd */
+            total_value_usd?: string | null;
+            /** Ts */
+            ts: string;
+            /**
+             * Type
+             * @default tick
+             * @constant
+             */
+            type: "tick";
+        };
+        /**
+         * TickPoint
+         * @description The new intraday portfolio sample, in both currencies (single instant).
+         */
+        TickPoint: {
+            /** Eur */
+            EUR?: string | null;
+            /** Usd */
+            USD?: string | null;
+            /** T */
+            t: string;
+        };
+        /**
+         * TickPrice
+         * @description One instrument's latest price in its native currency.
+         */
+        TickPrice: {
+            /** Ccy */
+            ccy: string;
+            /** Prev Close */
+            prev_close?: string | null;
+            /** Px */
+            px: string;
         };
         /**
          * TransactionKind
@@ -6665,6 +6748,38 @@ export interface operations {
             };
         };
     };
+    get_live_api_live_get: {
+        parameters: {
+            query?: {
+                /** @description Last tick seq the client has. */
+                since?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_backups_api_maintenance_backups_get: {
         parameters: {
             query?: never;
@@ -7730,8 +7845,29 @@ export interface operations {
                          * @enum {string}
                          */
                         market_state: "open" | "closed" | "holiday";
+                        point?: {
+                            /** Eur */
+                            EUR?: string | null;
+                            /** Usd */
+                            USD?: string | null;
+                            /** T */
+                            t: string;
+                        } | null;
+                        /** Prices */
+                        prices?: {
+                            [key: string]: {
+                                /** Ccy */
+                                ccy: string;
+                                /** Prev Close */
+                                prev_close?: string | null;
+                                /** Px */
+                                px: string;
+                            };
+                        } | null;
                         /** Prices Live */
                         prices_live?: boolean | null;
+                        /** Seq */
+                        seq?: number | null;
                         /** Total Value Eur */
                         total_value_eur?: string | null;
                         /** Total Value Usd */
