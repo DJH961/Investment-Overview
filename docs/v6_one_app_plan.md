@@ -254,7 +254,7 @@ The import layer stays **broker-agnostic**. Parsers are plugins that emit `Parse
 - **Scheduler** (FastAPI lifespan task):
   - market hours: a batched quote + FX every 60 s, one `IntradayValue` sample, then an SSE push;
   - after close: closes, splits, snapshots, cache janitor;
-  - off-hours: FX every 30–60 min.
+  - off-hours: live FX every 2 min (setting `scheduler.fx_interval_minutes`).
 - **Auth:**
   - password (argon2) + passkeys via the `webauthn` Python lib;
   - httpOnly/Secure/SameSite=Strict cookie;
