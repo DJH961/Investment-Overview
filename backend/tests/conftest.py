@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -71,6 +72,19 @@ def session(engine: Engine) -> Iterator[Session]:
 def tmp_db_path(tmp_path: Path) -> Path:
     """Path to a fresh on-disk SQLite file (useful for Alembic tests)."""
     return tmp_path / "test.sqlite"
+
+
+@pytest.fixture(autouse=True)
+def _loggers_enabled() -> None:
+    """Undo Alembic's ``fileConfig(disable_existing_loggers=True)`` between tests.
+
+    Any migration test switches off every logger that already exists, so a later
+    test that checks log output (``caplog``) sees nothing. Serial runs hid this by
+    file order; under ``pytest -n`` the order differs per worker.
+    """
+    for logger in logging.root.manager.loggerDict.values():
+        if isinstance(logger, logging.Logger):
+            logger.disabled = False
 
 
 @pytest.fixture(autouse=True)
