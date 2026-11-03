@@ -81,15 +81,14 @@ export function Overview() {
 
       {data && <CurrencyBox data={data} />}
 
-      <div className="overview-page__row">
-        <ValueChartCard
-          currency={currency}
-          defaultRange={data?.default_range}
-          configuredRange={overviewRange}
-          marketOpen={data?.freshness?.market_state === "open"}
-        />
-        <MoversCard movers={data?.movers} currency={currency} loading={loading} />
-      </div>
+      {/* Full width, top to bottom: chart, movers, holdings. */}
+      <ValueChartCard
+        currency={currency}
+        defaultRange={data?.default_range}
+        configuredRange={overviewRange}
+        marketOpen={data?.freshness?.market_state === "open"}
+      />
+      <MoversCard movers={data?.movers} currency={currency} loading={loading} />
 
       <OverviewHoldings currency={currency} movers={data?.movers} />
 

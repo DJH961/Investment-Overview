@@ -29,13 +29,17 @@ function Row({
   ccy,
   badge,
   timeZone,
+  maxWeight,
 }: {
   row: HoldingRowDto;
   ccy: string;
   badge?: "winner" | "loser";
   timeZone?: string;
+  /** Largest weight in the list: the weight bars share its scale. */
+  maxWeight: number;
 }) {
   const stale = row.daily_is_stale;
+  const weight = toNum(row.weight_pct);
   return (
     <li className="overview-holdings__row" data-symbol={row.symbol}>
       <span className="overview-holdings__who">
@@ -56,6 +60,25 @@ function Row({
         </span>
         <span className="overview-holdings__name" title={row.name}>
           {row.name}
+        </span>
+      </span>
+      {/* Wider screens only: share of the portfolio and the return since buying. */}
+      <span className="overview-holdings__weight">
+        <span className="overview-holdings__weight-bar" aria-hidden>
+          <span
+            className="overview-holdings__weight-fill"
+            style={{ width: `${weight !== null && maxWeight > 0 ? Math.min((weight / maxWeight) * 100, 100) : 0}%` }}
+          />
+        </span>
+        <span className="overview-holdings__weight-pct">
+          <Percent ratio={weight} digits={1} />
+          <span className="overview-holdings__fresh"> of portfolio</span>
+        </span>
+      </span>
+      <span className="overview-holdings__total">
+        <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
+        <span className="overview-holdings__fresh">
+          <Percent ratio={toNum(row.total_growth)} signed /> since buying
         </span>
       </span>
       <span className="overview-holdings__value">
@@ -84,6 +107,7 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const losers = new Set(movers?.losers.map((m) => m.symbol) ?? []);
   const rows = q.data ? topHoldings(q.data.holdings) : [];
   const more = q.data ? q.data.holdings.length - rows.length : 0;
+  const maxWeight = Math.max(0, ...rows.map((r) => toNum(r.weight_pct) ?? 0));
   return (
     <Card
       className="overview-holdings"
@@ -108,6 +132,7 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
                 row={r}
                 ccy={currency}
                 timeZone={timeZone}
+                maxWeight={maxWeight}
                 badge={winners.has(r.symbol) ? "winner" : losers.has(r.symbol) ? "loser" : undefined}
               />
             ))}
