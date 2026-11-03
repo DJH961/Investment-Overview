@@ -47,3 +47,42 @@ def test_engine_opens_encrypted_db(tmp_path: Path) -> None:
     eng.dispose()
     assert verify_database_key(path, cfg)
     assert not verify_database_key(path, _cfg("nope"))
+
+
+def test_encrypted_engine_uses_a_queue_pool(tmp_path: Path) -> None:
+    """SQLAlchemy's pysqlcipher dialect defaults to SingletonThreadPool, which
+    closes in-use connections once more than 5 threads touch it ("Error closing
+    cursor" on the server). File databases must get a normal QueuePool."""
+    from sqlalchemy.pool import QueuePool
+
+    eng = make_engine(f"sqlite:///{tmp_path / 'app.sqlite'}", encryption_config=_cfg(KEY))
+    try:
+        assert isinstance(eng.pool, QueuePool)
+    finally:
+        eng.dispose()
+
+
+def test_encrypted_engine_survives_many_threads(tmp_path: Path) -> None:
+    import threading
+
+    eng = make_engine(f"sqlite:///{tmp_path / 'app.sqlite'}", encryption_config=_cfg(KEY))
+    with eng.begin() as c:
+        c.execute(text("CREATE TABLE t (x INTEGER)"))
+    errors: list[BaseException] = []
+    hold = threading.Barrier(12)
+
+    def work() -> None:
+        try:
+            with eng.connect() as c:
+                hold.wait(timeout=10)  # every thread holds a connection at once
+                c.execute(text("SELECT count(*) FROM t")).scalar_one()
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=work) for _ in range(12)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    eng.dispose()
+    assert errors == []

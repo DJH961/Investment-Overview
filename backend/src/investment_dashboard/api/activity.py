@@ -8,6 +8,7 @@ request bodies, query strings, cookies or tokens. See
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Awaitable, Callable
 
@@ -138,6 +139,21 @@ def subject_for(method: str, path: str) -> str | None:  # noqa: PLR0911 - flat r
     return _DOWNLOADS.get(path) if method == "GET" else None
 
 
+def _level(status: int, path: str) -> int:
+    """INFO for success and for requests turned away for lack of a session.
+
+    A 401/403 outside ``/api/auth/`` is the guard working: internet scanners
+    probing ``/api/v1/execute`` or ``/api/settings/export`` with no cookie. It
+    stays in the activity file but must not land in Recent problems. Failed
+    logins (``/api/auth/*``) and every other refusal stay WARNING.
+    """
+    if status < 400:
+        return logging.INFO
+    if status in (401, 403) and not path.startswith("/api/auth/"):
+        return logging.INFO
+    return logging.WARNING
+
+
 async def log_request_activity(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
@@ -154,7 +170,7 @@ async def log_request_activity(
     client = request.client.host if request.client else "-"
     agent = (request.headers.get("user-agent") or "-")[:120]
     activity(subject).log(
-        20 if ok else 30,  # INFO / WARNING
+        _level(response.status_code, path),
         "%s status=%d ip=%s ms=%d path=%s %s ua=%s",
         what,
         response.status_code,
