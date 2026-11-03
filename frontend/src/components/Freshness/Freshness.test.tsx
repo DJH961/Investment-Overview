@@ -26,7 +26,7 @@ describe("describeFreshness", () => {
   });
   it("names the price day when the market is closed", () => {
     const v = describeFreshness({ ...base, market_state: "closed", prices_live: false }, opts);
-    expect(v).toEqual({ status: "closed", label: "Closed · prices as of Fri 20:00" });
+    expect(v).toEqual({ status: "closed", label: "Closed · prices as of Fri 20:00", short: "Closed · Fri 20:00" });
   });
   it("shows Updating… and history progress", () => {
     expect(describeFreshness({ ...base, refresh_running: true }, opts).label).toBe("Updating…");

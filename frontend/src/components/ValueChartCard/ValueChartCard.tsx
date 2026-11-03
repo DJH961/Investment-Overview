@@ -144,7 +144,13 @@ export function ValueChartCard({
       return out;
     }
     const out: ChartSeries[] = [
-      { id: "primary", label: g.ccy, points: g.points.map((p) => ({ t: p.t, v: toNum(p.v) })) },
+      {
+        id: "primary",
+        label: g.ccy,
+        points: g.points.map((p) => ({ t: p.t, v: toNum(p.v) })),
+        // Full amounts in the readout; only the axis is compact ("€98k").
+        valueFormat: chartMoneyFormat(g.ccy, "tooltip"),
+      },
     ];
     const sec = g.secondary;
     const scale = toNum(sec?.scale);
@@ -193,7 +199,6 @@ export function ValueChartCard({
       className={clsx("value-chart-card", className)}
       title="Value"
       collapsibleId="overview.chart"
-      subtitle={subtitle}
       actions={
         <IconButton
           size="sm"
@@ -214,13 +219,15 @@ export function ValueChartCard({
             ranges={GRAPH_RANGES}
             rangeLabel={(r) => RANGE_LABELS[r as GraphRange] ?? r}
             onRangeChange={changeRange}
+            // One line for every range (the 1D day label sits here too), so
+            // switching ranges never moves the chart up or down.
             headerExtra={
-              growth !== null ? (
-                <span className="value-chart-card__growth" data-testid="range-growth">
-                  <Percent ratio={growth} signed colored />
-                  <span className="value-chart-card__growth-label">{RANGE_LABELS[shown]}</span>
+              <span className="value-chart-card__growth" data-testid="range-growth">
+                {growth !== null && <Percent ratio={growth} signed colored />}
+                <span className="value-chart-card__growth-label">
+                  {subtitle ? `${RANGE_LABELS[shown]} · ${subtitle}` : RANGE_LABELS[shown]}
                 </span>
-              ) : undefined
+              </span>
             }
             referenceLine={
               prevClose !== null ? { value: prevClose, label: hide ? "Prev close" : `Prev close ${tipFormat(prevClose)}` } : undefined

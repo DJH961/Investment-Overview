@@ -9,6 +9,8 @@ type FreshnessDto = components["schemas"]["Freshness"];
 export interface FreshnessView {
   status: FreshnessStatus;
   label: string;
+  /** Phone top bar: the same facts in fewer words ("Closed · Mon 22:00"). */
+  short?: string;
 }
 
 const latest = (...values: (string | null | undefined)[]): string | null => {
@@ -59,8 +61,10 @@ export function describeFreshness(
   }
   const priceAt = freshness.price_market_at ?? freshness.price_observed_at;
   const word = freshness.market_state === "holiday" ? "Holiday" : "Closed";
+  const when = priceAt ? formatWeekdayTime(priceAt, timeZone) : null;
   return {
     status: "closed",
-    label: priceAt ? `${word} · prices as of ${formatWeekdayTime(priceAt, timeZone)}` : word,
+    label: when ? `${word} · prices as of ${when}` : word,
+    short: when ? `${word} · ${when}` : word,
   };
 }

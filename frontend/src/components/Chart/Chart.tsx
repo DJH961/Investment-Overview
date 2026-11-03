@@ -144,6 +144,8 @@ const BASE_PAD = { top: 12, right: 8, bottom: 24, left: 8 };
 const CHAR_W = 7.6;
 /** Space between a y label and the plot. */
 const LABEL_GAP = 8;
+/** Below this width the chart uses inset axis labels and an inline readout. */
+const COMPACT_WIDTH = 520;
 
 /** Estimated pixel width of an axis label. */
 export function labelWidth(text: string): number {
@@ -169,6 +171,11 @@ export function niceTicks(lo: number, hi: number, maxTicks = 5): number[] {
     if (ticks.length >= 3 && ticks.length <= maxTicks) return ticks;
   }
   return [lo, hi];
+}
+
+/** The label, or its first word ("Tue 27" -> "Tue") when it does not fit `maxPx`. */
+export function fitLabel(label: string, maxPx: number): string {
+  return labelWidth(label) <= maxPx ? label : label.split(" ")[0];
 }
 
 export function toTime(t: string | number): number {
@@ -235,7 +242,9 @@ export function Chart({
 }: ChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
-  const [cursor, setCursor] = useState<number | null>(null);
+  // The scrub position belongs to the data it was taken on: a new range or
+  // series set drops it (no tooltip left hanging over a different chart).
+  const [cursorState, setCursorState] = useState<{ i: number; key: string } | null>(null);
   const gradId = useId();
 
   useEffect(() => {
@@ -270,6 +279,16 @@ export function Chart({
   }, [series]);
 
   const { all, prepared, times, values } = model;
+  const dataKey = `${range ?? ""}|${times.length}|${times[0] ?? ""}|${times[times.length - 1] ?? ""}`;
+  const cursor = cursorState && cursorState.key === dataKey ? cursorState.i : null;
+  const setCursor = useCallback(
+    (i: number | null) => setCursorState(i === null ? null : { i, key: dataKey }),
+    [dataKey],
+  );
+  // Narrow (phone) charts: axis labels sit inside the plot and the scrub
+  // readout replaces the legend line, so the lines get the full width and
+  // nothing floats over them.
+  const compact = width < COMPACT_WIDTH;
   const rightSeries = rightAxisFormat ? prepared.find((s) => s.axis === "right") : undefined;
   const rightScale = rightSeries?.scale && Number.isFinite(rightSeries.scale) ? rightSeries.scale : 1;
   const bounds = useMemo(() => {
@@ -295,11 +314,13 @@ export function Chart({
   const leftW = Math.max(0, ...yTicks.map((v) => labelWidth(valueFormat(v))));
   const rightW =
     rightSeries && rightAxisFormat ? Math.max(0, ...yTicks.map((v) => labelWidth(rightAxisFormat(v * rightScale)))) : 0;
-  const PAD = {
-    ...BASE_PAD,
-    left: leftW + LABEL_GAP,
-    right: rightW ? rightW + LABEL_GAP : BASE_PAD.right,
-  };
+  const PAD = compact
+    ? { top: 18, right: 2, bottom: 24, left: 2 }
+    : {
+        ...BASE_PAD,
+        left: leftW + LABEL_GAP,
+        right: rightW ? rightW + LABEL_GAP : BASE_PAD.right,
+      };
   const innerW = Math.max(width - PAD.left - PAD.right, 10);
   const innerH = Math.max(height - PAD.top - PAD.bottom, 10);
 
@@ -332,7 +353,7 @@ export function Chart({
       });
       setCursor(best);
     },
-    [scales, times, width],
+    [scales, times, width, setCursor],
   );
 
   function onPointer(e: PointerEvent<SVGSVGElement>) {
@@ -442,9 +463,12 @@ export function Chart({
           tabIndex={0}
           onPointerMove={onPointer}
           onPointerDown={onPointer}
-          onPointerLeave={(e) => {
-            if (e.pointerType === "mouse") setCursor(null);
+          onPointerLeave={() => setCursor(null)}
+          // Touch: the readout shows while the finger is down, never after.
+          onPointerUp={(e) => {
+            if (e.pointerType !== "mouse") setCursor(null);
           }}
+          onPointerCancel={() => setCursor(null)}
           onKeyDown={onKeyDown}
           onBlur={() => setCursor(null)}
         >
@@ -457,15 +481,24 @@ export function Chart({
           {yTicks.map((v) => (
             <g key={v}>
               <line className="chart__grid" x1={PAD.left} x2={width - PAD.right} y1={scales.y(v)} y2={scales.y(v)} />
-              <text className="chart__axis-label chart__axis-label--y" x={PAD.left - 8} y={scales.y(v)} dy="0.32em">
+              <text
+                className={clsx("chart__axis-label", compact ? "chart__axis-label--inset" : "chart__axis-label--y")}
+                x={compact ? PAD.left + 2 : PAD.left - 8}
+                y={compact ? scales.y(v) - 4 : scales.y(v)}
+                dy={compact ? undefined : "0.32em"}
+              >
                 {valueFormat(v)}
               </text>
               {rightSeries && rightAxisFormat && (
                 <text
-                  className={clsx("chart__axis-label", "chart__axis-label--right", `chart__axis-label--${rightSeries.toneCls}`)}
-                  x={width - PAD.right + 8}
-                  y={scales.y(v)}
-                  dy="0.32em"
+                  className={clsx(
+                    "chart__axis-label",
+                    compact ? "chart__axis-label--inset chart__axis-label--inset-end" : "chart__axis-label--right",
+                    `chart__axis-label--${rightSeries.toneCls}`,
+                  )}
+                  x={compact ? width - PAD.right - 2 : width - PAD.right + 8}
+                  y={compact ? scales.y(v) - 4 : scales.y(v)}
+                  dy={compact ? undefined : "0.32em"}
                 >
                   {rightAxisFormat(v * rightScale)}
                 </text>
@@ -496,7 +529,7 @@ export function Chart({
                 y={height - 6}
                 textAnchor="middle"
               >
-                {timeFormat(b.open)}
+                {fitLabel(timeFormat(b.open), b.x1 - b.x0 - 6)}
               </text>
             </g>
           ))}
@@ -588,7 +621,7 @@ export function Chart({
             </g>
           )}
         </svg>
-        {cursorX !== null && cursorT !== null && (
+        {!compact && cursorX !== null && cursorT !== null && (
           <output
             className={clsx("chart__tooltip", tipOnLeft && "chart__tooltip--left")}
             style={{ left: cursorX, top: PAD.top }}
@@ -604,7 +637,17 @@ export function Chart({
           </output>
         )}
       </div>
-      {all.length > 1 && (
+      {compact && cursorT !== null ? (
+        <output className="chart__readout">
+          <span className="chart__readout-time">{tipTime(cursorT)}</span>
+          {tipRows.map((r) => (
+            <span key={r.id} className="chart__readout-item">
+              <span className={clsx("chart__swatch", `chart__swatch--${r.tone}`)} aria-hidden />
+              <span className="chart__readout-value">{r.value}</span>
+            </span>
+          ))}
+        </output>
+      ) : all.length > 1 ? (
         <ul className="chart__legend">
           {all.map((s) => {
             const swatch = <span className={clsx("chart__swatch", `chart__swatch--${s.toneCls}`)} aria-hidden />;
@@ -630,7 +673,10 @@ export function Chart({
             );
           })}
         </ul>
-      )}
+      ) : compact ? (
+        // Same height as the readout, so scrubbing never moves the page.
+        <div className="chart__readout chart__readout--idle" aria-hidden />
+      ) : null}
     </div>
   );
 }

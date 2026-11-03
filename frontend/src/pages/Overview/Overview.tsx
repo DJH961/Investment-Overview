@@ -42,7 +42,7 @@ export function Overview() {
   if (overview.isError) chip = { status: "stale", label: "Offline" };
   else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone });
   else chip = { status: "loading", label: "Loading" };
-  useShellStatus(chip.status, chip.label, () => void overview.refetch(), overview.isFetching);
+  useShellStatus(chip.status, chip.label, () => void overview.refetch(), overview.isFetching, chip.short);
 
   if (overview.isError && !data) {
     return (
