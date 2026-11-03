@@ -135,4 +135,19 @@ describe("Allocations page", () => {
     expect(screen.getByLabelText("Target % for Stocks")).toHaveValue("72.8");
     expect(screen.getAllByText(/Funds in this category/)).toHaveLength(2);
   });
+
+  it("renders the allocation section while only the calculator inputs are loading", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        // The calculator inputs never answer; the allocations do.
+        if (url.includes("/api/calculator")) return new Promise<Response>(() => undefined);
+        if (url.includes("/api/allocations")) return new Response(JSON.stringify(allocations), { status: 200 });
+        return new Response(JSON.stringify({ values: {} }), { status: 200 });
+      }),
+    );
+    wrap();
+    expect(await screen.findByText("Current allocation")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Compute plan" })).not.toBeInTheDocument();
+  });
 });

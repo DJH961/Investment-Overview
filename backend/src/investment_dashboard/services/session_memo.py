@@ -12,46 +12,15 @@ Rules:
 * Read paths only. Any flush, commit or rollback on the session clears the memo,
   so a write in the same session is never followed by a stale read.
 * Callers must treat memoized results as read-only (they are shared).
+
+The implementation lives in :mod:`investment_dashboard.db` (outside the layered
+packages) so ``repositories`` can memoize too without importing ``services``;
+this module keeps the public API.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Hashable
-from typing import Any, TypeVar
+from investment_dashboard.db import clear_memo as clear
+from investment_dashboard.db import memo
 
-from sqlalchemy import event
-from sqlalchemy.orm import Session
-
-T = TypeVar("T")
-
-_INFO_KEY = "investment_dashboard.session_memo"
-
-
-def memo(session: Session, key: tuple[Hashable, ...], fn: Callable[[], T]) -> T:
-    """Return ``fn()``, computed at most once per ``key`` until the session changes."""
-    store: dict[tuple[Hashable, ...], Any] = session.info.setdefault(_INFO_KEY, {})
-    if key in store:
-        return store[key]  # type: ignore[no-any-return]
-    value = fn()
-    store[key] = value
-    return value
-
-
-def clear(session: Session) -> None:
-    """Forget everything memoized on ``session``."""
-    session.info.pop(_INFO_KEY, None)
-
-
-@event.listens_for(Session, "after_flush")
-def _after_flush(session: Session, _flush_context: object) -> None:
-    clear(session)
-
-
-@event.listens_for(Session, "after_commit")
-def _after_commit(session: Session) -> None:
-    clear(session)
-
-
-@event.listens_for(Session, "after_rollback")
-def _after_rollback(session: Session) -> None:
-    clear(session)
+__all__ = ["clear", "memo"]

@@ -63,6 +63,7 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
         "import action mapping rejected",
     ),
     ("POST", "/api/imports/batches/{batch_id}/undo"): ("import UNDONE", "import undo refused"),
+    ("POST", "/api/ops/announce-restart"): ("restart announced", "restart announce refused"),
     ("POST", "/api/refresh"): ("manual refresh requested", "manual refresh refused"),
     ("POST", "/api/graphs/{range_key}/reload"): (
         "graph reload requested",
@@ -134,6 +135,8 @@ def subject_for(method: str, path: str) -> str | None:  # noqa: PLR0911 - flat r
             return "auth"
         if path.startswith("/api/imports"):
             return "imports"
+        if path == "/api/ops/announce-restart":
+            return "system"
         if path == "/api/refresh" or (path.startswith("/api/graphs/") and path.endswith("/reload")):
             return "market_data"
         for prefix, subject in _WRITE_PREFIXES:

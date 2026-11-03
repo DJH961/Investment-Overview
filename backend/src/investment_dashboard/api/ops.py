@@ -25,14 +25,24 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
+from pydantic import ValidationError
 from starlette.background import BackgroundTask
 
+from investment_dashboard.activity_log import activity
 from investment_dashboard.api import security
 from investment_dashboard.api.guards import actor_of
-from investment_dashboard.api.schemas.ops import RefreshStatus
+from investment_dashboard.api.schemas.ops import AnnounceRestart, RefreshStatus
+from investment_dashboard.api.schemas.stream import ServerEvent
 from investment_dashboard.config import get_settings
 from investment_dashboard.db import get_active_encryption
-from investment_dashboard.services import auto_refresh, backup_service, job_runner, refresh_status
+from investment_dashboard.services import (
+    auto_refresh,
+    backup_service,
+    job_runner,
+    live_bus,
+    refresh_status,
+    restart_notice,
+)
 from investment_dashboard.storage.encryption import connect_sqlite
 from investment_dashboard.storage.integrity import backup_database
 
@@ -47,6 +57,44 @@ _REFRESH_JOB = "refresh"
 _SECRET_TABLES = ("auth_credential", "auth_passkeys", "auth_sessions")
 #: ``app_config`` keys containing any of these words are dropped from backups.
 _SECRET_KEY_WORDS = ("token", "secret", "passphrase", "password", "api_key")
+
+
+#: Mounted WITHOUT the session guard (see ``api/app.py``): loopback + per-boot token
+#: is its only gate, and every other caller gets a plain 404.
+announce_router = APIRouter(tags=["ops"])
+
+
+@announce_router.post(
+    "/ops/announce-restart",
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+async def announce_restart(request: Request) -> dict[str, bool]:
+    host = request.client.host if request.client else None
+    if not restart_notice.is_authorised(host, request.headers.get(restart_notice.TOKEN_HEADER)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
+    try:
+        body = AnnounceRestart.model_validate(await request.json())
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Bad announcement") from exc
+    now = datetime.now(UTC)
+    event = ServerEvent(
+        ts=now.isoformat(),
+        market_state=live_bus.market_state(now),  # type: ignore[arg-type]
+        state=body.state,
+        version=body.version,
+        eta_s=body.eta_s,
+        at=body.at,
+    )
+    live_bus.bus.publish(event.model_dump(mode="json", exclude_none=True))
+    activity("system").info(
+        "restart announced state=%s version=%s eta_s=%s at=%s",
+        body.state,
+        body.version,
+        body.eta_s,
+        body.at,
+    )
+    return {"ok": True}
 
 
 def _status() -> RefreshStatus:

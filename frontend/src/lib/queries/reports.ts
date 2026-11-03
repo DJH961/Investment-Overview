@@ -27,32 +27,41 @@ export const periodsQuery = (kind: PeriodKind, ccy: ReportingCurrency) =>
     // Monthly asks the server to pad empty months so the history is contiguous.
     queryFn: ({ signal }) =>
       api<PeriodsOut>(`/api/periods/${kind}?ccy=${ccy}${kind === "monthly" ? "&fill_gaps=true" : ""}`, { signal }),
+    placeholderData: keepPreviousData,
   });
 
 export function usePeriods(kind: PeriodKind, ccy: ReportingCurrency) {
   return useQuery(periodsQuery(kind, ccy));
 }
 
-export function useDeposits(ccy: ReportingCurrency) {
-  return useQuery({
-    queryKey: ["deposits", ccy],
-    queryFn: ({ signal }) => api<DepositsOut>(`/api/deposits?ccy=${ccy}`, { signal }),
-  });
-}
+// One hook per key: `useDeposits` lives in ./activity (it takes the filters).
+export { useDeposits } from "./activity";
 
-export function useAnalytics(ccy: ReportingCurrency, lookbackDays: number) {
-  return useQuery({
+export const analyticsQuery = (ccy: ReportingCurrency, lookbackDays: number) =>
+  queryOptions({
     queryKey: ["analytics", ccy, lookbackDays],
     queryFn: ({ signal }) =>
       api<AnalyticsOut>(`/api/analytics?ccy=${ccy}&lookback_days=${lookbackDays}`, { signal }),
+    // A lookback or currency change keeps the old figures until the new ones land.
+    placeholderData: keepPreviousData,
   });
+
+/** The Risk page's default lookback (days) when nothing is remembered. */
+export const DEFAULT_LOOKBACK_DAYS = 365;
+
+export function useAnalytics(ccy: ReportingCurrency, lookbackDays: number) {
+  return useQuery(analyticsQuery(ccy, lookbackDays));
 }
 
-export function useCalculatorInputs(ccy: ReportingCurrency) {
-  return useQuery({
+export const calculatorInputsQuery = (ccy: ReportingCurrency) =>
+  queryOptions({
     queryKey: ["calculator", "inputs", ccy],
     queryFn: ({ signal }) => api<CalculatorInputsOut>(`/api/calculator?ccy=${ccy}`, { signal }),
+    placeholderData: keepPreviousData,
   });
+
+export function useCalculatorInputs(ccy: ReportingCurrency) {
+  return useQuery(calculatorInputsQuery(ccy));
 }
 
 /**

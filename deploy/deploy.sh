@@ -78,8 +78,26 @@ prune_old_images() {
   docker image prune -f >/dev/null
 }
 
+# Tell connected browsers the app is about to restart (they show "Updating..." and
+# keep their data). The running container publishes it on its own live stream; the
+# route answers only to 127.0.0.1 with the per-boot token in /tmp/inv-restart.token.
+# A failed announcement (old image without the route, container down) never blocks
+# the deploy.
+announce_restart() {
+  docker compose exec -T app python -c '
+import json, sys, urllib.request as u
+token = open("/tmp/inv-restart.token").read().strip()
+body = json.dumps({"state": "restarting", "version": sys.argv[1], "eta_s": 20}).encode()
+req = u.Request("http://127.0.0.1:8000/api/ops/announce-restart", data=body, method="POST",
+                headers={"Content-Type": "application/json", "X-Restart-Token": token})
+u.urlopen(req, timeout=3)
+' "${NEW_TAG:0:7}" >/dev/null 2>&1 || echo "deploy.sh: restart announcement skipped" >&2
+}
+
 set_tag "$NEW_TAG"
 docker compose pull app
+announce_restart || true
+sleep 2
 # Start every service, not just app: a changed compose file (network, caddy,
 # backup) is then applied too, and a failed start rolls back instead of exiting.
 if docker compose up -d && healthy; then

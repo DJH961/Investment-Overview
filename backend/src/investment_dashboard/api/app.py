@@ -17,6 +17,7 @@ and :func:`run` refuses to start with an unsafe configuration.
 from __future__ import annotations
 
 import importlib
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -95,9 +96,11 @@ def _load_router(name: str) -> APIRouter:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    from investment_dashboard.services import server_runtime  # noqa: PLC0415
+    from investment_dashboard.services import restart_notice, server_runtime  # noqa: PLC0415
 
     await server_runtime.startup(app)
+    # deploy.sh reads this boot's token from the container to announce a restart.
+    restart_notice.ensure_token()
     try:
         yield
     finally:
@@ -176,6 +179,19 @@ def create_app(*, lifespan: bool = True) -> FastAPI:
             read_cache.invalidate()
         return response
 
+    @app.middleware("http")
+    async def server_timing(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        # Outermost: total time spent in the app for this request, so the browser
+        # network panel can split server time from network time.
+        started = time.perf_counter()
+        response = await call_next(request)
+        if request.url.path.startswith(API_PREFIX):
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+        return response
+
     @app.exception_handler(DomainError)
     async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
         # One mapping for every service error that no route handled itself.
@@ -196,6 +212,10 @@ def create_app(*, lifespan: bool = True) -> FastAPI:
         app.include_router(
             _load_router(name), prefix=API_PREFIX, dependencies=[Depends(require_auth)]
         )
+    # No session guard: loopback + this boot's token is the gate (api/ops.py).
+    from investment_dashboard.api.ops import announce_router  # noqa: PLC0415
+
+    app.include_router(announce_router, prefix=API_PREFIX)
 
     if settings.frontend_dist is not None and (settings.frontend_dist / "index.html").is_file():
         _mount_frontend(app, settings.frontend_dist, docs=docs)
@@ -218,4 +238,5 @@ def run() -> None:  # pragma: no cover - thin uvicorn launcher
         proxy_headers=True,
         forwarded_allow_ips=settings.forwarded_allow_ips,
         limit_concurrency=settings.limit_concurrency,
+        timeout_graceful_shutdown=3,
     )

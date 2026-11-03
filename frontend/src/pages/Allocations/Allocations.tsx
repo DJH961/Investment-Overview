@@ -60,7 +60,7 @@ export function Allocations() {
   ];
 
   const failed = (q.isError && !q.data) || (inputs.isError && !inputs.data);
-  const loading = q.isPending || inputs.isPending;
+  const noFunds = inputs.data !== undefined && inputs.data.instruments.length === 0;
   const active = q.data?.targets.find((t) => t.id === q.data?.active_target_id);
 
   return (
@@ -73,9 +73,7 @@ export function Allocations() {
             void inputs.refetch();
           }}
         />
-      ) : loading ? (
-        <Skeleton height="260px" />
-      ) : inputs.data.instruments.length === 0 ? (
+      ) : noFunds ? (
         <EmptyState
           icon={<PieChart aria-hidden />}
           title="No funds yet"
@@ -83,27 +81,36 @@ export function Allocations() {
         />
       ) : (
         <>
+          {/* Each section renders as soon as its own data is there; only the rest shows a skeleton. */}
           {/* Always shown: with no target yet this is where the first one is made. */}
-          <Builder
-            key={q.data.active_target_id ?? "none"}
-            inputs={inputs.data}
-            allocations={q.data}
-            defaultCcy={currency}
-          />
-          <Card
-            collapsibleId="allocations.drift"
-            title={hasDrift ? `Targets & drift${active ? ` · ${active.name}` : ""}` : "Current allocation"}
-            subtitle={
-              hasDrift
-                ? "Drift: positive means over-allocated, negative under-allocated."
-                : "No active target yet. Share of portfolio value by asset class."
-            }
-          >
-            <AllocationBar slices={slices} ariaLabel="Current allocation with target markers" />
-            {hasDrift && (
-              <DataTable caption="Allocation drift" columns={driftColumns} rows={q.data.drift} rowKey={(r) => r.key} />
-            )}
-          </Card>
+          {inputs.data && q.data ? (
+            <Builder
+              key={q.data.active_target_id ?? "none"}
+              inputs={inputs.data}
+              allocations={q.data}
+              defaultCcy={currency}
+            />
+          ) : (
+            <Skeleton height="260px" />
+          )}
+          {q.data ? (
+            <Card
+              collapsibleId="allocations.drift"
+              title={hasDrift ? `Targets & drift${active ? ` · ${active.name}` : ""}` : "Current allocation"}
+              subtitle={
+                hasDrift
+                  ? "Drift: positive means over-allocated, negative under-allocated."
+                  : "No active target yet. Share of portfolio value by asset class."
+              }
+            >
+              <AllocationBar slices={slices} ariaLabel="Current allocation with target markers" />
+              {hasDrift && (
+                <DataTable caption="Allocation drift" columns={driftColumns} rows={q.data.drift} rowKey={(r) => r.key} />
+              )}
+            </Card>
+          ) : (
+            <Skeleton height="260px" />
+          )}
         </>
       )}
     </div>

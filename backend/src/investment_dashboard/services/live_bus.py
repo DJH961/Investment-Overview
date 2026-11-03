@@ -92,10 +92,10 @@ class LiveBus:
     def publish(self, event: Event) -> None:
         """Fan ``event`` out to every subscriber; safe from any thread.
 
-        Every event means data may have moved (tick, FX, refresh, graph reload),
-        so the read cache is dropped first.
+        Only the read-cache dependencies the event changed are bumped (tick:
+        prices + FX; fx: FX; graphs: prices; refresh and unknown types: all).
         """
-        read_cache.invalidate()
+        read_cache.invalidate_for_event(str(event.get("type", "")))
         with self._lock:
             subs = list(self._subs)
         for sub in subs:

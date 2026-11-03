@@ -1,5 +1,5 @@
 /** Schema-driven settings (`/api/settings/schema|values|reset|history|export|import`). */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../api";
 import type { components } from "../api-types";
 
@@ -21,23 +21,28 @@ const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 export const SETTINGS_EXPORT_URL = `${BASE}/api/settings/export`;
 
 /** The field list changes only with a deploy. */
-export function useSettingsSchema() {
-  return useQuery({
+export const settingsSchemaQuery = () =>
+  queryOptions({
     queryKey: ["settings", "schema"],
     queryFn: ({ signal }) => api<SettingsSchema>("/api/settings/schema", { signal }),
     staleTime: 60 * 60 * 1000,
   });
+
+export function useSettingsSchema() {
+  return useQuery(settingsSchemaQuery());
 }
 
-export function useSettingsValues(enabled = true) {
-  return useQuery({
+export const settingsValuesQuery = (enabled = true) =>
+  queryOptions({
     queryKey: SETTINGS_VALUES_KEY,
     queryFn: ({ signal }) =>
       api<S["SettingsValuesDto"]>("/api/settings/values", { signal, skipAuthRedirect: !enabled }).then(
         (r) => r.values,
       ),
-    enabled,
   });
+
+export function useSettingsValues(enabled = true) {
+  return useQuery({ ...settingsValuesQuery(enabled), enabled });
 }
 
 function useSettingsWrite<TVars>(fn: (vars: TVars) => Promise<SettingsChanged>) {

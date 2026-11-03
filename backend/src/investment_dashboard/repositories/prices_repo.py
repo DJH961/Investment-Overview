@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from investment_dashboard.db import memo
 from investment_dashboard.models import PriceHistory
 
 #: ``source`` of a close the user entered by hand; refreshes never overwrite it.
@@ -132,6 +133,14 @@ def latest_closes(
     """
     if not instrument_ids:
         return {}
+    ids = tuple(instrument_ids)
+    key = ("latest_closes", ids, on_or_before)
+    return dict(memo(session, key, lambda: _query_latest_closes(session, ids, on_or_before)))
+
+
+def _query_latest_closes(
+    session: Session, instrument_ids: Sequence[int], on_or_before: date | None
+) -> dict[int, Decimal]:
     row_number = (
         func.row_number()
         .over(

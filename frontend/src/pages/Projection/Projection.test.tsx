@@ -132,6 +132,35 @@ describe("Projection", () => {
     expect(screen.getByLabelText(/Contribution per month/)).toHaveValue("250");
   });
 
+  it("keeps the chart mounted while a second request is pending", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { monthly: boolean; horizon: number | null };
+          if (body.horizon === 5) {
+            // Never answers until the request is cancelled, like a slow server.
+            return new Promise<Response>((_, reject) =>
+              init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))),
+            );
+          }
+          return new Response(JSON.stringify(out(body.monthly)), { status: 200 });
+        }
+        return new Response(JSON.stringify(calc), { status: 200 });
+      }),
+    );
+    wrap();
+    expect(await screen.findByText("Next 10 years")).toBeInTheDocument();
+    const chart = screen.getByLabelText("Projected value scenarios");
+
+    fireEvent.change(screen.getByLabelText("Horizon (years)"), { target: { value: "5" } });
+
+    // Dimmed while the new result loads, but the same chart stays on screen.
+    await waitFor(() => expect(chart.closest(".chart")).toHaveAttribute("aria-busy", "true"));
+    expect(screen.getByLabelText("Projected value scenarios")).toBe(chart);
+    expect(screen.getByText("Next 10 years")).toBeInTheDocument();
+  });
+
   it("formats the axis and filters monthly detail rows", () => {
     expect(axisLabel(10, true)).toBe("Month 120");
     expect(axisLabel(2, false)).toBe("Year 2");

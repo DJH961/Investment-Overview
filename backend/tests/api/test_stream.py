@@ -163,6 +163,7 @@ def test_event_schema_lists_every_event_type() -> None:
         "refresh_progress",
         "refresh_finished",
         "graphs",
+        "server",
     }
 
 

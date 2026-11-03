@@ -11,6 +11,7 @@ import { formatDateTime } from "../../lib/format";
 import { useLogs, type LogQuery } from "../../lib/queries/maintenance";
 import { SUPPORT_BUNDLE_URL } from "../../lib/queries/manage";
 import { errorMessage } from "../../lib/queries/settings";
+import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { usePersistentState } from "../../lib/usePersistentState";
 
 const LEVELS: LogQuery["level"][] = ["DEBUG", "INFO", "WARNING", "ERROR"];
@@ -20,7 +21,9 @@ export function LogsTab() {
   const [level, setLevel] = usePersistentState<LogQuery["level"]>("diagnostics.logs.level", "INFO");
   const [contains, setContains] = useState("");
   const [tracebacks, setTracebacks] = useState(false);
-  const q = useLogs({ source, level, limit: 300, contains, tracebacks });
+  // The box shows what is typed; the server only gets the settled text (G5).
+  const containsSettled = useDebouncedValue(contains);
+  const q = useLogs({ source, level, limit: 300, contains: containsSettled, tracebacks });
   const sources = q.data?.sources ?? [source];
 
   return (

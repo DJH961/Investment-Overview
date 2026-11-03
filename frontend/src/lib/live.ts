@@ -1,6 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+import { markStaleAndRefetch, scheduleRefetchAllActive } from "./queries/invalidation";
+import type { OverviewDto } from "./queries/portfolio";
 import { applyRefreshEvent } from "./refresh";
+import { getServerStatus, setServerStatus } from "./serverStatus";
 
 /** `connecting`: first attempt (or back from a hidden tab); `reconnecting`: after an error. */
 export type LiveStatus = "connecting" | "connected" | "reconnecting" | "offline";
@@ -29,8 +32,13 @@ export function getLiveStatus(): LiveStatus {
   return status;
 }
 
-const TICK_KEYS = ["overview", "holdings", "graphs"];
 const STREAM_URL = "/api/stream";
+const HEALTH_URL = "/api/health";
+const HEALTH_POLL_MS = 2000;
+/** A dropped stream shows "connection lost" only after this long (no flash on brief blips). */
+export const LOST_AFTER_MS = 5000;
+/** "Updated to x" stays this long. */
+export const UPDATED_SHOWN_MS = 4000;
 
 /** A parsed SSE message (`type` discriminates; see `api/schemas/stream.py`). */
 export type LiveEvent = Record<string, unknown> & { type: string };
@@ -45,10 +53,133 @@ export function subscribeLiveEvents(cb: (ev: LiveEvent) => void): () => void {
   };
 }
 
-function invalidateTickKeys(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({
-    predicate: (q) => TICK_KEYS.includes(String(q.queryKey[0])),
-  });
+const decimal = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
+
+/**
+ * Put a tick's totals straight into the cached overviews (no request): the hero,
+ * the currency box and the freshness chip move together on arrival. The follow-up
+ * refetch (staggered, active queries only) brings the rest.
+ */
+export function patchOverviewFromEvent(queryClient: QueryClient, ev: LiveEvent): void {
+  const eur = decimal(ev.total_value_eur);
+  const usd = decimal(ev.total_value_usd);
+  const fx = decimal(ev.fx_eur_usd);
+  const last = typeof ev.last_update_at === "string" ? ev.last_update_at : null;
+  const live = typeof ev.prices_live === "boolean" ? ev.prices_live : null;
+  for (const [key, data] of queryClient.getQueriesData<OverviewDto>({ queryKey: ["overview"] })) {
+    if (!data || typeof data !== "object" || !data.kpis) continue;
+    const usdFirst = key[1] === "USD";
+    const primary = usdFirst ? usd : eur;
+    const secondary = usdFirst ? eur : usd;
+    queryClient.setQueryData<OverviewDto>(key, {
+      ...data,
+      fx_eur_usd: fx ?? data.fx_eur_usd,
+      kpis: primary ? { ...data.kpis, total_value: primary } : data.kpis,
+      kpis_secondary:
+        secondary && data.kpis_secondary ? { ...data.kpis_secondary, total_value: secondary } : data.kpis_secondary,
+      freshness: data.freshness
+        ? {
+            ...data.freshness,
+            ...(last ? { last_price_update_at: last } : {}),
+            ...(live !== null ? { prices_live: live } : {}),
+          }
+        : data.freshness,
+    });
+  }
+}
+
+// ---- server restarts / lost stream --------------------------------------------
+
+/** Set by `startLive` so the restart flow can reopen the stream. */
+let reconnectStream: (() => void) | null = null;
+let healthTimer: ReturnType<typeof setInterval> | undefined;
+let updatedTimer: ReturnType<typeof setTimeout> | undefined;
+let lostTimer: ReturnType<typeof setTimeout> | undefined;
+
+function stopHealthPoll(): void {
+  if (healthTimer) clearInterval(healthTimer);
+  healthTimer = undefined;
+}
+
+/** Test helper: forget timers and the stream hook between tests. */
+export function resetServerFlow(): void {
+  stopHealthPoll();
+  if (updatedTimer) clearTimeout(updatedTimer);
+  if (lostTimer) clearTimeout(lostTimer);
+  updatedTimer = undefined;
+  lostTimer = undefined;
+  reconnectStream = null;
+}
+
+/** The running app version, or null while the server does not answer. */
+async function readHealthVersion(): Promise<string | null> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 3000);
+  try {
+    const res = await fetch(HEALTH_URL, { signal: ctl.signal, credentials: "same-origin", cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { app_version?: unknown };
+    return typeof body.app_version === "string" ? body.app_version : "";
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** The server is back: reconnect the stream, refetch once (staggered), show "Updated" for a moment. */
+function finishRestart(queryClient: QueryClient, version: string | null): void {
+  stopHealthPoll();
+  reconnectStream?.();
+  scheduleRefetchAllActive(queryClient);
+  setServerStatus({ kind: "updated", version });
+  if (updatedTimer) clearTimeout(updatedTimer);
+  updatedTimer = setTimeout(() => {
+    if (getServerStatus().kind === "updated") setServerStatus({ kind: "idle" });
+  }, UPDATED_SHOWN_MS);
+}
+
+function startHealthPoll(queryClient: QueryClient, announced: string | null, etaS: number | null): void {
+  stopHealthPoll();
+  const began = Date.now();
+  let baseline: string | null = null;
+  let sawGap = false;
+  let busy = false;
+  healthTimer = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    void readHealthVersion()
+      .then((version) => {
+        if (getServerStatus().kind !== "restarting") {
+          stopHealthPoll();
+          return;
+        }
+        if (version === null) {
+          sawGap = true;
+          return;
+        }
+        baseline ??= version;
+        const overdue = Date.now() - began > Math.max(30_000, (etaS ?? 0) * 3000);
+        if (sawGap || version !== baseline || overdue) finishRestart(queryClient, announced ?? version);
+      })
+      .finally(() => {
+        busy = false;
+      });
+  }, HEALTH_POLL_MS);
+}
+
+function handleServerEvent(queryClient: QueryClient, ev: LiveEvent): void {
+  if (ev.state === "restarting") {
+    if (lostTimer) clearTimeout(lostTimer);
+    lostTimer = undefined;
+    const version = typeof ev.version === "string" ? ev.version : null;
+    const etaS = typeof ev.eta_s === "number" ? ev.eta_s : null;
+    setServerStatus({ kind: "restarting", version, etaS, since: Date.now() });
+    startHealthPoll(queryClient, version, etaS);
+  } else if (ev.state === "restart_planned") {
+    if (getServerStatus().kind === "restarting") return;
+    setServerStatus({ kind: "planned", at: typeof ev.at === "string" ? ev.at : null });
+  }
 }
 
 export function handleLiveEvent(queryClient: QueryClient, data: string): void {
@@ -63,11 +194,16 @@ export function handleLiveEvent(queryClient: QueryClient, data: string): void {
   const type = ev.type;
   applyRefreshEvent(queryClient, ev);
   if (type === "tick" || type === "fx") {
-    invalidateTickKeys(queryClient);
+    // Totals and the rate go on screen now; one staggered refetch of the active
+    // tick-dependent queries follows. Inactive ones are only marked stale.
+    patchOverviewFromEvent(queryClient, ev);
+    markStaleAndRefetch(queryClient, "tick");
   } else if (type === "refresh") {
-    void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
+    markStaleAndRefetch(queryClient, "refresh");
   } else if (type === "graphs" && typeof ev.range === "string") {
     void queryClient.invalidateQueries({ queryKey: ["graphs", ev.range] });
+  } else if (type === "server") {
+    handleServerEvent(queryClient, ev);
   }
   eventListeners.forEach((l) => l(ev));
 }
@@ -99,14 +235,27 @@ export function startLive(queryClient: QueryClient): () => void {
     es.onopen = () => {
       attempt = 0;
       setStatus("connected");
-      if (openedBefore) invalidateTickKeys(queryClient);
+      if (lostTimer) clearTimeout(lostTimer);
+      lostTimer = undefined;
+      if (getServerStatus().kind === "lost") setServerStatus({ kind: "idle" });
+      if (openedBefore) markStaleAndRefetch(queryClient, "tick");
       openedBefore = true;
     };
     es.onmessage = (ev: MessageEvent<string>) => handleLiveEvent(queryClient, ev.data);
     es.onerror = () => {
       close();
       if (stopped || document.hidden) return;
-      setStatus(typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "reconnecting");
+      const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+      setStatus(offline ? "offline" : "reconnecting");
+      // A drop with no announced restart: say "lost" only if it lasts (no flash on blips).
+      if (!offline && !lostTimer && getServerStatus().kind === "idle") {
+        lostTimer = setTimeout(() => {
+          lostTimer = undefined;
+          if (getServerStatus().kind === "idle" && getLiveStatus() !== "connected") {
+            setServerStatus({ kind: "lost", since: Date.now() });
+          }
+        }, LOST_AFTER_MS);
+      }
       const delay = Math.min(30_000, 1000 * 2 ** attempt++);
       timer = setTimeout(connect, delay);
     };
@@ -135,6 +284,11 @@ export function startLive(queryClient: QueryClient): () => void {
     close();
     setStatus("offline");
   };
+  reconnectStream = () => {
+    close();
+    attempt = 0;
+    connect();
+  };
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("online", onOnline);
   window.addEventListener("offline", onOffline);
@@ -143,6 +297,9 @@ export function startLive(queryClient: QueryClient): () => void {
 
   return () => {
     stopped = true;
+    reconnectStream = null;
+    if (lostTimer) clearTimeout(lostTimer);
+    lostTimer = undefined;
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("online", onOnline);
     window.removeEventListener("offline", onOffline);
