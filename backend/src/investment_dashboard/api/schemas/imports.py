@@ -41,6 +41,54 @@ class ImportCounts(ApiModel):
     warnings: int
 
 
+class ImportField(ApiModel):
+    """A ledger field a file column can be mapped to."""
+
+    id: str
+    label: str
+    help: str
+    required: bool = False
+
+
+class ImportColumn(ApiModel):
+    """One column of the uploaded table, with what it was matched to."""
+
+    index: int
+    header: str
+    samples: list[str]
+    field: str | None = None
+    #: 0..1; ``by`` says how: ``header`` name, cell ``content``, ``user`` choice.
+    confidence: float = 0
+    by: str | None = None
+
+
+class ImportQuestion(ApiModel):
+    """Something to settle before confirming: pick a column, derive it, or cancel."""
+
+    field: str
+    message: str
+    can_derive: bool = False
+    derive_hint: str = ""
+
+
+class ImportLayout(ApiModel):
+    """How the flexible reader sees the file (the page's column editor)."""
+
+    sheets: list[str]
+    sheet: int
+    #: 0-based grid row of the header; ``None`` = the file has no header row.
+    header_row: int | None
+    columns: list[ImportColumn]
+    fields: list[ImportField]
+    decimal: Literal[".", ","]
+    date_order: Literal["MDY", "DMY", "YMD"]
+    derive: list[str]
+    questions: list[ImportQuestion]
+    notes: list[str]
+    #: Key "remember" saves the layout under (empty when there is no header row).
+    signature: str
+
+
 class ImportPreview(ApiModel):
     import_id: str
     broker: str
@@ -53,6 +101,27 @@ class ImportPreview(ApiModel):
     warnings: list[ImportIssue]
     unknown_actions: list[str]
     expires_at: datetime
+    #: ``standard`` = the broker's own parser read it; ``flexible`` = the
+    #: flexible reader did (``layout`` is what it used).
+    parser: Literal["standard", "flexible"] = "standard"
+    layout: ImportLayout | None = None
+    #: False while a layout question is open (confirm would be refused).
+    can_confirm: bool = True
+
+
+class ImportLayoutIn(ApiModel):
+    """Corrections from the column editor; re-parses the staged file."""
+
+    #: field id -> column index, or ``null`` for "this file has no such column".
+    columns: dict[str, int | None] = Field(default_factory=dict)
+    decimal: Literal[".", ","] | None = None
+    date_order: Literal["MDY", "DMY", "YMD"] | None = None
+    #: Fields to work out from the others (``price``, ``quantity``, ``amount``).
+    derive: list[Literal["price", "quantity", "amount"]] = Field(default_factory=list)
+    header_row: int | None = -1
+    sheet: int | None = None
+    #: Remember this layout for future files with the same column names.
+    remember: bool = False
 
 
 class ImportConfirmResult(ApiModel):

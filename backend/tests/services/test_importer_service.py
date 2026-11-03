@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters.frankfurter_client import FrankfurterError
 from investment_dashboard.models import Transaction
-from investment_dashboard.repositories import accounts_repo, fx_repo, snapshots_repo
+from investment_dashboard.repositories import (
+    accounts_repo,
+    fx_repo,
+    snapshots_repo,
+    transactions_repo,
+)
 from investment_dashboard.services import fx_service, instrument_enrichment_service
 from investment_dashboard.services.importer_service import Broker, import_csv
 
@@ -205,8 +210,14 @@ class TestRowLevelReporting:
         result = import_csv(
             session, broker=Broker.FIDELITY, account_id=usd_account, content=content
         )
-        assert result.inserted == 0
-        assert any("EU-locale" in e.message for e in result.errors)
+        # The strict parser rejects it; the flexible reader then reads the
+        # comma decimal correctly (keeping Fidelity's US dates) and says so.
+        assert result.inserted == 1
+        assert not result.errors
+        assert any("flexible importer" in w.message for w in result.warnings)
+        txn = transactions_repo.list_transactions(session, account_id=usd_account)[-1]
+        assert txn.date == date(2024, 1, 5)
+        assert txn.net_native == Decimal("1234.56")
 
     def test_reconciliation_warning_still_imports(
         self, session: Session, usd_account: int, fx_seeded: None

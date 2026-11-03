@@ -15,7 +15,8 @@ Data that only exists in v6 (``fx_conversions``, login credentials, the settings
 change history ``app_config_audit``, the instrument provider-symbol mapping and
 pricing mode on ``instrument_overrides``, and the import history
 ``import_batches`` / ``transactions.import_batch_id``) is dropped
-by the downgrade: v5 has no place for it.
+by the downgrade: v5 has no place for it. Rows imported with the flexible importer
+(``source = 'import_generic'``) are relabelled ``manual``.
 
 The key comes from ``INV_DASHBOARD_DB_PASSPHRASE`` or a hidden prompt.
 """

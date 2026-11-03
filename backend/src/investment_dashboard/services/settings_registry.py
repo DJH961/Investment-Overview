@@ -83,7 +83,7 @@ def _currencies(value: Typed) -> None:
 #: Values an action override may map to: a ledger kind, or "ignore" (drop the row).
 ACTION_OVERRIDE_TARGETS: tuple[str, ...] = (*(k.value for k in TransactionKind), "ignore")
 #: Brokers whose parsers accept action overrides (``import.action_overrides.<broker>``).
-ACTION_OVERRIDE_BROKERS: tuple[str, ...] = ("fidelity", "vanguard")
+ACTION_OVERRIDE_BROKERS: tuple[str, ...] = ("fidelity", "vanguard", "generic")
 
 
 def _action_overrides(value: Typed) -> None:
@@ -359,6 +359,17 @@ DEFS: tuple[SettingDef, ...] = (
         min=_D(50),
         max=_D(5000),
         level="advanced",
+    ),
+    SettingDef(
+        "import.column_profiles",
+        SettingType.JSON_MAP,
+        {},
+        "imports",
+        "Saved column layouts",
+        help=(
+            "Column layouts remembered by the flexible importer: header signature -> "
+            "JSON layout. Written from the Import page; delete an entry to forget a layout."
+        ),
     ),
     *(_action_map(b) for b in ACTION_OVERRIDE_BROKERS),
     # -- data refresh ----------------------------------------------------------

@@ -9,7 +9,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse
 
+from investment_dashboard.adapters.generic.parser import Layout, LayoutChoice
 from investment_dashboard.adapters.importer_types import RowIssue, action_key
+from investment_dashboard.adapters.tabular.columns import FIELDS
 from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.guards import ActorDep, FreshActorDep, RequestIdDep
 from investment_dashboard.api.schemas.common import OkResponse
@@ -19,12 +21,17 @@ from investment_dashboard.api.schemas.imports import (
     ImportBatchList,
     ImportBatchOut,
     ImportBroker,
+    ImportColumn,
     ImportConfirmResult,
     ImportCounts,
     ImportErrorDto,
+    ImportField,
     ImportIssue,
+    ImportLayout,
+    ImportLayoutIn,
     ImportPreview,
     ImportPreviewRow,
+    ImportQuestion,
     ImportUndoPreview,
     ImportUndoRequest,
     ImportUndoResult,
@@ -57,6 +64,42 @@ def _preview_limit() -> int:
 
 def _issues(items: Sequence[RowIssue]) -> list[ImportIssue]:
     return [ImportIssue(message=i.message, line=i.line, raw=i.raw) for i in items]
+
+
+def _layout(layout: Layout | None) -> ImportLayout | None:
+    if layout is None:
+        return None
+    return ImportLayout(
+        sheets=list(layout.sheets),
+        sheet=layout.sheet,
+        header_row=layout.header_row,
+        columns=[
+            ImportColumn(
+                index=c.index,
+                header=c.header,
+                samples=list(c.samples),
+                field=c.field,
+                confidence=c.confidence,
+                by=c.by,
+            )
+            for c in layout.columns
+        ],
+        fields=[
+            ImportField(id=f.id.value, label=f.label, help=f.help, required=f.required)
+            for f in FIELDS
+        ],
+        decimal=layout.decimal,
+        date_order=layout.date_order,
+        derive=list(layout.derive),
+        questions=[
+            ImportQuestion(
+                field=q.field, message=q.message, can_derive=q.can_derive, derive_hint=q.derive_hint
+            )
+            for q in layout.questions
+        ],
+        notes=list(layout.notes),
+        signature=layout.signature,
+    )
 
 
 def _preview(staged: import_staging.StagedImport) -> ImportPreview:
@@ -101,6 +144,9 @@ def _preview(staged: import_staging.StagedImport) -> ImportPreview:
         warnings=_issues(report.warnings),
         unknown_actions=list(report.unknown_actions),
         expires_at=staged.expires_at,
+        parser="flexible" if staged.parser == "flexible" else "standard",
+        layout=_layout(staged.detected),
+        can_confirm=staged.open_questions == 0,
     )
 
 
@@ -109,7 +155,9 @@ def list_import_brokers() -> list[ImportBroker]:
     """Importer plugins the server can parse (the frontend builds its picker from this)."""
     return [
         ImportBroker(
-            id=b.value, label=b.value.title(), file_types=list(import_staging.ALLOWED_EXTENSIONS)
+            id=b.value,
+            label=importer_service.BROKER_LABELS[b],
+            file_types=list(import_staging.ALLOWED_EXTENSIONS),
         )
         for b in Broker
     ]
@@ -173,6 +221,38 @@ def reparse_import(import_id: str, session: SessionDep) -> ImportPreview:
     """Parse a staged upload again with the current action mapping (new ``import_id``)."""
     try:
         staged = import_staging.restage(session, import_id)
+    except import_staging.StagedImportNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except import_staging.ImportStagingError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _preview(staged)
+
+
+@router.post(
+    "/imports/{import_id}/layout",
+    response_model=ImportPreview,
+    responses={422: {"model": ImportErrorDto}},
+)
+def set_import_layout(
+    import_id: str, body: ImportLayoutIn, session: SessionDep, actor: ActorDep
+) -> ImportPreview:
+    """Re-parse a staged file with corrected columns / formats (new ``import_id``).
+
+    Always uses the flexible reader. ``remember`` stores the layout in the
+    setting ``import.column_profiles`` for future files with the same columns.
+    """
+    choice = LayoutChoice(
+        columns=dict(body.columns),
+        decimal=body.decimal,
+        date_order=body.date_order,
+        derive=frozenset(body.derive),
+        header_row=body.header_row,
+        sheet=body.sheet,
+    )
+    try:
+        staged = import_staging.relayout(
+            session, import_id, choice, remember=body.remember, actor=actor
+        )
     except import_staging.StagedImportNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except import_staging.ImportStagingError as exc:

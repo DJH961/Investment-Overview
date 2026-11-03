@@ -116,7 +116,9 @@ def test_bad_uploads_are_rejected(api_client: TestClient, account_id: int) -> No
     no_account = _upload(api_client)
     assert no_account.status_code == 422
     wrong_ext = api_client.post(
-        "/api/imports", files={"file": ("x.txt", b"abc", "text/plain")}, data={"account_id": "1"}
+        "/api/imports",
+        files={"file": ("x.pdf", b"abc", "application/pdf")},
+        data={"account_id": "1"},
     )
     assert wrong_ext.status_code == 422
     empty = api_client.post(

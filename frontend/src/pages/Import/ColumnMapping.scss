@@ -1,0 +1,131 @@
+@use "../../styles/mixins" as m;
+
+.column-mapping {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+
+  &__questions,
+  &__list,
+  &__notes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__question {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--color-warn);
+    border-radius: var(--radius-md);
+    background: var(--color-warn-soft);
+  }
+
+  &__message {
+    margin: 0;
+    font-size: var(--font-size-sm);
+  }
+
+  &__choices {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  &__choice {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  &__choice-label,
+  &__setting-label {
+    font-size: var(--font-size-sm);
+  }
+
+  &__hint,
+  &__samples,
+  &__notes {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  &__title {
+    margin: 0;
+    font-size: var(--font-size-sm);
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 1fr minmax(10rem, 14rem) minmax(8rem, 11rem);
+    gap: var(--space-2);
+    align-items: center;
+
+    @include m.phone {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  &__source {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__header {
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  &__samples {
+    overflow-wrap: anywhere;
+  }
+
+  &__badge {
+    justify-self: start;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    font-size: var(--font-size-xs);
+
+    &--low {
+      background: var(--color-warn-soft);
+      color: var(--color-warn);
+    }
+  }
+
+  &__settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+
+  &__setting {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__actions,
+  &__toggle {
+    display: flex;
+    justify-content: flex-end;
+  }
+}

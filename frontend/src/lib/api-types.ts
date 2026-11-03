@@ -752,6 +752,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/{import_id}/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Import Layout
+         * @description Re-parse a staged file with corrected columns / formats (new ``import_id``).
+         *
+         *     Always uses the flexible reader. ``remember`` stores the layout in the
+         *     setting ``import.column_profiles`` for future files with the same columns.
+         */
+        post: operations["set_import_layout_api_imports__import_id__layout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/{import_id}/reparse": {
         parameters: {
             query?: never;
@@ -2956,6 +2979,27 @@ export interface components {
             /** Label */
             label: string;
         };
+        /**
+         * ImportColumn
+         * @description One column of the uploaded table, with what it was matched to.
+         */
+        ImportColumn: {
+            /** By */
+            by?: string | null;
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+            /** Field */
+            field?: string | null;
+            /** Header */
+            header: string;
+            /** Index */
+            index: number;
+            /** Samples */
+            samples: string[];
+        };
         /** ImportConfirmResult */
         ImportConfirmResult: {
             /** Duplicates */
@@ -3003,6 +3047,23 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /**
+         * ImportField
+         * @description A ledger field a file column can be mapped to.
+         */
+        ImportField: {
+            /** Help */
+            help: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+        };
         /** ImportIssue */
         ImportIssue: {
             /** Line */
@@ -3015,12 +3076,79 @@ export interface components {
              */
             raw: string;
         };
+        /**
+         * ImportLayout
+         * @description How the flexible reader sees the file (the page's column editor).
+         */
+        ImportLayout: {
+            /** Columns */
+            columns: components["schemas"]["ImportColumn"][];
+            /**
+             * Date Order
+             * @enum {string}
+             */
+            date_order: "MDY" | "DMY" | "YMD";
+            /**
+             * Decimal
+             * @enum {string}
+             */
+            decimal: "." | ",";
+            /** Derive */
+            derive: string[];
+            /** Fields */
+            fields: components["schemas"]["ImportField"][];
+            /** Header Row */
+            header_row: number | null;
+            /** Notes */
+            notes: string[];
+            /** Questions */
+            questions: components["schemas"]["ImportQuestion"][];
+            /** Sheet */
+            sheet: number;
+            /** Sheets */
+            sheets: string[];
+            /** Signature */
+            signature: string;
+        };
+        /**
+         * ImportLayoutIn
+         * @description Corrections from the column editor; re-parses the staged file.
+         */
+        ImportLayoutIn: {
+            /** Columns */
+            columns?: {
+                [key: string]: number | null;
+            };
+            /** Date Order */
+            date_order?: ("MDY" | "DMY" | "YMD") | null;
+            /** Decimal */
+            decimal?: ("." | ",") | null;
+            /** Derive */
+            derive?: ("price" | "quantity" | "amount")[];
+            /**
+             * Header Row
+             * @default -1
+             */
+            header_row: number | null;
+            /**
+             * Remember
+             * @default false
+             */
+            remember: boolean;
+            /** Sheet */
+            sheet?: number | null;
+        };
         /** ImportPreview */
         ImportPreview: {
             /** Account Id */
             account_id: number;
             /** Broker */
             broker: string;
+            /**
+             * Can Confirm
+             * @default true
+             */
+            can_confirm: boolean;
             counts: components["schemas"]["ImportCounts"];
             /** Errors */
             errors: components["schemas"]["ImportIssue"][];
@@ -3033,6 +3161,13 @@ export interface components {
             filename: string;
             /** Import Id */
             import_id: string;
+            layout?: components["schemas"]["ImportLayout"] | null;
+            /**
+             * Parser
+             * @default standard
+             * @enum {string}
+             */
+            parser: "standard" | "flexible";
             /** Rows */
             rows: components["schemas"]["ImportPreviewRow"][];
             /**
@@ -3073,6 +3208,26 @@ export interface components {
             settlement_date?: string | null;
             /** Symbol */
             symbol?: string | null;
+        };
+        /**
+         * ImportQuestion
+         * @description Something to settle before confirming: pick a column, derive it, or cancel.
+         */
+        ImportQuestion: {
+            /**
+             * Can Derive
+             * @default false
+             */
+            can_derive: boolean;
+            /**
+             * Derive Hint
+             * @default
+             */
+            derive_hint: string;
+            /** Field */
+            field: string;
+            /** Message */
+            message: string;
         };
         /** ImportUndoPreview */
         ImportUndoPreview: {
@@ -6354,6 +6509,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_import_layout_api_imports__import_id__layout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportLayoutIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPreview"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportErrorDto"];
                 };
             };
         };

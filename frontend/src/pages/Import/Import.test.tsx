@@ -10,6 +10,8 @@ vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 
 const preview = {
   account_id: 1,
+  can_confirm: true,
+  parser: "standard",
   broker: "fidelity",
   counts: { duplicates: 1, errors: 0, new: 1, rows: 2, sweeps_dropped: 0, warnings: 0 },
   errors: [],
@@ -195,5 +197,97 @@ describe("Import", () => {
     await userEvent.click(screen.getByRole("button", { name: "Re-parse with these mappings" }));
     expect(await screen.findByText(/re-parsed/)).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/api/imports/imp1/reparse"))).toBe(true);
+  });
+
+  describe("flexible importer", () => {
+    const layoutOf = (questions: object[]) => ({
+      sheets: ["Sheet1"],
+      sheet: 0,
+      header_row: 0,
+      columns: [
+        { index: 0, header: "Datum", samples: ["01.05.2026"], field: "date", confidence: 1, by: "header" },
+        { index: 1, header: "Kurs", samples: ["105,50", "110,25"], field: null, confidence: 0, by: null },
+      ],
+      fields: [
+        { id: "date", label: "Date", help: "", required: true },
+        { id: "price", label: "Price", help: "", required: false },
+      ],
+      decimal: ",",
+      date_order: "DMY",
+      derive: [],
+      questions,
+      notes: [],
+      signature: "sig",
+    });
+    const flexible = (questions: object[], canConfirm = false) => ({
+      ...preview,
+      parser: "flexible",
+      layout: layoutOf(questions),
+      can_confirm: canConfirm,
+    });
+    const priceQuestion = (can_derive: boolean) => ({
+      field: "price",
+      message: "Which column holds the price?",
+      can_derive,
+      derive_hint: "price = amount / quantity",
+    });
+
+    it("offers three answers when the field can be derived", async () => {
+      stubUpload(flexible([priceQuestion(true)]));
+      stubFetch();
+      renderPage();
+      await uploadFile();
+      expect(await screen.findByText("Which column holds the price?")).toBeInTheDocument();
+      expect(screen.getByText("Pick a column")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Work it out from the other columns/ })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "Cancel import" })).toHaveLength(1);
+      expect(screen.getByText("Read with the flexible importer")).toBeInTheDocument();
+    });
+
+    it("hides the derive option when it cannot be derived", async () => {
+      stubUpload(flexible([priceQuestion(false)]));
+      stubFetch();
+      renderPage();
+      await uploadFile();
+      expect(await screen.findByText("Pick a column")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Work it out/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Cancel import" })).toBeInTheDocument();
+    });
+
+    it("posts the derive answer and swaps in the new preview", async () => {
+      stubUpload(flexible([priceQuestion(true)]));
+      const fetchMock = stubFetch((url, init) =>
+        url.endsWith("/api/imports/imp1/layout") && init?.method === "POST"
+          ? new Response(JSON.stringify({ ...flexible([], true), import_id: "imp2", filename: "a.csv (derived)" }), { status: 200 })
+          : undefined,
+      );
+      renderPage();
+      await uploadFile();
+      await userEvent.click(await screen.findByRole("button", { name: /Work it out from the other columns/ }));
+      expect(await screen.findByText(/a\.csv \(derived\)/)).toBeInTheDocument();
+      const post = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/imp1/layout"));
+      expect(JSON.parse(String(post![1]!.body))).toMatchObject({ derive: ["price"] });
+      expect(screen.queryByText("Which column holds the price?")).not.toBeInTheDocument();
+    });
+
+    it("disables confirm while a question is open", async () => {
+      stubUpload(flexible([priceQuestion(true)], false));
+      stubFetch();
+      renderPage();
+      await uploadFile();
+      expect(await screen.findByText("Answer the questions above first")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Import 1 transactions" })).toBeDisabled();
+    });
+
+    it("shows the three date orders for a date_order question", async () => {
+      stubUpload(flexible([{ field: "date_order", message: "01/05 is ambiguous.", can_derive: false, derive_hint: "" }]));
+      stubFetch();
+      renderPage();
+      await uploadFile();
+      expect(await screen.findByRole("button", { name: "Month/Day/Year (01/05 = 5 Jan)" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Day/Month/Year (01/05 = 1 May)" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Year-Month-Day" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Cancel import" })).toBeInTheDocument();
+    });
   });
 });
