@@ -76,5 +76,6 @@ class TransactionSource(StrEnum):
     IMPORT_VANGUARD_CSV = "import_vanguard_csv"
     IMPORT_VANGUARD_XLSX = "import_vanguard_xlsx"
     IMPORT_FIDELITY_CSV = "import_fidelity_csv"
+    IMPORT_GENERIC = "import_generic"
     MANUAL = "manual"
     MIGRATION = "migration"

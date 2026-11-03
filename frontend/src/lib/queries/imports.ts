@@ -63,3 +63,13 @@ export function useReparseImport() {
     mutationFn: (importId: string) => api<ImportPreview>(`/api/imports/${importId}/reparse`, { method: "POST" }),
   });
 }
+
+export type ImportLayoutIn = Schemas["ImportLayoutIn"];
+
+/** Re-read the staged file with the user's column choices (flexible reader); returns a new preview. */
+export function useSetImportLayout() {
+  return useMutation({
+    mutationFn: ({ importId, body }: { importId: string; body: ImportLayoutIn }) =>
+      api<ImportPreview>(`/api/imports/${importId}/layout`, { method: "POST", body }),
+  });
+}

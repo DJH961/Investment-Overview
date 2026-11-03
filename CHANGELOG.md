@@ -17,6 +17,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.2.0] — 2026-11-03
+
+### Added
+- **Import any transaction file.** A new flexible importer reads CSV, TSV, text
+  and Excel files from any broker (pick "Other / any file"): it finds the header
+  row even below a preamble (or works without one), matches columns by name in
+  English, German, French, Spanish and Dutch or by their contents, works out the
+  number format (1,234.56 or 1.234,56) and date order, recognises buy / sell /
+  dividend / deposit / fee ... wording in those languages, and sets signs from the
+  kind when the file has none.
+- Fidelity and Vanguard files that the usual parser can't read (renamed or moved
+  columns, another number format, a re-saved workbook) fall back to the flexible
+  importer automatically, with a warning.
+- The Import page shows how each column was read and lets you change it, the
+  number format, date order, header row and sheet; "Remember this layout" reuses
+  your choices for files with the same columns.
+- Missing data is asked, not guessed: a file with trades but no price (or no
+  quantity, or no amount) asks you to pick the column, work it out from the other
+  two (when possible) or cancel; ambiguous dates (01/05/2024) ask for the order.
+  Confirming waits until every question is answered.
+
+### Changed
+- Re-importing the same transactions from a differently formatted file no longer
+  creates duplicates: rows matching a booked transaction's date, kind, symbol,
+  quantity and amount are skipped.
+- Accounts at brokers without their own parser use the flexible importer instead
+  of refusing the upload.
+- Schema: transactions may have `source = 'import_generic'` (migration 0021; the
+  v5 export relabels them `manual`).
+
 ## [6.0.1] — 2026-11-03
 
 ### Fixed

@@ -119,14 +119,25 @@ Two physical layouts exist behind the same ORM:
   differences). Snapshots and intraday samples store native USD plus the
   per-instant rate; EUR is `usd / fx` at that instant.
 - **`UNIQUE(account_id, external_id)`** on transactions is the dedup guard.
-  CSV importers compute a SHA-256 over the raw row fields as `external_id`.
+  CSV importers compute a SHA-256 over the raw row fields as `external_id`. On top,
+  the importer skips rows whose content (date, kind, symbol, quantity, amount)
+  matches a transaction already booked, so the same trades exported in another
+  format are not imported twice.
+- **Importers:** Fidelity and Vanguard files go through their exact parsers
+  (`adapters/fidelity`, `adapters/vanguard`). Anything else, and any broker file
+  those parsers can't read, goes through the flexible reader (`adapters/tabular` +
+  `adapters/generic`): any CSV/TSV/XLSX, header found anywhere (or none), columns
+  matched by name in several languages or by content, number format and date order
+  inferred. What it can't settle (a missing price, an ambiguous date order) becomes
+  a question on the Import page: pick a column, work it out, or cancel. Layouts the
+  user fixes can be remembered (`import.column_profiles`).
 
 ## External data flow
 
 ```
 yfinance ───► price_history (raw closes, auto_adjust=False)
 Frankfurter ─► fx_history   (EUR base, USD quote, ECB rates)
-CSV importers ─► transactions (with computed external_id for dedup)
+Broker files ─► transactions (exact or flexible parser; external_id + content dedup)
 Manual entry ──► transactions (source='manual')
 ```
 

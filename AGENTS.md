@@ -129,9 +129,12 @@ Adapted from the owner's starter-project convention (see plan §4a):
 - **Release fast — default is one release per change.** Any change that alters
   what the app does (feature or bug fix) is released **in the same PR/push**: a
   patch bump for fixes, a minor bump for features, under a dated
-  `## [x.y.z] — YYYY-MM-DD` heading. Bump `backend/pyproject.toml` and `web/package.json`
-  in lockstep and regenerate lockfiles (`uv lock`, and `npm install` inside
-  `web/`). Pushing the bump to `main` tags the release.
+  `## [x.y.z] — YYYY-MM-DD` heading. Bump `backend/pyproject.toml`, `web/package.json`
+  and `frontend/package.json` in lockstep and regenerate lockfiles (`uv lock`, and
+  `npm install` inside `web/` and `frontend/`). `backend/openapi.json` embeds the
+  version, so regenerate it too (`uv run python -m
+  investment_dashboard.tools.export_openapi openapi.json` in `backend/`), or CI fails
+  and the release never deploys. Pushing the bump to `main` tags the release.
 - **`[Unreleased]` is temporary storage, not the default.** Use it only for
   changes with no effect on the running app (docs, CI, tests, refactors) or to
   batch a short series of related PRs. Fold it into the next release; no entry

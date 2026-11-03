@@ -54,6 +54,10 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ("POST", "/api/imports/{import_id}/confirm"): ("import confirmed", "import confirm failed"),
     ("DELETE", "/api/imports/{import_id}"): ("import discarded", "import discard failed"),
     ("POST", "/api/imports/{import_id}/reparse"): ("import re-previewed", "import reparse failed"),
+    ("POST", "/api/imports/{import_id}/layout"): (
+        "import columns changed (re-previewed)",
+        "import column change failed",
+    ),
     ("PUT", "/api/imports/action-overrides/{broker}"): (
         "import action mapping changed",
         "import action mapping rejected",

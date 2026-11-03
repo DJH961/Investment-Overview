@@ -22,6 +22,7 @@ import { formatDate } from "../../lib/format";
 import { useShellStatus } from "../../lib/shell";
 import { formatPrice, formatQuantity, num } from "../Transactions/numbers";
 import { AccountEditor } from "../Settings/AccountsCard";
+import { ColumnMapping } from "./ColumnMapping";
 import { ImportHistory } from "./ImportHistory";
 import { UnknownActions } from "./UnknownActions";
 import "./Import.scss";
@@ -172,7 +173,7 @@ export function Import() {
               onDrop={onDrop}
             >
               <FileUp aria-hidden />
-              <p className="import-page__drop-text">{file ? file.name : "Drag a CSV or XLSX file here"}</p>
+              <p className="import-page__drop-text">{file ? file.name : "Drag a CSV, TSV or Excel file here"}</p>
               <Button variant="secondary" onClick={() => inputRef.current?.click()}>
                 Choose file
               </Button>
@@ -180,7 +181,7 @@ export function Import() {
                 ref={inputRef}
                 className="import-page__file"
                 type="file"
-                accept=".csv,.xlsx"
+                accept=".csv,.tsv,.txt,.xlsx,.xlsm,.xls"
                 aria-label="Broker file"
                 onChange={(e) => pick(e.target.files?.[0])}
               />
@@ -219,7 +220,17 @@ export function Import() {
             <span className="import-page__chip">Sweeps dropped {preview.counts.sweeps_dropped}</span>
             <span className="import-page__chip import-page__chip--warn">Warnings {preview.counts.warnings}</span>
             <span className="import-page__chip import-page__chip--error">Errors {preview.counts.errors}</span>
+            {preview.parser === "flexible" && <span className="import-page__chip">Read with the flexible importer</span>}
           </div>
+          {preview.layout && (
+            <ColumnMapping
+              key={preview.import_id}
+              preview={preview}
+              layout={preview.layout}
+              onReparsed={setPreview}
+              onCancel={discardPreview}
+            />
+          )}
           {preview.errors.length > 0 && (
             <ul className="import-page__issues import-page__issues--error" aria-label="Errors">
               {preview.errors.map((i, n) => (
@@ -248,14 +259,24 @@ export function Import() {
             columns={columns}
             rows={preview.rows}
             rowKey={(r) => String(r.index)}
-            emptyMessage="No rows were parsed from this file."
+            emptyMessage={
+              preview.layout
+                ? "No rows were parsed from this file. Check the column assignments above (use Adjust columns) and apply."
+                : "No rows were parsed from this file."
+            }
           />
           {preview.rows_truncated && <p className="import-page__note">Only the first rows are shown; all are imported on confirm.</p>}
           <div className="import-page__actions">
+            {!preview.can_confirm && <span className="import-page__note">Answer the questions above first</span>}
             <Button variant="ghost" loading={discard.isPending} onClick={discardPreview}>
               Discard
             </Button>
-            <Button variant="primary" loading={confirm.isPending} disabled={preview.counts.new === 0} onClick={confirmImport}>
+            <Button
+              variant="primary"
+              loading={confirm.isPending}
+              disabled={preview.counts.new === 0 || !preview.can_confirm}
+              onClick={confirmImport}
+            >
               {`Import ${preview.counts.new} transactions`}
             </Button>
           </div>
