@@ -17,6 +17,7 @@
 set -euo pipefail
 
 DIR="${DEPLOY_DIR:-/opt/investments}"
+IMAGE_REPO="${DEPLOY_IMAGE_REPO:-ghcr.io/djh961/investment-overview}"
 ALLOWED_FILES=(docker-compose.yml Caddyfile restore.sh first_install.sh)
 
 die() { echo "deploy.sh: $*" >&2; exit 2; }
@@ -63,20 +64,35 @@ healthy() {
   return 1
 }
 
+# Keep only the running image and the previous one (the rollback target). Every
+# deploy pulls a new sha-tagged image, and `docker image prune` only removes
+# untagged ones, so without this the old tags slowly fill the disk.
+prune_old_images() {
+  local tag
+  docker image ls "$IMAGE_REPO" --format '{{.Tag}}' | sort -u | while read -r tag; do
+    case "$tag" in
+      "$NEW_TAG" | "$PREV_TAG") ;;
+      *) docker image rm "$IMAGE_REPO:$tag" >/dev/null 2>&1 || true ;;
+    esac
+  done
+  docker image prune -f >/dev/null
+}
+
 set_tag "$NEW_TAG"
 docker compose pull app
-docker compose up -d app
-if healthy; then
+# Start every service, not just app: a changed compose file (network, caddy,
+# backup) is then applied too, and a failed start rolls back instead of exiting.
+if docker compose up -d && healthy; then
   echo "Deployed $NEW_TAG (previous: $PREV_TAG)"
   # Pick up a changed Caddyfile (no-op when caddy is not running yet).
   docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
-  docker image prune -f >/dev/null
+  prune_old_images
   exit 0
 fi
 
 echo "Health check failed; rolling back to $PREV_TAG" >&2
 docker compose logs --tail 50 app >&2 || true
 set_tag "$PREV_TAG"
-docker compose up -d app
+docker compose up -d
 healthy || echo "Rollback target is also unhealthy" >&2
 exit 1
