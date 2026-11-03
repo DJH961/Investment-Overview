@@ -115,3 +115,35 @@ def test_middleware_logs_failed_login(folder: Path) -> None:
     text = (folder / "auth.log").read_text(encoding="utf-8")
     assert "login FAILED (password) status=401" in text
     assert "never-logged-123" not in text
+
+
+def test_unauthenticated_probe_is_info_not_a_problem(folder: Path) -> None:
+    """Scanners hitting protected routes without a session are not problems."""
+    app = FastAPI()
+    app.middleware("http")(log_request_activity)
+
+    @app.get("/api/settings/export", status_code=401)
+    def export() -> dict[str, str]:
+        return {"detail": "Not authenticated."}
+
+    @app.post("/api/v1/execute", status_code=401)
+    def probe() -> dict[str, str]:
+        return {"detail": "Not authenticated."}
+
+    client = TestClient(app)
+    client.get("/api/settings/export")
+    client.post("/api/v1/execute")
+    _flush()
+    text = (folder / "changes.log").read_text(encoding="utf-8")
+    assert "settings export failed status=401" in text
+    assert "POST /api/v1/execute status=401" in text
+    assert "WARNING" not in text
+
+
+@pytest.mark.parametrize(
+    ("path", "status"), [("/api/auth/login", 401), ("/api/settings/values", 422)]
+)
+def test_level_keeps_real_refusals_as_warnings(path: str, status: int) -> None:
+    from investment_dashboard.api.activity import _level
+
+    assert _level(status, path) == logging.WARNING

@@ -28,6 +28,7 @@ from typing import Any
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import QueuePool
 
 from investment_dashboard.config import get_settings
 from investment_dashboard.storage.encryption import (
@@ -97,11 +98,20 @@ def make_engine(
         # password on every connect (and would otherwise key with ""). The URL
         # object hides the password when rendered, so it does not reach logs.
         target = make_url(engine_url).set(password=encryption.passphrase)
+    # SQLAlchemy's pysqlcipher dialect defaults to SingletonThreadPool, which
+    # closes *in-use* connections once more than 5 threads have touched it
+    # ("Error closing cursor" / "Cannot operate on a closed database" under the
+    # API thread pool + scheduler). File databases get the normal QueuePool, as
+    # plain pysqlite already does; connections are keyed once on connect.
+    pool_kw: dict[str, Any] = {}
+    if engine_url.startswith("sqlite") and _url_path(engine_url) is not None:
+        pool_kw = {"poolclass": QueuePool, "pool_size": 5, "max_overflow": 10}
     engine = create_engine(
         target,
         future=True,
         echo=False,
         connect_args={"check_same_thread": False} if "sqlite" in engine_url else {},
+        **pool_kw,
     )
     if engine_url.startswith("sqlite"):
         _install_sqlite_pragmas(engine, _url_path(engine_url), encryption, durable=durable)
