@@ -1,5 +1,11 @@
 // Design tokens. Palette ported from the v5 web companion (web/src/styles.css).
 // Gains/losses use the colour-blind-safe blue/orange pair, never red/green.
+// Rule: series colours (--chart-*) must stay distinct from pos/neg (the main chart
+// recolours its primary line to them), and warn must stay distinct from neg. Every
+// co-displayed pair is validated for deutan/protan (Machado 2009) with CIEDE2000:
+// >= 15 minimum, >= 20 preferred, in both themes. Under deutan only lightness
+// separates warn from neg, so never nudge one without re-checking the other.
+// Secondary chart series also carry a dash pattern (non-colour cue).
 // Theme: [data-theme="light"|"dark"] on <html>; without it, prefers-color-scheme.
 
 @mixin dark-tokens {
@@ -19,20 +25,20 @@
   --color-border: #232b3b;
   --color-border-strong: #33405a;
   --color-pos: #5fb3c9;
-  --color-neg: #e8894f;
+  --color-neg: #d9703f;
   --color-pos-soft: rgba(95, 179, 201, 0.16);
-  --color-neg-soft: rgba(232, 137, 79, 0.16);
-  --color-warn: #d8b84a;
-  --color-warn-soft: rgba(216, 184, 74, 0.16);
+  --color-neg-soft: rgba(217, 112, 63, 0.16);
+  --color-warn: #f8e820;
+  --color-warn-soft: rgba(248, 232, 32, 0.16);
   --color-overlay: rgba(4, 6, 10, 0.62);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
-  --chart-1: #8b85ff;
-  --chart-2: #3ad7ee;
-  --chart-3: #d8b84a;
-  --chart-4: #e8894f;
-  --chart-5: #5fb3c9;
-  --chart-6: #c084fc;
+  --chart-1: #6a62e0;
+  --chart-2: #a8f8c8;
+  --chart-3: #d0f828;
+  --chart-4: #a04870;
+  --chart-5: #a89890;
+  --chart-6: #f84810;
 }
 
 :root {
@@ -59,20 +65,20 @@
   --color-border: #e6eaf2;
   --color-border-strong: #cfd6e4;
   --color-pos: #1f6f8b;
-  --color-neg: #b34d17;
+  --color-neg: #6e1a0a;
   --color-pos-soft: rgba(31, 111, 139, 0.12);
-  --color-neg-soft: rgba(196, 86, 30, 0.12);
+  --color-neg-soft: rgba(110, 26, 10, 0.12);
   --color-warn: #8a6d00;
   --color-warn-soft: rgba(138, 109, 0, 0.12);
   --color-overlay: rgba(15, 22, 35, 0.4);
   --shadow-1: 0 1px 2px rgba(16, 22, 35, 0.05);
   --shadow-2: 0 12px 32px rgba(16, 22, 35, 0.14), 0 2px 6px rgba(16, 22, 35, 0.08);
-  --chart-1: #4f46e5;
-  --chart-2: #06b6d4;
-  --chart-3: #8a6d00;
-  --chart-4: #c4561e;
-  --chart-5: #1f6f8b;
-  --chart-6: #9333ea;
+  --chart-1: #9078f8;
+  --chart-2: #c08000;
+  --chart-3: #809080;
+  --chart-4: #406850;
+  --chart-5: #1c10f0;
+  --chart-6: #783800;
 
   // Spacing (4px scale)
   --space-1: 4px;
