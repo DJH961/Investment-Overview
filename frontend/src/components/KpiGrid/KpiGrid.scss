@@ -8,12 +8,8 @@
   &__tiles {
     display: grid;
     gap: var(--space-3);
-
-    @include m.phone {
-      gap: var(--space-2);
-    }
-
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    @include m.phone-tile-grid;
 
     @include m.desktop {
       grid-template-columns: repeat(4, minmax(0, 1fr));

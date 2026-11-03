@@ -282,7 +282,7 @@ export function Holdings() {
         key: "asof",
         header: "As of",
         sortValue: (r) => r.price_as_of ?? "",
-        cell: (r) => (r.price_as_of ? formatDate(r.price_as_of, "short") : "–"),
+        cell: (r) => (r.price_as_of ? formatDate(r.price_as_of) : "–"),
       },
       {
         key: "expense",

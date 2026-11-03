@@ -176,8 +176,8 @@ export function Help() {
       <Card title="Quick start" collapsibleId="help.quick-start">
         <ol className="help__tour">
           {QUICK_START.map((t) => (
-            <li key={t} className="help__text">
-              {t}
+            <li key={t} className="help__step">
+              <span className="help__text">{t}</span>
             </li>
           ))}
         </ol>
@@ -185,9 +185,11 @@ export function Help() {
       <Card title="Tour" collapsibleId="help.tour">
         <ol className="help__tour">
           {TOUR_STEPS.map((s) => (
-            <li key={s.id} className="help__tour-step">
-              <h3 className="help__heading">{s.title}</h3>
-              <p className="help__text">{s.body}</p>
+            <li key={s.id} className="help__step">
+              <div>
+                <h3 className="help__heading">{s.title}</h3>
+                <p className="help__text">{s.body}</p>
+              </div>
             </li>
           ))}
         </ol>

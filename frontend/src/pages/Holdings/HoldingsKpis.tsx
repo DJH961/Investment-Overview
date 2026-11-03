@@ -14,7 +14,7 @@ interface Props {
 /** "as of 14:05" for a live spot, "EOD · 30 Oct 2026" for a settled fixing. */
 function fxStamp(fx: NonNullable<HoldingsDto["fx"]>): string | undefined {
   if (fx.source === "live" && fx.observed_at) return `as of ${formatTime(fx.observed_at)}`;
-  if (fx.as_of) return `EOD · ${formatDate(fx.as_of, "short")}`;
+  if (fx.as_of) return `EOD · ${formatDate(fx.as_of)}`;
   return undefined;
 }
 

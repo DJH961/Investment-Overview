@@ -105,7 +105,13 @@ export function Activity() {
 
   const depositColumns: Column<DepositRowDto>[] = [
     { key: "date", header: "Date", primary: true, sortValue: (r) => r.date, cell: (r) => formatDate(r.date) },
-    { key: "kind", header: "Kind", sortValue: (r) => r.kind, cell: (r) => r.kind.replace("_", " ") },
+    {
+      key: "kind",
+      header: "Kind",
+      phone: "inline",
+      sortValue: (r) => r.kind,
+      cell: (r) => <span className="activity-page__kind">{r.kind.replace("_", " ")}</span>,
+    },
     { key: "account", header: "Account", phone: "sub", sortValue: (r) => r.account, cell: (r) => r.account },
     {
       key: "description",

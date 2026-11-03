@@ -8,7 +8,7 @@ import { ErrorState } from "../../components/ErrorState";
 import { IconButton } from "../../components/IconButton";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
-import { formatDateTime } from "../../lib/format";
+import { formatDate, formatDateTime } from "../../lib/format";
 import { useDismissProblem, useJobCatalogue, type CheckAction, type JobInfo } from "../../lib/queries/maintenance";
 import { useDiagnostics, useRefreshStatus, useStartRefresh, type DiagnosticsData } from "../../lib/queries/manage";
 import { errorMessage } from "../../lib/queries/settings";
@@ -156,7 +156,7 @@ export function HealthTab() {
                   <span className="diagnostics__chips">
                     {c.examples.map((e) => (
                       <span key={e} className="diagnostics__chip">
-                        {e}
+                        {/^\d{4}-\d{2}-\d{2}$/.test(e) ? formatDate(e) : e}
                       </span>
                     ))}
                   </span>

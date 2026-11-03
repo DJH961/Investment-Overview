@@ -217,7 +217,7 @@ export function Transactions() {
   };
 
   const columns: Column<TransactionOut>[] = [
-    { key: "date", header: "Date", phone: "sub", cell: (r) => formatDate(r.date, "short"), nowrap: true },
+    { key: "date", header: "Date", phone: "sub", cell: (r) => formatDate(r.date), nowrap: true },
     { key: "symbol", header: "Symbol", primary: true, cell: (r) => r.symbol || "—" },
     {
       key: "kind",

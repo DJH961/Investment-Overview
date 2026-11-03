@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .activity-page {
   display: block;
 
@@ -10,12 +12,16 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: var(--space-3);
+    @include m.phone-tile-grid;
   }
 
+  // Phone: two filters per row (the odd one spans), not three stacked rows.
+  // Wide screens: one row of compact filters. Phone: two per row (the odd one spans).
   &__filters {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 16rem));
     gap: var(--space-2);
+    @include m.phone-tile-grid;
   }
 
   &__amount {
@@ -36,5 +42,19 @@
   &__paid {
     color: var(--color-muted);
     font-size: var(--font-size-sm);
+  }
+
+  // Small uppercase badge (matches the Transactions kind badge).
+  &__kind {
+    display: inline-block;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-pos-soft);
+    color: var(--color-pos);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 }

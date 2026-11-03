@@ -38,6 +38,14 @@
     font-size: var(--font-size-sm);
     cursor: pointer;
 
+    // Phone: all five tabs fit across the screen instead of scrolling off it.
+    @include m.phone {
+      flex: 1 1 auto;
+      min-height: var(--tap-min);
+      padding: var(--space-2) var(--space-1);
+      font-size: var(--font-size-xs);
+    }
+
     &:hover {
       color: var(--color-fg);
     }

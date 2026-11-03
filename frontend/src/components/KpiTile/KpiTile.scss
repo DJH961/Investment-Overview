@@ -98,6 +98,11 @@
     min-width: 0;
     max-width: 100%;
     font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-2xl)) * var(--kpi-tile-fit, 1));
+
+    // Phone: the same size in every tile, even one spanning the full row.
+    @include m.phone {
+      font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-xl)) * var(--kpi-tile-fit, 1));
+    }
     white-space: nowrap;
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.02em;

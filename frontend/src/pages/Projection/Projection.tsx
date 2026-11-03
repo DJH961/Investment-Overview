@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../components/Button";
+import { AllocationBar } from "../../components/AllocationBar";
 import { Card } from "../../components/Card";
 import { Chart, type ChartSeries } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
@@ -9,7 +10,6 @@ import { Input } from "../../components/Input";
 import { KpiTile } from "../../components/KpiTile";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
-import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
@@ -68,7 +68,7 @@ function fmtInput(v: string | null | undefined, scale = 1): string {
 
 /** Monthly projections still report `years`; show them as months. */
 export function axisLabel(t: number, monthly: boolean): string {
-  return monthly ? `Month ${Math.round(t * 12)}` : `Year ${parseFloat(t.toFixed(1))}`;
+  return monthly ? `Month ${Math.round(t * 12)}` : `Year ${Math.round(t)}`;
 }
 
 /** Detail table: monthly mode lists whole years only (every 12th point). */
@@ -335,13 +335,10 @@ export function Projection() {
           )}
           {inputs.data && inputs.data.categories.length > 0 && (
             <Card title="Holdings mix" collapsibleId="projection.mix">
-              <ul className="projection-page__mix">
-                {inputs.data.categories.map((c) => (
-                  <li key={c.name}>
-                    {c.name}: <Percent ratio={toNum(c.current_pct)} />
-                  </li>
-                ))}
-              </ul>
+              <AllocationBar
+                ariaLabel="Current holdings mix"
+                slices={inputs.data.categories.map((c) => ({ id: c.name, label: c.name, actual: toNum(c.current_pct) ?? 0 }))}
+              />
             </Card>
           )}
         </div>

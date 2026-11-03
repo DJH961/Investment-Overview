@@ -12,7 +12,8 @@ interface ShellApi extends ShellState {
   setShell: (patch: Partial<ShellState>) => void;
 }
 
-const DEFAULT_STATE: ShellState = { freshness: { status: "stale", label: "No data yet" }, refreshing: false };
+/** No status: pages without live data (Settings, Allocations, Help) show none in the top bar. */
+export const DEFAULT_STATE: ShellState = { freshness: { status: "closed", label: "" }, refreshing: false };
 
 const ShellContext = createContext<ShellApi | null>(null);
 
@@ -47,4 +48,6 @@ export function useShellStatus(status: FreshnessStatus, label: string, onRefresh
       refreshing,
     });
   }, [setShell, status, label, hasRefresh, refreshing]);
+  // Leaving the page: drop its status so the next page does not inherit it.
+  useEffect(() => () => setShell(DEFAULT_STATE), [setShell]);
 }
