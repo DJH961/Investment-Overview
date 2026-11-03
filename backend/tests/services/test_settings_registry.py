@@ -95,3 +95,14 @@ def test_boot_constants() -> None:
 
     assert _default("boot.backfill_days") == boot._BOOT_BACKFILL_DAYS
     assert _default("boot.warm_force_recent_days") == boot._WARM_FORCE_RECENT_DAYS
+
+
+def test_regional_formats_are_independent_and_default_to_auto() -> None:
+    from investment_dashboard.services.settings_registry import DEFS
+
+    by_key = {d.key: d for d in DEFS}
+    assert by_key["display.date_format"].default == "auto"
+    assert by_key["display.number_format"].default == "auto"
+    assert by_key["clock_format"].default == "auto"
+    assert "YYYY-MM-DD" in (by_key["display.date_format"].choices or ())
+    assert "1'234.56" in (by_key["display.number_format"].choices or ())

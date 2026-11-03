@@ -11,7 +11,7 @@
  * (usePersistentState, never sent to the server) passed on to `lib/format.ts`.
  */
 import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { setFormatPrefs, type Locale } from "./format";
+import { setFormatPrefs, type DateFormat, type Locale, type NumberFormat } from "./format";
 import type { SettingsValues } from "./queries/settings";
 import { readPersisted, writePersisted } from "./usePersistentState";
 
@@ -19,7 +19,10 @@ export type ClockFormat = "auto" | "12h" | "24h";
 export type RangeKey = "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
 
 export interface DisplayPrefs {
+  /** Regional preset (`display.locale`): what "auto" date / number / clock follow. */
   locale: Locale;
+  dateFormat: DateFormat;
+  numberFormat: NumberFormat;
   /** The stored setting: "Browser", "Local", "UTC" or an IANA zone. */
   timezone: string;
   /** The zone to format in; `undefined` = the browser's own zone. */
@@ -37,6 +40,8 @@ export interface DisplayPrefs {
 
 export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
   locale: "en-GB",
+  dateFormat: "auto",
+  numberFormat: "auto",
   timezone: "Local",
   timeZone: undefined,
   clockFormat: "auto",
@@ -50,6 +55,8 @@ export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
 
 const CACHE_KEY = "displayPrefs";
 const LOCALES: readonly Locale[] = ["en-GB", "de-DE", "en-US"];
+const DATE_FORMATS: readonly DateFormat[] = ["auto", "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "DD.MM.YYYY"];
+const NUMBER_FORMATS: readonly NumberFormat[] = ["auto", "1,234.56", "1.234,56", "1 234,56", "1'234.56"];
 const RANGES: readonly RangeKey[] = ["1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all"];
 
 /**
@@ -77,6 +84,8 @@ export function prefsFromValues(values: SettingsValues | undefined, base: Displa
   const lookback = Number(v("chart_pref.analytics_lookback"));
   return {
     locale: pick(LOCALES, v("display.locale"), base.locale),
+    dateFormat: pick(DATE_FORMATS, v("display.date_format"), "auto"),
+    numberFormat: pick(NUMBER_FORMATS, v("display.number_format"), "auto"),
     timezone,
     timeZone: resolveTimeZone(timezone),
     clockFormat,
@@ -102,14 +111,14 @@ let current: DisplayPrefs = DEFAULT_DISPLAY_PREFS;
 
 function apply(prefs: DisplayPrefs): void {
   current = prefs;
-  setFormatPrefs({ locale: prefs.locale, timeZone: prefs.timeZone, hour12: prefs.hour12 });
+  setFormatPrefs({ locale: prefs.locale, dateFormat: prefs.dateFormat, numberFormat: prefs.numberFormat, timeZone: prefs.timeZone, hour12: prefs.hour12 });
 }
 
 // Instant paint: the cached prefs drive formatting before React renders.
 if (typeof window !== "undefined") apply(readCachedPrefs());
 
 /** A string that changes whenever formatting output would change. */
-export const formatSignature = (p: DisplayPrefs) => `${p.locale}|${p.timeZone ?? ""}|${p.clockFormat}`;
+export const formatSignature = (p: DisplayPrefs) => `${p.locale}|${p.dateFormat}|${p.numberFormat}|${p.timeZone ?? ""}|${p.clockFormat}`;
 
 const DisplayPrefsContext = createContext<DisplayPrefs | null>(null);
 
@@ -133,7 +142,7 @@ export function useDisplayPrefs(): DisplayPrefs {
 }
 
 /**
- * Remounts its children when locale / timezone / clock change, so every
+ * Remounts its children when locale / date / number / timezone / clock change, so every
  * plain-function formatter re-renders. Wrap the routes (not the providers:
  * toasts and the router survive). It only fires on a real change.
  */

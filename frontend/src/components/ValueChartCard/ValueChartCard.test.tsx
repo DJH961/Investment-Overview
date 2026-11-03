@@ -80,7 +80,7 @@ describe("ValueChartCard", () => {
     expect(screen.getByText("Prev close €1,005")).toBeInTheDocument();
     expect(container.querySelector(".chart--down")).not.toBeNull();
     // The day label shares the growth line, so ranges never shift the layout.
-    expect(screen.getByTestId("range-growth")).toHaveTextContent("1D · Fri 30 Oct");
+    expect(screen.getByTestId("range-growth")).toHaveTextContent("1D · Fri 30/10");
     expect(screen.getByTestId("range-growth")).toHaveTextContent("-1.50%");
     expect(screen.getByText(/complete for 3 of 5 sessions/)).toBeInTheDocument();
     // axis ticks are clock times

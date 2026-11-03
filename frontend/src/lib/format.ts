@@ -5,8 +5,16 @@ export type Currency = string;
 /** Supported number/date locales (Settings → Display; `display.locale`). */
 export type Locale = "en-GB" | "de-DE" | "en-US";
 
+/** Date layouts (`display.date_format`); "auto" follows the regional preset. */
+export type DateFormat = "auto" | "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD" | "DD.MM.YYYY";
+/** Number layouts (`display.number_format`); "auto" follows the regional preset. */
+export type NumberFormat = "auto" | "1,234.56" | "1.234,56" | "1 234,56" | "1'234.56";
+
 export interface FormatPrefs {
+  /** Regional preset (`display.locale`): the fallback for date / number / clock on "auto"; also drives symbols and weekday names. */
   locale: Locale;
+  dateFormat: DateFormat;
+  numberFormat: NumberFormat;
   /** IANA zone for date-times; `undefined` = the browser's own zone. */
   timeZone: string | undefined;
   /** `true` 12-hour, `false` 24-hour, `undefined` = the locale's default. */
@@ -16,18 +24,22 @@ export interface FormatPrefs {
 // Module-level so plain functions (no hooks) format with the user's prefs.
 // `lib/displayPrefs.tsx` feeds these from the server settings (+ local cache).
 let LOCALE: Locale = "en-GB";
+let DATE_FORMAT: DateFormat = "auto";
+let NUMBER_FORMAT: NumberFormat = "auto";
 let TIME_ZONE: string | undefined;
 let HOUR12: boolean | undefined;
 
 /** Called by `lib/displayPrefs.tsx`; tests may call it directly. */
 export function setFormatPrefs(prefs: Partial<FormatPrefs>): void {
   if (prefs.locale) LOCALE = prefs.locale;
+  if (prefs.dateFormat) DATE_FORMAT = prefs.dateFormat;
+  if (prefs.numberFormat) NUMBER_FORMAT = prefs.numberFormat;
   if ("timeZone" in prefs) TIME_ZONE = prefs.timeZone;
   if ("hour12" in prefs) HOUR12 = prefs.hour12;
 }
 
 export function getFormatPrefs(): FormatPrefs {
-  return { locale: LOCALE, timeZone: TIME_ZONE, hour12: HOUR12 };
+  return { locale: LOCALE, dateFormat: DATE_FORMAT, numberFormat: NUMBER_FORMAT, timeZone: TIME_ZONE, hour12: HOUR12 };
 }
 
 // Per-device "Hide numbers" mode: absolute amounts and quantities render as a mask.
@@ -43,6 +55,37 @@ export function setHideAmounts(on: boolean): void {
 
 export function isHidingAmounts(): boolean {
   return HIDE_AMOUNTS;
+}
+
+const NUMBER_SEPARATORS: Record<Exclude<NumberFormat, "auto">, { group: string; decimal: string }> = {
+  "1,234.56": { group: ",", decimal: "." },
+  "1.234,56": { group: ".", decimal: "," },
+  "1 234,56": { group: "\u00a0", decimal: "," },
+  "1'234.56": { group: "'", decimal: "." },
+};
+
+const LOCALE_NUMBER_FORMAT: Record<Locale, Exclude<NumberFormat, "auto">> = {
+  "en-GB": "1,234.56",
+  "de-DE": "1.234,56",
+  "en-US": "1,234.56",
+};
+
+/** The effective number layout: the explicit choice, else the regional preset's. */
+export function effectiveNumberFormat(): Exclude<NumberFormat, "auto"> {
+  return NUMBER_FORMAT === "auto" ? LOCALE_NUMBER_FORMAT[LOCALE] : NUMBER_FORMAT;
+}
+
+/**
+ * Formats with Intl (symbols, sign, compact suffix and their placement follow
+ * the regional preset) but writes the group / decimal separators exactly as
+ * chosen in `display.number_format`.
+ */
+function formatIntl(options: Intl.NumberFormatOptions, value: number): string {
+  const sep = NUMBER_SEPARATORS[effectiveNumberFormat()];
+  return new Intl.NumberFormat(LOCALE, options)
+    .formatToParts(value)
+    .map((p) => (p.type === "group" ? sep.group : p.type === "decimal" ? sep.decimal : p.value))
+    .join("");
 }
 
 export interface MoneyOptions {
@@ -70,34 +113,38 @@ const isMissing = (v: number | null | undefined): v is null | undefined =>
 function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): string {
   const digits = opts.digits ?? (opts.compact ? 1 : 2);
   const sample = (opts.compact ? 88_800 : 88_888.88) * (amount < 0 ? -1 : 1);
-  return new Intl.NumberFormat(LOCALE, {
-    style: "currency",
-    currency,
-    currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
-    notation: opts.compact ? "compact" : "standard",
-    minimumFractionDigits: opts.compact ? 0 : digits,
-    maximumFractionDigits: digits,
-    // A real zero has no sign; the sample is never zero, so decide here.
-    signDisplay: opts.signed && amount !== 0 ? "exceptZero" : "auto",
-  })
-    .format(sample)
-    .replace(/\d/g, "•");
+  return formatIntl(
+    {
+      style: "currency",
+      currency,
+      currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
+      notation: opts.compact ? "compact" : "standard",
+      minimumFractionDigits: opts.compact ? 0 : digits,
+      maximumFractionDigits: digits,
+      // A real zero has no sign; the sample is never zero, so decide here.
+      signDisplay: opts.signed && amount !== 0 ? "exceptZero" : "auto",
+    },
+    sample,
+  ).replace(/\d/g, "•");
 }
 
 export function formatMoney(amount: number | null | undefined, currency: Currency, opts: MoneyOptions = {}): string {
   if (isMissing(amount)) return "–";
   if (HIDE_AMOUNTS && !opts.unmasked) return maskedMoney(amount, currency, opts);
   const digits = opts.digits ?? (opts.compact ? 1 : 2);
-  return new Intl.NumberFormat(LOCALE, {
-    style: "currency",
-    currency,
-    currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
-    notation: opts.compact ? "compact" : "standard",
-    ...(opts.significant
-      ? { maximumSignificantDigits: opts.significant }
-      : { minimumFractionDigits: opts.compact ? 0 : digits, maximumFractionDigits: digits }),
-    signDisplay: opts.signed ? "exceptZero" : "auto",
-  }).format(amount);
+  return formatIntl(
+    {
+      style: "currency",
+      currency,
+      currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
+      notation: opts.compact ? "compact" : "standard",
+      ...(opts.significant
+        ? { maximumSignificantDigits: opts.significant }
+        : { minimumFractionDigits: opts.compact ? 0 : digits, maximumFractionDigits: digits }),
+      signDisplay: opts.signed ? "exceptZero" : "auto",
+    },
+    amount,
+  );
 }
 
 /** `ratio` is a fraction: 0.0525 -> "5.25%". */
@@ -107,12 +154,15 @@ export function formatPercent(
 ): string {
   if (isMissing(ratio)) return "–";
   const digits = opts.digits ?? 2;
-  return new Intl.NumberFormat(LOCALE, {
-    style: "percent",
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    signDisplay: opts.signed ? "exceptZero" : "auto",
-  }).format(ratio);
+  return formatIntl(
+    {
+      style: "percent",
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+      signDisplay: opts.signed ? "exceptZero" : "auto",
+    },
+    ratio,
+  );
 }
 
 /** A share count / quantity: masked in hide mode (it reveals value next to public prices). */
@@ -123,55 +173,99 @@ export function formatQuantity(value: number | null | undefined, digits = 2): st
 
 export function formatNumber(value: number | null | undefined, digits = 2): string {
   if (isMissing(value)) return "–";
-  return new Intl.NumberFormat(LOCALE, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+  return formatIntl({ minimumFractionDigits: digits, maximumFractionDigits: digits }, value);
 }
 
 const isCalendarDate = (value: string | Date): value is string =>
   typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
-const clock = (): Intl.DateTimeFormatOptions => (HOUR12 === undefined ? {} : { hour12: HOUR12 });
+const LOCALE_DATE_FORMAT: Record<Locale, Exclude<DateFormat, "auto">> = {
+  "en-GB": "DD/MM/YYYY",
+  "de-DE": "DD.MM.YYYY",
+  "en-US": "MM/DD/YYYY",
+};
+
+/** The effective date layout: the explicit choice, else the regional preset's. */
+export function effectiveDateFormat(): Exclude<DateFormat, "auto"> {
+  return DATE_FORMAT === "auto" ? LOCALE_DATE_FORMAT[LOCALE] : DATE_FORMAT;
+}
+
+/** `true` = 12-hour clock. An "Auto" clock follows the regional preset (en-US: 12-hour). */
+export function effectiveHour12(): boolean {
+  return HOUR12 ?? LOCALE === "en-US";
+}
+
+interface Ymd {
+  y: string;
+  m: string;
+  d: string;
+}
+
+function ymdOf(d: Date, timeZone: string | undefined): Ymd {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return { y: get("year"), m: get("month"), d: get("day") };
+}
+
+/** Lays out the date fields in the effective order / separator, dropping the token `omit`. */
+function layoutDate(v: Ymd, omit: "YYYY" | "DD" | null = null): string {
+  const pattern = effectiveDateFormat();
+  const sep = /[^A-Z]/.exec(pattern)?.[0] ?? "/";
+  return pattern
+    .split(sep)
+    .filter((t) => t !== omit)
+    .map((t) => (t === "YYYY" ? v.y : t === "MM" ? v.m : v.d))
+    .join(sep);
+}
+
+/** Clock time in the chosen 12 / 24-hour style ("14:05" / "2:05 PM"). */
+function clockTime(d: Date, timeZone: string | undefined): string {
+  const h12 = effectiveHour12();
+  return new Intl.DateTimeFormat(h12 ? "en-US" : "en-GB", {
+    hour: h12 ? "numeric" : "2-digit",
+    minute: "2-digit",
+    hour12: h12,
+    timeZone,
+  })
+    .format(d)
+    .replace(/\u202f/g, " ");
+}
 
 /**
  * A calendar date ("2026-03-05") is shown as that day everywhere (UTC); a
- * timestamp is shown in the user's timezone (`timeZone` overrides it).
+ * timestamp is shown in the user's timezone (`timeZone` overrides it). The
+ * layout is always the chosen numeric one ("05/03/2026"); `style` is kept for
+ * callers but no longer changes the output.
  */
 export function formatDate(
   value: string | Date,
-  style: "short" | "medium" | "long" = "medium",
+  _style: "short" | "medium" | "long" = "medium",
   timeZone?: string,
 ): string {
   const d = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "–";
   const zone = isCalendarDate(value) ? "UTC" : (timeZone ?? TIME_ZONE);
-  return new Intl.DateTimeFormat(LOCALE, { dateStyle: style, timeZone: zone }).format(d);
+  return layoutDate(ymdOf(d, zone));
 }
 
 export function formatTime(value: string | Date, timeZone?: string): string {
   const d = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "–";
-  return new Intl.DateTimeFormat(LOCALE, {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: timeZone ?? TIME_ZONE,
-    ...clock(),
-  }).format(d);
+  return clockTime(d, timeZone ?? TIME_ZONE);
 }
 
 /**
- * Short chart-axis date: "5 Oct" when the axis spans under a year, "Oct 2026"
- * beyond that (a full date per tick does not fit on a phone).
+ * Short chart-axis date: day and month ("05/10") when the axis spans under a
+ * year, month and year ("10/2026") beyond that, in the chosen date layout.
  */
 export function formatAxisDate(t: number, spanMs: number, timeZone?: string): string {
   const d = new Date(t);
   if (Number.isNaN(d.getTime())) return "–";
   const long = spanMs > 330 * 86_400_000;
-  return new Intl.DateTimeFormat(LOCALE, {
-    ...(long ? { month: "short", year: "numeric" } : { day: "numeric", month: "short" }),
-    timeZone: timeZone ?? "UTC",
-  }).format(d);
+  return layoutDate(ymdOf(d, timeZone ?? "UTC"), long ? "DD" : "YYYY");
 }
 
-/** "5 Mar 2026, 14:30" in the user's timezone; "never" for a missing stamp. */
+/** "05/03/2026 14:30" in the user's timezone; "never" for a missing stamp. */
 export function formatDateTime(value: string | Date | null | undefined, missing = "never"): string {
   if (value === null || value === undefined || value === "") return missing;
   const d = typeof value === "string" ? new Date(value) : value;
@@ -194,18 +288,17 @@ function validDate(value: string | number | Date): Date | null {
 export function formatWeekdayTime(value: string | number | Date, timeZone?: string): string {
   const d = validDate(value);
   if (!d) return "–";
-  const fmt = (o: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat(LOCALE, { ...o, ...clock(), timeZone: timeZone ?? TIME_ZONE }).format(d);
-  return `${fmt({ weekday: "short" })} ${fmt({ hour: "2-digit", minute: "2-digit" })}`;
+  const zone = timeZone ?? TIME_ZONE;
+  return `${new Intl.DateTimeFormat(LOCALE, { weekday: "short", timeZone: zone }).format(d)} ${clockTime(d, zone)}`;
 }
 
 /** "Mon 26 Oct 14:30" in `timeZone`. */
 export function formatDayTime(value: string | number | Date, timeZone?: string): string {
   const d = validDate(value);
   if (!d) return "–";
-  const fmt = (o: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat(LOCALE, { ...o, ...clock(), timeZone: timeZone ?? TIME_ZONE }).format(d);
-  return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric", month: "short" })} ${fmt({ hour: "2-digit", minute: "2-digit" })}`;
+  const zone = timeZone ?? TIME_ZONE;
+  const weekday = new Intl.DateTimeFormat(LOCALE, { weekday: "short", timeZone: zone }).format(d);
+  return `${weekday} ${layoutDate(ymdOf(d, zone), "YYYY")} ${clockTime(d, zone)}`;
 }
 
 /** A calendar date (ISO "2026-10-30") as "Fri 30 Oct"; `weekday: "long"` gives just "Friday". */
@@ -213,8 +306,8 @@ export function formatDayLabel(value: string, style: "short" | "weekday" = "shor
   const d = validDate(value.length === 10 ? `${value}T00:00:00Z` : value);
   if (!d) return "–";
   if (style === "weekday") return new Intl.DateTimeFormat(LOCALE, { weekday: "long", timeZone: "UTC" }).format(d);
-  const fmt = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(LOCALE, { ...o, timeZone: "UTC" }).format(d);
-  return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric", month: "short" })}`;
+  const weekday = new Intl.DateTimeFormat(LOCALE, { weekday: "short", timeZone: "UTC" }).format(d);
+  return `${weekday} ${layoutDate(ymdOf(d, "UTC"), "YYYY")}`;
 }
 
 /** Today's calendar date (ISO) in `timeZone`. */
@@ -227,7 +320,7 @@ export function formatShortDay(value: string | number | Date, timeZone?: string)
   const d = validDate(value);
   if (!d) return "–";
   const fmt = (o: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat(LOCALE, { ...o, ...clock(), timeZone: timeZone ?? TIME_ZONE }).format(d);
+    new Intl.DateTimeFormat(LOCALE, { ...o, timeZone: timeZone ?? TIME_ZONE }).format(d);
   return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric" })}`;
 }
 
@@ -248,11 +341,7 @@ export function chartMoneyFormat(currency: Currency, kind: "axis" | "tooltip" = 
 /** A difference of two returns (fraction, 0.0123 = 1.23 pp) as "+1.23 pp". */
 export function formatPp(ratio: number | null | undefined, digits = 2): string {
   if (isMissing(ratio)) return "–";
-  return `${new Intl.NumberFormat(LOCALE, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    signDisplay: "exceptZero",
-  }).format(ratio * 100)} pp`;
+  return `${formatIntl({ minimumFractionDigits: digits, maximumFractionDigits: digits, signDisplay: "exceptZero" }, ratio * 100)} pp`;
 }
 
 const ASSET_CLASS_LABELS: Record<string, string> = {

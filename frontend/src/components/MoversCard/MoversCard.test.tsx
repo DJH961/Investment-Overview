@@ -18,7 +18,7 @@ afterEach(() => localStorage.clear());
 describe("MoversCard", () => {
   it("tags the ranking and leads with the figure it ranked on", () => {
     const { container } = render(<MoversCard movers={movers} currency="EUR" loading={false} />);
-    expect(screen.getByText("last close · Fri 26 Jun")).toBeInTheDocument();
+    expect(screen.getByText("last close · Fri 26/06")).toBeInTheDocument();
     expect(screen.getByText("biggest move")).toBeInTheDocument();
     expect(screen.getByText("top %")).toBeInTheDocument();
     const leads = [...container.querySelectorAll(".movers-card__lead")].map((n) => n.textContent);

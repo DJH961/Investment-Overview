@@ -46,6 +46,8 @@ SECTIONS: dict[str, str] = {
 
 GRAPH_RANGE_KEYS: tuple[str, ...] = ("1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all")
 LOCALES: tuple[str, ...] = ("en-GB", "de-DE", "en-US")
+DATE_FORMATS: tuple[str, ...] = ("auto", "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "DD.MM.YYYY")
+NUMBER_FORMATS: tuple[str, ...] = ("auto", "1,234.56", "1.234,56", "1 234,56", "1'234.56")
 #: Sentinels accepted besides IANA zone names. "Browser" = the viewer's device zone.
 TIMEZONE_SENTINELS: tuple[str, ...] = ("Browser", "Local", "UTC")
 LOG_LEVELS: tuple[str, ...] = ("INFO", "DEBUG", "WARNING")
@@ -144,9 +146,32 @@ DEFS: tuple[SettingDef, ...] = (
         SettingType.ENUM,
         "en-GB",
         "display",
-        "Number and date format",
-        help="en-GB: 1,234.56 · de-DE: 1.234,56 · en-US: 1,234.56 with US dates.",
+        "Regional preset",
+        help=(
+            "What the date, number and time formats below follow while they are on "
+            "'auto'. en-GB: 31/12/2026, 24h, 1,234.56 · de-DE: 31.12.2026, 24h, "
+            "1.234,56 · en-US: 12/31/2026, 12h, 1,234.56. Also picks the currency "
+            "symbol placement."
+        ),
         choices=LOCALES,
+    ),
+    SettingDef(
+        "display.date_format",
+        SettingType.ENUM,
+        "auto",
+        "display",
+        "Date format",
+        help="Example for 31 December 2026: 31/12/2026, 12/31/2026, 2026-12-31 or 31.12.2026. 'auto' follows the regional preset.",
+        choices=DATE_FORMATS,
+    ),
+    SettingDef(
+        "display.number_format",
+        SettingType.ENUM,
+        "auto",
+        "display",
+        "Number and currency format",
+        help="Separators for numbers and amounts: 1,234.56 · 1.234,56 · 1 234,56 · 1'234.56. 'auto' follows the regional preset.",
+        choices=NUMBER_FORMATS,
     ),
     SettingDef(
         "display_timezone",
@@ -162,7 +187,8 @@ DEFS: tuple[SettingDef, ...] = (
         SettingType.ENUM,
         "auto",
         "display",
-        "Clock format",
+        "Time format",
+        help="24h: 14:05 · 12h: 2:05 PM. 'auto' follows the regional preset (en-US 12h, others 24h).",
         choices=("auto", "12h", "24h"),
     ),
     SettingDef(
