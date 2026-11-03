@@ -1,3 +1,5 @@
+/// <reference types="node" />
+// Node APIs read tokens.scss (vitest runs with css: false, so ?raw would be empty).
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
