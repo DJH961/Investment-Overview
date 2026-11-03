@@ -334,7 +334,34 @@ _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$|^[A-Z]{2}[A-Z0-9]{9}\d$")
 #: ISO codes a per-row currency column realistically holds. A plain
 #: ``[A-Z]{3}`` test would take a column of tickers (VTI, VOO) for currencies.
 _CURRENCIES = frozenset(
-    ["USD", "EUR", "GBP", "CHF", "JPY", "CAD", "AUD", "NZD", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "HKD", "SGD", "CNY", "INR", "ZAR", "MXN", "BRL", "TRY", "ILS", "KRW", "TWD", "THB"]
+    [
+        "USD",
+        "EUR",
+        "GBP",
+        "CHF",
+        "JPY",
+        "CAD",
+        "AUD",
+        "NZD",
+        "SEK",
+        "NOK",
+        "DKK",
+        "PLN",
+        "CZK",
+        "HUF",
+        "HKD",
+        "SGD",
+        "CNY",
+        "INR",
+        "ZAR",
+        "MXN",
+        "BRL",
+        "TRY",
+        "ILS",
+        "KRW",
+        "TWD",
+        "THB",
+    ]
 )
 _SAMPLE_ROWS = 200
 
