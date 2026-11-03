@@ -10,7 +10,7 @@
     gap: var(--space-3);
   }
 
-  // Chart + lifetime FX | movers + holdings. Below desktop the columns dissolve
+  // Chart, lifetime FX, treemap | movers, holdings, asset classes. Below desktop the columns dissolve
   // (display: contents) and `order` keeps the phone reading order.
   &__main {
     display: flex;
@@ -57,20 +57,13 @@
     &--lifetime {
       order: 4;
     }
-  }
 
-  &__row {
-    display: grid;
-    gap: var(--space-4);
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
+    &--alloc {
+      order: 5;
+    }
 
-    @include m.desktop {
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-
-      &--alloc {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      }
+    &--classes {
+      order: 6;
     }
   }
 }

@@ -82,7 +82,7 @@ export function Overview() {
       {data && <CurrencyBox data={data} />}
 
       {/* Desktop: chart and lifetime FX on the left, movers and holdings beside
-          them. Narrower screens keep one column: chart, movers, holdings, FX. */}
+          them. Narrower screens keep one column in the old order. */}
       <div className="overview-page__main">
         <div className="overview-page__col">
           <div className="overview-page__slot overview-page__slot--chart">
@@ -98,6 +98,9 @@ export function Overview() {
               <CurrencyLifetime data={data} />
             </div>
           )}
+          <div className="overview-page__slot overview-page__slot--alloc">
+            <AllocationCard currency={currency} />
+          </div>
         </div>
         <div className="overview-page__col">
           <div className="overview-page__slot overview-page__slot--movers">
@@ -106,12 +109,10 @@ export function Overview() {
           <div className="overview-page__slot overview-page__slot--holdings">
             <OverviewHoldings currency={currency} movers={data?.movers} />
           </div>
+          <div className="overview-page__slot overview-page__slot--classes">
+            <AssetClassCard currency={currency} />
+          </div>
         </div>
-      </div>
-
-      <div className="overview-page__row overview-page__row--alloc">
-        <AllocationCard currency={currency} />
-        <AssetClassCard currency={currency} />
       </div>
     </div>
   );
