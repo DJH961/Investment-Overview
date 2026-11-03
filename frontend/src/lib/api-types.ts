@@ -1282,10 +1282,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Overview Both
-         * @description EUR and USD overview built in one session (loads are reused).
-         */
+        /** Get Overview Both */
         get: operations["get_overview_both_api_overview_both_get"];
         put?: never;
         post?: never;

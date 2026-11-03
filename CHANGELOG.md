@@ -17,6 +17,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.3.0] — 2026-11-03
+
+Phase 2 of the speed plan (`docs/v6_speed_plan.md`).
+
+### Added
+- **Instant EUR ⇄ USD switch.** Overview, holdings, graphs, periods, allocations,
+  risk, calculator inputs, deposits and dividends load both currencies in one
+  response (`GET …/both`, each side built independently, so returns stay FX-aware).
+  A currency switch picks the other side with no request at all.
+- **Cheap reloads.** The `/both` routes send an ETag and answer a repeat request
+  with `304 Not Modified` when nothing changed, without recomputing.
+- **Richer live ticks.** Each tick now carries the latest price per instrument and
+  the new intraday graph point (both currencies). The 1D/1W graphs move by
+  themselves, and holding prices and values update in place without a refetch.
+- **Catch-up after a break.** A tab that comes back asks `GET /api/live?since=…`
+  once for the latest tick and the graph points it missed, instead of reloading
+  every page.
+
+### Fixed
+- **Faster under load.** Identical reads that arrive at the same time are computed
+  once and shared. Right after each tick (while a device is connected) the server
+  pre-computes Overview, Holdings and the 1D graph, so the devices' refresh hits a
+  ready answer.
+- RUNBOOK: re-running `bootstrap.sh` needs `CLOSE_PUBLIC_SSH=1`, or it reopens
+  public SSH. This is now stated with the exact command.
+
 ## [6.2.1] — 2026-11-03
 
 Phase 1 of the speed plan (`docs/v6_speed_plan.md`).
