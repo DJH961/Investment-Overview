@@ -109,6 +109,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Installer source-tarball fallback points pip at `backend/` for releases after 5.3.1.
 
 ### Changed
+- **CI no longer runs twice per merge.** A merged PR whose required checks passed on the identical tree skips the full CI rerun on `main` (a small gate job verifies the PR, the tree and the five checks), so the deploy starts right after merging. Direct pushes or anything that does not match still run the full CI before a deploy.
 - Dependabot runs monthly and groups its PRs (per area: one minor/patch PR, one major PR, grouped security fixes) instead of one PR per package; `web/` gets no major bumps.
 - "Data health" is now "Health & Repair" everywhere; the investing-power dollar amount is computed on the server.
 
