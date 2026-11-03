@@ -111,6 +111,15 @@ Adapted from the owner's starter-project convention (see plan §4a):
   (`.block__element--modifier`); colors, sizes, spacing and radii only from
   `var(--…)` tokens in `styles/tokens.scss`. No bare element selectors or generic
   classes inside component stylesheets.
+- **Colour accessibility (the owner is protan, red-green colour-blind):** gains and
+  losses are blue `--color-pos` / orange `--color-neg`, never red/green. Every colour
+  shown next to another with a different meaning (chart series, the trend-recoloured
+  primary line, status dots, badges, warn vs neg) must stay distinguishable in a
+  Machado 2009 protan simulation: CIEDE2000 ≥ 20 (≥ 15 for deutan and normal vision),
+  in both themes, and keep its contrast as a protan sees it (reds look darker). Never
+  rely on colour alone: secondary chart series are dashed, statuses carry an icon or
+  label. Enforced by `frontend/src/styles/tokens.cvd.test.ts`: when you add or change
+  a colour token, or put two colours on screen together, add the pair to its list.
 
 ## Testing
 
@@ -169,7 +178,8 @@ Adapted from the owner's starter-project convention (see plan §4a):
     Dockerfile `ENV` block.
   - **Server boot, encryption, scheduler, backups:** cover them in the CI `image` job
     (it runs on a real SQLCipher database); Windows tests cannot see these failures.
-  - **Frontend:** no inline scripts (CSP), tokens and BEM only.
+  - **Frontend:** no inline scripts (CSP), tokens and BEM only; new colours or
+    co-displayed colour pairs go into the CVD pair list (`tokens.cvd.test.ts`).
 - Commits use conventional prefixes (`feat:`, `fix:`, `docs:`, `refactor:`,
   `test:`, `chore:`), subject ≤ 72 chars.
 - On completion, open/update the PR that contains the work; at the very end, check
