@@ -75,7 +75,7 @@ export function Overview() {
   const timeZone = useTimeZone();
 
   const data = overview.data;
-  const treemap = useTreemapHeight(Boolean(data));
+  const { slot: treemapSlot, side: treemapSide, height: treemapHeight } = useTreemapHeight(Boolean(data));
   let chip: FreshnessView;
   if (overview.isError) chip = { status: "stale", label: "Offline" };
   else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone });
@@ -132,10 +132,10 @@ export function Overview() {
 
       {/* The secondary lifetime FX card sits under asset classes, beside the treemap. */}
       <div className="overview-page__row overview-page__row--alloc">
-        <div ref={treemap.slot} className="overview-page__cell">
-          <AllocationCard currency={currency} height={treemap.height} />
+        <div ref={treemapSlot} className="overview-page__cell">
+          <AllocationCard currency={currency} height={treemapHeight} />
         </div>
-        <div ref={treemap.side} className="overview-page__side">
+        <div ref={treemapSide} className="overview-page__side">
           <AssetClassCard currency={currency} />
           {data && <CurrencyLifetime data={data} />}
         </div>
