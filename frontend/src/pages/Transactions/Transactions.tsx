@@ -218,7 +218,13 @@ export function Transactions() {
 
   const columns: Column<TransactionOut>[] = [
     { key: "date", header: "Date", phone: "sub", cell: (r) => formatDate(r.date), nowrap: true },
-    { key: "symbol", header: "Symbol", primary: true, cell: (r) => r.symbol || "—" },
+    {
+      key: "symbol",
+      header: "Symbol",
+      primary: true,
+      // Cash rows (deposits, fees) have no symbol: the account names the row.
+      cell: (r) => r.symbol || <span className="transactions-page__no-symbol">{r.account}</span>,
+    },
     {
       key: "kind",
       header: "Kind",
@@ -233,7 +239,7 @@ export function Transactions() {
       key: "price",
       header: "Price",
       align: "right",
-      cell: (r) => <span className="money">{formatPrice(r.price_native, r.currency)}</span>,
+      cell: (r) => (r.price_native == null ? "–" : <span className="money">{formatPrice(r.price_native, r.currency)}</span>),
     },
     {
       key: "fees",

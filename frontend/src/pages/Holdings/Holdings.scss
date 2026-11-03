@@ -124,14 +124,16 @@
     }
   }
 
+  // Lives in a flush card: no box of its own (it doubled the card's border);
+  // the bottom corners follow the card so row tints don't poke out.
   &__list {
     display: flex;
     flex-direction: column;
-    margin: 0;
+    margin: var(--space-3) 0 0;
     padding: 0;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
+    overflow: hidden;
+    border-top: var(--border-width) solid var(--color-border);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     list-style: none;
   }
 

@@ -61,4 +61,12 @@
 
 .risk-page__neg {
   color: var(--color-neg);
+
+  // Phone: the list rows have their own side padding; cancel the card's so
+  // they line up with the card title instead of sitting a step further in.
+  &__attribution {
+    @include m.phone {
+      margin-inline: calc(-1 * var(--space-4));
+    }
+  }
 }

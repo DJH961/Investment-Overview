@@ -91,6 +91,8 @@
   }
 
   &__tag {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-semibold);
     white-space: nowrap;
     font-size: var(--font-size-2xs);
     letter-spacing: 0.06em;

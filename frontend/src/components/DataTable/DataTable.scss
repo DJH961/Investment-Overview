@@ -126,7 +126,7 @@
 
       // Order: title, headline, sub line, then chips in column order.
       &--primary {
-        order: -3;
+        order: -4;
         flex: 1 1 auto;
         font-size: var(--font-size-md);
         font-weight: var(--font-weight-semibold);
@@ -135,7 +135,6 @@
       &--headline {
         display: block;
         order: -2;
-        margin-left: auto;
         font-size: var(--font-size-md);
         font-weight: var(--font-weight-semibold);
         text-align: right;
@@ -144,7 +143,7 @@
       &--sub {
         display: block;
         order: -1;
-        flex-basis: 100%;
+        flex: 1 0 100%;
         margin-top: calc(-1 * var(--space-2));
         color: var(--color-muted);
         font-size: var(--font-size-xs);
@@ -158,8 +157,10 @@
         font-size: var(--font-size-xs);
       }
 
-      // Trailing actions (edit icons) sit at the right end of the chip line.
+      // Trailing actions (edit icons) join the title line, left of the
+      // headline figure, instead of taking a line of their own.
       &--bare:last-child {
+        order: -3;
         margin-left: auto;
       }
 
@@ -168,6 +169,10 @@
       &--phone-hidden {
         display: none;
       }
+    }
+
+    &__row:last-child {
+      border-bottom: 0;
     }
 
     &__th--phone-hidden {

@@ -134,6 +134,11 @@
     }
   }
 
+  &__no-symbol {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-medium);
+  }
+
   &__pager {
     display: flex;
     justify-content: center;

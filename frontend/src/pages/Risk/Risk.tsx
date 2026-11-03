@@ -273,6 +273,7 @@ export function Risk() {
           </Card>
           <Card title="Attribution" subtitle="What each holding added to the return" collapsibleId="risk.attribution">
             <DataTable
+              className="risk-page__attribution"
               caption="Return attribution"
               columns={attrColumns}
               rows={d.attribution}
