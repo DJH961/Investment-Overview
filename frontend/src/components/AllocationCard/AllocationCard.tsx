@@ -17,13 +17,15 @@ const isView = (v: unknown): v is AllocationView => v === "category" || v === "f
 export interface AllocationCardProps {
   /** Reporting currency. */
   currency: ReportingCurrency;
+  /** Treemap height in px (default: its own); the Overview matches it to the cards beside it. */
+  height?: number;
 }
 
 const toneOf = (t: number | null): TreemapItem["tone"] =>
   t === null || t === 0 ? "neutral" : t > 0 ? "pos" : "neg";
 
 /** Overview treemap: categories (the default) or holdings by value, tinted by today's move. */
-export function AllocationCard({ currency }: AllocationCardProps) {
+export function AllocationCard({ currency, height }: AllocationCardProps) {
   const holdings = useHoldings(currency);
   const [view, setView] = usePersistentState<AllocationView>("overview.allocView", "category", isView);
   const items = useMemo(() => {
@@ -90,7 +92,7 @@ export function AllocationCard({ currency }: AllocationCardProps) {
       ) : holdings.isPending ? (
         <Skeleton height="12rem" />
       ) : (
-        <Treemap items={items} ariaLabel={view === "category" ? "Categories by value" : "Holdings by value"} />
+        <Treemap items={items} height={height} ariaLabel={view === "category" ? "Categories by value" : "Holdings by value"} />
       )}
     </Card>
   );

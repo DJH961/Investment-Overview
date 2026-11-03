@@ -1,4 +1,5 @@
 import { Inbox } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { AllocationCard } from "../../components/AllocationCard";
 import { AssetClassCard } from "../../components/AssetClassCard";
 import { CurrencyBox } from "../../components/CurrencyBox";
@@ -21,7 +22,43 @@ import { useTimeZone } from "../../lib/timezone";
 import { usePrefs } from "../../lib/prefs";
 import { useOverview } from "../../lib/queries/portfolio";
 import { useShellStatus } from "../../lib/shell";
+import { useIsDesktop } from "../../lib/useMediaQuery";
 import "./Overview.scss";
+
+/** The treemap's own default height. */
+const MIN_TREEMAP = 280;
+
+/**
+ * Desktop: size the treemap so its card ends level with the stack beside it
+ * (asset classes + lifetime FX). Phones and tablets keep the default height.
+ */
+function useTreemapHeight(active: boolean) {
+  const desktop = useIsDesktop();
+  const slot = useRef<HTMLDivElement>(null);
+  const side = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const own = slot.current;
+    const col = side.current;
+    if (!desktop || !active || !own || !col || typeof ResizeObserver === "undefined") {
+      setHeight(undefined);
+      return;
+    }
+    const fit = () => {
+      const map = own.querySelector<HTMLElement>(".treemap");
+      if (!map) return;
+      const chrome = own.offsetHeight - map.offsetHeight;
+      const next = Math.max(MIN_TREEMAP, Math.round(col.offsetHeight - chrome));
+      setHeight((h) => (h === next ? h : next));
+    };
+    const ro = new ResizeObserver(fit);
+    ro.observe(own);
+    ro.observe(col);
+    fit();
+    return () => ro.disconnect();
+  }, [desktop, active]);
+  return { slot, side, height };
+}
 
 /**
  * Overview page: composes one component per section so each later package
@@ -38,6 +75,7 @@ export function Overview() {
   const timeZone = useTimeZone();
 
   const data = overview.data;
+  const treemap = useTreemapHeight(Boolean(data));
   let chip: FreshnessView;
   if (overview.isError) chip = { status: "stale", label: "Offline" };
   else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone });
@@ -94,8 +132,10 @@ export function Overview() {
 
       {/* The secondary lifetime FX card sits under asset classes, beside the treemap. */}
       <div className="overview-page__row overview-page__row--alloc">
-        <AllocationCard currency={currency} />
-        <div className="overview-page__side">
+        <div ref={treemap.slot} className="overview-page__cell">
+          <AllocationCard currency={currency} height={treemap.height} />
+        </div>
+        <div ref={treemap.side} className="overview-page__side">
           <AssetClassCard currency={currency} />
           {data && <CurrencyLifetime data={data} />}
         </div>

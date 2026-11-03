@@ -29,6 +29,10 @@
     }
   }
 
+  &__cell {
+    min-width: 0;
+  }
+
   // Cards stacked in one grid cell (asset classes + lifetime FX).
   &__side {
     display: flex;

@@ -40,8 +40,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on wide screens. The drift list replaces the 14-colour bar and wide table.
 - **Better use of desktop width.** Overview: value chart, top movers and holdings each
   run full width, one under the other; on wider screens each holding also shows its
-  share of the portfolio (with a bar) and its total return since buying. The lifetime
-  currency effect is a compact card under asset classes, next to the treemap.
+  share of the portfolio (with a bar) and its total return since buying. Top movers is
+  one strip of tiles across the width (an up/down arrow on each; "No winners today"
+  as a quiet tile). The lifetime currency effect is a compact card under asset
+  classes, and the treemap beside it grows to end level with it.
   Risk: metric groups share rows instead of leaving half of each row empty.
 
 ### Fixed
