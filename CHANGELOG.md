@@ -17,6 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.0.0] — 2026-11-03
+
+**v6 is the app.** The hosted FastAPI backend and React frontend on the owner's
+server replace the NiceGUI desktop app and the encrypted-blob web companion. The
+v5 code stays in the repo for about a week of visual comparison and is removed
+in the next release; `legacy/v5` / tag `v5.3.1` keep it for good, and
+`inv-dashboard-export-v5` still turns a v6 database back into a v5 ledger.
+
 ### Security
 - **Deploy pipeline:** a deploy runs only for a successful CI run from a `push` to this repo's `main`; all third-party actions are pinned to commit SHAs; deploys use a `production` environment, a pinned `DEPLOY_KNOWN_HOSTS` and a forced-command `deploy/deploy.sh`; Dependabot added.
 - **Requests:** authentication is checked before any request body is read; per-route body caps (413); Caddy caps bodies at 12 MB, hides `/docs`, `/redoc`, `/openapi.json` and stops logging auth headers; the app trusts `X-Forwarded-For` only from Caddy's fixed address.
@@ -114,6 +122,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Installer source-tarball fallback points pip at `backend/` for releases after 5.3.1.
 
 ### Changed
+- **The GitHub Pages web companion is now demo-only.** It opens straight into the sample portfolios (no sign-in, no encrypted ledger, no price polling), and a Content-Security-Policy blocks every request to another origin. The demo now looks like a live trading day: today's date during US market hours, live-moving prices, the 1D/1W graphs, and figures that agree across every tab (generated from one simulated ledger, benchmark VT).
 - **Faster everywhere (v6 app).** The server keeps the last Overview, graph, holdings, periods, analytics, allocations and contributions answers for up to a minute and drops them on any price/FX/refresh event or data change, so repeat requests answer in a few milliseconds instead of 0.1–2 s; sign-in is still checked on every request. After sign-in the app quietly loads Overview, Holdings, Periods and every graph range in the background (one request at a time), so switching pages and ranges shows data immediately. Daily graph ranges stay fresh for 5 minutes (live events still update them), and a background refresh no longer dims the chart. Chart labels are shorter: "$120k", "€98k" instead of "US$120.3k".
 - **CI no longer runs twice per merge.** A merged PR whose required checks passed on the identical tree skips the full CI rerun on `main` (a small gate job verifies the PR, the tree and the five checks), so the deploy starts right after merging. Direct pushes or anything that does not match still run the full CI before a deploy.
 - Dependabot runs monthly and groups its PRs (per area: one minor/patch PR, one major PR, grouped security fixes) instead of one PR per package; `web/` gets no major bumps.

@@ -1,12 +1,10 @@
 name: Deploy Pages
 
-# Builds and publishes the static web companion (legacy/v5:docs/v3.0_live_web_companion_proposal.md §4) to
-# GitHub Pages. It compiles the Vite/TypeScript front-end in `web/` and uploads
-# the `web/dist` build output.
-#
-# NOTE: nothing is served until Pages is enabled in repo Settings → Pages
-# (Source: "GitHub Actions"). Keep that disabled while the repo is private and
-# the encrypted ledger frontend is not yet ready.
+# Builds and publishes the v5 web companion to GitHub Pages as a **demo-only**
+# site (since 6.0.0, v6 on the server is the real app). `VITE_DEMO_ONLY=1` boots
+# straight into the offline sample portfolios: no sign-in, no encrypted ledger,
+# no price polling, and a CSP that blocks every request to another origin.
+# Removed with `web/` in the post-cutover clean-up release.
 
 on:
   push:
@@ -46,6 +44,8 @@ jobs:
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - name: Build site
         working-directory: web
+        env:
+          VITE_DEMO_ONLY: "1"
         run: |
           npm ci
           npm run build
