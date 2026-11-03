@@ -144,56 +144,26 @@
     }
   }
 
-  // Wider: tiles stack their content (tag + arrow, name, big figure).
+  // Wider: one line per tile, figures side by side (no stacked numbers).
   &__mover {
     @include m.tablet-up {
-      display: grid;
-      grid-template-areas:
-        "icon tag"
-        "who who"
-        "figs figs";
-      grid-template-columns: auto minmax(0, 1fr);
-      align-items: center;
-      gap: var(--space-1) var(--space-2);
+      gap: var(--space-3);
       padding: var(--space-3);
-    }
-  }
-
-  &__icon {
-    @include m.tablet-up {
-      grid-area: icon;
-    }
-  }
-
-  &__who {
-    @include m.tablet-up {
-      grid-area: who;
     }
   }
 
   &__figures {
     @include m.tablet-up {
-      display: contents;
-    }
-  }
-
-  &__tag {
-    @include m.tablet-up {
-      grid-area: tag;
-      justify-self: end;
+      flex-direction: row;
+      align-items: baseline;
+      gap: var(--space-3);
+      max-width: none;
     }
   }
 
   &__lead {
     @include m.tablet-up {
-      grid-column: 1 / -1;
-      font-size: var(--font-size-xl);
-    }
-  }
-
-  &__trail {
-    @include m.tablet-up {
-      grid-column: 1 / -1;
+      font-size: var(--font-size-lg);
     }
   }
 }
