@@ -133,6 +133,20 @@ export function formatTime(value: string | Date, timeZone?: string): string {
   }).format(d);
 }
 
+/**
+ * Short chart-axis date: "5 Oct" when the axis spans under a year, "Oct 2026"
+ * beyond that (a full date per tick does not fit on a phone).
+ */
+export function formatAxisDate(t: number, spanMs: number, timeZone?: string): string {
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return "–";
+  const long = spanMs > 330 * 86_400_000;
+  return new Intl.DateTimeFormat(LOCALE, {
+    ...(long ? { month: "short", year: "numeric" } : { day: "numeric", month: "short" }),
+    timeZone: timeZone ?? "UTC",
+  }).format(d);
+}
+
 /** "5 Mar 2026, 14:30" in the user's timezone; "never" for a missing stamp. */
 export function formatDateTime(value: string | Date | null | undefined, missing = "never"): string {
   if (value === null || value === undefined || value === "") return missing;
@@ -200,7 +214,10 @@ export function formatShortDay(value: string | number | Date, timeZone?: string)
  */
 export function chartMoneyFormat(currency: Currency, kind: "axis" | "tooltip" = "tooltip"): (v: number) => string {
   return kind === "axis"
-    ? (v) => formatMoney(v, currency, { digits: 0, compact: Math.abs(v) >= 1_000_000 })
+    ? (v) =>
+        Math.abs(v) >= 10_000
+          ? formatMoney(v, currency, { digits: 1, compact: true })
+          : formatMoney(v, currency, { digits: 0 })
     : (v) => formatMoney(v, currency, { digits: 0 });
 }
 
@@ -212,4 +229,21 @@ export function formatPp(ratio: number | null | undefined, digits = 2): string {
     maximumFractionDigits: digits,
     signDisplay: "exceptZero",
   }).format(ratio * 100)} pp`;
+}
+
+const ASSET_CLASS_LABELS: Record<string, string> = {
+  etf: "ETFs",
+  mutual_fund: "Mutual funds",
+  stock: "Stocks",
+  cash: "Cash",
+  savings: "Savings",
+  unknown: "Other",
+};
+
+/** "mutual_fund" -> "Mutual funds"; unknown keys are tidied ("foo_bar" -> "Foo bar"). */
+export function assetClassLabel(key: string): string {
+  const k = key.trim().toLowerCase();
+  if (ASSET_CLASS_LABELS[k]) return ASSET_CLASS_LABELS[k];
+  const t = key.replace(/_/g, " ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }

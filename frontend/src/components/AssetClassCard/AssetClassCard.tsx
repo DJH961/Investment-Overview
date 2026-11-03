@@ -3,6 +3,7 @@ import { AllocationBar } from "../AllocationBar";
 import { Card } from "../Card";
 import { ErrorState } from "../ErrorState";
 import { Skeleton } from "../Skeleton";
+import { assetClassLabel } from "../../lib/format";
 import { toNum, useAllocations } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./AssetClassCard.scss";
@@ -19,7 +20,7 @@ export function AssetClassCard({ currency }: AssetClassCardProps) {
     () =>
       (allocations.data?.current_by_asset_class ?? []).map((b) => ({
         id: b.label,
-        label: b.label,
+        label: assetClassLabel(b.label),
         actual: toNum(b.pct) ?? 0,
       })),
     [allocations.data],

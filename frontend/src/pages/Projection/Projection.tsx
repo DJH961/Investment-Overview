@@ -13,7 +13,7 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
-import { MASK, formatMoney, formatNumber, formatPercent } from "../../lib/format";
+import { MASK, formatDate, formatMoney, formatNumber, formatPercent } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { type ProjectionOut, type ProjectionRequest, toNum, useCalculatorInputs, useProjectionMutation } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -133,7 +133,7 @@ export function Projection() {
   const rerun = useCallback(() => mutate(JSON.parse(requestKey) as ProjectionRequest), [mutate, requestKey]);
   useShellStatus(
     mutation.isError ? "stale" : out ? "closed" : "loading",
-    out ? `As of ${out.as_of}` : "Loading",
+    out ? `As of ${formatDate(out.as_of)}` : "Loading",
     rerun,
     mutation.isPending,
   );
@@ -168,7 +168,7 @@ export function Projection() {
       { key: "label", header: out?.monthly ? "Month" : "Year", primary: true, cell: (p) => p.label },
       { key: "contrib", header: "Contributed", align: "right", cell: (p) => m(p.contributed) },
       { key: "pess", header: "Pessimistic", align: "right", cell: (p) => m(real ? p.pessimistic_real : p.pessimistic) },
-      { key: "exp", header: "Expected", align: "right", cell: (p) => m(real ? p.expected_real : p.expected) },
+      { key: "exp", header: "Expected", align: "right", phone: "headline", cell: (p) => m(real ? p.expected_real : p.expected) },
       { key: "opt", header: "Optimistic", align: "right", cell: (p) => m(real ? p.optimistic_real : p.optimistic) },
     ];
   }, [out?.real, out?.monthly, currency]);

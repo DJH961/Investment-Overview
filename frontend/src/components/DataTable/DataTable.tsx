@@ -14,8 +14,16 @@ export interface Column<Row> {
   align?: "left" | "right";
   /** On phones the primary column becomes the list-row title (no label), shown first. */
   primary?: boolean;
-  /** Phone visibility: `"hide"` drops low-priority columns (source, edit icons) on phones. */
-  phone?: "show" | "hide";
+  /**
+   * Phone layout (each row is a compact card):
+   * - `"show"` (default): a small "Label value" chip under the title;
+   * - `"headline"`: the row's key figure, right of the title, no label;
+   * - `"sub"`: a muted line under the title (name, account, date), no label;
+   * - `"inline"`: with the chips but without label or pill (badges, actions);
+   * - `"hide"`: dropped on phones (low-priority columns, desktop-only detail).
+   * Empty cells (blank, "–") are left out on phones.
+   */
+  phone?: "show" | "hide" | "headline" | "sub" | "inline";
   /** Keep the value on one line (default: true for right-aligned columns). */
   nowrap?: boolean;
 }
@@ -34,6 +42,13 @@ export interface DataTableProps<Row> {
 }
 
 type Direction = "asc" | "desc";
+
+/** Nothing worth a phone line: blank, or the "no value" dash. */
+function isEmptyCell(content: ReactNode): boolean {
+  if (content === null || content === undefined || content === false) return true;
+  if (typeof content === "string") return /^\s*[–—-]?\s*$/.test(content);
+  return false;
+}
 
 function compare(a: string | number | null | undefined, b: string | number | null | undefined): number {
   if (a === b) return 0;
@@ -128,31 +143,41 @@ export function DataTable<Row>({
           {!loading &&
             sorted.map((row) => (
               <tr key={rowKey(row)} className={clsx("data-table__row", rowClassName?.(row))}>
-                {columns.map((col) => (
-                  <td
-                    key={col.key}
-                    className={clsx(
-                      "data-table__td",
-                      col.align === "right" && "data-table__td--right",
-                      col.primary && "data-table__td--primary",
-                      col.phone === "hide" && "data-table__td--phone-hidden",
-                    )}
-                  >
-                    {!col.primary && col.header && (
-                      <span className="data-table__label" aria-hidden>
-                        {col.header}
-                      </span>
-                    )}
-                    <span
+                {columns.map((col) => {
+                  const content = col.cell(row);
+                  const role = col.primary ? "primary" : (col.phone ?? "show");
+                  const chip = role === "show" && Boolean(col.header);
+                  return (
+                    <td
+                      key={col.key}
                       className={clsx(
-                        "data-table__value",
-                        (col.nowrap ?? col.align === "right") && "data-table__value--nowrap",
+                        "data-table__td",
+                        col.align === "right" && "data-table__td--right",
+                        col.primary && "data-table__td--primary",
+                        role === "headline" && "data-table__td--headline",
+                        role === "sub" && "data-table__td--sub",
+                        ((role === "show" && !col.header) || role === "inline") && "data-table__td--bare",
+                        chip && "data-table__td--chip",
+                        isEmptyCell(content) && "data-table__td--empty",
+                        col.phone === "hide" && "data-table__td--phone-hidden",
                       )}
                     >
-                      {col.cell(row)}
-                    </span>
-                  </td>
-                ))}
+                      {chip && (
+                        <span className="data-table__label" aria-hidden>
+                          {col.header}
+                        </span>
+                      )}
+                      <span
+                        className={clsx(
+                          "data-table__value",
+                          (col.nowrap ?? col.align === "right") && "data-table__value--nowrap",
+                        )}
+                      >
+                        {content}
+                      </span>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
         </tbody>

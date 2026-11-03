@@ -102,19 +102,34 @@
     color: var(--color-muted);
   }
 
+  // Small uppercase badge, as in the v5 activity list.
   &__kind {
-    font-size: var(--font-size-xs);
+    display: inline-block;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
     color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
 
     &--buy,
     &--deposit,
-    &--transfer_in {
+    &--transfer_in,
+    &--dividend_cash,
+    &--dividend_reinvest,
+    &--interest {
+      background: var(--color-pos-soft);
       color: var(--color-pos);
     }
 
     &--sell,
     &--withdrawal,
-    &--transfer_out {
+    &--transfer_out,
+    &--fee {
+      background: var(--color-neg-soft);
       color: var(--color-neg);
     }
   }

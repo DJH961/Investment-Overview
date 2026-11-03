@@ -13,9 +13,16 @@
     justify-content: space-between;
     gap: var(--space-3);
     padding: var(--space-4) var(--space-5) 0;
+
+    @include m.phone {
+      padding: var(--space-3) var(--space-4) 0;
+    }
   }
 
+  // Grows to the free space: as a shrink-to-fit flex item the title wrapped
+  // after one word ("Asset / classes") even with room to spare.
   &__heading {
+    flex: 1 1 auto;
     min-width: 0;
   }
 
@@ -80,6 +87,10 @@
 
   &--collapsed &__header {
     padding-bottom: var(--space-4);
+
+    @include m.phone {
+      padding-bottom: var(--space-3);
+    }
   }
 
   &__subtitle {
@@ -97,6 +108,11 @@
 
   &__body {
     padding: var(--space-4) var(--space-5) var(--space-5);
+
+    // Phone: a few pixels back for content (charts, tables) on a 360-430px screen.
+    @include m.phone {
+      padding: var(--space-3) var(--space-4) var(--space-4);
+    }
 
     &[hidden] {
       display: none;

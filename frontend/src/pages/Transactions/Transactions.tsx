@@ -217,11 +217,12 @@ export function Transactions() {
   };
 
   const columns: Column<TransactionOut>[] = [
-    { key: "date", header: "Date", cell: (r) => formatDate(r.date, "short"), nowrap: true },
+    { key: "date", header: "Date", phone: "sub", cell: (r) => formatDate(r.date, "short"), nowrap: true },
     { key: "symbol", header: "Symbol", primary: true, cell: (r) => r.symbol || "—" },
     {
       key: "kind",
       header: "Kind",
+      phone: "inline",
       cell: (r) => (
         <span className={`transactions-page__kind transactions-page__kind--${r.kind}`}>{KIND_LABEL[r.kind] ?? r.kind}</span>
       ),
@@ -241,7 +242,7 @@ export function Transactions() {
       phone: "hide",
       cell: (r) => (num(r.fees_native) ? <Money amount={num(r.fees_native)} currency={r.currency} /> : "–"),
     },
-    { key: "net", header: `Net (${currency})`, align: "right", cell: (r) => <NetCell row={r} currency={currency} /> },
+    { key: "net", header: `Net (${currency})`, align: "right", phone: "headline", cell: (r) => <NetCell row={r} currency={currency} /> },
     { key: "source", header: "Source", phone: "hide", cell: (r) => r.source ?? "—" },
     {
       key: "edit",

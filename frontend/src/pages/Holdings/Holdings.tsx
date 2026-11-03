@@ -13,7 +13,7 @@ import { Select } from "../../components/Select";
 import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
-import { formatDate, formatMoney, formatTime, formatQuantity } from "../../lib/format";
+import { formatAxisDate, formatDate, formatMoney, formatTime, formatQuantity } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import {
   type HistoryRange,
@@ -133,7 +133,8 @@ function HoldingDrawerChart({ row }: { row: HoldingRowDto }) {
       onRangeChange={(r) => setRange(r as HistoryRange)}
       loading={history.isPending}
       valueFormat={(v) => formatMoney(v, ccy)}
-      timeFormat={(t) => formatDate(new Date(t).toISOString().slice(0, 10), "short")}
+      timeFormat={(t) => formatAxisDate(t, range === "1m" || range === "3m" || range === "6m" ? 0 : Infinity)}
+      tooltipTimeFormat={(t) => formatDate(new Date(t).toISOString().slice(0, 10))}
       height={200}
       ariaLabel={`${row.symbol} price against cost basis`}
       emptyMessage={history.isError ? "Could not load the price history." : "No price history yet."}
@@ -254,7 +255,7 @@ export function Holdings() {
           </span>
         ),
       },
-      { key: "name", header: "Name", sortValue: (r) => r.name, cell: (r) => r.name },
+      { key: "name", header: "Name", phone: "sub", sortValue: (r) => r.name, cell: (r) => r.name },
       { key: "category", header: "Category", sortValue: (r) => r.category, cell: (r) => r.category },
       {
         key: "shares",
@@ -301,6 +302,7 @@ export function Holdings() {
         key: "value",
         header: "Value",
         align: "right",
+        phone: "headline",
         sortValue: (r) => toNum(r.value),
         cell: (r) => <Money amount={toNum(r.value)} currency={currency} />,
       },
@@ -425,6 +427,7 @@ export function Holdings() {
       <FlagNotice rows={data?.holdings ?? []} />
 
       <div className="holdings-page__toolbar">
+        <div className="holdings-page__tool holdings-page__tool--search">
         <Input
           data-search
           type="search"
@@ -434,25 +437,32 @@ export function Holdings() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        </div>
+        <div className="holdings-page__tool holdings-page__tool--category">
         <Select
           ariaLabel="Category"
           value={category}
           onValueChange={setCategory}
           options={[{ value: ALL, label: "All categories" }, ...categories.map((c) => ({ value: c, label: c }))]}
         />
+        </div>
+        <div className="holdings-page__tool holdings-page__tool--group">
         <Select
           ariaLabel="Group by"
           value={groupBy}
           onValueChange={(v) => setGroupBy(v as HoldingsGroupBy)}
           options={GROUP_OPTIONS}
         />
+        </div>
         {isPhone && (
+          <div className="holdings-page__tool holdings-page__tool--sort">
           <Select
             ariaLabel="Sort by"
             value={sortKey}
             onValueChange={(v) => setSortKey(v as SortKey)}
             options={SORT_OPTIONS}
           />
+          </div>
         )}
       </div>
       {groupedReady && filtered && (

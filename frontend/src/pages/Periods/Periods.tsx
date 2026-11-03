@@ -12,6 +12,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
+import { formatDate } from "../../lib/format";
 import { type ReportingCurrency, usePrefs } from "../../lib/prefs";
 import { type PeriodRowOut, toNum, usePeriods } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -29,6 +30,17 @@ const VIEWS = [
 ] as const;
 
 const isView: Validator<View> = (v): v is View => v === "year" || v === "monthly" || v === "yearly";
+
+/** "2026-10" -> "Oct 2026"; years and other labels pass through. */
+export function periodLabel(label: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(label);
+  if (!m) return label;
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)).toLocaleDateString("en-GB", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 const otherCcy = (c: ReportingCurrency): ReportingCurrency => (c === "EUR" ? "USD" : "EUR");
 
@@ -56,7 +68,7 @@ function buildColumns(
       sortValue: (r) => r.label,
       cell: (r) => (
         <>
-          {r.label}
+          {periodLabel(r.label)}
           {r.is_current && <span className="periods-page__pill"> live</span>}
         </>
       ),
@@ -65,6 +77,7 @@ function buildColumns(
       key: "closing",
       header: "Value",
       align: "right",
+      phone: "sub",
       sortValue: (r) => toNum(r.closing_value),
       cell: (r) => {
         const o = toNum(other.get(r.label)?.closing_value);
@@ -84,6 +97,7 @@ function buildColumns(
       key: "growth",
       header: opts.yearly ? "Growth (TWR)" : "Growth",
       align: "right",
+      phone: "headline",
       sortValue: (r) => toNum(r.growth_pct),
       cell: (r) => pct(r.growth_pct),
     },
@@ -158,7 +172,7 @@ export function Periods() {
     void refetchM();
     void refetchY();
   }, [refetchM, refetchY]);
-  useShellStatus(failed ? "stale" : pending ? "loading" : "closed", asOf ? `As of ${asOf}` : "Loading", refetch, fetching);
+  useShellStatus(failed ? "stale" : pending ? "loading" : "closed", asOf ? `As of ${formatDate(asOf)}` : "Loading", refetch, fetching);
 
   const mRows = monthly.data?.rows ?? [];
   const yRows = yearly.data?.rows ?? [];
@@ -279,35 +293,30 @@ function YearSummary({
   const o = toNum(other?.closing_value);
   return (
     <span className="periods-page__summary" data-year={yearOf(row.label)}>
-      <span>
-        {amt(row.closing_value)}
-        {o !== null && (
-          <span className="periods-page__second">
-            <Money amount={o} currency={second} />
+      <span className="periods-page__summary-main">
+        <span className="periods-page__summary-value">
+          {amt(row.closing_value)}
+          {o !== null && (
+            <span className="periods-page__second">
+              <Money amount={o} currency={second} />
+            </span>
+          )}
+        </span>
+        <span className="periods-page__summary-growth">
+          <Percent ratio={toNum(row.growth_pct)} signed colored />
+          <span className="periods-page__chip-label"> TWR</span>
+        </span>
+      </span>
+      <span className="periods-page__chips">
+        {toNum(row.period_growth_xirr) !== null && (
+          <span className="periods-page__chip">
+            <span className="periods-page__chip-label">XIRR</span> <Percent ratio={toNum(row.period_growth_xirr)} signed colored />
           </span>
         )}
-      </span>
-      <span>
-        <Percent ratio={toNum(row.growth_pct)} signed colored />
-        <span className="periods-page__chip-label"> TWR</span>
-      </span>
-      {toNum(row.period_growth_xirr) !== null && (
-        <span>
-          <Percent ratio={toNum(row.period_growth_xirr)} signed colored />
-          <span className="periods-page__chip-label"> XIRR</span>
-        </span>
-      )}
-      <span className="periods-page__chip">
-        Net flow {amt(row.net_flow)}
-      </span>
-      <span className="periods-page__chip">
-        Contrib {amt(row.contributions)}
-      </span>
-      <span className="periods-page__chip">
-        Div {amt(row.dividends)}
-      </span>
-      <span className="periods-page__chip">
-        Int {amt(row.interest)}
+        <span className="periods-page__chip"><span className="periods-page__chip-label">Net flow</span> {amt(row.net_flow)}</span>
+        <span className="periods-page__chip"><span className="periods-page__chip-label">Contrib</span> {amt(row.contributions)}</span>
+        {toNum(row.dividends) ? <span className="periods-page__chip"><span className="periods-page__chip-label">Div</span> {amt(row.dividends)}</span> : null}
+        {toNum(row.interest) ? <span className="periods-page__chip"><span className="periods-page__chip-label">Int</span> {amt(row.interest)}</span> : null}
       </span>
     </span>
   );

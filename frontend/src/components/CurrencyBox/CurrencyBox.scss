@@ -24,7 +24,8 @@
   &__stats {
     display: grid;
     gap: var(--space-3);
-    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    // Three equal columns at every width (pair, move, since), as in v5.
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     margin: 0;
   }
 
@@ -53,7 +54,9 @@
 
   &__sub {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
+    row-gap: var(--space-1);
     gap: var(--space-2);
     color: var(--color-muted);
     font-size: var(--font-size-xs);
@@ -68,6 +71,7 @@
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
+    white-space: nowrap;
   }
 
   &__closed {

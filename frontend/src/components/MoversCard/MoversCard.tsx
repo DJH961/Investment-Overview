@@ -17,7 +17,7 @@ export function moverTag(reason: string): string {
   return reason === "total" ? "biggest move" : "top %";
 }
 
-function MoverList({ title, movers, ccy }: { title: string; movers: Mover[]; ccy: string }) {
+function MoverList({ title, movers, ccy, tone }: { title: string; movers: Mover[]; ccy: string; tone: "pos" | "neg" }) {
   return (
     <div className="movers-card__col">
       <h3 className="movers-card__title">{title}</h3>
@@ -30,15 +30,16 @@ function MoverList({ title, movers, ccy }: { title: string; movers: Mover[]; ccy
             const money = <Money amount={toNum(m.move)} currency={ccy} signed colored compact />;
             const byMoney = m.reason === "total";
             return (
-              <li key={m.symbol} className="movers-card__mover">
+              <li key={m.symbol} className={clsx("movers-card__mover", `movers-card__mover--${tone}`)}>
                 <span className="movers-card__who">
                   <span className="movers-card__symbol" title={m.name}>
                     {m.symbol}
                   </span>
-                  <span className="movers-card__tag">{moverTag(m.reason)}</span>
+                  {m.name && <span className="movers-card__name">{m.name}</span>}
                 </span>
                 {/* The figure it earned its slot on leads; the other trails. */}
                 <span className="movers-card__figures">
+                  <span className="movers-card__tag">{moverTag(m.reason)}</span>
                   <span className="movers-card__lead">{byMoney ? money : pct}</span>
                   <span className="movers-card__trail">{byMoney ? pct : money}</span>
                 </span>
@@ -71,8 +72,8 @@ export function MoversCard({ movers, currency, loading, className }: MoversCardP
         <Skeleton height="6rem" />
       ) : (
         <div className="movers-card__grid">
-          <MoverList title="Winners" movers={movers?.winners ?? []} ccy={currency} />
-          <MoverList title="Losers" movers={movers?.losers ?? []} ccy={currency} />
+          <MoverList title="Winners" movers={movers?.winners ?? []} ccy={currency} tone="pos" />
+          <MoverList title="Losers" movers={movers?.losers ?? []} ccy={currency} tone="neg" />
         </div>
       )}
     </Card>

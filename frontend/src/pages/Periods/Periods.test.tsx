@@ -85,7 +85,7 @@ describe("Periods", () => {
       ),
     );
     wrap(<Periods />);
-    expect((await screen.findAllByText("2026-10")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Oct 2026")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
@@ -100,17 +100,17 @@ describe("Periods by year", () => {
   it("opens the current year only and remembers folds", async () => {
     stubPeriods();
     wrap(<Periods />);
-    expect(await screen.findByText("2026-02")).toBeInTheDocument();
-    expect(screen.queryByText("2025-12")).not.toBeInTheDocument();
+    expect(await screen.findByText("Feb 2026")).toBeInTheDocument();
+    expect(screen.queryByText("Dec 2025")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /2025/ }));
-    expect(await screen.findByText("2025-12")).toBeInTheDocument();
+    expect(await screen.findByText("Dec 2025")).toBeInTheDocument();
     expect(window.localStorage.getItem("iv.fold.periods.year.2025")).toBe("true");
   });
 
   it("requests padded months and shows Total growth and XIRR on the yearly view", async () => {
     stubPeriods();
     wrap(<Periods />);
-    await screen.findByText("2026-02");
+    await screen.findByText("Feb 2026");
     const urls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
     expect(urls.some((u) => u.includes("/monthly") && u.includes("fill_gaps=true"))).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "Yearly" }));
