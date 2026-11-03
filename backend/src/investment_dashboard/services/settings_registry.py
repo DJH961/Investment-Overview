@@ -345,10 +345,10 @@ DEFS: tuple[SettingDef, ...] = (
     SettingDef(
         "scheduler.fx_interval_minutes",
         SettingType.INT,
-        30,
+        2,
         "data_refresh",
         "FX refresh while the market is closed",
-        min=_D(5),
+        min=_D(1),
         max=_D(720),
         level="advanced",
         unit="min",

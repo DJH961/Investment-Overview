@@ -10,7 +10,7 @@ Decisions use the New York exchange clock from :mod:`domain.market_hours`
   event;
 * market closed -> ``eod`` once per settled session date (closes, splits,
   benchmark, snapshots, cache janitor), then a ``refresh`` event;
-* otherwise the live FX spot every ``scheduler.fx_interval_minutes`` (default 30;
+* otherwise the live FX spot every ``scheduler.fx_interval_minutes`` (default 2;
   ``fx`` event).
 
 Control (``/api/maintenance/scheduler``): :meth:`Scheduler.snapshot` reports the
@@ -45,7 +45,7 @@ log = logging.getLogger(__name__)
 
 POLL_SECONDS = 5.0
 #: Fallback when the ``scheduler.fx_interval_minutes`` setting cannot be read.
-FX_INTERVAL = timedelta(minutes=30)
+FX_INTERVAL = timedelta(minutes=2)
 JOB_NAMES: tuple[str, ...] = ("tick", "fx", "eod", "backup")
 PAUSE_KEY = "scheduler.pause"
 #: Longest pause accepted (a pause always expires).
@@ -118,6 +118,10 @@ def default_eod_job() -> dict[str, Any] | None:
     from investment_dashboard import boot  # noqa: PLC0415
 
     for step in (
+        # Live spot first: this job also stamps ``last_fx``, so the live EUR/USD
+        # must really be fetched here (a restart otherwise sat on the ECB
+        # end-of-day rate until the next FX run).
+        boot._refresh_live_fx,
         boot._refresh_fx,
         boot._refresh_prices,
         boot._refresh_splits,
