@@ -133,10 +133,17 @@ def delete_tiingo_token_from_keyring() -> bool:
 def _keyring_get(username: str) -> str | None:
     try:
         import keyring  # noqa: PLC0415
+        from keyring.errors import NoKeyringError  # noqa: PLC0415
     except ImportError:
         return None
     try:
         return keyring.get_password(_KEYRING_SERVICE, username)
+    except NoKeyringError:
+        # No OS keychain on this machine (the v6 server container, a headless
+        # Linux box): nothing can be stored there, so this is "not set", not a
+        # problem. Secrets come from env / the encrypted config tier instead.
+        log.debug("no keyring backend; %s lookup skipped", username)
+        return None
     except Exception:  # pragma: no cover - backend-specific
         log.warning("keyring lookup failed", exc_info=True)
         return None
@@ -158,14 +165,15 @@ def _keyring_set(username: str, secret: str) -> bool:
 def _keyring_delete(username: str) -> bool:
     try:
         import keyring  # noqa: PLC0415
-        from keyring.errors import PasswordDeleteError  # noqa: PLC0415
+        from keyring.errors import NoKeyringError, PasswordDeleteError  # noqa: PLC0415
     except ImportError:
         return False
     try:
         keyring.delete_password(_KEYRING_SERVICE, username)
         return True
-    except PasswordDeleteError:
-        # Entry already absent — treat as success (idempotent clear).
+    except (PasswordDeleteError, NoKeyringError):
+        # Entry already absent (or no keychain at all) — treat as success
+        # (idempotent clear).
         return True
     except Exception:  # pragma: no cover - backend-specific
         log.warning("keyring delete failed", exc_info=True)

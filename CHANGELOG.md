@@ -78,6 +78,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Claude Code on the server (no app change).** `deploy/bootstrap.sh` creates a locked-down `dev` workspace user (same SSH key, no sudo, no Docker, admin home set to `750`) and installs Claude Code there; `deploy/RUNBOOK.md` explains the one-time login and three ways in: desktop app over SSH, phone/browser via `claude remote-control` in tmux, or plain SSH.
 
 ### Fixed
+- **"keyring lookup failed" in Recent problems on the server.** With no Tiingo token set, the price/FX fallback also asked the OS keychain, which the server container does not have; that logged a warning every time. A machine without a keychain now counts as "nothing stored" (debug log only); real keychain errors still warn.
 - Overview/KPI tiles and movers rows no longer overflow on 390 px phones; the Overview chart opens on the configured default range.
 - Two diagnostics tests failed every evening (US time) on CI: they took "today" from the UTC clock while the service uses the New York trading date. They now use `exchange_today()` too.
 - Diagnostics no longer flags manual or delisted instruments as stale; the Tiingo fallback asks for the mapped provider symbol.
