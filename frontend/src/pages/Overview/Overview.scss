@@ -10,40 +10,6 @@
     gap: var(--space-3);
   }
 
-  // Desktop: value chart | movers + holdings. The chart's height is matched to
-  // the side column in Overview.tsx, so both end level with real content.
-  &__main {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-
-    @include m.phone {
-      gap: var(--space-3);
-    }
-
-    @include m.desktop {
-      display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);
-      align-items: start;
-    }
-  }
-
-  &__chart {
-    min-width: 0;
-  }
-
-  // A stack of cards in a side column (and in one column below desktop).
-  &__side {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    min-width: 0;
-
-    @include m.phone {
-      gap: var(--space-3);
-    }
-  }
-
   &__row {
     display: grid;
     gap: var(--space-4);
@@ -55,7 +21,23 @@
     }
 
     @include m.desktop {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+
+      &--alloc {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+    }
+  }
+
+  // Cards stacked in one grid cell (asset classes + lifetime FX).
+  &__side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-width: 0;
+
+    @include m.phone {
+      gap: var(--space-3);
     }
   }
 }

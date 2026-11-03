@@ -38,10 +38,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on wide screens; the total and Compute / Save buttons stick to the bottom of the
   screen; the plan summary is a 2 × 2 grid on phones and the buy plan uses columns
   on wide screens. The drift list replaces the 14-colour bar and wide table.
-- **Better use of desktop width.** Overview: movers and holdings sit beside the value
-  chart, which grows to end level with them (no empty page under either column); the
-  lifetime currency effect is a compact card under asset classes, next to the
-  treemap. Phones keep one column.
+- **Better use of desktop width.** Overview: the lifetime currency effect is a compact
+  card under asset classes, next to the treemap, instead of a full-width strip.
   Risk: metric groups share rows instead of leaving half of each row empty.
 
 ### Fixed
