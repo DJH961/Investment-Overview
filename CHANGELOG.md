@@ -47,6 +47,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Schema: transactions may have `source = 'import_generic'` (migration 0021; the
   v5 export relabels them `manual`).
 
+### Fixed
+- Tests: the 1D-vs-1W graph consistency test no longer fails during US market
+  hours (the live "now" point is stamped per request, milliseconds apart).
+
 ## [6.1.1] — 2026-11-03
 
 ### Fixed

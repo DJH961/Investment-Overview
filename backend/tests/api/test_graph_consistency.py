@@ -117,8 +117,10 @@ def test_week_last_session_is_the_day_curve(
     monkeypatch.setattr(intraday_snapshots_service, "week_nav_drift_with_fx", lambda *_a, **_k: {})
     day, week = _graph(api_client, "1d", ccy), _graph(api_client, "1w", ccy)
     assert day["session_date"] == week["session_date"] == session_date.isoformat()
-    day_points = [(p["t"], p["v"]) for p in day["points"]]  # type: ignore[attr-defined]
-    tail = [(p["t"], p["v"]) for p in week["points"]][-len(day_points) :]  # type: ignore[attr-defined]
+    # During market hours both curves end in a live "now" point, stamped when each
+    # request ran (milliseconds apart): compare timestamps to the minute.
+    day_points = [(p["t"][:16], p["v"]) for p in day["points"]]  # type: ignore[attr-defined]
+    tail = [(p["t"][:16], p["v"]) for p in week["points"]][-len(day_points) :]  # type: ignore[attr-defined]
     assert tail == day_points
 
 
