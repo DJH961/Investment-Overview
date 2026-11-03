@@ -98,9 +98,11 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 
 ## Owner-input items (not done by agents)
 - [x] yfinance spike (Mon 2026-11-02): passed (see Log, 2026-11-03).
-- Parity gate on the real ledger → then the snapshot/intraday storage migration.
-- Set secrets on the server; GHCR + Actions secrets; enable the deploy workflow.
-- Run `upload_db.py` with the real ledger; restore drill; first deploy.
+- [x] Parity gate on the real ledger (owner ran it). The snapshot/intraday storage migration follows as its own release.
+- [x] Set secrets on the server; GHCR + Actions secrets; enable the deploy workflow.
+- [x] Run `upload_db.py` with the real ledger; restore drill; first deploy.
+- [x] 6.0.0 released (2026-11-03); Pages companion is demo-only.
+- [ ] About a week of visual comparison, then the clean-up release (delete the §4 list) and the owner switches off Pages, the Worker, `live-data` and the Twelve Data key.
 
 ## Log
 - 2026-10-31 branch created, tracker written; W0 started.

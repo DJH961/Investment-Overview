@@ -12,8 +12,8 @@ valuation moment's rate, so EUR returns are FX-aware (rule in
 
 | Track | State |
 | --- | --- |
-| **v5.3.1** (this code) | Final v5 release: local NiceGUI desktop app plus a read-only, end-to-end-encrypted web companion ([`web/`](web/)). **Frozen, no support.** Kept running until the v6 cutover; also preserved on branch `legacy/v5` / tag `v5.3.1` ([rollback guide](docs/legacy_v5.md)). |
-| **v6 "One App"** | In progress: one hosted FastAPI backend plus a React frontend replacing both v5 apps. Plan: [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md). |
+| **v6 "One App"** (6.0.0) | **Live.** One hosted FastAPI backend ([`backend/`](backend/)) plus a React frontend ([`frontend/`](frontend/)) on the owner's server, replacing both v5 apps. Plan: [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md). |
+| **v5.3.1** | Final v5 release, **frozen, no support**: preserved on branch `legacy/v5` / tag `v5.3.1` ([rollback guide](docs/legacy_v5.md)). Its code stays on `main` until the clean-up release; the GitHub Pages companion ([`web/`](web/)) now serves only an offline demo. |
 
 ## Quick start (current v5 code)
 
