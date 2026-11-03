@@ -30,7 +30,7 @@ describe("Money in hide mode", () => {
     expect(screen.getByText(/1,234\.50/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "flip" }));
     expect(screen.queryByText(/1,234/)).toBeNull();
-    expect(screen.getByLabelText("hidden amount")).toHaveTextContent("€ •••••");
+    expect(screen.getByLabelText("hidden amount")).toHaveTextContent("€••,•••.••");
     expect(localStorage.getItem("iv.privacy.hideAmounts")).toBe("true");
   });
 });

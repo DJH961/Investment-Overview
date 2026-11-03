@@ -18,6 +18,7 @@
 
   &__verdict {
     font-size: var(--font-size-lg);
+    white-space: nowrap;
 
     &--pos {
       color: var(--color-pos);
@@ -44,6 +45,27 @@
   }
 
   &__stat-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-muted);
+  }
+
+  // Vs market: "You" and the benchmark on their own lines, values aligned.
+  &__vs {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: start;
+    gap: 2px var(--space-3);
+    margin-top: var(--space-1);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__vs-row {
+    display: contents;
+  }
+
+  &__vs-who {
     color: var(--color-muted);
   }
 

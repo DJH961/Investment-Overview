@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
@@ -19,6 +20,14 @@ export interface KpiGridProps {
 }
 
 /** Copy for the info buttons (NiceGUI `ui/copy/tooltips.py` wording, shortened). */
+const STRIP_TIPS = {
+  expense:
+    "Weighted average yearly fund fee (TER) across your holdings, and roughly what that costs per year at today's value.",
+  dividendReturn: "All dividends received since you started, as a share of the money you invested.",
+  yield12:
+    "Dividends received in the last 12 months as a share of today's portfolio value: your current income yield.",
+};
+
 export const KPI_TIPS = {
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
   capitalGain: "Current value minus net invested. Excludes dividends.",
@@ -36,7 +45,7 @@ function VsMarket({ verdict }: { verdict: Verdict | undefined }) {
   }
   return (
     <span className={clsx("kpi-grid__verdict", verdict.beating ? "kpi-grid__verdict--pos" : "kpi-grid__verdict--neg")}>
-      {verdict.beating ? "Beating the market" : "Trailing the market"}
+      {verdict.beating ? "Beating" : "Trailing"}
     </span>
   );
 }
@@ -98,9 +107,19 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={<VsMarket verdict={v} />}
           hint={
-            v && v.portfolio_return != null && v.benchmark_return != null
-              ? `You ${formatPercent(toNum(v.portfolio_return), { signed: true })} · ${v.benchmark_symbol} ${formatPercent(toNum(v.benchmark_return), { signed: true })}`
-              : undefined
+            v && v.portfolio_return != null && v.benchmark_return != null ? (
+              // One comparison per line, aligned: "You +76.86%" over "VT +79.06%".
+              <span className="kpi-grid__vs">
+                <span className="kpi-grid__vs-row">
+                  <span className="kpi-grid__vs-who">You</span>
+                  <Percent ratio={toNum(v.portfolio_return)} signed />
+                </span>
+                <span className="kpi-grid__vs-row">
+                  <span className="kpi-grid__vs-who">{v.benchmark_symbol}</span>
+                  <Percent ratio={toNum(v.benchmark_return)} signed />
+                </span>
+              </span>
+            ) : undefined
           }
         />
         <KpiTile
@@ -135,7 +154,10 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
       {!loading && k && (
         <dl className="kpi-grid__strip">
           <div className="kpi-grid__stat">
-            <dt className="kpi-grid__stat-label">Expense ratio</dt>
+            <dt className="kpi-grid__stat-label">
+              Expense ratio
+              <InfoTip label="Expense ratio" content={STRIP_TIPS.expense} />
+            </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={expense} />
               {k.annual_expense_cost != null && (
@@ -147,7 +169,10 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
             </dd>
           </div>
           <div className="kpi-grid__stat">
-            <dt className="kpi-grid__stat-label">Dividend return</dt>
+            <dt className="kpi-grid__stat-label">
+              Dividend return
+              <InfoTip label="Dividend return" content={STRIP_TIPS.dividendReturn} />
+            </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={toNum(k.dividend_yield_pct)} />
               {k.dividend_income != null && (
@@ -158,12 +183,15 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
             </dd>
           </div>
           <div className="kpi-grid__stat">
-            <dt className="kpi-grid__stat-label">TTM yield</dt>
+            <dt className="kpi-grid__stat-label">
+              Dividend yield, 12 mo
+              <InfoTip label="Dividend yield, 12 months" content={STRIP_TIPS.yield12} />
+            </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={toNum(k.dividend_yield_ttm_pct)} />
               {ttm !== null && (
                 <span className="kpi-grid__stat-sub">
-                  <Money amount={ttm} currency={currency} digits={0} /> last 12 mo
+                  <Money amount={ttm} currency={currency} digits={0} /> paid
                 </span>
               )}
             </dd>

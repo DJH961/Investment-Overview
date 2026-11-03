@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { useMemo, useState } from "react";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -6,6 +7,7 @@ import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
+import { Switch } from "../../components/Switch";
 import { ApiError } from "../../lib/api";
 import { formatNumber } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
@@ -131,45 +133,50 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
     <>
       <Card title="1 · How much are you investing?">
         <div className="allocations__step">
-          <Field label={`Cash to invest (${ccy})`}>
-            {(c) => <Input {...c} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />}
-          </Field>
-          <SegmentedControl
-            ariaLabel="Cash currency"
-            options={[
-              { value: "EUR", label: "EUR" },
-              { value: "USD", label: "USD" },
-            ]}
-            value={ccy}
-            onChange={setCcy}
-          />
-          <label className="allocations__check">
-            <input type="checkbox" checked={fractional} onChange={(e) => setFractional(e.target.checked)} />
-            Fractional shares
-          </label>
-          <label className="allocations__check">
-            <input type="checkbox" checked={allowSell} onChange={(e) => setAllowSell(e.target.checked)} />
-            Allow selling (rebalance)
-          </label>
+          <div className="allocations__amount">
+            <Field label={`Cash to invest (${ccy})`}>
+              {(c) => <Input {...c} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />}
+            </Field>
+            <SegmentedControl
+              ariaLabel="Cash currency"
+              options={[
+                { value: "EUR", label: "EUR" },
+                { value: "USD", label: "USD" },
+              ]}
+              value={ccy}
+              onChange={setCcy}
+            />
+          </div>
+          <div className="allocations__switches">
+            <Switch
+              label="Fractional shares"
+              hint="Buy parts of a share when your broker allows it."
+              checked={fractional}
+              onCheckedChange={setFractional}
+            />
+            <Switch
+              label="Allow selling (rebalance)"
+              hint="Sell what is over target instead of only buying."
+              checked={allowSell}
+              onCheckedChange={setAllowSell}
+            />
+          </div>
         </div>
       </Card>
 
       <Card
         title="2 · Target mix"
-        subtitle="Totals are normalised to 100 % when the plan is computed, so you can sketch freely."
-        actions={
-          <SegmentedControl
-            ariaLabel="Target mode"
-            size="sm"
-            options={[
-              { value: "category", label: "By category" },
-              { value: "fund", label: "By fund" },
-            ]}
-            value={mode}
-            onChange={setMode}
-          />
-        }
+        subtitle="Totals are scaled to 100 % when the plan is computed, so you can sketch freely."
       >
+        <SegmentedControl
+          ariaLabel="Target mode"
+          options={[
+            { value: "category", label: "By category" },
+            { value: "fund", label: "By fund" },
+          ]}
+          value={mode}
+          onChange={setMode}
+        />
         <div className="allocations__presets">
           <Button size="sm" variant="secondary" onClick={() => setWeights(presetCurrent(rows))}>
             Match current mix
@@ -199,38 +206,58 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
             ? inputs.instruments.map((i) => {
                 const k = String(i.instrument_id);
                 return (
-                  <li key={k} className="allocations__row">
-                    <span className="allocations__row-label" title={i.name}>
-                      {i.symbol}
+                  <li key={k} className={clsx("allocations__row", noBuy[k] && "allocations__row--skipped")}>
+                    <span className="allocations__row-who">
+                      <span className="allocations__row-label" title={i.name}>
+                        {i.symbol}
+                      </span>
+                      <span className="allocations__row-now">
+                        now <Percent ratio={Number(i.current_pct ?? 0)} digits={1} />
+                      </span>
                     </span>
-                    <Percent ratio={Number(i.current_pct ?? 0)} digits={1} className="allocations__row-now" />
-                    <Input
-                      aria-label={`Target % for ${i.symbol}`}
-                      inputMode="decimal"
-                      value={fundW[k] ?? ""}
-                      onChange={(e) => setFundW((w) => ({ ...w, [k]: e.target.value }))}
-                    />
-                    <label className="allocations__check">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(noBuy[k])}
-                        onChange={(e) => setNoBuy((n) => ({ ...n, [k]: e.target.checked }))}
+                    <span className="allocations__pct">
+                      <Input
+                        aria-label={`Target % for ${i.symbol}`}
+                        inputMode="decimal"
+                        value={fundW[k] ?? ""}
+                        onChange={(e) => setFundW((w) => ({ ...w, [k]: e.target.value }))}
                       />
+                      <span className="allocations__pct-unit" aria-hidden>
+                        %
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="allocations__nobuy"
+                      aria-pressed={Boolean(noBuy[k])}
+                      aria-label={`Don't buy ${i.symbol}`}
+                      title="Keep its weight but never buy more of it"
+                      onClick={() => setNoBuy((n) => ({ ...n, [k]: !n[k] }))}
+                    >
                       No buy
-                    </label>
+                    </button>
                   </li>
                 );
               })
             : inputs.categories.map((c) => (
                 <li key={c.name} className="allocations__row allocations__row--category">
-                  <span className="allocations__row-label">{c.name}</span>
-                  <Percent ratio={Number(c.current_pct ?? 0)} digits={1} className="allocations__row-now" />
-                  <Input
-                    aria-label={`Target % for ${c.name}`}
-                    inputMode="decimal"
-                    value={catW[c.name] ?? ""}
-                    onChange={(e) => setCatW((w) => ({ ...w, [c.name]: e.target.value }))}
-                  />
+                  <span className="allocations__row-who">
+                    <span className="allocations__row-label">{c.name}</span>
+                    <span className="allocations__row-now">
+                      now <Percent ratio={Number(c.current_pct ?? 0)} digits={1} />
+                    </span>
+                  </span>
+                  <span className="allocations__pct">
+                    <Input
+                      aria-label={`Target % for ${c.name}`}
+                      inputMode="decimal"
+                      value={catW[c.name] ?? ""}
+                      onChange={(e) => setCatW((w) => ({ ...w, [c.name]: e.target.value }))}
+                    />
+                    <span className="allocations__pct-unit" aria-hidden>
+                      %
+                    </span>
+                  </span>
                   <details className="allocations__members">
                     <summary className="allocations__members-toggle">
                       Funds in this category ({(selected[c.name] ?? []).length}/{c.members.length})
@@ -264,22 +291,19 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
               ))}
         </ul>
 
-        <div className="allocations__total-bar" aria-hidden>
-          <span
-            className={off ? "allocations__total-fill allocations__total-fill--off" : "allocations__total-fill"}
-            style={{ width: `${Math.min(total, 100)}%` }}
-          />
+        <div className={clsx("allocations__sum", off && "allocations__sum--off")}>
+          <p className="allocations__sum-line" aria-live="polite" data-testid="weight-total">
+            <span className="allocations__sum-label">Total</span>
+            <span className="allocations__sum-value">{formatNumber(total, 1)} %</span>
+            <span className="allocations__sum-note">{off ? "will be scaled to 100 %" : "sums to 100 %"}</span>
+          </p>
+          <div className="allocations__total-bar" aria-hidden>
+            <span className="allocations__total-fill" style={{ width: `${Math.min(total, 100)}%` }} />
+          </div>
         </div>
-        <p
-          className={off ? "allocations__total allocations__total--off" : "allocations__total"}
-          aria-live="polite"
-          data-testid="weight-total"
-        >
-          Total: {formatNumber(total, 2)} % {off ? "(will be normalised to 100 %)" : "· sums to 100 %"}
-        </p>
 
         <div className="allocations__actions">
-          <Button onClick={() => plan.mutate(request())} loading={plan.isPending}>
+          <Button className="allocations__compute" variant="primary" onClick={() => plan.mutate(request())} loading={plan.isPending}>
             Compute plan
           </Button>
           <Button

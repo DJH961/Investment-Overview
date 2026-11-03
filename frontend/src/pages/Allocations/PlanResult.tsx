@@ -1,11 +1,13 @@
 import { Card } from "../../components/Card";
-import { KpiTile } from "../../components/KpiTile";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { formatNumber, formatQuantity } from "../../lib/format";
 import type { BuilderPlan, BuilderPlanRow } from "../../lib/queries/allocations";
 
 const num = (s: string | null | undefined) => (s === null || s === undefined ? null : Number(s));
+
+/** A fund row that actually buys or sells something. */
+const moves = (r: BuilderPlanRow) => (num(r.add_value) ?? 0) !== 0;
 
 /** Before → after bar: the held part, the added slice highlighted, and a target marker. */
 export function ShiftBar({ before, after, target, label }: { before: number; after: number; target: number; label: string }) {
@@ -62,32 +64,55 @@ export function PlanResult({ plan }: { plan: BuilderPlan }) {
     v === null || v === undefined ? undefined : <Money amount={Number(v)} currency={s.other_ccy} />;
   const selling = Number(s.selling ?? 0) > 0;
   const groups = plan.categories.map((c) => ({ c, rows: plan.rows.filter((r) => r.category === c.name) }));
+  // Only categories that buy (or sell) get a section; the rest collapse into
+  // one "Already on target" line instead of a list of "€0.00" rows.
+  const active = groups.filter(({ rows }) => rows.some(moves));
+  const idle = groups.filter(({ rows }) => !rows.some(moves));
 
   return (
     <>
       <Card title="Plan summary" collapsibleId="allocations.summary">
-        <div className="allocations__kpis">
-          <KpiTile
-            label="Investing"
-            value={<Money amount={num(s.cash)} currency={plan.ccy} />}
-            secondary={
-              <>
-                {other(s.other_cash)}
-                {s.pct_of_wealth && (
-                  <>
-                    {" · "}
-                    <Percent ratio={Number(s.pct_of_wealth)} digits={1} /> of wealth
-                  </>
-                )}
-              </>
-            }
-          />
-          <KpiTile label="Buying" value={<Money amount={num(s.buying)} currency={plan.ccy} />} secondary={other(s.other_buying)} />
+        {/* Three figures side by side (four when selling): compact, no lone tile. */}
+        <dl className="allocations__summary">
+          <div className="allocations__stat">
+            <dt className="allocations__stat-label">Investing</dt>
+            <dd className="allocations__stat-value">
+              <Money amount={num(s.cash)} currency={plan.ccy} digits={0} />
+            </dd>
+            <dd className="allocations__stat-sub">
+              {s.pct_of_wealth ? (
+                <>
+                  <Percent ratio={Number(s.pct_of_wealth)} digits={1} /> of wealth
+                </>
+              ) : (
+                other(s.other_cash)
+              )}
+            </dd>
+          </div>
+          <div className="allocations__stat">
+            <dt className="allocations__stat-label">Buying</dt>
+            <dd className="allocations__stat-value">
+              <Money amount={num(s.buying)} currency={plan.ccy} digits={0} />
+            </dd>
+            <dd className="allocations__stat-sub">{other(s.other_buying)}</dd>
+          </div>
           {selling && (
-            <KpiTile label="Selling" value={<Money amount={num(s.selling)} currency={plan.ccy} />} secondary={other(s.other_selling)} />
+            <div className="allocations__stat">
+              <dt className="allocations__stat-label">Selling</dt>
+              <dd className="allocations__stat-value">
+                <Money amount={num(s.selling)} currency={plan.ccy} digits={0} />
+              </dd>
+              <dd className="allocations__stat-sub">{other(s.other_selling)}</dd>
+            </div>
           )}
-          <KpiTile label="Left over" value={<Money amount={num(s.leftover)} currency={plan.ccy} />} secondary={other(s.other_leftover)} />
-        </div>
+          <div className="allocations__stat">
+            <dt className="allocations__stat-label">Left over</dt>
+            <dd className="allocations__stat-value">
+              <Money amount={num(s.leftover)} currency={plan.ccy} digits={0} />
+            </dd>
+            <dd className="allocations__stat-sub">{other(s.other_leftover)}</dd>
+          </div>
+        </dl>
         {plan.extras.length > 0 && (
           <p className="allocations__notice" role="note">
             Held but not ticked: {plan.extras.join(", ")}. Their value counts toward their category, so they
@@ -98,7 +123,8 @@ export function PlanResult({ plan }: { plan: BuilderPlan }) {
 
       <Card title={plan.allow_sell ? "Rebalance plan" : "Buy plan"} collapsibleId="allocations.plan">
         <div className="allocations__groups">
-          {groups.map(({ c, rows }) => (
+          {active.length === 0 && <p className="allocations__plan-note">Nothing to buy: your mix is already on target.</p>}
+          {active.map(({ c, rows }) => (
             <section key={c.name} className="allocations__group" aria-label={c.name}>
               <div className="allocations__plan-head">
                 <h3 className="allocations__group-title">{c.name}</h3>
@@ -113,12 +139,31 @@ export function PlanResult({ plan }: { plan: BuilderPlan }) {
                 label={shiftLabel(c.name, c)}
               />
               <ul className="allocations__rows">
-                {rows.map((r) => (
+                {rows.filter(moves).map((r) => (
                   <FundRow key={r.instrument_id} r={r} ccy={plan.ccy} />
                 ))}
               </ul>
+              {rows.some((r) => !moves(r)) && (
+                <p className="allocations__plan-note">
+                  No change:{" "}
+                  {rows
+                    .filter((r) => !moves(r))
+                    .map((r) => r.symbol)
+                    .join(", ")}
+                </p>
+              )}
             </section>
           ))}
+          {idle.length > 0 && (
+            <p className="allocations__idle">
+              <span className="allocations__idle-label">Already on target</span>
+              {idle.map(({ c }) => (
+                <span key={c.name} className="allocations__idle-item">
+                  {c.name} <Percent ratio={Number(c.after_pct)} digits={1} />
+                </span>
+              ))}
+            </p>
+          )}
         </div>
       </Card>
     </>

@@ -36,10 +36,12 @@ describe("hide mode", () => {
   afterEach(() => setHideAmounts(false));
   it("masks money (symbol kept), quantities and the chart formatters; keeps percentages", () => {
     setHideAmounts(true);
-    expect(formatMoney(1234.5, "EUR")).toBe("€ •••••");
+    // Number-shaped (fixed five-digit shape), so hidden figures lay out like real ones.
+    expect(formatMoney(1234.5, "EUR")).toBe("€••,•••.••");
+    expect(formatMoney(-1234.5, "EUR", { signed: true })).toBe("-€••,•••.••");
     expect(formatMoney(null, "EUR")).toBe("–");
     expect(formatQuantity(12.5, 4)).toBe("•••••");
-    expect(chartMoneyFormat("USD", "axis")(5000)).toBe("US$ •••••");
+    expect(chartMoneyFormat("USD", "axis")(5000)).toBe("$••,•••");
     expect(formatPercent(0.05)).toContain("5");
     setHideAmounts(false);
     expect(formatMoney(1234.5, "EUR")).toContain("1,234.50");
