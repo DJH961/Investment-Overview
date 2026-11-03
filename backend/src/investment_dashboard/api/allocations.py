@@ -18,11 +18,13 @@ from investment_dashboard.api.schemas.allocations import (
 )
 from investment_dashboard.readmodels import allocations as allocations_readmodel
 from investment_dashboard.readmodels import rebalance
+from investment_dashboard.services.read_cache import cached_read
 
 router = APIRouter(tags=["allocations"])
 
 
 @router.get("/allocations", response_model=AllocationsResponse)
+@cached_read
 def get_allocations(session: SessionDep, ccy: ReportCcy = "EUR") -> AllocationsResponse:
     return AllocationsResponse.model_validate(allocations_readmodel.build(session, ccy=ccy))
 

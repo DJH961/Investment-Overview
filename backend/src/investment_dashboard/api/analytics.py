@@ -9,11 +9,13 @@ from fastapi import APIRouter, Query
 from investment_dashboard.api.deps import ReportCcy, SessionDep
 from investment_dashboard.api.schemas.analytics import AnalyticsOut
 from investment_dashboard.readmodels import analytics as analytics_rm
+from investment_dashboard.services.read_cache import cached_read
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 @router.get("", response_model=AnalyticsOut)
+@cached_read
 def get_analytics(
     session: SessionDep,
     ccy: ReportCcy = "EUR",

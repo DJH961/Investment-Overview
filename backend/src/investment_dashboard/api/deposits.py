@@ -9,11 +9,13 @@ from fastapi import APIRouter, Query
 from investment_dashboard.api.deps import ReportCcy, SessionDep
 from investment_dashboard.api.schemas.deposits import DepositsOut, DividendsOut
 from investment_dashboard.readmodels import deposits as deposits_rm
+from investment_dashboard.services.read_cache import cached_read
 
 router = APIRouter(prefix="/deposits", tags=["deposits"])
 
 
 @router.get("", response_model=DepositsOut)
+@cached_read
 def get_deposits(
     session: SessionDep,
     ccy: ReportCcy = "EUR",
@@ -27,5 +29,6 @@ def get_deposits(
 
 
 @router.get("/dividends", response_model=DividendsOut)
+@cached_read
 def get_dividends(session: SessionDep, ccy: ReportCcy = "EUR") -> dict[str, Any]:
     return deposits_rm.build_dividends(session, ccy=ccy)

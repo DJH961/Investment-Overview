@@ -12,11 +12,13 @@ from investment_dashboard.api.schemas.holdings import (
     HoldingsResponse,
 )
 from investment_dashboard.readmodels import holdings as holdings_readmodel
+from investment_dashboard.services.read_cache import cached_read
 
 router = APIRouter(tags=["holdings"])
 
 
 @router.get("/holdings", response_model=HoldingsResponse)
+@cached_read
 def get_holdings(
     session: SessionDep, ccy: ReportCcy = "EUR", group_by: GroupBy = "none"
 ) -> HoldingsResponse:
@@ -26,6 +28,7 @@ def get_holdings(
 
 
 @router.get("/holdings/{instrument_id}/history", response_model=HoldingHistoryResponse)
+@cached_read
 def get_holding_history(
     session: SessionDep,
     instrument_id: int,

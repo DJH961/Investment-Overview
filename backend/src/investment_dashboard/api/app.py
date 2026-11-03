@@ -32,6 +32,7 @@ from investment_dashboard.api.deps import require_auth
 from investment_dashboard.api.limits import RequestGuard
 from investment_dashboard.config import get_settings, validate_server_config
 from investment_dashboard.errors import DomainError
+from investment_dashboard.services import read_cache
 
 API_PREFIX = "/api"
 
@@ -125,6 +126,10 @@ def _mount_frontend(app: FastAPI, dist: Path, *, docs: bool = True) -> None:
         return FileResponse(index)
 
 
+#: Writes that change no report data (a UI preference), so they keep the read cache.
+_CACHE_NEUTRAL_WRITES = frozenset({"/api/graphs/range"})
+
+
 def create_app(*, lifespan: bool = True) -> FastAPI:
     """Build the v6 app. ``lifespan=False`` skips boot/scheduler (tests, OpenAPI export)."""
     settings = get_settings()
@@ -155,6 +160,21 @@ def create_app(*, lifespan: bool = True) -> FastAPI:
         return response
 
     app.middleware("http")(log_request_activity)
+
+    @app.middleware("http")
+    async def drop_read_cache_on_write(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        # A successful write (transaction, import, setting, repair...) can change
+        # any report: forget cached reads so the next request recomputes.
+        response = await call_next(request)
+        if (
+            request.method not in ("GET", "HEAD", "OPTIONS")
+            and response.status_code < 400
+            and request.url.path not in _CACHE_NEUTRAL_WRITES
+        ):
+            read_cache.invalidate()
+        return response
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:

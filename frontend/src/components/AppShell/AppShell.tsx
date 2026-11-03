@@ -2,6 +2,7 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import clsx from "clsx";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { useHideAmounts } from "../../lib/hideAmounts";
@@ -9,6 +10,8 @@ import { getConnectivity } from "../../lib/network";
 import { reauthLoginPath, setReauthHandler } from "../../lib/api";
 import { logout as signOut } from "../../lib/auth";
 import { NAV_ITEMS, titleFor } from "../../lib/nav";
+import { prefetchKeyData } from "../../lib/prefetch";
+import { usePrefs } from "../../lib/prefs";
 import { useServerRefresh } from "../../lib/refresh";
 import { useShell } from "../../lib/shell";
 import { PULL_THRESHOLD, usePullToRefresh } from "../../lib/usePullToRefresh";
@@ -55,7 +58,21 @@ function PullToRefresh({ enabled, onRefresh }: { enabled: boolean; onRefresh: ()
 }
 
 /** Responsive frame: sidebar (desktop) / rail (tablet) / bottom tab bar (phone). */
+/** Wait this long after the shell mounts, so the open page's own requests go first. */
+const PREFETCH_DELAY_MS = 1200;
+
 export function AppShell() {
+  const queryClient = useQueryClient();
+  const { currency } = usePrefs();
+  // Warm Overview, Holdings, Periods and every graph range in the background.
+  useEffect(() => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => void prefetchKeyData(queryClient, currency, ctl.signal), PREFETCH_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [queryClient, currency]);
   const phone = useIsPhone();
   const desktop = useIsDesktop();
   const navigate = useNavigate();

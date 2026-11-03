@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from investment_dashboard.domain import market_hours
+from investment_dashboard.services import read_cache
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +90,12 @@ class LiveBus:
             return len(self._subs)
 
     def publish(self, event: Event) -> None:
-        """Fan ``event`` out to every subscriber; safe from any thread."""
+        """Fan ``event`` out to every subscriber; safe from any thread.
+
+        Every event means data may have moved (tick, FX, refresh, graph reload),
+        so the read cache is dropped first.
+        """
+        read_cache.invalidate()
         with self._lock:
             subs = list(self._subs)
         for sub in subs:

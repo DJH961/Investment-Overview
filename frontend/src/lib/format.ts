@@ -57,6 +57,10 @@ export interface MoneyOptions {
   digits?: number;
   /** Public market data (a unit price): never masked in hide mode. */
   unmasked?: boolean;
+  /** "$" instead of "US$" (charts, where the EUR/USD pair makes it unambiguous). */
+  narrow?: boolean;
+  /** Significant digits instead of fraction digits (short axis labels: "$120k", "$96.3k"). */
+  significant?: number;
 }
 
 const isMissing = (v: number | null | undefined): v is null | undefined =>
@@ -69,9 +73,11 @@ export function formatMoney(amount: number | null | undefined, currency: Currenc
   return new Intl.NumberFormat(LOCALE, {
     style: "currency",
     currency,
+    currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
     notation: opts.compact ? "compact" : "standard",
-    minimumFractionDigits: opts.compact ? 0 : digits,
-    maximumFractionDigits: digits,
+    ...(opts.significant
+      ? { maximumSignificantDigits: opts.significant }
+      : { minimumFractionDigits: opts.compact ? 0 : digits, maximumFractionDigits: digits }),
     signDisplay: opts.signed ? "exceptZero" : "auto",
   }).format(amount);
 }
@@ -216,9 +222,9 @@ export function chartMoneyFormat(currency: Currency, kind: "axis" | "tooltip" = 
   return kind === "axis"
     ? (v) =>
         Math.abs(v) >= 10_000
-          ? formatMoney(v, currency, { digits: 1, compact: true })
-          : formatMoney(v, currency, { digits: 0 })
-    : (v) => formatMoney(v, currency, { digits: 0 });
+          ? formatMoney(v, currency, { compact: true, narrow: true, significant: 3 })
+          : formatMoney(v, currency, { digits: 0, narrow: true })
+    : (v) => formatMoney(v, currency, { digits: 0, narrow: true });
 }
 
 /** A difference of two returns (fraction, 0.0123 = 1.23 pp) as "+1.23 pp". */
