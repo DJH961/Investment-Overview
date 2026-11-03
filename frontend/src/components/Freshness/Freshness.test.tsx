@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { IDLE_REFRESH } from "../../lib/refresh";
 import { describeFreshness, Freshness } from ".";
+import { preMarketOpen } from "./describeFreshness";
 
 const base = {
   market_state: "open" as const,
@@ -25,8 +26,24 @@ describe("describeFreshness", () => {
     });
   });
   it("names the price day when the market is closed", () => {
-    const v = describeFreshness({ ...base, market_state: "closed", prices_live: false }, opts);
+    // Tuesday 22:00 UTC = 17:00 New York, after the close.
+    const v = describeFreshness(
+      { ...base, market_state: "closed", prices_live: false },
+      { ...opts, now: new Date("2026-11-03T22:00:00Z") },
+    );
     expect(v).toEqual({ status: "closed", label: "Closed · prices as of Fri 20:00" });
+  });
+  it("says when the market opens on a weekday morning", () => {
+    // Tuesday 07:38 UTC = 02:38 New York; the bell is 09:30 New York = 14:30 UTC.
+    const v = describeFreshness(
+      { ...base, market_state: "closed", prices_live: false },
+      { ...opts, now: new Date("2026-11-03T07:38:00Z") },
+    );
+    expect(v).toEqual({ status: "closed", label: "Pre-market · opens 14:30" });
+    expect(preMarketOpen(new Date("2026-11-07T07:38:00Z"))).toBeNull(); // Saturday
+    expect(preMarketOpen(new Date("2026-11-03T15:00:00Z"))).toBeNull(); // already open
+    // Summer time: 09:30 EDT = 13:30 UTC.
+    expect(preMarketOpen(new Date("2026-07-07T08:00:00Z"))?.toISOString()).toBe("2026-07-07T13:30:00.000Z");
   });
   it("shows Updating… and history progress", () => {
     expect(describeFreshness({ ...base, refresh_running: true }, opts).label).toBe("Updating…");

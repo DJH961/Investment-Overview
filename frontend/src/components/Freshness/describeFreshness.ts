@@ -30,9 +30,37 @@ export function updatingView(refresh: Pick<RefreshState, "historical" | "done" |
  * landed within the live window (`prices_live`), stamped with the price time,
  * never the server's compute time.
  */
+const NY = "America/New_York";
+const OPEN_MINUTES = 9 * 60 + 30; // regular session opens 09:30 New York time
+
+/**
+ * When the US market opens later today, or null when it does not (weekend,
+ * already opened or closed for the day). Only call this for a "closed" market
+ * state: the server already reports exchange holidays as "holiday".
+ */
+export function preMarketOpen(now: Date = new Date()): Date | null {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: NY,
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(now)
+      .map((p) => [p.type, p.value]),
+  );
+  if (parts.weekday === "Sat" || parts.weekday === "Sun") return null;
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  if (minutes >= OPEN_MINUTES) return null;
+  const msToOpen = (OPEN_MINUTES - minutes) * 60_000 - Number(parts.second) * 1000 - now.getMilliseconds();
+  return new Date(now.getTime() + msToOpen);
+}
+
 export function describeFreshness(
   freshness: FreshnessDto,
-  opts: { live: LiveStatus; refresh: RefreshState; timeZone?: string },
+  opts: { live: LiveStatus; refresh: RefreshState; timeZone?: string; now?: Date },
 ): FreshnessView {
   const { live, refresh, timeZone } = opts;
   if (refresh.running || freshness.refresh_running) {
@@ -57,6 +85,10 @@ export function describeFreshness(
     if (pricesLive) return { status: "live", label: updated ? `Live · ${formatTime(updated, timeZone)}` : "Live" };
     return { status: "closed", label: updated ? `Updated ${formatTime(updated, timeZone)}` : "Market open" };
   }
+  // A weekday morning before the bell: say when trading starts, so "Closed"
+  // does not read like something is broken.
+  const opensAt = freshness.market_state === "closed" ? preMarketOpen(opts.now) : null;
+  if (opensAt) return { status: "closed", label: `Pre-market · opens ${formatTime(opensAt, timeZone)}` };
   const priceAt = freshness.price_market_at ?? freshness.price_observed_at;
   const word = freshness.market_state === "holiday" ? "Holiday" : "Closed";
   return {
