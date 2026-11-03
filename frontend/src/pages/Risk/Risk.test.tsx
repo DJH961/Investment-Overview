@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 function mount() {
-  const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify(body), { status: 200 }));
+  const fetchMock = vi.fn(async (_url: string) => new Response(JSON.stringify({ EUR: body, USD: body }), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

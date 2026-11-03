@@ -40,8 +40,8 @@ function stored<T>(key: string): T | null {
   }
 }
 
-/** Queries that do not depend on the reporting currency (fetched once). */
-function currencyFreeJobs() {
+/** The ledger-side pages (no reporting currency involved). */
+function ledgerJobs() {
   return [
     instrumentsQuery(),
     accountsQuery(),
@@ -51,8 +51,8 @@ function currencyFreeJobs() {
   ];
 }
 
-/** Every nav page's default queries for one currency, most likely first. */
-function jobsFor(ccy: ReportingCurrency) {
+/** Every report page's default query, most likely first. One fetch each: it holds both currencies. */
+function reportJobs(ccy: ReportingCurrency) {
   const range = stored<GraphRange>("chart.overview.range");
   const first = range && GRAPH_RANGES.includes(range) ? range : null;
   const groupBy = stored<HoldingsGroupBy>("holdings.group") ?? "none";
@@ -75,12 +75,11 @@ function jobsFor(ccy: ReportingCurrency) {
 
 /**
  * The jobs in priority order (exported for tests): everything reachable from the
- * nav for the current currency, then the shared (currency-free) pages, then the
- * same set for the other currency, so a currency switch is a cache hit (G6).
+ * nav, one request per page. The `/both` responses already hold the other
+ * currency, so a currency switch is a cache hit with no request (G6).
  */
 export function prefetchPlan(ccy: ReportingCurrency) {
-  const other: ReportingCurrency = ccy === "EUR" ? "USD" : "EUR";
-  return [...jobsFor(ccy), ...currencyFreeJobs(), ...jobsFor(other)];
+  return [...reportJobs(ccy), ...ledgerJobs()];
 }
 
 /** Wait for the browser to be idle (max 2 s), so prefetching never competes with taps. */

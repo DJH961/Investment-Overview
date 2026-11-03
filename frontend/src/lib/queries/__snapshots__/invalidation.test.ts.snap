@@ -2,33 +2,33 @@
 
 exports[`write -> invalidated keys > fxConversionWrite 1`] = `
 [
-  "analytics/EUR",
+  "analytics/both",
   "calculator/inputs",
-  "deposits/EUR",
+  "deposits/both",
   "deposits/dividends",
   "fx-conversions",
   "graphs/1d",
-  "holdings/EUR",
+  "holdings/both",
   "holdings/history",
-  "overview/EUR",
+  "overview/both",
   "periods/monthly",
 ]
 `;
 
 exports[`write -> invalidated keys > importWrite 1`] = `
 [
-  "allocations/EUR",
-  "analytics/EUR",
+  "allocations/both",
+  "analytics/both",
   "calculator/inputs",
-  "deposits/EUR",
+  "deposits/both",
   "deposits/dividends",
   "diagnostics/status",
   "graphs/1d",
-  "holdings/EUR",
+  "holdings/both",
   "holdings/history",
   "import-batches/50",
   "instruments",
-  "overview/EUR",
+  "overview/both",
   "periods/monthly",
   "transaction/1",
   "transactions/[object Object]",
@@ -37,57 +37,57 @@ exports[`write -> invalidated keys > importWrite 1`] = `
 
 exports[`write -> invalidated keys > instrumentEdit 1`] = `
 [
-  "allocations/EUR",
-  "analytics/EUR",
+  "allocations/both",
+  "analytics/both",
   "calculator/inputs",
-  "deposits/EUR",
+  "deposits/both",
   "deposits/dividends",
-  "holdings/EUR",
+  "holdings/both",
   "holdings/history",
   "instruments",
-  "overview/EUR",
+  "overview/both",
   "transactions/[object Object]",
 ]
 `;
 
 exports[`write -> invalidated keys > refresh 1`] = `
 [
-  "allocations/EUR",
-  "analytics/EUR",
+  "allocations/both",
+  "analytics/both",
   "calculator/inputs",
-  "deposits/EUR",
+  "deposits/both",
   "deposits/dividends",
   "diagnostics/status",
   "graphs/1d",
-  "holdings/EUR",
+  "holdings/both",
   "holdings/history",
-  "overview/EUR",
+  "overview/both",
   "periods/monthly",
 ]
 `;
 
 exports[`write -> invalidated keys > tick 1`] = `
 [
-  "allocations/EUR",
+  "allocations/both",
   "graphs/1d",
-  "holdings/EUR",
+  "holdings/both",
   "holdings/history",
-  "overview/EUR",
+  "overview/both",
 ]
 `;
 
 exports[`write -> invalidated keys > transactionWrite 1`] = `
 [
-  "allocations/EUR",
-  "analytics/EUR",
+  "allocations/both",
+  "analytics/both",
   "calculator/inputs",
-  "deposits/EUR",
+  "deposits/both",
   "deposits/dividends",
   "diagnostics/status",
   "graphs/1d",
-  "holdings/EUR",
+  "holdings/both",
   "holdings/history",
-  "overview/EUR",
+  "overview/both",
   "periods/monthly",
   "transaction/1",
   "transactions/[object Object]",

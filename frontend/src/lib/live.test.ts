@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getLiveStatus, startLive, subscribeLiveEvents } from "./live";
+import { getLiveStatus, resetLiveSeq, startLive, subscribeLiveEvents } from "./live";
 import { getRefreshState, resetRefreshState } from "./refresh";
 
 class FakeEventSource {
@@ -33,6 +33,7 @@ describe("startLive", () => {
     qc.setQueryData(["auth", "me"], { authenticated: true });
   });
   afterEach(() => {
+    resetLiveSeq();
     resetRefreshState();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -100,7 +101,34 @@ describe("startLive", () => {
     stop();
   });
 
-  it("refetches live keys when the stream reopens after a drop", () => {
+  it("catches up from /api/live?since=<last seq> when the stream reopens, without marking stale", async () => {
+    qc.setQueryData(["graphs", "1d", "both"], {
+      EUR: { points: [{ t: "10:00", v: "1" }], secondary: null },
+      USD: { points: [{ t: "10:00", v: "2" }], secondary: null },
+    });
+    const fetchMock = vi.fn(
+      async (_url: string) =>
+        new Response(JSON.stringify({ seq: 9, missed_points: [{ t: "10:05", EUR: "5", USD: "6" }], tick: null }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const stop = startLive(qc);
+    FakeEventSource.instances[0]!.onopen?.();
+    FakeEventSource.instances[0]!.emit({ type: "tick", seq: 7 });
+    qc.setQueryData(["overview", "EUR"], 1); // reset the stale mark the tick left
+    FakeEventSource.instances[0]!.onerror?.();
+    vi.advanceTimersByTime(1000);
+    FakeEventSource.instances[1]!.onopen?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(String(fetchMock.mock.calls[0]![0])).toBe("/api/live?since=7");
+    const g = qc.getQueryData<{ EUR: { points: unknown[] } }>(["graphs", "1d", "both"])!;
+    expect(g.EUR.points).toHaveLength(2);
+    expect(stale(["overview", "EUR"])).toBe(false);
+    stop();
+  });
+
+  it("refetches live keys when the stream reopens after a drop and there is no seq to catch up from", async () => {
     const stop = startLive(qc);
     expect(getLiveStatus()).toBe("connecting");
     FakeEventSource.instances[0]!.onopen?.();
@@ -109,6 +137,7 @@ describe("startLive", () => {
     expect(getLiveStatus()).toBe("reconnecting");
     vi.advanceTimersByTime(1000);
     FakeEventSource.instances[1]!.onopen?.();
+    await vi.advanceTimersByTimeAsync(0);
     expect(getLiveStatus()).toBe("connected");
     expect(stale(["overview", "EUR"])).toBe(true);
     stop();

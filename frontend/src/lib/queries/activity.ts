@@ -18,13 +18,15 @@ export interface DepositFilters {
 
 /** Contributions ledger; the filters are applied by the server (rows and `by_year`). */
 export const depositsQuery = (ccy: ReportingCurrency, filters: DepositFilters = {}) => {
-  const params = new URLSearchParams({ ccy });
+  const params = new URLSearchParams();
   if (filters.accountId) params.set("account_id", String(filters.accountId));
   if (filters.kind) params.set("kind", filters.kind);
   if (filters.year) params.set("year", String(filters.year));
   return queryOptions({
-    queryKey: ["deposits", ccy, filters.accountId ?? null, filters.kind ?? null, filters.year ?? null],
-    queryFn: ({ signal }) => api<DepositsDto>(`/api/deposits?${params}`, { signal }),
+    queryKey: ["deposits", "both", filters.accountId ?? null, filters.kind ?? null, filters.year ?? null],
+    queryFn: ({ signal }) =>
+      api<{ EUR: DepositsDto; USD: DepositsDto }>(`/api/deposits/both${params.size ? `?${params}` : ""}`, { signal }),
+    select: (d: { EUR: DepositsDto; USD: DepositsDto }) => d[ccy],
     placeholderData: keepPreviousData,
   });
 };
@@ -36,8 +38,9 @@ export function useDeposits(ccy: ReportingCurrency, filters: DepositFilters = {}
 /** Dividend and interest income: payments, per year, per holding, TTM and yield. */
 export const dividendsQuery = (ccy: ReportingCurrency) =>
   queryOptions({
-    queryKey: ["deposits", "dividends", ccy],
-    queryFn: ({ signal }) => api<DividendsDto>(`/api/deposits/dividends?ccy=${ccy}`, { signal }),
+    queryKey: ["deposits", "dividends", "both"],
+    queryFn: ({ signal }) => api<{ EUR: DividendsDto; USD: DividendsDto }>("/api/deposits/dividends/both", { signal }),
+    select: (d: { EUR: DividendsDto; USD: DividendsDto }) => d[ccy],
     placeholderData: keepPreviousData,
   });
 

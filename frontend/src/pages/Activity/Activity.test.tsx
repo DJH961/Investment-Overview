@@ -74,9 +74,9 @@ function stub(urls: string[] = []) {
       const url = String(input);
       urls.push(url);
       const body = url.includes("/api/deposits/dividends")
-        ? dividends
+        ? { EUR: dividends, USD: dividends }
         : url.includes("/api/deposits")
-          ? deposits
+          ? { EUR: deposits, USD: deposits }
           : [{ id: 1, account_label: "Main", broker: "vanguard", native_currency: "USD", account_type: "brokerage", active: true }];
       return new Response(JSON.stringify(body), { status: 200 });
     }),

@@ -81,7 +81,27 @@ export function addAuthLostListener(listener: AuthLostListener): () => void {
   return () => authLostListeners.delete(listener);
 }
 
+/**
+ * `/both` GETs: the last ETag and body per URL, so a 304 can answer from memory.
+ * The app sends `Cache-Control: no-store`, so the browser never revalidates by itself.
+ */
+const BOTH_CACHE_MAX = 64;
+const bothCache = new Map<string, { etag: string; text: string }>();
+const isBothUrl = (path: string) => /\/both(\?|$)/.test(path);
+
+function rememberBoth(path: string, etag: string, text: string): void {
+  bothCache.delete(path);
+  bothCache.set(path, { etag, text });
+  if (bothCache.size > BOTH_CACHE_MAX) bothCache.delete(bothCache.keys().next().value as string);
+}
+
+/** Forget remembered `/both` bodies (sign-out, tests). */
+export function clearEtagCache(): void {
+  bothCache.clear();
+}
+
 function notifyAuthLost(): void {
+  bothCache.clear();
   for (const listener of authLostListeners) {
     try {
       listener();
@@ -181,6 +201,9 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
   const timeoutMs = options.timeoutMs ?? (method === "GET" ? DEFAULT_GET_TIMEOUT_MS : 0);
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  const conditional = method === "GET" && isBothUrl(path);
+  const remembered = conditional ? bothCache.get(path) : undefined;
+  if (remembered) headers["If-None-Match"] = remembered.etag;
 
   // One controller for both the caller's cancel (TanStack Query) and our timeout.
   const controller = new AbortController();
@@ -222,6 +245,7 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
       notifyAuthLost();
       if (!skipAuthRedirect) onUnauthorized();
     }
+    if (res.status === 304 && remembered) return JSON.parse(remembered.text) as T;
     if (!res.ok) {
       let payload: unknown;
       try {
@@ -243,6 +267,8 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
     } catch (err) {
       throw asNetworkError(err);
     }
+    const etag = conditional ? res.headers.get("ETag") : null;
+    if (etag && text) rememberBoth(path, etag, text);
     return (text ? JSON.parse(text) : undefined) as T;
   } finally {
     if (timer) clearTimeout(timer);
