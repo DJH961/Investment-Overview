@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrefsProvider } from "../../lib/prefs";
 import { resetRefreshState, setRefreshState } from "../../lib/refresh";
 import { ShellProvider } from "../../lib/shell";
+import { ToastProvider } from "../Toast";
 import { AppShell } from "./AppShell";
 
 function mockViewport(width: number) {
@@ -20,6 +21,7 @@ function renderShell() {
   return render(
     <QueryClientProvider client={new QueryClient()}>
     <PrefsProvider>
+      <ToastProvider>
       <ShellProvider>
         <MemoryRouter initialEntries={["/overview"]}>
           <Routes>
@@ -29,6 +31,7 @@ function renderShell() {
           </Routes>
         </MemoryRouter>
       </ShellProvider>
+      </ToastProvider>
     </PrefsProvider>
     </QueryClientProvider>,
   );

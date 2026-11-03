@@ -5,6 +5,7 @@ import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { useHideAmounts } from "../../lib/hideAmounts";
+import { getConnectivity } from "../../lib/network";
 import { reauthLoginPath, setReauthHandler } from "../../lib/api";
 import { logout as signOut } from "../../lib/auth";
 import { NAV_ITEMS, titleFor } from "../../lib/nav";
@@ -15,6 +16,8 @@ import { useShortcuts } from "../../lib/useShortcuts";
 import { useIsDesktop, useIsPhone, useMediaQuery } from "../../lib/useMediaQuery";
 import { IconButton } from "../IconButton";
 import { Dialog } from "../Dialog";
+import { OfflineBanner } from "../OfflineBanner";
+import { useToast } from "../Toast";
 import { updatingView } from "../Freshness";
 import { Sidebar } from "../Sidebar";
 import { TabBar } from "../TabBar";
@@ -62,8 +65,17 @@ export function AppShell() {
   const server = useServerRefresh();
   const refresh = server.state;
   const freshness = refresh.running ? updatingView(refresh) : pageFreshness;
+  const { toast } = useToast();
   // Always enabled, on every page: it never depends on a page registering a handler.
-  const onRefresh = server.start;
+  // Offline, say so instead of spinning (the cached data stays on screen).
+  const startRefresh = server.start;
+  const onRefresh = useCallback(() => {
+    if (getConnectivity() === "offline") {
+      toast({ title: "You're offline", description: "Prices refresh once the connection is back." });
+      return;
+    }
+    startRefresh();
+  }, [startRefresh, toast]);
   const health = useShellHealth();
   const { hide, toggle: toggleHide } = useHideAmounts();
   const refreshing = refresh.running || pageRefreshing;
@@ -137,6 +149,7 @@ export function AppShell() {
             />
           }
         />
+        <OfflineBanner />
         <main className="app-shell__content" id="main" key={hide ? "hidden" : "shown"}>
           <Outlet />
         </main>

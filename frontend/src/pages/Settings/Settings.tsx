@@ -265,7 +265,7 @@ export function Settings() {
           </div>
         }
       />
-      {schema.isError || values.isError ? (
+      {(schema.isError && !schema.data) || (values.isError && !values.data) ? (
         <ErrorState
           onRetry={() => {
             void schema.refetch();

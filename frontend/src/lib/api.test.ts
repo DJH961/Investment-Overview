@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, addAuthLostListener, api, reauthLoginPath, setReauthHandler, setUnauthorizedHandler } from "./api";
+import {
+  ApiError,
+  NetworkError,
+  addAuthLostListener,
+  api,
+  isNetworkError,
+  reauthLoginPath,
+  setReauthHandler,
+  setUnauthorizedHandler,
+} from "./api";
+import { getConnectivity, resetConnectivity } from "./network";
 
 function respond(status: number, body?: unknown) {
   vi.stubGlobal(
@@ -8,7 +18,68 @@ function respond(status: number, body?: unknown) {
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+  resetConnectivity();
+});
+
+describe("api connectivity", () => {
+  it("turns a failed fetch into a NetworkError and marks the server unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
+    const err = await api("/api/x").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NetworkError);
+    expect(isNetworkError(err)).toBe(true);
+    expect(getConnectivity()).toBe("unreachable");
+    respond(200, {});
+    await api("/api/x");
+    expect(getConnectivity()).toBe("online");
+  });
+
+  it("times out a hanging GET", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+      ),
+    );
+    const pending = api("/api/x", { timeoutMs: 1000 }).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(1000);
+    const err = await pending;
+    expect(err).toBeInstanceOf(NetworkError);
+    expect((err as NetworkError).timedOut).toBe(true);
+  });
+
+  it("passes a caller's cancel through untouched", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+      ),
+    );
+    const ctrl = new AbortController();
+    const pending = api("/api/x", { signal: ctrl.signal }).catch((e: unknown) => e);
+    ctrl.abort();
+    const err = await pending;
+    expect(err).not.toBeInstanceOf(NetworkError);
+    expect(getConnectivity()).toBe("online");
+  });
+
+  it("treats a proxy 502 as unreachable", async () => {
+    respond(502);
+    const err = await api("/api/x").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(isNetworkError(err)).toBe(true);
+    expect(getConnectivity()).toBe("unreachable");
+  });
+});
 
 describe("api", () => {
   it("returns parsed JSON and sends same-origin credentials", async () => {

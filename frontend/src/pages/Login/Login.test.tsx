@@ -8,9 +8,11 @@ vi.mock("@simplewebauthn/browser", () => ({
   browserSupportsWebAuthn: vi.fn(() => true),
   browserSupportsWebAuthnAutofill: vi.fn(async () => false),
   startAuthentication: vi.fn(),
+  WebAuthnAbortService: { cancelCeremony: vi.fn() },
 }));
 
-import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
+import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
+import { rememberPasskeyDevice } from "../../lib/auth";
 import { Login } from "./Login";
 
 function renderLogin(url = "/login?next=%2Fholdings") {
@@ -29,7 +31,21 @@ function renderLogin(url = "/login?next=%2Fholdings") {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.mocked(browserSupportsWebAuthn).mockReturnValue(true);
+  vi.mocked(startAuthentication).mockReset();
+  localStorage.clear();
+  sessionStorage.clear();
 });
+
+/** fetch stub: passkey options, then a 204 for verify. */
+function passkeyServer() {
+  const fetchMock = vi.fn(async (url: string) =>
+    String(url).endsWith("/options")
+      ? new Response(JSON.stringify({ challenge: "c", rpId: "x" }), { status: 200 })
+      : new Response(null, { status: 204 }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
 
 describe("Login", () => {
   it("signs in and navigates to ?next", async () => {
@@ -84,5 +100,42 @@ describe("Login", () => {
   it("shows no re-sign-in note by default", () => {
     renderLogin();
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  describe("passkey auto-prompt", () => {
+    it("opens the passkey dialog by itself on a device that used one before", async () => {
+      rememberPasskeyDevice();
+      passkeyServer();
+      vi.mocked(startAuthentication).mockResolvedValue({ id: "cred" } as never);
+      renderLogin();
+      expect(await screen.findByText("holdings page")).toBeInTheDocument();
+      expect(startAuthentication).toHaveBeenCalledWith(expect.objectContaining({ useBrowserAutofill: false }));
+    });
+
+    it("does not auto-prompt on a device without a passkey hint", async () => {
+      passkeyServer();
+      renderLogin();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(startAuthentication).not.toHaveBeenCalled();
+    });
+
+    it("does not auto-prompt right after signing out on purpose", async () => {
+      rememberPasskeyDevice();
+      sessionStorage.setItem("iv.signed-out", "1");
+      passkeyServer();
+      renderLogin();
+      await new Promise((r) => setTimeout(r, 20));
+      expect(startAuthentication).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the form quietly when the dialog is dismissed", async () => {
+      rememberPasskeyDevice();
+      passkeyServer();
+      vi.mocked(startAuthentication).mockRejectedValue(Object.assign(new Error("x"), { name: "NotAllowedError" }));
+      renderLogin();
+      await waitFor(() => expect(startAuthentication).toHaveBeenCalled());
+      await waitFor(() => expect(screen.getByRole("button", { name: "Sign in with passkey" })).toBeEnabled());
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
   });
 });

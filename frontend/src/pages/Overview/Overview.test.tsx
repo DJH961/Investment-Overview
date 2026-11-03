@@ -21,12 +21,19 @@ const populated = {
   currency: { return_split: { currency_effect_pp: "0.01" }, today: { rate_move_pct: "0.001" } },
   movers: { basis_date: "2026-10-30", winners: [], losers: [] },
 };
-let overview: Record<string, unknown> = empty;
+let overview: Record<string, unknown> | undefined = empty;
+let overviewError = false;
 const idle = { data: undefined, isPending: true, isError: false, isFetching: false, refetch: vi.fn() };
 
 vi.mock("../../lib/queries/portfolio", async (orig) => ({
   ...(await orig<typeof import("../../lib/queries/portfolio")>()),
-  useOverview: () => ({ ...idle, data: overview, isPending: false }),
+  useOverview: () => ({
+    ...idle,
+    data: overview,
+    isPending: false,
+    isError: overviewError,
+    error: overviewError ? new Error("Can't reach the server.") : null,
+  }),
   useHoldings: () => idle,
   useAllocations: () => idle,
   useGraph: () => idle,
@@ -48,10 +55,24 @@ const render = (ui: ReactElement) =>
 
 afterEach(() => {
   overview = empty;
+  overviewError = false;
   localStorage.clear();
 });
 
 describe("Overview page", () => {
+  it("keeps the cached overview on screen when a refetch fails (offline)", () => {
+    overview = empty;
+    overviewError = true;
+    render(<Overview />);
+    expect(screen.getByText("No positions yet")).toBeInTheDocument();
+    expect(screen.queryByText("Something went wrong")).toBeNull();
+  });
+  it("shows the error when there is nothing cached", () => {
+    overview = undefined;
+    overviewError = true;
+    render(<Overview />);
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+  });
   it("shows the empty state without positions", () => {
     render(<Overview />);
     expect(screen.getByText("No positions yet")).toBeInTheDocument();

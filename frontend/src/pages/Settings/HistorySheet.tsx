@@ -32,7 +32,7 @@ export function HistorySheet({ open, onOpenChange, settingKey, fields }: History
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={title}>
-      {q.isError ? (
+      {q.isError && !q.data ? (
         <ErrorState onRetry={() => void q.refetch()} />
       ) : q.isPending ? (
         <Skeleton height="160px" />

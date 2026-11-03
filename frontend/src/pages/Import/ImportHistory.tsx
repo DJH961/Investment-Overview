@@ -82,7 +82,7 @@ function UndoDialog({ batchId, onClose }: { batchId: number; onClose: () => void
     >
       {preview.isPending ? (
         <Skeleton height="8rem" />
-      ) : preview.isError ? (
+      ) : preview.isError && !preview.data ? (
         <ErrorState title="Could not load the preview" message={preview.error.message} onRetry={() => void preview.refetch()} />
       ) : (
         <UndoPreviewBody preview={preview.data} />
@@ -181,7 +181,7 @@ export function ImportHistory({ highlight }: { highlight?: number | null }) {
     <Card title="Import history" subtitle={batches.data?.note} collapsibleId="import.history" flush>
       {batches.isPending ? (
         <Skeleton height="6rem" />
-      ) : batches.isError ? (
+      ) : batches.isError && !batches.data ? (
         <ErrorState title="Could not load import history" message={batches.error.message} onRetry={() => void batches.refetch()} />
       ) : (
         <DataTable

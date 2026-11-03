@@ -1,7 +1,16 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { api } from "./api";
+import { markSignedOut, rememberPasskeyDevice } from "./passkeyHint";
 import { clearClientData } from "./queries";
+
+export {
+  clearSignedOutFlag,
+  forgetPasskeyDevice,
+  notePasskeyAutoDeclined,
+  rememberPasskeyDevice,
+  shouldAutoPromptPasskey,
+} from "./passkeyHint";
 
 export interface PasskeyInfo {
   id: string | number;
@@ -20,6 +29,7 @@ export async function logout(): Promise<void> {
     await api<void>("/api/auth/logout", { method: "POST", skipAuthRedirect: true });
   } finally {
     clearClientData();
+    markSignedOut();
   }
 }
 
@@ -34,6 +44,7 @@ export async function passkeyLogin(autofill = false): Promise<void> {
   );
   const credential = await startAuthentication({ optionsJSON, useBrowserAutofill: autofill });
   await api<void>("/api/auth/passkey/login/verify", { method: "POST", body: credential, skipAuthRedirect: true });
+  rememberPasskeyDevice();
 }
 
 export async function registerPasskey(name?: string): Promise<void> {
@@ -46,6 +57,7 @@ export async function registerPasskey(name?: string): Promise<void> {
     method: "POST",
     body: name ? { ...credential, name } : credential,
   });
+  rememberPasskeyDevice();
 }
 
 export function listPasskeys(): Promise<PasskeyInfo[]> {

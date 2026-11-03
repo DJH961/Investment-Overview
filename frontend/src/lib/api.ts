@@ -8,7 +8,15 @@
  *   re-auth handler (default: /login?next=<current page>).
  */
 
+import { markReachable, markUnreachable } from "./network";
+
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+
+/** GETs give up after this long, so a bad connection falls back to cached data quickly. */
+export const DEFAULT_GET_TIMEOUT_MS = 20_000;
+
+/** Proxy answers that mean "the app itself did not answer" (restart, deploy, crash). */
+const UNREACHABLE_STATUSES = new Set([502, 503, 504]);
 
 /** Error code the server sends when an action needs a recent sign-in. */
 export const REAUTH_REQUIRED = "reauth_required";
@@ -39,6 +47,28 @@ function readDetail(payload: unknown): { message?: string; code?: string } {
     };
   }
   return { message: String(detail) };
+}
+
+/**
+ * The request never got an answer from the server: no network, a dropped
+ * connection or a timeout. Nothing is known about whether a write landed.
+ */
+export class NetworkError extends Error {
+  readonly timedOut: boolean;
+  constructor(timedOut = false) {
+    super(
+      timedOut
+        ? "The server took too long to answer. Your connection may be slow; please try again."
+        : "Can't reach the server. Check your connection and try again.",
+    );
+    this.name = "NetworkError";
+    this.timedOut = timedOut;
+  }
+}
+
+/** True for errors caused by connectivity rather than by the server's answer. */
+export function isNetworkError(err: unknown): boolean {
+  return err instanceof NetworkError || (err instanceof ApiError && UNREACHABLE_STATUSES.has(err.status));
 }
 
 type AuthLostListener = () => void;
@@ -97,35 +127,83 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Do not redirect on 401 (login form and the /auth/me probe). */
   skipAuthRedirect?: boolean;
+  /**
+   * Abort after this many ms and throw a `NetworkError`. Default: 20 s for GET,
+   * none for writes (a write may legitimately run long on the server). 0 = none.
+   */
+  timeoutMs?: number;
 }
 
 export async function api<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, signal, skipAuthRedirect = false } = options;
+  const timeoutMs = options.timeoutMs ?? (method === "GET" ? DEFAULT_GET_TIMEOUT_MS : 0);
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    credentials: "same-origin",
-    signal,
-  });
-  if (res.status === 401) {
-    notifyAuthLost();
-    if (!skipAuthRedirect) onUnauthorized();
-  }
-  if (!res.ok) {
-    let payload: unknown;
+
+  // One controller for both the caller's cancel (TanStack Query) and our timeout.
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) forwardAbort();
+  else signal?.addEventListener("abort", forwardAbort, { once: true });
+  let timedOut = false;
+  const timer =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs)
+      : undefined;
+
+  // A failure that is not the caller cancelling is a connectivity problem.
+  const asNetworkError = (err: unknown): unknown => {
+    if (signal?.aborted && !timedOut) return err;
+    markUnreachable();
+    return new NetworkError(timedOut);
+  };
+
+  try {
+    let res: Response;
     try {
-      payload = await res.json();
-    } catch {
-      payload = undefined;
+      res = await fetch(`${BASE}${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        credentials: "same-origin",
+        signal: controller.signal,
+      });
+    } catch (err) {
+      throw asNetworkError(err);
     }
-    const { message, code } = readDetail(payload);
-    if (res.status === 403 && code === REAUTH_REQUIRED) onReauthRequired();
-    throw new ApiError(res.status, message ?? (res.statusText || `HTTP ${res.status}`), payload, code);
+    if (UNREACHABLE_STATUSES.has(res.status)) markUnreachable();
+    else markReachable();
+    if (res.status === 401) {
+      notifyAuthLost();
+      if (!skipAuthRedirect) onUnauthorized();
+    }
+    if (!res.ok) {
+      let payload: unknown;
+      try {
+        payload = await res.json();
+      } catch {
+        payload = undefined;
+      }
+      const { message, code } = readDetail(payload);
+      if (res.status === 403 && code === REAUTH_REQUIRED) onReauthRequired();
+      const fallback = UNREACHABLE_STATUSES.has(res.status)
+        ? "The server is not answering right now (it may be restarting). Please try again shortly."
+        : res.statusText || `HTTP ${res.status}`;
+      throw new ApiError(res.status, message ?? fallback, payload, code);
+    }
+    if (res.status === 204) return undefined as T;
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      throw asNetworkError(err);
+    }
+    return (text ? JSON.parse(text) : undefined) as T;
+  } finally {
+    if (timer) clearTimeout(timer);
+    signal?.removeEventListener("abort", forwardAbort);
   }
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
 }

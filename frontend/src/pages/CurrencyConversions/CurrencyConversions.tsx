@@ -239,7 +239,7 @@ export function CurrencyConversions() {
         actions={addButton}
       />
 
-      {list.isError ? (
+      {list.isError && !list.data ? (
         <ErrorState onRetry={() => void list.refetch()} />
       ) : list.isPending ? (
         <Skeleton height="220px" />
@@ -271,7 +271,7 @@ export function CurrencyConversions() {
             />
           </Card>
           <Card title="Deposit matching" subtitle="Any uncovered part uses the ECB rate.">
-            {pool.isError ? (
+            {pool.isError && !pool.data ? (
               <ErrorState onRetry={() => void pool.refetch()} />
             ) : pool.isPending ? (
               <Skeleton height="120px" />

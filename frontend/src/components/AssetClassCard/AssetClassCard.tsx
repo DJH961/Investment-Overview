@@ -27,7 +27,7 @@ export function AssetClassCard({ currency }: AssetClassCardProps) {
 
   return (
     <Card className="asset-class-card" title="Asset classes" collapsibleId="overview.asset-classes">
-      {allocations.isError ? (
+      {allocations.isError && !allocations.data ? (
         <ErrorState message={allocations.error.message} onRetry={() => void allocations.refetch()} />
       ) : allocations.isPending ? (
         <Skeleton height="3rem" />

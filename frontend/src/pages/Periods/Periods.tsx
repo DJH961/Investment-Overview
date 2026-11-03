@@ -149,7 +149,7 @@ export function Periods() {
   const yearly2 = usePeriods("yearly", second);
   const active = [needMonthly && monthly, needYearly && yearly].filter((x) => x !== false);
   const pending = active.some((q) => q.isPending);
-  const failed = active.find((q) => q.isError);
+  const failed = active.find((q) => q.isError && !q.data);
   const fetching = active.some((q) => q.isFetching);
   const asOf = (needYearly ? yearly : monthly).data?.as_of;
   const { refetch: refetchM } = monthly;

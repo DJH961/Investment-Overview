@@ -114,7 +114,7 @@ export function AccountsCard() {
 
   return (
     <Card title="Accounts" subtitle="Broker and currency are fixed once an account has transactions.">
-      {list.isError ? (
+      {list.isError && !list.data ? (
         <ErrorState onRetry={() => void list.refetch()} />
       ) : list.isPending ? (
         <Skeleton height="60px" />

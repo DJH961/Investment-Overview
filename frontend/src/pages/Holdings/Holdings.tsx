@@ -371,7 +371,7 @@ export function Holdings() {
     [currency],
   );
 
-  if (query.isError) {
+  if (query.isError && !data) {
     return (
       <div className="holdings-page">
         <PageHeader title="Holdings" subtitle="Every position in full detail" />

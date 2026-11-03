@@ -53,7 +53,7 @@ export function SystemTab() {
 
   return (
     <div className="diagnostics__tab">
-      {sys.isError ? (
+      {sys.isError && !sys.data ? (
         <ErrorState onRetry={() => void sys.refetch()} />
       ) : sys.isPending ? (
         <Skeleton height="160px" />
@@ -117,7 +117,7 @@ export function SystemTab() {
         collapsibleId="system.backups"
         actions={backupNow && <RunJob job={backupNow} label="Back up now" />}
       >
-        {backups.isError ? (
+        {backups.isError && !backups.data ? (
           <ErrorState onRetry={() => void backups.refetch()} />
         ) : (
           <DataTable

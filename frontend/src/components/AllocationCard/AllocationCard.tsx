@@ -36,7 +36,7 @@ export function AllocationCard({ currency }: AllocationCardProps) {
 
   return (
     <Card className="allocation-card" title="Allocation" collapsibleId="overview.allocation">
-      {holdings.isError ? (
+      {holdings.isError && !holdings.data ? (
         <ErrorState message={holdings.error.message} onRetry={() => void holdings.refetch()} />
       ) : holdings.isPending ? (
         <Skeleton height="12rem" />

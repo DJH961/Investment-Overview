@@ -44,7 +44,7 @@ export function Overview() {
   else chip = { status: "loading", label: "Loading" };
   useShellStatus(chip.status, chip.label, () => void overview.refetch(), overview.isFetching);
 
-  if (overview.isError) {
+  if (overview.isError && !data) {
     return (
       <div className="overview-page">
         <PageHeader title="Overview" />

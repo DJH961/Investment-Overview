@@ -137,7 +137,9 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
   const start = useCallback(() => {
     if (getRefreshState().running) return;
     setRefreshState({ running: true, source: "manual", historical: false, done: 0, total: 0, label: null });
-    api<RefreshStatusDto>("/api/refresh?force=true", { method: "POST" })
+    // The POST only starts the job; a bounded wait keeps a dead connection from
+    // leaving the bar spinning forever.
+    api<RefreshStatusDto>("/api/refresh?force=true", { method: "POST", timeoutMs: 30_000 })
       .then((s) => setRefreshState({ ...fromStatus(s), running: true }))
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 409) return; // already running: keep "Updating…"
@@ -149,7 +151,7 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
     if (!current.running) return;
     let cancelled = false;
     const timer = setInterval(() => {
-      api<RefreshStatusDto>("/api/refresh/status")
+      api<RefreshStatusDto>("/api/refresh/status", { timeoutMs: 5000 })
         .then((s) => {
           if (cancelled || !getRefreshState().running) return;
           setRefreshState(fromStatus(s));

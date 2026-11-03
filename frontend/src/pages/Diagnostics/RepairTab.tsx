@@ -45,7 +45,7 @@ function JobRow({ job }: { job: JobInfo }) {
 
 export function RepairTab() {
   const q = useJobCatalogue();
-  if (q.isError) return <ErrorState onRetry={() => void q.refetch()} />;
+  if (q.isError && !q.data) return <ErrorState onRetry={() => void q.refetch()} />;
   if (q.isPending) return <Skeleton height="320px" />;
   const c = q.data;
   const runColumns: Column<JobRun>[] = [

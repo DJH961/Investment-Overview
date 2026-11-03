@@ -120,7 +120,7 @@ function FixEditor({ initialInstrument }: { initialInstrument: number | null }) 
         )}
       </div>
       {subject &&
-        (series.isError ? (
+        (series.isError && !series.data ? (
           <ErrorState message={errorMessage(series.error)} onRetry={() => void series.refetch()} />
         ) : (
           <DataTable
@@ -220,7 +220,7 @@ export function MarketDataTab() {
   return (
     <div className="diagnostics__tab">
       <Card title={`Suspicious prices (${ids.length})`} subtitle="Instruments with a price spike or a gap worth checking." collapsibleId="market.anomalies">
-        {anomalies.isError ? (
+        {anomalies.isError && !anomalies.data ? (
           <ErrorState onRetry={() => void anomalies.refetch()} />
         ) : ids.length === 0 ? (
           <p className="diagnostics__muted">{anomalies.isPending ? "Checking…" : "Nothing suspicious."}</p>

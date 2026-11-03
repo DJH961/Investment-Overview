@@ -59,7 +59,7 @@ export function Allocations() {
     },
   ];
 
-  const failed = q.isError || inputs.isError;
+  const failed = (q.isError && !q.data) || (inputs.isError && !inputs.data);
   const loading = q.isPending || inputs.isPending;
   const active = q.data?.targets.find((t) => t.id === q.data?.active_target_id);
 

@@ -337,7 +337,7 @@ export function Activity() {
           />
         }
       />
-      {active.isError ? (
+      {active.isError && !active.data ? (
         <ErrorState title="Could not load activity" message={active.error.message} onRetry={() => void active.refetch()} />
       ) : active.isPending ? (
         <Skeleton height="14rem" />

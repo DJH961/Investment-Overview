@@ -64,7 +64,7 @@ export function LogsTab() {
             />
           </Field>
         </div>
-        {q.isError ? (
+        {q.isError && !q.data ? (
           <ErrorState message={errorMessage(q.error)} onRetry={() => void q.refetch()} />
         ) : q.isPending ? (
           <Skeleton height="200px" />

@@ -90,6 +90,10 @@ export function startLive(queryClient: QueryClient): () => void {
 
   const connect = () => {
     if (stopped || source || document.hidden) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setStatus("offline"); // the `online` listener reconnects
+      return;
+    }
     const es = new EventSource(STREAM_URL);
     source = es;
     es.onopen = () => {
@@ -118,13 +122,30 @@ export function startLive(queryClient: QueryClient): () => void {
       connect();
     }
   };
+  // Network back: reconnect now instead of waiting out a backoff of up to 30 s.
+  const onOnline = () => {
+    if (document.hidden) return;
+    close();
+    attempt = 0;
+    setStatus("connecting");
+    connect();
+  };
+  // Network gone: stop retrying until the browser reports it back.
+  const onOffline = () => {
+    close();
+    setStatus("offline");
+  };
   document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("online", onOnline);
+  window.addEventListener("offline", onOffline);
   if (!document.hidden) setStatus("connecting");
   connect();
 
   return () => {
     stopped = true;
     document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("online", onOnline);
+    window.removeEventListener("offline", onOffline);
     close();
     setStatus("offline");
   };

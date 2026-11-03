@@ -91,7 +91,7 @@ export function HealthTab() {
   const { toast } = useToast();
   const jobs = new Map((catalogue.data?.jobs ?? []).map((j) => [j.id, j]));
 
-  if (q.isError) return <ErrorState onRetry={() => void q.refetch()} />;
+  if (q.isError && !q.data) return <ErrorState onRetry={() => void q.refetch()} />;
   if (q.isPending) return <Skeleton height="240px" />;
   const d = q.data;
   const attention = d.checks.filter((c) => c.count > 0).sort(bySeverity);

@@ -36,7 +36,7 @@ export function PasskeysCard() {
 
   return (
     <Card title="Passkeys" subtitle="Sign in with Face ID, Touch ID or a security key.">
-      {list.isError ? (
+      {list.isError && !list.data ? (
         <ErrorState onRetry={() => void list.refetch()} />
       ) : list.isPending ? (
         <Skeleton height="60px" />

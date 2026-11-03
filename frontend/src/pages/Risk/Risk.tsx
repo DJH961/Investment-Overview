@@ -200,7 +200,7 @@ export function Risk() {
           <SegmentedControl ariaLabel="Lookback" options={[...LOOKBACKS]} value={lookback} onChange={setLookback} />
         }
       />
-      {q.isError ? (
+      {q.isError && !q.data ? (
         <ErrorState title="Could not load analytics" message={q.error.message} onRetry={() => void q.refetch()} />
       ) : q.isPending ? (
         <Skeleton height="18rem" />

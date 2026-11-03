@@ -25,7 +25,7 @@ export function SchedulerTab() {
   const { toast } = useToast();
   const [hours, setHours] = useState("24");
 
-  if (q.isError) return <ErrorState onRetry={() => void q.refetch()} />;
+  if (q.isError && !q.data) return <ErrorState onRetry={() => void q.refetch()} />;
   if (q.isPending) return <Skeleton height="200px" />;
   const s = q.data;
   const fail = (title: string) => (e: unknown) => toast({ title, description: errorMessage(e), tone: "error" });
