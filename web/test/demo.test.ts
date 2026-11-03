@@ -1,75 +1,213 @@
 /**
- * Demo / preview mode builds a complete, sensible dashboard from the baked-in
- * sample data — no network, no key, no passphrase. This guards the preview path
- * that the setup screen and the `?demo` URL expose.
+ * Demo / preview mode builds a complete, internally consistent, live-looking
+ * dashboard from generated sample data — no network, no key, no passphrase. This
+ * guards the preview path that the setup screen, `?demo` and the demo-only site use.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildDemoRender,
   buildDemoModel,
   parseDemoParams,
-  tickQuotes,
   getPersona,
   DEMO_PERSONAS,
   DEFAULT_PERSONA_ID,
   DEMO_TAB_IDS,
 } from "../src/demo";
+import { demoTradingDay, installDemoClock, uninstallDemoClock } from "../src/demo-clock";
+import { isUsMarketOpen, lastSessionDate } from "../src/market-hours";
 
-describe("buildDemoModel", () => {
-  const model = buildDemoModel();
+/** 11:42 ET on a normal Tuesday (EST). */
+const NOW = new Date("2026-11-03T16:42:00Z");
 
-  it("produces a positive total value across several holdings", () => {
-    expect(model.holdings.length).toBeGreaterThanOrEqual(5);
-    expect(model.overview.totalValueEur.greaterThan(0)).toBe(true);
-    expect(model.overview.holdingsCount).toBe(model.holdings.length);
+afterEach(() => {
+  uninstallDemoClock();
+  vi.unstubAllGlobals();
+});
+
+describe("generated demo data", () => {
+  it("is deterministic for a given (persona, day, instant)", () => {
+    const a = buildDemoRender({ persona: "tech", now: NOW });
+    const b = buildDemoRender({ persona: "tech", now: NOW });
+    expect(a.model.overview.totalValueEur.toString()).toBe(b.model.overview.totalValueEur.toString());
+    expect(JSON.stringify(a.scene.data)).toBe(JSON.stringify(b.scene.data));
   });
 
-  it("computes a portfolio XIRR from the sample cashflows", () => {
-    expect(model.overview.portfolioXirr).not.toBeNull();
+  it("differs per persona and per demo day", () => {
+    const a = buildDemoModel({ persona: "global", now: NOW });
+    const b = buildDemoModel({ persona: "tech", now: NOW });
+    const c = buildDemoModel({ persona: "global", now: new Date("2026-11-04T16:42:00Z") });
+    expect(a.overview.totalValueEur.equals(b.overview.totalValueEur)).toBe(false);
+    expect(a.overview.totalValueEur.equals(c.overview.totalValueEur)).toBe(false);
   });
 
-  it("seeds a transaction ledger so the Activity tab has content", () => {
-    expect(model.transactions.available).toBe(true);
-    expect(model.transactions.rows.length).toBeGreaterThan(0);
-    // The kind filter list is populated and sorted.
-    expect(model.transactions.kinds.length).toBeGreaterThan(0);
-    expect([...model.transactions.kinds].sort()).toEqual(model.transactions.kinds);
+  it("moves forward as the live clock advances", () => {
+    const a = buildDemoModel({ persona: "global", now: NOW });
+    const b = buildDemoModel({ persona: "global", now: new Date(NOW.getTime() + 20 * 60_000) });
+    expect(a.overview.totalValueEur.equals(b.overview.totalValueEur)).toBe(false);
   });
 
-  it("flags the money-market NAV holding as a non-live (fallback) price", () => {
-    const navRow = model.holdings.find((holding) => holding.symbol === "VMFXX");
-    expect(navRow).toBeDefined();
-    expect(navRow?.priceType).toBe("nav");
-    expect(navRow?.priceIsLive).toBe(false);
+  for (const persona of DEMO_PERSONAS) {
+    describe(persona.id, () => {
+      const { model, scene, hooks } = buildDemoRender({ persona: persona.id, now: NOW });
+      const o = model.overview;
+      const data = scene.data;
+
+      it("total value = holdings + cash, and nothing is missing", () => {
+        const holdingsSum = model.holdings.reduce((acc, h) => acc + (h.valueEur?.toNumber() ?? 0), 0);
+        expect(Math.abs(holdingsSum + o.cashValueEur.toNumber() - o.totalValueEur.toNumber())).toBeLessThan(0.01);
+        expect(o.totalValueIsComplete).toBe(true);
+        expect(o.fxMissingCurrencies).toEqual([]);
+        expect(o.pricesAreLive).toBe(true);
+        expect(o.totalValueUsd).not.toBeNull();
+      });
+
+      it("reads as a live session with a today's move, last pull and FX anchors", () => {
+        expect(o.lastDataPullAt).not.toBeNull();
+        expect(o.fxRateEurUsdSessionOpen).not.toBeNull();
+        expect(o.fxObservedAt).not.toBeNull();
+        expect(o.liveCoverage).toContain("live");
+        expect(o.todayMovePct).not.toBeNull();
+        expect(model.holdings.filter((h) => h.priceIsLive).length).toBeGreaterThanOrEqual(3);
+        expect(o.asOf).toBe(scene.history.day);
+      });
+
+      it("the 1D curve ends exactly on the headline, in both currencies", async () => {
+        const session = await hooks.session();
+        const pts = session!.points;
+        expect(pts.length).toBeGreaterThan(100);
+        const tip = pts[pts.length - 1];
+        expect(tip.valueEur.equals(o.totalValueEur)).toBe(true);
+        expect(tip.valueUsd.equals(o.totalValueUsd!)).toBe(true);
+        // Starts near the previous close (the dashed reference) and is time-ordered.
+        const open = pts[0].valueEur.toNumber();
+        const prev = o.prevCloseAnchorEur.toNumber();
+        expect(Math.abs(open / prev - 1)).toBeLessThan(0.03);
+        for (let i = 1; i < pts.length; i += 1) expect(pts[i].t).toBeGreaterThanOrEqual(pts[i - 1].t);
+      });
+
+      it("the 1W curve spans five sessions and ends on the headline", async () => {
+        const week = (await hooks.week())!;
+        const days = new Set(week.map((p) => new Date(p.t).toISOString().slice(0, 10)));
+        expect(days.size).toBeGreaterThanOrEqual(5);
+        expect(week[week.length - 1].valueEur.equals(o.totalValueEur)).toBe(true);
+      });
+
+      it("the equity curve runs to the previous close and is benchmarked to VT", () => {
+        const curve = data.analytics!.curve;
+        expect(curve[curve.length - 1].date).toBe(scene.history.prevDay);
+        expect(curve.every((p) => p.portfolio_value !== null && p.portfolio_value_usd != null && p.benchmark_value !== null)).toBe(true);
+        expect(model.analytics!.benchmarkSymbol).toBe("VT");
+      });
+
+      it("attribution sums to total gain and ~100% of return", () => {
+        const rows = data.analytics!.attribution;
+        const sum = rows.reduce((acc, r) => acc + Number(r.absolute_pnl), 0);
+        expect(Math.abs(sum - o.totalGainEur.toNumber())).toBeLessThan(0.02);
+        const pct = rows.reduce((acc, r) => acc + Number(r.pct_of_total_return), 0);
+        expect(Math.abs(pct - 1)).toBeLessThan(0.01);
+      });
+
+      it("periods and contributions add up", () => {
+        const deposits = model.deposits!;
+        const total = deposits.rows.reduce((acc, r) => acc + Number(r.amountEur ?? 0), 0);
+        expect(Math.abs(total - Number(deposits.totalEur))).toBeLessThan(0.01);
+        const year = scene.history.day.slice(0, 4);
+        const ytd = deposits.rows.filter((r) => r.date.startsWith(year)).reduce((acc, r) => acc + Number(r.amountEur ?? 0), 0);
+        expect(Math.abs(ytd - Number(deposits.ytdEur))).toBeLessThan(0.01);
+        const yearly = data.yearly!.rows.reduce((acc, r) => acc + Number(r.contributions_eur), 0);
+        expect(Math.abs(yearly - total)).toBeLessThan(0.01);
+        const monthly = data.monthly!.rows.reduce((acc, r) => acc + Number(r.contributions_eur), 0);
+        expect(Math.abs(monthly - total)).toBeLessThan(0.01);
+        // The current month/year rows are live-overlaid and no period is absurd.
+        expect(model.periods.monthly[0].isCurrent).toBe(true);
+        for (const row of model.periods.monthly) {
+          expect(Math.abs(row.growthPct?.toNumber() ?? 0)).toBeLessThan(0.2);
+        }
+      });
+
+      it("risk scalars are finite in both currencies and benchmarked to VT", () => {
+        const a = data.analytics!;
+        const rec = a as unknown as Record<string, string>;
+        const keys = ["cagr", "twr", "xirr", "volatility", "sharpe", "sortino", "max_drawdown", "calmar", "ulcer", "var_95", "cvar_95", "skew", "kurtosis", "beta", "alpha"];
+        for (const k of keys) {
+          expect(Number.isFinite(Number(rec[k])), k).toBe(true);
+          expect(Number.isFinite(Number(rec[`${k}_usd`])), `${k}_usd`).toBe(true);
+        }
+        expect(a.benchmark_symbol).toBe("VT");
+      });
+
+      it("renders no null in the fields the UI shows", () => {
+        for (const h of model.holdings) {
+          expect(h.valueEur, h.symbol).not.toBeNull();
+          expect(h.valueUsd, h.symbol).not.toBeNull();
+          expect(h.xirr, h.symbol).not.toBeNull();
+          expect(h.totalGrowthPct, h.symbol).not.toBeNull();
+          // Only a par-NAV money-market fund legitimately has no daily move.
+          if (!h.isMoneyMarket) expect(h.todayMovePct, h.symbol).not.toBeNull();
+        }
+        expect(o.portfolioXirr).not.toBeNull();
+        expect(o.portfolioXirrUsd).not.toBeNull();
+        expect(o.mtdGrowthPct).not.toBeNull();
+        expect(o.ytdGrowthPct).not.toBeNull();
+        expect(o.totalGrowthCompoundedPct).not.toBeNull();
+        expect(model.transactions.available).toBe(true);
+        expect(model.transactions.rows.length).toBeGreaterThan(20);
+        expect(model.calculator.savedTargets.length).toBeGreaterThan(0);
+      });
+    });
+  }
+
+  it("the global persona has a NAV fund with yesterday's NAV and a money-market fund", () => {
+    const model = buildDemoModel({ persona: "global", now: NOW });
+    const fund = model.holdings.find((h) => h.symbol === "FCNTX")!;
+    expect(fund.priceType).toBe("nav");
+    expect(fund.todayMovePct).not.toBeNull();
+    const mm = model.holdings.find((h) => h.symbol === "VMFXX")!;
+    expect(mm.isMoneyMarket).toBe(true);
+    expect(mm.priceIsLive).toBe(false);
   });
 
-  it("shows a today's move for the live mutual fund (NAV) holding", () => {
-    const fund = model.holdings.find((holding) => holding.symbol === "FCNTX");
-    expect(fund).toBeDefined();
-    expect(fund?.priceType).toBe("nav");
-    // A mutual fund priced from a daily bar carries a move from its prior close,
-    // just like a stock — not a blank dash.
-    expect(fund?.todayMoveEur).not.toBeNull();
-    expect(fund?.todayMovePct?.greaterThan(0)).toBe(true);
+  it("the tech persona has a winner and a loser today", () => {
+    const model = buildDemoModel({ persona: "tech", now: NOW });
+    expect(model.holdings.some((h) => h.todayMovePct?.isNegative() ?? false)).toBe(true);
+    expect(model.holdings.some((h) => h.todayMovePct?.isPositive() ?? false)).toBe(true);
+  });
+});
+
+describe("demo clock", () => {
+  it("anchors on the latest trading day and reads as an open session at 11:42 ET", () => {
+    // Juneteenth 2026 (a Friday market holiday) walks back to Thursday.
+    expect(demoTradingDay(Date.parse("2026-06-19T12:00:00Z"))).toBe("2026-06-18");
+    // A Saturday walks back to Friday.
+    expect(demoTradingDay(Date.parse("2026-11-07T15:00:00Z"))).toBe("2026-11-06");
+    const day = installDemoClock();
+    const now = new Date();
+    expect(isUsMarketOpen(now)).toBe(true);
+    expect(lastSessionDate(now)).toBe(day);
+    expect(new Date(0).getTime()).toBe(0);
+    expect(new Date("2026-01-02T00:00:00Z") instanceof Date).toBe(true);
   });
 
-  it("has no missing FX legs (USD rate is provided)", () => {
-    expect(model.overview.fxMissingCurrencies).toEqual([]);
+  it("restores the real Date", () => {
+    const Real = Date;
+    installDemoClock();
+    expect(Date).not.toBe(Real);
+    uninstallDemoClock();
+    expect(Date).toBe(Real);
   });
+});
 
-  it("includes a cash balance in the total", () => {
-    expect(model.overview.cashValueEur.greaterThan(0)).toBe(true);
-  });
-
-  it("builds the Phase 4 periods, analytics, deposits and plan blocks", () => {
-    expect(model.periods.monthly.length).toBeGreaterThan(0);
-    expect(model.periods.yearly.length).toBeGreaterThan(0);
-    // The newest month/year is overlaid with the live recompute.
-    expect(model.periods.monthly[0].isCurrent).toBe(true);
-    expect(model.analytics).not.toBeNull();
-    expect(model.deposits).not.toBeNull();
-    expect(model.plan.startingValueEur.greaterThan(0)).toBe(true);
-    expect(model.plan.defaultAnnualContributionEur.greaterThan(0)).toBe(true);
+describe("demo-only path", () => {
+  it("makes no network request while building and driving the demo", async () => {
+    const fetchSpy = vi.fn(() => Promise.reject(new Error("network is off")));
+    vi.stubGlobal("fetch", fetchSpy);
+    for (const persona of DEMO_PERSONAS) {
+      const { hooks } = buildDemoRender({ persona: persona.id, now: NOW });
+      await hooks.session({ forceFetch: true });
+      await hooks.week({ forceFetch: true });
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -85,77 +223,6 @@ describe("demo personas", () => {
     expect(getPersona("does-not-exist").id).toBe(DEFAULT_PERSONA_ID);
     expect(getPersona(null).id).toBe(DEFAULT_PERSONA_ID);
     expect(getPersona("tech").id).toBe("tech");
-  });
-
-  it("each persona builds a complete, sensible dashboard across all tabs", () => {
-    for (const persona of DEMO_PERSONAS) {
-      const model = buildDemoModel({ persona: persona.id });
-      expect(model.holdings.length, persona.id).toBeGreaterThanOrEqual(4);
-      expect(model.overview.totalValueEur.greaterThan(0), persona.id).toBe(true);
-      expect(model.overview.holdingsCount, persona.id).toBe(model.holdings.length);
-      expect(model.overview.portfolioXirr, persona.id).not.toBeNull();
-      // Currency is fully wired (no missing FX legs), so the EUR/USD toggle works.
-      expect(model.overview.fxMissingCurrencies, persona.id).toEqual([]);
-      // Every Phase 4 block has content so no tab renders empty.
-      expect(model.periods.monthly.length, persona.id).toBeGreaterThan(0);
-      expect(model.periods.yearly.length, persona.id).toBeGreaterThan(0);
-      expect(model.analytics, persona.id).not.toBeNull();
-      expect((model.analytics?.curve.length ?? 0), persona.id).toBeGreaterThanOrEqual(2);
-      expect(model.deposits, persona.id).not.toBeNull();
-      expect(model.plan.startingValueEur.greaterThan(0), persona.id).toBe(true);
-    }
-  });
-
-  it("the tech persona carries a deliberate loser (a negative attribution row)", () => {
-    const model = buildDemoModel({ persona: "tech" });
-    const losers = model.analytics?.attribution.filter(
-      (row) => row.absolutePnlEur !== null && row.absolutePnlEur.isNegative(),
-    );
-    expect(losers?.length ?? 0).toBeGreaterThan(0);
-  });
-});
-
-describe("live-tick simulator", () => {
-  it("tick 0 returns the baked prices unchanged (frozen snapshot)", () => {
-    const persona = getPersona("global");
-    const frozen = tickQuotes(persona.quotes, 0);
-    for (const [symbol, q] of persona.quotes) {
-      expect(frozen.get(symbol)?.price?.toString(), symbol).toBe(q.price?.toString());
-    }
-  });
-
-  it("is deterministic for a given (persona, tick)", () => {
-    const a = buildDemoModel({ persona: "tech", tick: 5 });
-    const b = buildDemoModel({ persona: "tech", tick: 5 });
-    expect(a.overview.totalValueEur.toString()).toBe(b.overview.totalValueEur.toString());
-  });
-
-  it("moves the headline value once it starts ticking", () => {
-    const frozen = buildDemoModel({ persona: "global", tick: 0 });
-    // Some tick within the first few must differ from the frozen snapshot.
-    const moved = [1, 2, 3, 4].some(
-      (t) => !buildDemoModel({ persona: "global", tick: t }).overview.totalValueEur.equals(frozen.overview.totalValueEur),
-    );
-    expect(moved).toBe(true);
-  });
-
-  it("never moves a market holding's today's move beyond a sane band", () => {
-    const persona = getPersona("tech");
-    for (let tick = 0; tick < 40; tick += 1) {
-      const model = buildDemoModel({ persona: persona.id, tick });
-      for (const holding of model.holdings) {
-        if (holding.todayMovePct === null) continue;
-        // Bounded, "never alarming" — base moves are ~1% and the sim adds <1%.
-        expect(Math.abs(holding.todayMovePct.toNumber()), `${holding.symbol}@${tick}`).toBeLessThan(0.05);
-      }
-    }
-  });
-
-  it("leaves once-a-day NAV quotes (money-market / funds) unmoved", () => {
-    const persona = getPersona("global");
-    const ticked = tickQuotes(persona.quotes, 7);
-    // FCNTX is a NAV (mutual fund) bar in the global persona — it must not tick.
-    expect(ticked.get("FCNTX")?.price?.toString()).toBe(persona.quotes.get("FCNTX")?.price?.toString());
   });
 });
 

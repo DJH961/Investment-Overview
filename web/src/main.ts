@@ -4,6 +4,7 @@
  * request), applies the saved colour theme, and boots the app controller
  * against the `#app` root.
  */
+import "./demo-boot";
 import "./decimal-config";
 import "@fontsource-variable/inter/index.css";
 import { App } from "./app";

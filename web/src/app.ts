@@ -17,7 +17,8 @@
 import { fetchBlobMeta, fetchEnvelopeConditional } from "./blob";
 import { buildDashboard, buildFetchPlan, strikeTimeMs, suspectQuoteSymbols, undatableQuoteSymbols, type DashboardModel } from "./compute";
 import { decryptEnvelopeToJson, type Envelope } from "./crypto";
-import { buildDemoModel, parseDemoParams, getPersona, DEMO_PERSONAS, type DemoParams } from "./demo";
+import { buildDemoRender, parseDemoParams, getPersona, isDemoOnly, DEMO_PERSONAS, type DemoParams } from "./demo";
+import { installDemoClock, uninstallDemoClock } from "./demo-clock";
 import { startTour, DEMO_TOUR_STEPS } from "./tour";
 import {
   defaultConfig,
@@ -958,7 +959,7 @@ export class App {
    * Holds the active persona, the live-tick index (0 = frozen snapshot), whether
    * the offline live-sim is running, and the deep-linked tab still to apply.
    */
-  private demo: { persona: string; tick: number; sim: boolean; initialTab: string | null } | null = null;
+  private demo: { persona: string; tick: number; sim: boolean; initialTab: string | null; intervalMs: number } | null = null;
   /** The running live-sim interval, if any (advances {@link demo.tick}). */
   private demoTimer: ReturnType<typeof setInterval> | null = null;
   /** Teardown for an open guided tour, if any. */
@@ -970,6 +971,12 @@ export class App {
   }
 
   async start(): Promise<void> {
+    // The public demo-only build boots straight into the sample dashboard: no
+    // config, sign-in, key store or provider code is ever touched.
+    if (isDemoOnly()) {
+      this.enterDemo({ ...this.demoParams(), requested: true });
+      return;
+    }
     this.logVersionUpdate();
     this.state.config = await loadConfig();
     applyProviderLimits(this.state.config);
@@ -3718,8 +3725,10 @@ export class App {
 
   // --- Demo / preview ---------------------------------------------------------
 
-  /** Cadence of the offline live-tick simulator while "Live" is selected. */
+  /** Cadence of the offline live-tick simulator for an explicit `?sim=1` link. */
   private static readonly DEMO_SIM_INTERVAL_MS = 2500;
+  /** Calmer default cadence when the sim is on by default (the demo-only site). */
+  private static readonly DEMO_AUTO_INTERVAL_MS = 15000;
 
   /** True when the viewer asked the OS to minimise motion. */
   private prefersReducedMotion(): boolean {
@@ -3736,9 +3745,19 @@ export class App {
    * and motion is allowed — starts the live-sim and/or the guided tour.
    */
   private enterDemo(params: DemoParams): void {
-    this.demo = { persona: params.persona, tick: 0, sim: false, initialTab: params.tab };
+    // Make "now" a live US market session (11:42 ET on the latest trading day,
+    // advancing in real time) so every clock-derived label reads as a live day.
+    installDemoClock();
+    this.demo = {
+      persona: params.persona,
+      tick: 0,
+      sim: false,
+      initialTab: params.tab,
+      intervalMs: params.sim ? App.DEMO_SIM_INTERVAL_MS : App.DEMO_AUTO_INTERVAL_MS,
+    };
     this.renderDemo();
-    if (params.sim && !this.prefersReducedMotion()) this.setSim(true);
+    // The demo-only site ticks by default; a reduced-motion viewer stays still.
+    if ((params.sim || isDemoOnly()) && !this.prefersReducedMotion()) this.setSim(true);
     if (params.tour) this.startDemoTour();
   }
 
@@ -3767,10 +3786,10 @@ export class App {
    */
   private renderDemo(): void {
     if (!this.demo) return;
-    const model = buildDemoModel({ persona: this.demo.persona, tick: this.demo.tick });
+    const { model, scene, hooks } = buildDemoRender({ persona: this.demo.persona });
     // Seed the EUR→USD rate from the sample export so the currency toggle works.
     setEurUsdRate(model.overview.fxRateEurUsd);
-    setInvestmentAmountEur(this.state.config.investmentAmountEur);
+    setInvestmentAmountEur(Number(scene.data.meta.investment_amount_eur ?? this.state.config.investmentAmountEur));
     this.model = model;
 
     const banner = this.renderDemoBanner();
@@ -3786,10 +3805,13 @@ export class App {
       () => this.renderDemo(), // Currency toggle re-renders without ticking.
       () => this.showDemoSettings(),
       "Exit demo",
-      undefined,
-      { initialTabId },
+      hooks,
+      { initialTabId, hideLock: isDemoOnly() },
     );
+    // A live repaint keeps the viewer's place on the page.
+    const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
     this.mount(h("div", { class: "demo-shell" }, [banner, dashboard]));
+    if (scrollY > 0) window.scrollTo(0, scrollY);
   }
 
   /** The demo banner: synthetic-data note, persona "story", and the controls. */
@@ -3858,10 +3880,13 @@ export class App {
   private startDemoTimer(): void {
     if (this.demoTimer !== null) return;
     this.demoTimer = setInterval(() => {
-      // Pause while the tab is hidden so a backgrounded demo doesn't churn.
+      // Pause while the tab is hidden so a backgrounded demo doesn't churn, and
+      // never repaint under a form control the viewer is using.
       if (typeof document !== "undefined" && document.hidden) return;
+      const active = typeof document !== "undefined" ? document.activeElement?.tagName : undefined;
+      if (active === "INPUT" || active === "SELECT" || active === "TEXTAREA") return;
       this.tickDemo();
-    }, App.DEMO_SIM_INTERVAL_MS);
+    }, this.demo?.intervalMs ?? App.DEMO_SIM_INTERVAL_MS);
   }
 
   private clearDemoTimer(): void {
@@ -3894,6 +3919,7 @@ export class App {
   private leaveDemoChrome(): void {
     this.clearDemoTimer();
     this.endTour();
+    if (this.demo !== null && !isDemoOnly()) uninstallDemoClock();
     this.demo = null;
   }
 
@@ -3912,6 +3938,8 @@ export class App {
     });
     const exit = h("button", { class: "btn ghost", type: "button" }, ["Exit demo"]);
     exit.addEventListener("click", () => this.exitDemo());
+    // The demo-only site has no real app to return to.
+    const actions = isDemoOnly() ? [back] : [back, exit];
 
     const form = h("form", { class: "panel", novalidate: "novalidate" }, [
       h("h1", {}, ["Demo settings"]),
@@ -3927,7 +3955,7 @@ export class App {
         h("p", { class: "field-static muted" }, ["Use the € / $ toggle in the topbar to flip the whole dashboard between EUR and USD."]),
         "EUR and USD are equal, first-class display currencies.",
       ),
-      h("div", { class: "row" }, [back, exit]),
+      h("div", { class: "row" }, actions),
     ]);
     this.mount(h("div", { class: "screen" }, [form]));
   }
@@ -3937,6 +3965,7 @@ export class App {
    * down the demo chrome first so no timer or tour outlives it.
    */
   private exitDemo(): void {
+    if (isDemoOnly()) return;
     this.leaveDemoChrome();
     void (async () => {
       this.state.config = await loadConfig();

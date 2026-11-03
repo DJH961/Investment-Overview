@@ -7,11 +7,12 @@ other doc.
 
 ## Project status: v5 → v6
 
-- **v5 (current code):** a local NiceGUI desktop app plus a read-only web companion
-  (`web/`) fed by an encrypted GitHub-release blob.
-- **v6 (planned):** one hosted FastAPI backend + React frontend. The plan is
-  [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md). Do not start a v6 phase
-  until the owner has approved it; keep v5 working until cutover.
+- **v6 (live since 6.0.0):** one hosted FastAPI backend (`backend/`) + React frontend
+  (`frontend/`). The plan is [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md).
+  Do not start a new phase or the clean-up release until the owner has approved it.
+- **v5 (leaving):** the NiceGUI desktop code and `web/` stay on `main` until the
+  clean-up release. `web/` builds only the offline demo for GitHub Pages
+  (`VITE_DEMO_ONLY=1`); never reconnect it to real data or price APIs.
 - **Legacy:** branch `legacy/v5` / tag `v5.3.1` is frozen. Never commit to it or
   backport to it (the owner-requested known-bugs note there is the only exception);
   see [`docs/legacy_v5.md`](docs/legacy_v5.md).

@@ -1535,7 +1535,7 @@ export function renderDashboard(
   onSettings: () => void,
   lockLabel = "Lock",
   liveGraph?: LiveGraphHooks,
-  options: { initialTabId?: string; holdingStatus?: HoldingStatusModel } = {},
+  options: { initialTabId?: string; holdingStatus?: HoldingStatusModel; hideLock?: boolean } = {},
 ): HTMLElement {
   const refresh = h("button", { class: "icon-btn", type: "button", "data-action": "refresh" }, [
     h("span", { class: "icon-btn-glyph", "aria-hidden": "true" }, ["↻"]),
@@ -1566,7 +1566,7 @@ export function renderDashboard(
         h("span", { class: "brand-name brand-name-full" }, ["Investment Overview"]),
         h("span", { class: "brand-name brand-name-short" }, ["Investments"]),
       ]),
-      h("div", { class: "topbar-actions" }, [currency, refresh, settings, lock]),
+      h("div", { class: "topbar-actions" }, options.hideLock ? [currency, refresh, settings] : [currency, refresh, settings, lock]),
     ]),
   ]);
 
