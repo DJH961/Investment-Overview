@@ -10,6 +10,55 @@
     gap: var(--space-3);
   }
 
+  // Chart + lifetime FX | movers + holdings. Below desktop the columns dissolve
+  // (display: contents) and `order` keeps the phone reading order.
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+
+    @include m.phone {
+      gap: var(--space-3);
+    }
+
+    @include m.desktop {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);
+      align-items: start;
+    }
+  }
+
+  &__col {
+    display: contents;
+
+    @include m.desktop {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4);
+      min-width: 0;
+    }
+  }
+
+  &__slot {
+    min-width: 0;
+
+    &--chart {
+      order: 1;
+    }
+
+    &--movers {
+      order: 2;
+    }
+
+    &--holdings {
+      order: 3;
+    }
+
+    &--lifetime {
+      order: 4;
+    }
+  }
+
   &__row {
     display: grid;
     gap: var(--space-4);

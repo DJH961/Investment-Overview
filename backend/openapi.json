@@ -192,6 +192,13 @@
             "title": "Drift",
             "type": "array"
           },
+          "drift_by_category": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryDriftRow"
+            },
+            "title": "Drift By Category",
+            "type": "array"
+          },
           "targets": {
             "items": {
               "$ref": "#/components/schemas/TargetOut"
@@ -1150,6 +1157,75 @@
           "projection_defaults"
         ],
         "title": "CalculatorInputsOut",
+        "type": "object"
+      },
+      "CategoryDriftRow": {
+        "description": "The active target's drift summed per category (its funds' rows added up).",
+        "properties": {
+          "current_pct": {
+            "description": "Current weight (fraction, 0.01 = 1%)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Current Pct",
+            "type": "string"
+          },
+          "current_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Value"
+          },
+          "delta_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Value"
+          },
+          "drift_pp": {
+            "description": "current - target in percentage points (1.5 = 1.5 pp); positive = over",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Drift Pp",
+            "type": "string"
+          },
+          "funds": {
+            "title": "Funds",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "target_pct": {
+            "description": "Target weight (fraction, 0.01 = 1%)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Target Pct",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "funds",
+          "current_pct",
+          "target_pct",
+          "drift_pp"
+        ],
+        "title": "CategoryDriftRow",
         "type": "object"
       },
       "CategoryWeightIn": {
@@ -4650,8 +4726,18 @@
             "title": "Rows",
             "type": "integer"
           },
+          "skipped": {
+            "default": 0,
+            "title": "Skipped",
+            "type": "integer"
+          },
           "sweeps_dropped": {
             "title": "Sweeps Dropped",
+            "type": "integer"
+          },
+          "unresolved": {
+            "default": 0,
+            "title": "Unresolved",
             "type": "integer"
           },
           "warnings": {
@@ -5071,6 +5157,18 @@
             ],
             "title": "Fees Native"
           },
+          "fixes": {
+            "items": {
+              "enum": [
+                "keep",
+                "fix_price",
+                "skip"
+              ],
+              "type": "string"
+            },
+            "title": "Fixes",
+            "type": "array"
+          },
           "gross_native": {
             "anyOf": [
               {
@@ -5131,6 +5229,22 @@
             ],
             "title": "Quantity"
           },
+          "resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "keep",
+                  "fix_price",
+                  "skip"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
           "settlement_date": {
             "anyOf": [
               {
@@ -5142,6 +5256,11 @@
             ],
             "title": "Settlement Date"
           },
+          "skipped": {
+            "default": false,
+            "title": "Skipped",
+            "type": "boolean"
+          },
           "symbol": {
             "anyOf": [
               {
@@ -5152,6 +5271,13 @@
               }
             ],
             "title": "Symbol"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -5191,6 +5317,53 @@
           "message"
         ],
         "title": "ImportQuestion",
+        "type": "object"
+      },
+      "ImportResolveIn": {
+        "description": "Resolutions for flagged preview rows (by preview row ``index``).",
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ImportResolveRow"
+            },
+            "minItems": 1,
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "ImportResolveIn",
+        "type": "object"
+      },
+      "ImportResolveRow": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "keep",
+                  "fix_price",
+                  "skip"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "ImportResolveRow",
         "type": "object"
       },
       "ImportUndoPreview": {
@@ -13209,6 +13382,59 @@
           }
         },
         "summary": "Reparse Import",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/{import_id}/resolve": {
+      "post": {
+        "description": "Resolve rows that don't add up: keep as is, recompute the price, or skip (new ``import_id``).",
+        "operationId": "resolve_import_rows_api_imports__import_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "title": "Import Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportResolveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resolve Import Rows",
         "tags": [
           "imports"
         ]

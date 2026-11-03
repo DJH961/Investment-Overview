@@ -32,6 +32,7 @@ from investment_dashboard.api.schemas.imports import (
     ImportPreview,
     ImportPreviewRow,
     ImportQuestion,
+    ImportResolveIn,
     ImportUndoPreview,
     ImportUndoRequest,
     ImportUndoResult,
@@ -102,6 +103,9 @@ def _layout(layout: Layout | None) -> ImportLayout | None:
     )
 
 
+_FIXES: frozenset[Any] = frozenset({"keep", "fix_price", "skip"})
+
+
 def _preview(staged: import_staging.StagedImport) -> ImportPreview:
     rows = []
     limit = _preview_limit()
@@ -122,6 +126,10 @@ def _preview(staged: import_staging.StagedImport) -> ImportPreview:
                 currency=r.native_currency or staged.account_currency,
                 description=r.description,
                 is_duplicate=pr.is_duplicate,
+                skipped=pr.skipped,
+                warnings=list(pr.warnings),
+                fixes=[f for f in pr.fixes if f in _FIXES],
+                resolution=pr.resolution if pr.resolution in _FIXES else None,
             )
         )
     report = staged.report
@@ -137,6 +145,8 @@ def _preview(staged: import_staging.StagedImport) -> ImportPreview:
             sweeps_dropped=report.sweeps_dropped,
             errors=len(report.errors),
             warnings=len(report.warnings),
+            skipped=staged.skipped_count,
+            unresolved=staged.unresolved_count,
         ),
         rows=rows,
         rows_truncated=len(staged.rows) > limit,
@@ -221,6 +231,20 @@ def reparse_import(import_id: str, session: SessionDep) -> ImportPreview:
     """Parse a staged upload again with the current action mapping (new ``import_id``)."""
     try:
         staged = import_staging.restage(session, import_id)
+    except import_staging.StagedImportNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except import_staging.ImportStagingError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _preview(staged)
+
+
+@router.post("/imports/{import_id}/resolve", response_model=ImportPreview)
+def resolve_import_rows(
+    import_id: str, body: ImportResolveIn, session: SessionDep
+) -> ImportPreview:
+    """Resolve rows that don't add up: keep as is, recompute the price, or skip (new ``import_id``)."""
+    try:
+        staged = import_staging.resolve(session, import_id, {r.index: r.action for r in body.rows})
     except import_staging.StagedImportNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except import_staging.ImportStagingError as exc:

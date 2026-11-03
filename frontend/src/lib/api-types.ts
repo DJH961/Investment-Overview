@@ -795,6 +795,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/{import_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Import Rows
+         * @description Resolve rows that don't add up: keep as is, recompute the price, or skip (new ``import_id``).
+         */
+        post: operations["resolve_import_rows_api_imports__import_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instruments": {
         parameters: {
             query?: never;
@@ -1504,6 +1524,8 @@ export interface components {
             current_by_category: components["schemas"]["Bucket"][];
             /** Drift */
             drift: components["schemas"]["DriftRow"][];
+            /** Drift By Category */
+            drift_by_category?: components["schemas"]["CategoryDriftRow"][];
             /** Targets */
             targets: components["schemas"]["TargetOut"][];
             /** Total Value */
@@ -1796,6 +1818,37 @@ export interface components {
             projection_defaults: components["schemas"]["ProjectionDefaultsOut"];
             /** Total Value */
             total_value: string | null;
+        };
+        /**
+         * CategoryDriftRow
+         * @description The active target's drift summed per category (its funds' rows added up).
+         */
+        CategoryDriftRow: {
+            /**
+             * Current Pct
+             * @description Current weight (fraction, 0.01 = 1%)
+             */
+            current_pct: string;
+            /** Current Value */
+            current_value?: string | null;
+            /** Delta Value */
+            delta_value?: string | null;
+            /**
+             * Drift Pp
+             * @description current - target in percentage points (1.5 = 1.5 pp); positive = over
+             */
+            drift_pp: string;
+            /** Funds */
+            funds: number;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Target Pct
+             * @description Target weight (fraction, 0.01 = 1%)
+             */
+            target_pct: string;
         };
         /** CategoryWeightIn */
         CategoryWeightIn: {
@@ -3033,8 +3086,18 @@ export interface components {
             new: number;
             /** Rows */
             rows: number;
+            /**
+             * Skipped
+             * @default 0
+             */
+            skipped: number;
             /** Sweeps Dropped */
             sweeps_dropped: number;
+            /**
+             * Unresolved
+             * @default 0
+             */
+            unresolved: number;
             /** Warnings */
             warnings: number;
         };
@@ -3190,6 +3253,8 @@ export interface components {
             description?: string | null;
             /** Fees Native */
             fees_native?: string | null;
+            /** Fixes */
+            fixes?: ("keep" | "fix_price" | "skip")[];
             /** Gross Native */
             gross_native?: string | null;
             /** Index */
@@ -3204,10 +3269,19 @@ export interface components {
             price_native?: string | null;
             /** Quantity */
             quantity?: string | null;
+            /** Resolution */
+            resolution?: ("keep" | "fix_price" | "skip") | null;
             /** Settlement Date */
             settlement_date?: string | null;
+            /**
+             * Skipped
+             * @default false
+             */
+            skipped: boolean;
             /** Symbol */
             symbol?: string | null;
+            /** Warnings */
+            warnings?: string[];
         };
         /**
          * ImportQuestion
@@ -3228,6 +3302,21 @@ export interface components {
             field: string;
             /** Message */
             message: string;
+        };
+        /**
+         * ImportResolveIn
+         * @description Resolutions for flagged preview rows (by preview row ``index``).
+         */
+        ImportResolveIn: {
+            /** Rows */
+            rows: components["schemas"]["ImportResolveRow"][];
+        };
+        /** ImportResolveRow */
+        ImportResolveRow: {
+            /** Action */
+            action?: ("keep" | "fix_price" | "skip") | null;
+            /** Index */
+            index: number;
         };
         /** ImportUndoPreview */
         ImportUndoPreview: {
@@ -6558,6 +6647,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_import_rows_api_imports__import_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                import_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportResolveIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -81,19 +81,33 @@ export function Overview() {
 
       {data && <CurrencyBox data={data} />}
 
-      <div className="overview-page__row">
-        <ValueChartCard
-          currency={currency}
-          defaultRange={data?.default_range}
-          configuredRange={overviewRange}
-          marketOpen={data?.freshness?.market_state === "open"}
-        />
-        <MoversCard movers={data?.movers} currency={currency} loading={loading} />
+      {/* Desktop: chart and lifetime FX on the left, movers and holdings beside
+          them. Narrower screens keep one column: chart, movers, holdings, FX. */}
+      <div className="overview-page__main">
+        <div className="overview-page__col">
+          <div className="overview-page__slot overview-page__slot--chart">
+            <ValueChartCard
+              currency={currency}
+              defaultRange={data?.default_range}
+              configuredRange={overviewRange}
+              marketOpen={data?.freshness?.market_state === "open"}
+            />
+          </div>
+          {data && (
+            <div className="overview-page__slot overview-page__slot--lifetime">
+              <CurrencyLifetime data={data} />
+            </div>
+          )}
+        </div>
+        <div className="overview-page__col">
+          <div className="overview-page__slot overview-page__slot--movers">
+            <MoversCard movers={data?.movers} currency={currency} loading={loading} />
+          </div>
+          <div className="overview-page__slot overview-page__slot--holdings">
+            <OverviewHoldings currency={currency} movers={data?.movers} />
+          </div>
+        </div>
       </div>
-
-      <OverviewHoldings currency={currency} movers={data?.movers} />
-
-      {data && <CurrencyLifetime data={data} />}
 
       <div className="overview-page__row overview-page__row--alloc">
         <AllocationCard currency={currency} />
