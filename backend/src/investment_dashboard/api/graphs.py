@@ -28,6 +28,7 @@ from investment_dashboard.api.schemas.graphs import (
 )
 from investment_dashboard.readmodels import live_graphs
 from investment_dashboard.services import live_bus
+from investment_dashboard.services.read_cache import cached_read
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def put_graph_range(body: GraphRangePref, session: SessionDep) -> GraphRangePref
 
 
 @router.get("/graphs/{range_key}", response_model=GraphResponse)
+@cached_read
 def get_graph(
     range_key: GraphRange,
     session: SessionDep,

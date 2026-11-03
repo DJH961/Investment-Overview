@@ -242,7 +242,9 @@ export function ValueChartCard({
             valueFormat={axisFormat}
             timeFormat={timeFormat}
             tooltipTimeFormat={tooltipTimeFormat}
-            busy={graph.isPlaceholderData || (graph.isFetching && !graph.isPending) || reloading === shown}
+            // Dim only while the curve on screen is another range's (or a manual
+            // reload runs); a background refresh of the same range stays crisp.
+            busy={graph.isPlaceholderData || reloading === shown}
             loading={graph.isPending}
             emptyMessage="No history for this range yet."
             ariaLabel="Portfolio value over time"

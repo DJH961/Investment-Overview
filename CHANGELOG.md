@@ -111,6 +111,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Installer source-tarball fallback points pip at `backend/` for releases after 5.3.1.
 
 ### Changed
+- **Faster everywhere (v6 app).** The server keeps the last Overview, graph, holdings, periods, analytics, allocations and contributions answers for up to a minute and drops them on any price/FX/refresh event or data change, so repeat requests answer in a few milliseconds instead of 0.1–2 s; sign-in is still checked on every request. After sign-in the app quietly loads Overview, Holdings, Periods and every graph range in the background (one request at a time), so switching pages and ranges shows data immediately. Daily graph ranges stay fresh for 5 minutes (live events still update them), and a background refresh no longer dims the chart. Chart labels are shorter: "$120k", "€98k" instead of "US$120.3k".
 - **CI no longer runs twice per merge.** A merged PR whose required checks passed on the identical tree skips the full CI rerun on `main` (a small gate job verifies the PR, the tree and the five checks), so the deploy starts right after merging. Direct pushes or anything that does not match still run the full CI before a deploy.
 - Dependabot runs monthly and groups its PRs (per area: one minor/patch PR, one major PR, grouped security fixes) instead of one PR per package; `web/` gets no major bumps.
 - "Data health" is now "Health & Repair" everywhere; the investing-power dollar amount is computed on the server.

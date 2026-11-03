@@ -9,11 +9,13 @@ from fastapi import APIRouter, Query
 from investment_dashboard.api.deps import ReportCcy, SessionDep
 from investment_dashboard.api.schemas.periods import PeriodsOut
 from investment_dashboard.readmodels import periods as periods_rm
+from investment_dashboard.services.read_cache import cached_read
 
 router = APIRouter(prefix="/periods", tags=["periods"])
 
 
 @router.get("/monthly", response_model=PeriodsOut)
+@cached_read
 def monthly(
     session: SessionDep,
     ccy: ReportCcy = "EUR",
@@ -23,5 +25,6 @@ def monthly(
 
 
 @router.get("/yearly", response_model=PeriodsOut)
+@cached_read
 def yearly(session: SessionDep, ccy: ReportCcy = "EUR") -> dict[str, Any]:
     return periods_rm.build_for_ccy(session, monthly=False, ccy=ccy)

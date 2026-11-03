@@ -71,3 +71,13 @@ def session(engine: Engine) -> Iterator[Session]:
 def tmp_db_path(tmp_path: Path) -> Path:
     """Path to a fresh on-disk SQLite file (useful for Alembic tests)."""
     return tmp_path / "test.sqlite"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_read_cache() -> Iterator[None]:
+    """The API read cache is process-wide: never let one test see another's answers."""
+    from investment_dashboard.services import read_cache
+
+    read_cache.invalidate()
+    yield
+    read_cache.invalidate()

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 import type { ReportingCurrency } from "../prefs";
@@ -11,11 +11,14 @@ export type HistoryRange = HoldingHistoryDto["range"];
 export type HoldingsGroupBy = HoldingsDto["group_by"];
 
 /** `groupBy` makes the server add per-group subtotals (`groups`). */
-export function useHoldings(ccy: ReportingCurrency, groupBy: HoldingsGroupBy = "none") {
-  return useQuery({
+export const holdingsQuery = (ccy: ReportingCurrency, groupBy: HoldingsGroupBy = "none") =>
+  queryOptions({
     queryKey: ["holdings", ccy, groupBy],
     queryFn: ({ signal }) => api<HoldingsDto>(`/api/holdings?ccy=${ccy}&group_by=${groupBy}`, { signal }),
   });
+
+export function useHoldings(ccy: ReportingCurrency, groupBy: HoldingsGroupBy = "none") {
+  return useQuery(holdingsQuery(ccy, groupBy));
 }
 
 /** Daily closes of one instrument in its native currency (drawer chart). */

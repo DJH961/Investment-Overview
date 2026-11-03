@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 import type { ReportingCurrency } from "../prefs";
@@ -21,13 +21,16 @@ export function toNum(v: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function usePeriods(kind: PeriodKind, ccy: ReportingCurrency) {
-  return useQuery({
+export const periodsQuery = (kind: PeriodKind, ccy: ReportingCurrency) =>
+  queryOptions({
     queryKey: ["periods", kind, ccy],
     // Monthly asks the server to pad empty months so the history is contiguous.
     queryFn: ({ signal }) =>
       api<PeriodsOut>(`/api/periods/${kind}?ccy=${ccy}${kind === "monthly" ? "&fill_gaps=true" : ""}`, { signal }),
   });
+
+export function usePeriods(kind: PeriodKind, ccy: ReportingCurrency) {
+  return useQuery(periodsQuery(kind, ccy));
 }
 
 export function useDeposits(ccy: ReportingCurrency) {
