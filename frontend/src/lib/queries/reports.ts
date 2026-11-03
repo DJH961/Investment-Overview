@@ -1,4 +1,4 @@
-import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 import type { ReportingCurrency } from "../prefs";
@@ -27,34 +27,61 @@ export const periodsQuery = (kind: PeriodKind, ccy: ReportingCurrency) =>
     // Monthly asks the server to pad empty months so the history is contiguous.
     queryFn: ({ signal }) =>
       api<PeriodsOut>(`/api/periods/${kind}?ccy=${ccy}${kind === "monthly" ? "&fill_gaps=true" : ""}`, { signal }),
+    placeholderData: keepPreviousData,
   });
 
 export function usePeriods(kind: PeriodKind, ccy: ReportingCurrency) {
   return useQuery(periodsQuery(kind, ccy));
 }
 
-export function useDeposits(ccy: ReportingCurrency) {
-  return useQuery({
-    queryKey: ["deposits", ccy],
-    queryFn: ({ signal }) => api<DepositsOut>(`/api/deposits?ccy=${ccy}`, { signal }),
-  });
-}
+// One hook per key: `useDeposits` lives in ./activity (it takes the filters).
+export { useDeposits } from "./activity";
 
-export function useAnalytics(ccy: ReportingCurrency, lookbackDays: number) {
-  return useQuery({
+export const analyticsQuery = (ccy: ReportingCurrency, lookbackDays: number) =>
+  queryOptions({
     queryKey: ["analytics", ccy, lookbackDays],
     queryFn: ({ signal }) =>
       api<AnalyticsOut>(`/api/analytics?ccy=${ccy}&lookback_days=${lookbackDays}`, { signal }),
+    // A lookback or currency change keeps the old figures until the new ones land.
+    placeholderData: keepPreviousData,
   });
+
+/** The Risk page's default lookback (days) when nothing is remembered. */
+export const DEFAULT_LOOKBACK_DAYS = 365;
+
+export function useAnalytics(ccy: ReportingCurrency, lookbackDays: number) {
+  return useQuery(analyticsQuery(ccy, lookbackDays));
 }
 
-export function useCalculatorInputs(ccy: ReportingCurrency) {
-  return useQuery({
+export const calculatorInputsQuery = (ccy: ReportingCurrency) =>
+  queryOptions({
     queryKey: ["calculator", "inputs", ccy],
     queryFn: ({ signal }) => api<CalculatorInputsOut>(`/api/calculator?ccy=${ccy}`, { signal }),
+    placeholderData: keepPreviousData,
+  });
+
+export function useCalculatorInputs(ccy: ReportingCurrency) {
+  return useQuery(calculatorInputsQuery(ccy));
+}
+
+/**
+ * The projection for `body` (null: not ready, nothing fetched). A query, not a
+ * mutation: results are cached per input, a superseded request is aborted, and the
+ * previous result stays on screen (`keepPreviousData`) while a new one computes, so
+ * the chart never blanks on an input or currency change (docs/v6_speed_plan.md §4.5).
+ */
+export function useProjection(ccy: ReportingCurrency, body: ProjectionRequest | null) {
+  return useQuery({
+    queryKey: ["calculator", "projection", ccy, body],
+    queryFn: ({ signal }) =>
+      api<ProjectionOut>(`/api/calculator?ccy=${ccy}`, { method: "POST", body: body!, signal }),
+    enabled: body !== null,
+    placeholderData: keepPreviousData,
+    staleTime: 5 * 60_000,
   });
 }
 
+/** @deprecated Use {@link useProjection}; removed once the Projection page moves over. */
 export function useProjectionMutation(ccy: ReportingCurrency) {
   return useMutation({
     mutationKey: ["calculator", "projection", ccy],

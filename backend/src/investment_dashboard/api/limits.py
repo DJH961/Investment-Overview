@@ -27,7 +27,12 @@ from investment_dashboard.config import Settings, get_settings
 
 API_PREFIX = "/api"
 #: ``/api`` path prefixes that are not authenticated by the guard (they guard per route).
-PUBLIC_API_PREFIXES: tuple[str, ...] = ("/api/health", "/api/auth")
+PUBLIC_API_PREFIXES: tuple[str, ...] = (
+    "/api/health",
+    "/api/auth",
+    # Loopback + per-boot token only (api/ops.py announce_router).
+    "/api/ops/announce-restart",
+)
 #: (method, exact path) routes allowed the upload cap instead of the default cap.
 UPLOAD_ROUTES: frozenset[tuple[str, str]] = frozenset({("POST", "/api/imports")})
 

@@ -30,6 +30,7 @@ from investment_dashboard.services.instrument_enrichment_service import (
     EffectiveInstrument,
     effective_instrument,
 )
+from investment_dashboard.services.session_memo import memo
 
 if TYPE_CHECKING:
     from investment_dashboard.models import Account, Instrument, Transaction
@@ -106,7 +107,30 @@ class Position:
     effective: EffectiveInstrument | None = None
 
 
-def compute_positions(  # noqa: PLR0912, PLR0915
+def compute_positions(
+    session: Session,
+    *,
+    as_of: date | None = None,
+    transactions: Sequence[Transaction] | None = None,
+) -> list[Position]:
+    """:func:`_compute_positions` memoized per session (``Position`` is frozen).
+
+    Only the plain ``(session, as_of)`` form is memoized; an explicit
+    ``transactions`` list bypasses it. Each caller gets its own list.
+    """
+    as_of = as_of or exchange_today()
+    if transactions is not None:
+        return _compute_positions(session, as_of=as_of, transactions=transactions)
+    return list(
+        memo(
+            session,
+            ("compute_positions", as_of),
+            lambda: tuple(_compute_positions(session, as_of=as_of)),
+        )
+    )
+
+
+def _compute_positions(  # noqa: PLR0912, PLR0915
     session: Session,
     *,
     as_of: date | None = None,

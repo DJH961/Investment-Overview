@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "../../components/Button";
 import { AllocationBar } from "../../components/AllocationBar";
 import { Card } from "../../components/Card";
@@ -14,7 +14,8 @@ import { Skeleton } from "../../components/Skeleton";
 import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
 import { MASK, formatDate, formatMoney, formatNumber, formatPercent } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
-import { type ProjectionOut, type ProjectionRequest, toNum, useCalculatorInputs, useProjectionMutation } from "../../lib/queries/reports";
+import { useDebouncedValue } from "../../lib/useDebouncedValue";
+import { type ProjectionOut, type ProjectionRequest, toNum, useCalculatorInputs, useProjection } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { Maybe } from "../Periods/Maybe";
@@ -131,24 +132,23 @@ export function Projection() {
     };
   };
   const inputs = useCalculatorInputs(currency);
-  const mutation = useProjectionMutation(currency);
-  const { mutate } = mutation;
   const set = <K extends keyof Form>(k: K, v: Form[K]) =>
     setStored({ ccy: currency, form: { ...form, [k]: v } });
 
+  // Compare by the JSON string so the debounce only restarts on a real change.
   const requestKey = JSON.stringify(toRequest(form));
-  useEffect(() => {
-    const id = setTimeout(() => mutate(JSON.parse(requestKey) as ProjectionRequest), 300);
-    return () => clearTimeout(id);
-  }, [requestKey, mutate, currency]);
+  const debouncedKey = useDebouncedValue(requestKey, 300);
+  const body = useMemo(() => JSON.parse(debouncedKey) as ProjectionRequest, [debouncedKey]);
+  const query = useProjection(currency, body);
+  const { refetch, isError, isFetching } = query;
 
-  const out = mutation.data;
-  const rerun = useCallback(() => mutate(JSON.parse(requestKey) as ProjectionRequest), [mutate, requestKey]);
+  // Keep the previous result on screen (keepPreviousData); error only replaces it when there is none.
+  const out = query.data;
   useShellStatus(
-    mutation.isError ? "stale" : out ? "closed" : "loading",
+    isError ? "stale" : out ? "closed" : "loading",
     out ? `As of ${formatDate(out.as_of)}` : "Loading",
-    rerun,
-    mutation.isPending,
+    () => void refetch(),
+    isFetching,
   );
 
   const seed = inputs.data?.projection_defaults[form.monthly ? "month" : "year"];
@@ -282,17 +282,17 @@ export function Projection() {
                 />
               )}
             </Field>
-            <Button className="projection-page__wide" variant="secondary" onClick={rerun} loading={mutation.isPending}>
+            <Button className="projection-page__wide" variant="secondary" onClick={() => void refetch()} loading={isFetching}>
               Recalculate
             </Button>
           </form>
         </Card>
         <div className="projection-page__results">
-          {mutation.isError ? (
+          {isError && !out ? (
             <ErrorState
               title="Could not compute projection"
-              message={mutation.error.message}
-              onRetry={rerun}
+              message={query.error?.message ?? ""}
+              onRetry={() => void refetch()}
             />
           ) : !out ? (
             <Skeleton height="18rem" />
@@ -325,6 +325,7 @@ export function Projection() {
               </Card>
               <Card title={`Next ${out.inputs.horizon} ${out.monthly ? "months" : "years"}`}>
                 <Chart
+                  busy={isFetching}
                   series={series}
                   valueFormat={(v) =>
                     hide ? formatPercent(v, { digits: 0 }) : formatMoney(v, currency, { compact: true })

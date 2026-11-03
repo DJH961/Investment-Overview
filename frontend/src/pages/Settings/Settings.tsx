@@ -272,7 +272,7 @@ export function Settings() {
             void values.refetch();
           }}
         />
-      ) : schema.isPending || values.isPending ? (
+      ) : !schema.data ? (
         <Skeleton height="320px" />
       ) : (
         <div className="settings__layout">
@@ -338,7 +338,13 @@ export function Settings() {
                 <h2 className="settings__section-title" id={`settings-${s.id}`}>
                   {s.label}
                 </h2>
-                {list.length > 0 && <div className="settings__fields">{list.map(renderField)}</div>}
+                {list.length > 0 &&
+                  (values.data ? (
+                    <div className="settings__fields">{list.map(renderField)}</div>
+                  ) : (
+                    // Field rows need the values (they would show as "default" otherwise); the rest renders now.
+                    <Skeleton height="160px" />
+                  ))}
                 {!q && EXTRA_CARDS[s.id]?.()}
                 {!q && list.length === 0 && !EXTRA_CARDS[s.id] && (
                   <p className="settings__muted">Nothing here{hiddenAdvanced ? " unless advanced settings are shown" : ""}.</p>

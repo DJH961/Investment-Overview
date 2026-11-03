@@ -26,9 +26,9 @@ export function useUndoPreview(batchId: number | null) {
   });
 }
 
-/** Undo deletes ledger rows: refetch everything (history, ledger, graphs). */
+/** Undo deletes ledger rows: refetch the report, ledger and batch queries. */
 export function useUndoBatch() {
-  const invalidate = useInvalidateAfterWrite();
+  const invalidate = useInvalidateAfterWrite("importWrite");
   return useMutation({
     mutationFn: ({ id, confirm }: { id: number; confirm: string }) =>
       api<ImportUndoResult>(`/api/imports/batches/${id}/undo`, { method: "POST", body: { confirm } }),

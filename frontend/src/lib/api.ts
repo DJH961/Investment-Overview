@@ -9,6 +9,7 @@
  */
 
 import { markReachable, markUnreachable } from "./network";
+import { isRidingOutOutage } from "./serverStatus";
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
@@ -132,9 +133,50 @@ export interface RequestOptions {
    * none for writes (a write may legitimately run long on the server). 0 = none.
    */
   timeoutMs?: number;
+  /**
+   * GET only. While the server is restarting or lost, retry quietly with backoff
+   * instead of failing, so the page keeps its old data. Default true; the health
+   * poll turns it off.
+   */
+  rideOut?: boolean;
 }
 
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Typed request. A GET that cannot reach the server while a restart is announced
+ * (or the stream is lost) keeps retrying with backoff (1 s, 2 s … 5 s) rather than
+ * surfacing an error, until it succeeds, the caller cancels or the outage ends.
+ */
 export async function api<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
+  if ((options.method ?? "GET") !== "GET" || options.rideOut === false) return request<T>(path, options);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request<T>(path, options);
+    } catch (err) {
+      if (!isNetworkError(err) || !isRidingOutOutage() || options.signal?.aborted) throw err;
+      await sleep(Math.min(5000, 1000 * 2 ** attempt), options.signal);
+    }
+  }
+}
+
+async function request<T>(path: string, options: RequestOptions): Promise<T> {
   const { method = "GET", body, signal, skipAuthRedirect = false } = options;
   const timeoutMs = options.timeoutMs ?? (method === "GET" ? DEFAULT_GET_TIMEOUT_MS : 0);
   const headers: Record<string, string> = { Accept: "application/json" };

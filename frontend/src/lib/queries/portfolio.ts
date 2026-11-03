@@ -25,6 +25,8 @@ export const overviewQuery = (ccy: ReportingCurrency) =>
   queryOptions({
     queryKey: ["overview", ccy],
     queryFn: ({ signal }) => api<OverviewDto>(`/api/overview?ccy=${ccy}`, { signal }),
+    // A currency switch shows the old numbers until the new ones land (no skeleton).
+    placeholderData: keepPreviousData,
   });
 
 /**
@@ -61,6 +63,7 @@ export const allocationsQuery = (ccy: ReportingCurrency) =>
   queryOptions({
     queryKey: ["allocations", ccy],
     queryFn: ({ signal }) => api<AllocationsDto>(`/api/allocations?ccy=${ccy}`, { signal }),
+    placeholderData: keepPreviousData,
   });
 
 export function useAllocations(ccy: ReportingCurrency) {

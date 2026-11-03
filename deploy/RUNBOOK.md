@@ -121,7 +121,7 @@ The app keeps one log per subject in the data volume, `/data/logs/activity/`:
 | `imports.log` | broker file uploads, import confirms/discards |
 | `changes.log` | manual edits: transactions, accounts, deposits, settings |
 | `backups.log` | sealed snapshots, backup downloads, restores |
-| `system.log` | startup, shutdown, migrations, watchdog warnings |
+| `system.log` | startup, shutdown, migrations, watchdog warnings, deploy restart announcements, "memory high" warnings |
 
 Each line has the time (UTC), what happened, the HTTP status, the client IP and the
 browser; never passwords, request bodies or cookies. Files rotate at midnight and are
@@ -323,7 +323,37 @@ previous version back and the run turns red.
   A changed network definition cannot be applied to running containers; if a deploy
   fails on that, run `docker compose down && docker compose up -d` on the server once
   (the data volumes are kept).
+- **Restart announcement:** after pulling the new image and before restarting, `deploy.sh`
+  runs a tiny Python call inside the running app container. It reads the per-boot token
+  from `/tmp/inv-restart.token` and POSTs `restarting` to `127.0.0.1:8000/api/ops/announce-restart`.
+  That route answers only to loopback with the token (anything else gets 404) and puts
+  a `server` event on the live stream, so open browsers show "Updating, back in about
+  20 s" and keep their data. Then it waits 2 s. If the announcement fails (older image
+  without the route, app down) the deploy goes on. The app container gets 5 s to stop
+  (`stop_grace_period`). The line "restart announced" lands in `system.log`.
+- **Deploy timing (`DEPLOY_MODE`):** repo variable under the same Variables page.
+  `immediate` (or missing) deploys every green push to `main`. `scheduled` deploys only
+  at 21:30 UTC on weekdays and every 4 hours on weekends (the latest `main` commit, if
+  its CI is green and it is not already the last deployed one), or at once when the
+  commit message of the push has the line `Deploy: now`. **Run workflow** always
+  deploys immediately.
+- **Reinstall `deploy.sh` (when it changed in the repo):** copy it to the server and
+  install it as root: `scp deploy/deploy.sh daniel@hetzner-djh-v1:/tmp/` then
+  `ssh daniel@hetzner-djh-v1 'sudo install -o root -g root -m 755 /tmp/deploy.sh /opt/investments/deploy.sh'`
+  (on the Windows laptop use `/c/Windows/System32/OpenSSH/ssh.exe` and `scp.exe`). The
+  announce step only starts working after this reinstall.
 - **Look at it:** `ssh daniel@hetzner-djh-v1 'cd /opt/investments && docker compose ps && docker compose logs --tail 50 app'`
+
+### Memory
+
+The server has 1 GB RAM and the app container is capped at 512 MB. `bootstrap.sh`
+sets up **zram** (compressed swap in RAM, about 25% of memory, priority above the
+2 GB swap file, via `systemd-zram-generator`), so the swap file is only touched
+when zram is full. Check with `swapon --show` (two lines: `/dev/zram0` first) and
+`zramctl`. The image sets `MALLOC_ARENA_MAX=2` to keep glibc from reserving a
+memory arena per thread. The Data Health page shows the app's resident memory and
+swap; above 400 MB the app writes a "memory high" warning (at most once an hour) to
+`system.log`.
 
 ## Rolling back
 

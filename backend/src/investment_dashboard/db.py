@@ -20,7 +20,7 @@ ledger-tier session.
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Hashable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,10 @@ from investment_dashboard.storage.encryption import (
     to_sqlcipher_url,
 )
 from investment_dashboard.storage.sidecar import should_use_truncate_journal
+
+#: Persistent connections per engine (a full Overview burst is ~6 concurrent
+#: requests; the scheduler adds a few worker threads).
+_POOL_SIZE = 20
 
 
 def _ensure_parent(path: Path) -> None:
@@ -105,7 +109,15 @@ def make_engine(
     # plain pysqlite already does; connections are keyed once on connect.
     pool_kw: dict[str, Any] = {}
     if engine_url.startswith("sqlite") and _url_path(engine_url) is not None:
-        pool_kw = {"poolclass": QueuePool, "pool_size": 5, "max_overflow": 10}
+        # Connections are created lazily and kept (a new SQLCipher connection redoes
+        # key derivation), so size the pool for a burst of API requests plus the
+        # scheduler threads instead of relying on short-lived overflow connections.
+        pool_kw = {
+            "poolclass": QueuePool,
+            "pool_size": _POOL_SIZE,
+            "max_overflow": 8,
+            "pool_recycle": -1,
+        }
     engine = create_engine(
         target,
         future=True,
@@ -308,6 +320,50 @@ def cache_write_session(fallback: Session) -> Iterator[Session]:
         return
     with cache_session_scope() as s:
         yield s
+
+
+# --- Per-session read memo ----------------------------------------------
+# Public API is re-exported by ``services.session_memo``; it lives here so the
+# repositories layer can use it without importing ``services``.
+
+_MEMO_KEY = "investment_dashboard.session_memo"
+
+
+def memo[T](session: Session, key: tuple[Hashable, ...], fn: Callable[[], T]) -> T:
+    """Return ``fn()``, computed at most once per ``key`` until the session changes."""
+    store: dict[tuple[Hashable, ...], Any] = session.info.setdefault(_MEMO_KEY, {})
+    if key in store:
+        return store[key]  # type: ignore[no-any-return]
+    value = fn()
+    store[key] = value
+    return value
+
+
+def clear_memo(session: Session) -> None:
+    """Forget everything memoized on ``session``."""
+    session.info.pop(_MEMO_KEY, None)
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _memo_on_bulk_write(state: Any) -> None:
+    # Bulk UPDATE/DELETE/INSERT statements bypass flush: drop the memo too.
+    if not state.is_select:
+        clear_memo(state.session)
+
+
+@event.listens_for(Session, "after_flush")
+def _memo_after_flush(session: Session, _flush_context: object) -> None:
+    clear_memo(session)
+
+
+@event.listens_for(Session, "after_commit")
+def _memo_after_commit(session: Session) -> None:
+    clear_memo(session)
+
+
+@event.listens_for(Session, "after_rollback")
+def _memo_after_rollback(session: Session) -> None:
+    clear_memo(session)
 
 
 # --- Backup dirty flag -------------------------------------------------

@@ -30,6 +30,7 @@ import {
   type TransactionWrite,
 } from "../../lib/queries/ledger";
 import { useShellStatus } from "../../lib/shell";
+import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useIsPhone } from "../../lib/useMediaQuery";
 import { usePersistentState } from "../../lib/usePersistentState";
 import { formatPrice, formatQuantity, num } from "./numbers";
@@ -154,13 +155,16 @@ export function Transactions() {
   };
   const pickRange = (range: RangeKey) => patch({ range, ...rangeDates(range, todayIn(getFormatPrefs().timeZone)) });
 
+  // Typing updates the box at once; only the settled text goes to the server (G5).
+  const debouncedQ = useDebouncedValue(f.q);
+  const debouncedSymbol = useDebouncedValue(f.symbol);
   const list = useTransactions({
     account_id: f.account === ALL ? undefined : Number(f.account),
     kind: f.kind === ALL ? undefined : f.kind,
-    symbol: f.symbol.trim().toUpperCase() || undefined,
+    symbol: debouncedSymbol.trim().toUpperCase() || undefined,
     start: f.start || undefined,
     end: f.end || undefined,
-    q: f.q.trim() || undefined,
+    q: debouncedQ.trim() || undefined,
     hide_sweeps: !f.sweeps,
     sort: f.sort,
     order: f.order,
@@ -180,8 +184,8 @@ export function Transactions() {
   const { refetch } = list;
   const onRefresh = useCallback(() => void refetch(), [refetch]);
   useShellStatus(
-    list.isError ? "stale" : list.isFetching ? "loading" : "closed",
-    list.isError ? "Offline" : list.isFetching ? "Loading" : "Ledger",
+    list.isError ? "stale" : list.isPending ? "loading" : "closed",
+    list.isError ? "Offline" : list.isPending ? "Loading" : "Ledger",
     onRefresh,
     list.isFetching,
   );

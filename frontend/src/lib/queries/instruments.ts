@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../api";
 import type { components } from "../api-types";
 import { useInvalidateAfterWrite } from "./ledger";
@@ -10,16 +10,24 @@ export type InstrumentUpdateResult = Schemas["InstrumentUpdateResult"];
 export type PricingMode = Instrument["pricing_mode"];
 export type AssetClass = NonNullable<InstrumentPatch["asset_class"]>;
 
-export function useInstruments() {
-  return useQuery({
+/** The one definition of `["instruments"]` (the Diagnostics pickers use the alias below). */
+export const instrumentsQuery = () =>
+  queryOptions({
     queryKey: ["instruments"],
     queryFn: ({ signal }) => api<Instrument[]>("/api/instruments", { signal }),
+    staleTime: 5 * 60_000,
   });
+
+export function useInstruments() {
+  return useQuery(instrumentsQuery());
 }
 
-/** Names, classes and TERs feed holdings/allocations: refetch everything after a change. */
+/** Alias kept for the Diagnostics pages; same query as {@link useInstruments}. */
+export const useInstrumentList = useInstruments;
+
+/** Names, classes and TERs feed holdings/allocations: refetch just those (see ./invalidation). */
 export function useUpdateInstrument() {
-  const invalidate = useInvalidateAfterWrite();
+  const invalidate = useInvalidateAfterWrite("instrumentEdit");
   return useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: InstrumentPatch }) =>
       api<InstrumentUpdateResult>(`/api/instruments/${id}`, { method: "PATCH", body: patch }),

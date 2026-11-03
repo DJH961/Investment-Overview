@@ -1,5 +1,5 @@
 /** Health & Repair: maintenance jobs, scheduler, logs, backups, market-data fixes, system info. */
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api } from "../api";
 import type { components } from "../api-types";
@@ -133,6 +133,7 @@ export function useLogs(p: LogQuery) {
       return api<LogsDto>(`/api/maintenance/logs?${q.toString()}`, { signal });
     },
     staleTime: 5_000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -158,13 +159,8 @@ export function useProbe() {
 
 // ---- market data -------------------------------------------------------------
 
-export function useInstrumentList() {
-  return useQuery({
-    queryKey: ["instruments"],
-    queryFn: ({ signal }) => api<InstrumentOut[]>("/api/instruments", { signal }),
-    staleTime: 5 * 60_000,
-  });
-}
+/** Same query as `useInstruments` (one hook per key). */
+export { useInstrumentList } from "./instruments";
 
 export function useAnomalies() {
   return useQuery({

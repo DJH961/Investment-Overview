@@ -64,7 +64,7 @@ const PREFETCH_DELAY_MS = 1200;
 export function AppShell() {
   const queryClient = useQueryClient();
   const { currency } = usePrefs();
-  // Warm Overview, Holdings, Periods and every graph range in the background.
+  // Warm every nav page (both currencies) in idle time; the server-restart banner lives in <OfflineBanner />.
   useEffect(() => {
     const ctl = new AbortController();
     const timer = setTimeout(() => void prefetchKeyData(queryClient, currency, ctl.signal), PREFETCH_DELAY_MS);

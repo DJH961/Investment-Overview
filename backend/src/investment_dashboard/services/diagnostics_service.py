@@ -17,13 +17,16 @@ disagree with the figures the rest of the app shows.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.activity_log import activity
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.instruments import SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import exchange_today
@@ -474,6 +477,71 @@ def _check_intraday_graph(session: Session) -> HealthItem:
     )
 
 
+#: Log a warning (system activity log) when the app's resident memory passes this.
+RSS_WARN_BYTES = 400 * 1024 * 1024
+#: At most one such warning per this many seconds.
+_RSS_WARN_INTERVAL_S = 3600.0
+_last_rss_warning: float | None = None
+_PROC_STATUS = Path("/proc/self/status")
+
+
+def memory_usage(status_path: Path | None = None) -> tuple[int, int] | None:
+    """``(rss_bytes, swap_bytes)`` of this process from ``/proc/self/status``.
+
+    ``None`` when the file is absent or unreadable (Windows, macOS).
+    """
+    try:
+        text = (status_path or _PROC_STATUS).read_text(encoding="ascii", errors="replace")
+    except OSError:
+        return None
+    values: dict[str, int] = {}
+    for line in text.splitlines():
+        key, _, rest = line.partition(":")
+        if key in ("VmRSS", "VmSwap"):
+            parts = rest.split()
+            if parts and parts[0].isdigit():
+                values[key] = int(parts[0]) * 1024  # reported in kB
+    if "VmRSS" not in values:
+        return None
+    return values["VmRSS"], values.get("VmSwap", 0)
+
+
+def _mb(value: int) -> str:
+    return f"{value / (1024 * 1024):.0f} MB"
+
+
+def warn_if_memory_high(usage: tuple[int, int] | None, *, now: float | None = None) -> bool:
+    """Log a rate-limited warning when RSS exceeds :data:`RSS_WARN_BYTES`."""
+    global _last_rss_warning  # noqa: PLW0603
+    if usage is None or usage[0] <= RSS_WARN_BYTES:
+        return False
+    stamp = time.monotonic() if now is None else now
+    if _last_rss_warning is not None and stamp - _last_rss_warning < _RSS_WARN_INTERVAL_S:
+        return False
+    _last_rss_warning = stamp
+    activity("system").warning(
+        "memory high: rss=%s swap=%s (warn above %s)",
+        _mb(usage[0]),
+        _mb(usage[1]),
+        _mb(RSS_WARN_BYTES),
+    )
+    return True
+
+
+def _check_memory() -> HealthItem | None:
+    usage = memory_usage()
+    if usage is None:
+        return None
+    warn_if_memory_high(usage)
+    return HealthItem(
+        key="memory",
+        title="Memory",
+        severity="ok",
+        count=0,
+        detail=f"App memory {_mb(usage[0])} resident, {_mb(usage[1])} swapped out.",
+    )
+
+
 def check_health(session: Session) -> HealthReport:
     """Run every read-only data-health probe and return one aggregate report.
 
@@ -489,6 +557,9 @@ def check_health(session: Session) -> HealthReport:
         _check_intraday_graph(session),
         _check_providers(),
     ]
+    memory = _check_memory()
+    if memory is not None:
+        items.append(memory)
     return HealthReport(items=tuple(items))
 
 

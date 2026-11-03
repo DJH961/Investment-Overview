@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -66,6 +66,13 @@ function accountsAnd(handler: (url: string, init?: RequestInit) => Response | un
   });
 }
 
+/** Ledger list requests that carry a text search. */
+function searchUrls(fetchMock: ReturnType<typeof accountsAnd>): string[] {
+  return fetchMock.mock.calls
+    .map(([u]) => String(u))
+    .filter((u) => u.startsWith("/api/transactions") && /[?&]q=/.test(u));
+}
+
 describe("Transactions", () => {
   it("lists rows and sends decimal strings on create", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -123,6 +130,28 @@ describe("Transactions", () => {
     const urls = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith("/api/transactions"));
     expect(urls.some((u) => u.includes("order=asc"))).toBe(true);
     expect(urls.at(-1)).toMatch(/start=\d{4}-01-01/);
+  });
+
+  it("sends one search request after typing five characters quickly", async () => {
+    const fetchMock = accountsAnd(() => undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await screen.findByRole("button", { name: /January 2026/ });
+    const box = screen.getByLabelText("Search transactions");
+
+    vi.useFakeTimers();
+    try {
+      for (const s of ["a", "ab", "abc", "abcd", "abcde"]) fireEvent.change(box, { target: { value: s } });
+      expect(box).toHaveValue("abcde");
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await waitFor(() => expect(searchUrls(fetchMock)).toHaveLength(1));
+    expect(searchUrls(fetchMock)[0]).toMatch(/[?&]q=abcde(&|$)/);
   });
 
   it("checks quantity x price = total and defaults money-market auto-fill on", async () => {

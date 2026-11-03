@@ -9,6 +9,14 @@
   color: var(--color-fg);
   font-size: var(--font-size-sm);
 
+  &--ok {
+    background: var(--color-pos-soft, var(--color-warn-soft));
+  }
+
+  &--ok &__icon {
+    color: var(--color-pos, var(--color-warn));
+  }
+
   &__icon {
     flex: none;
     width: 1.1em;
