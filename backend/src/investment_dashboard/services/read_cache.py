@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import logging
 import secrets
 import threading
 import time
@@ -29,6 +30,8 @@ from collections.abc import Callable
 from decimal import Decimal
 from enum import Enum
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 #: Upper bound on how old a cached answer can be, even without any event.
 TTL_SECONDS = 60.0
@@ -49,6 +52,10 @@ _entries: OrderedDict[tuple[Any, ...], tuple[tuple[tuple[str, int], ...], float,
 #: Per-dependency generation; bumped by :func:`invalidate`. An answer computed
 #: across a bump of a dependency it reads is not stored.
 _gens: dict[str, int] = dict.fromkeys(ALL_DEPS, 0)
+#: (key, generations) -> Event set when the thread computing it finished (single flight).
+_inflight: dict[tuple[Any, ...], threading.Event] = {}
+#: Longest a waiter sits behind another thread's computation before computing itself.
+_WAIT_SECONDS = 30.0
 _KEYABLE = (str, int, float, bool, Decimal, Enum, type(None))
 
 
@@ -96,24 +103,77 @@ def cached_read[**P, R](
     @functools.wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         key = (name, *sorted((k, v) for k, v in kwargs.items() if isinstance(v, _KEYABLE)))
-        now = time.monotonic()
-        with _lock:
-            snap = tuple((d, _gens[d]) for d in deps)
-            hit = _entries.get(key)
-            if hit is not None and hit[0] == snap and hit[1] > now:
-                _entries.move_to_end(key)
-                return hit[2]  # type: ignore[no-any-return]
-        value = func(*args, **kwargs)
-        with _lock:
-            # Something it reads changed while computing: don't store a stale answer.
-            if snap == tuple((d, _gens[d]) for d in deps):
-                _entries[key] = (snap, now + TTL_SECONDS, value)
-                _entries.move_to_end(key)
-                while len(_entries) > MAX_ENTRIES:
-                    _entries.popitem(last=False)
-        return value
+        while True:
+            now = time.monotonic()
+            with _lock:
+                snap = tuple((d, _gens[d]) for d in deps)
+                hit = _entries.get(key)
+                if hit is not None and hit[0] == snap and hit[1] > now:
+                    _entries.move_to_end(key)
+                    return hit[2]  # type: ignore[no-any-return]
+                flight = (key, snap)
+                pending = _inflight.get(flight)
+                if pending is None:
+                    _inflight[flight] = done = threading.Event()
+            if pending is None:
+                break
+            # Single flight: another thread computes this key at this generation.
+            pending.wait(timeout=_WAIT_SECONDS)
+            with _lock:
+                if _inflight.get(flight) is pending:  # stuck: stop waiting, compute
+                    pending = None
+            if pending is None:
+                done = threading.Event()
+                break
+        try:
+            value = func(*args, **kwargs)
+            with _lock:
+                # Something it reads changed while computing: don't store a stale answer.
+                if snap == tuple((d, _gens[d]) for d in deps):
+                    _entries[key] = (snap, now + TTL_SECONDS, value)
+                    _entries.move_to_end(key)
+                    while len(_entries) > MAX_ENTRIES:
+                        _entries.popitem(last=False)
+            return value
+        finally:
+            with _lock:
+                if _inflight.get(flight) is done:
+                    del _inflight[flight]
+            done.set()
 
     return wrapper
+
+
+_warmers: list[Callable[[Any], None]] = []
+
+
+def register_warmer(fn: Callable[[Any], None]) -> None:
+    """Register ``fn(session)`` to pre-compute a read after a tick (see :func:`warm`)."""
+    if fn not in _warmers:
+        _warmers.append(fn)
+
+
+def warm() -> None:
+    """Compute the registered reads sequentially on one session; never raises.
+
+    Each warmer calls the same cached function the API route uses, so the cache keys
+    match. A failure is logged and the next warmer still runs.
+    """
+    if not _warmers:
+        return
+    started = time.perf_counter()
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+
+        with ledger_session_scope() as session:
+            for fn in list(_warmers):
+                try:
+                    fn(session)
+                except Exception:
+                    log.warning("read cache warmer %s failed", fn, exc_info=True)
+    except Exception:
+        log.warning("read cache warm-up failed", exc_info=True)
+    log.debug("read cache warmed in %.2fs", time.perf_counter() - started)
 
 
 #: Changes on every process start so a restarted server (generations back at 0)

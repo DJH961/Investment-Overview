@@ -39,7 +39,7 @@ from typing import Any
 
 from investment_dashboard.activity_log import activity
 from investment_dashboard.domain import market_hours
-from investment_dashboard.services import live_bus, live_state
+from investment_dashboard.services import live_bus, live_state, read_cache
 
 log = logging.getLogger(__name__)
 
@@ -470,6 +470,13 @@ class Scheduler:
             if etype == "tick":
                 live_state.record_tick(event, day=market_hours.exchange_today(now))
             self.bus.publish(event)
+            if etype == "tick" and self.bus.subscriber_count > 0:
+                # Pre-compute the reads the clients refetch right after a tick (in the
+                # background: the tick job is already done).
+                with contextlib.suppress(Exception):
+                    threading.Thread(
+                        target=read_cache.warm, name="inv-dashboard-cache-warm", daemon=True
+                    ).start()
         finally:
             st.running.discard(name)
 

@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from sqlalchemy.orm import Session
 
 from investment_dashboard.activity_log import activity
 from investment_dashboard.api.deps import ReportCcy, SessionDep
@@ -29,7 +30,11 @@ from investment_dashboard.api.schemas.graphs import (
 )
 from investment_dashboard.readmodels import live_graphs
 from investment_dashboard.services import live_bus
-from investment_dashboard.services.read_cache import cached_read, conditional_both
+from investment_dashboard.services.read_cache import (
+    cached_read,
+    conditional_both,
+    register_warmer,
+)
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +67,6 @@ def get_graph(
 
 @router.get("/graphs/{range_key}/both", response_model=ByCurrency[GraphResponse])
 @conditional_both("graphs")
-@cached_read
 def get_graph_both(
     range_key: GraphRange,
     request: Request,
@@ -72,6 +76,13 @@ def get_graph_both(
         bool, Query(description="Also return the other currency line (default on).")
     ] = True,
 ) -> ByCurrency[GraphResponse]:
+    return _graph_both(session=session, range_key=range_key, compare=compare)
+
+
+@cached_read
+def _graph_both(
+    session: Session, range_key: GraphRange, compare: bool = True
+) -> ByCurrency[GraphResponse]:
     return ByCurrency[GraphResponse].model_validate(
         {
             c: GraphResponse.model_validate(
@@ -80,6 +91,9 @@ def get_graph_both(
             for c in ("EUR", "USD")
         }
     )
+
+
+register_warmer(lambda session: _graph_both(session=session, range_key="1d", compare=True))
 
 
 def _run_reload(range_key: str) -> None:

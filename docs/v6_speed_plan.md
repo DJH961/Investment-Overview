@@ -327,6 +327,32 @@ dev work while performance is an issue.
   Overview from ~1.1 s to roughly 0.2–0.3 s, and it's the foundation of Tier A in §4.
   This is now **step 1 of Phase 1**.
 
+### After 6.2.1 (2026-11-03, ~21:00 UTC)
+
+Server checks: `deploy.sh` matches the repo, zram is active (priority 100, above the
+swapfile), `MALLOC_ARENA_MAX=2` is set, the app has `VmSwap` 0 and RSS ~220 MB, the
+restart token exists, and public SSH is still closed.
+
+In-container builds (same script as before):
+
+| Build | before | after 6.2.1 |
+|---|---|---|
+| overview EUR / USD | 1.12 / 2.58 s | **0.45 / 0.45 s** |
+| holdings EUR | 1.61 s | **0.41 s** |
+| graph 1d | 1.24 s | **0.36 s** |
+| graph 1m | 0.60 s | 0.26 s |
+| periods monthly | 0.45 s | 0.29 s |
+| allocations | 0.16 s | 0.07 s |
+
+**Real requests (Caddy, first ~40 min) were still 1.5–2.4 s**, though the sample
+was small (n≈9). The reason: after a tick, several reads compute at once on the
+single vCPU, so each gets 3–5× slower. Two fixes are in Phase 2: single-flight in
+`cached_read`, so identical concurrent reads compute once, and **warming the main
+`/both` reads right after each tick** while a client is connected. Clients' staggered
+refetch then hits the cache. The remaining build time is ~60 % ORM row loading
+(positions computed for several dates). A cross-request ledger cache is the next
+lever if needed.
+
 ## 3a. Deploys without the "it broke" feeling
 
 Both owner asks were checked against the code and are possible.
