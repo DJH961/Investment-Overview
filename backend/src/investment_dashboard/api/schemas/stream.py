@@ -19,12 +19,35 @@ class HelloEvent(ApiModel):
     market_state: MarketState
 
 
+class TickPrice(ApiModel):
+    """One instrument's latest price in its native currency."""
+
+    px: DecStr
+    ccy: str
+    #: Previous session close (native), for the day change; null if unknown.
+    prev_close: DecStr | None = None
+
+
+class TickPoint(ApiModel):
+    """The new intraday portfolio sample, in both currencies (single instant)."""
+
+    t: str
+    EUR: DecStr | None = None
+    USD: DecStr | None = None
+
+
 class TickEvent(ApiModel):
     """A market-hours poll finished: prices, FX and the intraday sample are fresh."""
 
     type: Literal["tick"] = "tick"
     ts: str
     market_state: MarketState
+    #: Monotonic per process; ``GET /api/live?since=`` catches up from it.
+    seq: int | None = None
+    #: Latest price per instrument id (as a string key).
+    prices: dict[str, TickPrice] | None = None
+    #: The intraday sample this tick added (1D/1W graphs append it).
+    point: TickPoint | None = None
     total_value_eur: DecStr | None = None
     #: EUR total x the live spot at ``ts`` (single instant, so the conversion is valid).
     total_value_usd: DecStr | None = None
