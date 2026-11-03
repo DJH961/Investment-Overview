@@ -84,7 +84,7 @@ prune_old_images() {
 # A failed announcement (old image without the route, container down) never blocks
 # the deploy.
 announce_restart() {
-  docker compose exec -T app python -c '
+  timeout 10 docker compose exec -T app python -c '
 import json, sys, urllib.request as u
 token = open("/tmp/inv-restart.token").read().strip()
 body = json.dumps({"state": "restarting", "version": sys.argv[1], "eta_s": 20}).encode()

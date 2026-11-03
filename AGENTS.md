@@ -132,7 +132,7 @@ Adapted from the owner's starter-project convention (see plan §4a):
 
 - **Git flow:** features and risky changes go through a PR. Small or urgent fixes
   may be pushed straight to `main` once the quality gate passes. `main` must stay
-  green (in v6 every green `main` commit deploys).
+  green (in v6 every green `main` commit deploys, unless the repo variable `DEPLOY_MODE=scheduled` batches deploys; see `deploy/RUNBOOK.md`).
 - **Changelog:** every change adds a `CHANGELOG.md` entry (Keep a Changelog
   sections; small UI updates and patch-sized changes go under **Fixed**).
 - **Release fast — default is one release per change.** Any change that alters
