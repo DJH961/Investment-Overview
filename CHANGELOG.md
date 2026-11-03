@@ -17,7 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [6.0.2] — 2026-11-03
+## [6.1.1] — 2026-11-03
 
 ### Fixed
 - Colour-blind safety (the owner is protan): the main graph's second-currency
@@ -28,6 +28,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   themes); secondary chart series are dashed, with dashed legend and tooltip
   swatches. A new frontend test (`tokens.cvd.test.ts`) fails CI if a colour
   collision comes back; the rule is in AGENTS.md and the docs.
+
+## [6.1.0] — 2026-11-03
+
+### Added
+- Settings: separate questions for **Date format** (31/12/2026, 12/31/2026,
+  2026-12-31, 31.12.2026), **Time format** (24h `14:05` / 12h `2:05 PM`) and
+  **Number and currency format** (1,234.56 / 1.234,56 / 1 234,56 / 1'234.56),
+  each settable independently. Charts, axes and tooltips follow them.
+
+### Changed
+- The old "Number and date format" setting (`display.locale`) is now the
+  **Regional preset**: the fallback for any of the three settings left on
+  `auto` (the default), so existing choices look the same. Dates are now shown
+  numerically in the chosen layout (no month names in tables and axes), and the
+  clock uses the existing `clock_format` setting, relabelled "Time format".
 
 ## [6.0.1] — 2026-11-03
 
