@@ -43,11 +43,18 @@
     box-shadow: 0 0 0 3px var(--color-pos-soft);
   }
 
+  // Phone: the second currency always on its own line, so a long value, a
+  // short one and the hidden "€••,•••.••" all lay out the same way.
   &__values {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-2) var(--space-4);
+
+    @include m.phone {
+      flex-direction: column;
+      gap: var(--space-1);
+    }
   }
 
   &__value {
@@ -74,6 +81,21 @@
 
   &__day {
     font-weight: var(--font-weight-medium);
+  }
+
+  // The other-currency move and its (i) never split across lines.
+  &__usd {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    white-space: nowrap;
+  }
+
+  &__split {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-2);
   }
 
   &__muted,

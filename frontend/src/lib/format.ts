@@ -45,11 +45,6 @@ export function isHidingAmounts(): boolean {
   return HIDE_AMOUNTS;
 }
 
-function currencySymbol(currency: Currency): string {
-  const part = new Intl.NumberFormat(LOCALE, { style: "currency", currency }).formatToParts(0).find((p) => p.type === "currency");
-  return part?.value ?? currency;
-}
-
 export interface MoneyOptions {
   signed?: boolean;
   compact?: boolean;
@@ -66,9 +61,32 @@ export interface MoneyOptions {
 const isMissing = (v: number | null | undefined): v is null | undefined =>
   v === null || v === undefined || Number.isNaN(v);
 
+/**
+ * Hide mode: the shape of a typical amount ("€••,•••.••", "+US$••,•••.••",
+ * "€••.•k"), so hidden figures sit and wrap exactly like real ones. The shape
+ * is fixed (a five-digit amount), so it never reveals the real magnitude; the
+ * sign is kept because colour already shows it.
+ */
+function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): string {
+  const digits = opts.digits ?? (opts.compact ? 1 : 2);
+  const sample = (opts.compact ? 88_800 : 88_888.88) * (amount < 0 ? -1 : 1);
+  return new Intl.NumberFormat(LOCALE, {
+    style: "currency",
+    currency,
+    currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
+    notation: opts.compact ? "compact" : "standard",
+    minimumFractionDigits: opts.compact ? 0 : digits,
+    maximumFractionDigits: digits,
+    // A real zero has no sign; the sample is never zero, so decide here.
+    signDisplay: opts.signed && amount !== 0 ? "exceptZero" : "auto",
+  })
+    .format(sample)
+    .replace(/\d/g, "•");
+}
+
 export function formatMoney(amount: number | null | undefined, currency: Currency, opts: MoneyOptions = {}): string {
   if (isMissing(amount)) return "–";
-  if (HIDE_AMOUNTS && !opts.unmasked) return `${currencySymbol(currency)} ${MASK}`;
+  if (HIDE_AMOUNTS && !opts.unmasked) return maskedMoney(amount, currency, opts);
   const digits = opts.digits ?? (opts.compact ? 1 : 2);
   return new Intl.NumberFormat(LOCALE, {
     style: "currency",

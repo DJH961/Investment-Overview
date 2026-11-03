@@ -7,7 +7,6 @@ import { type Column, DataTable } from "../../components/DataTable";
 import { ErrorState } from "../../components/ErrorState";
 import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
-import { KpiTile } from "../../components/KpiTile";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { SegmentedControl } from "../../components/SegmentedControl";
@@ -117,6 +116,20 @@ export function Projection() {
   const [focused, setFocused] = useState<string | null>(null);
   const maskMoney = (key: string, v: string) => (hide && focused !== key && v !== "" ? MASK : v);
   const masked = (key: string) => ({ onFocus: () => setFocused(key), onBlur: () => setFocused(null) });
+  /**
+   * An auto-filled field: empty means "use the suggestion". While the field has
+   * focus it shows exactly what is typed (the suggestion only as a grey
+   * placeholder), so clearing it to type a new number never refills it; once
+   * focus leaves an empty field, the suggestion shows again.
+   */
+  const auto = (key: string, typed: string, suggested: string) => {
+    const editing = focused === key;
+    return {
+      ...masked(key),
+      value: typed !== "" || editing ? typed : suggested,
+      placeholder: editing ? suggested : undefined,
+    };
+  };
   const inputs = useCalculatorInputs(currency);
   const mutation = useProjectionMutation(currency);
   const { mutate } = mutation;
@@ -175,7 +188,6 @@ export function Projection() {
 
   const endLabel = out?.points.at(-1)?.label;
   const basis = out?.real ? "today's money" : "nominal";
-  const endHint = endLabel ? `in ${endLabel} · ${basis}` : basis;
 
   const money = (v: string | null | undefined) => (
     <Maybe present={toNum(v) !== null} ccy={currency}>
@@ -189,8 +201,9 @@ export function Projection() {
       <div className="projection-page__layout">
         <Card title="Assumptions" collapsibleId="projection.assumptions">
           <form className="projection-page__form" onSubmit={(e) => e.preventDefault()}>
-            <SegmentedControl
-              ariaLabel="Period"
+            <div className="projection-page__toggles">
+              <SegmentedControl
+                ariaLabel="Period"
               options={[
                 { value: "year", label: "Yearly" },
                 { value: "month", label: "Monthly" },
@@ -207,12 +220,13 @@ export function Projection() {
               value={form.real ? "real" : "nominal"}
               onChange={(v) => set("real", v === "real")}
             />
-            <Field label="Expected return (% p.a.)" hint="Blank uses your measured XIRR.">
+            </div>
+            <Field label="Expected return (% p.a.)" hint="Blank: your XIRR">
               {(c) => (
                 <Input
                   {...c}
                   inputMode="decimal"
-                  value={form.expected !== "" ? form.expected : fmtInput(seed?.expected_rate, 100)}
+                  {...auto("expected", form.expected, fmtInput(seed?.expected_rate, 100))}
                   onChange={(e) => set("expected", e.target.value)}
                 />
               )}
@@ -220,13 +234,20 @@ export function Projection() {
             <Field label="Band (+/- pp)">
               {(c) => <Input {...c} inputMode="decimal" value={form.band} onChange={(e) => set("band", e.target.value)} />}
             </Field>
-            <Field label={`Contribution per ${unit} (${currency})`}>
+            <Field
+              label={`Contribution per ${unit} (${currency})`}
+              hint="Blank: your average since the start"
+              className="projection-page__wide"
+            >
               {(c) => (
                 <Input
                   {...c}
                   inputMode="decimal"
-                  {...masked("contribution")}
-                  value={maskMoney("contribution", form.contribution !== "" ? form.contribution : fmtInput(seed?.avg_contribution))}
+                  {...auto("contribution", form.contribution, fmtInput(seed?.avg_contribution))}
+                  value={maskMoney(
+                    "contribution",
+                    auto("contribution", form.contribution, fmtInput(seed?.avg_contribution)).value,
+                  )}
                   onChange={(e) => set("contribution", e.target.value)}
                 />
               )}
@@ -239,7 +260,7 @@ export function Projection() {
                 <Input {...c} inputMode="decimal" value={form.inflation} onChange={(e) => set("inflation", e.target.value)} />
               )}
             </Field>
-            <Field label={`Target value (${currency})`}>
+            <Field label={`Target value (${currency})`} hint="Shows when you reach it">
               {(c) => (
                 <Input
                   {...c}
@@ -252,10 +273,16 @@ export function Projection() {
             </Field>
             <Field label={`Horizon (${unitPlural})`}>
               {(c) => (
-                <Input {...c} type="number" min={1} value={form.horizon !== "" ? form.horizon : String(out?.inputs.horizon ?? "")} onChange={(e) => set("horizon", e.target.value)} />
+                <Input
+                  {...c}
+                  type="number"
+                  min={1}
+                  {...auto("horizon", form.horizon, String(out?.inputs.horizon ?? ""))}
+                  onChange={(e) => set("horizon", e.target.value)}
+                />
               )}
             </Field>
-            <Button variant="secondary" onClick={rerun} loading={mutation.isPending}>
+            <Button className="projection-page__wide" variant="secondary" onClick={rerun} loading={mutation.isPending}>
               Recalculate
             </Button>
           </form>
@@ -271,13 +298,31 @@ export function Projection() {
             <Skeleton height="18rem" />
           ) : (
             <>
-              <div className="projection-page__kpis">
-                <KpiTile label="Expected" value={money(out.final.expected)} hint={endHint} />
-                <KpiTile label="Optimistic" value={money(out.final.optimistic)} hint={endHint} />
-                <KpiTile label="Pessimistic" value={money(out.final.pessimistic)} hint={endHint} />
-                <KpiTile label="Additionally contributed" value={money(out.total_contributed)} hint={endHint} />
-                <KpiTile label="Projected growth" value={money(out.final.projected_growth)} hint={basis} />
-              </div>
+              {/* One summary instead of five similar tiles: the expected end value,
+                  the range around it, then what you add and what it grows by. */}
+              <Card className="projection-page__summary">
+                <p className="projection-page__eyebrow">Expected {endLabel ? `in ${endLabel}` : ""}</p>
+                <p className="projection-page__headline">{money(out.final.expected)}</p>
+                <p className="projection-page__range">
+                  {money(out.final.pessimistic)} <span className="projection-page__range-sep">to</span>{" "}
+                  {money(out.final.optimistic)}
+                  <span className="projection-page__range-note">pessimistic to optimistic · {basis}</span>
+                </p>
+                <dl className="projection-page__facts">
+                  <div className="projection-page__fact">
+                    <dt className="projection-page__fact-label">You add</dt>
+                    <dd className="projection-page__fact-value">{money(out.total_contributed)}</dd>
+                  </div>
+                  <div className="projection-page__fact">
+                    <dt className="projection-page__fact-label">Growth</dt>
+                    <dd className="projection-page__fact-value">
+                      <Maybe present={toNum(out.final.projected_growth) !== null} ccy={currency}>
+                        <Money amount={toNum(out.final.projected_growth)} currency={currency} signed colored />
+                      </Maybe>
+                    </dd>
+                  </div>
+                </dl>
+              </Card>
               <Card title={`Next ${out.inputs.horizon} ${out.monthly ? "months" : "years"}`}>
                 <Chart
                   series={series}
@@ -288,9 +333,8 @@ export function Projection() {
                   ariaLabel="Projected value scenarios"
                 />
               </Card>
-              <Card title="Goal">
-                {toNum(out.inputs.target) ? (
-                  <>
+              {toNum(out.inputs.target) ? (
+                <Card title="Goal">
                     <p className="projection-page__note">
                       Reaching <Money amount={toNum(out.inputs.target)} currency={currency} />
                     </p>
@@ -313,11 +357,8 @@ export function Projection() {
                         )}
                       </li>
                     </ul>
-                  </>
-                ) : (
-                  <p className="projection-page__note">Set a target value to see when you could reach it.</p>
-                )}
-              </Card>
+                </Card>
+              ) : null}
               <Card
                 title={out.monthly ? "Year-by-year detail (every 12th month)" : "Year-by-year detail"}
                 collapsibleId="projection.detail"

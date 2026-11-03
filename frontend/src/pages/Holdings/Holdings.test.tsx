@@ -181,7 +181,7 @@ describe("Holdings page", () => {
       </HideAmountsProvider>,
     );
     const text = container.textContent ?? "";
-    expect(text).toContain("•••••");
+    expect(text).toContain("••,•••");
     expect(text).toContain("VWCE");
     expect(text).not.toMatch(/1,000|1000|200\.00|120\.00|220\.00|10\.0000|€\s?10\.00/);
   });

@@ -14,22 +14,96 @@
     }
   }
 
+  // Two short fields per row (return + band, step-up + inflation, target +
+  // horizon); the toggles, the contribution and the button span the width.
   &__form {
     display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3);
+    align-items: start;
+  }
+
+  &__wide,
+  &__toggles {
+    grid-column: 1 / -1;
+  }
+
+  &__toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 
   &__results {
     display: grid;
     gap: var(--space-4);
     min-width: 0;
+
+    // Phone: the answer first, the assumptions to tweak it below.
+    @include m.phone {
+      order: -1;
+      gap: var(--space-3);
+    }
   }
 
-  &__kpis {
+  &__eyebrow {
+    margin: 0;
+    @include m.eyebrow(var(--font-size-xs));
+  }
+
+  &__headline {
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.02em;
+    line-height: var(--line-height-tight);
+    font-variant-numeric: tabular-nums;
+
+    @include m.phone {
+      font-size: var(--font-size-2xl);
+    }
+  }
+
+  &__range {
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-md);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__range-sep,
+  &__range-note {
+    color: var(--color-muted);
+  }
+
+  &__range-note {
+    display: block;
+    font-size: var(--font-size-xs);
+  }
+
+  &__facts {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3);
-    @include m.phone-tile-grid;
+    margin: var(--space-4) 0 0;
+    padding-top: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  &__fact {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__fact-label {
+    @include m.eyebrow;
+  }
+
+  &__fact-value {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
   }
 
   &__goal,

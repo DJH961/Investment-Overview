@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrefsProvider } from "../../lib/prefs";
 import { axisLabel, detailRows, Projection } from "./Projection";
@@ -94,6 +94,24 @@ describe("Projection", () => {
     expect(screen.getByLabelText(/Contribution per year/)).toHaveValue("3000");
     expect(await screen.findByText("Next 10 years")).toBeInTheDocument();
     expect(screen.getByLabelText("Horizon (years)")).toHaveValue(10);
+  });
+
+  it("never refills a suggested value while it is being edited", async () => {
+    stub();
+    wrap();
+    const field = screen.getByLabelText(/Contribution per year/);
+    await waitFor(() => expect(field).toHaveValue("3000"));
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "" } });
+    // Cleared to type a new number: stays empty, suggestion only as a hint.
+    expect(field).toHaveValue("");
+    expect(field).toHaveAttribute("placeholder", "3000");
+    fireEvent.change(field, { target: { value: "45" } });
+    expect(field).toHaveValue("45");
+    // Left empty and tapped away: the suggestion comes back.
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.blur(field);
+    expect(field).toHaveValue("3000");
   });
 
   it("labels months in monthly mode and restores saved inputs", async () => {

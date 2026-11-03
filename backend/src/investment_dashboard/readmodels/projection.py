@@ -63,15 +63,25 @@ class ProjectionSeed:
 
 
 def _mean_positive(values: list[Decimal]) -> Decimal:
+    """Mean of the *ongoing* positive contributions, in date order.
+
+    The first period that has a contribution is where the portfolio started:
+    it usually holds the initial lump sum ("moment zero"), so averaging it in
+    inflated the suggested monthly / yearly saving. It is left out whenever
+    later contributions exist; with a single contributing period it is all
+    there is, so it stays.
+    """
     positive = [v for v in values if v > 0]
+    if len(positive) > 1:
+        positive = positive[1:]
     if not positive:
         return ZERO
     return sum(positive, start=ZERO) / Decimal(len(positive))
 
 
 def _avg_contribution(rows: list[PeriodRow]) -> Decimal:
-    """Mean of historical positive contributions (withdrawal-only periods ignored)."""
-    return _mean_positive([r.contributions for r in rows])
+    """Mean of the ongoing positive contributions (see :func:`_mean_positive`)."""
+    return _mean_positive([r.contributions for r in sorted(rows, key=lambda r: r.label)])
 
 
 def _avg_contribution_usd(session: Session, *, monthly: bool, today: date) -> Decimal | None:
@@ -79,6 +89,7 @@ def _avg_contribution_usd(session: Session, *, monthly: bool, today: date) -> De
     rows = aggregate(
         session, monthly=monthly, with_closing_value=False, today=today, display_currency="USD"
     )
+    rows = sorted(rows, key=lambda r: r.label)
     usd = [r.contributions_display for r in rows if r.contributions_display is not None]
     if not rows or len(usd) != len(rows):
         return None

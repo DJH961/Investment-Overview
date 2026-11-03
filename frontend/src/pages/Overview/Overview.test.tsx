@@ -105,7 +105,7 @@ describe("Overview page", () => {
       </HideAmountsProvider>,
     );
     const text = container.textContent ?? "";
-    expect(text).toContain("•••••");
+    expect(text).toContain("••,•••");
     expect(text).not.toMatch(/1,234,567|1\.2M|1234567|12\.50/);
   });
 });

@@ -38,15 +38,17 @@ describe("KpiGrid", () => {
     expect(screen.getByText("US$110,000.00")).toBeInTheDocument();
     expect(screen.getByText("+6.00%")).toBeInTheDocument(); // YTD in USD
     expect(screen.getByText("YTD +5.00%")).toBeInTheDocument();
-    expect(screen.getByText("Beating the market")).toBeInTheDocument();
-    expect(screen.getByText("You +25.00% · VT +20.00%")).toBeInTheDocument();
+    expect(screen.getByText("Beating")).toBeInTheDocument();
+    // One comparison per line: "You +25.00%" over "VT +20.00%".
+    expect(screen.getByText("You").parentElement).toHaveTextContent("You+25.00%");
+    expect(screen.getByText("VT").parentElement).toHaveTextContent("VT+20.00%");
     expect(screen.getByText("€150")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "About XIRR" })).toBeInTheDocument();
   });
 
   it("Vs market: trailing and missing benchmark history", () => {
     const { rerender } = render(<KpiGrid data={data({ beating: false })} currency="EUR" loading={false} />);
-    expect(screen.getByText("Trailing the market")).toBeInTheDocument();
+    expect(screen.getByText("Trailing")).toBeInTheDocument();
     rerender(<KpiGrid data={data({ beating: null })} currency="EUR" loading={false} />);
     expect(screen.getByText("Need VT history")).toBeInTheDocument();
   });

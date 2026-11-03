@@ -46,8 +46,9 @@ def _seed_deposits(session: Session) -> None:
 def test_build_seed_yearly_average_contribution(session: Session) -> None:
     _seed_deposits(session)
     seed = build_seed(session, monthly=False, primary="EUR", today=date(2025, 1, 1))
-    # Average of the two positive yearly contributions (1000, 3000) → 2000 EUR.
-    assert seed.avg_contribution_eur == Decimal("2000")
+    # The first contributing year (1000) is the starting lump sum, so the
+    # ongoing average is the later year alone: 3000 EUR (not 2000).
+    assert seed.avg_contribution_eur == Decimal("3000")
     assert seed.periods_per_year == 1
     assert seed.primary == "EUR"
 
@@ -61,3 +62,25 @@ def test_build_seed_falls_back_without_history(session: Session) -> None:
     assert seed.expected_rate_usd == FALLBACK_EXPECTED_RATE
     assert seed.usd_per_eur > 0  # never zero/negative, so conversions are safe
     assert seed.periods_per_year == 12
+
+
+def test_single_contribution_period_is_kept(session: Session) -> None:
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fid",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 6, 1),
+            kind="deposit",
+            net_eur=Decimal("5000"),
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+    seed = build_seed(session, monthly=False, primary="EUR", today=date(2025, 1, 1))
+    assert seed.avg_contribution_eur == Decimal("5000")
