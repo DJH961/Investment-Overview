@@ -10,7 +10,64 @@ permissions:
   contents: read
 
 jobs:
+  # A merge to main normally re-tests nothing new: the ruleset demands a PR whose
+  # required checks passed with the branch up to date, so the merged tree is the
+  # one CI already tested. This gate proves that for the pushed commit (merged
+  # PR, same tree as its tested head, all required checks green on that head)
+  # and then lets the heavy jobs skip, so CI on main finishes in seconds and the
+  # Deploy workflow (which waits for a successful CI run on a push to main)
+  # starts right away. Anything else - a direct push, an admin bypass, a tree
+  # mismatch, a missing or failed check - runs the full CI as before.
+  pr-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      tested: ${{ steps.check.outputs.tested }}
+    steps:
+      - name: Was this exact tree already tested in its PR?
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          REQUIRED: "quality web frontend e2e image"
+        run: |
+          set -euo pipefail
+          tested=false
+          if [ "$EVENT" = "push" ]; then
+            pr=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq "[.[] | select(.merged_at != null and .merge_commit_sha == \"$SHA\" and .base.ref == \"main\")][0] // empty")
+            if [ -n "$pr" ]; then
+              num=$(jq -r .number <<<"$pr")
+              head=$(jq -r .head.sha <<<"$pr")
+              merged_tree=$(gh api "repos/$REPO/git/commits/$SHA" --jq .tree.sha)
+              head_tree=$(gh api "repos/$REPO/git/commits/$head" --jq .tree.sha)
+              echo "PR #$num, head $head; tree merged=$merged_tree head=$head_tree"
+              if [ "$merged_tree" = "$head_tree" ]; then
+                runs=$(gh api --paginate "repos/$REPO/commits/$head/check-runs?per_page=100" --jq '.check_runs[]')
+                tested=true
+                for name in $REQUIRED; do
+                  # Latest run of that check on the PR head.
+                  c=$(jq -rs --arg n "$name" \
+                    '[.[] | select(.name == $n)] | sort_by(.started_at) | last | .conclusion // "missing"' <<<"$runs")
+                  echo "  $name: $c"
+                  [ "$c" = "success" ] || tested=false
+                done
+              fi
+            else
+              echo "No merged PR for $SHA (direct push?)"
+            fi
+          fi
+          echo "tested=$tested" | tee -a "$GITHUB_OUTPUT"
+
   quality:
+    needs: pr-gate
+    if: needs.pr-gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,6 +104,8 @@ jobs:
         run: uv run pytest -q --cov --cov-report=term-missing
 
   web:
+    needs: pr-gate
+    if: needs.pr-gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -77,6 +136,8 @@ jobs:
         run: npm run build
 
   frontend:
+    needs: pr-gate
+    if: needs.pr-gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -132,6 +193,8 @@ jobs:
           git diff --exit-code -- src/lib/api-types.ts
 
   e2e:
+    needs: pr-gate
+    if: needs.pr-gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -180,6 +243,8 @@ jobs:
           if-no-files-found: ignore
 
   image:
+    needs: pr-gate
+    if: needs.pr-gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
