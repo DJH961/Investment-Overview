@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.0.1] — 2026-11-03
+
+### Fixed
+- Vanguard import: the CSV and Excel exports now name the transaction-type
+  column `Type` instead of `Transaction Type`; both headers are accepted.
+
 ## [6.0.0] — 2026-11-03
 
 **v6 is the app.** The hosted FastAPI backend and React frontend on the owner's

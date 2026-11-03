@@ -44,6 +44,14 @@ def test_unknown_raises() -> None:
 
 
 class TestParser:
+    def test_type_header_alias(self) -> None:
+        # Vanguard renamed the "Transaction Type" column to "Type".
+        text = FIXTURE.read_text().replace("Transaction Type", "Type")
+        renamed = parse_vanguard_csv(text)
+        original = parse_vanguard_csv(FIXTURE.read_text())
+        assert renamed.rows == original.rows
+        assert renamed.sweeps_dropped == original.sweeps_dropped
+
     def test_drops_sweeps(self) -> None:
         result = parse_vanguard_csv(FIXTURE.read_text())
         assert result.sweeps_dropped == 2

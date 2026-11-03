@@ -76,9 +76,14 @@ class VanguardXlsxParseResult(ParseReport):
     """
 
 
+#: Header renames Vanguard has shipped; mapped onto the canonical name.
+_HEADER_ALIASES = {"type": "transaction type"}
+
+
 def _normalise_header(h: object) -> str:
     s = "" if h is None else str(h)
-    return s.strip().lower().rstrip("*").strip()
+    key = s.strip().lower().rstrip("*").strip()
+    return _HEADER_ALIASES.get(key, key)
 
 
 def _to_str(v: object) -> str:
@@ -125,7 +130,7 @@ def _find_header_row(grid: list[list[object]]) -> int:
             return i
     raise ValueError(
         "Vanguard XLSX: could not locate header row containing "
-        "'Settlement date', 'Trade date', 'Transaction type' and 'Amount'"
+        "'Settlement date', 'Trade date', 'Transaction type' (or 'Type') and 'Amount'"
     )
 
 

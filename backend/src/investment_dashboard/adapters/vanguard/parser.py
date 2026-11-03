@@ -52,8 +52,13 @@ class VanguardParseResult(ParseReport):
     """
 
 
+#: Header renames Vanguard has shipped; mapped onto the canonical name.
+_HEADER_ALIASES = {"type": "transaction type"}
+
+
 def _normalise_header(h: str) -> str:
-    return h.strip().lower()
+    key = h.strip().lower()
+    return _HEADER_ALIASES.get(key, key)
 
 
 def _hash_external_id(*parts: object) -> str:
@@ -65,12 +70,14 @@ def _iter_dict_rows(content: str) -> Iterator[tuple[int, dict[str, str]]]:
     lines = content.splitlines()
     header_idx = -1
     for i, line in enumerate(lines):
-        lowered = line.lower()
-        if "trade date" in lowered and "transaction type" in lowered:
+        cells = {_normalise_header(c) for c in next(csv.reader([line]), [])}
+        if "trade date" in cells and "transaction type" in cells:
             header_idx = i
             break
     if header_idx == -1:
-        raise ValueError("Vanguard CSV: no header containing 'Trade Date' and 'Transaction Type'")
+        raise ValueError(
+            "Vanguard CSV: no header containing 'Trade Date' and 'Transaction Type' (or 'Type')"
+        )
     body = "\n".join(lines[header_idx:])
     reader = csv.DictReader(io.StringIO(body))
     if reader.fieldnames is None:

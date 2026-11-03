@@ -18,7 +18,7 @@ from investment_dashboard.adapters.vanguard.xlsx_parser import (
 FIXTURE = Path(__file__).parents[4] / "docs" / "Comparison Files" / "Vanguard Full History.xlsx"
 
 
-def _build_xlsx(rows: list[tuple[object, ...]]) -> bytes:
+def _build_xlsx(rows: list[tuple[object, ...]], type_header: str = "Transaction type") -> bytes:
     """Render a one-sheet workbook mimicking the Vanguard Full History layout.
 
     The real export prepends two banner rows + a blank row before the
@@ -36,7 +36,7 @@ def _build_xlsx(rows: list[tuple[object, ...]]) -> bytes:
             "Trade date",
             "Symbol",
             "Name",
-            "Transaction type",
+            type_header,
             "Account type",
             "Quantity",
             "Price",
@@ -53,6 +53,25 @@ def _build_xlsx(rows: list[tuple[object, ...]]) -> bytes:
 
 class TestSyntheticWorkbook:
     """Synthetic, hand-built fixtures keep these tests fast + hermetic."""
+
+    def test_type_header_alias(self) -> None:
+        # Vanguard renamed the "Transaction type" column to "Type".
+        row = (
+            "01/05/2024",
+            "01/03/2024",
+            "VTI",
+            "VTI ETF",
+            "Buy",
+            "CASH",
+            "5.0000",
+            "$220.0000",
+            "Free",
+            "-$1,100.0000",
+        )
+        renamed = parse_vanguard_xlsx(_build_xlsx([row], type_header="Type"))
+        original = parse_vanguard_xlsx(_build_xlsx([row]))
+        assert len(renamed.rows) == 1
+        assert renamed.rows == original.rows
 
     def test_basic_buy_sell_dividend(self) -> None:
         data = _build_xlsx(
