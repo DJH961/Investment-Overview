@@ -138,7 +138,7 @@ export function PlanResult({ plan }: { plan: BuilderPlan }) {
                 target={Number(c.target_pct)}
                 label={shiftLabel(c.name, c)}
               />
-              <ul className="allocations__rows">
+              <ul className="allocations__plan-list">
                 {rows.filter(moves).map((r) => (
                   <FundRow key={r.instrument_id} r={r} ccy={plan.ccy} />
                 ))}

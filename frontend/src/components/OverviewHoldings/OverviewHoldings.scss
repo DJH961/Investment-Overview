@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .overview-holdings {
   &__list {
     display: flex;
@@ -7,6 +9,7 @@
     list-style: none;
   }
 
+  // Phone: name | value | today. Wider: name | weight | total return | value | today.
   &__row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -19,6 +22,59 @@
     &:last-child {
       border-bottom: 0;
     }
+
+    @include m.tablet-up {
+      grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.3fr) auto auto auto;
+      gap: var(--space-5);
+    }
+  }
+
+  &__weight,
+  &__total {
+    display: none;
+
+    @include m.tablet-up {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__weight {
+    gap: var(--space-1);
+
+    @include m.tablet-up {
+      flex-direction: row-reverse;
+      align-items: center;
+      gap: var(--space-3);
+    }
+  }
+
+  &__total {
+    align-items: flex-end;
+  }
+
+  &__weight-bar {
+    flex: 1 1 auto;
+    position: relative;
+    height: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    overflow: hidden;
+  }
+
+  &__weight-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: var(--radius-full);
+    background: var(--color-accent);
+  }
+
+  &__weight-pct {
+    white-space: nowrap;
   }
 
   &__who,
@@ -33,6 +89,26 @@
   &__today {
     align-items: flex-end;
     font-variant-numeric: tabular-nums;
+  }
+
+  // Wider screens: each figure pair on one line instead of stacked.
+  &__value,
+  &__today,
+  &__total,
+  &__weight-pct {
+    @include m.tablet-up {
+      flex-direction: row;
+      align-items: baseline;
+      justify-content: flex-end;
+      gap: var(--space-2);
+      white-space: nowrap;
+    }
+  }
+
+  &__weight-pct {
+    @include m.tablet-up {
+      justify-content: flex-start;
+    }
   }
 
   &__today--stale {

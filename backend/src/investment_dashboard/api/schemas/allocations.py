@@ -45,6 +45,23 @@ class DriftRow(ApiModel):
     delta_value: DecStr | None = None
 
 
+class CategoryDriftRow(ApiModel):
+    """The active target's drift summed per category (its funds' rows added up)."""
+
+    key: str
+    label: str
+    #: Funds of this category in the drift table.
+    funds: int
+    current_pct: DecStr = Field(description=f"Current weight ({_FRAC})")
+    target_pct: DecStr = Field(description=f"Target weight ({_FRAC})")
+    drift_pp: DecStr = Field(
+        description="current - target in percentage points (1.5 = 1.5 pp); positive = over"
+    )
+    current_value: DecStr | None = None
+    #: Target value minus current value; positive = buy, negative = sell.
+    delta_value: DecStr | None = None
+
+
 class Bucket(ApiModel):
     label: str
     value: DecStr | None = None
@@ -58,6 +75,7 @@ class AllocationsResponse(ApiModel):
     targets: list[TargetOut]
     active_target_id: int | None = None
     drift: list[DriftRow]
+    drift_by_category: list[CategoryDriftRow] = Field(default_factory=list)
     current_by_category: list[Bucket]
     current_by_asset_class: list[Bucket]
 

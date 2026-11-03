@@ -64,6 +64,17 @@ export function useReparseImport() {
   });
 }
 
+export type RowFix = NonNullable<Schemas["ImportResolveRow"]["action"]>;
+export type ImportResolveRow = Schemas["ImportResolveRow"];
+
+/** Resolve rows that don't add up (keep / fix price / skip, null clears); returns a new preview. */
+export function useResolveImport() {
+  return useMutation({
+    mutationFn: ({ importId, rows }: { importId: string; rows: ImportResolveRow[] }) =>
+      api<ImportPreview>(`/api/imports/${importId}/resolve`, { method: "POST", body: { rows } }),
+  });
+}
+
 export type ImportLayoutIn = Schemas["ImportLayoutIn"];
 
 /** Re-read the staged file with the user's column choices (flexible reader); returns a new preview. */

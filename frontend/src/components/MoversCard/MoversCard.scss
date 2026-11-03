@@ -1,17 +1,32 @@
 @use "../../styles/mixins" as m;
 
 .movers-card {
+  // Phone: winners above losers, each mover a full-width tile (v5 layout).
+  // Wider: one strip of equal tiles, winners then losers (the arrow and edge say
+  // which), so a short list never leaves half the card empty.
   &__grid {
     display: grid;
     gap: var(--space-3) var(--space-4);
-    // Winners above losers when narrow (phone, the desktop side column), side
-    // by side when the card is wide; each mover a full-width tile (v5 layout).
-    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+
+    @include m.tablet-up {
+      grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+      gap: var(--space-3);
+    }
+  }
+
+  &__col {
+    @include m.tablet-up {
+      display: contents;
+    }
   }
 
   &__title {
     margin: 0 0 var(--space-2);
     @include m.eyebrow;
+
+    @include m.tablet-up {
+      @include m.visually-hidden;
+    }
   }
 
   &__list {
@@ -21,6 +36,24 @@
     margin: 0;
     padding: 0;
     list-style: none;
+
+    @include m.tablet-up {
+      display: contents;
+    }
+  }
+
+  &__icon {
+    flex: none;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+  }
+
+  &__mover--pos &__icon {
+    color: var(--color-pos);
+  }
+
+  &__mover--neg &__icon {
+    color: var(--color-neg);
   }
 
   // Tinted tile with an accent edge: blue for winners, orange for losers.
@@ -100,5 +133,37 @@
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
+
+    // Wider: a quiet tile in the strip instead of an empty column.
+    @include m.tablet-up {
+      display: flex;
+      align-items: center;
+      padding: var(--space-3);
+      border: var(--border-width) dashed var(--color-border);
+      border-radius: var(--radius-sm);
+    }
+  }
+
+  // Wider: one line per tile, figures side by side (no stacked numbers).
+  &__mover {
+    @include m.tablet-up {
+      gap: var(--space-3);
+      padding: var(--space-3);
+    }
+  }
+
+  &__figures {
+    @include m.tablet-up {
+      flex-direction: row;
+      align-items: baseline;
+      gap: var(--space-3);
+      max-width: none;
+    }
+  }
+
+  &__lead {
+    @include m.tablet-up {
+      font-size: var(--font-size-lg);
+    }
   }
 }

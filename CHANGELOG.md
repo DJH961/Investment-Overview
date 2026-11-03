@@ -17,6 +17,40 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.3.0] — 2026-11-03
+
+### Added
+- **Fix import rows that don't add up, right in the preview.** The top of the preview
+  now only says *that* rows don't add up; each flagged row shows its warning in the
+  table with **Keep as is**, **Fix price** (work the price out from amount and
+  quantity) or **Skip row**, plus "Fix all prices", "Keep all" and a "show only these
+  rows" filter. Choices are applied on confirm (new
+  `POST /api/imports/{import_id}/resolve`, logged in `imports.log`).
+- **Overview allocation by category.** The Allocation treemap on the Overview has a
+  Category / Fund switch; Category is the default.
+- **Allocations: targets & drift by category.** The drift overview has a Category /
+  Fund switch (Category by default; categories open to show their funds) and lists
+  the largest drifts first with "Show all". The API adds `drift_by_category`.
+
+### Changed
+- **Allocation calculator redesign (phone and laptop).** Funds are grouped by
+  category with a now-vs-target bar per row and per-category totals, in two columns
+  on wide screens; the total and Compute / Save buttons stick to the bottom of the
+  screen; the plan summary is a 2 × 2 grid on phones and the buy plan uses columns
+  on wide screens. The drift list replaces the 14-colour bar and wide table.
+- **Better use of desktop width.** Overview: value chart, top movers and holdings each
+  run full width, one under the other; on wider screens each holding also shows its
+  share of the portfolio (with a bar) and its total return since buying. Top movers is
+  one strip of tiles across the width (an up/down arrow on each; "No winners today"
+  as a quiet tile). The lifetime currency effect is a compact card under asset
+  classes, and the treemap beside it grows to end level with it.
+  Risk: metric groups share rows instead of leaving half of each row empty.
+
+### Fixed
+- The Allocations page failed to load in the Windows dev server (`builder.ts` and
+  `Builder.tsx` differed only in case; renamed to `builderState.ts`).
+- The Risk attribution table's phone margin rule never applied (mis-nested selector).
+
 ## [6.2.1] — 2026-11-03
 
 Phase 1 of the speed plan (`docs/v6_speed_plan.md`).

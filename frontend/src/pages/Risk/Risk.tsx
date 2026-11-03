@@ -1,5 +1,5 @@
 import { Inbox } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, type CSSProperties } from "react";
 import { Card } from "../../components/Card";
 import { Chart, type ChartSeries } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
@@ -209,46 +209,54 @@ export function Risk() {
         <EmptyState icon={<Inbox aria-hidden />} title="No analytics yet" description="Import transactions to see risk metrics." />
       ) : (
         <div className="risk-page__stack">
-          {GROUPS.map((g) => (
-            <section key={g.id} className="risk-page__group" aria-label={g.title}>
-              <h2 className="risk-page__group-title">{g.title}</h2>
-              <div className="risk-page__metrics">
-                {g.metrics.map(renderMetric)}
-                {g.id === "risk" ? (
-                  <KpiTile
-                    label="Risk-free rate"
-                    tooltip={glossaryText("risk_free")}
-                    value={
-                      <Maybe present={rf !== null} ccy={currency}>
-                        <Percent ratio={rf} />
-                      </Maybe>
-                    }
-                    hint={rf !== null ? `source: ${d.risk_free_symbol}` : "no live rate cached"}
-                  />
-                ) : null}
-                {g.id === "market" ? (
-                  <>
+          <div className="risk-page__groups">
+            {GROUPS.map((g) => (
+              <section
+                key={g.id}
+                className="risk-page__group"
+                aria-label={g.title}
+                // Tile count: on desktop each group takes width in proportion, so rows fill up.
+                style={{ "--risk-tiles": g.metrics.length + (g.id === "risk" ? 1 : g.id === "market" ? 2 : 0) } as CSSProperties}
+              >
+                <h2 className="risk-page__group-title">{g.title}</h2>
+                <div className="risk-page__metrics">
+                  {g.metrics.map(renderMetric)}
+                  {g.id === "risk" ? (
                     <KpiTile
-                      label="Benchmark"
-                      tooltip={glossaryText("benchmark")}
-                      value={<span>{d.benchmark_symbol}</span>}
-                      hint={d.benchmark_is_funded ? "funded with your deposits" : "price only"}
-                    />
-                    <KpiTile
-                      label={benchLabel}
-                      tooltip={glossaryText("benchmark")}
+                      label="Risk-free rate"
+                      tooltip={glossaryText("risk_free")}
                       value={
-                        <Maybe present={diff !== null} ccy={currency}>
-                          {money(d.benchmark_diff, true)}
+                        <Maybe present={rf !== null} ccy={currency}>
+                          <Percent ratio={rf} />
                         </Maybe>
                       }
-                      hint={diffPct !== null ? <Percent ratio={diffPct} colored /> : undefined}
+                      hint={rf !== null ? `source: ${d.risk_free_symbol}` : "no live rate cached"}
                     />
-                  </>
-                ) : null}
-              </div>
-            </section>
-          ))}
+                  ) : null}
+                  {g.id === "market" ? (
+                    <>
+                      <KpiTile
+                        label="Benchmark"
+                        tooltip={glossaryText("benchmark")}
+                        value={<span>{d.benchmark_symbol}</span>}
+                        hint={d.benchmark_is_funded ? "funded with your deposits" : "price only"}
+                      />
+                      <KpiTile
+                        label={benchLabel}
+                        tooltip={glossaryText("benchmark")}
+                        value={
+                          <Maybe present={diff !== null} ccy={currency}>
+                            {money(d.benchmark_diff, true)}
+                          </Maybe>
+                        }
+                        hint={diffPct !== null ? <Percent ratio={diffPct} colored /> : undefined}
+                      />
+                    </>
+                  ) : null}
+                </div>
+              </section>
+            ))}
+          </div>
           <Card title="Equity curve" subtitle={`Since ${formatDate(d.curve_start)}`} collapsibleId="risk.curve">
             <Chart
               series={series}

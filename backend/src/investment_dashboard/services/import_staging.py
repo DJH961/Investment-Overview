@@ -19,13 +19,15 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters.generic.parser import GenericParseReport, Layout, LayoutChoice
 from investment_dashboard.adapters.importer_types import ParsedTransactionRow, ParseReport
+from investment_dashboard.adapters.row_validation import apply_fix, fixes_for, validate_row
 from investment_dashboard.adapters.vanguard.settlement import inject_settlement_legs
 from investment_dashboard.errors import NotFoundError, ValidationError
 from investment_dashboard.repositories import (
@@ -71,8 +73,17 @@ class StagedImportNotFoundError(NotFoundError):
 @dataclass(frozen=True)
 class PreviewRow:
     index: int
+    #: The row as it will be written (a chosen fix already applied).
     row: ParsedTransactionRow
     is_duplicate: bool
+    #: Left out of the import (the user chose "skip", or its source row was skipped).
+    skipped: bool = False
+    #: Consistency warnings for the row as the file has it.
+    warnings: tuple[str, ...] = ()
+    #: Resolutions on offer for those warnings (``row_validation.FIX_*``).
+    fixes: tuple[str, ...] = ()
+    #: The resolution the user picked, if any.
+    resolution: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,14 +103,25 @@ class StagedImport:
     detected: Layout | None = None
     #: ``"standard"`` (the broker's own parser) or ``"flexible"``.
     parser: str = "standard"
+    #: external_id -> chosen fix for a flagged row (kept across re-parses).
+    resolutions: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def new_count(self) -> int:
-        return sum(1 for r in self.rows if not r.is_duplicate)
+        return sum(1 for r in self.rows if not r.is_duplicate and not r.skipped)
 
     @property
     def duplicate_count(self) -> int:
-        return sum(1 for r in self.rows if r.is_duplicate)
+        return sum(1 for r in self.rows if r.is_duplicate and not r.skipped)
+
+    @property
+    def skipped_count(self) -> int:
+        return sum(1 for r in self.rows if r.skipped)
+
+    @property
+    def unresolved_count(self) -> int:
+        """Rows with warnings the user has not resolved yet."""
+        return sum(1 for r in self.rows if r.warnings and r.resolution is None)
 
     @property
     def open_questions(self) -> int:
@@ -163,8 +185,13 @@ def stage(
     account_id: int | None = None,
     now: datetime | None = None,
     layout: LayoutChoice | None = None,
+    resolutions: Mapping[str, str] | None = None,
 ) -> StagedImport:
-    """Parse ``content`` without writing and keep it for :func:`confirm`."""
+    """Parse ``content`` without writing and keep it for :func:`confirm`.
+
+    ``resolutions`` (external_id -> fix) are applied to the rows they name, so
+    the preview shows what confirm will write.
+    """
     name = filename or "upload"
     if not name.lower().endswith(ALLOWED_EXTENSIONS):
         raise ImportStagingError("Only CSV, TSV, text and Excel (.xlsx) files can be imported")
@@ -178,14 +205,21 @@ def stage(
     if account is None:
         raise ImportStagingError(f"Unknown account_id={acct_id}")
     resolved = _resolve_broker(broker, account.broker)
+    fixes = dict(resolutions or {})
     try:
         report = importer_service._parse(resolved, content, choice=layout)
-        parsed: list[ParsedTransactionRow] = list(report.rows)
+        originals: list[ParsedTransactionRow] = list(report.rows)
+        fixed = [apply_fix(r, fixes.get(r.external_id)) for r in originals]
+        # Skipped rows stay in the preview (shown struck out), the rest as fixed.
+        shown = [f if f is not None else o for f, o in zip(fixed, originals, strict=True)]
+        written = [f for f in fixed if f is not None]
         # Same pre-insert step as import_csv, so the preview matches what is written.
-        if resolved == Broker.VANGUARD and parsed:
-            parsed = list(inject_settlement_legs(parsed))
+        if resolved == Broker.VANGUARD:
+            shown = list(inject_settlement_legs(shown)) if shown else shown
+            written = list(inject_settlement_legs(written)) if written else written
     except Exception as exc:
         raise ImportStagingError(f"Could not read this file: {exc}") from exc
+    by_id = {o.external_id: o for o in originals}
     detected = (
         report.layout
         if isinstance(report, GenericParseReport)
@@ -197,12 +231,28 @@ def stage(
         if t.external_id
     }
     dups = importer_service.mark_duplicates(
-        parsed, existing, importer_service.existing_content_keys(session, acct_id)
+        written, existing, importer_service.existing_content_keys(session, acct_id)
     )
-    rows = tuple(
-        PreviewRow(index=i, row=r, is_duplicate=d)
-        for i, (r, d) in enumerate(zip(parsed, dups, strict=True), start=1)
-    )
+    # ``written`` is ``shown`` minus the skipped rows (and their settlement legs),
+    # in the same order: walk both to tell which shown rows are written.
+    out: list[PreviewRow] = []
+    w = 0
+    for i, r in enumerate(shown, start=1):
+        kept = w < len(written) and written[w].external_id == r.external_id
+        original = by_id.get(r.external_id, r)
+        out.append(
+            PreviewRow(
+                index=i,
+                row=r,
+                is_duplicate=dups[w] if kept else False,
+                skipped=not kept,
+                warnings=tuple(validate_row(original)),
+                fixes=tuple(fixes_for(original)),
+                resolution=fixes.get(r.external_id) if r.external_id in by_id else None,
+            )
+        )
+        w += 1 if kept else 0
+    rows = tuple(out)
     moment = now or _now()
     staged = StagedImport(
         id=uuid.uuid4().hex,
@@ -218,6 +268,7 @@ def stage(
         layout=layout,
         detected=detected,
         parser="flexible" if isinstance(report, GenericParseReport) else "standard",
+        resolutions={k: v for k, v in fixes.items() if k in by_id},
     )
     with _lock:
         _purge(moment)
@@ -260,12 +311,13 @@ def restage(
     now: datetime | None = None,
     layout: LayoutChoice | None = None,
     broker: str | None = None,
+    resolutions: Mapping[str, str] | None = None,
 ) -> StagedImport:
     """Parse a staged upload again (an action mapping or the layout changed).
 
     ``layout`` replaces the stored column layout (``None`` keeps it); ``broker``
-    switches the parser. Returns a new staged import (new id); the old one is
-    dropped.
+    switches the parser; ``resolutions`` replace the row fixes (``None`` keeps
+    them). Returns a new staged import (new id); the old one is dropped.
     """
     staged = get(import_id, now=now)
     fresh = stage(
@@ -276,9 +328,38 @@ def restage(
         account_id=staged.account_id,
         now=now,
         layout=layout if layout is not None else staged.layout,
+        resolutions=resolutions if resolutions is not None else staged.resolutions,
     )
     discard(import_id)
     return fresh
+
+
+def resolve(
+    session: Session,
+    import_id: str,
+    changes: Mapping[int, str | None],
+    *,
+    now: datetime | None = None,
+) -> StagedImport:
+    """Pick (or clear, with ``None``) a fix for flagged preview rows, by row index.
+
+    Only rows with warnings can be resolved, and only with a fix they offer.
+    Returns the re-parsed import (new ``import_id``).
+    """
+    staged = get(import_id, now=now)
+    by_index = {r.index: r for r in staged.rows}
+    fixes = dict(staged.resolutions)
+    for index, fix in changes.items():
+        row = by_index.get(index)
+        if row is None:
+            raise ImportStagingError(f"No row {index} in this import")
+        if fix is None:
+            fixes.pop(row.row.external_id, None)
+            continue
+        if fix not in row.fixes:
+            raise ImportStagingError(f"Row {index} can't be resolved with {fix!r}")
+        fixes[row.row.external_id] = fix
+    return restage(session, import_id, now=now, resolutions=fixes)
 
 
 def relayout(
@@ -341,6 +422,7 @@ def confirm(
         content=staged.raw_bytes,
         import_batch_id=batch.id,
         layout=staged.layout,
+        resolutions=staged.resolutions,
     )
     if result.inserted:
         batch.row_count = result.inserted

@@ -8,11 +8,28 @@
     gap: var(--space-4);
   }
 
+  // Desktop: the metric groups share rows, each as wide as its tile count
+  // (--risk-tiles), so no row ends in empty space.
+  &__groups {
+    display: grid;
+    gap: var(--space-4);
+
+    @include m.desktop {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-4) var(--space-5);
+    }
+  }
+
   &__metrics {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
     gap: var(--space-3);
     @include m.phone-tile-grid;
+
+    @include m.desktop {
+      grid-template-columns: repeat(var(--risk-tiles, 4), minmax(0, 1fr));
+    }
   }
 
   &__note {
@@ -24,7 +41,13 @@
 
 .risk-page__group {
   display: grid;
+  align-content: start;
   gap: var(--space-2);
+
+  @include m.desktop {
+    flex: var(--risk-tiles, 4) 1 calc(var(--risk-tiles, 4) * 9rem);
+    min-width: 0;
+  }
 }
 
 // Section label above each metric group ("RETURNS", "RISK AND VOLATILITY").
@@ -61,12 +84,12 @@
 
 .risk-page__neg {
   color: var(--color-neg);
+}
 
-  // Phone: the list rows have their own side padding; cancel the card's so
-  // they line up with the card title instead of sitting a step further in.
-  &__attribution {
-    @include m.phone {
-      margin-inline: calc(-1 * var(--space-4));
-    }
+// Phone: the list rows have their own side padding; cancel the card's so
+// they line up with the card title instead of sitting a step further in.
+.risk-page__attribution {
+  @include m.phone {
+    margin-inline: calc(-1 * var(--space-4));
   }
 }

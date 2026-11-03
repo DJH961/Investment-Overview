@@ -5,7 +5,7 @@ import { ToastProvider } from "../../components/Toast";
 import { PrefsProvider } from "../../lib/prefs";
 import { rebalancePath } from "../../lib/queries/manage";
 import { Allocations, totalWeight } from "./Allocations";
-import { presetClear, presetCurrent, presetEqual, presetSaved } from "./builder";
+import { presetClear, presetCurrent, presetEqual, presetSaved } from "./builderState";
 
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 

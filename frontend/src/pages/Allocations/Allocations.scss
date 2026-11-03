@@ -5,10 +5,17 @@
   flex-direction: column;
   gap: var(--space-4);
 
+  // -- 1 · How much: amount and switches side by side on wide screens ---------
+
   &__step {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: var(--space-3);
+
+    @include m.tablet-up {
+      grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+      align-items: start;
+      gap: var(--space-6);
+    }
   }
 
   // Amount and its currency on one row (the toggle sits level with the input).
@@ -17,45 +24,81 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: end;
     gap: var(--space-3);
-
-    @include m.desktop {
-      max-width: 28rem;
-    }
   }
 
   &__switches {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: var(--space-2);
     padding-top: var(--space-2);
     border-top: var(--border-width) solid var(--color-border);
 
+    @include m.tablet-up {
+      padding-top: 0;
+      padding-left: var(--space-6);
+      border-top: 0;
+      border-left: var(--border-width) solid var(--color-border);
+    }
+
     @include m.desktop {
-      max-width: 40rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-6);
     }
   }
 
-  &__presets,
-  &__actions {
+  // -- 2 · Target mix -------------------------------------------------------------
+
+  &__presets {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
+    margin-bottom: var(--space-4);
   }
 
-  &__presets {
-    margin: var(--space-3) 0;
+  // Fund mode: one block per category, flowing into columns on wide screens.
+  &__edit-groups {
+    columns: 2 28rem;
+    column-gap: var(--space-6);
   }
 
-  &__actions {
-    margin-top: var(--space-4);
-  }
+  &__edit-group {
+    break-inside: avoid;
+    margin-bottom: var(--space-4);
+    padding: var(--space-3) var(--space-3) var(--space-1);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
 
-  &__compute {
-    flex: 1 1 auto;
-
-    @include m.desktop {
-      flex: 0 0 auto;
+    @include m.phone {
+      padding: var(--space-2) var(--space-3) 0;
     }
+  }
+
+  &__edit-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  &__edit-title {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__edit-sum {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__edit-sum-value {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-semibold);
   }
 
   &__rows {
@@ -65,18 +108,23 @@
     padding: 0;
     list-style: none;
 
-    // Wide screens: keep name, input and toggle within reach of each other.
-    @include m.desktop {
-      max-width: 40rem;
+    &--categories {
+      @include m.desktop {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: var(--space-6);
+      }
     }
   }
 
-  // Target row: name + "now x %" | target input with % | No buy pill.
+  // Edit row: name | now-vs-target bar | target % | No buy.
+  // Phones: name, input and toggle on one line, the bar full width under them.
   &__row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "who bar pct nobuy";
+    grid-template-columns: minmax(5rem, 1fr) minmax(5rem, 1.1fr) 5.25rem auto;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2) var(--space-3);
     padding: var(--space-2) 0;
     border-bottom: var(--border-width) solid var(--color-border);
 
@@ -84,16 +132,44 @@
       border-bottom: 0;
     }
 
+    @include m.phone {
+      grid-template-areas:
+        "who pct nobuy"
+        "bar bar bar";
+      grid-template-columns: minmax(0, 1fr) 5.25rem auto;
+      row-gap: var(--space-1);
+    }
+
     &--category {
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "who bar pct"
+        "members members members";
+      grid-template-columns: minmax(6rem, 1fr) minmax(5rem, 1.2fr) 5.25rem;
+
+      @include m.phone {
+        grid-template-areas:
+          "who pct"
+          "bar bar"
+          "members members";
+        grid-template-columns: minmax(0, 1fr) 5.25rem;
+      }
     }
 
     &--skipped {
-      opacity: 0.7;
+      opacity: 0.65;
+    }
+  }
+
+  &__rows--categories &__row:last-child {
+    border-bottom: var(--border-width) solid var(--color-border);
+
+    @include m.phone {
+      border-bottom: 0;
     }
   }
 
   &__row-who {
+    grid-area: who;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -105,17 +181,67 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  &__row-name {
+    @include m.truncate;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__row-bar {
+    grid-area: bar;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
   &__row-now {
+    flex: none;
+    min-width: 5.5em;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
+    text-align: right;
     white-space: nowrap;
+  }
+
+  // Share now (fill) against the target (a line), shared by editor and drift list.
+  &__meter {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 3rem;
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+  }
+
+  &__edit-group &__meter {
+    background: var(--color-surface);
+  }
+
+  &__meter-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: var(--radius-full);
+    background: var(--color-accent);
+  }
+
+  &__meter-target {
+    position: absolute;
+    top: calc(-1 * var(--space-1));
+    bottom: calc(-1 * var(--space-1));
+    width: 2px;
+    margin-left: -1px;
+    border-radius: var(--radius-full);
+    background: var(--color-fg);
   }
 
   // Target input with a "%" unit inside its right edge.
   &__pct {
+    grid-area: pct;
     position: relative;
-    width: 5.5rem;
   }
 
   &__pct-unit {
@@ -129,8 +255,13 @@
   }
 
   &__nobuy {
+    grid-area: nobuy;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
     min-height: var(--control-height-sm);
-    padding: 0 var(--space-3);
+    padding: 0 var(--space-2);
     border: var(--border-width) solid var(--color-border-strong);
     border-radius: var(--radius-full);
     background: none;
@@ -151,39 +282,108 @@
       @include m.focus-ring;
     }
 
+    // Phones: icon only, at full tap size.
     @include m.phone {
+      min-width: var(--control-height);
       min-height: var(--control-height);
     }
   }
 
+  &__nobuy-icon {
+    width: var(--space-3);
+    height: var(--space-3);
+  }
+
+  &__nobuy-text {
+    @include m.phone {
+      @include m.visually-hidden;
+    }
+  }
+
+  // Category mode: which funds take the category's weight, and how it splits.
   &__members {
-    grid-column: 1 / -1;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding-left: var(--space-3);
+    grid-area: members;
+    min-width: 0;
   }
 
   &__members-toggle {
     cursor: pointer;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__members-body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) 0 var(--space-1);
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
   }
 
   &__check {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1);
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
     color: var(--color-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
     accent-color: var(--color-accent);
+    cursor: pointer;
+
+    &:has(:checked) {
+      border-color: var(--color-accent);
+      color: var(--color-fg);
+    }
+
+    @include m.phone {
+      min-height: var(--control-height);
+    }
   }
 
-  // "Total 100.1 %  sums to 100 %" with a thin bar under it.
-  &__sum {
-    margin-top: var(--space-3);
-    padding-top: var(--space-3);
+  &__check-label {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  // Total + actions: sticks to the bottom of the screen while the list scrolls.
+  &__footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-5);
+    margin: var(--space-2) calc(-1 * var(--space-5)) calc(-1 * var(--space-5));
+    padding: var(--space-3) var(--space-5);
     border-top: var(--border-width) solid var(--color-border);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    background: var(--color-surface);
+
+    @include m.phone {
+      bottom: calc(var(--tabbar-height) + var(--safe-bottom));
+      margin: var(--space-2) calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+      padding: var(--space-3) var(--space-4);
+    }
+  }
+
+  &__sum {
+    flex: 1 1 14rem;
+    min-width: 0;
   }
 
   &__sum-line {
@@ -209,12 +409,13 @@
     font-size: var(--font-size-xs);
   }
 
-  &__sum--off &__sum-note {
+  &__footer--off &__sum-note {
     color: var(--color-warn);
   }
 
   &__total-bar {
     position: relative;
+    max-width: 24rem;
     height: var(--space-1);
     margin-top: var(--space-2);
     border-radius: var(--radius-full);
@@ -229,9 +430,202 @@
     background: var(--color-pos);
   }
 
-  &__sum--off &__total-fill {
+  &__footer--off &__total-fill {
     background: var(--color-warn);
   }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+
+    @include m.phone {
+      flex: 1 1 100%;
+    }
+  }
+
+  &__compute {
+    @include m.phone {
+      flex: 1 1 auto;
+    }
+  }
+
+  // -- Targets & drift ----------------------------------------------------------
+
+  &__drift-mix {
+    margin-bottom: var(--space-4);
+  }
+
+  // Name | now of target | bar | drift | to target; phones stack it in three lines.
+  &__drift-head,
+  &__drift-row {
+    display: grid;
+    grid-template-areas: "who shares bar pp delta";
+    grid-template-columns: minmax(8rem, 1.2fr) 8.5rem minmax(6rem, 1.6fr) 5rem 7.5rem;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+  }
+
+  &__drift-head {
+    @include m.eyebrow;
+    padding-bottom: var(--space-2);
+    border-bottom: var(--border-width) solid var(--color-border);
+
+    & > :nth-child(n + 4) {
+      text-align: right;
+    }
+
+    @include m.phone {
+      display: none;
+    }
+  }
+
+  &__drift-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    &--nested {
+      margin-bottom: var(--space-2);
+      border-left: 2px solid var(--color-border-strong);
+    }
+  }
+
+  &__drift-group + &__drift-group,
+  &__drift-row + &__drift-row {
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  &__drift-row {
+    padding: var(--space-2) 0;
+
+    @include m.phone {
+      grid-template-areas:
+        "who delta"
+        "bar bar"
+        "shares pp";
+      grid-template-columns: minmax(0, 1fr) auto;
+      row-gap: var(--space-1);
+    }
+
+    &--nested {
+      padding-left: var(--space-4);
+      color: var(--color-muted);
+    }
+  }
+
+  &__drift-row--nested + &__drift-row--nested {
+    border-top-style: dashed;
+  }
+
+  &__drift-who {
+    grid-area: who;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  &__drift-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    min-height: var(--control-height-sm);
+    margin-left: calc(-1 * var(--space-1));
+    padding: 0 var(--space-1);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--color-accent);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__drift-chevron {
+    flex: none;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-muted);
+    transition: transform var(--duration-fast) var(--ease-standard);
+
+    &--open {
+      transform: rotate(90deg);
+    }
+
+    @include m.reduced-motion {
+      transition: none;
+    }
+  }
+
+  &__drift-label {
+    @include m.truncate;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__drift-row--nested &__drift-label {
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__drift-sub {
+    @include m.truncate;
+    color: var(--color-faint);
+    font-size: var(--font-size-xs);
+  }
+
+  &__drift-shares {
+    grid-area: shares;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__drift-of {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__drift-bar {
+    grid-area: bar;
+    display: flex;
+    min-width: 0;
+  }
+
+  &__drift-pp {
+    grid-area: pp;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-medium);
+    text-align: right;
+    white-space: nowrap;
+
+    &--ok {
+      color: var(--color-muted);
+      font-weight: inherit;
+    }
+  }
+
+  &__drift-delta {
+    grid-area: delta;
+    font-size: var(--font-size-sm);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  &__drift-more {
+    margin-top: var(--space-2);
+  }
+
+  // -- Plan result --------------------------------------------------------------
 
   // Plan summary: the figures side by side, separated by thin rules.
   &__summary {
@@ -239,6 +633,12 @@
     grid-auto-columns: minmax(0, 1fr);
     grid-auto-flow: column;
     margin: 0;
+
+    @include m.phone {
+      grid-auto-flow: row;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-3) 0;
+    }
   }
 
   &__stat {
@@ -252,6 +652,13 @@
     &:first-child {
       padding-left: 0;
       border-left: 0;
+    }
+
+    @include m.phone {
+      &:nth-child(odd) {
+        padding-left: 0;
+        border-left: 0;
+      }
     }
   }
 
@@ -307,16 +714,18 @@
     font-size: var(--font-size-sm);
   }
 
+  // Buy plan: one block per category, in columns on wide screens.
   &__groups {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-5);
+    columns: 2 26rem;
+    column-gap: var(--space-6);
   }
 
   &__group {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    break-inside: avoid;
+    margin-bottom: var(--space-5);
   }
 
   &__group-title {
@@ -324,11 +733,20 @@
     font-size: var(--font-size-md);
   }
 
+  &__plan-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0 0 0 var(--space-3);
+    border-left: 2px solid var(--color-border);
+    list-style: none;
+  }
+
   &__plan-row {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    padding-left: var(--space-3);
   }
 
   &__plan-head {
@@ -342,6 +760,7 @@
     display: inline-flex;
     gap: var(--space-2);
     align-items: baseline;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
 

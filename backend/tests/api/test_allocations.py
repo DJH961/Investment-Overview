@@ -80,6 +80,13 @@ def test_put_then_get_drift(api_client: TestClient, ids: dict[str, int]) -> None
     # Amount to hit target: 60 % of 5150 = 3090 vs 3750 held.
     assert Decimal(drift["VTI"]["delta_value"]) == Decimal(3090) - 3750
     assert body["drift"][0]["label"] == "VTI"  # sorted by |drift|
+    # One fund per category here, so the category rows repeat the fund rows.
+    by_cat = {r["label"]: r for r in body["drift_by_category"]}
+    assert set(by_cat) == {"US Stocks", "Bonds"}
+    assert by_cat["US Stocks"]["funds"] == 1
+    assert by_cat["US Stocks"]["drift_pp"] == drift["VTI"]["drift_pp"]
+    assert Decimal(by_cat["US Stocks"]["delta_value"]) == Decimal(3090) - 3750
+    assert Decimal(by_cat["Bonds"]["target_pct"]) == Decimal("0.4")
 
 
 def test_put_normalises_replaces_and_validates(api_client: TestClient, ids: dict[str, int]) -> None:
