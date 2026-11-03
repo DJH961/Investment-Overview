@@ -1,4 +1,4 @@
-import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, queryOptions, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 import type { ReportingCurrency } from "../prefs";
@@ -55,6 +55,24 @@ export function useCalculatorInputs(ccy: ReportingCurrency) {
   });
 }
 
+/**
+ * The projection for `body` (null: not ready, nothing fetched). A query, not a
+ * mutation: results are cached per input, a superseded request is aborted, and the
+ * previous result stays on screen (`keepPreviousData`) while a new one computes, so
+ * the chart never blanks on an input or currency change (docs/v6_speed_plan.md §4.5).
+ */
+export function useProjection(ccy: ReportingCurrency, body: ProjectionRequest | null) {
+  return useQuery({
+    queryKey: ["calculator", "projection", ccy, body],
+    queryFn: ({ signal }) =>
+      api<ProjectionOut>(`/api/calculator?ccy=${ccy}`, { method: "POST", body: body!, signal }),
+    enabled: body !== null,
+    placeholderData: keepPreviousData,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** @deprecated Use {@link useProjection}; removed once the Projection page moves over. */
 export function useProjectionMutation(ccy: ReportingCurrency) {
   return useMutation({
     mutationKey: ["calculator", "projection", ccy],

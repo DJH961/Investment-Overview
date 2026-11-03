@@ -15236,6 +15236,84 @@
                       ],
                       "title": "GraphsEvent",
                       "type": "object"
+                    },
+                    {
+                      "description": "The server is about to restart (a deploy) or has one planned.\n\n``restarting``: sent by ``deploy.sh`` (via the loopback-only announce\nendpoint) right before the old container stops; clients show \"Updating to\n<version>, back in about <eta_s> s\" and keep their cached data. ``restart_planned``:\na scheduled deploy at ``at`` (ISO time).",
+                      "properties": {
+                        "at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "At"
+                        },
+                        "eta_s": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Eta S"
+                        },
+                        "market_state": {
+                          "enum": [
+                            "open",
+                            "closed",
+                            "holiday"
+                          ],
+                          "title": "Market State",
+                          "type": "string"
+                        },
+                        "reason": {
+                          "const": "deploy",
+                          "default": "deploy",
+                          "title": "Reason",
+                          "type": "string"
+                        },
+                        "state": {
+                          "enum": [
+                            "restarting",
+                            "restart_planned"
+                          ],
+                          "title": "State",
+                          "type": "string"
+                        },
+                        "ts": {
+                          "title": "Ts",
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "server",
+                          "default": "server",
+                          "title": "Type",
+                          "type": "string"
+                        },
+                        "version": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Version"
+                        }
+                      },
+                      "required": [
+                        "ts",
+                        "market_state",
+                        "state"
+                      ],
+                      "title": "ServerEvent",
+                      "type": "object"
                     }
                   ]
                 }

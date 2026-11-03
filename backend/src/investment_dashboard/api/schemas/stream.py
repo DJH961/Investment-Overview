@@ -97,6 +97,28 @@ class GraphsEvent(ApiModel):
     points: int | None = None
 
 
+class ServerEvent(ApiModel):
+    """The server is about to restart (a deploy) or has one planned.
+
+    ``restarting``: sent by ``deploy.sh`` (via the loopback-only announce
+    endpoint) right before the old container stops; clients show "Updating to
+    <version>, back in about <eta_s> s" and keep their cached data. ``restart_planned``:
+    a scheduled deploy at ``at`` (ISO time).
+    """
+
+    type: Literal["server"] = "server"
+    ts: str
+    market_state: MarketState
+    state: Literal["restarting", "restart_planned"]
+    reason: Literal["deploy"] = "deploy"
+    #: Version being deployed (``app_version`` of the new image), if known.
+    version: str | None = None
+    #: Rough expected downtime in seconds.
+    eta_s: int | None = None
+    #: ``restart_planned`` only: when the deploy will start (ISO time).
+    at: str | None = None
+
+
 EVENT_MODELS: tuple[type[ApiModel], ...] = (
     HelloEvent,
     TickEvent,
@@ -106,6 +128,7 @@ EVENT_MODELS: tuple[type[ApiModel], ...] = (
     RefreshProgressEvent,
     RefreshFinishedEvent,
     GraphsEvent,
+    ServerEvent,
 )
 
 
