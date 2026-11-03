@@ -1,6 +1,6 @@
 # v6.0 "One App": a hosted, single-backend Investment Overview
 
-> Status: **in implementation** (2026-11-01, branch `feat/v6-one-app`). Phase 0 steps 1–2 done; the yfinance spike (step 3) is still to run (Mon 2026-11-02). Phases 1 and 3 and the agent-doable parts of Phase 2 are built (not deployed). 2026-11-02: v5 parity, in-app settings/repair, instruments editor, import undo, phone layout and hide-numbers built on `feat/v6-parity-settings` with the security hardening merged; cutover release is the owner's call. The snapshot/intraday native-currency migration waits for the parity gate on the real ledger. Execution order and resume notes: [`v6_progress.md`](v6_progress.md). Backups changed from Litestream to sealed snapshots (Litestream can't replicate SQLCipher files). **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)).
+> Status: **in implementation** (2026-11-01, branch `feat/v6-one-app`). Phase 0 steps 1–3 done; the yfinance spike passed on Mon 2026-11-02 (no failures or throttling, so Tiingo stays the fallback only). Phases 1 and 3 and the agent-doable parts of Phase 2 are built (not deployed). 2026-11-02: v5 parity, in-app settings/repair, instruments editor, import undo, phone layout and hide-numbers built on `feat/v6-parity-settings` with the security hardening merged; cutover release is the owner's call. The snapshot/intraday native-currency migration waits for the parity gate on the real ledger. Execution order and resume notes: [`v6_progress.md`](v6_progress.md). Backups changed from Litestream to sealed snapshots (Litestream can't replicate SQLCipher files). **v5.3.1 is the final, frozen legacy release** (branch `legacy/v5`, tag `v5.3.1`; see [`legacy_v5.md`](legacy_v5.md)).
 
 ## Context
 
@@ -240,6 +240,7 @@ The import layer stays **broker-agnostic**. Parsers are plugins that emit `Parse
 2. Write `deploy/bootstrap.sh` + a minimal Dockerfile. Provision the VPS (after you've created the accounts, see "What you need to do"). Harden it, get Caddy + own-domain HTTPS working.
 3. **yfinance spike:** a tiny service polls the real ~17 tickers + EUR/USD every 60 s for one trading day and logs failures and latency.
    - **Gate:** if it is throttled, Tiingo becomes co-primary.
+   - **Result (2026-11-02): passed.** 400 one-minute calls with no failures and no throttling, a median of 2.1 s and a slowest call of 15 s, and 109 MB peak memory. The 14 NAV calls also all succeeded. Three calls each missed one or two tickers once, and that cleared on the next call. Thinly traded ETFs only get a 1-minute bar when they trade, so "last price" can be tens of minutes old. That is correct, not a fault. Tiingo stays the fallback only.
 4. Confirm the `sqlcipher3-binary` wheel works in the image.
 
 ### Phase 1: Backend becomes the API server

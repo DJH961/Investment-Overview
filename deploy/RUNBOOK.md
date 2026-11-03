@@ -721,10 +721,9 @@ Docker-published ports bypass `ufw`. Only the Caddy container publishes ports
   It is replaced by the real stack in v6 Phase 2: `docker rm -f caddy-check`.
 - yfinance one-shot from the server (2026-10-31): daily closes and 1-minute bars
   returned in under 2 s.
-- All-day yfinance polling test: a throwaway job (`yf-spike.timer`, files in
-  `/opt/investments/spike/`, not in this repo) runs on Monday 2026-11-02 during the
-  US session. After the results are read, remove it:
-  `sudo systemctl disable --now yf-spike.timer && sudo rm /etc/systemd/system/yf-spike.* && sudo systemctl daemon-reload && rm -rf /opt/investments/spike && docker rmi yf-spike:1`.
+- All-day yfinance polling test (2026-11-02, one US session, a call every minute):
+  no failures or throttling, a median of 2.1 s per call and a slowest of 15 s. The
+  throwaway job was removed from the server on 2026-11-03.
 - B2 (2026-10-31): a bucket-scoped key in `~/b2.env` (mode 600) can upload, list,
   download and delete in `Investment-Overview`, and is refused when listing other buckets.
   Replace it, see "Security checklist" item 5.
