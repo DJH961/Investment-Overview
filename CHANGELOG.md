@@ -37,6 +37,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - Vanguard import: the CSV and Excel exports now name the transaction-type
   column `Type` instead of `Transaction Type`; both headers are accepted.
+- `backend/openapi.json` carries the 6.0.1 version, so the release passes CI and
+  deploys.
 
 ## [6.0.0] — 2026-11-03
 
