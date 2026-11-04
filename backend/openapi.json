@@ -7265,6 +7265,25 @@
         "title": "OverviewWarnings",
         "type": "object"
       },
+      "PasskeyLoginOptionsBody": {
+        "description": "The passkey this device used last (base64url id): the browser then goes\nstraight to it instead of showing a passkey picker. Unknown ids are ignored.",
+        "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Id"
+          }
+        },
+        "title": "PasskeyLoginOptionsBody",
+        "type": "object"
+      },
       "PasskeyNameBody": {
         "properties": {
           "name": {
@@ -10996,6 +11015,23 @@
         "title": "TickPrice",
         "type": "object"
       },
+      "TransactionAll": {
+        "description": "The whole ledger in one answer (the client filters, sorts and pages it).",
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "TransactionAll",
+        "type": "object"
+      },
       "TransactionKind": {
         "description": "Enumerated kinds \u2014 see spec \u00a74.1.",
         "enum": [
@@ -11635,7 +11671,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.4.0"
+    "version": "6.5.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12252,6 +12288,23 @@
     "/api/auth/passkey/login/options": {
       "post": {
         "operationId": "passkey_login_options_api_auth_passkey_login_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PasskeyLoginOptionsBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -12260,6 +12313,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Passkey Login Options",
@@ -16831,6 +16894,27 @@
           }
         },
         "summary": "Create Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/transactions/all": {
+      "get": {
+        "operationId": "list_all_transactions_api_transactions_all_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionAll"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List All Transactions",
         "tags": [
           "transactions"
         ]

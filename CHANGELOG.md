@@ -17,6 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.5.0] — 2026-11-04
+
 ### Changed
 - **Overview hero uses its width on desktop:** the portfolio value stays on the
   left; the right half shows the day's curve from the cached, live-updated 1D
@@ -66,6 +68,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - "Beating" / "Trailing" on the Vs market tile is the same size as the other
   figures (it was tiny on desktop).
 - Holdings page header said "Updated 01:00" (a date read as a time).
+
+## [6.4.3] — 2026-11-04
+
+### Fixed
+- **Passkey sign-in goes straight to your passkey again.** The browser showed its
+  passkey picker on every sign-in. The app now remembers which passkey this device
+  used and asks for exactly that one (like the old web app), so the phone goes
+  straight to the fingerprint/face prompt. If that passkey was removed or isn't on
+  the device, the next sign-in shows the picker as before.
+  `POST /api/auth/passkey/login/options` takes an optional `credential_id`.
+
+## [6.4.2] — 2026-11-04
+
+### Fixed
+- **Open tabs update themselves after a deploy.** A tab or phone app left open kept
+  running the old version (and its slower requests) until a full reload. When the
+  live stream reconnects, the app now compares its own version with the server's
+  and, if it is older, reloads quietly the next time the tab is hidden or shown
+  again — never while you are typing or have a dialog open, and at most once per
+  version.
+
+## [6.4.1] — 2026-11-04
+
+Phase 3 of the speed plan (`docs/v6_speed_plan.md`).
+
+### Fixed
+- **Every graph range moves live.** Besides 1D/1W, the 1M–All graphs now update
+  today's point on each tick without reloading.
+- **Edits show instantly.** Editing or deleting a transaction, and saving an account,
+  instrument or setting, shows at once and rolls back if the server refuses it.
+- **Transactions filter, sort and page instantly.** The page loads the whole ledger
+  once (`GET /api/transactions/all`, with ETag) and does the rest on the device.
+- **The allocation plan stays visible while it recomputes.**
+- **Faster first load.** Pages other than Overview and Login load on demand and are
+  preloaded while the app is idle.
+- AGENTS.md: "Strong server, weak client" is now "Server computes, client patches"
+  (the client may do linear presentation maths, never returns).
 
 ## [6.4.0] — 2026-11-04
 

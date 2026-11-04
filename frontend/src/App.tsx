@@ -1,33 +1,40 @@
-import { useEffect } from "react";
+import { Suspense, useEffect, type ComponentType, type ReactNode } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router";
 import { AppShell } from "./components/AppShell";
 import { Tour } from "./components/Tour";
 import { setUnauthorizedHandler } from "./lib/api";
+import { Skeleton } from "./components/Skeleton";
 import { FormatBoundary } from "./lib/displayPrefs";
-import { Activity } from "./pages/Activity";
-import { Allocations } from "./pages/Allocations";
-import { CurrencyConversions } from "./pages/CurrencyConversions";
-import { Diagnostics } from "./pages/Diagnostics";
-import { Help } from "./pages/Help";
-import { Holdings } from "./pages/Holdings";
-import { Import } from "./pages/Import";
-import { Instruments } from "./pages/Instruments";
+import { Pages, preloadPages, type PageName } from "./lib/routeChunks";
 import { Login, RequireAuth } from "./pages/Login";
-import { NotFound } from "./pages/NotFound";
-import { Onboarding } from "./pages/Onboarding";
 import { Overview } from "./pages/Overview";
-import { Periods } from "./pages/Periods";
-import { Projection } from "./pages/Projection";
-import { Risk } from "./pages/Risk";
-import { Settings } from "./pages/Settings";
-import { Styleguide } from "./pages/Styleguide";
-import { Transactions } from "./pages/Transactions";
+
+/** Skeleton shown while a page chunk downloads (the shell around it stays put). */
+function PageFallback() {
+  return (
+    <div aria-busy="true">
+      <Skeleton height="2rem" width="40%" />
+      <Skeleton height="12rem" />
+    </div>
+  );
+}
+
+function lazyPage(name: PageName): ReactNode {
+  const Page = Pages[name] as ComponentType;
+  return (
+    <Suspense fallback={<PageFallback />}>
+      <Page />
+    </Suspense>
+  );
+}
 
 export function App() {
   const navigate = useNavigate();
   useEffect(() => {
     setUnauthorizedHandler(() => navigate("/login"));
   }, [navigate]);
+  // After first render, fetch the other pages' code while the browser is idle.
+  useEffect(() => preloadPages(), []);
 
   return (
     <>
@@ -39,22 +46,22 @@ export function App() {
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/overview" replace />} />
         <Route path="/overview" element={<Overview />} />
-        <Route path="/holdings" element={<Holdings />} />
-        <Route path="/periods" element={<Periods />} />
-        <Route path="/activity" element={<Activity />} />
-        <Route path="/risk" element={<Risk />} />
-        <Route path="/projection" element={<Projection />} />
-        <Route path="/transactions" element={<Transactions />} />
-        <Route path="/import" element={<Import />} />
-        <Route path="/instruments" element={<Instruments />} />
-        <Route path="/conversions" element={<CurrencyConversions />} />
-        <Route path="/allocations" element={<Allocations />} />
-        <Route path="/diagnostics" element={<Diagnostics />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/help" element={<Help />} />
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/_styleguide" element={<Styleguide />} />
-        <Route path="*" element={<NotFound />} />
+        <Route path="/holdings" element={lazyPage("Holdings")} />
+        <Route path="/periods" element={lazyPage("Periods")} />
+        <Route path="/activity" element={lazyPage("Activity")} />
+        <Route path="/risk" element={lazyPage("Risk")} />
+        <Route path="/projection" element={lazyPage("Projection")} />
+        <Route path="/transactions" element={lazyPage("Transactions")} />
+        <Route path="/import" element={lazyPage("Import")} />
+        <Route path="/instruments" element={lazyPage("Instruments")} />
+        <Route path="/conversions" element={lazyPage("CurrencyConversions")} />
+        <Route path="/allocations" element={lazyPage("Allocations")} />
+        <Route path="/diagnostics" element={lazyPage("Diagnostics")} />
+        <Route path="/settings" element={lazyPage("Settings")} />
+        <Route path="/help" element={lazyPage("Help")} />
+        <Route path="/onboarding" element={lazyPage("Onboarding")} />
+        <Route path="/_styleguide" element={lazyPage("Styleguide")} />
+        <Route path="*" element={lazyPage("NotFound")} />
       </Route>
       </Route>
     </Routes>

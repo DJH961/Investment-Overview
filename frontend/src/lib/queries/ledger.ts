@@ -2,6 +2,7 @@ import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient }
 import { ApiError, api } from "../api";
 import type { components } from "../api-types";
 import { invalidateFor, type InvalidationKind } from "./invalidation";
+import { applyOptimistic, byRoot, rollback, type OptimisticContext } from "./optimistic";
 
 type Schemas = components["schemas"];
 export type TransactionOut = Schemas["TransactionOut"];
@@ -69,6 +70,22 @@ export function useTransaction(id: number | null) {
   });
 }
 
+/** Edit one row in every cached ledger page and in the single-row cache. */
+function patchCachedTransaction(qc: ReturnType<typeof useQueryClient>, id: number, fields: Partial<TransactionOut>) {
+  return applyOptimistic(qc, (q) => q.queryKey[0] === "transactions" || q.queryKey[0] === "transaction", (old, key) => {
+    if (key[0] === "transaction") {
+      return key[1] === id && old && typeof old === "object" ? { ...(old as TransactionOut), ...fields } : undefined;
+    }
+    const page = old as TransactionPage;
+    if (!Array.isArray(page?.rows) || !page.rows.some((r) => r.id === id)) return undefined;
+    return { ...page, rows: page.rows.map((r) => (r.id === id ? { ...r, ...fields } : r)) };
+  });
+}
+
+/**
+ * A create has no server id, account name or sort position yet, so it is not drawn
+ * early: the list refetches once the write lands (the dialog closes on success).
+ */
 export function useCreateTransaction() {
   const invalidate = useInvalidateAfterWrite();
   return useMutation({
@@ -77,20 +94,38 @@ export function useCreateTransaction() {
   });
 }
 
+/** Fields of the form that map one-to-one onto a ledger row. */
+function rowFields(body: TransactionWrite): Partial<TransactionOut> {
+  const out: Partial<TransactionOut> = { date: body.date, kind: body.kind, account_id: body.account_id };
+  if (body.description !== undefined) out.description = body.description;
+  return out;
+}
+
 export function useUpdateTransaction() {
+  const client = useQueryClient();
   const invalidate = useInvalidateAfterWrite();
   return useMutation({
     mutationFn: ({ id, body }: { id: number; body: TransactionWrite }) =>
       api<TransactionWriteResult>(`/api/transactions/${id}`, { method: "PUT", body }),
-    onSuccess: invalidate,
+    onMutate: ({ id, body }): Promise<OptimisticContext> => patchCachedTransaction(client, id, rowFields(body)),
+    onError: (_e, _v, ctx) => rollback(client, ctx),
+    onSettled: invalidate,
   });
 }
 
 export function useDeleteTransaction() {
+  const client = useQueryClient();
   const invalidate = useInvalidateAfterWrite();
   return useMutation({
     mutationFn: (id: number) => api<void>(`/api/transactions/${id}`, { method: "DELETE" }),
-    onSuccess: invalidate,
+    onMutate: (id): Promise<OptimisticContext> =>
+      applyOptimistic(client, byRoot("transactions"), (old) => {
+        const page = old as TransactionPage;
+        if (!Array.isArray(page?.rows) || !page.rows.some((r) => r.id === id)) return undefined;
+        return { ...page, rows: page.rows.filter((r) => r.id !== id), total: Math.max(0, page.total - 1) };
+      }),
+    onError: (_e, _v, ctx) => rollback(client, ctx),
+    onSettled: invalidate,
   });
 }
 

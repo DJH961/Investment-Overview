@@ -90,9 +90,15 @@ What this means in practice:
 - Importers are **broker-agnostic plugins**: each file-format parser in
   `adapters/<broker>/` emits `ParsedTransactionRow`; nothing downstream knows the
   broker.
-- **Strong server, weak client:** business maths, market-data provider calls and
-  secrets belong in the backend. The v5 web companion still contains some of this;
-  don't add more.
+- **Server computes, client patches:** the server owns the data, every provider call,
+  secrets and **every non-linear money calculation** (XIRR, TWR, FX-aware returns,
+  period growth). It computes once per change and pushes results (`/both` reads with
+  ETags, rich SSE ticks; see [`docs/v6_speed_plan.md`](docs/v6_speed_plan.md)). The
+  client may only do **linear presentation maths** on server-supplied values (sums,
+  `qty × price × fx_now`, shares of a total, filter/sort/page of lists it already
+  holds) and never computes a return. It converts currency only at a single instant,
+  with the rate sent in the same tick. The v5 web companion still breaks this rule;
+  don't copy it.
 - Secrets never go in the repo. Settings are documented in `.env.example` files
   (v6); real `.env` files are git-ignored.
 

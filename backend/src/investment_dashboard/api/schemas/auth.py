@@ -26,3 +26,10 @@ class PasskeyOut(ApiModel):
 
 class PasskeyNameBody(ApiModel):
     name: str | None = Field(default=None, max_length=80)
+
+
+class PasskeyLoginOptionsBody(ApiModel):
+    """The passkey this device used last (base64url id): the browser then goes
+    straight to it instead of showing a passkey picker. Unknown ids are ignored."""
+
+    credential_id: str | None = Field(default=None, max_length=1024)

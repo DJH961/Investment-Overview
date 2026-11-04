@@ -135,6 +135,19 @@ def build_page(
     }
 
 
+def build_all(session: Session, *, context: ReadModelContext | None = None) -> dict[str, Any]:
+    """Every ledger row (sweeps included, newest first) for client-side filter / sort / paging."""
+    ctx = context or build_context(session)
+    rows = list_ledger_records(
+        session,
+        LedgerFilters(hide_settlement_sweeps=False),
+        fx_rate=ctx.fx_rate_eur_usd,
+        sort="date",
+        order="desc",
+    )
+    return {"rows": [_detail_dict(r) for r in rows]}
+
+
 def build_one(session: Session, txn_id: int) -> dict[str, Any] | None:
     """One transaction in the detail shape, or ``None`` if it doesn't exist."""
     ctx = build_context(session)

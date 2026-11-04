@@ -25,6 +25,7 @@ from investment_dashboard.api.deps import ConfigSessionDep, require_auth
 from investment_dashboard.api.schemas.auth import (
     LoginBody,
     MeResponse,
+    PasskeyLoginOptionsBody,
     PasskeyNameBody,
     PasskeyOut,
 )
@@ -190,12 +191,17 @@ async def me(request: Request, db: ConfigSessionDep) -> MeResponse:
 
 @router.post("/passkey/login/options", dependencies=[OriginGuard])
 def passkey_login_options(
-    request: Request, db: ConfigSessionDep, settings: SettingsDep
+    request: Request,
+    db: ConfigSessionDep,
+    settings: SettingsDep,
+    body: Annotated[PasskeyLoginOptionsBody | None, Body()] = None,
 ) -> Response:
     # Every request counts (options are unauthenticated and allocate a challenge).
     limit = max(auth_service.limit(settings, "login_rate_limit_per_minute") * 6, 30)
     _reserve(request, settings, db, auth_service.options_limiter, limit)
-    options_json, key = auth_service.authentication_options(settings)
+    options_json, key = auth_service.authentication_options(
+        settings, db, body.credential_id if body else None
+    )
     response = Response(content=options_json, media_type="application/json")
     _set_cookie(
         response,

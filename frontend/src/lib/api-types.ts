@@ -1587,6 +1587,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/transactions/all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List All Transactions */
+        get: operations["list_all_transactions_api_transactions_all_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/transactions/reconcile": {
         parameters: {
             query?: never;
@@ -4087,6 +4104,15 @@ export interface components {
             /** Zero Value */
             zero_value: string[];
         };
+        /**
+         * PasskeyLoginOptionsBody
+         * @description The passkey this device used last (base64url id): the browser then goes
+         *     straight to it instead of showing a passkey picker. Unknown ids are ignored.
+         */
+        PasskeyLoginOptionsBody: {
+            /** Credential Id */
+            credential_id?: string | null;
+        };
         /** PasskeyNameBody */
         PasskeyNameBody: {
             /** Name */
@@ -5241,6 +5267,14 @@ export interface components {
             px: string;
         };
         /**
+         * TransactionAll
+         * @description The whole ledger in one answer (the client filters, sorts and pages it).
+         */
+        TransactionAll: {
+            /** Rows */
+            rows: components["schemas"]["TransactionOut"][];
+        };
+        /**
          * TransactionKind
          * @description Enumerated kinds — see spec §4.1.
          * @enum {string}
@@ -5874,7 +5908,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PasskeyLoginOptionsBody"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5883,6 +5921,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8704,6 +8751,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_all_transactions_api_transactions_all_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionAll"];
                 };
             };
         };

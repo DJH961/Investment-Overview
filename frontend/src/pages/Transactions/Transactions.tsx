@@ -22,13 +22,12 @@ import { useAccounts } from "../../lib/queries/accounts";
 import {
   useCreateTransaction,
   useDeleteTransaction,
-  useTransactions,
   useUpdateTransaction,
   type TransactionFilters,
-  type TransactionMonth,
   type TransactionOut,
   type TransactionWrite,
 } from "../../lib/queries/ledger";
+import { filterLedger, monthTotals, sortLedger, summarizeLedger, useLedgerAll } from "../../lib/queries/ledgerAll";
 import { useShellStatus } from "../../lib/shell";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useIsPhone } from "../../lib/useMediaQuery";
@@ -158,19 +157,26 @@ export function Transactions() {
   // Typing updates the box at once; only the settled text goes to the server (G5).
   const debouncedQ = useDebouncedValue(f.q);
   const debouncedSymbol = useDebouncedValue(f.symbol);
-  const list = useTransactions({
-    account_id: f.account === ALL ? undefined : Number(f.account),
-    kind: f.kind === ALL ? undefined : f.kind,
-    symbol: debouncedSymbol.trim().toUpperCase() || undefined,
-    start: f.start || undefined,
-    end: f.end || undefined,
-    q: debouncedQ.trim() || undefined,
-    hide_sweeps: !f.sweeps,
-    sort: f.sort,
-    order: f.order,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  });
+  // The whole ledger is fetched once; filter, sort and paging below cost no requests.
+  const list = useLedgerAll();
+  const view = useMemo(() => {
+    const filteredRows = filterLedger(list.data?.rows ?? [], {
+      account_id: f.account === ALL ? undefined : Number(f.account),
+      kind: f.kind === ALL ? undefined : f.kind,
+      symbol: debouncedSymbol.trim().toUpperCase() || undefined,
+      start: f.start || undefined,
+      end: f.end || undefined,
+      q: debouncedQ.trim() || undefined,
+      hide_sweeps: !f.sweeps,
+      sort: f.sort,
+      order: f.order,
+    });
+    return {
+      sorted: sortLedger(filteredRows, f.sort, f.order),
+      summary: summarizeLedger(filteredRows),
+      months: monthTotals(filteredRows),
+    };
+  }, [list.data, f.account, f.kind, f.start, f.end, f.sweeps, f.sort, f.order, debouncedSymbol, debouncedQ]);
   const accountList = useAccounts();
   const accounts = useMemo<SelectOption[]>(
     () => (accountList.data ?? []).map((a) => ({ value: String(a.id), label: a.account_label })),
@@ -180,6 +186,10 @@ export function Transactions() {
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const remove = useDeleteTransaction();
+
+  // A delete (or a narrower filter) can leave the current page past the end.
+  const lastPage = Math.max(0, Math.ceil(view.sorted.length / PAGE_SIZE) - 1);
+  if (page > lastPage) setPage(lastPage);
 
   const { refetch } = list;
   const onRefresh = useCallback(() => void refetch(), [refetch]);
@@ -275,14 +285,15 @@ export function Transactions() {
     },
   ];
 
-  const summary = list.data?.summary;
-  const total = list.data?.total ?? 0;
+  const summary = list.data ? view.summary : undefined;
+  const total = view.sorted.length;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageRows = useMemo(() => view.sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [view.sorted, page]);
   const activeFilters = [f.account !== ALL, f.kind !== ALL, Boolean(f.symbol), Boolean(f.start || f.end), f.sweeps].filter(
     Boolean,
   ).length;
   const filtered = activeFilters > 0 || Boolean(f.q);
-  const avgTrade = summary ? num(currency === "EUR" ? summary.avg_trade_size_eur : summary.avg_trade_size_usd) : null;
+  const avgTrade = summary ? (currency === "EUR" ? summary.avg_trade_size_eur : summary.avg_trade_size_usd) : null;
 
   const form = editing && (
     <TransactionForm
@@ -363,7 +374,7 @@ export function Transactions() {
     body = <ErrorState title="Could not load transactions" message={list.error.message} onRetry={() => void list.refetch()} />;
   } else if (list.isPending) {
     body = <Skeleton height="16rem" />;
-  } else if (list.data.rows.length === 0) {
+  } else if (pageRows.length === 0) {
     body = (
       <EmptyState
         title={filtered ? "No transactions match your filters" : "No transactions yet"}
@@ -378,15 +389,15 @@ export function Transactions() {
       />
     );
   } else if (f.sort === "date") {
-    const months = new Map<string, TransactionMonth>((list.data.months ?? []).map((m) => [m.month, m]));
+    const months = view.months;
     const groups = new Map<string, TransactionOut[]>();
-    for (const r of list.data.rows) {
+    for (const r of pageRows) {
       const m = r.date.slice(0, 7);
       groups.set(m, [...(groups.get(m) ?? []), r]);
     }
     body = [...groups.entries()].map(([month, rows]) => {
       const t = months.get(month);
-      const net = t ? num(currency === "EUR" ? t.net_eur : t.net_usd) : null;
+      const net = t ? (currency === "EUR" ? t.net_eur : t.net_usd) : null;
       return (
         <Card
           key={month}
@@ -407,7 +418,7 @@ export function Transactions() {
       );
     });
   } else {
-    body = <Card flush>{table(list.data.rows, "Transactions")}</Card>;
+    body = <Card flush>{table(pageRows, "Transactions")}</Card>;
   }
 
   return (
@@ -470,7 +481,7 @@ export function Transactions() {
 
       {body}
 
-      {list.data && list.data.rows.length > 0 && pages > 1 && (
+      {list.data && pageRows.length > 0 && pages > 1 && (
         <nav className="transactions-page__pager" aria-label="Pagination">
           <Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
             Previous

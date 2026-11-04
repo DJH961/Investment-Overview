@@ -63,6 +63,9 @@ export function patchOverviewFromEvent(queryClient: QueryClient, ev: TickLike): 
   }
 }
 
+const INTRADAY_RANGES = ["1d", "1w"];
+const DAILY_RANGES = ["1m", "3m", "6m", "ytd", "1y", "all"];
+
 function withPoint(points: GraphDto["points"], t: string, v: string): GraphDto["points"] {
   const last = points[points.length - 1];
   if (last && last.t === t) return [...points.slice(0, -1), { t, v }];
@@ -70,22 +73,41 @@ function withPoint(points: GraphDto["points"], t: string, v: string): GraphDto["
   return [...points, { t, v }];
 }
 
-/** Append (or replace, same `t`) one intraday sample in every cached 1d / 1w graph, both sides. */
+/**
+ * Daily ranges carry one point per date (`t` = "YYYY-MM-DD"): today's value replaces
+ * the last point when it is the same (UTC) day, is appended when newer, and is ignored
+ * when older. Never touches earlier points.
+ */
+function withDailyPoint(points: GraphDto["points"], t: string, v: string): GraphDto["points"] {
+  const day = t.slice(0, 10);
+  const last = points[points.length - 1];
+  if (!last) return points; // nothing drawn yet: leave it to the fetch
+  const lastDay = last.t.slice(0, 10);
+  if (lastDay === day) return [...points.slice(0, -1), { ...last, v }];
+  if (lastDay > day) return points;
+  return [...points, { t: day, v }];
+}
+
+/** Append (or replace, same `t`) the live sample in every cached graph range, both sides. */
 export function patchGraphPoint(queryClient: QueryClient, point: TickPointDto): void {
-  if (!point || typeof point.t !== "string") return;
-  for (const range of ["1d", "1w"]) {
+  if (!point || typeof point.t !== "string" || point.t === "") return;
+  const ranges: Array<[string, typeof withPoint]> = [
+    ...INTRADAY_RANGES.map((r): [string, typeof withPoint] => [r, withPoint]),
+    ...DAILY_RANGES.map((r): [string, typeof withPoint] => [r, withDailyPoint]),
+  ];
+  for (const [range, add] of ranges) {
     for (const [key, data] of queryClient.getQueriesData<Both<GraphDto>>({ queryKey: ["graphs", range, "both"] })) {
       if (!data || typeof data !== "object") continue;
       const next = { ...data };
       for (const side of SIDES) {
         const g = data[side];
-        if (!g) continue;
+        if (!g || !Array.isArray(g.points)) continue;
         const own = decimal(point[side]);
         const sec = g.secondary ? decimal(point[g.secondary.ccy]) : null;
         next[side] = {
           ...g,
-          points: own ? withPoint(g.points, point.t, own) : g.points,
-          secondary: g.secondary && sec ? { ...g.secondary, points: withPoint(g.secondary.points, point.t, sec) } : g.secondary,
+          points: own ? add(g.points, point.t, own) : g.points,
+          secondary: g.secondary && sec ? { ...g.secondary, points: add(g.secondary.points, point.t, sec) } : g.secondary,
         };
       }
       queryClient.setQueryData<Both<GraphDto>>(key, next);
