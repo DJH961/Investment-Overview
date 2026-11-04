@@ -1,12 +1,19 @@
 /// <reference types="vitest/config" />
+import { readFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+
+// The build's own version: an open tab compares it with the server's
+// (`lib/appVersion.ts`) and reloads itself after a deploy.
+const APP_VERSION = (JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string })
+  .version;
 
 // Dev proxy: the FastAPI backend serves /api (including the /api/stream SSE
 // endpoint). SSE needs an unbuffered, long-lived connection, so no timeouts.
 // VITE_API_PROXY points it at another backend (e.g. a second checkout's).
 export default defineConfig({
   plugins: [react()],
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   server: {
     port: 5173,
     proxy: {

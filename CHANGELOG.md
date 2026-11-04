@@ -17,6 +17,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.4.2] — 2026-11-04
+
+### Fixed
+- **Open tabs update themselves after a deploy.** A tab or phone app left open kept
+  running the old version (and its slower requests) until a full reload. When the
+  live stream reconnects, the app now compares its own version with the server's
+  and, if it is older, reloads quietly the next time the tab is hidden or shown
+  again — never while you are typing or have a dialog open, and at most once per
+  version.
+
 ## [6.4.1] — 2026-11-04
 
 Phase 3 of the speed plan (`docs/v6_speed_plan.md`).
