@@ -17,6 +17,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.5.1] — 2026-11-04
+
+### Added
+- **Separate polling for stocks and currencies, each with an open and a closed
+  pace (Settings › Data refresh).** Stocks: every live refresh interval (60 s)
+  while the US market is open, every 10 min while it is closed (new
+  "Price refresh while the stock market is closed"; before, prices were not
+  checked at all outside the session). Currencies follow their own market
+  (Sunday 17:00 – Friday 17:00 New York): every minute while it trades, day or
+  night, whatever the stock market does, and every 10 min over the weekend (new
+  "Currency refresh while the currency market is closed"; the open pace was
+  every 2 min after the close and rode along with the stock tick before).
+
+### Fixed
+- **Pages stay fast between price changes.** The server kept throwing its
+  ready-made answers away: on every FX check even when the rate had not moved,
+  on every settings save (including the EUR/USD switch), on sign-in and passkey
+  requests, and on every background-job progress message. Now only a real change
+  recomputes: a check that finds the same prices and rate keeps the cache, and
+  currency/theme switches, sign-ins and job progress never clear it.
+- After each price or currency change the server also pre-computes the graph the
+  Overview opens on (not only the 1D one), and the app's background preloading
+  waits until the page you are on has loaded, so it never queues in front of it
+  on the one-CPU server.
+
 ## [6.5.0] — 2026-11-04
 
 ### Changed

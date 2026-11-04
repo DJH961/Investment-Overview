@@ -382,12 +382,42 @@ DEFS: tuple[SettingDef, ...] = (
     SettingDef(
         "scheduler.fx_interval_minutes",
         SettingType.INT,
-        2,
+        1,
         "data_refresh",
-        "FX refresh while the market is closed",
+        "Currency refresh while the currency market is open",
+        help=(
+            "EUR/USD trades around the clock on weekdays (Sunday 17:00 to Friday 17:00 "
+            "New York time) on its own clock, separate from the stock market: it is "
+            "checked at this pace whenever it trades, day or night."
+        ),
         min=_D(1),
         max=_D(720),
-        level="advanced",
+        unit="min",
+    ),
+    SettingDef(
+        "scheduler.fx_closed_interval_minutes",
+        SettingType.INT,
+        10,
+        "data_refresh",
+        "Currency refresh while the currency market is closed",
+        help="How often EUR/USD is checked over the weekend, when it does not trade.",
+        min=_D(1),
+        max=_D(720),
+        unit="min",
+    ),
+    SettingDef(
+        "scheduler.closed_interval_minutes",
+        SettingType.INT,
+        10,
+        "data_refresh",
+        "Price refresh while the stock market is closed",
+        help=(
+            "How often prices are checked while the US stock market is closed "
+            "(nights, weekends, holidays). While it is open they follow the live "
+            "refresh interval."
+        ),
+        min=_D(1),
+        max=_D(720),
         unit="min",
     ),
     SettingDef(

@@ -1,5 +1,21 @@
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it } from "vitest";
-import { prefetchPlan } from "./prefetch";
+import { prefetchPlan, quiet } from "./prefetch";
+
+describe("quiet", () => {
+  it("waits until the page's own requests are done", async () => {
+    const qc = new QueryClient();
+    let release: (v: number) => void = () => undefined;
+    void qc.fetchQuery({ queryKey: ["page"], queryFn: () => new Promise<number>((r) => (release = r)) });
+    let done = false;
+    const waiting = quiet(qc).then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(done).toBe(false);
+    release(1);
+    await waiting;
+    expect(done).toBe(true);
+  });
+});
 
 afterEach(() => localStorage.clear());
 

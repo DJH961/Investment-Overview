@@ -4,14 +4,25 @@ One asyncio loop; every job is blocking code run through ``asyncio.to_thread``.
 Decisions use the New York exchange clock from :mod:`domain.market_hours`
 (never ``date.today()``):
 
-* market open  -> ``tick`` every auto-refresh interval (default 60 s): one
-  batched price + FX refresh and an intraday sample (``auto_refresh.tick_refresh``,
-  which also runs the Tiingo fallback inside ``prices_service``), then a ``tick``
-  event;
-* market closed -> ``eod`` once per settled session date (closes, splits,
-  benchmark, snapshots, cache janitor), then a ``refresh`` event;
-* otherwise the live FX spot every ``scheduler.fx_interval_minutes`` (default 2;
-  ``fx`` event).
+Stocks and currencies are polled on two separate clocks, each with an "open" and
+a "closed" interval from Settings:
+
+* stocks (US market, ``is_us_market_open``): while open a ``tick`` every
+  ``live_refresh_interval_seconds`` (default 60 s): a price refresh and an intraday
+  sample (``auto_refresh.tick_refresh``, which also runs the Tiingo fallback inside
+  ``prices_service``), then a ``tick`` event. While closed, ``eod`` once per
+  settled session date (closes, splits, benchmark, snapshots, cache janitor; a
+  ``refresh`` event), then a price ``tick`` without a sample every
+  ``scheduler.closed_interval_minutes`` (default 10);
+* currencies (24/5, ``is_forex_market_open``): the live EUR/USD spot (``fx``
+  event) every ``scheduler.fx_interval_minutes`` (default 1) while the currency
+  market trades, whatever the stock market does (so on a Tuesday night it is still
+  checked every minute), and every ``scheduler.fx_closed_interval_minutes``
+  (default 10) over the weekend.
+
+A tick or FX check that changed nothing (same prices, same rate, no new sample)
+is published with ``unchanged: True``: clients still see the check, but the read
+cache is kept (see ``read_cache.invalidate_for_event``).
 
 Control (``/api/maintenance/scheduler``): :meth:`Scheduler.snapshot` reports the
 state, :meth:`Scheduler.request_run` runs a job on the next loop pass (it also
@@ -45,7 +56,12 @@ log = logging.getLogger(__name__)
 
 POLL_SECONDS = 5.0
 #: Fallback when the ``scheduler.fx_interval_minutes`` setting cannot be read.
-FX_INTERVAL = timedelta(minutes=2)
+FX_INTERVAL = timedelta(minutes=1)
+#: Fallback when the ``scheduler.closed_interval_minutes`` /
+#: ``scheduler.fx_closed_interval_minutes`` settings cannot be read.
+CLOSED_INTERVAL = timedelta(minutes=10)
+#: Event fields that say whether a tick / FX check changed anything.
+_CHANGE_KEYS = ("total_value_eur", "fx_eur_usd", "prices", "point")
 JOB_NAMES: tuple[str, ...] = ("tick", "fx", "eod", "backup")
 PAUSE_KEY = "scheduler.pause"
 #: Longest pause accepted (a pause always expires).
@@ -81,10 +97,12 @@ def default_tick_job() -> dict[str, Any] | None:
     auto_refresh.tick_refresh("Scheduled live refresh")
     rate = _live_fx()
     today = market_hours.exchange_today()
+    # Outside the session a tick only checks prices: no intraday sample.
+    session_open = market_hours.is_us_market_open()
     with ledger_session_scope() as session:
         total_eur = positions_service.total_portfolio_value(session, as_of=today)
         prices = _tick_prices(session, today)
-        point = _tick_point(session, total_eur, rate)
+        point = _tick_point(session, total_eur, rate) if session_open else None
     return {
         "total_value_eur": _dec(total_eur),
         # One instant (value now x spot now), so EUR -> USD is a valid conversion.
@@ -223,6 +241,20 @@ def default_fx_interval() -> timedelta:
     return FX_INTERVAL if minutes is None else timedelta(minutes=int(minutes))
 
 
+def default_closed_interval() -> timedelta:
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    minutes = settings_service.get_or("scheduler.closed_interval_minutes", None)
+    return CLOSED_INTERVAL if minutes is None else timedelta(minutes=int(minutes))
+
+
+def default_fx_closed_interval() -> timedelta:
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    minutes = settings_service.get_or("scheduler.fx_closed_interval_minutes", None)
+    return CLOSED_INTERVAL if minutes is None else timedelta(minutes=int(minutes))
+
+
 def default_heavy_busy() -> str | None:
     from investment_dashboard.services import job_runner  # noqa: PLC0415
 
@@ -317,6 +349,10 @@ class Jobs:
     backup_due: Callable[[datetime], bool] = default_backup_due
     interval_seconds: Callable[[], int] = default_interval
     fx_interval: Callable[[], timedelta] = default_fx_interval
+    #: Price checks while the US stock market is closed.
+    closed_interval: Callable[[], timedelta] = default_closed_interval
+    #: FX checks while the currency market is closed (weekends).
+    fx_closed_interval: Callable[[], timedelta] = default_fx_closed_interval
     #: Name of a running heavy maintenance job (market jobs wait), or ``None``.
     heavy_busy: Callable[[], str | None] = default_heavy_busy
 
@@ -331,6 +367,8 @@ class State:
     requested: set[str] = field(default_factory=set)
     last_runs: dict[str, datetime] = field(default_factory=dict)
     last_failed: dict[str, bool] = field(default_factory=dict)
+    #: What the last published tick / fx event carried (change detection).
+    last_payload: dict[str, Any] = field(default_factory=dict)
 
 
 class Scheduler:
@@ -406,24 +444,63 @@ class Scheduler:
         return names
 
     def _due_market(self, now: datetime, interval_seconds: int) -> list[str]:
+        stocks = self._due_stocks(now, interval_seconds)
+        if stocks == ["eod"]:
+            return stocks  # eod refreshes the FX rate as well
+        return [*stocks, *self._due_fx(now)]
+
+    def _due_stocks(self, now: datetime, interval_seconds: int) -> list[str]:
+        """The stock clock: live interval while the US market is open, else eod + closed."""
         st = self.state
         if market_hours.is_us_market_open(now):
-            if st.last_tick is None or now - st.last_tick >= timedelta(seconds=interval_seconds):
-                return ["tick"]
-            return []
-        if st.last_eod_session != market_hours.latest_settled_session_date(now):
+            every = timedelta(seconds=interval_seconds)
+        elif st.last_eod_session != market_hours.latest_settled_session_date(now):
             return ["eod"]
-        if st.last_fx is None or now - st.last_fx >= self._fx_interval():
-            return ["fx"]
-        return []
+        else:
+            every = self._interval(self.jobs.closed_interval, CLOSED_INTERVAL)
+        return ["tick"] if st.last_tick is None or now - st.last_tick >= every else []
 
-    def _fx_interval(self) -> timedelta:
+    def _due_fx(self, now: datetime) -> list[str]:
+        """The currency clock (24/5), independent of the stock market."""
+        st = self.state
+        if market_hours.is_forex_market_open(now):
+            every = self._interval(self.jobs.fx_interval, FX_INTERVAL)
+        else:
+            every = self._interval(self.jobs.fx_closed_interval, CLOSED_INTERVAL)
+        return ["fx"] if st.last_fx is None or now - st.last_fx >= every else []
+
+    @staticmethod
+    def _interval(read: Callable[[], timedelta], fallback: timedelta) -> timedelta:
         try:
-            return self.jobs.fx_interval()
+            return read()
         except Exception:
-            return FX_INTERVAL
+            return fallback
+
+    def _unchanged(self, etype: str, extra: dict[str, Any] | None) -> bool:
+        """True when a tick / fx check carries exactly what the last one did."""
+        if etype not in ("tick", "fx") or not extra or extra.get("point") is not None:
+            return False
+        payload = {k: extra.get(k) for k in _CHANGE_KEYS}
+        before = self.state.last_payload.get(etype)
+        self.state.last_payload[etype] = payload
+        return before == payload
 
     # -- execution ---------------------------------------------------------
+
+    def _stamp(self, name: str, now: datetime) -> None:
+        """Record when each clock last ran (stocks: tick/eod, currencies: fx/eod)."""
+        st = self.state
+        if name == "tick":
+            st.last_tick = now
+        elif name == "fx":
+            st.last_fx = now
+        elif name == "eod":
+            # It pulled the closes and the live spot: both clocks start over.
+            st.last_eod_session = market_hours.latest_settled_session_date(now)
+            st.last_fx = now
+            st.last_tick = now
+        elif name == "backup":
+            st.last_backup = now
 
     async def _run_job(self, name: str, now: datetime) -> None:
         st = self.state
@@ -449,15 +526,7 @@ class Scheduler:
             # cadence instead of spinning every poll.
             st.last_runs[name] = now
             st.last_failed[name] = failed
-            if name == "tick":
-                st.last_tick = now
-            elif name == "fx":
-                st.last_fx = now
-            elif name == "eod":
-                st.last_eod_session = market_hours.latest_settled_session_date(now)
-                st.last_fx = now
-            elif name == "backup":
-                st.last_backup = now
+            self._stamp(name, now)
             if failed or name == "backup":
                 return
             etype = {"tick": "tick", "fx": "fx", "eod": "refresh"}[name]
@@ -467,10 +536,13 @@ class Scheduler:
                 "market_state": live_bus.market_state(now),
             }
             event.update(extra or {})
+            unchanged = self._unchanged(etype, extra)
+            if unchanged:
+                event["unchanged"] = True
             if etype == "tick":
                 live_state.record_tick(event, day=market_hours.exchange_today(now))
             self.bus.publish(event)
-            if etype == "tick" and self.bus.subscriber_count > 0:
+            if etype in ("tick", "fx") and not unchanged and self.bus.subscriber_count > 0:
                 # Pre-compute the reads the clients refetch right after a tick (in the
                 # background: the tick job is already done).
                 with contextlib.suppress(Exception):

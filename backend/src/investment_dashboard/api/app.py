@@ -131,7 +131,11 @@ def _mount_frontend(app: FastAPI, dist: Path, *, docs: bool = True) -> None:
 
 
 #: Writes that change no report data (a UI preference), so they keep the read cache.
-_CACHE_NEUTRAL_WRITES = frozenset({"/api/graphs/range"})
+#: ``/api/settings/values`` goes through ``settings_service``, whose ``settings``
+#: event bumps the cache unless only presentation settings (currency, theme) changed.
+_CACHE_NEUTRAL_WRITES = frozenset({"/api/graphs/range", "/api/settings/values"})
+#: Sign-in, sign-out and passkey ceremonies touch no report data.
+_CACHE_NEUTRAL_PREFIXES = ("/api/auth/",)
 
 
 def create_app(*, lifespan: bool = True) -> FastAPI:
@@ -176,6 +180,7 @@ def create_app(*, lifespan: bool = True) -> FastAPI:
             request.method not in ("GET", "HEAD", "OPTIONS")
             and response.status_code < 400
             and request.url.path not in _CACHE_NEUTRAL_WRITES
+            and not request.url.path.startswith(_CACHE_NEUTRAL_PREFIXES)
         ):
             read_cache.invalidate()
         return response
