@@ -43,10 +43,10 @@ describe("tick handling", () => {
   }
 
   it("patches the totals at once, then refetches active queries once after the stagger", async () => {
-    qc.setQueryData(["overview", "EUR"], overview("EUR"));
-    qc.setQueryData(["overview", "USD"], overview("USD"));
-    const eurFetch = vi.fn(() => overview("EUR"));
-    const unsub = observe(["overview", "EUR"], eurFetch);
+    const both = () => ({ EUR: overview("EUR"), USD: overview("USD") });
+    qc.setQueryData(["overview", "both"], both());
+    const eurFetch = vi.fn(both);
+    const unsub = observe(["overview", "both"], eurFetch);
 
     const tick = {
       type: "tick",
@@ -59,12 +59,13 @@ describe("tick handling", () => {
     handleLiveEvent(qc, JSON.stringify(tick));
     handleLiveEvent(qc, JSON.stringify(tick)); // a second tick inside the delay joins the first
 
-    const eur = qc.getQueryData<ReturnType<typeof overview>>(["overview", "EUR"])!;
+    const cached = qc.getQueryData<Record<"EUR" | "USD", ReturnType<typeof overview>>>(["overview", "both"])!;
+    const eur = cached.EUR;
     expect(eur.kpis.total_value).toBe("1100.00");
     expect(eur.kpis_secondary.total_value).toBe("1210.00");
     expect(eur.fx_eur_usd).toBe("1.1000");
     expect(eur.freshness).toMatchObject({ last_price_update_at: "2026-11-03T10:01:00Z", prices_live: true });
-    const usd = qc.getQueryData<ReturnType<typeof overview>>(["overview", "USD"])!;
+    const usd = cached.USD;
     expect(usd.kpis.total_value).toBe("1210.00");
     expect(usd.kpis_secondary.total_value).toBe("1100.00");
 
@@ -80,13 +81,49 @@ describe("tick handling", () => {
   it("only marks inactive queries stale; they are not fetched", async () => {
     const fn = vi.fn(() => ({}));
     qc.setQueryDefaults(["holdings"], { queryFn: async () => fn() });
-    qc.setQueryData(["holdings", "EUR", "none"], { rows: [] });
-    qc.setQueryData(["periods", "EUR"], 1);
+    qc.setQueryData(["holdings", "both", "none"], { rows: [] });
+    qc.setQueryData(["periods", "monthly", "both"], 1);
     handleLiveEvent(qc, JSON.stringify({ type: "fx", fx_eur_usd: "1.09" }));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(fn).not.toHaveBeenCalled();
-    expect(qc.getQueryState(["holdings", "EUR", "none"])?.isInvalidated).toBe(true);
-    expect(qc.getQueryState(["periods", "EUR"])?.isInvalidated).toBe(false);
+    expect(qc.getQueryState(["holdings", "both", "none"])?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(["periods", "monthly", "both"])?.isInvalidated).toBe(false);
+  });
+
+  it("appends the point to cached 1d graphs on both sides and updates holdings prices", () => {
+    const graph = (ccy: "EUR" | "USD", sec: "EUR" | "USD") => ({
+      ccy,
+      points: [{ t: "2026-11-03T10:00:00Z", v: "1" }],
+      secondary: { ccy: sec, points: [{ t: "2026-11-03T10:00:00Z", v: "2" }] },
+    });
+    qc.setQueryData(["graphs", "1d", "both"], { EUR: graph("EUR", "USD"), USD: graph("USD", "EUR") });
+    qc.setQueryData(["graphs", "1m", "both"], { EUR: graph("EUR", "USD"), USD: graph("USD", "EUR") });
+    const row = { instrument_id: 5, shares: "10", native_currency: "USD", price_native: "100", value: "1000" };
+    qc.setQueryData(["holdings", "both", "none"], {
+      EUR: { holdings: [row], fx_eur_usd: "2" },
+      USD: { holdings: [row], fx_eur_usd: "2" },
+    });
+    const tick = {
+      type: "tick",
+      seq: 3,
+      fx_eur_usd: "2",
+      point: { t: "2026-11-03T10:01:00Z", EUR: "50", USD: "100" },
+      prices: { "5": { px: "110", ccy: "USD", prev_close: "100" } },
+    };
+    handleLiveEvent(qc, JSON.stringify(tick));
+    handleLiveEvent(qc, JSON.stringify(tick)); // same t: replaced, not duplicated
+    type G = Record<"EUR" | "USD", { points: { v: string }[]; secondary: { points: { v: string }[] } }>;
+    const g = qc.getQueryData<G>(["graphs", "1d", "both"])!;
+    expect(g.EUR.points.map((p) => p.v)).toEqual(["1", "50"]);
+    expect(g.USD.points.map((p) => p.v)).toEqual(["1", "100"]);
+    expect(g.EUR.secondary.points.map((p) => p.v)).toEqual(["2", "100"]);
+    expect(qc.getQueryData<G>(["graphs", "1m", "both"])!.EUR.points).toHaveLength(1);
+    type H = Record<"EUR" | "USD", { holdings: { value: string; price_native: string; today_pct: string }[] }>;
+    const h = qc.getQueryData<H>(["holdings", "both", "none"])!;
+    expect(h.USD.holdings[0]!.value).toBe("1100");
+    expect(h.EUR.holdings[0]!.value).toBe("550");
+    expect(h.USD.holdings[0]!.price_native).toBe("110");
+    expect(Number(h.USD.holdings[0]!.today_pct)).toBeCloseTo(0.1);
   });
 });
 

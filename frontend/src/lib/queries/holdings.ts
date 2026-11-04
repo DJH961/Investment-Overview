@@ -13,8 +13,9 @@ export type HoldingsGroupBy = HoldingsDto["group_by"];
 /** `groupBy` makes the server add per-group subtotals (`groups`). */
 export const holdingsQuery = (ccy: ReportingCurrency, groupBy: HoldingsGroupBy = "none") =>
   queryOptions({
-    queryKey: ["holdings", ccy, groupBy],
-    queryFn: ({ signal }) => api<HoldingsDto>(`/api/holdings?ccy=${ccy}&group_by=${groupBy}`, { signal }),
+    queryKey: ["holdings", "both", groupBy],
+    queryFn: ({ signal }) => api<{ EUR: HoldingsDto; USD: HoldingsDto }>(`/api/holdings/both?group_by=${groupBy}`, { signal }),
+    select: (d: { EUR: HoldingsDto; USD: HoldingsDto }) => d[ccy],
     // Group-by and currency switches keep the old rows on screen.
     placeholderData: keepPreviousData,
   });

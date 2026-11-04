@@ -35,6 +35,12 @@ def test_runs_and_records_result(events: list[dict[str, Any]]) -> None:
     done = _wait(run.id)
     assert done.status == "succeeded"
     assert done.result == {"got": 1}
+    # The run is stored as finished just before its event is published, so
+    # wait for the event instead of racing the worker thread.
+    for _ in range(200):
+        if len(events) >= 2:
+            break
+        threading.Event().wait(0.01)
     assert [e["status"] for e in events] == ["running", "succeeded"]
     assert job_runner.recent()[0].id == run.id
 

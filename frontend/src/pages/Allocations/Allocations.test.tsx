@@ -82,9 +82,9 @@ function stub() {
       const json = url.includes("/api/allocations/plan")
         ? plan
         : url.includes("/api/allocations")
-          ? allocations
+          ? { EUR: allocations, USD: allocations }
           : url.includes("/api/calculator")
-            ? inputs
+            ? { EUR: inputs, USD: inputs }
             : url.includes("/api/settings/values")
               ? { values: { "chart_pref.calc.allow_fractional": { value: true } } }
               : {};
@@ -142,7 +142,7 @@ describe("Allocations page", () => {
       vi.fn(async (url: string) => {
         // The calculator inputs never answer; the allocations do.
         if (url.includes("/api/calculator")) return new Promise<Response>(() => undefined);
-        if (url.includes("/api/allocations")) return new Response(JSON.stringify(allocations), { status: 200 });
+        if (url.includes("/api/allocations")) return new Response(JSON.stringify({ EUR: allocations, USD: allocations }), { status: 200 });
         return new Response(JSON.stringify({ values: {} }), { status: 200 });
       }),
     );

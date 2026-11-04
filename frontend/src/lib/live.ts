@@ -1,7 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { markStaleAndRefetch, scheduleRefetchAllActive } from "./queries/invalidation";
-import type { OverviewDto } from "./queries/portfolio";
+import { api } from "./api";
+import { applyTick, patchGraphPoint, patchOverviewFromEvent, type TickLike, type TickPointDto } from "./tickPatch";
+import type { components } from "./api-types";
 import { applyRefreshEvent } from "./refresh";
 import { getServerStatus, setServerStatus } from "./serverStatus";
 
@@ -53,38 +55,34 @@ export function subscribeLiveEvents(cb: (ev: LiveEvent) => void): () => void {
   };
 }
 
-const decimal = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
+export { patchOverviewFromEvent };
+
+/** Highest tick sequence number seen (the catch-up after a reconnect asks for newer ones). */
+let lastSeq: number | null = null;
+
+/** Test helper. */
+export function resetLiveSeq(): void {
+  lastSeq = null;
+}
+
+function noteSeq(ev: Record<string, unknown>): void {
+  if (typeof ev.seq === "number" && (lastSeq === null || ev.seq > lastSeq)) lastSeq = ev.seq;
+}
 
 /**
- * Put a tick's totals straight into the cached overviews (no request): the hero,
- * the currency box and the freshness chip move together on arrival. The follow-up
- * refetch (staggered, active queries only) brings the rest.
+ * After a gap (tab back, network back) ask the server what was missed and apply it
+ * without refetching. Returns false when it could not (caller falls back to a refetch).
  */
-export function patchOverviewFromEvent(queryClient: QueryClient, ev: LiveEvent): void {
-  const eur = decimal(ev.total_value_eur);
-  const usd = decimal(ev.total_value_usd);
-  const fx = decimal(ev.fx_eur_usd);
-  const last = typeof ev.last_update_at === "string" ? ev.last_update_at : null;
-  const live = typeof ev.prices_live === "boolean" ? ev.prices_live : null;
-  for (const [key, data] of queryClient.getQueriesData<OverviewDto>({ queryKey: ["overview"] })) {
-    if (!data || typeof data !== "object" || !data.kpis) continue;
-    const usdFirst = key[1] === "USD";
-    const primary = usdFirst ? usd : eur;
-    const secondary = usdFirst ? eur : usd;
-    queryClient.setQueryData<OverviewDto>(key, {
-      ...data,
-      fx_eur_usd: fx ?? data.fx_eur_usd,
-      kpis: primary ? { ...data.kpis, total_value: primary } : data.kpis,
-      kpis_secondary:
-        secondary && data.kpis_secondary ? { ...data.kpis_secondary, total_value: secondary } : data.kpis_secondary,
-      freshness: data.freshness
-        ? {
-            ...data.freshness,
-            ...(last ? { last_price_update_at: last } : {}),
-            ...(live !== null ? { prices_live: live } : {}),
-          }
-        : data.freshness,
-    });
+export async function catchUpLive(queryClient: QueryClient): Promise<boolean> {
+  if (lastSeq === null) return false;
+  try {
+    const res = await api<components["schemas"]["LiveResponse"]>(`/api/live?since=${lastSeq}`, { rideOut: false });
+    for (const p of res.missed_points ?? []) patchGraphPoint(queryClient, p as TickPointDto);
+    if (res.tick) applyTick(queryClient, res.tick as TickLike);
+    if (typeof res.seq === "number" && (lastSeq === null || res.seq > lastSeq)) lastSeq = res.seq;
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -196,7 +194,8 @@ export function handleLiveEvent(queryClient: QueryClient, data: string): void {
   if (type === "tick" || type === "fx") {
     // Totals and the rate go on screen now; one staggered refetch of the active
     // tick-dependent queries follows. Inactive ones are only marked stale.
-    patchOverviewFromEvent(queryClient, ev);
+    noteSeq(ev);
+    applyTick(queryClient, ev as TickLike);
     markStaleAndRefetch(queryClient, "tick");
   } else if (type === "refresh") {
     markStaleAndRefetch(queryClient, "refresh");
@@ -238,7 +237,11 @@ export function startLive(queryClient: QueryClient): () => void {
       if (lostTimer) clearTimeout(lostTimer);
       lostTimer = undefined;
       if (getServerStatus().kind === "lost") setServerStatus({ kind: "idle" });
-      if (openedBefore) markStaleAndRefetch(queryClient, "tick");
+      if (openedBefore) {
+        void catchUpLive(queryClient).then((ok) => {
+          if (!ok) markStaleAndRefetch(queryClient, "tick");
+        });
+      }
       openedBefore = true;
     };
     es.onmessage = (ev: MessageEvent<string>) => handleLiveEvent(queryClient, ev.data);

@@ -5,17 +5,17 @@ import { INVALIDATION, invalidateFor, type InvalidationKind } from "./invalidati
 /** Every root a real query uses, so a mutation's key set can be compared against all of them. */
 const ALL_KEYS: unknown[][] = [
   ["auth", "me"],
-  ["overview", "EUR"],
-  ["holdings", "EUR", "none"],
+  ["overview", "both"],
+  ["holdings", "both", "none"],
   ["holdings", "history", 1, "1y"],
-  ["graphs", "1d", "EUR"],
-  ["periods", "monthly", "EUR"],
-  ["allocations", "EUR"],
-  ["analytics", "EUR", 365],
-  ["calculator", "inputs", "EUR"],
+  ["graphs", "1d", "both"],
+  ["periods", "monthly", "both"],
+  ["allocations", "both"],
+  ["analytics", "both", 365],
+  ["calculator", "inputs", "both"],
   ["calculator", "projection", "EUR", {}],
-  ["deposits", "EUR", null, null, null],
-  ["deposits", "dividends", "EUR"],
+  ["deposits", "both", null, null, null],
+  ["deposits", "dividends", "both"],
   ["transactions", {}],
   ["transaction", 1],
   ["instruments"],
@@ -49,7 +49,7 @@ describe("write -> invalidated keys", () => {
 
   it("a transaction write leaves instruments, accounts and fx conversions alone", () => {
     const hit = invalidatedBy("transactionWrite");
-    expect(hit).toContain("overview/EUR");
+    expect(hit).toContain("overview/both");
     expect(hit).not.toContain("instruments");
     expect(hit).not.toContain("accounts");
     expect(hit).not.toContain("fx-conversions");

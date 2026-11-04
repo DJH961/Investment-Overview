@@ -988,6 +988,249 @@
         "title": "BuilderPlanRowOut",
         "type": "object"
       },
+      "ByCurrency_AllocationsResponse_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/AllocationsResponse"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/AllocationsResponse"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[AllocationsResponse]",
+        "type": "object"
+      },
+      "ByCurrency_AnalyticsOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/AnalyticsOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/AnalyticsOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[AnalyticsOut]",
+        "type": "object"
+      },
+      "ByCurrency_CalculatorInputsOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/CalculatorInputsOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/CalculatorInputsOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[CalculatorInputsOut]",
+        "type": "object"
+      },
+      "ByCurrency_DepositsOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/DepositsOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/DepositsOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[DepositsOut]",
+        "type": "object"
+      },
+      "ByCurrency_DividendsOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/DividendsOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/DividendsOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[DividendsOut]",
+        "type": "object"
+      },
+      "ByCurrency_GraphResponse_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/GraphResponse"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/GraphResponse"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[GraphResponse]",
+        "type": "object"
+      },
+      "ByCurrency_HoldingsResponse_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/HoldingsResponse"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/HoldingsResponse"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[HoldingsResponse]",
+        "type": "object"
+      },
+      "ByCurrency_OverviewResponse_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/OverviewResponse"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/OverviewResponse"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[OverviewResponse]",
+        "type": "object"
+      },
+      "ByCurrency_PeriodsOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/PeriodsOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/PeriodsOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[PeriodsOut]",
+        "type": "object"
+      },
       "CalcCategoryOut": {
         "properties": {
           "current_pct": {
@@ -6251,6 +6494,36 @@
         "title": "JobStart",
         "type": "object"
       },
+      "LiveResponse": {
+        "properties": {
+          "missed_points": {
+            "items": {
+              "$ref": "#/components/schemas/TickPoint"
+            },
+            "title": "Missed Points",
+            "type": "array"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "tick": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TickEvent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "seq"
+        ],
+        "title": "LiveResponse",
+        "type": "object"
+      },
       "LogLine": {
         "properties": {
           "level": {
@@ -6564,17 +6837,6 @@
       },
       "OkResponse": {
         "properties": {
-          "detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Detail"
-          },
           "ok": {
             "default": true,
             "title": "Ok",
@@ -10541,6 +10803,199 @@
         "title": "TargetOut",
         "type": "object"
       },
+      "TickEvent": {
+        "description": "A market-hours poll finished: prices, FX and the intraday sample are fresh.",
+        "properties": {
+          "fx_eur_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Eur Usd"
+          },
+          "last_update_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Update At"
+          },
+          "market_state": {
+            "enum": [
+              "open",
+              "closed",
+              "holiday"
+            ],
+            "title": "Market State",
+            "type": "string"
+          },
+          "point": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TickPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prices": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/TickPrice"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prices"
+          },
+          "prices_live": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prices Live"
+          },
+          "seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seq"
+          },
+          "total_value_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Value Eur"
+          },
+          "total_value_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Value Usd"
+          },
+          "ts": {
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "tick",
+            "default": "tick",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "market_state"
+        ],
+        "title": "TickEvent",
+        "type": "object"
+      },
+      "TickPoint": {
+        "description": "The new intraday portfolio sample, in both currencies (single instant).",
+        "properties": {
+          "EUR": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur"
+          },
+          "USD": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "TickPoint",
+        "type": "object"
+      },
+      "TickPrice": {
+        "description": "One instrument's latest price in its native currency.",
+        "properties": {
+          "ccy": {
+            "title": "Ccy",
+            "type": "string"
+          },
+          "prev_close": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prev Close"
+          },
+          "px": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Px",
+            "type": "string"
+          }
+        },
+        "required": [
+          "px",
+          "ccy"
+        ],
+        "title": "TickPrice",
+        "type": "object"
+      },
       "TransactionKind": {
         "description": "Enumerated kinds \u2014 see spec \u00a74.1.",
         "enum": [
@@ -11180,7 +11635,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.3.0"
+    "version": "6.4.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -11421,6 +11876,27 @@
         ]
       }
     },
+    "/api/allocations/both": {
+      "get": {
+        "operationId": "get_allocations_both_api_allocations_both_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_AllocationsResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Allocations Both",
+        "tags": [
+          "allocations"
+        ]
+      }
+    },
     "/api/allocations/plan": {
       "post": {
         "description": "Plan for an unsaved builder mix (by fund or by category); nothing is stored.",
@@ -11642,6 +12118,63 @@
           }
         },
         "summary": "Get Analytics",
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/api/analytics/both": {
+      "get": {
+        "operationId": "get_analytics_both_api_analytics_both_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lookback_days",
+            "required": false,
+            "schema": {
+              "default": 365,
+              "maximum": 36500,
+              "minimum": 1,
+              "title": "Lookback Days",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Draw the curve from inception.",
+            "in": "query",
+            "name": "full_curve",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Draw the curve from inception.",
+              "title": "Full Curve",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_AnalyticsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Analytics Both",
         "tags": [
           "analytics"
         ]
@@ -12077,6 +12610,27 @@
         ]
       }
     },
+    "/api/calculator/both": {
+      "get": {
+        "operationId": "get_inputs_both_api_calculator_both_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_CalculatorInputsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Inputs Both",
+        "tags": [
+          "calculator"
+        ]
+      }
+    },
     "/api/deposits": {
       "get": {
         "operationId": "get_deposits_api_deposits_get",
@@ -12186,6 +12740,99 @@
         ]
       }
     },
+    "/api/deposits/both": {
+      "get": {
+        "operationId": "get_deposits_both_api_deposits_both_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "account_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
+            }
+          },
+          {
+            "description": "Row filter; transfer = in + out.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "deposit",
+                    "withdrawal",
+                    "transfer"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Row filter; transfer = in + out.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Row filter.",
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2200,
+                  "minimum": 1900,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Row filter.",
+              "title": "Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_DepositsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Deposits Both",
+        "tags": [
+          "deposits"
+        ]
+      }
+    },
     "/api/deposits/dividends": {
       "get": {
         "operationId": "get_dividends_api_deposits_dividends_get",
@@ -12230,6 +12877,27 @@
           }
         },
         "summary": "Get Dividends",
+        "tags": [
+          "deposits"
+        ]
+      }
+    },
+    "/api/deposits/dividends/both": {
+      "get": {
+        "operationId": "get_dividends_both_api_deposits_dividends_both_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_DividendsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Dividends Both",
         "tags": [
           "deposits"
         ]
@@ -12655,6 +13323,70 @@
         ]
       }
     },
+    "/api/graphs/{range_key}/both": {
+      "get": {
+        "operationId": "get_graph_both_api_graphs__range_key__both_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "range_key",
+            "required": true,
+            "schema": {
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "6m",
+                "ytd",
+                "1y",
+                "all"
+              ],
+              "title": "Range Key",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Also return the other currency line (default on).",
+            "in": "query",
+            "name": "compare",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Also return the other currency line (default on).",
+              "title": "Compare",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_GraphResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Graph Both",
+        "tags": [
+          "graphs"
+        ]
+      }
+    },
     "/api/graphs/{range_key}/reload": {
       "post": {
         "operationId": "reload_graph_api_graphs__range_key__reload_post",
@@ -12792,6 +13524,56 @@
           }
         },
         "summary": "Get Holdings",
+        "tags": [
+          "holdings"
+        ]
+      }
+    },
+    "/api/holdings/both": {
+      "get": {
+        "operationId": "get_holdings_both_api_holdings_both_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "default": "none",
+              "enum": [
+                "none",
+                "account",
+                "asset_class",
+                "currency",
+                "category"
+              ],
+              "title": "Group By",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_HoldingsResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Holdings Both",
         "tags": [
           "holdings"
         ]
@@ -13554,6 +14336,52 @@
         "summary": "Update Instrument",
         "tags": [
           "instruments"
+        ]
+      }
+    },
+    "/api/live": {
+      "get": {
+        "operationId": "get_live_api_live_get",
+        "parameters": [
+          {
+            "description": "Last tick seq the client has.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Last tick seq the client has.",
+              "minimum": 0,
+              "title": "Since",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Live",
+        "tags": [
+          "live"
         ]
       }
     },
@@ -14535,6 +15363,27 @@
         ]
       }
     },
+    "/api/overview/both": {
+      "get": {
+        "operationId": "get_overview_both_api_overview_both_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_OverviewResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Overview Both",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
     "/api/periods/monthly": {
       "get": {
         "operationId": "monthly_api_periods_monthly_get",
@@ -14640,6 +15489,64 @@
           }
         },
         "summary": "Yearly",
+        "tags": [
+          "periods"
+        ]
+      }
+    },
+    "/api/periods/{kind}/both": {
+      "get": {
+        "operationId": "periods_both_api_periods__kind__both_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "monthly",
+                "yearly"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Pad empty months (monthly only).",
+            "in": "query",
+            "name": "fill_gaps",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Pad empty months (monthly only).",
+              "title": "Fill Gaps",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_PeriodsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Periods Both",
         "tags": [
           "periods"
         ]
@@ -15145,6 +16052,94 @@
                           "title": "Market State",
                           "type": "string"
                         },
+                        "point": {
+                          "anyOf": [
+                            {
+                              "description": "The new intraday portfolio sample, in both currencies (single instant).",
+                              "properties": {
+                                "EUR": {
+                                  "anyOf": [
+                                    {
+                                      "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Eur"
+                                },
+                                "USD": {
+                                  "anyOf": [
+                                    {
+                                      "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Usd"
+                                },
+                                "t": {
+                                  "title": "T",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "t"
+                              ],
+                              "title": "TickPoint",
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "prices": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": {
+                                "description": "One instrument's latest price in its native currency.",
+                                "properties": {
+                                  "ccy": {
+                                    "title": "Ccy",
+                                    "type": "string"
+                                  },
+                                  "prev_close": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Prev Close"
+                                  },
+                                  "px": {
+                                    "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                    "title": "Px",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "px",
+                                  "ccy"
+                                ],
+                                "title": "TickPrice",
+                                "type": "object"
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Prices"
+                        },
                         "prices_live": {
                           "anyOf": [
                             {
@@ -15155,6 +16150,17 @@
                             }
                           ],
                           "title": "Prices Live"
+                        },
+                        "seq": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Seq"
                         },
                         "total_value_eur": {
                           "anyOf": [

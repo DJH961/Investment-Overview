@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, Response
 
 from investment_dashboard.api.deps import ReportCcy, SessionDep
 from investment_dashboard.api.schemas.analytics import AnalyticsOut
+from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.readmodels import analytics as analytics_rm
-from investment_dashboard.services.read_cache import cached_read
+from investment_dashboard.services.read_cache import cached_read, conditional_both
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -24,4 +25,26 @@ def get_analytics(
 ) -> dict[str, Any]:
     return analytics_rm.build_for_ccy(
         session, ccy=ccy, lookback_days=lookback_days, full_curve=full_curve
+    )
+
+
+@router.get("/both", response_model=ByCurrency[AnalyticsOut])
+@conditional_both("analytics")
+@cached_read
+def get_analytics_both(
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    lookback_days: int = Query(365, ge=1, le=36500),
+    full_curve: bool = Query(False, description="Draw the curve from inception."),
+) -> ByCurrency[AnalyticsOut]:
+    return ByCurrency[AnalyticsOut].model_validate(
+        {
+            c: AnalyticsOut.model_validate(
+                analytics_rm.build_for_ccy(
+                    session, ccy=c, lookback_days=lookback_days, full_curve=full_curve
+                )
+            )
+            for c in ("EUR", "USD")
+        }
     )

@@ -18,7 +18,7 @@ function wrap(node: React.ReactNode) {
   );
 }
 
-const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+const json = (body: unknown) => new Response(JSON.stringify({ EUR: body, USD: body }), { status: 200 });
 
 afterEach(() => {
   vi.unstubAllGlobals();

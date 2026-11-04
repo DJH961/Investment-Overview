@@ -39,7 +39,7 @@ from typing import Any
 
 from investment_dashboard.activity_log import activity
 from investment_dashboard.domain import market_hours
-from investment_dashboard.services import live_bus
+from investment_dashboard.services import live_bus, live_state, read_cache
 
 log = logging.getLogger(__name__)
 
@@ -80,17 +80,79 @@ def default_tick_job() -> dict[str, Any] | None:
 
     auto_refresh.tick_refresh("Scheduled live refresh")
     rate = _live_fx()
+    today = market_hours.exchange_today()
     with ledger_session_scope() as session:
-        total_eur = positions_service.total_portfolio_value(
-            session, as_of=market_hours.exchange_today()
-        )
+        total_eur = positions_service.total_portfolio_value(session, as_of=today)
+        prices = _tick_prices(session, today)
+        point = _tick_point(session, total_eur, rate)
     return {
         "total_value_eur": _dec(total_eur),
         # One instant (value now x spot now), so EUR -> USD is a valid conversion.
         "total_value_usd": _dec(total_eur * rate) if rate is not None else None,
         "fx_eur_usd": _dec(rate),
+        "prices": prices,
+        "point": point,
         **_price_freshness(),
     }
+
+
+def _tick_prices(session: Any, today: date) -> dict[str, Any] | None:
+    """Latest native price + previous close per held instrument (best effort)."""
+    try:
+        from investment_dashboard.services import (  # noqa: PLC0415
+            positions_service,
+            prices_service,
+        )
+
+        latest: dict[int, tuple[Decimal, str]] = {}
+        for pos in positions_service.compute_positions(session, as_of=today):
+            price = pos.current_price_native
+            if price is not None and pos.shares != 0:
+                latest[pos.instrument.id] = (price, pos.instrument.native_currency)
+        recent = prices_service.recent_closes_by_instrument(
+            session, list(latest), on_or_before=today, limit=3
+        )
+        out: dict[str, Any] = {}
+        for iid, (price, ccy) in latest.items():
+            prev = [c for d, c in sorted(recent.get(iid, []), reverse=True) if d < today]
+            out[str(iid)] = {
+                "px": format(price, "f"),
+                "ccy": ccy,
+                "prev_close": format(prev[0], "f") if prev else None,
+            }
+        return out
+    except Exception:
+        log.warning("tick prices unavailable", exc_info=True)
+        return None
+
+
+def _tick_point(session: Any, total_eur: Decimal, rate: Decimal | None) -> dict[str, Any] | None:
+    """The intraday sample this tick just stored, as a graph point (or ``None``).
+
+    ``USD`` is the total at the sample's own stored FX (single instant); ``EUR`` is
+    that USD value divided by the same rate, i.e. the total itself.
+    """
+    try:
+        from investment_dashboard.services import (  # noqa: PLC0415
+            intraday_snapshots_service,
+            live_state,
+        )
+
+        series = intraday_snapshots_service.day_series_with_fx(session)
+        if not series:
+            return None
+        at, _market, fx = series[-1]
+        t = at.replace(tzinfo=UTC).isoformat()
+        if t == live_state.last_point_t():
+            return None  # no new sample this tick (market closed / dedupe floor)
+        fx = fx or rate
+        if fx is None or fx == 0:
+            return {"t": t, "EUR": _dec(total_eur), "USD": None}
+        usd = total_eur * fx
+        return {"t": t, "EUR": _dec(usd / fx), "USD": _dec(usd)}
+    except Exception:
+        log.warning("tick point unavailable", exc_info=True)
+        return None
 
 
 def _price_freshness(now: datetime | None = None) -> dict[str, Any]:
@@ -405,7 +467,16 @@ class Scheduler:
                 "market_state": live_bus.market_state(now),
             }
             event.update(extra or {})
+            if etype == "tick":
+                live_state.record_tick(event, day=market_hours.exchange_today(now))
             self.bus.publish(event)
+            if etype == "tick" and self.bus.subscriber_count > 0:
+                # Pre-compute the reads the clients refetch right after a tick (in the
+                # background: the tick job is already done).
+                with contextlib.suppress(Exception):
+                    threading.Thread(
+                        target=read_cache.warm, name="inv-dashboard-cache-warm", daemon=True
+                    ).start()
         finally:
             st.running.discard(name)
 

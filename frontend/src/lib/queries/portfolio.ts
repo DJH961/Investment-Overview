@@ -9,6 +9,8 @@ export type GraphDto = components["schemas"]["GraphResponse"];
 export type AllocationsDto = components["schemas"]["AllocationsResponse"];
 export type { HistoryRange, HoldingHistoryDto } from "./holdings";
 export { holdingsQuery, useHoldingHistory, useHoldings } from "./holdings";
+/** The `/both` routes answer with one entry per reporting currency. */
+export type Both<T> = { EUR: T; USD: T };
 export type GraphRange = GraphDto["range"];
 
 export const GRAPH_RANGES: GraphRange[] = ["1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all"];
@@ -23,9 +25,10 @@ export function toNum(value: string | null | undefined): number | null {
 /** Query definitions shared by the hooks and the startup prefetch (lib/prefetch.ts). */
 export const overviewQuery = (ccy: ReportingCurrency) =>
   queryOptions({
-    queryKey: ["overview", ccy],
-    queryFn: ({ signal }) => api<OverviewDto>(`/api/overview?ccy=${ccy}`, { signal }),
-    // A currency switch shows the old numbers until the new ones land (no skeleton).
+    // Both currencies in one cached entry: a currency switch is a `select`, no request.
+    queryKey: ["overview", "both"],
+    queryFn: ({ signal }) => api<Both<OverviewDto>>("/api/overview/both", { signal }),
+    select: (d: Both<OverviewDto>) => d[ccy],
     placeholderData: keepPreviousData,
   });
 
@@ -37,8 +40,9 @@ export const graphStaleTime = (range: GraphRange) => (range === "1d" || range ==
 
 export const graphQuery = (range: GraphRange, ccy: ReportingCurrency) =>
   queryOptions({
-    queryKey: ["graphs", range, ccy],
-    queryFn: ({ signal }) => api<GraphDto>(`/api/graphs/${range}?ccy=${ccy}`, { signal }),
+    queryKey: ["graphs", range, "both"],
+    queryFn: ({ signal }) => api<Both<GraphDto>>(`/api/graphs/${range}/both`, { signal }),
+    select: (d: Both<GraphDto>) => d[ccy],
     staleTime: graphStaleTime(range),
   });
 
@@ -49,8 +53,8 @@ export function useOverview(ccy: ReportingCurrency) {
 export function useGraph(range: GraphRange, ccy: ReportingCurrency) {
   return useQuery({
     ...graphQuery(range, ccy),
-    // Keep the previous curve only within the same currency (never show EUR values labelled USD).
-    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[2] === ccy ? keepPreviousData(prev) : undefined),
+    // A range switch keeps the old curve until the new one lands (the select is per currency).
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -61,8 +65,9 @@ export function rememberGraphRange(range: GraphRange): void {
 
 export const allocationsQuery = (ccy: ReportingCurrency) =>
   queryOptions({
-    queryKey: ["allocations", ccy],
-    queryFn: ({ signal }) => api<AllocationsDto>(`/api/allocations?ccy=${ccy}`, { signal }),
+    queryKey: ["allocations", "both"],
+    queryFn: ({ signal }) => api<Both<AllocationsDto>>("/api/allocations/both", { signal }),
+    select: (d: Both<AllocationsDto>) => d[ccy],
     placeholderData: keepPreviousData,
   });
 

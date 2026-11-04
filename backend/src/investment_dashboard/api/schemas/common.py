@@ -33,6 +33,18 @@ class Envelope(ApiModel):
 
 class OkResponse(ApiModel):
     ok: bool = True
+
+
+class ByCurrency[T](ApiModel):
+    """The same report built once per reporting currency (docs/v6_speed_plan.md §1a R3).
+
+    Each side is a complete, independently built response in that currency (EUR
+    returns are FX-aware, never converted from USD), so the client switches currency
+    by picking a side: no request, no conversion.
+    """
+
+    EUR: T
+    USD: T
     detail: str | None = None
 
 

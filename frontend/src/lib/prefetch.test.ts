@@ -10,42 +10,39 @@ describe("prefetchPlan", () => {
   it("loads Overview first, then the remembered range, then the rest", () => {
     localStorage.setItem("iv.chart.overview.range", JSON.stringify("1y"));
     const keys = prefetchPlan("EUR").map(keyOf);
-    expect(keys[0]).toBe("overview/EUR");
-    expect(keys[1]).toBe("graphs/1y/EUR");
-    expect(keys).toContain("holdings/EUR/none");
-    expect(keys.filter((k) => k.startsWith("graphs/") && k.endsWith("/EUR"))).toHaveLength(8);
-    expect(keys.filter((k) => k === "graphs/1y/EUR")).toHaveLength(1);
+    expect(keys[0]).toBe("overview/both");
+    expect(keys[1]).toBe("graphs/1y/both");
+    expect(keys).toContain("holdings/both/none");
+    expect(keys.filter((k) => k.startsWith("graphs/"))).toHaveLength(8);
+    expect(keys.filter((k) => k === "graphs/1y/both")).toHaveLength(1);
   });
 
-  it("warms every nav page for both currencies, current currency first", () => {
+  it("warms every nav page once (each response holds both currencies)", () => {
     const keys = prefetchPlan("USD").map(keyOf);
-    expect(keys[0]).toBe("overview/USD");
-    const firstEur = keys.findIndex((k) => k.includes("EUR"));
-    const lastUsd = keys.map((k, i) => (k.includes("USD") ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-    expect(lastUsd).toBeLessThan(firstEur);
-    for (const ccy of ["EUR", "USD"]) {
-      for (const needle of [
-        `overview/${ccy}`,
-        `holdings/${ccy}/none`,
-        `periods/monthly/${ccy}`,
-        `allocations/${ccy}`,
-        `analytics/${ccy}/365`,
-        `calculator/inputs/${ccy}`,
-        `deposits/dividends/${ccy}`,
-      ]) {
-        expect(keys, needle).toContain(needle);
-      }
-      expect(keys.some((k) => k.startsWith(`deposits/${ccy}/`))).toBe(true);
+    expect(keys).toEqual([...new Set(keys)]);
+    expect(keys.some((k) => k.includes("EUR") || k.includes("USD"))).toBe(false);
+    for (const needle of [
+      "overview/both",
+      "holdings/both/none",
+      "periods/monthly/both",
+      "periods/yearly/both",
+      "allocations/both",
+      "analytics/both/365",
+      "calculator/inputs/both",
+      "deposits/dividends/both",
+      "instruments",
+      "accounts",
+      "settings/schema",
+      "settings/values",
+    ]) {
+      expect(keys, needle).toContain(needle);
     }
-    // Currency-free pages are fetched once.
-    for (const needle of ["instruments", "accounts", "settings/schema", "settings/values"]) {
-      expect(keys.filter((k) => k === needle)).toHaveLength(1);
-    }
+    expect(keys.some((k) => k.startsWith("deposits/both/"))).toBe(true);
     expect(keys.filter((k) => k.startsWith("transactions/"))).toHaveLength(1);
   });
 
   it("uses the remembered risk lookback", () => {
     localStorage.setItem("iv.risk.lookback", JSON.stringify("90"));
-    expect(prefetchPlan("EUR").map(keyOf)).toContain("analytics/EUR/90");
+    expect(prefetchPlan("EUR").map(keyOf)).toContain("analytics/both/90");
   });
 });

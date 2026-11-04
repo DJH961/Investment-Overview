@@ -12,6 +12,7 @@ export type CalculatorInputsOut = S["CalculatorInputsOut"];
 export type ProjectionRequest = S["ProjectionRequest"];
 export type ProjectionOut = S["ProjectionOut"];
 
+type Both<T> = { EUR: T; USD: T };
 export type PeriodKind = "monthly" | "yearly";
 
 /** API decimals arrive as strings; this is parsing for display, not maths. */
@@ -23,10 +24,11 @@ export function toNum(v: string | number | null | undefined): number | null {
 
 export const periodsQuery = (kind: PeriodKind, ccy: ReportingCurrency) =>
   queryOptions({
-    queryKey: ["periods", kind, ccy],
+    queryKey: ["periods", kind, "both"],
     // Monthly asks the server to pad empty months so the history is contiguous.
     queryFn: ({ signal }) =>
-      api<PeriodsOut>(`/api/periods/${kind}?ccy=${ccy}${kind === "monthly" ? "&fill_gaps=true" : ""}`, { signal }),
+      api<Both<PeriodsOut>>(`/api/periods/${kind}/both${kind === "monthly" ? "?fill_gaps=true" : ""}`, { signal }),
+    select: (d: Both<PeriodsOut>) => d[ccy],
     placeholderData: keepPreviousData,
   });
 
@@ -39,9 +41,9 @@ export { useDeposits } from "./activity";
 
 export const analyticsQuery = (ccy: ReportingCurrency, lookbackDays: number) =>
   queryOptions({
-    queryKey: ["analytics", ccy, lookbackDays],
-    queryFn: ({ signal }) =>
-      api<AnalyticsOut>(`/api/analytics?ccy=${ccy}&lookback_days=${lookbackDays}`, { signal }),
+    queryKey: ["analytics", "both", lookbackDays],
+    queryFn: ({ signal }) => api<Both<AnalyticsOut>>(`/api/analytics/both?lookback_days=${lookbackDays}`, { signal }),
+    select: (d: Both<AnalyticsOut>) => d[ccy],
     // A lookback or currency change keeps the old figures until the new ones land.
     placeholderData: keepPreviousData,
   });
@@ -55,8 +57,9 @@ export function useAnalytics(ccy: ReportingCurrency, lookbackDays: number) {
 
 export const calculatorInputsQuery = (ccy: ReportingCurrency) =>
   queryOptions({
-    queryKey: ["calculator", "inputs", ccy],
-    queryFn: ({ signal }) => api<CalculatorInputsOut>(`/api/calculator?ccy=${ccy}`, { signal }),
+    queryKey: ["calculator", "inputs", "both"],
+    queryFn: ({ signal }) => api<Both<CalculatorInputsOut>>("/api/calculator/both", { signal }),
+    select: (d: Both<CalculatorInputsOut>) => d[ccy],
     placeholderData: keepPreviousData,
   });
 

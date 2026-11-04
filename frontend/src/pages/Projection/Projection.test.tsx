@@ -66,7 +66,7 @@ function stub() {
         const body = JSON.parse(String(init.body)) as { monthly: boolean };
         return new Response(JSON.stringify(out(body.monthly)), { status: 200 });
       }
-      return new Response(JSON.stringify(calc), { status: 200 });
+      return new Response(JSON.stringify({ EUR: calc, USD: calc }), { status: 200 });
     }),
   );
 }
@@ -146,7 +146,7 @@ describe("Projection", () => {
           }
           return new Response(JSON.stringify(out(body.monthly)), { status: 200 });
         }
-        return new Response(JSON.stringify(calc), { status: 200 });
+        return new Response(JSON.stringify({ EUR: calc, USD: calc }), { status: 200 });
       }),
     );
     wrap();
