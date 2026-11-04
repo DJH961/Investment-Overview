@@ -17,6 +17,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.4.3] — 2026-11-04
+
+### Fixed
+- **Passkey sign-in goes straight to your passkey again.** The browser showed its
+  passkey picker on every sign-in. The app now remembers which passkey this device
+  used and asks for exactly that one (like the old web app), so the phone goes
+  straight to the fingerprint/face prompt. If that passkey was removed or isn't on
+  the device, the next sign-in shows the picker as before.
+  `POST /api/auth/passkey/login/options` takes an optional `credential_id`.
+
 ## [6.4.2] — 2026-11-04
 
 ### Fixed

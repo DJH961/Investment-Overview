@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { api } from "./api";
-import { markSignedOut, rememberPasskeyDevice } from "./passkeyHint";
+import { forgetPasskeyId, lastPasskeyId, markSignedOut, rememberPasskeyDevice, rememberPasskeyId } from "./passkeyHint";
 import { clearClientData } from "./queries";
 
 export {
@@ -38,12 +38,22 @@ export async function logout(): Promise<void> {
  * (resolves only when the user picks a passkey from the autofill list).
  */
 export async function passkeyLogin(autofill = false): Promise<void> {
+  // Name the passkey this device used last, so the browser skips its picker.
+  // Autofill (conditional UI) always lists every passkey instead.
+  const named = autofill ? null : lastPasskeyId();
   const optionsJSON = await api<Parameters<typeof startAuthentication>[0]["optionsJSON"]>(
     "/api/auth/passkey/login/options",
-    { method: "POST", skipAuthRedirect: true },
+    { method: "POST", body: named ? { credential_id: named } : {}, skipAuthRedirect: true },
   );
-  const credential = await startAuthentication({ optionsJSON, useBrowserAutofill: autofill });
+  let credential: Awaited<ReturnType<typeof startAuthentication>>;
+  try {
+    credential = await startAuthentication({ optionsJSON, useBrowserAutofill: autofill });
+  } catch (err) {
+    if (named) forgetPasskeyId();
+    throw err;
+  }
   await api<void>("/api/auth/passkey/login/verify", { method: "POST", body: credential, skipAuthRedirect: true });
+  rememberPasskeyId(credential.id);
   rememberPasskeyDevice();
 }
 
@@ -57,6 +67,7 @@ export async function registerPasskey(name?: string): Promise<void> {
     method: "POST",
     body: name ? { ...credential, name } : credential,
   });
+  rememberPasskeyId(credential.id);
   rememberPasskeyDevice();
 }
 
