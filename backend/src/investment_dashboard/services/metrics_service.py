@@ -15,7 +15,7 @@ single-currency series rescaled by today's spot.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -707,6 +707,43 @@ def _compute_daily_growth(
     )
     return _DailyGrowth(
         growth_eur, growth_usd, last_date, prev_date, fx_last, fx_prev, move_eur, move_usd
+    )
+
+
+def with_last_session_daily_growth(
+    session: Session, metrics: PortfolioMetrics, *, session_date: date
+) -> PortfolioMetrics:
+    """Re-base the day move onto ``session_date`` when the baseline day has not traded yet.
+
+    :func:`compute_portfolio_metrics` anchors "today's move" on the latest
+    trading *day* on or before ``as_of``. Before the open on a trading day that
+    day has no prices yet, so every holding forward-fills yesterday's close into
+    both marks and the move reads 0 % (only FX moves the EUR leg). The v5 web
+    app showed the last session's result instead ("Last session · Tue"); this
+    does the same: ``session_date`` is the most recent session that has started
+    (:func:`intraday_snapshots_service.last_session_date`), and the day move,
+    its dates and FX marks are recomputed for it vs the session before.
+
+    FX-aware like the original: each mark is valued at its own date's rate
+    (never a converted return). Returns ``metrics`` unchanged when the baseline
+    already is that session (or earlier), or when no move can be computed.
+    """
+    if metrics.daily_growth_as_of is None or metrics.daily_growth_as_of <= session_date:
+        return metrics
+    eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+    daily = _compute_daily_growth(session, as_of=session_date, eur_to_usd=eur_to_usd)
+    if daily.last_date is None:
+        return metrics
+    return replace(
+        metrics,
+        daily_growth_pct=daily.growth_eur,
+        daily_growth_pct_usd=daily.growth_usd,
+        daily_growth_money_eur=daily.move_eur,
+        daily_growth_money_usd=daily.move_usd,
+        daily_growth_as_of=daily.last_date,
+        daily_growth_prev_as_of=daily.prev_date,
+        daily_growth_fx_eur_usd=daily.fx_last,
+        daily_growth_fx_eur_usd_prev=daily.fx_prev,
     )
 
 

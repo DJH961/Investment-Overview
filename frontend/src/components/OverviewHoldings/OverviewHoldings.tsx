@@ -2,10 +2,10 @@ import clsx from "clsx";
 import { Link } from "react-router";
 import { Card } from "../Card";
 import { ErrorState } from "../ErrorState";
+import { holdingPriceTime, PriceStamps } from "../Freshness";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
-import { formatTime } from "../../lib/format";
 import { toNum, useHoldings, type HoldingRowDto, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useTimeZone } from "../../lib/timezone";
@@ -40,11 +40,13 @@ function Row({
 }) {
   const stale = row.daily_is_stale;
   const weight = toNum(row.weight_pct);
+  const live = row.market_open && !stale;
   return (
     <li className="overview-holdings__row" data-symbol={row.symbol}>
       <span className="overview-holdings__who">
         <span className="overview-holdings__symbol">
           {row.symbol}
+          {live && <span className="overview-holdings__pill overview-holdings__pill--live">live</span>}
           {row.is_money_market && <span className="overview-holdings__pill">PAR</span>}
           {row.value_warning && (
             <span className="overview-holdings__pill overview-holdings__pill--warn">stale value</span>
@@ -62,7 +64,6 @@ function Row({
           {row.name}
         </span>
       </span>
-      {/* Wider screens only: share of the portfolio and the return since buying. */}
       <span className="overview-holdings__weight">
         <span className="overview-holdings__weight-bar" aria-hidden>
           <span
@@ -70,36 +71,47 @@ function Row({
             style={{ width: `${weight !== null && maxWeight > 0 ? Math.min((weight / maxWeight) * 100, 100) : 0}%` }}
           />
         </span>
-        <span className="overview-holdings__weight-pct">
+        <span className="overview-holdings__num">
           <Percent ratio={weight} digits={1} />
-          <span className="overview-holdings__fresh"> of portfolio</span>
         </span>
       </span>
-      <span className="overview-holdings__total">
-        <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
-        <span className="overview-holdings__fresh">
-          <Percent ratio={toNum(row.total_growth)} signed /> since buying
+      <span className="overview-holdings__cell overview-holdings__value">
+        <span className="overview-holdings__main">
+          <Money amount={toNum(row.value)} currency={ccy} />
+        </span>
+        <span className="overview-holdings__sub overview-holdings__sub--phone">
+          <Percent ratio={weight} digits={1} /> of portfolio
         </span>
       </span>
-      <span className="overview-holdings__value">
-        <Money amount={toNum(row.value)} currency={ccy} />
-        {(row.market_open && !stale) || row.updated_at ? (
-          <span className="overview-holdings__fresh">
-            {[row.market_open && !stale ? "LIVE" : null, row.updated_at ? formatTime(row.updated_at, timeZone) : null]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        ) : null}
+      <span className={clsx("overview-holdings__cell", stale && "overview-holdings__today--stale")}>
+        <span className="overview-holdings__main">
+          <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
+        </span>
+        <span className="overview-holdings__sub">
+          <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
+        </span>
       </span>
-      <span className={clsx("overview-holdings__today", stale && "overview-holdings__today--stale")}>
-        <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
-        <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
+      <span className="overview-holdings__cell overview-holdings__total">
+        <span className="overview-holdings__main">
+          <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
+        </span>
+        <span className="overview-holdings__sub">
+          <Percent ratio={toNum(row.total_growth)} signed />
+        </span>
       </span>
+      <PriceStamps
+        className="overview-holdings__asof"
+        price={holdingPriceTime(row)}
+        updated={row.updated_at}
+        layout="stack"
+        terse
+        options={{ timeZone }}
+      />
     </li>
   );
 }
 
-/** Compact, foldable list of the largest positions on the Overview, with a link to the full table. */
+/** Compact, foldable table of the largest positions on the Overview, with a link to the full table. */
 export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const q = useHoldings(currency);
   const timeZone = useTimeZone();
@@ -126,6 +138,14 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
       ) : (
         <>
           <ul className="overview-holdings__list">
+            <li className="overview-holdings__head" aria-hidden>
+              <span>Holding</span>
+              <span className="overview-holdings__head-weight">Weight</span>
+              <span className="overview-holdings__head-num">Value</span>
+              <span className="overview-holdings__head-num">Day</span>
+              <span className="overview-holdings__head-num overview-holdings__head-total">Since buying</span>
+              <span className="overview-holdings__head-asof">Price as of</span>
+            </li>
             {rows.map((r) => (
               <Row
                 key={r.instrument_id}

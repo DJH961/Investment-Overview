@@ -242,14 +242,14 @@ export function formatDate(
   _style: "short" | "medium" | "long" = "medium",
   timeZone?: string,
 ): string {
-  const d = typeof value === "string" ? new Date(value) : value;
+  const d = parseInstant(value);
   if (Number.isNaN(d.getTime())) return "–";
   const zone = isCalendarDate(value) ? "UTC" : (timeZone ?? TIME_ZONE);
   return layoutDate(ymdOf(d, zone));
 }
 
 export function formatTime(value: string | Date, timeZone?: string): string {
-  const d = typeof value === "string" ? new Date(value) : value;
+  const d = parseInstant(value);
   if (Number.isNaN(d.getTime())) return "–";
   return clockTime(d, timeZone ?? TIME_ZONE);
 }
@@ -268,7 +268,7 @@ export function formatAxisDate(t: number, spanMs: number, timeZone?: string): st
 /** "05/03/2026 14:30" in the user's timezone; "never" for a missing stamp. */
 export function formatDateTime(value: string | Date | null | undefined, missing = "never"): string {
   if (value === null || value === undefined || value === "") return missing;
-  const d = typeof value === "string" ? new Date(value) : value;
+  const d = parseInstant(value);
   if (Number.isNaN(d.getTime())) return "–";
   return `${formatDate(d)} ${formatTime(d)}`;
 }
@@ -279,8 +279,22 @@ export function signOf(value: number | null | undefined): "pos" | "neg" | "flat"
   return value > 0 ? "pos" : "neg";
 }
 
+/** A server date-time without an offset ("2026-11-04T20:16:49.5") is naive UTC. */
+const NAIVE_DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+
+/**
+ * Parses an instant the way the server means it: offset-less date-times are UTC
+ * (the backend stores naive UTC), never the browser's local time. Calendar
+ * dates ("2026-11-04") stay as `new Date()` reads them (UTC midnight).
+ */
+export function parseInstant(value: string | number | Date): Date {
+  if (value instanceof Date) return value;
+  if (typeof value === "string" && NAIVE_DATETIME.test(value)) return new Date(`${value.replace(" ", "T")}Z`);
+  return new Date(value);
+}
+
 function validDate(value: string | number | Date): Date | null {
-  const d = value instanceof Date ? value : new Date(value);
+  const d = parseInstant(value);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 

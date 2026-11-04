@@ -81,6 +81,15 @@
 
   &__day {
     font-weight: var(--font-weight-medium);
+
+    // Not today's move: a quiet tag so it never reads as live.
+    &--last {
+      padding: 0 var(--space-2);
+      border: var(--border-width) solid var(--color-border-strong);
+      border-radius: var(--radius-full);
+      color: var(--color-muted);
+      font-size: var(--font-size-sm);
+    }
   }
 
   // The other-currency move and its (i) never split across lines.

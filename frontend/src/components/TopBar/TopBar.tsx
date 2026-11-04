@@ -3,7 +3,10 @@ import { CircleHelp, HeartPulse, LogOut, Monitor, Moon, RefreshCw, Settings, Sun
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { usePrefs, type ReportingCurrency } from "../../lib/prefs";
+import type { ShellSummary } from "../../lib/shell";
+import { DeltaBadge } from "../DeltaBadge";
 import { Freshness, type FreshnessStatus } from "../Freshness";
+import { Money } from "../Money";
 import { IconButton } from "../IconButton";
 import { Menu, type MenuItem } from "../Menu";
 import { SegmentedControl } from "../SegmentedControl";
@@ -20,7 +23,9 @@ export interface HealthSummary {
 
 export interface TopBarProps {
   title: string;
-  freshness: { status: FreshnessStatus; label: string; short?: string };
+  freshness: { status: FreshnessStatus; label: string; short?: string; updated?: string };
+  /** Desktop: the page's headline figures (Overview: value and day move), pinned beside the title. */
+  summary?: ShellSummary;
   /** Phone layout: title + freshness on the left, the essential actions on the right. */
   compact?: boolean;
   /** Server refresh; always available (disabled only while one runs). */
@@ -79,6 +84,7 @@ export function TopBar({
   health,
   privacyToggle,
   leading,
+  summary,
 }: TopBarProps) {
   const { currency, setCurrency, theme, cycleTheme } = usePrefs();
   const navigate = useNavigate();
@@ -102,10 +108,28 @@ export function TopBar({
             className="top-bar__freshness"
             status={freshness.status}
             label={compact && freshness.short ? freshness.short : freshness.label}
-            title={compact && freshness.short ? freshness.label : undefined}
+            title={compact && freshness.short ? freshness.label : freshness.updated}
           />
         )}
+        {!compact && freshness.updated && (
+          <span className="top-bar__updated" title="When the app last fetched prices">
+            <RefreshCw aria-hidden className="top-bar__updated-icon" />
+            {freshness.updated}
+          </span>
+        )}
       </div>
+      {!compact && summary && (
+        <div className="top-bar__summary" aria-label="Portfolio summary">
+          <span className="top-bar__summary-value">
+            <Money amount={summary.value} currency={summary.currency} />
+          </span>
+          <DeltaBadge value={summary.pct} />
+          <span className="top-bar__summary-move">
+            <Money amount={summary.move} currency={summary.currency} signed colored />
+          </span>
+          <span className="top-bar__summary-day">{summary.dayLabel}</span>
+        </div>
+      )}
       <div className="top-bar__actions">
         {showHealth && <HealthBadge health={health} />}
         {privacyToggle}

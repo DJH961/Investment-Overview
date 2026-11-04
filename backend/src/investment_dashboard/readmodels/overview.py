@@ -48,6 +48,7 @@ from investment_dashboard.services.daily_growth_view import (
 from investment_dashboard.services.metrics_service import (
     PortfolioMetrics,
     compute_portfolio_metrics,
+    with_last_session_daily_growth,
 )
 from investment_dashboard.services.positions_service import Position, compute_positions
 
@@ -454,6 +455,11 @@ def build_overview(
     now = now or datetime.now(UTC)
     ctx = build_context(session, as_of=as_of)
     metrics = compute_portfolio_metrics(session, as_of=ctx.as_of)
+    # Before the open the latest trading day has no prices yet: show the last
+    # session's move (as the v5 web app did) instead of a flat 0 %.
+    metrics = with_last_session_daily_growth(
+        session, metrics, session_date=intraday_snapshots_service.last_session_date(now)
+    )
     usd = ccy == "USD"
     pick = holdings.pick
 

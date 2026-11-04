@@ -17,6 +17,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **When a price is from vs when it was fetched**, said the same way everywhere
+  (one shared helper in `components/Freshness`): "Price as of today 15:42" /
+  "yesterday's close" with a tag icon, "Updated today 15:47" with a refresh icon.
+  Dates read like the v5 web app: "today 15:42", "yesterday", "Mon 15:42",
+  "Mon 2 Nov". Shown on the Overview hero, the top bar, the Overview holdings
+  and every row of the Holdings page.
+- **Top bar (desktop):** the chip says the market state and when prices are
+  from, the "Updated …" time sits beside it, and wide screens pin the portfolio
+  value and day move. The page title no longer gets squeezed.
+- **Sidebar fits without a scroll bar:** the collapse button moved into the
+  brand row, and laptop-height windows get denser rows (group titles turn into
+  dividers on very short windows).
+- **Top movers rebuilt:** winners beside losers (stacked on a phone), one row per
+  mover with symbol, ranking tag and name, and the two figures in aligned columns.
+- **Overview holdings is a real table:** one grid with column headings (holding,
+  weight, value, day, since buying, price as of), right-aligned tabular numbers.
+- **Holdings page:** the 14 summary tiles became one strip of at most two lines;
+  the table groups its columns (Position, Value, Return, Period) under quiet
+  headings with dividers, shows the name under the symbol, keeps the holding
+  column in place while scrolling, uses zebra rows and an accent edge for
+  profit / loss instead of a full-row wash, and puts the figures that matter in
+  bold. Phone rows show their figures in a fixed two-line grid.
+- **Settings on a phone:** every section on one page as foldable sections (they
+  remember which are open) instead of a section picker. The Save / Discard bar
+  now sits **above** the settings, sticky under the top bar.
+
+### Fixed
+- Times in the top bar, hero and holdings now follow the timezone set in
+  Settings: offset-less server times were read as the browser's local time, and
+  the hero used clock text formatted on the server (its own zone, UTC in Docker).
+- Before the US open, the Overview day move showed 0 % (yesterday's close carried
+  into a day that had not traded). It now shows the last session's result,
+  labelled "Last session · Tue", as the v5 web app did.
+- Switching EUR ⇄ USD on a phone no longer moves the page: the currency box shows
+  the same lines in both currencies, the Holdings FX stat is always there, pills
+  no longer wrap with longer US$ amounts, and phone table chips sit two per line.
+- "Beating" / "Trailing" on the Vs market tile is the same size as the other
+  figures (it was tiny on desktop).
+- Holdings page header said "Updated 01:00" (a date read as a time).
+
 ## [6.4.0] — 2026-11-04
 
 Phase 2 of the speed plan (`docs/v6_speed_plan.md`).

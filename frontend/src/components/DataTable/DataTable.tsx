@@ -26,6 +26,30 @@ export interface Column<Row> {
   phone?: "show" | "hide" | "headline" | "sub" | "inline";
   /** Keep the value on one line (default: true for right-aligned columns). */
   nowrap?: boolean;
+  /**
+   * Wide screens: a group heading over consecutive columns with the same
+   * `group` ("Position", "Returns"), with a divider before each group.
+   */
+  group?: string;
+  /** Wide screens: stronger type for the figures that matter most. */
+  emphasis?: boolean;
+}
+
+interface GroupSpan {
+  label: string;
+  span: number;
+}
+
+/** Consecutive columns with the same `group` merged into one heading cell. */
+export function groupSpans<Row>(columns: Column<Row>[]): GroupSpan[] {
+  const out: GroupSpan[] = [];
+  for (const c of columns) {
+    const label = c.group ?? "";
+    const last = out[out.length - 1];
+    if (last && last.label === label) last.span += 1;
+    else out.push({ label, span: 1 });
+  }
+  return out;
 }
 
 export interface DataTableProps<Row> {
@@ -85,13 +109,31 @@ export function DataTable<Row>({
     );
   };
 
+  const grouped = columns.some((c) => c.group);
+  /** First column of a group (after the first): gets a divider on its left. */
+  const groupStart = (i: number) => grouped && i > 0 && (columns[i].group ?? "") !== (columns[i - 1].group ?? "");
+
   return (
-    <div className={clsx("data-table", className)}>
+    <div className={clsx("data-table", grouped && "data-table--grouped", className)}>
       <table className="data-table__table">
         <caption className="u-sr-only">{caption}</caption>
         <thead className="data-table__head">
+          {grouped && (
+            <tr className="data-table__groups">
+              {groupSpans(columns).map((g, i) => (
+                <th
+                  key={`${g.label}-${i}`}
+                  scope="colgroup"
+                  colSpan={g.span}
+                  className={clsx("data-table__group", i > 0 && "data-table__group--start")}
+                >
+                  {g.label}
+                </th>
+              ))}
+            </tr>
+          )}
           <tr>
-            {columns.map((col) => {
+            {columns.map((col, i) => {
               const active = sort?.key === col.key;
               const ariaSort = active ? (sort.direction === "asc" ? "ascending" : "descending") : undefined;
               return (
@@ -103,6 +145,7 @@ export function DataTable<Row>({
                     "data-table__th",
                     col.align === "right" && "data-table__th--right",
                     col.phone === "hide" && "data-table__th--phone-hidden",
+                    groupStart(i) && "data-table__th--group-start",
                   )}
                 >
                   {col.sortValue ? (
@@ -143,7 +186,7 @@ export function DataTable<Row>({
           {!loading &&
             sorted.map((row) => (
               <tr key={rowKey(row)} className={clsx("data-table__row", rowClassName?.(row))}>
-                {columns.map((col) => {
+                {columns.map((col, i) => {
                   const content = col.cell(row);
                   const role = col.primary ? "primary" : (col.phone ?? "show");
                   const chip = role === "show" && Boolean(col.header);
@@ -160,6 +203,8 @@ export function DataTable<Row>({
                         chip && "data-table__td--chip",
                         isEmptyCell(content) && "data-table__td--empty",
                         col.phone === "hide" && "data-table__td--phone-hidden",
+                        groupStart(i) && "data-table__td--group-start",
+                        col.emphasis && "data-table__td--emphasis",
                       )}
                     >
                       {chip && (

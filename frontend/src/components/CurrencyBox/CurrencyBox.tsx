@@ -86,14 +86,29 @@ function AsOfStamp({ asOf, timeZone }: { asOf: Today["as_of"]; timeZone?: string
 function EffectPanel({ data }: { data: OverviewDto }) {
   const today = data.currency.today;
   const phrase = sincePhrase(today.since_phrase);
+  // "Regular €100 · $118.87 today": shown under both panels, so EUR and USD
+  // views have the same lines and a currency switch never moves the page.
+  const ip = today.investing_power_usd;
+  const amount = toNum(ip?.amount_eur);
+  const amountUsd = toNum(ip?.amount_usd);
+  const amountLine =
+    amount !== null ? (
+      <p className="currency-box__amount">
+        <span>
+          Regular <Money amount={amount} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
+        </span>
+        {amountUsd !== null && (
+          <span>
+            <Money amount={amountUsd} currency="USD" /> today
+          </span>
+        )}
+      </p>
+    ) : null;
   if (data.ccy === "USD") {
-    const ip = today.investing_power_usd;
     const net = toNum(ip?.net);
     if (!ip || net === null) return null;
     const digits = Math.abs(net) < 100 ? 2 : 0;
     const fmt = (v: number) => <Money amount={v} currency="USD" signed colored digits={digits} />;
-    const amount = toNum(ip.amount_eur);
-    const amountUsd = toNum(ip.amount_usd);
     const title = `Investing power ${phrase}`;
     return (
       <section className="currency-box__effect" aria-label={title}>
@@ -102,18 +117,7 @@ function EffectPanel({ data }: { data: OverviewDto }) {
           <span className="currency-box__effect-net">{fmt(net)}</span>
         </div>
         <DivergingBar rows={legRows(today, ip, fmt)} ariaLabel="Market hours versus overnight" />
-        {amount !== null && (
-          <p className="currency-box__amount">
-            <span>
-              Regular <Money amount={amount} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
-            </span>
-            {amountUsd !== null && (
-              <span>
-                <Money amount={amountUsd} currency="USD" /> today
-              </span>
-            )}
-          </p>
-        )}
+        {amountLine}
       </section>
     );
   }
@@ -129,6 +133,7 @@ function EffectPanel({ data }: { data: OverviewDto }) {
         <span className="currency-box__effect-net">{fmt(net)}</span>
       </div>
       <DivergingBar rows={legRows(today, legs, fmt)} ariaLabel="Market hours versus overnight" />
+      {amountLine}
     </section>
   );
 }

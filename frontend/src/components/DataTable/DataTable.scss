@@ -76,6 +76,29 @@
     text-align: center;
   }
 
+  // Column groups (wide screens): a quiet heading row and a divider before each group.
+  &__group {
+    padding: var(--space-2) var(--space-4) 0;
+    color: var(--color-faint);
+    text-align: left;
+    white-space: nowrap;
+    @include m.eyebrow;
+
+    &--start {
+      border-left: var(--border-width) solid var(--color-border);
+    }
+  }
+
+  &__th--group-start,
+  &__td--group-start {
+    border-left: var(--border-width) solid var(--color-border);
+  }
+
+  &__td--emphasis {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-semibold);
+  }
+
   // The inline label only shows on phones (the header row does it on wider screens).
   &__label {
     display: none;
@@ -149,8 +172,13 @@
         font-size: var(--font-size-xs);
       }
 
+      // Two chips per line, each half the row: the same number of lines in
+      // either currency (US$ amounts are longer), so a switch never reflows.
       &--chip {
+        flex: 0 0 calc((100% - var(--space-2)) / 2);
+        overflow: hidden;
         padding: 2px var(--space-2);
+        white-space: nowrap;
         border: var(--border-width) solid var(--color-border);
         border-radius: var(--radius-full);
         background: var(--color-surface-2);

@@ -1,3 +1,4 @@
+import { holdingPriceTime, PriceStamps } from "../../components/Freshness";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { formatMoney, formatQuantity } from "../../lib/format";
@@ -16,7 +17,20 @@ export function Flags({ row }: { row: HoldingRowDto }) {
   );
 }
 
-/** Row tint class: calm green/red wash for holdings in profit / loss. */
+/** Weight as a number with a thin bar on the table's shared scale (the largest weight fills it). */
+export function WeightCell({ ratio, max }: { ratio: number | null; max: number }) {
+  const width = ratio !== null && max > 0 ? Math.min((ratio / max) * 100, 100) : 0;
+  return (
+    <span className="holdings-page__weight">
+      <Percent ratio={ratio} digits={1} />
+      <span className="holdings-page__weight-bar" aria-hidden>
+        <span className="holdings-page__weight-fill" style={{ width: `${width}%` }} />
+      </span>
+    </span>
+  );
+}
+
+/** Row class for holdings in profit / loss: an accent edge (blue / orange), never a full-row wash. */
 export function tintClass(row: HoldingRowDto): string | undefined {
   const gain = toNum(row.capital_gain);
   if (gain === null || gain === 0) return undefined;
@@ -29,6 +43,12 @@ export function HoldingDetails({ id, row, ccy }: { id?: string; row: HoldingRowD
       <div>
         <dt>Price</dt>
         <dd>{formatMoney(toNum(row.price_native), row.native_currency, { unmasked: true })}</dd>
+      </div>
+      <div>
+        <dt>Price as of / updated</dt>
+        <dd>
+          <PriceStamps price={holdingPriceTime(row)} updated={row.updated_at} layout="stack" />
+        </dd>
       </div>
       <div>
         <dt>Shares</dt>

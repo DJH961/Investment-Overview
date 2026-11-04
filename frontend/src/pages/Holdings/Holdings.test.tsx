@@ -128,13 +128,27 @@ describe("Holdings page", () => {
     expect(localStorage.getItem("iv.holdings.group")).toBe('"account"');
   });
 
-  it("shows the income, expense and FX tiles of the second KPI row", () => {
-    render(<Holdings />);
+  it("shows the summary as one strip, income, fee and FX included", () => {
+    const { container } = render(<Holdings />);
+    expect(container.querySelectorAll(".holdings-page__stats .holdings-page__stat")).toHaveLength(14);
     expect(screen.getByText("Dividend return")).toBeInTheDocument();
-    expect(screen.getByText("Dividend yield (TTM)")).toBeInTheDocument();
-    expect(screen.getByText("Weighted expense")).toBeInTheDocument();
-    expect(screen.getByText("Current FX (USD/EUR)")).toBeInTheDocument();
+    expect(screen.getByText("Yield (TTM)")).toBeInTheDocument();
+    expect(screen.getByText("Weighted fee")).toBeInTheDocument();
+    expect(screen.getByText("FX USD/EUR")).toBeInTheDocument();
     expect(screen.getByText(/EOD · /)).toBeInTheDocument();
+  });
+
+  it("keeps the same summary stats when the FX block is absent (USD view)", () => {
+    const fx = holdings.fx;
+    holdings.fx = null;
+    holdings.fx_eur_usd = "1.0830";
+    try {
+      const { container } = render(<Holdings />);
+      expect(container.querySelectorAll(".holdings-page__stats .holdings-page__stat")).toHaveLength(14);
+      expect(screen.getByText("FX EUR/USD")).toBeInTheDocument();
+    } finally {
+      holdings.fx = fx;
+    }
   });
 
   it("tints profitable rows and lists flagged symbols in one notice", () => {
@@ -146,7 +160,8 @@ describe("Holdings page", () => {
   it("on a phone shows the as-of stamp, today in money and the price chart button", () => {
     phone.value = true;
     const { container } = render(<Holdings />);
-    expect(screen.getByText(/as of /)).toBeInTheDocument();
+    // Price as of (a closed market: the close it belongs to), labelled for screen readers.
+    expect(container.querySelector(".holdings-page__chips .price-stamps")).toHaveTextContent(/Price as of/);
     expect(container.querySelector(".holdings-page__today")).toHaveTextContent("+€10.00"); // money move
     expect(container.querySelector(".holdings-page__today--stale")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /VWCE/ }));

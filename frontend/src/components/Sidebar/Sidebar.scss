@@ -19,11 +19,17 @@
   &__brand {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2);
     height: var(--topbar-height);
-    padding: 0 var(--space-2);
+    padding: 0 0 0 var(--space-1);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;
+  }
+
+  &__toggle {
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--color-faint);
   }
 
   &__logo {
@@ -38,6 +44,10 @@
     @include m.truncate;
   }
 
+  &__brand-text {
+    font-size: var(--font-size-sm);
+  }
+
   &--rail &__brand-text,
   &--rail &__label {
     @include m.visually-hidden;
@@ -50,10 +60,18 @@
     font-size: 0;
   }
 
+  // Fits without scrolling (denser rows on short screens below). If a very
+  // short window still overflows, it scrolls without showing a scroll bar.
   &__nav {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding-top: var(--space-2);
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
   }
 
   &__group {
@@ -121,5 +139,39 @@
 
   &--rail &__footer {
     justify-content: center;
+  }
+
+  // Laptop-height windows: denser rows so every item fits.
+  @include m.short {
+    &__brand {
+      height: var(--control-height-lg);
+    }
+
+    &__nav {
+      padding-top: 0;
+    }
+
+    &__group {
+      margin-bottom: var(--space-1);
+    }
+
+    &__group-title {
+      padding: var(--space-1) var(--space-2);
+    }
+
+    &__link {
+      height: var(--control-height-sm);
+    }
+  }
+
+  // Very short windows: group titles become thin dividers (like the rail).
+  @include m.very-short {
+    &__group-title {
+      height: var(--border-width);
+      margin: var(--space-2);
+      padding: 0;
+      background: var(--color-border);
+      font-size: 0;
+    }
   }
 }

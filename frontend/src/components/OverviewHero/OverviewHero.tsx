@@ -4,9 +4,11 @@ import { InfoTip } from "../InfoTip";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
+import { latestInstant, lastSessionLabel, PriceStamps, type PriceTime, type StampOptions } from "../Freshness";
 import { formatPercent, formatPp } from "../../lib/format";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
+import { useTimeZone } from "../../lib/timezone";
 import "./OverviewHero.scss";
 
 export interface OverviewHeroProps {
@@ -14,26 +16,49 @@ export interface OverviewHeroProps {
   data: OverviewDto | undefined;
   currency: ReportingCurrency;
   loading: boolean;
+  /** Injected clock (tests). */
+  now?: Date;
 }
 
-/**
- * Headline: total value in both currencies and the day's move, labelled with
- * the server's day caption ("Today" / "Yesterday" / "Fri 30 Oct") and its
- * live/clock corner stamp, plus the investment-vs-currency return split.
- */
 const SPLIT_TIP =
   "Since you started. Investment: the return of your holdings in the currency they trade in (mostly USD). " +
   "Currency: how much the EUR/USD exchange rate added (+) or took away (−) from your EUR return, in percentage points.";
 
-function moveTip(ccy: string, ccy2: string, closed: boolean): string {
+function moveTip(ccy: string, ccy2: string, closed: boolean, lastSession: boolean): string {
   return (
-    `The change since the last close, in ${ccy}. ${ccy2}: the same change measured in ${ccy2}, ` +
+    `The change since the previous close, in ${ccy}. ${ccy2}: the same change measured in ${ccy2}, ` +
     `so the gap between the two is the exchange-rate effect.` +
-    (closed ? ` US markets are closed now, so dollar prices stand still and only the exchange rate moves.` : "")
+    (lastSession
+      ? ` The market has not traded yet today, so this is the last session's result.`
+      : closed
+        ? ` US markets are closed now, so dollar prices stand still and only the exchange rate moves.`
+        : "")
   );
 }
 
-export function OverviewHero({ data, currency, loading }: OverviewHeroProps) {
+/** "Today" for today's move, else "Last session · Tue" (days in the Settings timezone). */
+export function dayMoveLabel(asOf: string | null | undefined, opts: StampOptions = {}): string {
+  return lastSessionLabel(asOf, opts) ?? "Today";
+}
+
+/** When the headline prices are from: the exchange time, a live pull, else the session close. */
+export function heroPriceTime(data: OverviewDto): PriceTime {
+  const f = data.freshness;
+  const open = f?.market_state === "open";
+  return {
+    instant: f?.price_market_at ?? (open ? f?.price_observed_at : null) ?? null,
+    date: data.kpis.daily_growth_as_of ?? null,
+    marketOpen: open,
+  };
+}
+
+/**
+ * Headline: total value in both currencies and the day's move, labelled
+ * "Today" or "Last session · Tue", with when the prices are from and when the
+ * app last fetched them, plus the investment-vs-currency return split.
+ */
+export function OverviewHero({ data, currency, loading, now }: OverviewHeroProps) {
+  const timeZone = useTimeZone();
   if (loading || !data) {
     return (
       <section className="overview-hero" aria-label="Portfolio value">
@@ -43,22 +68,27 @@ export function OverviewHero({ data, currency, loading }: OverviewHeroProps) {
       </section>
     );
   }
+  const opts = { timeZone, now };
   const k = data.kpis;
   const k2 = data.kpis_secondary;
-  const cap = data.daily_caption;
+  const live = data.daily_caption?.live ?? false;
   const split = data.currency.return_split;
   const ccy2 = data.secondary_ccy;
-  const marketClosed = data.freshness?.market_state !== "open";
+  const f = data.freshness;
+  const marketClosed = f?.market_state !== "open";
+  const dayLabel = dayMoveLabel(k.daily_growth_as_of, opts);
+  const lastSession = dayLabel !== "Today";
   // While US markets are shut the dollar value cannot move: say so instead of "0.00%".
-  const usdFlat = marketClosed && toNum(k2?.daily_growth_pct ?? null) === 0;
+  const usdFlat = marketClosed && !lastSession && toNum(k2?.daily_growth_pct ?? null) === 0;
+  const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
     <section className="overview-hero" aria-label="Portfolio value">
       <div className="overview-hero__head">
         <span className="overview-hero__label">Portfolio value</span>
-        {cap?.corner_text && (
-          <span className={clsx("overview-hero__corner", cap.live && "overview-hero__corner--live")}>
-            {cap.live && <span className="overview-hero__dot" aria-hidden />}
-            {cap.corner_text}
+        {live && (
+          <span className="overview-hero__corner overview-hero__corner--live">
+            <span className="overview-hero__dot" aria-hidden />
+            Live
           </span>
         )}
       </div>
@@ -75,7 +105,7 @@ export function OverviewHero({ data, currency, loading }: OverviewHeroProps) {
       <div className="overview-hero__move">
         <DeltaBadge value={toNum(k.daily_growth_pct)} />
         <Money amount={toNum(k.daily_move)} currency={currency} signed colored />
-        <span className="overview-hero__day">{cap?.title ?? "Today"}</span>
+        <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
         {k2?.daily_growth_pct != null && (
           <span className="overview-hero__muted overview-hero__usd">
             {usdFlat ? (
@@ -85,11 +115,11 @@ export function OverviewHero({ data, currency, loading }: OverviewHeroProps) {
                 {ccy2} <Percent ratio={toNum(k2.daily_growth_pct)} signed />
               </span>
             )}
-            <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed)} />
+            <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
           </span>
         )}
-        {cap?.updated_text && <span className="overview-hero__muted">{cap.updated_text}</span>}
       </div>
+      <PriceStamps className="overview-hero__stamps" price={heroPriceTime(data)} updated={fetched} options={opts} />
       {split && (split.investment_return != null || split.currency_effect_pp != null) && (
         <p className="overview-hero__split">
           <span>

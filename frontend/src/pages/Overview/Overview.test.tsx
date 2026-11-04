@@ -39,7 +39,7 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
   useGraph: () => idle,
 }));
 vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
-vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
+vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined, useShellSummary: () => undefined }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
 import { ToastProvider } from "../../components/Toast";

@@ -16,16 +16,67 @@
   &__title-block {
     display: flex;
     flex: 1 1 auto;
-    align-items: baseline;
+    align-items: center;
     gap: var(--space-4);
     min-width: 0;
   }
 
   &__title {
     @include m.truncate;
+    flex-shrink: 0;
+    max-width: 50%;
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;
+  }
+
+  // When the app last fetched prices (the chip says when they are from).
+  &__updated {
+    display: none;
+    align-items: center;
+    gap: var(--space-1);
+    flex-shrink: 0;
+    color: var(--color-faint);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    @include m.desktop {
+      display: inline-flex;
+    }
+  }
+
+  &__updated-icon {
+    width: var(--font-size-xs);
+    height: var(--font-size-xs);
+  }
+
+  // Wide desktop: the page's headline figures, so the bar carries the essentials.
+  &__summary {
+    display: none;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+    padding: var(--space-1) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    @include m.wide {
+      display: inline-flex;
+    }
+  }
+
+  &__summary-value {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__summary-day {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
   }
 
   &__actions {

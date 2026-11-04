@@ -77,7 +77,7 @@ export function AppShell() {
   const desktop = useIsDesktop();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { freshness: pageFreshness, refreshing: pageRefreshing } = useShell();
+  const { freshness: pageFreshness, refreshing: pageRefreshing, summary } = useShell();
   // The top-bar refresh is always a real server pull (prices, FX, intraday sample).
   const server = useServerRefresh();
   const refresh = server.state;
@@ -156,6 +156,7 @@ export function AppShell() {
           refreshing={refreshing}
           onLogout={logout}
           health={health}
+          summary={summary}
           privacyToggle={
             <IconButton
               label={hide ? "Show numbers" : "Hide numbers"}

@@ -13,12 +13,27 @@ export interface SidebarProps {
   onToggle?: () => void;
 }
 
+/**
+ * Desktop sidebar / tablet rail. Sized to fit without a scroll bar: the
+ * collapse toggle sits in the brand row, and on short screens the rows get
+ * denser and the group titles turn into thin dividers (see Sidebar.scss).
+ */
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+  const toggle = onToggle && (
+    <IconButton
+      className="sidebar__toggle"
+      size={collapsed ? "md" : "sm"}
+      label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      icon={collapsed ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
+      onClick={onToggle}
+    />
+  );
   return (
     <aside className={clsx("sidebar", collapsed && "sidebar--rail")}>
       <div className="sidebar__brand">
         <BrandMark className="sidebar__logo" size={32} />
         <span className="sidebar__brand-text">Investment Overview</span>
+        {!collapsed && toggle}
       </div>
       <nav className="sidebar__nav" aria-label="Primary">
         {NAV_GROUPS.map((group) => (
@@ -42,15 +57,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         ))}
       </nav>
-      {onToggle && (
-        <div className="sidebar__footer">
-          <IconButton
-            label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            icon={collapsed ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
-            onClick={onToggle}
-          />
-        </div>
-      )}
+      {collapsed && toggle && <div className="sidebar__footer">{toggle}</div>}
     </aside>
   );
 }
