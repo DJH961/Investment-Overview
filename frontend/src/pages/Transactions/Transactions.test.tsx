@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -66,13 +66,6 @@ function accountsAnd(handler: (url: string, init?: RequestInit) => Response | un
   });
 }
 
-/** Ledger list requests that carry a text search. */
-function searchUrls(fetchMock: ReturnType<typeof accountsAnd>): string[] {
-  return fetchMock.mock.calls
-    .map(([u]) => String(u))
-    .filter((u) => u.startsWith("/api/transactions") && /[?&]q=/.test(u));
-}
-
 describe("Transactions", () => {
   it("lists rows and sends decimal strings on create", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -113,7 +106,7 @@ describe("Transactions", () => {
     vi.stubGlobal("fetch", accountsAnd(() => undefined));
     renderPage();
     expect(await screen.findByRole("button", { name: /January 2026/ })).toBeInTheDocument();
-    expect(screen.getByText("4 transactions", { exact: false })).toBeInTheDocument();
+    expect(screen.getAllByText("1 transaction", { exact: false }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("-€182.73").length).toBeGreaterThan(0);
     expect(screen.getAllByText("-US$201.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("US$100.50").length).toBeGreaterThan(0);
@@ -121,37 +114,42 @@ describe("Transactions", () => {
     expect(screen.getByRole("link", { name: "Edit instrument VT" })).toHaveAttribute("href", "/instruments?id=3");
   });
 
-  it("asks the server for oldest-first and quick ranges", async () => {
-    const fetchMock = accountsAnd(() => undefined);
-    vi.stubGlobal("fetch", fetchMock);
-    renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: /Order: newest/ }));
-    await userEvent.click(screen.getByRole("radio", { name: "This year" }));
-    const urls = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith("/api/transactions"));
-    expect(urls.some((u) => u.includes("order=asc"))).toBe(true);
-    expect(urls.at(-1)).toMatch(/start=\d{4}-01-01/);
-  });
-
-  it("sends one search request after typing five characters quickly", async () => {
-    const fetchMock = accountsAnd(() => undefined);
+  it("sorts, ranges and searches in the browser without more requests", async () => {
+    const rows = [
+      { ...row, id: 1, symbol: "AAA", date: "2026-01-03" },
+      { ...row, id: 2, symbol: "BBB", date: "2026-01-04" },
+      { ...row, id: 3, symbol: "CCC", date: "2026-01-05" },
+    ];
+    const fetchMock = accountsAnd(() => new Response(JSON.stringify({ rows }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     renderPage();
     await screen.findByRole("button", { name: /January 2026/ });
+    const ledgerCalls = () => fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith("/api/transactions"));
+    expect(ledgerCalls()).toEqual(["/api/transactions/all"]);
+    const symbols = () => screen.getAllByRole("row").map((r) => r.textContent ?? "");
+
+    expect(symbols()[1]).toContain("CCC");
+    await userEvent.click(await screen.findByRole("button", { name: /Order: newest/ }));
+    expect(symbols()[1]).toContain("AAA");
+    await userEvent.click(screen.getByRole("radio", { name: "This year" }));
+
     const box = screen.getByLabelText("Search transactions");
+    await userEvent.type(box, "bbb");
+    await waitFor(() => expect(screen.queryByText("AAA")).not.toBeInTheDocument());
+    expect(screen.getAllByText("BBB").length).toBeGreaterThan(0);
+    expect(ledgerCalls()).toEqual(["/api/transactions/all"]);
+  });
 
-    vi.useFakeTimers();
-    try {
-      for (const s of ["a", "ab", "abc", "abcd", "abcde"]) fireEvent.change(box, { target: { value: s } });
-      expect(box).toHaveValue("abcde");
-      act(() => {
-        vi.advanceTimersByTime(300);
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-
-    await waitFor(() => expect(searchUrls(fetchMock)).toHaveLength(1));
-    expect(searchUrls(fetchMock)[0]).toMatch(/[?&]q=abcde(&|$)/);
+  it("pages through the full list locally", async () => {
+    const rows = Array.from({ length: 60 }, (_, i) => ({ ...row, id: i + 1, symbol: `S${String(i + 1).padStart(2, "0")}`, date: "2026-01-05" }));
+    const fetchMock = accountsAnd(() => new Response(JSON.stringify({ rows }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await screen.findByText("Page 1 of 2");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("Page 2 of 2")).toBeInTheDocument();
+    const ledger = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith("/api/transactions"));
+    expect(ledger).toEqual(["/api/transactions/all"]);
   });
 
   it("checks quantity x price = total and defaults money-market auto-fill on", async () => {

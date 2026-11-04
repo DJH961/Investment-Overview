@@ -1,6 +1,7 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
+import { applyOptimistic, byRoot, rollback, type OptimisticContext } from "./optimistic";
 
 type S = components["schemas"];
 export type Account = S["AccountOut"];
@@ -35,7 +36,18 @@ export function useSaveAccount() {
       id === undefined
         ? api<Account>("/api/accounts", { method: "POST", body })
         : api<Account>(`/api/accounts/${id}`, { method: "PUT", body }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
+    onMutate: ({ id, body }): Promise<OptimisticContext> =>
+      applyOptimistic(qc, byRoot("accounts"), (old) => {
+        // A new account has no id yet: it appears when the list refetches.
+        if (id === undefined || !Array.isArray(old)) return undefined;
+        return (old as Account[]).map((a) =>
+          a.id === id
+            ? { ...a, account_label: body.account_label, broker: body.broker, native_currency: body.native_currency, account_type: body.account_type ?? a.account_type }
+            : a,
+        );
+      }),
+    onError: (_e, _v, ctx) => rollback(qc, ctx),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
   });
 }
 
@@ -43,6 +55,11 @@ export function useDeleteAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => api<void>(`/api/accounts/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
+    onMutate: (id): Promise<OptimisticContext> =>
+      applyOptimistic(qc, byRoot("accounts"), (old) =>
+        Array.isArray(old) ? (old as Account[]).filter((a) => a.id !== id) : undefined,
+      ),
+    onError: (_e, _v, ctx) => rollback(qc, ctx),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
   });
 }

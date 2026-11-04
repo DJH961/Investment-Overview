@@ -10996,6 +10996,23 @@
         "title": "TickPrice",
         "type": "object"
       },
+      "TransactionAll": {
+        "description": "The whole ledger in one answer (the client filters, sorts and pages it).",
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "TransactionAll",
+        "type": "object"
+      },
       "TransactionKind": {
         "description": "Enumerated kinds \u2014 see spec \u00a74.1.",
         "enum": [
@@ -11635,7 +11652,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.4.0"
+    "version": "6.4.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -16831,6 +16848,27 @@
           }
         },
         "summary": "Create Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/transactions/all": {
+      "get": {
+        "operationId": "list_all_transactions_api_transactions_all_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionAll"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List All Transactions",
         "tags": [
           "transactions"
         ]

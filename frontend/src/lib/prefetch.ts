@@ -22,7 +22,7 @@ import {
 import { accountsQuery } from "./queries/accounts";
 import { dividendsQuery, depositsQuery } from "./queries/activity";
 import { instrumentsQuery } from "./queries/instruments";
-import { DEFAULT_TRANSACTION_FILTERS, transactionsQuery } from "./queries/ledger";
+import { ledgerAllQuery } from "./queries/ledgerAll";
 import {
   analyticsQuery,
   calculatorInputsQuery,
@@ -45,7 +45,7 @@ function ledgerJobs() {
   return [
     instrumentsQuery(),
     accountsQuery(),
-    transactionsQuery(DEFAULT_TRANSACTION_FILTERS),
+    ledgerAllQuery(),
     settingsSchemaQuery(),
     settingsValuesQuery(),
   ];

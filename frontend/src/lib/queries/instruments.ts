@@ -2,6 +2,7 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/r
 import { ApiError, api } from "../api";
 import type { components } from "../api-types";
 import { useInvalidateAfterWrite } from "./ledger";
+import { applyOptimistic, byRoot, rollback, type OptimisticContext } from "./optimistic";
 
 type Schemas = components["schemas"];
 export type Instrument = Schemas["InstrumentOut"];
@@ -27,11 +28,23 @@ export const useInstrumentList = useInstruments;
 
 /** Names, classes and TERs feed holdings/allocations: refetch just those (see ./invalidation). */
 export function useUpdateInstrument() {
+  const client = useQueryClient();
   const invalidate = useInvalidateAfterWrite("instrumentEdit");
   return useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: InstrumentPatch }) =>
       api<InstrumentUpdateResult>(`/api/instruments/${id}`, { method: "PATCH", body: patch }),
-    onSuccess: invalidate,
+    onMutate: ({ id, patch }): Promise<OptimisticContext> =>
+      applyOptimistic(client, byRoot("instruments"), (old) => {
+        if (!Array.isArray(old)) return undefined;
+        const edit: Partial<Instrument> = {};
+        if (patch.name !== undefined && patch.name !== null) edit.name = patch.name;
+        if (patch.category !== undefined) edit.category = patch.category;
+        if (patch.active !== undefined && patch.active !== null) edit.active = patch.active;
+        if (patch.pricing_mode) edit.pricing_mode = patch.pricing_mode;
+        return (old as Instrument[]).map((i) => (i.id === id ? { ...i, ...edit } : i));
+      }),
+    onError: (_e, _v, ctx) => rollback(client, ctx),
+    onSettled: invalidate,
   });
 }
 

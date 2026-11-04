@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from investment_dashboard.api.deps import SessionDep
@@ -18,6 +18,7 @@ from investment_dashboard.api.schemas.common import OkResponse
 from investment_dashboard.api.schemas.transactions import (
     ReconcileRequest,
     ReconcileResult,
+    TransactionAll,
     TransactionOut,
     TransactionPage,
     TransactionWrite,
@@ -28,6 +29,7 @@ from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.queries.ledger_query import LedgerFilters
 from investment_dashboard.services import manual_entry
 from investment_dashboard.services import transaction_edit_service as edit
+from investment_dashboard.services.read_cache import cached_read, conditional_both
 
 router = APIRouter(tags=["transactions"])
 
@@ -88,6 +90,15 @@ def list_transactions(
             session, filters=filters, limit=limit, offset=offset, sort=sort, order=order
         )
     )
+
+
+@router.get("/transactions/all", response_model=TransactionAll)
+@conditional_both("transactions-all", deps=("ledger",))
+@cached_read(deps=("ledger",))
+def list_all_transactions(
+    request: Request, response: Response, session: SessionDep
+) -> TransactionAll:
+    return TransactionAll.model_validate(transactions_rm.build_all(session))
 
 
 @router.post("/transactions/reconcile", response_model=ReconcileResult)

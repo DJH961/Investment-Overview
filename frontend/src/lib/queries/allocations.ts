@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
+import { applyOptimistic, byRoot, rollback, type OptimisticContext } from "./optimistic";
 
 type S = components["schemas"];
 export type AllocationsData = S["AllocationsResponse"];
@@ -20,7 +21,25 @@ export function useSaveTarget() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: TargetInput) => api<TargetOut>("/api/allocations", { method: "PUT", body }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["allocations"] }),
+    // Only the target's own fields are drawn early; drift and plans are derived server-side.
+    onMutate: (body): Promise<OptimisticContext> =>
+      applyOptimistic(qc, byRoot("allocations", "both"), (old) => {
+        if (body.id === undefined || body.id === null || !old || typeof old !== "object") return undefined;
+        const next = { ...(old as Record<string, AllocationsData>) };
+        for (const side of ["EUR", "USD"]) {
+          const a = next[side];
+          if (!a?.targets) continue;
+          next[side] = {
+            ...a,
+            targets: a.targets.map((t) =>
+              t.id === body.id ? { ...t, name: body.name, active: body.active, allow_sell: body.allow_sell } : t,
+            ),
+          };
+        }
+        return next;
+      }),
+    onError: (_e, _v, ctx) => rollback(qc, ctx),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["allocations"] }),
   });
 }
 

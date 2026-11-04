@@ -74,6 +74,12 @@ class TransactionPage(ApiModel):
     order: str = "desc"
 
 
+class TransactionAll(ApiModel):
+    """The whole ledger in one answer (the client filters, sorts and pages it)."""
+
+    rows: list[TransactionOut]
+
+
 class ReconcileRequest(ApiModel):
     """Quantity x price = total check for the manual-entry form (magnitudes)."""
 
