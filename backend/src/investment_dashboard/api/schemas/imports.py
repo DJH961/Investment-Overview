@@ -16,6 +16,11 @@ class ImportIssue(ApiModel):
     raw: str = ""
 
 
+#: ``keep`` = import as the file has it; ``fix_price`` = recompute the price from
+#: amount and quantity; ``skip`` = leave the row out.
+RowFix = Literal["keep", "fix_price", "skip"]
+
+
 class ImportPreviewRow(ApiModel):
     index: int
     date: str
@@ -30,6 +35,14 @@ class ImportPreviewRow(ApiModel):
     currency: str
     description: str | None = None
     is_duplicate: bool
+    #: Left out of the import (the user chose to skip it).
+    skipped: bool = False
+    #: Consistency warnings for this row as the file has it ("doesn't add up").
+    warnings: list[str] = Field(default_factory=list)
+    #: Ways to resolve those warnings (see ``ImportResolveRow.action``).
+    fixes: list[RowFix] = Field(default_factory=list)
+    #: The resolution picked for this row, if any.
+    resolution: RowFix | None = None
 
 
 class ImportCounts(ApiModel):
@@ -39,6 +52,10 @@ class ImportCounts(ApiModel):
     sweeps_dropped: int
     errors: int
     warnings: int
+    #: Rows the user chose to leave out.
+    skipped: int = 0
+    #: Rows with warnings not resolved yet (all rows, not just the preview page).
+    unresolved: int = 0
 
 
 class ImportField(ApiModel):
@@ -194,6 +211,18 @@ class ImportUndoPreview(ApiModel):
     earliest_date: str | None
     latest_date: str | None
     confirm_word: str
+
+
+class ImportResolveRow(ApiModel):
+    index: int
+    #: ``null`` clears an earlier choice.
+    action: RowFix | None = None
+
+
+class ImportResolveIn(ApiModel):
+    """Resolutions for flagged preview rows (by preview row ``index``)."""
+
+    rows: list[ImportResolveRow] = Field(min_length=1)
 
 
 class ImportUndoRequest(ApiModel):

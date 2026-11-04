@@ -13,6 +13,7 @@ turning a previously-silent mis-import into a visible one.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 
 from investment_dashboard.adapters.importer_types import ParsedTransactionRow
@@ -24,6 +25,26 @@ _TRADE_KINDS = frozenset({"buy", "sell", "dividend_reinvest"})
 #: Relative tolerance for the amount/quantity×price reconciliation. Brokers
 #: round price to a few decimals, so allow ~1% slack before warning.
 _RECONCILE_TOLERANCE = Decimal("0.01")
+
+
+def _reconcile_gap(row: ParsedTransactionRow) -> Decimal | None:
+    """``|qty * price|`` when a trade's amount does not reconcile with it, else ``None``."""
+    qty, price, net = row.quantity, row.price_native, row.net_native
+    if (
+        row.kind not in _TRADE_KINDS
+        or qty is None
+        or price is None
+        or net is None
+        or qty == 0
+        or price <= 0
+    ):
+        return None
+    expected = abs(qty * price)
+    fees = abs(row.fees_native) if row.fees_native is not None else Decimal(0)
+    # Allow the booked amount to differ from quantity×price by the fees
+    # plus a small rounding tolerance, in either direction.
+    slack = expected * _RECONCILE_TOLERANCE + fees
+    return expected if abs(abs(net) - expected) > slack else None
 
 
 def validate_row(row: ParsedTransactionRow) -> list[str]:
@@ -43,23 +64,70 @@ def validate_row(row: ParsedTransactionRow) -> list[str]:
     if qty is not None and qty == 0 and row.kind in _TRADE_KINDS:
         warnings.append(f"{row.kind} row with zero quantity")
 
-    net = row.net_native
-    if (
-        row.kind in _TRADE_KINDS
-        and qty is not None
-        and price is not None
-        and net is not None
-        and qty != 0
-        and price > 0
-    ):
-        expected = abs(qty * price)
-        fees = abs(row.fees_native) if row.fees_native is not None else Decimal(0)
-        # Allow the booked amount to differ from quantity×price by the fees
-        # plus a small rounding tolerance, in either direction.
-        slack = expected * _RECONCILE_TOLERANCE + fees
-        if abs(abs(net) - expected) > slack:
-            warnings.append(
-                f"amount {net} does not reconcile with quantity*price ({qty}*{price}={qty * price})"
-            )
+    if _reconcile_gap(row) is not None:
+        warnings.append(
+            f"amount {row.net_native} does not reconcile with quantity*price "
+            f"({qty}*{price}={(qty or 0) * (price or 0)})"
+        )
 
     return warnings
+
+
+# -- resolving a flagged row (import preview) --------------------------------
+
+#: Import it exactly as the file has it (the user checked it).
+FIX_KEEP = "keep"
+#: Keep amount and quantity, recompute the price from them.
+FIX_PRICE = "fix_price"
+#: Leave the row out of the import.
+FIX_SKIP = "skip"
+
+_PRICE_Q = Decimal("0.000001")
+
+
+def price_from_amount(row: ParsedTransactionRow) -> Decimal | None:
+    """The price that makes ``row`` reconcile: (|amount| ∓ fees) / |quantity|.
+
+    A buy pays the fees on top (``|net| = qty×price + fees``); a sale has them
+    taken off (``|net| = qty×price − fees``). ``None`` when there is nothing to
+    compute it from.
+    """
+    qty, net = row.quantity, row.net_native
+    if qty is None or net is None or qty == 0:
+        return None
+    fees = abs(row.fees_native) if row.fees_native is not None else Decimal(0)
+    base = abs(net) + fees if row.kind == "sell" else abs(net) - fees
+    if base <= 0:
+        return None
+    return (base / abs(qty)).quantize(_PRICE_Q)
+
+
+def fixes_for(row: ParsedTransactionRow) -> list[str]:
+    """The resolutions offered for a flagged row (empty when it passed every check)."""
+    if not validate_row(row):
+        return []
+    out = [FIX_KEEP]
+    if _reconcile_gap(row) is not None and price_from_amount(row) is not None:
+        out.append(FIX_PRICE)
+    out.append(FIX_SKIP)
+    return out
+
+
+def apply_fix(row: ParsedTransactionRow, fix: str | None) -> ParsedTransactionRow | None:
+    """``row`` with ``fix`` applied; ``None`` when the row is skipped.
+
+    The ``external_id`` is kept, so a later re-import of the same file still
+    deduplicates against the corrected row.
+    """
+    if fix == FIX_SKIP:
+        return None
+    if fix == FIX_PRICE:
+        price = price_from_amount(row)
+        if price is None or row.quantity is None:
+            return row
+        gross = row.gross_native
+        if gross is not None:
+            new_gross = abs(row.quantity) * price
+            gross = -new_gross if gross < 0 else new_gross
+        return replace(row, price_native=price, gross_native=gross)
+    return row

@@ -1,6 +1,6 @@
 # v6 speed plan: "compute once, push small"
 
-> Status: **Phase 1 live (6.2.1); Phase 2 built (6.3.0, PR open)**; Phase 3 to follow (approved 2026-11-03). Written because the live v6 app
+> Status: **Phase 1 live (6.2.1); Phase 2 built (6.4.0, PR 368)**; Phase 3 to follow (approved 2026-11-03). Written because the live v6 app
 > feels slow and the live connection often drops. The question asked was: should
 > the clients do the maths instead of the server? Short answer: **mostly no, but the
 > instinct behind it is right.** The server isn't too weak. It does the same work

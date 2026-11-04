@@ -7,7 +7,7 @@ import { Select } from "../../components/Select";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../lib/api";
 import { useSaveTarget, type TargetOut } from "../../lib/queries/allocations";
-import { isOff, totalWeight } from "./builder";
+import { isOff, totalWeight } from "./builderState";
 
 export interface SaveItem {
   instrument_id: number;

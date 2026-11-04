@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import { Card } from "../Card";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
@@ -22,15 +23,17 @@ function MoverList({ title, movers, ccy, tone }: { title: string; movers: Mover[
     <div className="movers-card__col">
       <h3 className="movers-card__title">{title}</h3>
       {movers.length === 0 ? (
-        <p className="movers-card__muted">None</p>
+        <p className="movers-card__muted">No {title.toLowerCase()} today</p>
       ) : (
         <ul className="movers-card__list">
           {movers.map((m) => {
             const pct = <Percent ratio={toNum(m.pct)} signed colored />;
             const money = <Money amount={toNum(m.move)} currency={ccy} signed colored compact />;
             const byMoney = m.reason === "total";
+            const Arrow = tone === "pos" ? TrendingUp : TrendingDown;
             return (
               <li key={m.symbol} className={clsx("movers-card__mover", `movers-card__mover--${tone}`)}>
+                <Arrow className="movers-card__icon" aria-label={tone === "pos" ? "Up" : "Down"} />
                 <span className="movers-card__who">
                   <span className="movers-card__symbol" title={m.name}>
                     {m.symbol}

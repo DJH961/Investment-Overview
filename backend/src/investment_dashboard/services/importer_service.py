@@ -45,6 +45,7 @@ from investment_dashboard.adapters.importer_types import (
     ParseReport,
     RowIssue,
 )
+from investment_dashboard.adapters.row_validation import apply_fix, validate_row
 from investment_dashboard.adapters.tabular.actions import classify_action
 from investment_dashboard.adapters.tabular.reader import UnreadableFileError, is_workbook
 from investment_dashboard.adapters.tabular.values import (
@@ -352,6 +353,7 @@ def import_csv(
     content: str | bytes,
     import_batch_id: int | None = None,
     layout: LayoutChoice | None = None,
+    resolutions: Mapping[str, str] | None = None,
 ) -> ImportResult:
     """Parse ``content`` and insert rows under ``account_id``.
 
@@ -362,6 +364,8 @@ def import_csv(
 
     ``import_batch_id`` tags every inserted row with its import batch (see
     ``import_staging.confirm``), so the import can be undone as a whole.
+    ``resolutions`` (external_id -> fix, from the import preview) are applied
+    before anything is written; resolved rows no longer count as warnings.
 
     Idempotent: re-importing the same export writes zero new rows because
     the parser's ``external_id`` is a sha256 of the row's stable fields
@@ -372,6 +376,17 @@ def import_csv(
         raise ValueError(f"Unknown account_id={account_id}")
     report = _parse(broker, content, choice=layout)
     parsed_rows: Sequence[ParsedTransactionRow] = report.rows
+    warnings = report.warnings
+    if resolutions:
+        fixed = [apply_fix(r, resolutions.get(r.external_id)) for r in parsed_rows]
+        # Row warnings are re-derived so the ones the user resolved drop out.
+        warnings = [w for w in report.warnings if w.line is None] + [
+            RowIssue(message=m, raw=r.symbol or "")
+            for r in parsed_rows
+            if r.external_id not in resolutions
+            for m in validate_row(r)
+        ]
+        parsed_rows = [r for r in fixed if r is not None]
 
     # Vanguard routes every cash movement through its VMFXX settlement fund,
     # but the export drops those internal sweeps. Reconstruct the VMFXX legs
@@ -491,6 +506,6 @@ def import_csv(
         unknown_actions=report.unknown_actions,
         fx_missing_dates=sorted(fx_missing),
         errors=report.errors,
-        warnings=report.warnings,
+        warnings=warnings,
         unresolved_symbols=sorted(unresolved),
     )

@@ -1,4 +1,4 @@
-import { CheckCircle2, FileUp } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileUp } from "lucide-react";
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import { Link } from "react-router";
 import { Button } from "../../components/Button";
@@ -19,11 +19,13 @@ import {
 } from "../../lib/queries/ledger";
 import { useAccounts, useImportBrokers } from "../../lib/queries/accounts";
 import { formatDate } from "../../lib/format";
+import { useResolveImport, type RowFix } from "../../lib/queries/imports";
 import { useShellStatus } from "../../lib/shell";
 import { formatPrice, formatQuantity, num } from "../Transactions/numbers";
 import { AccountEditor } from "../Settings/AccountsCard";
 import { ColumnMapping } from "./ColumnMapping";
 import { ImportHistory } from "./ImportHistory";
+import { isFlagged, isOpen, RowCheck } from "./RowCheck";
 import { UnknownActions } from "./UnknownActions";
 import "./Import.scss";
 
@@ -33,7 +35,8 @@ const AUTO = "auto";
 const NEW_ACCOUNT = "__new__";
 const dash = (v: string | null | undefined) => (v === null || v === undefined || v === "" ? "—" : v);
 
-const columns: Column<PreviewRow>[] = [
+function previewColumns(busy: boolean, onResolve: (row: PreviewRow, fix: RowFix | null) => void): Column<PreviewRow>[] {
+  return [
   { key: "index", header: "#", cell: (r) => r.index, sortValue: (r) => r.index, phone: "hide" },
   { key: "date", header: "Date", cell: (r) => formatDate(r.date), sortValue: (r) => r.date, nowrap: true },
   { key: "symbol", header: "Symbol", primary: true, cell: (r) => dash(r.symbol), sortValue: (r) => r.symbol },
@@ -55,13 +58,24 @@ const columns: Column<PreviewRow>[] = [
   {
     key: "status",
     header: "Status",
-    cell: (r) => (
-      <span className={`import-page__status import-page__status--${r.is_duplicate ? "duplicate" : "new"}`}>
-        {r.is_duplicate ? "Duplicate" : "New"}
-      </span>
-    ),
+    cell: (r) => {
+      const status = r.skipped ? "skipped" : r.is_duplicate ? "duplicate" : "new";
+      return (
+        <span className={`import-page__status import-page__status--${status}`}>
+          {r.skipped ? "Skipped" : r.is_duplicate ? "Duplicate" : "New"}
+        </span>
+      );
+    },
+    sortValue: (r) => (isOpen(r) ? 0 : r.skipped ? 3 : r.is_duplicate ? 2 : 1),
   },
-];
+  {
+    key: "check",
+    header: "Check",
+    phone: "inline",
+    cell: (r) => <RowCheck row={r} busy={busy} onResolve={(fix) => onResolve(r, fix)} />,
+  },
+  ];
+}
 
 export function Import() {
   const { toast } = useToast();
@@ -77,6 +91,8 @@ export function Import() {
   const upload = useUploadImport();
   const confirm = useConfirmImport();
   const discard = useDiscardImport();
+  const resolve = useResolveImport();
+  const [onlyFlagged, setOnlyFlagged] = useState(false);
   const accountList = useAccounts();
   const brokerList = useImportBrokers();
 
@@ -146,6 +162,24 @@ export function Import() {
       },
     });
   };
+
+  const resolveRows = (rows: { index: number; action: RowFix | null }[]) => {
+    if (!preview || rows.length === 0) return;
+    resolve.mutate(
+      { importId: preview.import_id, rows },
+      {
+        onSuccess: setPreview,
+        onError: (e) => toast({ title: "Could not apply that", description: e.message, tone: "error" }),
+      },
+    );
+  };
+  const columns = previewColumns(resolve.isPending, (row, fix) => resolveRows([{ index: row.index, action: fix }]));
+
+  const open = preview?.rows.filter(isOpen) ?? [];
+  const unresolved = preview?.counts.unresolved ?? 0;
+  const flaggedShown = preview?.rows.filter(isFlagged).length ?? 0;
+  const fileWarnings = preview?.warnings.filter((w) => w.line == null) ?? [];
+  const tableRows = preview ? (onlyFlagged && flaggedShown > 0 ? preview.rows.filter(isFlagged) : preview.rows) : [];
 
   const step = result ? 3 : preview ? 2 : 1;
 
@@ -219,6 +253,7 @@ export function Import() {
             <span className="import-page__chip">Duplicate {preview.counts.duplicates}</span>
             <span className="import-page__chip">Sweeps dropped {preview.counts.sweeps_dropped}</span>
             <span className="import-page__chip import-page__chip--warn">Warnings {preview.counts.warnings}</span>
+            {(preview.counts.skipped ?? 0) > 0 && <span className="import-page__chip">Skipped {preview.counts.skipped}</span>}
             <span className="import-page__chip import-page__chip--error">Errors {preview.counts.errors}</span>
             {preview.parser === "flexible" && <span className="import-page__chip">Read with the flexible importer</span>}
           </div>
@@ -241,13 +276,64 @@ export function Import() {
               ))}
             </ul>
           )}
-          {(preview.warnings.length > 0 || preview.unknown_actions.length > 0) && (
+          {flaggedShown > 0 && (
+            <section
+              className={`import-page__flagged${unresolved === 0 ? " import-page__flagged--done" : ""}`}
+              aria-label="Rows that don't add up"
+            >
+              {unresolved > 0 ? (
+                <AlertTriangle className="import-page__flagged-icon" aria-hidden />
+              ) : (
+                <CheckCircle2 className="import-page__flagged-icon" aria-hidden />
+              )}
+              <div className="import-page__flagged-body">
+                <p className="import-page__flagged-title">
+                  {unresolved > 0
+                    ? `${unresolved} ${unresolved === 1 ? "row doesn't" : "rows don't"} add up`
+                    : "All flagged rows are resolved"}
+                </p>
+                <p className="import-page__flagged-text">
+                  {unresolved > 0
+                    ? "They are marked in the table below. Keep each one, fix its price, or skip it. Rows you leave alone are imported as they are."
+                    : "Your choices are applied when you import. Undo any of them in the table below."}
+                  {preview.rows_truncated && " Only the first rows are shown here."}
+                </p>
+                <div className="import-page__flagged-actions">
+                  {open.some((r) => r.fixes?.includes("fix_price")) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={resolve.isPending}
+                      onClick={() =>
+                        resolveRows(
+                          open.filter((r) => r.fixes?.includes("fix_price")).map((r) => ({ index: r.index, action: "fix_price" })),
+                        )
+                      }
+                    >
+                      Fix all prices
+                    </Button>
+                  )}
+                  {open.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={resolve.isPending}
+                      onClick={() => resolveRows(open.map((r) => ({ index: r.index, action: "keep" })))}
+                    >
+                      Keep all as they are
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" aria-pressed={onlyFlagged} onClick={() => setOnlyFlagged((v) => !v)}>
+                    {onlyFlagged ? "Show all rows" : "Show only these rows"}
+                  </Button>
+                </div>
+              </div>
+            </section>
+          )}
+          {(fileWarnings.length > 0 || preview.unknown_actions.length > 0) && (
             <ul className="import-page__issues import-page__issues--warn" aria-label="Warnings">
-              {preview.warnings.map((i, n) => (
-                <li key={n}>
-                  {i.line != null && `Line ${i.line}: `}
-                  {i.message}
-                </li>
+              {fileWarnings.map((i, n) => (
+                <li key={n}>{i.message}</li>
               ))}
               {preview.unknown_actions.length > 0 && <li>Unknown actions: {preview.unknown_actions.join(", ")}</li>}
             </ul>
@@ -257,8 +343,11 @@ export function Import() {
           <DataTable
             caption="Parsed rows"
             columns={columns}
-            rows={preview.rows}
+            rows={tableRows}
             rowKey={(r) => String(r.index)}
+            rowClassName={(r) =>
+              r.skipped ? "import-page__row--skipped" : isOpen(r) ? "import-page__row--flagged" : isFlagged(r) && "import-page__row--resolved"
+            }
             emptyMessage={
               preview.layout
                 ? "No rows were parsed from this file. Check the column assignments above (use Adjust columns) and apply."

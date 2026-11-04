@@ -129,6 +129,8 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
     targets = serialize_targets(session)
 
     drift: list[dict[str, Any]] = []
+    #: category -> [funds, current %, target %, current EUR, target EUR]
+    by_cat: dict[str, list[Any]] = {}
     active = next((t for t in targets if t["active"]), None)
     if active is not None:
         symbols = {i.id: i.symbol for i in instruments_repo.list_instruments(session)}
@@ -145,12 +147,19 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
             tgt = target_pct.get(iid, ZERO)
             cur = current_pct[iid]
             target_value_eur = total * tgt / HUNDRED
+            category = agg.category if agg else UNCATEGORIZED
+            acc = by_cat.setdefault(category, [0, ZERO, ZERO, ZERO, ZERO])
+            acc[0] += 1
+            acc[1] += cur
+            acc[2] += tgt
+            acc[3] += values[iid]
+            acc[4] += target_value_eur
             drift.append(
                 {
                     "key": str(iid),
                     "instrument_id": iid,
                     "label": agg.symbol if agg else symbols.get(iid, str(iid)),
-                    "category": agg.category if agg else UNCATEGORIZED,
+                    "category": category,
                     "asset_class": agg.asset_class if agg else UNCATEGORIZED,
                     "current_pct": dec(cur / HUNDRED),
                     "target_pct": dec(tgt / HUNDRED),
@@ -160,6 +169,22 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
                 }
             )
 
+    drift_by_category = [
+        {
+            "key": name,
+            "label": name,
+            "funds": funds,
+            "current_pct": dec(cur / HUNDRED),
+            "target_pct": dec(tgt / HUNDRED),
+            "drift_pp": dec(cur - tgt),
+            "current_value": dec(_val(cur_eur, ccy, fx)),
+            "delta_value": dec(_val(tgt_eur - cur_eur, ccy, fx)),
+        }
+        for name, (funds, cur, tgt, cur_eur, tgt_eur) in sorted(
+            by_cat.items(), key=lambda kv: abs(kv[1][1] - kv[1][2]), reverse=True
+        )
+    ]
+
     agg_list = list(aggs.values())
     return {
         "ccy": ccy,
@@ -168,6 +193,7 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
         "targets": targets,
         "active_target_id": active["id"] if active else None,
         "drift": drift,
+        "drift_by_category": drift_by_category,
         "current_by_category": _buckets(agg_list, "category", total, ccy, fx),
         "current_by_asset_class": _buckets(agg_list, "asset_class", total, ccy, fx),
     }

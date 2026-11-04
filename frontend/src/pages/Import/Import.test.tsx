@@ -139,6 +139,37 @@ describe("Import", () => {
     expect(screen.getByText(/Saved as import #10/)).toBeInTheDocument();
   });
 
+  it("says rows don't add up, shows the warning in the row and resolves it there", async () => {
+    const message = "amount -1300.00 does not reconcile with quantity*price (5*220.00=1100.00)";
+    const flagged = {
+      ...preview,
+      counts: { ...preview.counts, warnings: 1, unresolved: 1 },
+      warnings: [{ message, line: 2, raw: "" }],
+      rows: [{ ...preview.rows[0], warnings: [message], fixes: ["keep", "fix_price", "skip"], resolution: null }, preview.rows[1]],
+    };
+    const resolved = {
+      ...flagged,
+      import_id: "imp2",
+      counts: { ...flagged.counts, unresolved: 0 },
+      rows: [{ ...flagged.rows[0], price_native: "260", resolution: "fix_price" }, preview.rows[1]],
+    };
+    stubUpload(flagged);
+    const fetchMock = stubFetch((url) =>
+      url.includes("/api/imports/imp1/resolve") ? new Response(JSON.stringify(resolved), { status: 200 }) : undefined,
+    );
+    renderPage();
+    await uploadFile();
+    expect(await screen.findByText("1 row doesn't add up")).toBeInTheDocument();
+    // No "Line 2:" list at the top: the warning sits in its row.
+    expect(screen.queryByText(/Line 2/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Amount 1[.,]300 doesn.t match 5 × 220 = 1[.,]100/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Fix price" }));
+    expect(await screen.findByText("All flagged rows are resolved")).toBeInTheDocument();
+    expect(screen.getByText("Price recalculated from the amount")).toBeInTheDocument();
+    const call = fetchMock.mock.calls.find(([u]) => String(u).includes("/resolve"));
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ rows: [{ index: 1, action: "fix_price" }] });
+  });
+
   it("undoes a batch only after typing UNDO", async () => {
     const fetchMock = stubFetch((url, init) =>
       url.endsWith("/batches/9/undo") && init?.method === "POST"
