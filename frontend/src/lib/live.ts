@@ -6,6 +6,7 @@ import { applyTick, patchGraphPoint, patchOverviewFromEvent, type TickLike, type
 import type { components } from "./api-types";
 import { applyRefreshEvent } from "./refresh";
 import { getServerStatus, setServerStatus } from "./serverStatus";
+import { noteServerVersion } from "./appVersion";
 
 /** `connecting`: first attempt (or back from a hidden tab); `reconnecting`: after an error. */
 export type LiveStatus = "connecting" | "connected" | "reconnecting" | "offline";
@@ -131,6 +132,7 @@ function finishRestart(queryClient: QueryClient, version: string | null): void {
   reconnectStream?.();
   scheduleRefetchAllActive(queryClient);
   setServerStatus({ kind: "updated", version });
+  if (import.meta.env.PROD) noteServerVersion(version);
   if (updatedTimer) clearTimeout(updatedTimer);
   updatedTimer = setTimeout(() => {
     if (getServerStatus().kind === "updated") setServerStatus({ kind: "idle" });
@@ -237,6 +239,8 @@ export function startLive(queryClient: QueryClient): () => void {
       if (lostTimer) clearTimeout(lostTimer);
       lostTimer = undefined;
       if (getServerStatus().kind === "lost") setServerStatus({ kind: "idle" });
+      // A tab opened before a deploy still runs the old build: reload it quietly.
+      if (import.meta.env.PROD) void readHealthVersion().then(noteServerVersion);
       if (openedBefore) {
         void catchUpLive(queryClient).then((ok) => {
           if (!ok) markStaleAndRefetch(queryClient, "tick");

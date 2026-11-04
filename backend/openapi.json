@@ -11652,7 +11652,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.4.1"
+    "version": "6.4.2"
   },
   "openapi": "3.1.0",
   "paths": {
