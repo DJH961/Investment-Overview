@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import type { ReactNode } from "react";
 import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
 import { Money } from "../Money";
@@ -18,6 +19,8 @@ export interface OverviewHeroProps {
   loading: boolean;
   /** Injected clock (tests). */
   now?: Date;
+  /** Desktop right zone (the intraday mini chart); hidden below the desktop breakpoint. */
+  aside?: ReactNode;
 }
 
 const SPLIT_TIP =
@@ -57,14 +60,19 @@ export function heroPriceTime(data: OverviewDto): PriceTime {
  * "Today" or "Last session · Tue", with when the prices are from and when the
  * app last fetched them, plus the investment-vs-currency return split.
  */
-export function OverviewHero({ data, currency, loading, now }: OverviewHeroProps) {
+export function OverviewHero({ data, currency, loading, now, aside }: OverviewHeroProps) {
   const timeZone = useTimeZone();
+  const side = aside ? <div className="overview-hero__aside">{aside}</div> : null;
+  const cls = clsx("overview-hero", side && "overview-hero--split");
   if (loading || !data) {
     return (
-      <section className="overview-hero" aria-label="Portfolio value">
-        <Skeleton height="1rem" width="30%" />
-        <Skeleton height="2.5rem" width="55%" />
-        <Skeleton height="1rem" width="40%" />
+      <section className={cls} aria-label="Portfolio value">
+        <div className="overview-hero__main">
+          <Skeleton height="1rem" width="30%" />
+          <Skeleton height="2.5rem" width="55%" />
+          <Skeleton height="1rem" width="40%" />
+        </div>
+        {side}
       </section>
     );
   }
@@ -82,56 +90,59 @@ export function OverviewHero({ data, currency, loading, now }: OverviewHeroProps
   const usdFlat = marketClosed && !lastSession && toNum(k2?.daily_growth_pct ?? null) === 0;
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
-    <section className="overview-hero" aria-label="Portfolio value">
-      <div className="overview-hero__head">
-        <span className="overview-hero__label">Portfolio value</span>
-        {live && (
-          <span className="overview-hero__corner overview-hero__corner--live">
-            <span className="overview-hero__dot" aria-hidden />
-            Live
+    <section className={cls} aria-label="Portfolio value">
+      <div className="overview-hero__main">
+        <div className="overview-hero__head">
+          <span className="overview-hero__label">Portfolio value</span>
+          {live && (
+            <span className="overview-hero__corner overview-hero__corner--live">
+              <span className="overview-hero__dot" aria-hidden />
+              Live
+            </span>
+          )}
+        </div>
+        <div className="overview-hero__values">
+          <span className="overview-hero__value">
+            <Money amount={toNum(k.total_value)} currency={currency} />
           </span>
+          {k2 && (
+            <span className="overview-hero__value2">
+              <Money amount={toNum(k2.total_value)} currency={ccy2} />
+            </span>
+          )}
+        </div>
+        <div className="overview-hero__move">
+          <DeltaBadge value={toNum(k.daily_growth_pct)} />
+          <Money amount={toNum(k.daily_move)} currency={currency} signed colored />
+          <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
+          {k2?.daily_growth_pct != null && (
+            <span className="overview-hero__muted overview-hero__usd">
+              {usdFlat ? (
+                `${ccy2} unchanged`
+              ) : (
+                <span>
+                  {ccy2} <Percent ratio={toNum(k2.daily_growth_pct)} signed />
+                </span>
+              )}
+              <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
+            </span>
+          )}
+        </div>
+        <PriceStamps className="overview-hero__stamps" price={heroPriceTime(data)} updated={fetched} options={opts} />
+        {split && (split.investment_return != null || split.currency_effect_pp != null) && (
+          <p className="overview-hero__split">
+            <span>
+              Investment {formatPercent(toNum(split.investment_return), { signed: true })} · Currency{" "}
+              {formatPp(toNum(split.currency_effect_pp))}
+            </span>
+            <InfoTip label="investment and currency return" content={SPLIT_TIP} />
+          </p>
+        )}
+        {data.total_value_complete === false && (
+          <p className="overview-hero__note">Some holdings have no live price yet; the total is incomplete.</p>
         )}
       </div>
-      <div className="overview-hero__values">
-        <span className="overview-hero__value">
-          <Money amount={toNum(k.total_value)} currency={currency} />
-        </span>
-        {k2 && (
-          <span className="overview-hero__value2">
-            <Money amount={toNum(k2.total_value)} currency={ccy2} />
-          </span>
-        )}
-      </div>
-      <div className="overview-hero__move">
-        <DeltaBadge value={toNum(k.daily_growth_pct)} />
-        <Money amount={toNum(k.daily_move)} currency={currency} signed colored />
-        <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
-        {k2?.daily_growth_pct != null && (
-          <span className="overview-hero__muted overview-hero__usd">
-            {usdFlat ? (
-              `${ccy2} unchanged`
-            ) : (
-              <span>
-                {ccy2} <Percent ratio={toNum(k2.daily_growth_pct)} signed />
-              </span>
-            )}
-            <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
-          </span>
-        )}
-      </div>
-      <PriceStamps className="overview-hero__stamps" price={heroPriceTime(data)} updated={fetched} options={opts} />
-      {split && (split.investment_return != null || split.currency_effect_pp != null) && (
-        <p className="overview-hero__split">
-          <span>
-            Investment {formatPercent(toNum(split.investment_return), { signed: true })} · Currency{" "}
-            {formatPp(toNum(split.currency_effect_pp))}
-          </span>
-          <InfoTip label="investment and currency return" content={SPLIT_TIP} />
-        </p>
-      )}
-      {data.total_value_complete === false && (
-        <p className="overview-hero__note">Some holdings have no live price yet; the total is incomplete.</p>
-      )}
+      {side}
     </section>
   );
 }

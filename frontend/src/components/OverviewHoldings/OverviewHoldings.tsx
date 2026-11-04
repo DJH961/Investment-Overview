@@ -1,4 +1,6 @@
 import clsx from "clsx";
+import { ChevronDown } from "lucide-react";
+import { useId } from "react";
 import { Link } from "react-router";
 import { Card } from "../Card";
 import { ErrorState } from "../ErrorState";
@@ -9,9 +11,10 @@ import { Skeleton } from "../Skeleton";
 import { toNum, useHoldings, type HoldingRowDto, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useTimeZone } from "../../lib/timezone";
+import { usePersistentState } from "../../lib/usePersistentState";
 import "./OverviewHoldings.scss";
 
-/** How many positions the compact list shows (largest first). */
+/** How many positions stay open above the fold (largest first). */
 export const OVERVIEW_HOLDINGS_LIMIT = 8;
 
 export interface OverviewHoldingsProps {
@@ -21,7 +24,12 @@ export interface OverviewHoldingsProps {
 }
 
 export function topHoldings(rows: HoldingRowDto[], limit = OVERVIEW_HOLDINGS_LIMIT): HoldingRowDto[] {
-  return [...rows].sort((a, b) => (toNum(b.value) ?? -Infinity) - (toNum(a.value) ?? -Infinity)).slice(0, limit);
+  return byValue(rows).slice(0, limit);
+}
+
+/** Every position, largest first. */
+export function byValue(rows: HoldingRowDto[]): HoldingRowDto[] {
+  return [...rows].sort((a, b) => (toNum(b.value) ?? -Infinity) - (toNum(a.value) ?? -Infinity));
 }
 
 function Row({
@@ -111,15 +119,22 @@ function Row({
   );
 }
 
-/** Compact, foldable table of the largest positions on the Overview, with a link to the full table. */
+/**
+ * Compact table of every position on the Overview: the largest stay open, the
+ * rest sit in an inline fold in the same grid (remembered in
+ * `iv.overview.holdings.open`), with a link to the full table.
+ */
 export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const q = useHoldings(currency);
   const timeZone = useTimeZone();
+  const listId = useId();
+  const [open, setOpen] = usePersistentState<boolean>("overview.holdings.open", false);
   const winners = new Set(movers?.winners.map((m) => m.symbol) ?? []);
   const losers = new Set(movers?.losers.map((m) => m.symbol) ?? []);
-  const rows = q.data ? topHoldings(q.data.holdings) : [];
-  const more = q.data ? q.data.holdings.length - rows.length : 0;
-  const maxWeight = Math.max(0, ...rows.map((r) => toNum(r.weight_pct) ?? 0));
+  const all = q.data ? byValue(q.data.holdings) : [];
+  const more = Math.max(0, all.length - OVERVIEW_HOLDINGS_LIMIT);
+  const rows = open ? all : all.slice(0, OVERVIEW_HOLDINGS_LIMIT);
+  const maxWeight = Math.max(0, ...all.map((r) => toNum(r.weight_pct) ?? 0));
   return (
     <Card
       className="overview-holdings"
@@ -137,7 +152,7 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
         <Skeleton height="8rem" />
       ) : (
         <>
-          <ul className="overview-holdings__list">
+          <ul className="overview-holdings__list" id={listId}>
             <li className="overview-holdings__head" aria-hidden>
               <span>Holding</span>
               <span className="overview-holdings__head-weight">Weight</span>
@@ -158,9 +173,19 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
             ))}
           </ul>
           {more > 0 && (
-            <p className="overview-holdings__more">
-              {more} more in the <Link to="/holdings">full table</Link>.
-            </p>
+            <button
+              type="button"
+              className="overview-holdings__fold"
+              aria-expanded={open}
+              aria-controls={listId}
+              onClick={() => setOpen((v) => !v)}
+            >
+              <ChevronDown
+                className={clsx("overview-holdings__fold-icon", open && "overview-holdings__fold-icon--open")}
+                aria-hidden
+              />
+              {open ? "Show fewer" : `Show all ${all.length} holdings`}
+            </button>
           )}
         </>
       )}

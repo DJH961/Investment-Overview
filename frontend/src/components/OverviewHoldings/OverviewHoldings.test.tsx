@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HoldingRowDto, OverviewDto } from "../../lib/queries/portfolio";
@@ -50,7 +50,31 @@ describe("OverviewHoldings", () => {
     expect(screen.getByText("top winner")).toBeInTheDocument();
     expect(container.querySelector('[data-symbol="S20"] .overview-holdings__today--stale')).not.toBeNull();
     expect(screen.getByRole("link", { name: "Full table" })).toHaveAttribute("href", "/holdings");
-    expect(screen.getByText(/2 more in the/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show all 10 holdings" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Holdings" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("folds the rest inline in the same list and remembers the choice", () => {
+    const symbols = (c: HTMLElement) =>
+      [...c.querySelectorAll(".overview-holdings__list .overview-holdings__row")].map((n) => n.getAttribute("data-symbol"));
+    const first = render(
+      <MemoryRouter>
+        <OverviewHoldings currency="EUR" />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show all 10 holdings" }));
+    expect(symbols(first.container)).toEqual(["S20", "S9", "S8", "S7", "S6", "S5", "S4", "S3", "S2", "S1"]);
+    expect(localStorage.getItem("iv.overview.holdings.open")).toBe("true");
+    first.unmount();
+    // Reopened: still unfolded, and it folds back to the top 8.
+    const again = render(
+      <MemoryRouter>
+        <OverviewHoldings currency="EUR" />
+      </MemoryRouter>,
+    );
+    expect(symbols(again.container)).toHaveLength(10);
+    fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
+    expect(symbols(again.container)).toHaveLength(8);
+    expect(localStorage.getItem("iv.overview.holdings.open")).toBe("false");
   });
 });

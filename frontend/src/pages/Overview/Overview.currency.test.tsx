@@ -125,6 +125,27 @@ const holdingRow = (i: number, c: "EUR" | "USD") => {
 
 const both = { EUR: side("EUR"), USD: side("USD") };
 const holdings = (c: "EUR" | "USD") => ({ ccy: c, as_of: "2026-11-04", holdings: [holdingRow(1, c), holdingRow(2, c)] });
+// The hero's 1D mini chart (desktop right zone) reads the cached 1D graph.
+const day = (c: "EUR" | "USD") => {
+  const scale = c === "EUR" ? 1 : 1.1887;
+  const v = (n: number) => String(n * scale);
+  return {
+    ccy: c,
+    range: "1d",
+    as_of: "2026-11-04",
+    intraday: true,
+    market_open: false,
+    direction: c === "EUR" ? "down" : "up",
+    reference: v(112954.18),
+    session_date: "2026-11-04",
+    sessions: [{ date: "2026-11-04", open: "2026-11-04T14:30:00Z", close: "2026-11-04T21:00:00Z" }],
+    points: [
+      { t: "2026-11-04T14:30:00Z", v: v(112800) },
+      { t: "2026-11-04T17:00:00Z", v: v(113100) },
+      { t: "2026-11-04T21:00:00Z", v: v(112606.59) },
+    ],
+  };
+};
 const idle = { data: undefined, isPending: true, isError: false, isFetching: false, refetch: vi.fn() };
 
 vi.mock("../../lib/queries/portfolio", async (orig) => ({
@@ -132,7 +153,8 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
   useOverview: (c: "EUR" | "USD") => ({ ...idle, data: both[c], isPending: false }),
   useHoldings: (c: "EUR" | "USD") => ({ ...idle, data: holdings(c), isPending: false }),
   useAllocations: () => idle,
-  useGraph: () => idle,
+  useGraph: (range: string, c: "EUR" | "USD") =>
+    range === "1d" ? { ...idle, data: day(c), isPending: false } : idle,
 }));
 vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: ccy.value }) }));
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined, useShellSummary: () => undefined }));
@@ -144,11 +166,12 @@ import { Overview } from "./Overview";
 /**
  * Every element as "tag.class class", in document order: the page's structure
  * without its text. Gain / loss modifiers are dropped (a move can flip sign
- * between currencies; that recolours, it does not move anything).
+ * between currencies, and so can the 1D trend up / down; that recolours, it does
+ * not move anything).
  */
 function structure(root: Element): string[] {
   return [...root.querySelectorAll("*")].map(
-    (el) => `${el.tagName.toLowerCase()}.${(el.getAttribute("class") ?? "").replace(/--(pos|neg|flat)/g, "")}`,
+    (el) => `${el.tagName.toLowerCase()}.${(el.getAttribute("class") ?? "").replace(/--(pos|neg|flat|up|down)/g, "")}`,
   );
 }
 
@@ -182,6 +205,9 @@ describe("Overview currency switch", () => {
     expect(usd.container.querySelectorAll(".movers-card__row")).toHaveLength(2);
     // The currency box keeps the same lines (the "Regular €100 · $118.87 today" line in both).
     expect(usd.container.querySelectorAll(".currency-box__amount")).toHaveLength(1);
+    // The hero's day curve renders in both (its trend modifier may flip; the boxes do not move).
+    expect(usd.container.querySelectorAll(".overview-hero__aside .hero-intraday__line")).toHaveLength(1);
+    expect(usd.container.querySelectorAll(".hero-intraday__fact")).toHaveLength(3);
     const diff = usdShape.flatMap((s, i) => (s === eurShape[i] ? [] : [`${i}: ${eurShape[i]} -> ${s}`]));
     expect(diff).toEqual([]);
   });

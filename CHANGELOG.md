@@ -18,6 +18,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- **Overview hero uses its width on desktop:** the portfolio value stays on the
+  left; the right half shows the day's curve from the cached, live-updated 1D
+  graph ("Today" or "Last session · Fri", session open–close times), the
+  previous close as a dashed guide, and the day's low / high / previous close.
+  Its height is reserved, so nothing moves when it loads; phones and tablets
+  are unchanged.
+- **Overview holdings show every position:** the largest 8 stay open, the rest
+  unfold inline in the same columns ("Show all 11 holdings" / "Show fewer",
+  remembered on this device).
 - **When a price is from vs when it was fetched**, said the same way everywhere
   (one shared helper in `components/Freshness`): "Price as of today 15:42" /
   "yesterday's close" with a tag icon, "Updated today 15:47" with a refresh icon.

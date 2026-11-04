@@ -6,6 +6,7 @@ import { CurrencyBox } from "../../components/CurrencyBox";
 import { CurrencyLifetime } from "../../components/CurrencyLifetime";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
+import { HeroIntraday } from "../../components/HeroIntraday";
 import { KpiGrid } from "../../components/KpiGrid";
 import { MoversCard } from "../../components/MoversCard";
 import { dayMoveLabel, OverviewHero } from "../../components/OverviewHero";
@@ -124,7 +125,12 @@ export function Overview() {
       />
       {data && <OverviewWarnings warnings={data.warnings} />}
 
-      <OverviewHero data={data} currency={currency} loading={loading} />
+      <OverviewHero
+        data={data}
+        currency={currency}
+        loading={loading}
+        aside={<HeroIntraday currency={currency} />}
+      />
 
       <KpiGrid data={data} currency={currency} loading={loading} />
 

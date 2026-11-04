@@ -10,6 +10,42 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
 
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  // Phones and tablets keep the single stacked column; the right zone is desktop only.
+  &__aside {
+    display: none;
+  }
+
+  // Desktop: value on the left, the day's curve on the right, split by a hairline.
+  &--split {
+    @include m.desktop {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--space-7);
+      align-items: center;
+    }
+
+    // Wide screens: give the curve the larger share; the number needs little width.
+    @include m.wide {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    }
+  }
+
+  &--split &__aside {
+    @include m.desktop {
+      display: block;
+      min-width: 0;
+      padding-left: var(--space-7);
+      border-left: var(--border-width) solid var(--color-border);
+    }
+  }
+
   &__head {
     display: flex;
     align-items: center;
