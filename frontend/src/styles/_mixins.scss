@@ -3,6 +3,8 @@
 // so the numbers live here and in lib/useBreakpoint.ts.
 $bp-tablet: 640px;
 $bp-desktop: 1024px;
+// Wide desktop: room for extras (the top-bar summary) beside the sidebar.
+$bp-wide: 1280px;
 
 @mixin phone {
   @media (max-width: #{$bp-tablet - 1px}) {
@@ -24,6 +26,25 @@ $bp-desktop: 1024px;
 
 @mixin desktop {
   @media (min-width: $bp-desktop) {
+    @content;
+  }
+}
+
+@mixin wide {
+  @media (min-width: $bp-wide) {
+    @content;
+  }
+}
+
+// Short viewports (laptops at 768px tall): denser fixed chrome.
+@mixin short {
+  @media (max-height: 860px) {
+    @content;
+  }
+}
+
+@mixin very-short {
+  @media (max-height: 640px) {
     @content;
   }
 }

@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, History, LogOut, Search, Upload } from "lucide-react";
+import { ChevronDown, Download, History, LogOut, Search, Upload } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../../components/Button";
@@ -10,7 +10,6 @@ import { ErrorState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
 import { PageHeader } from "../../components/PageHeader";
 import { SegmentedControl } from "../../components/SegmentedControl";
-import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { useHideAmounts } from "../../lib/hideAmounts";
@@ -101,6 +100,8 @@ const EXTRA_CARDS: Record<string, () => ReactNode> = {
   backups: () => <BackupCard />,
 };
 
+const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+
 const matches = (f: FieldDef, q: string) =>
   [f.label, f.help, f.key].some((s) => s.toLowerCase().includes(q));
 
@@ -115,6 +116,10 @@ export function Settings() {
   const [section, setSection] = usePersistentState<string>("settings.section", "display");
   const [advanced, setAdvanced] = usePersistentState<boolean>("settings.advanced", false);
   const [search, setSearch] = useState("");
+  // Phone: which foldable sections are open (remembered per device).
+  const [openSections, setOpenSections] = usePersistentState<string[]>("settings.open", ["display"], isStringList);
+  const toggleSection = (id: string) =>
+    setOpenSections((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const [draft, setDraft] = useState<Record<string, DraftValue>>({});
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const [saveNote, setSaveNote] = useState<ReactNode>(null);
@@ -203,7 +208,10 @@ export function Settings() {
           setSaveNote(`${Object.keys(errs).length} setting(s) need fixing.`);
           // Jump to the first bad field's section so the message is visible.
           const first = byKey[Object.keys(errs)[0]];
-          if (first && !search) setSection(first.section);
+          if (first && !search) {
+            setSection(first.section);
+            setOpenSections((prev) => (prev.includes(first.section) ? prev : [...prev, first.section]));
+          }
         }
       },
     });
@@ -231,6 +239,34 @@ export function Settings() {
         .map((s) => ({ section: s, fields: visible.filter((f) => f.section === s.id) }))
         .filter((g) => g.fields.length > 0)
     : [{ section: sections.find((s) => s.id === active) ?? { id: active, label: active }, fields: visible }];
+
+  const sectionBody = (s: { id: string; label: string }, list: FieldDef[], hidden: number) => (
+    <>
+      {list.length > 0 &&
+        (values.data ? (
+          <div className="settings__fields">{list.map(renderField)}</div>
+        ) : (
+          // Field rows need the values (they would show as "default" otherwise); the rest renders now.
+          <Skeleton height="160px" />
+        ))}
+      {!q && EXTRA_CARDS[s.id]?.()}
+      {!q && list.length === 0 && !EXTRA_CARDS[s.id] && (
+        <p className="settings__muted">Nothing here{hidden ? " unless advanced settings are shown" : ""}.</p>
+      )}
+      {!q && hidden > 0 && (
+        <button type="button" className="settings__more" onClick={() => setAdvanced(true)}>
+          Show {hidden} advanced setting(s)
+        </button>
+      )}
+      {!q && list.some((f) => values.data?.[f.key]?.source === "db") && (
+        <div className="settings__section-foot">
+          <Button size="sm" variant="ghost" onClick={() => setResetSection(s.id)}>
+            Reset “{s.label}” to defaults
+          </Button>
+        </div>
+      )}
+    </>
+  );
 
   const renderField = (f: FieldDef) => (
     <SettingField
@@ -265,6 +301,18 @@ export function Settings() {
           </div>
         }
       />
+      <UnsavedBar
+        count={dirtyCount}
+        invalid={Object.keys(clientErrors).length > 0}
+        saving={patch.isPending}
+        note={saveNote}
+        onSave={save}
+        onDiscard={() => {
+          setDraft({});
+          setServerErrors({});
+          setSaveNote(null);
+        }}
+      />
       {(schema.isError && !schema.data) || (values.isError && !values.data) ? (
         <ErrorState
           onRetry={() => {
@@ -284,17 +332,7 @@ export function Settings() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            {phone ? (
-              <Select
-                ariaLabel="Section"
-                options={sections.map((s) => ({ value: s.id, label: s.label }))}
-                value={active}
-                onValueChange={(v) => {
-                  setSection(v);
-                  setSearch("");
-                }}
-              />
-            ) : (
+            {!phone && (
               <ul className="settings-nav__list">
                 {sections.map((s) => {
                   const dirty = fields.some((f) => f.section === s.id && f.key in draft);
@@ -333,36 +371,50 @@ export function Settings() {
           </nav>
 
           <div className="settings__content">
-            {grouped.map(({ section: s, fields: list }) => (
-              <section key={s.id} className="settings__section" aria-labelledby={`settings-${s.id}`}>
-                <h2 className="settings__section-title" id={`settings-${s.id}`}>
-                  {s.label}
-                </h2>
-                {list.length > 0 &&
-                  (values.data ? (
-                    <div className="settings__fields">{list.map(renderField)}</div>
-                  ) : (
-                    // Field rows need the values (they would show as "default" otherwise); the rest renders now.
-                    <Skeleton height="160px" />
-                  ))}
-                {!q && EXTRA_CARDS[s.id]?.()}
-                {!q && list.length === 0 && !EXTRA_CARDS[s.id] && (
-                  <p className="settings__muted">Nothing here{hiddenAdvanced ? " unless advanced settings are shown" : ""}.</p>
-                )}
-                {!q && hiddenAdvanced > 0 && (
-                  <button type="button" className="settings__more" onClick={() => setAdvanced(true)}>
-                    Show {hiddenAdvanced} advanced setting(s)
-                  </button>
-                )}
-                {!q && list.some((f) => values.data?.[f.key]?.source === "db") && (
-                  <div className="settings__section-foot">
-                    <Button size="sm" variant="ghost" onClick={() => setResetSection(s.id)}>
-                      Reset “{s.label}” to defaults
-                    </Button>
-                  </div>
-                )}
-              </section>
-            ))}
+            {phone && !q
+              ? // Phone: one long page of foldable sections (no section picker).
+                sections.map((s) => {
+                  const list = fields.filter((f) => f.section === s.id && !advancedHidden(f));
+                  const hidden = fields.filter((f) => f.section === s.id && advancedHidden(f)).length;
+                  const open = openSections.includes(s.id);
+                  const dirty = fields.some((f) => f.section === s.id && f.key in draft);
+                  const bodyId = `settings-body-${s.id}`;
+                  return (
+                    <section
+                      key={s.id}
+                      className={`settings-fold${open ? " settings-fold--open" : ""}`}
+                      aria-labelledby={`settings-${s.id}`}
+                    >
+                      <h2 className="settings-fold__heading" id={`settings-${s.id}`}>
+                        <button
+                          type="button"
+                          className="settings-fold__toggle"
+                          aria-expanded={open}
+                          aria-controls={bodyId}
+                          onClick={() => toggleSection(s.id)}
+                        >
+                          <ChevronDown aria-hidden className="settings-fold__chevron" />
+                          <span className="settings-fold__label">{s.label}</span>
+                          {dirty && <span className="settings-nav__dot" aria-label="unsaved changes" />}
+                          {list.length > 0 && <span className="settings-fold__count">{list.length}</span>}
+                        </button>
+                      </h2>
+                      {open && (
+                        <div className="settings-fold__body" id={bodyId}>
+                          {sectionBody(s, list, hidden)}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })
+              : grouped.map(({ section: s, fields: list }) => (
+                  <section key={s.id} className="settings__section" aria-labelledby={`settings-${s.id}`}>
+                    <h2 className="settings__section-title" id={`settings-${s.id}`}>
+                      {s.label}
+                    </h2>
+                    {sectionBody(s, list, hiddenAdvanced)}
+                  </section>
+                ))}
             {q && grouped.length === 0 && (
               <EmptyState
                 icon={<Search aria-hidden />}
@@ -373,19 +425,6 @@ export function Settings() {
           </div>
         </div>
       )}
-
-      <UnsavedBar
-        count={dirtyCount}
-        invalid={Object.keys(clientErrors).length > 0}
-        saving={patch.isPending}
-        note={saveNote}
-        onSave={save}
-        onDiscard={() => {
-          setDraft({});
-          setServerErrors({});
-          setSaveNote(null);
-        }}
-      />
 
       <HistorySheet
         open={history.open}

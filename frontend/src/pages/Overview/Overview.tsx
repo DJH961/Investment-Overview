@@ -6,9 +6,10 @@ import { CurrencyBox } from "../../components/CurrencyBox";
 import { CurrencyLifetime } from "../../components/CurrencyLifetime";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
+import { HeroIntraday } from "../../components/HeroIntraday";
 import { KpiGrid } from "../../components/KpiGrid";
 import { MoversCard } from "../../components/MoversCard";
-import { OverviewHero } from "../../components/OverviewHero";
+import { dayMoveLabel, OverviewHero } from "../../components/OverviewHero";
 import { OverviewHoldings } from "../../components/OverviewHoldings";
 import { OverviewWarnings } from "../../components/OverviewWarnings";
 import { PageHeader } from "../../components/PageHeader";
@@ -20,8 +21,8 @@ import { useLiveStatus } from "../../lib/live";
 import { useRefreshState } from "../../lib/refresh";
 import { useTimeZone } from "../../lib/timezone";
 import { usePrefs } from "../../lib/prefs";
-import { useOverview } from "../../lib/queries/portfolio";
-import { useShellStatus } from "../../lib/shell";
+import { toNum, useOverview } from "../../lib/queries/portfolio";
+import { useShellStatus, useShellSummary } from "../../lib/shell";
 import { useIsDesktop } from "../../lib/useMediaQuery";
 import "./Overview.scss";
 
@@ -78,9 +79,20 @@ export function Overview() {
   const { slot: treemapSlot, side: treemapSide, height: treemapHeight } = useTreemapHeight(Boolean(data));
   let chip: FreshnessView;
   if (overview.isError) chip = { status: "stale", label: "Offline" };
-  else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone });
+  else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone, sessionDate: data.kpis?.daily_growth_as_of });
   else chip = { status: "loading", label: "Loading" };
-  useShellStatus(chip.status, chip.label, () => void overview.refetch(), overview.isFetching, chip.short);
+  useShellStatus(chip.status, chip.label, () => void overview.refetch(), overview.isFetching, chip.short, chip.updated);
+  useShellSummary(
+    data?.kpis
+      ? {
+          value: toNum(data.kpis.total_value),
+          currency,
+          pct: toNum(data.kpis.daily_growth_pct),
+          move: toNum(data.kpis.daily_move),
+          dayLabel: dayMoveLabel(data.kpis.daily_growth_as_of, { timeZone }).replace("Today", "today"),
+        }
+      : undefined,
+  );
 
   if (overview.isError && !data) {
     return (
@@ -113,7 +125,12 @@ export function Overview() {
       />
       {data && <OverviewWarnings warnings={data.warnings} />}
 
-      <OverviewHero data={data} currency={currency} loading={loading} />
+      <OverviewHero
+        data={data}
+        currency={currency}
+        loading={loading}
+        aside={<HeroIntraday currency={currency} />}
+      />
 
       <KpiGrid data={data} currency={currency} loading={loading} />
 

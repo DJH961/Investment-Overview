@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components/Toast";
 import { Settings } from "./Settings";
 
+const phone = vi.hoisted(() => ({ value: false }));
+vi.mock("../../lib/useMediaQuery", async (orig) => ({
+  ...(await orig<typeof import("../../lib/useMediaQuery")>()),
+  useMediaQuery: () => phone.value,
+}));
+
 const field = (over: Record<string, unknown>) => ({
   choices: [],
   danger: null,
@@ -83,7 +89,10 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  phone.value = false;
+});
 
 function renderPage() {
   render(
@@ -170,5 +179,36 @@ describe("Settings (schema form)", () => {
     fireEvent.change(screen.getByLabelText("Search settings"), { target: { value: "tiingo" } });
     expect(screen.getByText("Tiingo API token")).toBeInTheDocument();
     expect(screen.queryByText("Live refresh interval")).not.toBeInTheDocument();
+  });
+
+  it("puts Save above the settings, before the first section", async () => {
+    renderPage();
+    const input = await screen.findByLabelText("Live refresh interval");
+    fireEvent.change(input, { target: { value: "30" } });
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    const firstSection = screen.getByRole("heading", { name: "Display" });
+    // DOCUMENT_POSITION_FOLLOWING: the section comes after the bar.
+    expect(bar.compareDocumentPosition(firstSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe("Settings on a phone", () => {
+  it("shows every section on one page as foldable sections that remember their state", async () => {
+    phone.value = true;
+    renderPage();
+    const display = await screen.findByRole("button", { name: /^Display/ });
+    const providers = screen.getByRole("button", { name: /^Providers/ });
+    // No section picker: Display is open by default, the rest folded.
+    expect(screen.queryByRole("combobox", { name: "Section" })).not.toBeInTheDocument();
+    expect(display).toHaveAttribute("aria-expanded", "true");
+    expect(providers).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Live refresh interval")).toBeInTheDocument();
+    expect(screen.queryByText("Tiingo API token")).not.toBeInTheDocument();
+    fireEvent.click(providers);
+    expect(providers).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Tiingo API token")).toBeInTheDocument();
+    fireEvent.click(display);
+    expect(screen.queryByText("Live refresh interval")).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("iv.settings.open") ?? "[]")).toEqual(["providers"]);
   });
 });

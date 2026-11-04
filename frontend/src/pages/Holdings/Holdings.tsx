@@ -1,9 +1,18 @@
+import clsx from "clsx";
 import { Inbox, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Card } from "../../components/Card";
 import { Chart } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
 import { EmptyState } from "../../components/EmptyState";
+import {
+  formatStamp,
+  holdingPriceTime,
+  latestInstant,
+  priceAsOf,
+  PriceStamps,
+  type PriceTime,
+} from "../../components/Freshness";
 import { ErrorState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
 import { Money } from "../../components/Money";
@@ -13,7 +22,7 @@ import { Select } from "../../components/Select";
 import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
-import { formatAxisDate, formatDate, formatMoney, formatTime, formatQuantity } from "../../lib/format";
+import { formatAxisDate, formatDate, formatMoney, formatQuantity } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import {
   type HistoryRange,
@@ -24,11 +33,12 @@ import {
   useHoldings,
 } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
+import { useTimeZone } from "../../lib/timezone";
 import { useShellStatus } from "../../lib/shell";
 import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { HoldingMobileRow } from "./HoldingMobileRow";
-import { Flags, HoldingDetails, tintClass } from "./HoldingParts";
+import { Flags, HoldingDetails, tintClass, WeightCell } from "./HoldingParts";
 import { HoldingsKpis } from "./HoldingsKpis";
 import "./Holdings.scss";
 
@@ -179,6 +189,18 @@ function FlagNotice({ rows }: { rows: HoldingRowDto[] }) {
   );
 }
 
+/** The book's freshest price time and fetch time (for the top bar and the page header). */
+function bookStamps(rows: HoldingRowDto[], asOf: string | undefined): { price: PriceTime | null; updated: string | null } {
+  const updated = latestInstant(...rows.map((r) => r.updated_at));
+  const live = rows.find((r) => r.updated_at === updated && r.market_open && !r.daily_is_stale);
+  const date = rows.reduce<string | null>((best, r) => (r.price_as_of && (!best || r.price_as_of > best) ? r.price_as_of : best), null);
+  if (!updated && !date && !asOf) return { price: null, updated: null };
+  return {
+    price: live ? holdingPriceTime(live) : { instant: updated, date: date ?? asOf ?? null, marketOpen: false },
+    updated,
+  };
+}
+
 export function Holdings() {
   const { currency } = usePrefs();
   const isPhone = useMediaQuery(PHONE_QUERY);
@@ -191,9 +213,14 @@ export function Holdings() {
 
   const data = query.data;
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
-  const label = data ? `Prices as of ${formatDate(data.as_of)}` : query.isPending ? "Loading" : "Offline";
-  const short = data ? `Prices ${formatAxisDate(Date.parse(data.as_of), 0)}` : undefined;
-  useShellStatus(status, label, () => void query.refetch(), query.isFetching, short);
+  const timeZone = useTimeZone();
+  const stamps = useMemo(() => bookStamps(data?.holdings ?? [], data?.as_of), [data]);
+  const priceText = stamps.price ? priceAsOf(stamps.price, { timeZone }) : null;
+  const label = data ? `Prices as of ${priceText ?? formatDate(data.as_of)}` : query.isPending ? "Loading" : "Offline";
+  const short = data ? (priceText ?? formatAxisDate(Date.parse(data.as_of), 0)) : undefined;
+  const updated = stamps.updated ? `Updated ${formatStamp(stamps.updated, { timeZone })}` : undefined;
+  useShellStatus(status, label, () => void query.refetch(), query.isFetching, short, updated);
+  const maxWeight = useMemo(() => Math.max(0, ...(data?.holdings ?? []).map((h) => toNum(h.weight_pct) ?? 0)), [data]);
 
   const categories = useMemo(
     () => [...new Set((data?.holdings ?? []).map((h) => h.category))].sort((a, b) => a.localeCompare(b)),
@@ -239,28 +266,38 @@ export function Holdings() {
     () => [
       {
         key: "symbol",
-        header: "Symbol",
+        header: "Holding",
         primary: true,
         sortValue: (r) => r.symbol,
         cell: (r) => (
-          <span className="holdings-page__symbol">
-            <button
-              type="button"
-              className="holdings-page__open"
-              aria-label={`Details for ${r.symbol}`}
-              onClick={() => setSelected(r)}
-            >
-              <strong>{r.symbol}</strong>
-            </button>
-            <Flags row={r} />
+          <span className="holdings-page__holding">
+            <span className="holdings-page__symbol">
+              <button
+                type="button"
+                className="holdings-page__open"
+                aria-label={`Details for ${r.symbol}`}
+                onClick={() => setSelected(r)}
+              >
+                {r.symbol}
+              </button>
+              <Flags row={r} />
+            </span>
+            <span className="holdings-page__holding-name" title={r.name}>
+              {r.name}
+            </span>
           </span>
         ),
       },
-      { key: "name", header: "Name", phone: "sub", sortValue: (r) => r.name, cell: (r) => r.name },
-      { key: "category", header: "Category", sortValue: (r) => r.category, cell: (r) => r.category },
+      {
+        key: "category",
+        header: "Category",
+        sortValue: (r) => r.category,
+        cell: (r) => <span className="holdings-page__category">{r.category}</span>,
+      },
       {
         key: "shares",
         header: "Shares",
+        group: "Position",
         align: "right",
         sortValue: (r) => toNum(r.shares),
         cell: (r) => formatQuantity(toNum(r.shares), 4),
@@ -268,6 +305,7 @@ export function Holdings() {
       {
         key: "avg",
         header: "Avg price",
+        group: "Position",
         align: "right",
         sortValue: (r) => toNum(r.avg_price_native),
         cell: (r) => formatMoney(toNum(r.avg_price_native), r.native_currency),
@@ -275,20 +313,23 @@ export function Holdings() {
       {
         key: "price",
         header: "Price",
+        group: "Position",
         align: "right",
         sortValue: (r) => toNum(r.price_native),
         cell: (r) => formatMoney(toNum(r.price_native), r.native_currency, { unmasked: true }),
       },
       {
         key: "asof",
-        header: "As of",
+        header: "Price as of",
+        group: "Position",
         nowrap: true,
-        sortValue: (r) => r.price_as_of ?? "",
-        cell: (r) => (r.price_as_of ? formatDate(r.price_as_of) : "–"),
+        sortValue: (r) => r.updated_at ?? r.price_as_of ?? "",
+        cell: (r) => <PriceStamps price={holdingPriceTime(r)} updated={r.updated_at} layout="stack" terse />,
       },
       {
         key: "expense",
-        header: "Expense",
+        header: "Fee",
+        group: "Position",
         align: "right",
         sortValue: (r) => toNum(r.expense_ratio),
         cell: (r) => <Percent ratio={toNum(r.expense_ratio)} />,
@@ -296,6 +337,7 @@ export function Holdings() {
       {
         key: "cost",
         header: "Cost basis",
+        group: "Value",
         align: "right",
         sortValue: (r) => toNum(r.cost_basis),
         cell: (r) => <Money amount={toNum(r.cost_basis)} currency={currency} />,
@@ -303,21 +345,25 @@ export function Holdings() {
       {
         key: "value",
         header: "Value",
+        group: "Value",
         align: "right",
         phone: "headline",
+        emphasis: true,
         sortValue: (r) => toNum(r.value),
         cell: (r) => <Money amount={toNum(r.value)} currency={currency} />,
       },
       {
         key: "weight",
         header: "Weight",
+        group: "Value",
         align: "right",
         sortValue: (r) => toNum(r.weight_pct),
-        cell: (r) => <Percent ratio={toNum(r.weight_pct)} digits={1} />,
+        cell: (r) => <WeightCell ratio={toNum(r.weight_pct)} max={maxWeight} />,
       },
       {
         key: "gain",
         header: "Capital gain",
+        group: "Return",
         align: "right",
         sortValue: (r) => toNum(r.capital_gain),
         cell: (r) => <Money amount={toNum(r.capital_gain)} currency={currency} signed colored />,
@@ -325,6 +371,7 @@ export function Holdings() {
       {
         key: "divs",
         header: "Dividends",
+        group: "Return",
         align: "right",
         sortValue: (r) => toNum(r.dividends),
         cell: (r) => <Money amount={toNum(r.dividends)} currency={currency} />,
@@ -332,47 +379,61 @@ export function Holdings() {
       {
         key: "totret",
         header: "Total return",
+        group: "Return",
         align: "right",
+        emphasis: true,
         sortValue: (r) => toNum(r.total_return),
         cell: (r) => <Money amount={toNum(r.total_return)} currency={currency} signed colored />,
       },
       {
-        key: "xirr",
-        header: "XIRR",
-        align: "right",
-        sortValue: (r) => toNum(r.xirr),
-        cell: (r) => <Percent ratio={toNum(r.xirr)} signed colored />,
-      },
-      {
         key: "growth",
         header: "Growth",
+        group: "Return",
         align: "right",
         sortValue: (r) => toNum(r.total_growth),
         cell: (r) => <Percent ratio={toNum(r.total_growth)} signed colored />,
       },
       {
-        key: "ytd",
-        header: "YTD",
+        key: "xirr",
+        header: "XIRR",
+        group: "Return",
         align: "right",
-        sortValue: (r) => toNum(r.ytd_growth),
-        cell: (r) => <Percent ratio={toNum(r.ytd_growth)} signed colored />,
+        sortValue: (r) => toNum(r.xirr),
+        cell: (r) => <Percent ratio={toNum(r.xirr)} signed colored />,
+      },
+      {
+        key: "today",
+        header: "Day",
+        group: "Period",
+        align: "right",
+        sortValue: (r) => toNum(r.today_pct),
+        cell: (r) => (
+          <span className={clsx("holdings-page__stack", r.daily_is_stale && "holdings-page__today--stale")}>
+            <Percent ratio={toNum(r.today_pct)} signed colored={!r.daily_is_stale} />
+            <span className="holdings-page__stack-sub">
+              <Money amount={toNum(r.today_move)} currency={currency} signed />
+            </span>
+          </span>
+        ),
       },
       {
         key: "mtd",
         header: "MTD",
+        group: "Period",
         align: "right",
         sortValue: (r) => toNum(r.mtd_growth),
         cell: (r) => <Percent ratio={toNum(r.mtd_growth)} signed colored />,
       },
       {
-        key: "today",
-        header: "Today",
+        key: "ytd",
+        header: "YTD",
+        group: "Period",
         align: "right",
-        sortValue: (r) => toNum(r.today_pct),
-        cell: (r) => <Percent ratio={toNum(r.today_pct)} signed colored />,
+        sortValue: (r) => toNum(r.ytd_growth),
+        cell: (r) => <Percent ratio={toNum(r.ytd_growth)} signed colored />,
       },
     ],
-    [currency],
+    [currency, maxWeight],
   );
 
   if (query.isError && !data) {
@@ -422,7 +483,9 @@ export function Holdings() {
       <PageHeader
         title="Holdings"
         subtitle="Every position in full detail"
-        actions={data ? <span className="holdings-page__muted">Updated {formatTime(data.as_of)}</span> : undefined}
+        actions={
+          data ? <PriceStamps price={stamps.price ?? undefined} updated={stamps.updated} options={{ timeZone }} /> : undefined
+        }
       />
 
       <HoldingsKpis data={data} currency={currency} />

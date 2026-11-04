@@ -16,9 +16,16 @@
     }
   }
 
+  // "Need VT history": a note, not a figure.
   &__verdict {
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-md);
     white-space: nowrap;
+
+    // Beating / Trailing: the same size as every other tile's figure.
+    &--pos,
+    &--neg {
+      font-size: inherit;
+    }
 
     &--pos {
       color: var(--color-pos);

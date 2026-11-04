@@ -1,20 +1,37 @@
 @use "../../styles/mixins" as m;
 
+// One grid for the whole list (rows are subgrids), so every column lines up:
+// phone:   holding | value | day
+// tablet:  holding | weight | value | day | since buying
+// desktop: holding | weight | value | day | since buying | price as of
 .overview-holdings {
   &__list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: var(--space-4);
     margin: 0;
     padding: 0;
     list-style: none;
+
+    @include m.tablet-up {
+      grid-template-columns: minmax(9rem, 1.4fr) minmax(7rem, 1fr) auto auto auto;
+      column-gap: var(--space-5);
+    }
+
+    @include m.desktop {
+      grid-template-columns: minmax(10rem, 1.6fr) minmax(8rem, 1fr) auto auto auto auto;
+    }
   }
 
-  // Phone: name | value | today. Wider: name | weight | total return | value | today.
-  &__row {
+  &__row,
+  &__head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     align-items: center;
-    gap: var(--space-4);
+  }
+
+  &__row {
     padding: var(--space-2) 0;
     border-bottom: var(--border-width) solid var(--color-border);
     font-size: var(--font-size-sm);
@@ -23,45 +40,56 @@
       border-bottom: 0;
     }
 
-    @include m.tablet-up {
-      grid-template-columns: minmax(8rem, 1fr) minmax(10rem, 1.3fr) auto auto auto;
-      gap: var(--space-5);
+    &:hover {
+      background: linear-gradient(90deg, transparent, var(--color-surface-2) 12%, var(--color-surface-2) 88%, transparent);
     }
   }
 
-  &__weight,
-  &__total {
-    display: none;
+  &__head {
+    padding-bottom: var(--space-2);
+    border-bottom: var(--border-width) solid var(--color-border-strong);
+    @include m.eyebrow;
+  }
 
-    @include m.tablet-up {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      font-variant-numeric: tabular-nums;
-    }
+  &__head-num {
+    text-align: right;
+  }
+
+  &__who {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  // One line, whatever the currency's figure widths (pills clip rather than wrap).
+  &__symbol {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    align-items: center;
+    gap: var(--space-1);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__name {
+    @include m.truncate;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
   }
 
   &__weight {
-    gap: var(--space-1);
-
-    @include m.tablet-up {
-      flex-direction: row-reverse;
-      align-items: center;
-      gap: var(--space-3);
-    }
-  }
-
-  &__total {
-    align-items: flex-end;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
   }
 
   &__weight-bar {
-    flex: 1 1 auto;
     position: relative;
+    flex: 1 1 auto;
     height: var(--space-1);
+    overflow: hidden;
     border-radius: var(--radius-full);
     background: var(--color-surface-2);
-    overflow: hidden;
   }
 
   &__weight-fill {
@@ -73,76 +101,64 @@
     background: var(--color-accent);
   }
 
-  &__weight-pct {
+  &__num {
+    min-width: 3.5em;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
     white-space: nowrap;
   }
 
-  &__who,
-  &__value,
-  &__today {
+  // Figure cells: the main number, a quieter one under it; right-aligned.
+  &__cell {
     display: flex;
     flex-direction: column;
-    min-width: 0;
-  }
-
-  &__value,
-  &__today {
     align-items: flex-end;
+    min-width: 0;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
-  // Wider screens: each figure pair on one line instead of stacked.
-  &__value,
-  &__today,
-  &__total,
-  &__weight-pct {
-    @include m.tablet-up {
-      flex-direction: row;
-      align-items: baseline;
-      justify-content: flex-end;
-      gap: var(--space-2);
-      white-space: nowrap;
+  &__main {
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__sub {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+
+    // The phone has no weight column: the share rides under the value.
+    &--phone {
+      @include m.tablet-up {
+        display: none;
+      }
     }
   }
 
-  &__weight-pct {
-    @include m.tablet-up {
-      justify-content: flex-start;
-    }
-  }
-
-  &__today--stale {
-    color: var(--color-faint);
-  }
-
-  &__symbol {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-1);
+  &__value &__main {
     font-weight: var(--font-weight-semibold);
   }
 
-  &__name {
-    overflow: hidden;
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__fresh {
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
+  &__today--stale,
+  &__today--stale &__sub {
+    color: var(--color-faint);
   }
 
   &__pill {
+    flex-shrink: 0;
     padding: 0 var(--space-1);
-    background: var(--color-surface-2);
+    white-space: nowrap;
     border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
     color: var(--color-muted);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+
+    &--live {
+      background: var(--color-pos-soft);
+      color: var(--color-pos);
+    }
 
     &--warn {
       background: var(--color-warn-soft);
@@ -160,13 +176,76 @@
     }
   }
 
-  &__link,
-  &__more {
+  &__link {
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
 
-  &__more {
+  // Inline fold under the list: same card, same grid, no navigation.
+  &__fold {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--control-height-sm);
     margin: var(--space-2) 0 0;
+    padding: 0 var(--space-2) 0 0;
+    color: var(--color-muted);
+    font: inherit;
+    font-size: var(--font-size-sm);
+
+    &:hover {
+      color: var(--color-fg);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__fold-icon {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    transition: transform var(--duration-fast) var(--ease-standard);
+
+    &--open {
+      transform: rotate(180deg);
+    }
+
+    @include m.reduced-motion {
+      transition: none;
+    }
+  }
+
+  // Column visibility last, and scoped to the row, so it wins over the cell
+  // and stamp display rules above.
+  &__head &__head-weight,
+  &__head &__head-total,
+  &__head &__head-asof,
+  &__row &__weight,
+  &__row &__total,
+  &__row &__asof {
+    display: none;
+  }
+
+  @include m.tablet-up {
+    &__head &__head-weight,
+    &__head &__head-total {
+      display: block;
+    }
+
+    &__row &__weight,
+    &__row &__total {
+      display: flex;
+    }
+  }
+
+  @include m.desktop {
+    &__head &__head-asof {
+      display: block;
+    }
+
+    &__row &__asof {
+      display: flex;
+    }
   }
 }

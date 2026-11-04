@@ -34,6 +34,10 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--chart-3", b: "--color-muted", why: "Risk/Projection benchmark vs muted line" },
   { a: "--chart-3", b: "--color-pos", why: "benchmark next to a trend-coloured primary" },
   { a: "--chart-3", b: "--color-neg", why: "benchmark next to a trend-coloured primary" },
+  // Overview hero 1D mini chart: the trend-coloured line next to the dashed
+  // previous-close guide (fg; muted is too close to pos for deutan / normal).
+  { a: "--color-pos", b: "--color-fg", why: "up-day 1D line vs dashed previous close" },
+  { a: "--color-neg", b: "--color-fg", why: "down-day 1D line vs dashed previous close" },
 ];
 
 /** Charts with 3+ untoned series (n2..n4) are rare; they get the lower bar plus dashes. */

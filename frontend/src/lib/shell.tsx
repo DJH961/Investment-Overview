@@ -1,11 +1,23 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FreshnessStatus } from "../components/Freshness";
 
+/** Headline figures a page can pin into the desktop top bar (Overview: value and day move). */
+export interface ShellSummary {
+  value: number | null;
+  currency: string;
+  /** Day move as a fraction. */
+  pct: number | null;
+  move: number | null;
+  /** "today" or "Last session · Tue". */
+  dayLabel: string;
+}
+
 /** Lets pages tell the shell their data freshness and how to refresh. */
 export interface ShellState {
-  freshness: { status: FreshnessStatus; label: string; short?: string };
+  freshness: { status: FreshnessStatus; label: string; short?: string; updated?: string };
   onRefresh?: () => void;
   refreshing: boolean;
+  summary?: ShellSummary;
 }
 
 interface ShellApi extends ShellState {
@@ -39,6 +51,7 @@ export function useShellStatus(
   onRefresh?: () => void,
   refreshing = false,
   short?: string,
+  updated?: string,
 ) {
   const { setShell } = useShell();
   // Keep the latest handler in a ref so inline callbacks don't retrigger the effect.
@@ -49,11 +62,27 @@ export function useShellStatus(
   const hasRefresh = onRefresh !== undefined;
   useEffect(() => {
     setShell({
-      freshness: { status, label, short },
+      freshness: { status, label, short, updated },
       onRefresh: hasRefresh ? () => refreshRef.current?.() : undefined,
       refreshing,
     });
-  }, [setShell, status, label, short, hasRefresh, refreshing]);
+  }, [setShell, status, label, short, updated, hasRefresh, refreshing]);
   // Leaving the page: drop its status so the next page does not inherit it.
   useEffect(() => () => setShell(DEFAULT_STATE), [setShell]);
+}
+
+/** Page hook: pin headline figures into the desktop top bar (primitives only, so no render loop). */
+export function useShellSummary(summary: ShellSummary | undefined) {
+  const { setShell } = useShell();
+  const { value, currency, pct, move, dayLabel } = summary ?? {};
+  const has = summary !== undefined;
+  useEffect(() => {
+    setShell({
+      summary:
+        has && currency !== undefined && dayLabel !== undefined
+          ? { value: value ?? null, currency, pct: pct ?? null, move: move ?? null, dayLabel }
+          : undefined,
+    });
+  }, [setShell, has, value, currency, pct, move, dayLabel]);
+  useEffect(() => () => setShell({ summary: undefined }), [setShell]);
 }

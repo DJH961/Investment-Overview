@@ -2,19 +2,13 @@ import clsx from "clsx";
 import { ChevronDown, LineChart } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../components/Button";
+import { holdingPriceTime, PriceStamps } from "../../components/Freshness";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
-import { formatAxisDate, formatMoney, formatTime, formatQuantity } from "../../lib/format";
+import { formatMoney, formatQuantity } from "../../lib/format";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
 import { Flags, HoldingDetails, tintClass } from "./HoldingParts";
-
-/** "14:05" when the price carries a capture time, else the price date. */
-export function asOfStamp(row: HoldingRowDto): string | null {
-  if (row.updated_at) return formatTime(row.updated_at);
-  if (row.price_as_of) return formatAxisDate(Date.parse(row.price_as_of), 0);
-  return null;
-}
 
 interface Props {
   row: HoldingRowDto;
@@ -22,12 +16,16 @@ interface Props {
   onOpenChart: (row: HoldingRowDto) => void;
 }
 
-/** Collapsed: the key figures without a tap. Expanded: all details + the price chart. */
+/**
+ * Collapsed: the key figures without a tap, in a fixed 3 x 2 grid (the same two
+ * lines in either currency, so a switch never moves the list). Expanded: all
+ * details + the price chart.
+ */
 export function HoldingMobileRow({ row, ccy, onOpenChart }: Props) {
   const [open, setOpen] = useState(false);
   const detailId = `holding-detail-${row.instrument_id}`;
-  const stamp = asOfStamp(row);
   const stale = row.daily_is_stale;
+  const shares = toNum(row.shares);
   return (
     <li className={clsx("holdings-page__item", tintClass(row))} data-search-row>
       <button
@@ -57,19 +55,28 @@ export function HoldingMobileRow({ row, ccy, onOpenChart }: Props) {
         <ChevronDown aria-hidden size={16} className="holdings-page__chevron" />
         <span className="holdings-page__chips">
           <span className="holdings-page__chip">
-            Px {formatMoney(toNum(row.price_native), row.native_currency, { unmasked: true })}
-          </span>
-          <span className="holdings-page__chip">{formatQuantity(toNum(row.shares), 4)} sh</span>
-          <span className="holdings-page__chip">
-            Growth <Percent ratio={toNum(row.total_growth)} signed colored />
+            <span className="holdings-page__chip-key">Price</span>
+            {formatMoney(toNum(row.price_native), row.native_currency, { unmasked: true })}
           </span>
           <span className="holdings-page__chip">
-            P/L <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored compact />
+            {formatQuantity(shares, shares !== null && Number.isInteger(shares) ? 0 : 4)}
+            <span className="holdings-page__chip-key">sh</span>
           </span>
           <span className="holdings-page__chip">
-            XIRR <Percent ratio={toNum(row.xirr)} signed colored />
+            <PriceStamps price={holdingPriceTime(row)} terse />
           </span>
-          {stamp && <span className="holdings-page__asof">as of {stamp}</span>}
+          <span className="holdings-page__chip">
+            <span className="holdings-page__chip-key">P/L</span>
+            <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored compact />
+          </span>
+          <span className="holdings-page__chip">
+            <span className="holdings-page__chip-key">Growth</span>
+            <Percent ratio={toNum(row.total_growth)} signed colored />
+          </span>
+          <span className="holdings-page__chip">
+            <span className="holdings-page__chip-key">XIRR</span>
+            <Percent ratio={toNum(row.xirr)} signed colored />
+          </span>
         </span>
       </button>
       {open && (
