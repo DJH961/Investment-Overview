@@ -7265,6 +7265,25 @@
         "title": "OverviewWarnings",
         "type": "object"
       },
+      "PasskeyLoginOptionsBody": {
+        "description": "The passkey this device used last (base64url id): the browser then goes\nstraight to it instead of showing a passkey picker. Unknown ids are ignored.",
+        "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Id"
+          }
+        },
+        "title": "PasskeyLoginOptionsBody",
+        "type": "object"
+      },
       "PasskeyNameBody": {
         "properties": {
           "name": {
@@ -11652,7 +11671,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.4.2"
+    "version": "6.4.3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12269,6 +12288,23 @@
     "/api/auth/passkey/login/options": {
       "post": {
         "operationId": "passkey_login_options_api_auth_passkey_login_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PasskeyLoginOptionsBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -12277,6 +12313,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Passkey Login Options",

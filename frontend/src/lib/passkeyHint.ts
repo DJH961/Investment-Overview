@@ -41,6 +41,27 @@ export function rememberPasskeyDevice(): void {
 export function forgetPasskeyDevice(): void {
   writeStore(local, PASSKEY_HINT_KEY, null);
   writeStore(local, PASSKEY_DECLINES_KEY, null);
+  writeStore(local, PASSKEY_ID_KEY, null);
+}
+
+/*
+ * The passkey this device used last (its public credential id, not a secret).
+ * The login options name it, so the browser goes straight to it instead of
+ * showing a passkey picker every time (what the v5 web app did).
+ */
+const PASSKEY_ID_KEY = "iv.passkey.id";
+
+export function lastPasskeyId(): string | null {
+  return readStore(local, PASSKEY_ID_KEY);
+}
+
+export function rememberPasskeyId(id: string | null | undefined): void {
+  if (id) writeStore(local, PASSKEY_ID_KEY, id);
+}
+
+/** The named passkey failed (removed, or not on this device): use the picker next time. */
+export function forgetPasskeyId(): void {
+  writeStore(local, PASSKEY_ID_KEY, null);
 }
 
 /** The user dismissed an automatic passkey prompt. */

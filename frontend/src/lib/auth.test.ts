@@ -46,6 +46,29 @@ describe("auth", () => {
     ]);
   });
 
+  it("names the passkey this device used last, and forgets it when it fails", async () => {
+    localStorage.removeItem("iv.passkey.id");
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("options") ? respond(200, { challenge: "abc" }) : respond(204),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const optionsBody = (i: number) => (fetchMock.mock.calls[i] as unknown as [string, RequestInit])[1].body;
+
+    await passkeyLogin(); // first time: no id yet, the browser shows its picker
+    expect(optionsBody(0)).toBe("{}");
+    expect(localStorage.getItem("iv.passkey.id")).toBe("cred");
+
+    await passkeyLogin(); // next time: straight to that passkey
+    expect(optionsBody(2)).toBe(JSON.stringify({ credential_id: "cred" }));
+
+    await passkeyLogin(true); // autofill lists every passkey
+    expect(optionsBody(4)).toBe("{}");
+
+    vi.mocked(startAuthentication).mockRejectedValueOnce(new Error("NotAllowedError"));
+    await expect(passkeyLogin()).rejects.toThrow();
+    expect(localStorage.getItem("iv.passkey.id")).toBeNull();
+  });
+
   it("registers, lists and deletes passkeys", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith("register/options")) return respond(200, { challenge: "c" });

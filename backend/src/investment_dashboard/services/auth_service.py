@@ -31,6 +31,7 @@ from webauthn import (
 from webauthn.helpers import base64url_to_bytes
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
+    AuthenticatorTransport,
     PublicKeyCredentialDescriptor,
     ResidentKeyRequirement,
     UserVerificationRequirement,
@@ -481,9 +482,38 @@ def register_passkey(
     )
 
 
-def authentication_options(settings: Settings) -> tuple[str, str]:
+def _allow_one(
+    session: Session | None, credential_id: str | None
+) -> list[PublicKeyCredentialDescriptor]:
+    """``allowCredentials`` for the passkey this device used last, if it still exists.
+
+    Naming it lets the browser go straight to that passkey (as the v5 web app did)
+    instead of showing a picker. Anything unknown or malformed gives the normal
+    discoverable flow.
+    """
+    if session is None or not credential_id:
+        return []
+    try:
+        cid = base64url_to_bytes(credential_id)
+    except (ValueError, TypeError):
+        return []
+    stored = auth_repo.passkey_transports(session, cid)
+    if stored is None:
+        return []
+    transports: list[AuthenticatorTransport] = []
+    with contextlib.suppress(ValueError, TypeError):
+        for t in json.loads(stored):
+            with contextlib.suppress(ValueError):
+                transports.append(AuthenticatorTransport(t))
+    return [PublicKeyCredentialDescriptor(id=cid, transports=transports or None)]
+
+
+def authentication_options(
+    settings: Settings, session: Session | None = None, credential_id: str | None = None
+) -> tuple[str, str]:
     options = generate_authentication_options(
         rp_id=settings.webauthn_rp_id,
+        allow_credentials=_allow_one(session, credential_id),
         user_verification=UserVerificationRequirement.REQUIRED,
     )
     key = challenges.put("login", options.challenge)

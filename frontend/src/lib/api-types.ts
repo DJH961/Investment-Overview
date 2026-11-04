@@ -4104,6 +4104,15 @@ export interface components {
             /** Zero Value */
             zero_value: string[];
         };
+        /**
+         * PasskeyLoginOptionsBody
+         * @description The passkey this device used last (base64url id): the browser then goes
+         *     straight to it instead of showing a passkey picker. Unknown ids are ignored.
+         */
+        PasskeyLoginOptionsBody: {
+            /** Credential Id */
+            credential_id?: string | null;
+        };
         /** PasskeyNameBody */
         PasskeyNameBody: {
             /** Name */
@@ -5899,7 +5908,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PasskeyLoginOptionsBody"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5908,6 +5921,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

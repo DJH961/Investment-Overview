@@ -76,6 +76,14 @@ def passkey_exists(session: Session, credential_id: bytes) -> bool:
     )
 
 
+def passkey_transports(session: Session, credential_id: bytes) -> str | None:
+    """The stored transports JSON of one passkey, ``None`` when it doesn't exist."""
+    row = session.scalar(select(AuthPasskey).where(AuthPasskey.credential_id == credential_id))
+    if row is None:
+        return None
+    return row.transports or "[]"
+
+
 def add_passkey(
     session: Session,
     *,

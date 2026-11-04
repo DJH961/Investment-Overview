@@ -513,3 +513,25 @@ def test_migration_0016_upgrade_downgrade(tmp_path: Path) -> None:
         assert not names & set(sa.inspect(conn).get_table_names())
         mod.downgrade()  # idempotent
     engine.dispose()
+
+
+def test_passkey_login_options_name_the_last_used_passkey(
+    client: TestClient, with_password: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _login(client)
+    _fake_registration(monkeypatch, {})
+    _register(client)
+    anon = _other(client, Origin=ORIGIN)
+
+    # The device's last passkey (base64url of b"cred-1"): the browser goes straight to it.
+    named = anon.post("/api/auth/passkey/login/options", json={"credential_id": CRED["id"]})
+    assert named.status_code == 200
+    allow = named.json()["allowCredentials"]
+    assert [a["id"] for a in allow] == [CRED["id"]]
+    assert allow[0]["transports"] == ["internal"]
+
+    # Unknown, malformed or absent ids keep the discoverable flow (picker).
+    for body in ({"credential_id": "dW5rbm93bg"}, {"credential_id": "%%%"}, {}, None):
+        r = anon.post("/api/auth/passkey/login/options", json=body)
+        assert r.status_code == 200
+        assert r.json().get("allowCredentials", []) == []
