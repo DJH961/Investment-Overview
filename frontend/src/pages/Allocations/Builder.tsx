@@ -142,7 +142,11 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
         : [],
   });
 
-  const result = plan.data && plan.data.mode === mode ? plan.data : undefined;
+  // A new computation clears `plan.data`; keep showing the last plan (marked as updating).
+  const [lastPlan, setLastPlan] = useState(plan.data);
+  if (plan.data && plan.data !== lastPlan) setLastPlan(plan.data);
+  const shown = plan.data ?? lastPlan;
+  const result = shown && shown.mode === mode ? shown : undefined;
   const saveItems: SaveItem[] | null =
     mode === "fund"
       ? funds
@@ -392,7 +396,16 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
           onRetry={() => plan.reset()}
         />
       )}
-      {result && <PlanResult plan={result} />}
+      {result && (
+        <div aria-busy={plan.isPending}>
+          {plan.isPending && (
+            <p className="allocations__plan-note" aria-live="polite">
+              Updating plan…
+            </p>
+          )}
+          <PlanResult plan={result} />
+        </div>
+      )}
 
       {saveOpen && (
         <SaveTargetDialog

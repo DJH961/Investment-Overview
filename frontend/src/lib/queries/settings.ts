@@ -2,6 +2,7 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../api";
 import type { components } from "../api-types";
+import { applyOptimistic, rollback, type OptimisticContext } from "./optimistic";
 
 type S = components["schemas"];
 export type SettingField = S["SettingField"];
@@ -45,10 +46,20 @@ export function useSettingsValues(enabled = true) {
   return useQuery({ ...settingsValuesQuery(enabled), enabled });
 }
 
-function useSettingsWrite<TVars>(fn: (vars: TVars) => Promise<SettingsChanged>) {
+function useSettingsWrite<TVars>(
+  fn: (vars: TVars) => Promise<SettingsChanged>,
+  optimistic?: (vars: TVars, old: SettingsValues) => SettingsValues,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
+    onMutate: (vars: TVars): Promise<OptimisticContext> =>
+      applyOptimistic(
+        qc,
+        (q) => q.queryKey[0] === "settings" && q.queryKey[1] === "values",
+        (old) => (optimistic ? optimistic(vars, old as SettingsValues) : undefined),
+      ),
+    onError: (_e, _v, ctx) => rollback(qc, ctx),
     onSuccess: (data) => {
       qc.setQueryData(SETTINGS_VALUES_KEY, data.values);
       // Legacy `/api/settings` readers and the history list.
@@ -63,6 +74,14 @@ function useSettingsWrite<TVars>(fn: (vars: TVars) => Promise<SettingsChanged>) 
 export function usePatchSettings() {
   return useSettingsWrite((changes: Record<string, SettingJson>) =>
     api<SettingsChanged>("/api/settings/values", { method: "PATCH", body: { changes } }),
+    (changes, old) => {
+      const next = { ...old } as Record<string, unknown>;
+      for (const [k, v] of Object.entries(changes)) {
+        const cur = next[k] as { value?: SettingJson } | undefined;
+        if (cur && typeof cur === "object") next[k] = { ...cur, value: v };
+      }
+      return next as SettingsValues;
+    },
   );
 }
 

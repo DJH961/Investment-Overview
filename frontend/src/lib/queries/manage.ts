@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
 import { invalidateFor } from "./invalidation";
+import { applyOptimistic, rollback, type OptimisticContext } from "./optimistic";
 
 type S = components["schemas"];
 export type FxConversion = S["FxConversionOut"];
@@ -82,6 +83,16 @@ export function useUpdateSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: SettingsPatch) => api<SettingsData>("/api/settings", { method: "PUT", body }),
+    onMutate: (body): Promise<OptimisticContext> =>
+      applyOptimistic(
+        qc,
+        (q) => q.queryKey.length === 1 && q.queryKey[0] === "settings",
+        (old) => {
+          const patch = Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined && v !== null));
+          return { ...(old as SettingsData), ...patch };
+        },
+      ),
+    onError: (_e, _v, ctx) => rollback(qc, ctx),
     onSuccess: (data) => qc.setQueryData(["settings"], data),
   });
 }
