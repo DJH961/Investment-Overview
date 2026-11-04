@@ -95,7 +95,14 @@ class LiveBus:
         Only the read-cache dependencies the event changed are bumped (tick:
         prices + FX; fx: FX; graphs: prices; refresh and unknown types: all).
         """
-        read_cache.invalidate_for_event(str(event.get("type", "")))
+        status = event.get("status")
+        keys = event.get("keys")
+        read_cache.invalidate_for_event(
+            str(event.get("type", "")),
+            unchanged=event.get("unchanged") is True,
+            status=status if isinstance(status, str) else None,
+            keys=frozenset(str(k) for k in keys) if isinstance(keys, list) else None,
+        )
         with self._lock:
             subs = list(self._subs)
         for sub in subs:

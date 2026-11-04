@@ -93,7 +93,21 @@ def _graph_both(
     )
 
 
-register_warmer(lambda session: _graph_both(session=session, range_key="1d", compare=True))
+def _warm_overview_graphs(session: Session) -> None:
+    """Pre-compute the graphs the Overview shows: 1D (live) plus the range it opens on
+    now (market-aware default) and the configured default, each once."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    ranges = ["1d", live_graphs.default_range(session)]
+    configured = settings_service.get_or("display.overview_default_range", None)
+    if isinstance(configured, str):
+        ranges.append(configured)
+    for key in dict.fromkeys(ranges):
+        if key in live_graphs.RANGE_LABELS:
+            _graph_both(session=session, range_key=key, compare=True)
+
+
+register_warmer(_warm_overview_graphs)
 
 
 def _run_reload(range_key: str) -> None:

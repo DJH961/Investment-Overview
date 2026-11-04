@@ -75,8 +75,34 @@ def invalidate(*deps: str) -> None:
             del _entries[key]
 
 
-def invalidate_for_event(event_type: str) -> None:
-    """Bump what a live event of ``event_type`` changed (see ``live_bus``)."""
+#: Events that never change a cached read (restart notices).
+_NEUTRAL_EVENTS = frozenset({"server"})
+#: Settings no server read depends on (every /both route answers both currencies;
+#: the theme is client-only). Switching them must not throw the cache away.
+PRESENTATION_SETTINGS = frozenset({"display_currency", "theme"})
+
+
+def invalidate_for_event(
+    event_type: str,
+    *,
+    unchanged: bool = False,
+    status: str | None = None,
+    keys: frozenset[str] | None = None,
+) -> None:
+    """Bump what a live event of ``event_type`` changed (see ``live_bus``).
+
+    ``unchanged`` (a tick / FX check that found nothing new) bumps nothing. A
+    ``job`` event bumps only when the job finished (its writes are done then). A
+    ``settings`` event whose ``keys`` are all presentation-only bumps nothing.
+    """
+    if unchanged or event_type in _NEUTRAL_EVENTS:
+        return
+    if event_type == "settings" and keys is not None and keys <= PRESENTATION_SETTINGS:
+        return
+    if event_type == "job":
+        if status in ("succeeded", "failed"):
+            invalidate()
+        return
     if event_type == "tick":
         invalidate(PRICES, FX)
     elif event_type == "fx":

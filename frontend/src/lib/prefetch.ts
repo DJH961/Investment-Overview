@@ -90,11 +90,31 @@ function idle(): Promise<void> {
   });
 }
 
-/** Run the plan sequentially in idle time; stops early when `signal` aborts (sign-out, unmount). */
+const QUIET_POLL_MS = 250;
+const QUIET_MAX_MS = 15_000;
+
+/**
+ * Wait until no other query is loading (the page on screen, a refetch after a tick),
+ * at most 15 s. The server has one CPU: a background prefetch must never queue in
+ * front of what the user is looking at. Exported for tests.
+ */
+export async function quiet(qc: QueryClient, signal?: AbortSignal): Promise<void> {
+  const began = Date.now();
+  while (qc.isFetching() > 0 && Date.now() - began < QUIET_MAX_MS) {
+    if (signal?.aborted) return;
+    await new Promise((r) => setTimeout(r, QUIET_POLL_MS));
+  }
+}
+
+/**
+ * Run the plan one request at a time, each only when nothing else is loading and the
+ * browser is idle; stops early when `signal` aborts (sign-out, unmount).
+ */
 export async function prefetchKeyData(qc: QueryClient, ccy: ReportingCurrency, signal?: AbortSignal): Promise<void> {
   for (const options of prefetchPlan(ccy)) {
     if (signal?.aborted) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    await quiet(qc, signal);
     await idle();
     if (signal?.aborted) return;
     // Errors are fine here: the page retries when it actually opens.

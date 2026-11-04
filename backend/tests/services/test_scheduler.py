@@ -47,20 +47,37 @@ class Rig:
                 fx=make("fx"),
                 eod=make("eod"),
                 interval_seconds=lambda: 60,
+                fx_interval=lambda: timedelta(minutes=1),
+                closed_interval=lambda: timedelta(minutes=10),
+                fx_closed_interval=lambda: timedelta(minutes=30),
             ),
             clock=lambda: self.now,
             bus=self.bus,
         )
+        # Start with a fresh FX reading so the stock-clock tests see only stock jobs.
+        self.sched.state.last_fx = now
 
 
 async def test_market_open_ticks_every_interval() -> None:
     r = Rig(et(2026, 11, 2, 10))  # Monday
+    r.sched.jobs.fx_interval = lambda: timedelta(hours=1)  # keep the FX clock out of it
     assert await r.sched.step() == ["tick"]
     r.now += timedelta(seconds=30)
     assert await r.sched.step() == []
     r.now += timedelta(seconds=31)
     assert await r.sched.step() == ["tick"]
     assert r.calls == ["tick", "tick"]
+
+
+async def test_fx_follows_its_own_setting_while_stocks_trade() -> None:
+    r = Rig(et(2026, 11, 2, 10))  # Monday, both markets open
+    r.sched.jobs.fx_interval = lambda: timedelta(minutes=5)
+    ran: list[str] = []
+    for _ in range(11):  # minutes 0..10
+        ran += await r.sched.step()
+        r.now += timedelta(minutes=1)
+    assert ran.count("tick") == 11  # every live interval (60 s)
+    assert ran.count("fx") == 2  # at 5 and 10 min, as set
 
 
 async def test_after_close_runs_eod_once_then_fx() -> None:
@@ -70,10 +87,57 @@ async def test_after_close_runs_eod_once_then_fx() -> None:
     ev = await asyncio.wait_for(sub.get(), 1)
     assert ev["type"] == "refresh"
     assert ev["market_state"] == "closed"
-    assert await r.sched.step() == []  # eod done, fx stamped by eod
-    r.now += timedelta(minutes=31)
-    assert await r.sched.step() == ["fx"]
+    assert await r.sched.step() == []  # eod done, fx + prices stamped by eod
+    r.now += timedelta(minutes=1)
+    assert await r.sched.step() == ["fx"]  # currencies still trade: every minute
     assert (await asyncio.wait_for(sub.get(), 1))["type"] == "fx"
+    r.now += timedelta(minutes=9)
+    assert await r.sched.step() == ["tick", "fx"]  # stocks closed: prices every 10 min
+    assert (await asyncio.wait_for(sub.get(), 1))["type"] == "tick"
+
+
+async def test_currency_and_stock_markets_poll_separately() -> None:
+    # Tuesday 23:00 New York: stocks closed, currencies open -> FX every minute.
+    r = Rig(et(2026, 11, 3, 23))
+    assert await r.sched.step() == ["eod"]
+    ran: list[str] = []
+    for _ in range(10):
+        r.now += timedelta(minutes=1)
+        ran += await r.sched.step()
+    assert ran.count("fx") == 10
+    assert ran.count("tick") == 1
+    # Saturday: both closed -> each clock uses its own closed interval (10 / 30 min).
+    w = Rig(et(2026, 11, 7, 12))
+    assert await w.sched.step() == ["eod"]
+    ran = []
+    for _ in range(60):
+        w.now += timedelta(minutes=1)
+        ran += await w.sched.step()
+    assert ran.count("tick") == 6
+    assert ran.count("fx") == 2
+
+
+async def test_unchanged_check_keeps_the_read_cache() -> None:
+    from investment_dashboard.services import read_cache
+
+    r = Rig(et(2026, 11, 3, 23))
+    same = {"total_value_eur": "100", "fx_eur_usd": "1.1", "prices": {"A": 1}, "point": None}
+    r.sched.jobs.tick = lambda: dict(same)
+    r.sched.jobs.fx_interval = lambda: timedelta(days=1)  # only ticks in this test
+    sub = r.bus.subscribe()
+    await r.sched.step()  # eod
+    await asyncio.wait_for(sub.get(), 1)
+    r.now += timedelta(minutes=10)
+    await r.sched.step()  # first closed tick: nothing seen before, so a change
+    first = await asyncio.wait_for(sub.get(), 1)
+    assert first["type"] == "tick"
+    assert "unchanged" not in first
+    mid = read_cache.generations()
+    r.now += timedelta(minutes=10)
+    await r.sched.step()  # same prices and rate again
+    second = await asyncio.wait_for(sub.get(), 1)
+    assert second["unchanged"] is True
+    assert read_cache.generations() == mid
 
 
 async def test_holiday_and_weekend_only_eod_once() -> None:
@@ -196,8 +260,8 @@ async def test_paused_job_is_skipped_until_expiry(no_pauses: Any) -> None:
     r = Rig(et(2026, 11, 2, 10))
     no_pauses.set_pause(["tick"], until=r.now + timedelta(hours=1), now=r.now)
     assert await r.sched.step() == []
-    r.now += timedelta(hours=2)  # the pause expired by itself
-    assert await r.sched.step() == ["tick"]
+    r.now += timedelta(hours=2)  # the pause expired by itself (FX is due again too)
+    assert await r.sched.step() == ["tick", "fx"]
     with pytest.raises(ValueError, match="7 days"):
         no_pauses.set_pause(["tick"], until=r.now + timedelta(days=30), now=r.now)
     with pytest.raises(ValueError, match="unknown"):
