@@ -17,6 +17,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **v7.0 planning docs.** `docs/v7_plan.md` is now the readable plan — the four
+  v7 themes, the release order and the open decisions. The previous draft moves
+  to `docs/v7_research.md` as the evidence file, corrected: the currency-effect
+  figures it called unsurfaced already ship on Overview, the German-tax
+  direction is struck (the owner is a US taxpayer), and the OpenRouter and
+  news-source facts it flagged as unverified are now verified. Docs only, no
+  app change.
+
 ## [6.6.0] — 2026-11-05
 
 ### Added
