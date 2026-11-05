@@ -17,6 +17,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.5.2] — 2026-11-05
+
+### Fixed
+- **Mutual-fund prices arrive the same evening.** A NAV is now re-checked every
+  30 min (was 6 h) while it is missing, so a fund that publishes after the close
+  shows its price soon after instead of in the middle of the night. Once the
+  NAV is in, the fund is not asked again until the next one is due.
+- **All refresh timings are together in Settings › Data refresh, and visible.**
+  The per-kind price ages (incl. the mutual-fund NAV re-check) were hidden
+  under "Advanced", and the open-market price interval sat under Display.
+
 ## [6.5.1] — 2026-11-04
 
 ### Added
