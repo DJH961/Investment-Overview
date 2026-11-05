@@ -951,6 +951,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/instruments/twin-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Twin Suggestions
+         * @description The built-in fund -> ETF twin list (identical-index pairs, then measured close twins).
+         */
+        get: operations["twin_suggestions_api_instruments_twin_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/instruments/{instrument_id}": {
         parameters: {
             query?: never;
@@ -2893,6 +2913,16 @@ export interface components {
             coverage?: components["schemas"]["GraphCoverage"] | null;
             /** Direction */
             direction?: ("up" | "down" | "flat") | null;
+            /**
+             * Estimated Funds
+             * @default []
+             */
+            estimated_funds: string[];
+            /**
+             * Funds Estimated
+             * @default false
+             */
+            funds_estimated: boolean;
             growth?: components["schemas"]["GraphGrowth"] | null;
             /** Intraday */
             intraday: boolean;
@@ -3718,6 +3748,11 @@ export interface components {
             fetch_symbol: string | null;
             /** Id */
             id: number;
+            /**
+             * Intraday Twin
+             * @description ETF whose live price estimates this fund on the 1D graph until its NAV posts.
+             */
+            intraday_twin?: string | null;
             /** Latest Price Date */
             latest_price_date: string | null;
             /** Ledger Asset Class */
@@ -3741,6 +3776,12 @@ export interface components {
             symbol: string;
             /** Transaction Count */
             transaction_count: number;
+            /**
+             * Twin Daily Gap
+             * @description Typical daily gap fund vs its twin from cached closes (fraction), if known.
+             */
+            twin_daily_gap?: string | null;
+            twin_suggestion?: components["schemas"]["TwinSuggestionDto"] | null;
         };
         /**
          * InstrumentPatch
@@ -3758,6 +3799,8 @@ export interface components {
              * @description Fraction, e.g. "0.0003".
              */
             expense_ratio?: string | null;
+            /** Intraday Twin */
+            intraday_twin?: string | null;
             /** Name */
             name?: string | null;
             /** Pricing Mode */
@@ -5504,6 +5547,30 @@ export interface components {
             transaction: components["schemas"]["TransactionOut"];
             /** Warnings */
             warnings?: string[];
+        };
+        /**
+         * TwinSuggestionDto
+         * @description A built-in ETF twin for a fund (a suggestion only, never applied automatically).
+         *
+         *     ``same_index``: the fund and ETF track the exact same index (or are share
+         *     classes of one Vanguard portfolio). ``close``: a different index whose daily
+         *     moves were measured to follow the fund as tightly as an identical pair.
+         */
+        TwinSuggestionDto: {
+            /** Etf */
+            etf: string;
+            /** Index */
+            index: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "same_index" | "close";
+            /**
+             * Typical Daily Gap
+             * @description Measured typical daily gap (fraction), close tier only.
+             */
+            typical_daily_gap?: string | null;
         };
         /** UnknownAction */
         UnknownAction: {
@@ -7320,6 +7387,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstrumentOut"][];
+                };
+            };
+        };
+    };
+    twin_suggestions_api_instruments_twin_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["TwinSuggestionDto"];
+                    };
                 };
             };
         };

@@ -17,6 +17,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **ETF twin per mutual fund.** Each instrument can carry an `intraday_twin`
+  (an ETF symbol) in `/api/instruments`; its live price estimates the fund on
+  the 1D graph until the NAV posts. A built-in list suggests twins that track the
+  exact same index (FXAIX→VOO, VTSAX→VTI, …) and three measured "close twins"
+  on a different index (FSKAX/FZROX→VTI, FNILX→VOO); nothing is applied
+  automatically (`GET /api/instruments/twin-suggestions`). The twin's prices are
+  pulled during the session as an extra symbol only: it never counts in totals,
+  holdings or allocations. New nullable `instrument_overrides.intraday_twin` and
+  cache table `intraday_twin_prices` (migration `0023`; both dropped by
+  `inv-dashboard-export-v5`).
+
+### Changed
+- **Mutual funds on the 1D graph follow their NAV without a jump.** While the
+  session runs a fund is drawn from its ETF twin (or flat at yesterday's NAV
+  without one); when the official NAV lands the difference is spread evenly
+  across the session, so the line starts at the previous close and ends exactly
+  at the official close instead of the whole curve jumping in the evening. The
+  graph says which funds are estimated (`funds_estimated`). Totals and history
+  still use official prices only.
+
+### Fixed
+- **Daily graphs pick up a late NAV even with no device open.** When a close or
+  NAV for a past or the current session lands while the market is shut, that
+  day's stored point is rebuilt straight away.
+
 ## [6.6.0] — 2026-11-05
 
 ### Added

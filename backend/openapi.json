@@ -3620,6 +3620,19 @@
             ],
             "title": "Direction"
           },
+          "estimated_funds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Estimated Funds",
+            "type": "array"
+          },
+          "funds_estimated": {
+            "default": false,
+            "title": "Funds Estimated",
+            "type": "boolean"
+          },
           "growth": {
             "anyOf": [
               {
@@ -5977,6 +5990,18 @@
             "title": "Id",
             "type": "integer"
           },
+          "intraday_twin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ETF whose live price estimates this fund on the 1D graph until its NAV posts.",
+            "title": "Intraday Twin"
+          },
           "latest_price_date": {
             "anyOf": [
               {
@@ -6056,6 +6081,28 @@
           "transaction_count": {
             "title": "Transaction Count",
             "type": "integer"
+          },
+          "twin_daily_gap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Typical daily gap fund vs its twin from cached closes (fraction), if known.",
+            "title": "Twin Daily Gap"
+          },
+          "twin_suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TwinSuggestionDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6136,6 +6183,17 @@
             ],
             "description": "Fraction, e.g. \"0.0003\".",
             "title": "Expense Ratio"
+          },
+          "intraday_twin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intraday Twin"
           },
           "name": {
             "anyOf": [
@@ -11647,6 +11705,46 @@
         "title": "TransactionWriteResult",
         "type": "object"
       },
+      "TwinSuggestionDto": {
+        "description": "A built-in ETF twin for a fund (a suggestion only, never applied automatically).\n\n``same_index``: the fund and ETF track the exact same index (or are share\nclasses of one Vanguard portfolio). ``close``: a different index whose daily\nmoves were measured to follow the fund as tightly as an identical pair.",
+        "properties": {
+          "etf": {
+            "title": "Etf",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "same_index",
+              "close"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
+          "typical_daily_gap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Measured typical daily gap (fraction), close tier only.",
+            "title": "Typical Daily Gap"
+          }
+        },
+        "required": [
+          "etf",
+          "tier",
+          "index"
+        ],
+        "title": "TwinSuggestionDto",
+        "type": "object"
+      },
       "UnknownAction": {
         "properties": {
           "action": {
@@ -14413,6 +14511,32 @@
           }
         },
         "summary": "List Instruments",
+        "tags": [
+          "instruments"
+        ]
+      }
+    },
+    "/api/instruments/twin-suggestions": {
+      "get": {
+        "description": "The built-in fund -> ETF twin list (identical-index pairs, then measured close twins).",
+        "operationId": "twin_suggestions_api_instruments_twin_suggestions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/TwinSuggestionDto"
+                  },
+                  "title": "Response Twin Suggestions Api Instruments Twin Suggestions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Twin Suggestions",
         "tags": [
           "instruments"
         ]
