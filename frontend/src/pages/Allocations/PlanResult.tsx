@@ -1,15 +1,17 @@
+import clsx from "clsx";
 import { Card } from "../../components/Card";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { formatNumber, formatQuantity } from "../../lib/format";
-import type { BuilderPlan, BuilderPlanRow } from "../../lib/queries/allocations";
+import type { BuilderPlan, BuilderPlanRow, PlanCategory } from "../../lib/queries/allocations";
+import { orderTrades, tradeTotals } from "./builderState";
 
 const num = (s: string | null | undefined) => (s === null || s === undefined ? null : Number(s));
 
 /** A fund row that actually buys or sells something. */
 const moves = (r: BuilderPlanRow) => (num(r.add_value) ?? 0) !== 0;
 
-/** Before → after bar: the held part, the added slice highlighted, and a target marker. */
+/** Before → after bar: the held part, the added (or sold) slice, and a target marker. */
 export function ShiftBar({ before, after, target, label }: { before: number; after: number; target: number; label: string }) {
   const lo = Math.min(before, after) * 100;
   const hi = Math.max(before, after) * 100;
@@ -30,35 +32,112 @@ function shiftLabel(name: string, r: { current_pct: string; after_pct: string; t
   return `${name}: now ${p(r.current_pct)}, after ${p(r.after_pct)}, target ${p(r.target_pct)}`;
 }
 
-function FundRow({ r, ccy }: { r: BuilderPlanRow; ccy: string }) {
-  const add = num(r.add_value) ?? 0;
+/** "12.3 % → 14.0 %" with the target after it. */
+function NowAfter({ r }: { r: { current_pct: string; after_pct: string; target_pct: string } }) {
   return (
-    <li className="allocations__plan-row">
-      <div className="allocations__plan-head">
-        <span className="allocations__row-label" title={r.name}>
-          {r.symbol}
-          {r.no_buy && <span className="allocations__tag">{r.held_unticked ? "held, not ticked" : "no buy"}</span>}
+    <span className="allocations__nowafter">
+      <Percent ratio={Number(r.current_pct)} digits={1} />
+      <span className="allocations__nowafter-arrow" aria-label="becomes">
+        →
+      </span>
+      <strong>
+        <Percent ratio={Number(r.after_pct)} digits={1} />
+      </strong>
+      <span className="allocations__nowafter-target">
+        target <Percent ratio={Number(r.target_pct)} digits={1} />
+      </span>
+    </span>
+  );
+}
+
+/** Whole shares read "182", fractional ones "1.2345". */
+const shareText = (s: string) => {
+  const n = Math.abs(Number(s));
+  return formatQuantity(n, Number.isInteger(n) ? 0 : 4);
+};
+
+/** One trade: a Buy / Sell word (never colour alone), the fund, shares and the amount, in aligned columns. */
+function TradeRow({ r, ccy }: { r: BuilderPlanRow; ccy: string }) {
+  const add = num(r.add_value) ?? 0;
+  const sell = add < 0;
+  return (
+    <li className={clsx("allocations__trade", sell && "allocations__trade--sell")}>
+      <span className={clsx("allocations__action", sell ? "allocations__action--sell" : "allocations__action--buy")}>
+        {sell ? "Sell" : "Buy"}
+      </span>
+      <span className="allocations__trade-who">
+        <span className="allocations__trade-symbol">{r.symbol}</span>
+        <span className="allocations__trade-name" title={r.name}>
+          {r.name}
         </span>
-        <span className="allocations__plan-amount">
-          {add !== 0 ? <Money amount={add} currency={ccy} signed colored /> : "–"}
-          {add !== 0 && <span className="allocations__plan-shares">{formatQuantity(Number(r.add_shares), 4)} sh</span>}
-        </span>
-      </div>
-      <ShiftBar
-        before={Number(r.before_pct)}
-        after={Number(r.after_pct)}
-        target={Number(r.target_pct)}
-        label={shiftLabel(r.symbol, r)}
-      />
-      <p className="allocations__plan-note">
-        <Percent ratio={Number(r.current_pct)} digits={1} /> → <Percent ratio={Number(r.after_pct)} digits={1} /> (target{" "}
-        <Percent ratio={Number(r.target_pct)} digits={1} />)
-      </p>
+      </span>
+      <span className="allocations__trade-shift">
+        <NowAfter r={r} />
+      </span>
+      <span className="allocations__trade-shares">{shareText(r.add_shares)} sh</span>
+      <span className="allocations__trade-amount">
+        <Money amount={Math.abs(add)} currency={ccy} />
+      </span>
     </li>
   );
 }
 
-export function PlanResult({ plan }: { plan: BuilderPlan }) {
+/** "Buy €1,200", "Sell €300" or both, in words. */
+function Totals({ rows, ccy }: { rows: BuilderPlanRow[]; ccy: string }) {
+  const { buy, sell } = tradeTotals(rows);
+  return (
+    <span className="allocations__cat-total">
+      {buy > 0 && (
+        <span className="allocations__cat-buy">
+          Buy <Money amount={buy} currency={ccy} />
+        </span>
+      )}
+      {sell > 0 && (
+        <span className="allocations__cat-sell">
+          Sell <Money amount={sell} currency={ccy} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+function CategoryPlan({ c, rows, ccy }: { c: PlanCategory; rows: BuilderPlanRow[]; ccy: string }) {
+  const trades = orderTrades(rows.filter(moves));
+  const kept = rows.filter((r) => !moves(r));
+  return (
+    <section className="allocations__plan-cat" aria-label={c.name}>
+      <header className="allocations__plan-cat-head">
+        <h3 className="allocations__group-title">{c.name}</h3>
+        <NowAfter r={c} />
+        <Totals rows={rows} ccy={ccy} />
+      </header>
+      <ShiftBar
+        before={Number(c.before_pct)}
+        after={Number(c.after_pct)}
+        target={Number(c.target_pct)}
+        label={shiftLabel(c.name, c)}
+      />
+      <ul className="allocations__trades">
+        {trades.map((r) => (
+          <TradeRow key={r.instrument_id} r={r} ccy={ccy} />
+        ))}
+      </ul>
+      {kept.length > 0 && (
+        <p className="allocations__plan-note">
+          No new money:{" "}
+          {kept.map((r) => (
+            <span key={r.instrument_id} className="allocations__kept">
+              {r.symbol}
+              {r.held_unticked ? " (held)" : r.no_buy ? " (no buy)" : ""}
+            </span>
+          ))}
+        </p>
+      )}
+    </section>
+  );
+}
+
+export function PlanResult({ plan, stale = false }: { plan: BuilderPlan; stale?: boolean }) {
   const s = plan.summary;
   const other = (v: string | null | undefined) =>
     v === null || v === undefined ? undefined : <Money amount={Number(v)} currency={s.other_ccy} />;
@@ -71,8 +150,12 @@ export function PlanResult({ plan }: { plan: BuilderPlan }) {
 
   return (
     <>
+      {stale && (
+        <output className="allocations__notice">
+          The mix changed since this plan was computed. Compute again to update it.
+        </output>
+      )}
       <Card title="Plan summary" collapsibleId="allocations.summary">
-        {/* Three figures side by side (four when selling): compact, no lone tile. */}
         <dl className="allocations__summary">
           <div className="allocations__stat">
             <dt className="allocations__stat-label">Investing</dt>
@@ -110,49 +193,26 @@ export function PlanResult({ plan }: { plan: BuilderPlan }) {
             <dd className="allocations__stat-value">
               <Money amount={num(s.leftover)} currency={plan.ccy} digits={0} />
             </dd>
-            <dd className="allocations__stat-sub">{other(s.other_leftover)}</dd>
+            <dd className="allocations__stat-sub">{selling ? "cash + sales − buys" : other(s.other_leftover)}</dd>
           </div>
         </dl>
         {plan.extras.length > 0 && (
           <p className="allocations__notice" role="note">
-            Held but not ticked: {plan.extras.join(", ")}. Their value counts toward their category, so they
-            are not bought.
+            Held, no new money: {plan.extras.join(", ")}. Their value counts toward their category
+            {plan.allow_sell ? " and they are neither bought nor sold." : ", so they are not bought."}
           </p>
         )}
       </Card>
 
-      <Card title={plan.allow_sell ? "Rebalance plan" : "Buy plan"} collapsibleId="allocations.plan">
-        <div className="allocations__groups">
-          {active.length === 0 && <p className="allocations__plan-note">Nothing to buy: your mix is already on target.</p>}
+      <Card
+        title={plan.allow_sell ? "Rebalance plan" : "Buy plan"}
+        subtitle={plan.allow_sell ? "Buys and sells per category, largest first" : "What to buy per category, largest first"}
+        collapsibleId="allocations.plan"
+      >
+        <div className="allocations__plan">
+          {active.length === 0 && <p className="allocations__plan-note">Nothing to trade: your mix is already on target.</p>}
           {active.map(({ c, rows }) => (
-            <section key={c.name} className="allocations__group" aria-label={c.name}>
-              <div className="allocations__plan-head">
-                <h3 className="allocations__group-title">{c.name}</h3>
-                <span className="allocations__plan-amount">
-                  <Money amount={num(c.add_value)} currency={plan.ccy} signed colored />
-                </span>
-              </div>
-              <ShiftBar
-                before={Number(c.before_pct)}
-                after={Number(c.after_pct)}
-                target={Number(c.target_pct)}
-                label={shiftLabel(c.name, c)}
-              />
-              <ul className="allocations__plan-list">
-                {rows.filter(moves).map((r) => (
-                  <FundRow key={r.instrument_id} r={r} ccy={plan.ccy} />
-                ))}
-              </ul>
-              {rows.some((r) => !moves(r)) && (
-                <p className="allocations__plan-note">
-                  No change:{" "}
-                  {rows
-                    .filter((r) => !moves(r))
-                    .map((r) => r.symbol)
-                    .join(", ")}
-                </p>
-              )}
-            </section>
+            <CategoryPlan key={c.name} c={c} rows={rows} ccy={plan.ccy} />
           ))}
           {idle.length > 0 && (
             <p className="allocations__idle">

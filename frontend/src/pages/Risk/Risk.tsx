@@ -1,9 +1,10 @@
 import { Inbox } from "lucide-react";
-import { useCallback, useMemo, type CSSProperties } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import { Card } from "../../components/Card";
 import { Chart, type ChartSeries } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
 import { EmptyState } from "../../components/EmptyState";
+import { InfoTip } from "../../components/InfoTip";
 import { ErrorState } from "../../components/ErrorState";
 import { KpiTile } from "../../components/KpiTile";
 import { Money } from "../../components/Money";
@@ -16,6 +17,7 @@ import { formatAxisDate, formatDate, formatMoney, formatNumber, formatPercent } 
 import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
 import { glossaryText } from "../../lib/glossary";
 import { usePrefs } from "../../lib/prefs";
+import { useIsDesktop } from "../../lib/useMediaQuery";
 import { usePersistentState } from "../../lib/usePersistentState";
 import { type AnalyticsOut, toNum, useAnalytics } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -42,6 +44,7 @@ interface Metric {
   tone?: Tone;
 }
 
+/** Every metric, grouped, for the "All metrics" table (the headline four lead the page). */
 const GROUPS: { id: string; title: string; metrics: Metric[] }[] = [
   {
     id: "returns",
@@ -84,6 +87,22 @@ const GROUPS: { id: string; title: string; metrics: Metric[] }[] = [
   },
 ];
 
+/** One labelled row of the metrics table: name (with its explanation) left, figure right. */
+function MetricRow({ label, tip, value, hint }: { label: string; tip?: string; value: ReactNode; hint?: ReactNode }) {
+  return (
+    <div className="risk-page__row">
+      <dt className="risk-page__row-label">
+        {label}
+        {tip ? <InfoTip label={label} content={tip} /> : null}
+      </dt>
+      <dd className="risk-page__row-value">
+        {value}
+        {hint ? <span className="risk-page__row-hint">{hint}</span> : null}
+      </dd>
+    </div>
+  );
+}
+
 const isLookback = (v: unknown): v is string => typeof v === "string" && LOOKBACKS.some((l) => l.value === v);
 
 export function Risk() {
@@ -105,6 +124,8 @@ export function Risk() {
   );
 
   const d = q.data;
+  // Desktop: the curve fills the height of the metrics table beside it.
+  const desktop = useIsDesktop();
   const { hide } = useHideAmounts();
   const series = useMemo<ChartSeries[]>(() => {
     if (!d) return [];
@@ -170,20 +191,20 @@ export function Risk() {
     },
   ];
 
-  const renderMetric = (m: Metric) => {
+  const metricValue = (m: Metric): ReactNode => {
     const n = toNum(d?.[m.key] as string | null);
-    const body = m.kind === "pct" ? <Percent ratio={n} colored={m.tone === "sign"} /> : <span className={m.tone === "sign" && n !== null && n !== 0 ? (n > 0 ? "risk-page__pos" : "risk-page__neg") : undefined}>{formatNumber(n)}</span>;
+    const body =
+      m.kind === "pct" ? (
+        <Percent ratio={n} colored={m.tone === "sign"} />
+      ) : (
+        <span className={m.tone === "sign" && n !== null && n !== 0 ? (n > 0 ? "risk-page__pos" : "risk-page__neg") : undefined}>
+          {formatNumber(n)}
+        </span>
+      );
     return (
-      <KpiTile
-        key={m.key}
-        label={m.label}
-        tooltip={glossaryText(m.key)}
-        value={
-          <Maybe present={n !== null} ccy={currency}>
-            {body}
-          </Maybe>
-        }
-      />
+      <Maybe present={n !== null} ccy={currency}>
+        {body}
+      </Maybe>
     );
   };
 
@@ -209,56 +230,95 @@ export function Risk() {
         <EmptyState icon={<Inbox aria-hidden />} title="No analytics yet" description="Import transactions to see risk metrics." />
       ) : (
         <div className="risk-page__stack">
-          <div className="risk-page__groups">
-            {GROUPS.map((g) => (
-              <section
-                key={g.id}
-                className="risk-page__group"
-                aria-label={g.title}
-                // Tile count: on desktop each group takes width in proportion, so rows fill up.
-                style={{ "--risk-tiles": g.metrics.length + (g.id === "risk" ? 1 : g.id === "market" ? 2 : 0) } as CSSProperties}
-              >
-                <h2 className="risk-page__group-title">{g.title}</h2>
-                <div className="risk-page__metrics">
-                  {g.metrics.map(renderMetric)}
-                  {g.id === "risk" ? (
-                    <KpiTile
-                      label="Risk-free rate"
-                      tooltip={glossaryText("risk_free")}
-                      value={
-                        <Maybe present={rf !== null} ccy={currency}>
-                          <Percent ratio={rf} />
-                        </Maybe>
-                      }
-                      hint={rf !== null ? `source: ${d.risk_free_symbol}` : "no live rate cached"}
-                    />
-                  ) : null}
-                  {g.id === "market" ? (
-                    <>
-                      <KpiTile
-                        label="Benchmark"
-                        tooltip={glossaryText("benchmark")}
-                        value={<span>{d.benchmark_symbol}</span>}
-                        hint={d.benchmark_is_funded ? "funded with your deposits" : "price only"}
-                      />
-                      <KpiTile
-                        label={benchLabel}
-                        tooltip={glossaryText("benchmark")}
+          {/* Headline: the four figures that answer "how did it go, and at what risk?" */}
+          <div className="risk-page__headline">
+            <KpiTile
+              label="CAGR"
+              tooltip={glossaryText("cagr")}
+              value={metricValue(GROUPS[0].metrics[0])}
+              hint={
+                <>
+                  TWR <Percent ratio={toNum(d.twr)} signed /> · XIRR <Percent ratio={toNum(d.xirr)} signed />
+                </>
+              }
+            />
+            <KpiTile
+              label="Volatility"
+              tooltip={glossaryText("volatility")}
+              value={metricValue(GROUPS[1].metrics[0])}
+              hint={<>Sharpe {formatNumber(toNum(d.sharpe))} · Sortino {formatNumber(toNum(d.sortino))}</>}
+            />
+            <KpiTile
+              label="Max drawdown"
+              tooltip={glossaryText("max_drawdown")}
+              value={metricValue(GROUPS[2].metrics[0])}
+              hint={<>Calmar {formatNumber(toNum(d.calmar))} · VaR <Percent ratio={toNum(d.var_95)} /></>}
+            />
+            <KpiTile
+              label={benchLabel}
+              tooltip={glossaryText("benchmark")}
+              value={
+                <Maybe present={diff !== null} ccy={currency}>
+                  {money(d.benchmark_diff, true)}
+                </Maybe>
+              }
+              hint={
+                diffPct !== null ? (
+                  <>
+                    <Percent ratio={diffPct} signed colored /> · beta {formatNumber(toNum(d.beta))}
+                  </>
+                ) : undefined
+              }
+            />
+          </div>
+          <div className="risk-page__main">
+          <Card
+            className="risk-page__metrics-card"
+            title="All metrics"
+            subtitle={`${LOOKBACKS.find((l) => l.value === lookback)?.label ?? ""} lookback`}
+            collapsibleId="risk.metrics"
+          >
+            <div className="risk-page__groups">
+              {GROUPS.map((g) => (
+                <section key={g.id} className="risk-page__group" aria-label={g.title}>
+                  <h2 className="risk-page__group-title">{g.title}</h2>
+                  <dl className="risk-page__rows">
+                    {g.metrics.map((m) => (
+                      <MetricRow key={m.key} label={m.label} tip={glossaryText(m.key)} value={metricValue(m)} />
+                    ))}
+                    {g.id === "risk" ? (
+                      <MetricRow
+                        label="Risk-free rate"
+                        tip={glossaryText("risk_free")}
                         value={
-                          <Maybe present={diff !== null} ccy={currency}>
-                            {money(d.benchmark_diff, true)}
+                          <Maybe present={rf !== null} ccy={currency}>
+                            <Percent ratio={rf} />
                           </Maybe>
                         }
-                        hint={diffPct !== null ? <Percent ratio={diffPct} colored /> : undefined}
+                        hint={rf !== null ? d.risk_free_symbol : "no live rate"}
                       />
-                    </>
-                  ) : null}
-                </div>
-              </section>
-            ))}
-          </div>
-          <Card title="Equity curve" subtitle={`Since ${formatDate(d.curve_start)}`} collapsibleId="risk.curve">
+                    ) : null}
+                    {g.id === "market" ? (
+                      <MetricRow
+                        label="Benchmark"
+                        tip={glossaryText("benchmark")}
+                        value={d.benchmark_symbol}
+                        hint={d.benchmark_is_funded ? "funded" : "price only"}
+                      />
+                    ) : null}
+                  </dl>
+                </section>
+              ))}
+            </div>
+          </Card>
+          <Card
+            className="risk-page__curve-card"
+            title="Equity curve"
+            subtitle={`Since ${formatDate(d.curve_start)}`}
+            collapsibleId="risk.curve"
+          >
             <Chart
+              height={desktop ? 540 : 300}
               series={series}
               valueFormat={(v) =>
                 hide ? formatPercent(v, { digits: 0 }) : formatMoney(v, d.currency, { compact: true })
@@ -279,6 +339,7 @@ export function Risk() {
               </p>
             ) : null}
           </Card>
+          </div>
           <Card title="Attribution" subtitle="What each holding added to the return" collapsibleId="risk.attribution">
             <DataTable
               className="risk-page__attribution"

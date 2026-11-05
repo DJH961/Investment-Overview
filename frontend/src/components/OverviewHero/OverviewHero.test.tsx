@@ -27,7 +27,7 @@ describe("OverviewHero", () => {
     expect(screen.getByText("Last session · Fri")).toBeInTheDocument();
     // When the price is from vs when the app fetched it, both labelled.
     const stamps = container.querySelector(".overview-hero__stamps");
-    expect(stamps).toHaveTextContent("Price as of Fri 30 Oct close");
+    expect(stamps).toHaveTextContent("Price as of Fri 20:00 (close)");
     expect(stamps).toHaveTextContent("Updated today 08:00");
     expect(screen.getByText("Investment +30.00% · Currency -1.20 pp")).toBeInTheDocument();
   });

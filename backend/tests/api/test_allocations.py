@@ -148,6 +148,50 @@ def test_rebalance_plan(api_client: TestClient, ids: dict[str, int]) -> None:
     )
 
 
+def test_target_saves_and_restores_the_calculator_selection(
+    api_client: TestClient, ids: dict[str, int]
+) -> None:
+    """Saving from the calculator keeps which funds get new money (and which do not).
+
+    BND is deselected in its category, ETF-only is on, rebalancing on; reading
+    the targets back (and after replacing the target) returns exactly that.
+    """
+    builder = {
+        "mode": "category",
+        "etf_only": True,
+        "categories": [
+            {"name": "US Stocks", "weight": "60", "split": "even", "selected": [ids["VTI"]]},
+            {"name": "Bonds", "weight": "40", "split": "value", "selected": []},
+        ],
+    }
+    body = _target(ids, allow_sell=True, builder=builder)
+    saved = api_client.put("/api/allocations", json=body)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["builder"] == builder
+    assert saved.json()["allow_sell"] is True
+    back = api_client.get("/api/allocations?ccy=USD").json()
+    (target,) = back["targets"]
+    assert target["builder"] == builder
+    assert target["allow_sell"] is True
+    # Replacing the target with a different selection replaces the state too.
+    changed = {
+        **builder,
+        "etf_only": False,
+        "categories": [{**builder["categories"][0], "selected": [ids["VTI"], ids["BND"]]}],
+    }
+    api_client.put("/api/allocations", json=body | {"id": target["id"], "builder": changed})
+    (again,) = api_client.get("/api/allocations?ccy=USD").json()["targets"]
+    assert again["builder"] == {**changed, "categories": [{**changed["categories"][0]}]}
+    # An older target (no state) reads back as null.
+    api_client.put("/api/allocations", json=_target(ids, name="plain"))
+    plain = next(
+        t
+        for t in api_client.get("/api/allocations?ccy=USD").json()["targets"]
+        if t["name"] == "plain"
+    )
+    assert plain["builder"] is None
+
+
 def test_rebalance_errors(api_client: TestClient, ids: dict[str, int]) -> None:
     no_target = api_client.get("/api/allocations/rebalance?amount=100")
     assert no_target.status_code == 422
@@ -250,11 +294,64 @@ def test_builder_plan_held_unticked_extras(api_client: TestClient, ids: dict[str
     rows = {r["symbol"]: r for r in plan["rows"]}
     assert rows["BND"]["held_unticked"] is True
     assert Decimal(rows["BND"]["add_value"]) == 0
-    # Selling turns the credit off: un-ticked funds are not part of the plan.
+    # Rebalancing keeps an un-ticked holding as it is (never sold, never bought).
     sell = api_client.post(
         "/api/allocations/plan", json=_cat_body(ids, "value", ["VTI"], allow_sell=True)
     ).json()
-    assert sell["extras"] == []
+    assert sell["extras"] == ["BND"]
+    sell_rows = {r["symbol"]: r for r in sell["rows"]}
+    assert Decimal(sell_rows["BND"]["add_value"]) == 0
+    assert Decimal(sell_rows["BND"]["add_shares"]) == 0
+
+
+def test_rebalance_counts_kept_funds_toward_their_category(
+    api_client: TestClient, ids: dict[str, int]
+) -> None:
+    """Regression: a rebalance used to plan over the ticked funds only.
+
+    US Stocks holds VTI (3750) + BND (1400, un-ticked, kept); Intl holds VXUS
+    (nothing yet). 50/50 with 1000 cash: the plan total is the whole 6150, so
+    US Stocks may hold 3075 of which BND already is 1400 -> VTI sells 2075 and
+    VXUS buys 3075. (Ignoring BND gave a 4750 total: VTI -1375, VXUS +2375.)
+    """
+    from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
+
+    _one_category(ids)
+    with ledger_session_scope() as session:
+        vxus = instruments_repo.get_or_create(session, symbol="VXUS", asset_class="etf")
+        instrument_overrides_repo.set_category(session, vxus.id, "Intl")
+        vxus_id = vxus.id
+    body = {
+        "amount": "1000",
+        "ccy": "USD",
+        "fractional": True,
+        "allow_sell": True,
+        "mode": "category",
+        "category_weights": [
+            {"name": "US Stocks", "weight": "50", "split": "value", "selected": [ids["VTI"]]},
+            {"name": "Intl", "weight": "50", "split": "value", "selected": [vxus_id]},
+        ],
+    }
+    res = api_client.post("/api/allocations/plan", json=body)
+    assert res.status_code == 200, res.text
+    plan = res.json()
+    rows = {r["symbol"]: r for r in plan["rows"]}
+    assert plan["extras"] == ["BND"]
+    assert Decimal(rows["BND"]["add_value"]) == 0
+    assert rows["BND"]["held_unticked"] is True
+    assert Decimal(rows["VTI"]["add_value"]) == pytest.approx(Decimal(-2075), abs=Decimal("0.01"))
+    assert Decimal(rows["VXUS"]["add_value"]) == pytest.approx(Decimal(3075), abs=Decimal("0.01"))
+    # Shares are of the whole portfolio after the plan, and the categories land on target.
+    assert sum(Decimal(r["after_pct"]) for r in plan["rows"]) == pytest.approx(Decimal(1))
+    cats = {c["name"]: c for c in plan["categories"]}
+    assert Decimal(cats["US Stocks"]["after_pct"]) == pytest.approx(
+        Decimal("0.5"), abs=Decimal("1e-6")
+    )
+    assert Decimal(cats["Intl"]["after_pct"]) == pytest.approx(Decimal("0.5"), abs=Decimal("1e-6"))
+    s = plan["summary"]
+    assert Decimal(s["buying"]) == pytest.approx(Decimal(3075), abs=Decimal("0.01"))
+    assert Decimal(s["selling"]) == pytest.approx(Decimal(2075), abs=Decimal("0.01"))
+    assert Decimal(s["leftover"]) == pytest.approx(Decimal(0), abs=Decimal("0.01"))
 
 
 def test_builder_plan_errors(api_client: TestClient, ids: dict[str, int]) -> None:

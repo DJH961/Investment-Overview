@@ -72,6 +72,7 @@ def create_allocation(
     no_buy_ids: set[int] | None = None,
     allow_sell: bool = False,
     display_currency: str | None = None,
+    builder_state: str | None = None,
 ) -> TargetAllocation:
     no_buy = no_buy_ids or set()
     alloc = TargetAllocation(
@@ -79,6 +80,7 @@ def create_allocation(
         active=active,
         allow_sell=allow_sell,
         display_currency=display_currency,
+        builder_state=builder_state,
     )
     session.add(alloc)
     session.flush()
@@ -111,12 +113,14 @@ def update_allocation(
     no_buy_ids: set[int] | None = None,
     allow_sell: bool = False,
     display_currency: str | None = None,
+    builder_state: str | None = None,
 ) -> TargetAllocation:
     """Replace an allocation's fields and items in place (the id is kept)."""
     no_buy = no_buy_ids or set()
     alloc.name = name
     alloc.allow_sell = allow_sell
     alloc.display_currency = display_currency
+    alloc.builder_state = builder_state
     alloc.items.clear()
     session.flush()  # delete-orphan removes the old items before the new ones insert
     for instrument_id, weight in weights_by_instrument_id.items():

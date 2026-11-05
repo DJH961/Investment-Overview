@@ -3,7 +3,8 @@
 // One grid for the whole list (rows are subgrids), so every column lines up:
 // phone:   holding | value | day
 // tablet:  holding | weight | value | day | since buying
-// desktop: holding | weight | value | day | since buying | price as of
+// The price time is said once (card header); a row whose price differs says
+// its own under the name.
 .overview-holdings {
   &__list {
     display: grid;
@@ -19,8 +20,19 @@
     }
 
     @include m.desktop {
-      grid-template-columns: minmax(10rem, 1.6fr) minmax(8rem, 1fr) auto auto auto auto;
+      grid-template-columns: minmax(12rem, 1.8fr) minmax(8rem, 1fr) auto auto auto;
     }
+  }
+
+  &__asof {
+    @include m.truncate;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__asof-key {
+    @include m.visually-hidden;
   }
 
   &__row,
@@ -138,9 +150,20 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  // An earlier session's move: greyed, lighter, never tinted (the text says so too).
+  &__today--stale {
+    opacity: 0.65;
+  }
+
   &__today--stale,
-  &__today--stale &__sub {
+  &__today--stale &__sub,
+  &__today--stale &__main {
     color: var(--color-faint);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__sr {
+    @include m.visually-hidden;
   }
 
   &__pill {
@@ -220,10 +243,8 @@
   // and stamp display rules above.
   &__head &__head-weight,
   &__head &__head-total,
-  &__head &__head-asof,
   &__row &__weight,
-  &__row &__total,
-  &__row &__asof {
+  &__row &__total {
     display: none;
   }
 
@@ -235,16 +256,6 @@
 
     &__row &__weight,
     &__row &__total {
-      display: flex;
-    }
-  }
-
-  @include m.desktop {
-    &__head &__head-asof {
-      display: block;
-    }
-
-    &__row &__asof {
       display: flex;
     }
   }

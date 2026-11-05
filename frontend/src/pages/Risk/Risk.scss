@@ -1,5 +1,7 @@
 @use "../../styles/mixins" as m;
 
+// Desktop: four headline tiles of one size, then the equity curve beside the
+// full metrics table (both cards the same height), then attribution.
 .risk-page {
   display: block;
 
@@ -8,27 +10,47 @@
     gap: var(--space-4);
   }
 
-  // Desktop: the metric groups share rows, each as wide as its tile count
-  // (--risk-tiles), so no row ends in empty space.
-  &__groups {
+  &__headline {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3);
+    @include m.phone-tile-grid;
+
+    @include m.tablet-only {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  &__main {
     display: grid;
     gap: var(--space-4);
 
     @include m.desktop {
-      display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-4) var(--space-5);
+      grid-template-columns: minmax(0, 1fr) minmax(22rem, 26rem);
+      align-items: stretch;
     }
   }
 
-  &__metrics {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
-    gap: var(--space-3);
-    @include m.phone-tile-grid;
-
+  // Phone: the metrics table comes first; desktop: right of the curve.
+  &__metrics-card {
     @include m.desktop {
-      grid-template-columns: repeat(var(--risk-tiles, 4), minmax(0, 1fr));
+      order: 2;
+    }
+  }
+
+  &__curve-card {
+    @include m.desktop {
+      order: 1;
+    }
+  }
+
+  &__groups {
+    display: grid;
+    gap: var(--space-4);
+
+    // Tablet: two groups side by side.
+    @include m.tablet-only {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 
@@ -42,18 +64,63 @@
 .risk-page__group {
   display: grid;
   align-content: start;
-  gap: var(--space-2);
-
-  @include m.desktop {
-    flex: var(--risk-tiles, 4) 1 calc(var(--risk-tiles, 4) * 9rem);
-    min-width: 0;
-  }
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 // Section label above each metric group ("RETURNS", "RISK AND VOLATILITY").
 .risk-page__group-title {
-  margin: var(--space-2) 0 0;
-  @include m.eyebrow(var(--font-size-xs));
+  margin: 0;
+  padding-bottom: var(--space-1);
+  border-bottom: var(--border-width) solid var(--color-border-strong);
+  @include m.eyebrow;
+}
+
+.risk-page__rows {
+  display: grid;
+  margin: 0;
+}
+
+// One metric: name left, figure right, a hairline between rows, tabular numbers.
+.risk-page__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-height-sm);
+  padding: var(--space-1) 0;
+  border-bottom: var(--border-width) solid var(--color-border);
+  font-size: var(--font-size-sm);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+}
+
+.risk-page__row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--color-muted);
+}
+
+.risk-page__row-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-fg);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.risk-page__row-hint {
+  color: var(--color-faint);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
 }
 
 .risk-page__total {
@@ -63,8 +130,9 @@
   gap: var(--space-2);
   margin: var(--space-3) 0 0;
   padding-top: var(--space-2);
-  border-top: 1px solid var(--color-border);
+  border-top: var(--border-width) solid var(--color-border);
   font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
 
   dt {
     font-weight: var(--font-weight-semibold);

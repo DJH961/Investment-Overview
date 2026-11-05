@@ -25,6 +25,9 @@ class CalcInstrumentOut(ApiModel):
     symbol: str
     name: str
     category: str
+    asset_class: str = Field(
+        default="", description='Effective asset class ("etf", "mutual_fund", ...)'
+    )
     current_value: DecStr | None
     current_pct: DecStr | None = Field(description="Share of total value (fraction, 0.01 = 1%)")
 

@@ -21,10 +21,19 @@
     min-width: 0;
   }
 
+  &__title-line {
+    display: flex;
+    flex-shrink: 0;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
   &__title {
     @include m.truncate;
     flex-shrink: 0;
-    max-width: 50%;
+    min-width: 0;
+    margin: 0;
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;
@@ -41,7 +50,7 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 
-    @include m.desktop {
+    @include m.wide {
       display: inline-flex;
     }
   }
@@ -51,10 +60,13 @@
     height: var(--font-size-xs);
   }
 
-  // Wide desktop: the page's headline figures, so the bar carries the essentials.
+  // The portfolio's headline figures, in the same place on every view.
   &__summary {
-    display: none;
+    display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-width: 15rem;
+    min-height: var(--control-height-sm);
     gap: var(--space-2);
     flex-shrink: 0;
     padding: var(--space-1) var(--space-3);
@@ -65,8 +77,14 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 
-    @include m.wide {
-      display: inline-flex;
+    // Tablet: value and day % only (the money move and its label need room).
+    @include m.tablet-only {
+      min-width: 0;
+
+      .top-bar__summary-move,
+      .top-bar__summary-day {
+        display: none;
+      }
     }
   }
 
@@ -74,9 +92,16 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  // The session label only on big monitors: below, the freshness chip says it
+  // and the page title + price time need the room.
   &__summary-day {
+    display: none;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+
+    @include m.xxl {
+      display: inline;
+    }
   }
 
   &__actions {
@@ -167,14 +192,54 @@
       gap: 0;
     }
 
-    .top-bar__title {
+    .top-bar__title-line {
+      gap: var(--space-2);
       max-width: 100%;
+    }
+
+    .top-bar__title {
       font-size: var(--font-size-md);
     }
 
     .top-bar__freshness {
       max-width: 100%;
     }
+  }
+}
+
+// Phone: the portfolio value and day % beside the title (compact figures).
+.top-bar__mini {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.top-bar__ccy {
+  display: inline-flex;
+}
+
+.top-bar__ccy-button {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-fg);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+
+  &:focus-visible {
+    @include m.focus-ring;
   }
 }
 

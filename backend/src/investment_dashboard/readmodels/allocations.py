@@ -7,6 +7,7 @@ spot - a single-instant conversion; it is ``None`` when no spot exists.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -63,10 +64,22 @@ def serialize_targets(session: Session) -> list[dict[str, Any]]:
                 "active": bool(alloc.active),
                 "allow_sell": bool(alloc.allow_sell),
                 "display_currency": alloc.display_currency,
+                "builder": _builder_state(alloc.builder_state),
                 "items": items,
             }
         )
     return out
+
+
+def _builder_state(raw: str | None) -> dict[str, Any] | None:
+    """The saved calculator state (JSON text), or ``None`` when absent or unreadable."""
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 @dataclass
@@ -208,6 +221,7 @@ def save_target(
     allow_sell: bool,
     display_currency: str | None,
     items: list[tuple[int, Decimal, bool]],
+    builder_state: str | None = None,
 ) -> dict[str, Any]:
     """Create or replace a saved target (weights normalised to 100).
 
@@ -248,6 +262,7 @@ def save_target(
             no_buy_ids=no_buy,
             allow_sell=allow_sell,
             display_currency=display_currency,
+            builder_state=builder_state,
         )
     else:
         created = allocations_repo.create_allocation(
@@ -258,6 +273,7 @@ def save_target(
             no_buy_ids=no_buy,
             allow_sell=allow_sell,
             display_currency=display_currency,
+            builder_state=builder_state,
         )
     session.flush()
     saved = next(t for t in serialize_targets(session) if t["id"] == created.id)

@@ -20,12 +20,36 @@ class TargetItem(ApiModel):
     no_buy: bool = False
 
 
+class CategoryStateIO(ApiModel):
+    """One category row of the calculator as saved with a target."""
+
+    name: str = Field(max_length=128)
+    weight: str = Field(
+        default="0", max_length=24, description="The typed target % (text, as entered)"
+    )
+    split: Literal["value", "even"] = "value"
+    selected: list[int] = Field(
+        default_factory=list, description="Funds that get new money; the rest are deselected"
+    )
+
+
+class BuilderStateIO(ApiModel):
+    """The calculator mix a target was saved from; loading the target restores it."""
+
+    mode: Literal["fund", "category"] = "fund"
+    etf_only: bool = Field(default=False, description='"Invest only in ETFs"')
+    categories: list[CategoryStateIO] = Field(default_factory=list)
+
+
 class TargetOut(ApiModel):
     id: int
     name: str
     active: bool
     allow_sell: bool
     display_currency: str | None = None
+    builder: BuilderStateIO | None = Field(
+        default=None, description="Calculator state saved with the target (null for older targets)"
+    )
     items: list[TargetItem]
 
 
@@ -96,6 +120,7 @@ class TargetIn(ApiModel):
     active: bool = False
     allow_sell: bool = False
     display_currency: Ccy | None = None
+    builder: BuilderStateIO | None = None
     items: list[TargetItemIn]
 
 

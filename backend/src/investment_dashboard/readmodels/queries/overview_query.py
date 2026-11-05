@@ -1516,6 +1516,9 @@ class HoldingCard:
     price_as_of: date | None
     updated_at: datetime | None
     market_open: bool = False
+    #: When the served price is *from* on the exchange / fund (the provider's
+    #: market time: a close print or a NAV publish time); ``None`` when unknown.
+    price_market_time: datetime | None = None
     #: The print date this holding's daily move lands on.
     daily_growth_as_of: date | None = None
     #: True when this holding's daily move is on an *older* print than the
@@ -1606,6 +1609,7 @@ def build_holding_cards(
                 price_as_of=fr.price_as_of if fr is not None else None,
                 updated_at=fr.updated_at if fr is not None else None,
                 market_open=fr.market_open if fr is not None else False,
+                price_market_time=fr.price_market_time if fr is not None else None,
             )
         )
     # Portfolio weight: each card's EUR value as a share of the held total.
