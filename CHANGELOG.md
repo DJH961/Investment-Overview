@@ -17,6 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.6.0] — 2026-11-05
+
 ### Added
 - **Saved targets remember the calculator selection.** Saving a target now also
   stores the mode, every category's weight and split, which funds get new money
@@ -73,6 +75,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (sales round down too, so "Buying" exceeded "Selling + cash" and "Left over" read
   0); the largest buys now give back shares until it fits. Sells read as "Sell",
   largest first, with whole share counts.
+
+## [6.5.3] — 2026-11-05
+
+### Changed
+- **Cleaner polling: a closed market fetches only what is missing.** While a
+  market trades nothing changes: stocks every 60 s during the US session,
+  EUR/USD every minute while the currency market trades (Sunday 17:00 – Friday
+  17:00 New York, on its own clock). Once a market is closed, the server stops
+  asking unless data is actually missing: a settled close that did not arrive, a
+  mutual-fund NAV not published yet (re-asked every 10 min until it is in, was
+  30 min), or no EUR/USD reading since Friday's close (retried every minute). So
+  on a Saturday afternoon nothing is fetched, but an outage or a restart still
+  fills its gap at once. The two "while closed" interval settings from 6.5.1 are
+  gone (they mostly polled data that was already complete).
+
+## [6.5.2] — 2026-11-05
+
+### Fixed
+- **Mutual-fund prices arrive the same evening.** A NAV is now re-checked every
+  30 min (was 6 h) while it is missing, so a fund that publishes after the close
+  shows its price soon after instead of in the middle of the night. Once the
+  NAV is in, the fund is not asked again until the next one is due.
+- **All refresh timings are together in Settings › Data refresh, and visible.**
+  The per-kind price ages (incl. the mutual-fund NAV re-check) were hidden
+  under "Advanced", and the open-market price interval sat under Display.
 
 ## [6.5.1] — 2026-11-04
 

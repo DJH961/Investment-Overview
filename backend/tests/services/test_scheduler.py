@@ -48,14 +48,16 @@ class Rig:
                 eod=make("eod"),
                 interval_seconds=lambda: 60,
                 fx_interval=lambda: timedelta(minutes=1),
-                closed_interval=lambda: timedelta(minutes=10),
-                fx_closed_interval=lambda: timedelta(minutes=30),
+                prices_due=lambda: self.missing,
             ),
             clock=lambda: self.now,
             bus=self.bus,
         )
+        #: What ``prices_service`` would report as still due (missing close / NAV).
+        self.missing = False
         # Start with a fresh FX reading so the stock-clock tests see only stock jobs.
         self.sched.state.last_fx = now
+        self.sched.state.last_fx_ok = now
 
 
 async def test_market_open_ticks_every_interval() -> None:
@@ -92,29 +94,52 @@ async def test_after_close_runs_eod_once_then_fx() -> None:
     assert await r.sched.step() == ["fx"]  # currencies still trade: every minute
     assert (await asyncio.wait_for(sub.get(), 1))["type"] == "fx"
     r.now += timedelta(minutes=9)
-    assert await r.sched.step() == ["tick", "fx"]  # stocks closed: prices every 10 min
-    assert (await asyncio.wait_for(sub.get(), 1))["type"] == "tick"
+    assert await r.sched.step() == ["fx"]  # every close is in: no price pull at all
 
 
-async def test_currency_and_stock_markets_poll_separately() -> None:
-    # Tuesday 23:00 New York: stocks closed, currencies open -> FX every minute.
+async def test_closed_market_pulls_only_what_is_missing() -> None:
+    # Tuesday 23:00 New York: stocks closed, currencies open -> FX every minute,
+    # prices only while something (here a NAV) is still missing.
     r = Rig(et(2026, 11, 3, 23))
     assert await r.sched.step() == ["eod"]
+    r.missing = True
     ran: list[str] = []
     for _ in range(10):
         r.now += timedelta(minutes=1)
         ran += await r.sched.step()
     assert ran.count("fx") == 10
-    assert ran.count("tick") == 1
-    # Saturday: both closed -> each clock uses its own closed interval (10 / 30 min).
-    w = Rig(et(2026, 11, 7, 12))
-    assert await w.sched.step() == ["eod"]
+    assert ran.count("tick") == 10  # asked every minute; the TTL spaces the real pulls
+    r.missing = False  # the NAV landed
     ran = []
+    for _ in range(10):
+        r.now += timedelta(minutes=1)
+        ran += await r.sched.step()
+    assert ran.count("tick") == 0
+    assert ran.count("fx") == 10
+
+
+async def test_weekend_fetches_nothing_once_fridays_rate_is_in() -> None:
+    w = Rig(et(2026, 11, 7, 12))  # Saturday noon
+    w.sched.state.last_fx_ok = et(2026, 11, 6, 17, 5)  # read after Friday's 17:00 close
+    assert await w.sched.step() == ["eod"]
+    ran: list[str] = []
     for _ in range(60):
         w.now += timedelta(minutes=1)
         ran += await w.sched.step()
-    assert ran.count("tick") == 6
-    assert ran.count("fx") == 2
+    assert ran == []
+
+
+async def test_weekend_retries_a_missing_rate_until_it_lands() -> None:
+    w = Rig(et(2026, 11, 7, 12))  # Saturday, e.g. right after a restart / outage
+    w.sched.state.last_fx = w.sched.state.last_fx_ok = None
+    w.sched.state.last_eod_session = et(2026, 11, 6, 17).date()
+    w.fail.add("fx")
+    assert await w.sched.step() == ["fx"]  # fails
+    w.now += timedelta(minutes=1)
+    w.fail.clear()
+    assert await w.sched.step() == ["fx"]  # retried, now good
+    w.now += timedelta(minutes=5)
+    assert await w.sched.step() == []  # Friday's rate is in: nothing until Sunday
 
 
 async def test_unchanged_check_keeps_the_read_cache() -> None:
@@ -126,6 +151,7 @@ async def test_unchanged_check_keeps_the_read_cache() -> None:
     r.sched.jobs.fx_interval = lambda: timedelta(days=1)  # only ticks in this test
     sub = r.bus.subscribe()
     await r.sched.step()  # eod
+    r.missing = True  # e.g. a NAV not published yet: closed ticks keep checking
     await asyncio.wait_for(sub.get(), 1)
     r.now += timedelta(minutes=10)
     await r.sched.step()  # first closed tick: nothing seen before, so a change
