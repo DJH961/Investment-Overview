@@ -255,7 +255,7 @@ The import layer stays **broker-agnostic**. Parsers are plugins that emit `Parse
 - **Scheduler** (FastAPI lifespan task):
   - market hours: a batched quote + FX every 60 s, one `IntradayValue` sample, then an SSE push;
   - after close: closes, splits, snapshots, cache janitor;
-  - off-hours: prices every `scheduler.closed_interval_minutes` (10); live FX on its own 24/5 clock, every `scheduler.fx_interval_minutes` (1) while it trades and `scheduler.fx_closed_interval_minutes` (10) at weekends (6.5.1).
+  - off-hours: nothing is fetched unless data is missing: a settled close or a mutual-fund NAV not in yet (NAVs re-asked every `prices.ttl_seconds.mutual_fund`, 10 min), or no EUR/USD reading since Friday 17:00 at weekends. Live FX keeps its own 24/5 clock, every `scheduler.fx_interval_minutes` (1) while it trades (6.5.3).
 - **Auth:**
   - password (argon2) + passkeys via the `webauthn` Python lib;
   - httpOnly/Secure/SameSite=Strict cookie;
