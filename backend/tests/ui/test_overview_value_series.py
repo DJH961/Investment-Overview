@@ -229,7 +229,8 @@ class TestBuildWeekValueSeries:
         # No intraday-priced holdings, so the market component is flat zero; the
         # plotted value is purely the per-day NAV-fund track.
         t_mon = datetime(2024, 6, 3, 18, 0)
-        t_wed = datetime(2024, 6, 5, 18, 0)
+        # At the 16:00 ET close: the late-NAV line ends exactly at the official NAV.
+        t_wed = datetime(2024, 6, 5, 20, 0)
         samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
         monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
 
@@ -255,7 +256,8 @@ class TestBuildWeekValueSeries:
         session.flush()
 
         t_mon = datetime(2024, 6, 3, 18, 0)
-        t_wed = datetime(2024, 6, 5, 18, 0)
+        # At the 16:00 ET close: the late-NAV line ends exactly at the official NAV.
+        t_wed = datetime(2024, 6, 5, 20, 0)
         samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
         monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
 
@@ -282,7 +284,8 @@ class TestBuildWeekValueSeries:
         session.flush()
 
         t_mon = datetime(2024, 6, 3, 18, 0)
-        t_wed = datetime(2024, 6, 5, 18, 0)
+        # At the 16:00 ET close: the late-NAV line ends exactly at the official NAV.
+        t_wed = datetime(2024, 6, 5, 20, 0)
         samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
         monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
 
@@ -349,7 +352,8 @@ class TestBuildWeekValueSeries:
         session.flush()
 
         t_mon = datetime(2024, 6, 3, 18, 0)
-        t_wed = datetime(2024, 6, 5, 18, 0)
+        # At the 16:00 ET close: the late-NAV line ends exactly at the official NAV.
+        t_wed = datetime(2024, 6, 5, 20, 0)
         samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
         monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
         now = datetime(2024, 6, 5, 20, 0, tzinfo=UTC)
@@ -380,7 +384,8 @@ class TestBuildWeekValueSeries:
         session.flush()
 
         t_mon = datetime(2024, 6, 3, 18, 0)
-        t_wed = datetime(2024, 6, 5, 18, 0)
+        # At the 16:00 ET close: the late-NAV line ends exactly at the official NAV.
+        t_wed = datetime(2024, 6, 5, 20, 0)
         samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
         monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
         now = datetime(2024, 6, 5, 20, 0, tzinfo=UTC)
@@ -442,7 +447,8 @@ class TestBuildWeekValueSeries:
         session.flush()
 
         t_mon = datetime(2024, 6, 3, 18, 0)
-        t_wed = datetime(2024, 6, 5, 18, 0)
+        # At the 16:00 ET close: the late-NAV line ends exactly at the official NAV.
+        t_wed = datetime(2024, 6, 5, 20, 0)
         samples = [(t_mon, Decimal("0"), None), (t_wed, Decimal("0"), None)]
         monkeypatch.setattr(iss, "week_series_with_fx", lambda *a, **k: list(samples))
 

@@ -87,6 +87,14 @@ def provider_symbol_map(session: Session) -> dict[int, str]:
     return {iid: sym for iid, sym in session.execute(stmt).all() if sym}
 
 
+def intraday_twin_map(session: Session) -> dict[int, str]:
+    """``{instrument_id: twin_etf_symbol}`` for every instrument with an intraday twin."""
+    stmt = select(InstrumentOverride.instrument_id, InstrumentOverride.intraday_twin).where(
+        InstrumentOverride.intraday_twin.is_not(None)
+    )
+    return {iid: sym for iid, sym in session.execute(stmt).all() if sym}
+
+
 def upsert(
     session: Session,
     instrument_id: int,
@@ -98,6 +106,7 @@ def upsert(
     expense_ratio_override: Decimal | None | _Sentinel = ...,  # type: ignore[assignment]
     provider_symbol: str | None | _Sentinel = ...,  # type: ignore[assignment]
     pricing_mode: str | None | _Sentinel = ...,  # type: ignore[assignment]
+    intraday_twin: str | None | _Sentinel = ...,  # type: ignore[assignment]
 ) -> InstrumentOverride:
     """Insert-or-update the override for ``instrument_id``.
 
@@ -122,6 +131,7 @@ def upsert(
             ),
             provider_symbol=provider_symbol if provider_symbol is not ... else None,
             pricing_mode=pricing_mode if pricing_mode is not ... else None,
+            intraday_twin=intraday_twin if intraday_twin is not ... else None,
         )
         session.add(ov)
     else:
@@ -139,6 +149,8 @@ def upsert(
             ov.provider_symbol = provider_symbol  # type: ignore[assignment]
         if pricing_mode is not ...:
             ov.pricing_mode = pricing_mode  # type: ignore[assignment]
+        if intraday_twin is not ...:
+            ov.intraday_twin = intraday_twin  # type: ignore[assignment]
     session.flush()
     return ov
 

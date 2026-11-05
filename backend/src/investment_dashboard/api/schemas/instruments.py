@@ -9,7 +9,24 @@ from pydantic import Field
 from investment_dashboard.api.schemas.common import ApiModel
 
 PricingMode = Literal["auto", "manual", "delisted"]
+TwinTier = Literal["same_index", "close"]
 AssetClass = Literal["etf", "mutual_fund", "stock", "cash", "savings", "unknown"]
+
+
+class TwinSuggestionDto(ApiModel):
+    """A built-in ETF twin for a fund (a suggestion only, never applied automatically).
+
+    ``same_index``: the fund and ETF track the exact same index (or are share
+    classes of one Vanguard portfolio). ``close``: a different index whose daily
+    moves were measured to follow the fund as tightly as an identical pair.
+    """
+
+    etf: str
+    tier: TwinTier
+    index: str
+    typical_daily_gap: str | None = Field(
+        default=None, description="Measured typical daily gap (fraction), close tier only."
+    )
 
 
 class InstrumentOut(ApiModel):
@@ -39,6 +56,15 @@ class InstrumentOut(ApiModel):
     pricing_mode: PricingMode
     transaction_count: int
     latest_price_date: str | None
+    intraday_twin: str | None = Field(
+        default=None,
+        description="ETF whose live price estimates this fund on the 1D graph until its NAV posts.",
+    )
+    twin_suggestion: TwinSuggestionDto | None = None
+    twin_daily_gap: str | None = Field(
+        default=None,
+        description="Typical daily gap fund vs its twin from cached closes (fraction), if known.",
+    )
 
 
 class InstrumentPatch(ApiModel):
@@ -51,6 +77,7 @@ class InstrumentPatch(ApiModel):
     active: bool | None = None
     provider_symbol: str | None = None
     pricing_mode: PricingMode | None = None
+    intraday_twin: str | None = None
 
 
 class InstrumentUpdateResult(ApiModel):

@@ -380,6 +380,7 @@ _CACHE_TABLES = frozenset(
         "price_history",
         "price_split",
         "auth_sessions",
+        "intraday_twin_prices",
     }
 )
 _dirty_state: dict[str, float | None] = {"since": None}

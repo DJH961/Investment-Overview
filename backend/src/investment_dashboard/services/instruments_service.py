@@ -9,7 +9,10 @@ the instrument by its broker symbol:
 * ``provider_symbol`` — the ticker the price provider knows it by,
 * ``pricing_mode`` — ``auto`` (fetched), ``manual`` (closes come from manual
   price fixes, ``/api/maintenance/prices``) or ``delisted`` (no more fetches; the
-  last known close keeps valuing it).
+  last known close keeps valuing it),
+* ``intraday_twin`` - the ETF whose live price estimates a mutual fund on the 1D
+  graph until its NAV posts (built-in suggestions in ``domain.index_twins``;
+  never applied automatically, never a holding).
 
 The native currency is read-only (the currency rule: amounts are stored in it).
 Every change is validated as a whole (422 with per-field errors), invalidates
@@ -31,13 +34,16 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.activity_log import activity
 from investment_dashboard.db import config_read_session, config_write_session
+from investment_dashboard.domain.index_twins import TwinSuggestion, suggest_twin
 from investment_dashboard.domain.instruments import (
     ASSET_CLASSES,
     PRICING_AUTO,
     PRICING_MODES,
     fetch_symbol,
     is_fetched,
+    is_nav_priced,
 )
+from investment_dashboard.domain.late_data import typical_daily_gap
 from investment_dashboard.errors import NotFoundError, ValidationError
 from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
 from investment_dashboard.services import prices_service
@@ -54,6 +60,7 @@ EDITABLE: tuple[str, ...] = (
     "active",
     "provider_symbol",
     "pricing_mode",
+    "intraday_twin",
 )
 _SYMBOL_RE = re.compile(r"^[A-Z0-9^][A-Z0-9.\-=^]{0,31}$")
 _MAX_NAME = 256
@@ -91,6 +98,13 @@ class InstrumentView:
     pricing_mode: str
     transaction_count: int
     latest_price_date: date | None
+    #: ETF twin for the 1D estimate (``None`` = none set).
+    intraday_twin: str | None = None
+    #: Built-in suggestion for this fund (only for NAV-priced instruments).
+    twin_suggestion: TwinSuggestion | None = None
+    #: Measured typical daily gap fund vs its twin (fraction), from the cached
+    #: closes of both; ``None`` when either history is missing.
+    twin_daily_gap: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -103,13 +117,13 @@ class UpdateResult:
 
 
 def _views(session: Session, ids: set[int] | None = None) -> list[InstrumentView]:
-    instruments = [
-        i for i in instruments_repo.list_instruments(session) if ids is None or i.id in ids
-    ]
+    every = instruments_repo.list_instruments(session)
+    instruments = [i for i in every if ids is None or i.id in ids]
     with config_read_session(session) as cfg:
         overrides = instrument_overrides_repo.get_override_map(cfg, [i.id for i in instruments])
     counts = instruments_repo.transaction_counts(session)
     latest = prices_service.latest_price_dates_for(session, [i.id for i in instruments])
+    by_symbol = {i.symbol.upper(): i.id for i in every}
     out: list[InstrumentView] = []
     for instr in instruments:
         ov = overrides.get(instr.id)
@@ -139,9 +153,32 @@ def _views(session: Session, ids: set[int] | None = None) -> list[InstrumentView
                 pricing_mode=eff.pricing_mode,
                 transaction_count=counts.get(instr.id, 0),
                 latest_price_date=latest.get(instr.id),
+                intraday_twin=eff.intraday_twin,
+                twin_suggestion=(
+                    suggest_twin(instr.symbol) if is_nav_priced(eff.asset_class) else None
+                ),
+                twin_daily_gap=_twin_gap(session, instr.id, eff.intraday_twin, by_symbol),
             )
         )
     return out
+
+
+def _twin_gap(
+    session: Session, instrument_id: int, twin: str | None, by_symbol: dict[str, int]
+) -> Decimal | None:
+    """Typical daily gap between a fund and its twin from both cached close histories.
+
+    Only when the twin is itself an instrument with cached closes; otherwise there
+    is no history to measure (``None``, the field is omitted on the page).
+    """
+    twin_id = by_symbol.get(twin.upper()) if twin else None
+    if twin_id is None:
+        return None
+    fund = prices_service.closes_for_instrument(session, instrument_id)
+    other = prices_service.closes_for_instrument(session, twin_id)
+    if not fund or not other:
+        return None
+    return typical_daily_gap(fund, other)
 
 
 def list_instruments(session: Session) -> list[InstrumentView]:
@@ -204,6 +241,14 @@ def _clean(field: str, value: Any) -> Any:  # noqa: PLR0911, PLR0912 - one branc
         if not _SYMBOL_RE.match(upper):
             raise ValueError(f"{cleaned!r} is not a valid ticker")
         return upper
+    if field == "intraday_twin":
+        cleaned = _text(value, 32)
+        if cleaned is None:
+            return None
+        upper = cleaned.upper()
+        if not _SYMBOL_RE.match(upper):
+            raise ValueError(f"{cleaned!r} is not a valid ticker")
+        return upper
     if field == "pricing_mode":
         if value not in PRICING_MODES:
             raise ValueError(f"one of {', '.join(PRICING_MODES)}")
@@ -236,6 +281,8 @@ def _validate(
                 sym == mapped and iid != instrument_id for iid, sym in taken.items()
             ):
                 errors["provider_symbol"] = f"{mapped} already prices another instrument"
+    if typed.get("intraday_twin") and typed["intraday_twin"] == symbol:
+        errors["intraday_twin"] = "a fund cannot be its own twin"
     if errors:
         raise InstrumentEditError(errors)
     return typed
@@ -249,6 +296,7 @@ _FIELD_TO_COLUMN = {
     "active": "active",
     "provider_symbol": "provider_symbol",
     "pricing_mode": "pricing_mode",
+    "intraday_twin": "intraday_twin",
 }
 
 
@@ -289,6 +337,11 @@ def update_instrument(
     )
     if {"asset_class", "active", "provider_symbol", "pricing_mode"} & set(changed):
         _valuations_changed(session)
+    elif "intraday_twin" in changed:
+        # Only the 1D line's estimate changes (read time): refresh views, keep history.
+        from investment_dashboard.services import refresh_status  # noqa: PLC0415
+
+        refresh_status._publish({"type": "refresh", "reason": "instrument twin"})
     if changed:
         activity("changes").info(
             "instrument %s (id %d) edited by %s: %s",

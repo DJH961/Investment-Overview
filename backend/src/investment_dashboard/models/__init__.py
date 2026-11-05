@@ -25,6 +25,7 @@ from investment_dashboard.models.fx_history import FxHistory
 from investment_dashboard.models.import_batch import ImportBatch
 from investment_dashboard.models.instrument import Instrument
 from investment_dashboard.models.instrument_override import InstrumentOverride
+from investment_dashboard.models.intraday_twin_price import IntradayTwinPrice
 from investment_dashboard.models.intraday_value import IntradayValue
 from investment_dashboard.models.position_snapshot import PositionSnapshot
 from investment_dashboard.models.price_cache_metadata import PriceCacheMetadata
@@ -48,6 +49,7 @@ __all__ = [
     "ImportBatch",
     "Instrument",
     "InstrumentOverride",
+    "IntradayTwinPrice",
     "IntradayValue",
     "LedgerBase",
     "PositionSnapshot",

@@ -85,6 +85,10 @@ class GraphResponse(ApiModel):
     sessions: list[GraphSession] = []  # noqa: RUF012 - pydantic copies defaults
     coverage: GraphCoverage | None = None
     growth: GraphGrowth | None = None
+    #: 1d/1w: some mutual funds are drawn from their ETF twin until their NAV posts.
+    funds_estimated: bool = False
+    #: Symbols of those funds (empty when funds_estimated is false).
+    estimated_funds: list[str] = []  # noqa: RUF012 - pydantic copies defaults
 
 
 class GraphRangePref(ApiModel):

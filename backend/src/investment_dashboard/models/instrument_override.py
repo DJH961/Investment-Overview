@@ -36,6 +36,9 @@ v6 adds two *pricing* fields (migration 0019):
   ``manual`` (never fetch; closes are entered as manual price fixes) or
   ``delisted`` (never fetch; the last known close keeps valuing it).
 
+v6 adds ``intraday_twin`` (migration 0022): an ETF symbol whose live price
+estimates this mutual fund on the 1D graph until its NAV posts. Never a holding.
+
 Effective-value composition (override → ledger → default) is centralised
 in :func:`investment_dashboard.services.instrument_enrichment_service.
 effective_instrument` so every read path agrees on precedence.
@@ -65,6 +68,7 @@ class InstrumentOverride(ConfigBase):
     expense_ratio_override: Mapped[Decimal | None] = mapped_column(Numeric(7, 5))
     provider_symbol: Mapped[str | None] = mapped_column(String(32))
     pricing_mode: Mapped[str | None] = mapped_column(String(16))
+    intraday_twin: Mapped[str | None] = mapped_column(String(32))
 
     def __repr__(self) -> str:  # pragma: no cover
         return (

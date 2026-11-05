@@ -121,6 +121,10 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
 
         intraday_snapshots_service.record_if_market_open()
+        # ETF twins of the mutual funds (auxiliary symbols, never holdings): their
+        # price now estimates each fund on the 1D line until its NAV posts. A no-op
+        # without twins; a session without twin bars is backfilled once.
+        intraday_snapshots_service.record_twin_prices()
         # Top up the "1 Day" / "1 Week" graphs to target on *every* auto-update,
         # whether or not the market is open: the live capture above only appends a
         # point while the market trades, so an under-filled graph (after a blank
