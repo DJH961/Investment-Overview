@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NavLink } from "react-router";
+import { APP_VERSION } from "../../lib/appVersion";
 import { NAV_GROUPS, NAV_ITEMS } from "../../lib/nav";
 import { BrandMark } from "../BrandMark";
 import { IconButton } from "../IconButton";
@@ -57,6 +58,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         ))}
       </nav>
+      {APP_VERSION && <p className="sidebar__meta">Investment Overview {APP_VERSION}</p>}
       {collapsed && toggle && <div className="sidebar__footer">{toggle}</div>}
     </aside>
   );

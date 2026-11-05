@@ -23,6 +23,19 @@ def test_get_inputs(api_client: TestClient) -> None:
     assert body["projection_defaults"]["month"]["monthly"] is True
 
 
+def test_inputs_carry_the_asset_class(api_client: TestClient, api_db: object) -> None:
+    """The allocation planner's "Invest only in ETFs" needs each fund's asset class."""
+    from investment_dashboard.db import ledger_session_scope
+    from investment_dashboard.repositories import instruments_repo
+
+    with ledger_session_scope() as session:
+        instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+        instruments_repo.get_or_create(session, symbol="FXAIX", asset_class="mutual_fund")
+    body = api_client.get("/api/calculator?ccy=USD").json()
+    classes = {i["symbol"]: i["asset_class"] for i in body["instruments"]}
+    assert classes == {"VTI": "etf", "FXAIX": "mutual_fund"}
+
+
 def test_projection_hand_checked(api_client: TestClient) -> None:
     # Empty portfolio: start 0, contribute 100 / year for 2 years at 10 % (annual,
     # contribution at period end). Year 1: 100. Year 2: 100 * 1.1 + 100 = 210.

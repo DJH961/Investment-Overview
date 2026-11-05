@@ -108,6 +108,7 @@ def build_inputs(
                 "symbol": i.symbol,
                 "name": i.name,
                 "category": i.category,
+                "asset_class": i.asset_class,
                 "current_value": _val(i.current_value_eur),
                 "current_pct": dec(i.current_pct / Decimal(100)),
             }

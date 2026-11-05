@@ -45,10 +45,14 @@ describe("OverviewHoldings", () => {
     );
     const symbols = [...container.querySelectorAll(".overview-holdings__row")].map((n) => n.getAttribute("data-symbol"));
     expect(symbols).toEqual(["S20", "S9", "S8", "S7", "S6", "S5", "S4", "S3"]);
-    expect(screen.getByText("PAR")).toBeInTheDocument();
+    expect(screen.getByText("CASH")).toBeInTheDocument();
     expect(screen.getByText("bad history")).toBeInTheDocument();
     expect(screen.getByText("top winner")).toBeInTheDocument();
     expect(container.querySelector('[data-symbol="S20"] .overview-holdings__today--stale')).not.toBeNull();
+    // A greyed move says why (never colour alone).
+    expect(container.querySelector('[data-symbol="S20"] .overview-holdings__today--stale')).toHaveTextContent(
+      /an earlier session's move/,
+    );
     expect(screen.getByRole("link", { name: "Full table" })).toHaveAttribute("href", "/holdings");
     expect(screen.getByRole("button", { name: "Show all 10 holdings" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Holdings" })).toHaveAttribute("aria-expanded", "true");
@@ -76,5 +80,27 @@ describe("OverviewHoldings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show fewer" }));
     expect(symbols(again.container)).toHaveLength(8);
     expect(localStorage.getItem("iv.overview.holdings.open")).toBe("false");
+  });
+
+  it("marks NAV funds and ticks holdings already on the latest close while the market is shut", () => {
+    const saved = holdings.splice(0, holdings.length);
+    holdings.push(
+      row(1, { market_open: false, price_as_of: "2026-10-30" }),
+      row(2, { market_open: false, price_as_of: "2026-10-30", asset_class: "mutual_fund", price_type: "nav" }),
+      row(3, { market_open: false, price_as_of: "2026-10-29", asset_class: "mutual_fund", daily_is_stale: true }),
+    );
+    try {
+      const { container } = render(
+        <MemoryRouter>
+          <OverviewHoldings currency="EUR" />
+        </MemoryRouter>,
+      );
+      expect(screen.getAllByText("NAV")).toHaveLength(2);
+      expect(container.querySelector('[data-symbol="S1"] .price-tick')).toHaveAttribute("data-tick", "Up to date with the latest close");
+      expect(container.querySelector('[data-symbol="S2"] .price-tick')).toHaveAttribute("data-tick", "Up to date with the latest NAV");
+      expect(container.querySelector('[data-symbol="S3"] .price-tick')).toBeNull();
+    } finally {
+      holdings.splice(0, holdings.length, ...saved);
+    }
   });
 });

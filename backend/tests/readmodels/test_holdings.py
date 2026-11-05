@@ -67,6 +67,23 @@ def test_build_selects_legs_without_converting_returns(session: Session) -> None
     assert usd["holdings"][0]["symbol"] == "VTI"  # largest first
 
 
+def test_mutual_fund_rows_read_as_nav_and_carry_market_time(session: Session) -> None:
+    """A NAV fund is never a "market close": the row says ``price_type == "nav"``."""
+    ids = seed_ledger(session)
+    from investment_dashboard.repositories import instruments_repo
+
+    bnd = instruments_repo.get_instrument(session, ids["BND"])
+    assert bnd is not None
+    bnd.asset_class = "mutual_fund"
+    session.flush()
+    rows = {r["symbol"]: r for r in holdings.build(session, ccy="USD")["holdings"]}
+    assert rows["BND"]["price_type"] == "nav"
+    assert rows["VTI"]["price_type"] == "market"
+    # The provider's market time is passed through (None when never recorded).
+    assert "price_market_at" in rows["VTI"]
+    assert rows["VTI"]["price_market_at"] is None
+
+
 def test_pick_selects_the_requested_leg() -> None:
     assert holdings.pick(D(1), D(2), "EUR") == 1
     assert holdings.pick(D(1), D(2), "USD") == 2

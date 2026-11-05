@@ -21,8 +21,13 @@
     scroll-snap-type: x proximity;
     scrollbar-width: thin;
 
+    // Phone: every stat in full, two per row (each pair stays side by side),
+    // instead of a sideways strip whose edge cuts the figures off.
     @include m.phone {
-      grid-auto-columns: minmax(9rem, 42%);
+      grid-auto-flow: row;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: none;
+      overflow-x: visible;
     }
   }
 
@@ -38,6 +43,20 @@
     // Top row of the two: a divider under it.
     &:nth-child(odd) {
       border-bottom: var(--border-width) solid var(--color-border);
+    }
+
+    @include m.phone {
+      padding: var(--space-3);
+      border-right: 0;
+      border-bottom: var(--border-width) solid var(--color-border);
+
+      &:nth-child(odd) {
+        border-right: var(--border-width) solid var(--color-border);
+      }
+
+      &:nth-last-child(-n + 2) {
+        border-bottom: 0;
+      }
     }
   }
 
@@ -291,7 +310,8 @@
     display: grid;
     grid-template-areas:
       "title figures chevron"
-      "chips chips chips";
+      "chips chips chips"
+      "stamp stamp stamp";
     grid-template-columns: minmax(0, 1fr) auto auto;
     gap: var(--space-2) var(--space-3);
     align-items: center;
@@ -313,48 +333,98 @@
     align-items: center;
   }
 
+  // Long fund names wrap to a second line instead of being cut off.
   &__item-name {
+    display: -webkit-box;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
   }
 
-  // Always exactly two lines: a fixed 3 x 2 grid of small label + value cells.
+  // A fixed 3 x 2 grid of label-over-value cells: each figure gets the full
+  // cell width, so nothing is clipped at 360 px.
   &__chips {
     display: grid;
     grid-area: chips;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-1) var(--space-3);
+    gap: var(--space-2) var(--space-3);
+    padding-top: var(--space-2);
+    border-top: var(--border-width) dashed var(--color-border);
   }
 
   &__chip {
     display: flex;
-    align-items: baseline;
-    gap: var(--space-1);
+    flex-direction: column;
     min-width: 0;
-    overflow: hidden;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-
-    &--asof {
-      flex-wrap: nowrap;
-    }
   }
 
   &__chip-key {
     color: var(--color-faint);
+    font-size: var(--font-size-2xs);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  &__item-stamp {
+    grid-area: stamp;
+    min-width: 0;
+  }
+
+  // A row's own price time (only when it differs from the header's).
+  &__row-stamp {
+    display: block;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__price {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  &__sr {
+    @include m.visually-hidden;
+  }
+
+  &__row-stamp-key {
+    @include m.visually-hidden;
+
+    &--shown {
+      position: static;
+      width: auto;
+      height: auto;
+      margin: 0;
+      overflow: visible;
+      clip: auto;
+      clip-path: none;
+      white-space: nowrap;
+      color: var(--color-faint);
+    }
   }
 
   &__today {
     display: inline-flex;
-    gap: var(--space-2);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0 var(--space-2);
     font-size: var(--font-size-sm);
+    white-space: nowrap;
 
-    // The last move, while the market has not traded since: greyed out.
+    // An earlier session's move (an older print than its peers): greyed,
+    // lighter and never tinted as a gain / loss; the text says so too.
     &--stale {
-      color: var(--color-muted);
-      opacity: 0.7;
+      color: var(--color-faint);
+      font-weight: var(--font-weight-medium);
+      opacity: 0.65;
     }
   }
 
@@ -372,9 +442,12 @@
   &__item-figures {
     display: flex;
     grid-area: figures;
-    font-weight: var(--font-weight-semibold);
     flex-direction: column;
     align-items: flex-end;
+    max-width: 55vw;
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   &__chevron {

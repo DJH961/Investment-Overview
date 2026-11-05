@@ -5,6 +5,9 @@ $bp-tablet: 640px;
 $bp-desktop: 1024px;
 // Wide desktop: room for extras (the top-bar summary) beside the sidebar.
 $bp-wide: 1280px;
+// Large desktop monitors: a wider, roomier sidebar.
+$bp-xl: 1440px;
+$bp-xxl: 1920px;
 
 @mixin phone {
   @media (max-width: #{$bp-tablet - 1px}) {
@@ -32,6 +35,18 @@ $bp-wide: 1280px;
 
 @mixin wide {
   @media (min-width: $bp-wide) {
+    @content;
+  }
+}
+
+@mixin xl {
+  @media (min-width: $bp-xl) {
+    @content;
+  }
+}
+
+@mixin xxl {
+  @media (min-width: $bp-xxl) {
     @content;
   }
 }

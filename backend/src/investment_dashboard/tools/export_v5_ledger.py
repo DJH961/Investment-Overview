@@ -13,8 +13,9 @@ them to ``--out``. The input file is never modified and existing files in
 
 Data that only exists in v6 (``fx_conversions``, login credentials, the settings
 change history ``app_config_audit``, the instrument provider-symbol mapping and
-pricing mode on ``instrument_overrides``, and the import history
-``import_batches`` / ``transactions.import_batch_id``) is dropped
+pricing mode on ``instrument_overrides``, the import history
+``import_batches`` / ``transactions.import_batch_id``, and the calculator state
+saved with a target, ``target_allocations.builder_state``) is dropped
 by the downgrade: v5 has no place for it. Rows imported with the flexible importer
 (``source = 'import_generic'``) are relabelled ``manual``.
 

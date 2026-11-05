@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Ban } from "lucide-react";
+import { Ban, Check } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -17,6 +17,12 @@ import type { CalculatorInputsOut } from "../../lib/queries/reports";
 import { useSettingsValues } from "../../lib/queries/settings";
 import { usePersistentState } from "../../lib/usePersistentState";
 import {
+  type CategoryEditor,
+  effectiveSelection,
+  fromSavedBuilder,
+  toSavedBuilder,
+  type SavedBuilder,
+  isEtfClass,
   isOff,
   presetClear,
   presetCurrent,
@@ -57,6 +63,15 @@ function PctInput({ label, value, onChange }: { label: string; value: string; on
   );
 }
 
+/** A short kind badge for a fund chip ("ETF", "Fund", "Stock"). */
+function kindLabel(assetClass: string | null | undefined): string {
+  const c = (assetClass ?? "").toLowerCase();
+  if (c === "etf") return "ETF";
+  if (c === "mutual_fund") return "Fund";
+  if (c === "stock" || c === "equity") return "Stock";
+  return c ? c.replace(/_/g, " ") : "";
+}
+
 /** A typed percent as a fraction (junk counts as 0). */
 const typed = (v: string | undefined) => (Number(v) || 0) / 100;
 
@@ -73,6 +88,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   const [fractional, setFractional] = useCalcToggle("calc.fractional", "chart_pref.calc.allow_fractional");
   const [allowSell, setAllowSell] = useCalcToggle("calc.rebalance", "chart_pref.calc.rebalance");
   const [mode, setMode] = usePersistentState<Mode>("calc.mode", "fund", isMode);
+  const [etfOnly, setEtfOnly] = usePersistentState<boolean>("calc.etfOnly", false, (v): v is boolean => typeof v === "boolean");
   const [saveOpen, setSaveOpen] = useState(false);
 
   const funds: Weighable[] = useMemo(
@@ -100,16 +116,47 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
 
   const [fundW, setFundW] = useState<Weights>(() => (active ? presetSaved(funds, active) : presetCurrent(funds)));
   const [noBuy, setNoBuy] = useState<Record<string, boolean>>(() => (active ? savedNoBuy(active) : {}));
-  const [catW, setCatW] = useState<Weights>(() => presetCurrent(cats));
-  const [split, setSplit] = useState<Record<string, Split>>({});
-  const [selected, setSelected] = useState<Record<string, number[]>>(() =>
-    Object.fromEntries(
-      inputs.categories.map((c) => {
-        const held = c.members.filter((m) => Number(byId.get(m)?.current_pct ?? 0) > 0);
-        return [c.name, held.length ? held : c.members];
-      }),
-    ),
+  const memberMap = useMemo(
+    () => Object.fromEntries(inputs.categories.map((c) => [c.name, c.members])),
+    [inputs.categories],
   );
+  // The category editor starts from the active target's saved selection when it has one.
+  const [initialCats] = useState<CategoryEditor>(() => {
+    const fresh: CategoryEditor = {
+      weights: presetCurrent(cats),
+      split: {},
+      selected: Object.fromEntries(
+        inputs.categories.map((c) => {
+          const held = c.members.filter((m) => Number(byId.get(m)?.current_pct ?? 0) > 0);
+          return [c.name, held.length ? held : c.members];
+        }),
+      ),
+    };
+    return active?.builder ? fromSavedBuilder(active.builder as SavedBuilder, memberMap, fresh) : fresh;
+  });
+  const [catW, setCatW] = useState<Weights>(initialCats.weights);
+  const [split, setSplit] = useState<Record<string, Split>>(initialCats.split);
+  const [selected, setSelected] = useState<Record<string, number[]>>(initialCats.selected);
+
+  /** Load a saved target into the calculator: its fund weights, no-buy flags, rebalance toggle and, when saved, its category selection, mode and ETF-only. */
+  const loadTarget = (t: NonNullable<typeof active>) => {
+    setFundW(presetSaved(funds, t));
+    setNoBuy(savedNoBuy(t));
+    setAllowSell(t.allow_sell);
+    const b = t.builder as SavedBuilder | null | undefined;
+    if (b) {
+      const ed = fromSavedBuilder(b, memberMap, { weights: catW, split, selected });
+      setCatW(ed.weights);
+      setSplit(ed.split);
+      setSelected(ed.selected);
+      setEtfOnly(b.etf_only);
+      setMode(b.mode);
+    }
+  };
+
+  const isEtfId = (id: number) => isEtfClass(byId.get(id)?.asset_class);
+  const memberIds = (cat: string) => inputs.categories.find((c) => c.name === cat)?.members ?? [];
+  const effectiveFor = (cat: string) => effectiveSelection(memberIds(cat), selected[cat] ?? [], etfOnly, isEtfId);
 
   const rows = mode === "fund" ? funds : cats;
   const weights = mode === "fund" ? fundW : catW;
@@ -137,10 +184,19 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
             name: c.name,
             weight: catW[c.name] || "0",
             split: split[c.name] ?? "value",
-            selected: selected[c.name] ?? [],
+            selected: effectiveFor(c.name).ids,
           }))
         : [],
   });
+
+  // The request the shown plan was computed for: a category mix is saved from
+  // the plan's fund targets, so only while the inputs still match it.
+  const [planKey, setPlanKey] = useState<string | null>(null);
+  const currentKey = JSON.stringify(request());
+  const compute = () => {
+    setPlanKey(currentKey);
+    plan.mutate(request());
+  };
 
   // A new computation clears `plan.data`; keep showing the last plan (marked as updating).
   const [lastPlan, setLastPlan] = useState(plan.data);
@@ -152,16 +208,20 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
       ? funds
           .filter((f) => Number(fundW[f.key]) > 0)
           .map((f) => ({ instrument_id: Number(f.key), weight_pct: fundW[f.key], no_buy: Boolean(noBuy[f.key]) }))
-      : result
+      : result && planKey === currentKey
         ? result.rows
             .filter((r) => !r.held_unticked && Number(r.target_pct) > 0)
             .map((r) => ({ instrument_id: r.instrument_id, weight_pct: String(Number(r.target_pct) * 100), no_buy: r.no_buy }))
         : null;
 
-  const toggleMember = (cat: string, id: number, on: boolean) =>
+  /** Tick or untick a fund for new money (with ETF-only on, only the ETF ticks change; the rest are kept for later). */
+  const toggleFund = (cat: string, id: number, on: boolean) =>
     setSelected((s) => {
-      const cur = s[cat] ?? [];
-      return { ...s, [cat]: on ? [...cur, id] : cur.filter((m) => m !== id) };
+      const eff = effectiveSelection(memberIds(cat), s[cat] ?? [], etfOnly, isEtfId);
+      const next = on ? [...eff.ids, id] : eff.ids.filter((m) => m !== id);
+      if (!eff.etfOnlyApplies) return { ...s, [cat]: next };
+      const kept = (s[cat] ?? []).filter((m) => !isEtfId(m));
+      return { ...s, [cat]: [...kept, ...next.filter(isEtfId)] };
     });
 
   return (
@@ -223,14 +283,12 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
           <Button size="sm" variant="secondary" onClick={() => setWeights(presetEqual(rows))}>
             Equal weight
           </Button>
-          {mode === "fund" && active && (
+          {active && (mode === "fund" || active.builder) && (
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => {
-                setFundW(presetSaved(funds, active));
-                setNoBuy(savedNoBuy(active));
-              }}
+              title={`Load "${active.name}" (weights, selection and rebalance setting)`}
+              onClick={() => loadTarget(active)}
             >
               Load saved target
             </Button>
@@ -298,68 +356,100 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
             })}
           </div>
         ) : (
-          <ul className="allocations__rows allocations__rows--categories">
-            {inputs.categories.map((c) => {
-              const now = Number(c.current_pct ?? 0);
-              const picked = selected[c.name] ?? [];
-              return (
-                <li key={c.name} className="allocations__row allocations__row--category">
-                  <span className="allocations__row-who">
-                    <span className="allocations__row-label">{c.name}</span>
-                    <span className="allocations__row-name">
-                      {c.members.length} {c.members.length === 1 ? "fund" : "funds"}
-                    </span>
-                  </span>
-                  <span className="allocations__row-bar">
-                    <NowTargetBar now={now} target={typed(catW[c.name])} scale={scale} />
-                    <span className="allocations__row-now">
-                      now <Percent ratio={now} digits={1} />
-                    </span>
-                  </span>
-                  <PctInput
-                    label={`Target % for ${c.name}`}
-                    value={catW[c.name] ?? ""}
-                    onChange={(v) => setCatW((w) => ({ ...w, [c.name]: v }))}
-                  />
-                  <details className="allocations__members">
-                    <summary className="allocations__members-toggle">
-                      Funds in this category ({picked.length}/{c.members.length}) ·{" "}
-                      {(split[c.name] ?? "value") === "value" ? "fair by value" : "even split"}
-                    </summary>
-                    <div className="allocations__members-body">
-                      <SegmentedControl
-                        ariaLabel={`Split for ${c.name}`}
-                        size="sm"
-                        options={[
-                          { value: "value", label: "Fair by value" },
-                          { value: "even", label: "Even" },
-                        ]}
-                        value={split[c.name] ?? "value"}
-                        onChange={(v) => setSplit((s) => ({ ...s, [c.name]: v }))}
-                      />
-                      <span className="allocations__chips">
-                        {c.members.map((m) => {
-                          const inst = byId.get(m);
-                          return (
-                            <label key={m} className="allocations__check">
-                              <input
-                                type="checkbox"
-                                className="allocations__check-box"
-                                checked={picked.includes(m)}
-                                onChange={(e) => toggleMember(c.name, m, e.target.checked)}
-                              />
-                              <span className="allocations__check-label">{inst?.symbol ?? m}</span>
-                              <Percent ratio={Number(inst?.current_pct ?? 0)} digits={1} />
-                            </label>
-                          );
-                        })}
+          <>
+            <div className="allocations__etf-bar">
+              <button
+                type="button"
+                className="allocations__etf-toggle"
+                aria-pressed={etfOnly}
+                onClick={() => setEtfOnly(!etfOnly)}
+              >
+                <span className="allocations__etf-box" aria-hidden>
+                  {etfOnly ? <Check className="allocations__etf-icon" /> : null}
+                </span>
+                Invest only in ETFs
+              </button>
+              <span className="allocations__etf-note">
+                {etfOnly
+                  ? "Mutual funds and stocks stay held and count toward their category, but get no new money."
+                  : "One tap to leave mutual funds and stocks out of the new money."}
+              </span>
+            </div>
+            <ul className="allocations__cats">
+              {inputs.categories.map((c) => {
+                const now = Number(c.current_pct ?? 0);
+                const target = typed(catW[c.name]);
+                const eff = effectiveFor(c.name);
+                const splitMode = split[c.name] ?? "value";
+                const idle = target <= 0;
+                return (
+                  <li key={c.name} className={clsx("allocations__cat", idle && "allocations__cat--idle")}>
+                    <div className="allocations__cat-head">
+                      <span className="allocations__row-who">
+                        <span className="allocations__row-label">{c.name}</span>
+                        <span className="allocations__row-name">
+                          {eff.ids.length} of {c.members.length} {c.members.length === 1 ? "fund" : "funds"} get new money
+                        </span>
                       </span>
+                      <span className="allocations__row-bar">
+                        <NowTargetBar now={now} target={target} scale={scale} />
+                        <span className="allocations__row-now">
+                          now <Percent ratio={now} digits={1} />
+                        </span>
+                      </span>
+                      <PctInput
+                        label={`Target % for ${c.name}`}
+                        value={catW[c.name] ?? ""}
+                        onChange={(v) => setCatW((w) => ({ ...w, [c.name]: v }))}
+                      />
                     </div>
-                  </details>
-                </li>
-              );
-            })}
-          </ul>
+                    <fieldset className="allocations__cat-funds">
+                      <legend className="allocations__sr">Funds in {c.name}</legend>
+                      {c.members.map((m) => {
+                        const inst = byId.get(m);
+                        const on = eff.ids.includes(m);
+                        const locked = eff.etfOnlyApplies && !isEtfId(m);
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            className={clsx("allocations__fund", on && "allocations__fund--on", locked && "allocations__fund--locked")}
+                            aria-pressed={on}
+                            disabled={locked}
+                            title={locked ? "Held, gets no new money (Invest only in ETFs)" : on ? "Gets new money" : "Held only: no new money"}
+                            onClick={() => toggleFund(c.name, m, !on)}
+                          >
+                            <span className="allocations__fund-box" aria-hidden>
+                              {on ? <Check className="allocations__fund-icon" /> : null}
+                            </span>
+                            <span className="allocations__fund-symbol">{inst?.symbol ?? m}</span>
+                            <span className="allocations__fund-kind">{kindLabel(inst?.asset_class)}</span>
+                            <span className="allocations__fund-pct">
+                              <Percent ratio={Number(inst?.current_pct ?? 0)} digits={1} />
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {eff.ids.length > 1 && (
+                        <span className="allocations__cat-split">
+                          <SegmentedControl
+                            ariaLabel={`Split for ${c.name}`}
+                            size="sm"
+                            options={[
+                              { value: "value", label: "Fair by value" },
+                              { value: "even", label: "Even" },
+                            ]}
+                            value={splitMode}
+                            onChange={(v) => setSplit((s) => ({ ...s, [c.name]: v }))}
+                          />
+                        </span>
+                      )}
+                    </fieldset>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
 
         {/* Sticky: the total and the actions stay in reach while editing a long list. */}
@@ -379,11 +469,11 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
               variant="secondary"
               onClick={() => setSaveOpen(true)}
               disabled={!saveItems || saveItems.length === 0}
-              title={saveItems ? undefined : "Compute the plan first to save a category mix"}
+              title={saveItems ? undefined : "Compute the plan for this mix first, then save it"}
             >
               Save as target…
             </Button>
-            <Button className="allocations__compute" variant="primary" onClick={() => plan.mutate(request())} loading={plan.isPending}>
+            <Button className="allocations__compute" variant="primary" onClick={compute} loading={plan.isPending}>
               Compute plan
             </Button>
           </div>
@@ -403,7 +493,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
               Updating plan…
             </p>
           )}
-          <PlanResult plan={result} />
+          <PlanResult plan={result} stale={planKey !== currentKey} />
         </div>
       )}
 
@@ -415,6 +505,12 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
           activeId={allocations.active_target_id ?? null}
           items={saveItems ?? []}
           allowSell={allowSell}
+          builder={toSavedBuilder(
+            mode,
+            etfOnly,
+            inputs.categories.map((c) => c.name),
+            { weights: catW, split, selected },
+          )}
           symbolOf={(id) => byId.get(id)?.symbol ?? String(id)}
         />
       )}

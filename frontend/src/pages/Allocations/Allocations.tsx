@@ -41,8 +41,8 @@ export function Allocations() {
           {/* Each section renders as soon as its own data is there; only the rest shows a skeleton. */}
           {/* Always shown: with no target yet this is where the first one is made. */}
           {inputs.data && q.data ? (
+            // Not keyed by the active target: saving one must not wipe the mix being edited.
             <Builder
-              key={q.data.active_target_id ?? "none"}
               inputs={inputs.data}
               allocations={q.data}
               defaultCcy={currency}

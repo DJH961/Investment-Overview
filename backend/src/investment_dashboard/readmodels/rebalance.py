@@ -13,7 +13,7 @@ only, never a return.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -134,6 +134,75 @@ def held_unticked_extras(
             no_buy_ids.add(mid)
     category_of = {mid: category_by_id.get(mid, UNCATEGORIZED) for mid in target_pct}
     return no_buy_ids, category_of
+
+
+def held_unticked_kept(
+    target_pct: dict[int, Decimal],
+    current_values: Mapping[int, Decimal],
+    *,
+    cash_eur: Decimal,
+    cat_targets: Mapping[str, Decimal],
+    cat_selected: Mapping[str, set[int]],
+    cat_members: Mapping[str, list[int]],
+    category_by_id: Mapping[int, str],
+) -> tuple[dict[int, Decimal], set[int]]:
+    """Keep held-but-un-ticked funds in a *rebalancing* category plan.
+
+    Without this, a rebalance planned only over the ticked funds: the un-ticked
+    holdings (say a mutual fund kept but no longer bought) vanished from the
+    plan, so every target was measured against part of the portfolio and the
+    plan over-bought the ticked funds and over-sold the other categories.
+
+    Here an un-ticked held fund of a targeted category is *kept as it is*
+    (never bought, never sold) and its value counts toward its category, like
+    the buy-only credit. The ticked funds share what is left of the category's
+    target (never below zero), and every weight is restated as a share of the
+    whole plan total (current value of every row + the cash), summing to 100.
+    Returns ``(new target_pct, kept ids)``; unchanged when nothing is kept.
+    """
+    kept: set[int] = set()
+    for name, weight in cat_targets.items():
+        if weight <= ZERO:
+            continue
+        selected = cat_selected.get(name, set())
+        for mid in cat_members.get(name, []):
+            if mid in selected or mid in target_pct:
+                continue
+            if current_values.get(mid, ZERO) > ZERO:
+                kept.add(mid)
+    if not kept:
+        return target_pct, kept
+    ids = [*target_pct, *sorted(kept)]
+    total_after = sum((current_values.get(i, ZERO) for i in ids), start=ZERO) + cash_eur
+    if total_after <= ZERO:
+        return target_pct, set()
+    cat_weight = {name: w for name, w in cat_targets.items() if w > ZERO}
+    weight_sum = sum(cat_weight.values(), start=ZERO)
+    kept_by_cat: dict[str, Decimal] = {}
+    for mid in kept:
+        cat = category_by_id.get(mid, UNCATEGORIZED)
+        kept_by_cat[cat] = kept_by_cat.get(cat, ZERO) + current_values.get(mid, ZERO)
+    # Each ticked fund's share of its category's ticked weight.
+    ticked_by_cat: dict[str, Decimal] = {}
+    for mid, w in target_pct.items():
+        cat = category_by_id.get(mid, UNCATEGORIZED)
+        ticked_by_cat[cat] = ticked_by_cat.get(cat, ZERO) + w
+    value: dict[int, Decimal] = {}
+    for mid, w in target_pct.items():
+        cat = category_by_id.get(mid, UNCATEGORIZED)
+        cat_value = total_after * cat_weight.get(cat, ZERO) / weight_sum if weight_sum else ZERO
+        room = max(ZERO, cat_value - kept_by_cat.get(cat, ZERO))
+        share = w / ticked_by_cat[cat] if ticked_by_cat.get(cat) else ZERO
+        value[mid] = room * share
+    kept_total = sum((current_values.get(i, ZERO) for i in kept), start=ZERO)
+    ticked_total = sum(value.values(), start=ZERO)
+    # A kept fund larger than its category's target leaves less for the rest:
+    # scale the ticked targets so the plan still adds up to the whole.
+    budget = total_after - kept_total
+    factor = budget / ticked_total if ticked_total > ZERO else ZERO
+    out = {mid: v * factor * HUNDRED / total_after for mid, v in value.items()}
+    out.update({mid: current_values.get(mid, ZERO) * HUNDRED / total_after for mid in kept})
+    return out, kept
 
 
 def compute_plan(
@@ -489,6 +558,16 @@ def build_builder_plan(
         category_by_id=category_by_id,
     )
     cash_eur = amount if ccy == "EUR" else amount / fx  # type: ignore[operator]
+    if category_mode and allow_sell:
+        target_pct, extra_no_buy = held_unticked_kept(
+            target_pct,
+            current_values,
+            cash_eur=cash_eur,
+            cat_targets=cat_targets,
+            cat_selected=cat_selected,
+            cat_members=cat_members,
+            category_by_id=category_by_id,
+        )
     try:
         plan = compute_plan(
             data,
@@ -502,6 +581,14 @@ def build_builder_plan(
         )
     except ValueError as exc:
         raise RebalanceInputError(str(exc)) from exc
+    if category_mode and allow_sell and extra_no_buy:
+        # Kept funds are held as they are: no rounding-dust trade on them.
+        kept_rows = [
+            replace(r, add_value=ZERO, add_shares=ZERO) if r.instrument_id in extra_no_buy else r
+            for r in plan.rows
+        ]
+        spent = sum((r.add_value for r in kept_rows), start=ZERO)
+        plan = replace(plan, rows=kept_rows, residual_cash=max(ZERO, cash_eur - spent))
 
     rows, category_rows = _shape_rows(
         plan,

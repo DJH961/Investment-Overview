@@ -7,6 +7,7 @@ import type { ShellSummary } from "../../lib/shell";
 import { DeltaBadge } from "../DeltaBadge";
 import { Freshness, type FreshnessStatus } from "../Freshness";
 import { Money } from "../Money";
+import { Percent } from "../Percent";
 import { IconButton } from "../IconButton";
 import { Menu, type MenuItem } from "../Menu";
 import { SegmentedControl } from "../SegmentedControl";
@@ -24,7 +25,7 @@ export interface HealthSummary {
 export interface TopBarProps {
   title: string;
   freshness: { status: FreshnessStatus; label: string; short?: string; updated?: string };
-  /** Desktop: the page's headline figures (Overview: value and day move), pinned beside the title. */
+  /** The portfolio's value and day move: the same place on every view (phone: under the title). */
   summary?: ShellSummary;
   /** Phone layout: title + freshness on the left, the essential actions on the right. */
   compact?: boolean;
@@ -102,7 +103,15 @@ export function TopBar({
     <header className={clsx("top-bar", compact && "top-bar--compact")}>
       {leading}
       <div className="top-bar__title-block">
-        <p className="top-bar__title">{title}</p>
+        <div className="top-bar__title-line">
+          <p className="top-bar__title">{title}</p>
+          {compact && summary && (
+            <span className="top-bar__mini" aria-label="Portfolio summary">
+              <Money amount={summary.value} currency={summary.currency} compact />
+              <Percent ratio={summary.pct} signed colored />
+            </span>
+          )}
+        </div>
         {freshness.label && (
           <Freshness
             className="top-bar__freshness"
@@ -118,28 +127,51 @@ export function TopBar({
           </span>
         )}
       </div>
-      {!compact && summary && (
-        <div className="top-bar__summary" aria-label="Portfolio summary">
-          <span className="top-bar__summary-value">
-            <Money amount={summary.value} currency={summary.currency} />
-          </span>
-          <DeltaBadge value={summary.pct} />
-          <span className="top-bar__summary-move">
-            <Money amount={summary.move} currency={summary.currency} signed colored />
-          </span>
-          <span className="top-bar__summary-day">{summary.dayLabel}</span>
+      {!compact && (
+        // Always rendered (a placeholder until the figures load), so the bar's
+        // items never shift between views.
+        <div className="top-bar__summary" aria-label="Portfolio summary" aria-busy={!summary || undefined}>
+          {summary ? (
+            <>
+              <span className="top-bar__summary-value">
+                <Money amount={summary.value} currency={summary.currency} />
+              </span>
+              <DeltaBadge value={summary.pct} />
+              <span className="top-bar__summary-move">
+                <Money amount={summary.move} currency={summary.currency} signed colored />
+              </span>
+              <span className="top-bar__summary-day">{summary.dayLabel}</span>
+            </>
+          ) : (
+            <span className="top-bar__summary-day">Portfolio…</span>
+          )}
         </div>
       )}
       <div className="top-bar__actions">
         {showHealth && <HealthBadge health={health} />}
         {privacyToggle}
-        <SegmentedControl<ReportingCurrency>
-          ariaLabel="Reporting currency"
-          size="sm"
-          options={[...CURRENCIES]}
-          value={currency}
-          onChange={setCurrency}
-        />
+        {compact ? (
+          // Phone: one tap swaps the currency (half the width of the two-option switch,
+          // which leaves the title, the portfolio figures and the price time room to show in full).
+          <span className="top-bar__ccy">
+            <button
+              type="button"
+              className="top-bar__ccy-button"
+              aria-label={`Showing ${currency}, switch to ${currency === "EUR" ? "USD" : "EUR"}`}
+              onClick={() => setCurrency(currency === "EUR" ? "USD" : "EUR")}
+            >
+              {currency}
+            </button>
+          </span>
+        ) : (
+          <SegmentedControl<ReportingCurrency>
+            ariaLabel="Reporting currency"
+            size="sm"
+            options={[...CURRENCIES]}
+            value={currency}
+            onChange={setCurrency}
+          />
+        )}
         <IconButton
           label="Refresh data"
           icon={<RefreshCw aria-hidden className={clsx(refreshing && "top-bar__spin")} />}

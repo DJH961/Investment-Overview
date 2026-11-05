@@ -56,6 +56,7 @@ def put_allocation(body: TargetIn, session: SessionDep) -> TargetOut:
             allow_sell=body.allow_sell,
             display_currency=body.display_currency,
             items=items,
+            builder_state=body.builder.model_dump_json() if body.builder else None,
         )
     except InvalidOperation as exc:
         raise HTTPException(status_code=422, detail="Invalid weight") from exc

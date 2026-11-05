@@ -107,14 +107,6 @@
     margin: 0;
     padding: 0;
     list-style: none;
-
-    &--categories {
-      @include m.desktop {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        column-gap: var(--space-6);
-      }
-    }
   }
 
   // Edit row: name | now-vs-target bar | target % | No buy.
@@ -160,13 +152,6 @@
     }
   }
 
-  &__rows--categories &__row:last-child {
-    border-bottom: var(--border-width) solid var(--color-border);
-
-    @include m.phone {
-      border-bottom: 0;
-    }
-  }
 
   &__row-who {
     grid-area: who;
@@ -298,64 +283,6 @@
     @include m.phone {
       @include m.visually-hidden;
     }
-  }
-
-  // Category mode: which funds take the category's weight, and how it splits.
-  &__members {
-    grid-area: members;
-    min-width: 0;
-  }
-
-  &__members-toggle {
-    cursor: pointer;
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-
-    &:focus-visible {
-      @include m.focus-ring;
-    }
-  }
-
-  &__members-body {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-2);
-    padding: var(--space-2) 0 var(--space-1);
-  }
-
-  &__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1);
-  }
-
-  &__check {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    min-height: var(--control-height-sm);
-    padding: 0 var(--space-2);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-full);
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-    accent-color: var(--color-accent);
-    cursor: pointer;
-
-    &:has(:checked) {
-      border-color: var(--color-accent);
-      color: var(--color-fg);
-    }
-
-    @include m.phone {
-      min-height: var(--control-height);
-    }
-  }
-
-  &__check-label {
-    font-weight: var(--font-weight-semibold);
   }
 
   // Total + actions: sticks to the bottom of the screen while the list scrolls.
@@ -714,66 +641,14 @@
     font-size: var(--font-size-sm);
   }
 
-  // Buy plan: one block per category, in columns on wide screens.
-  &__groups {
-    columns: 2 26rem;
-    column-gap: var(--space-6);
-  }
-
-  &__group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    break-inside: avoid;
-    margin-bottom: var(--space-5);
-  }
-
   &__group-title {
     margin: 0;
     font-size: var(--font-size-md);
   }
 
-  &__plan-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    margin: 0;
-    padding: 0 0 0 var(--space-3);
-    border-left: 2px solid var(--color-border);
-    list-style: none;
-  }
-
-  &__plan-row {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-
-  &__plan-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: var(--space-3);
-  }
-
-  &__plan-amount {
-    display: inline-flex;
-    gap: var(--space-2);
-    align-items: baseline;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  &__plan-shares,
   &__plan-note {
     margin: 0;
     color: var(--color-muted);
-    font-size: var(--font-size-xs);
-  }
-
-  &__tag {
-    margin-left: var(--space-2);
-    color: var(--color-faint);
     font-size: var(--font-size-xs);
   }
 
@@ -811,5 +686,359 @@
     bottom: 0;
     width: calc(var(--space-1) / 2);
     background: var(--color-fg);
+  }
+
+  // -- Category editor ----------------------------------------------------------
+
+  // "Invest only in ETFs": one tap, says what it does.
+  &__etf-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin: 0 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+  }
+
+  &__etf-toggle,
+  &__fund {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-3) 0 var(--space-2);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+
+    &[aria-pressed="true"] {
+      border-color: var(--color-accent);
+      background: var(--color-accent-soft);
+    }
+
+    @include m.phone {
+      min-height: var(--tap-min);
+    }
+  }
+
+  &__etf-toggle {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__etf-box,
+  &__fund-box {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: var(--space-4);
+    height: var(--space-4);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+  }
+
+  &__etf-toggle[aria-pressed="true"] &__etf-box,
+  &__fund--on &__fund-box {
+    border-color: var(--color-accent);
+    background: var(--color-accent);
+    color: var(--color-surface);
+  }
+
+  &__etf-icon,
+  &__fund-icon {
+    width: var(--space-3);
+    height: var(--space-3);
+  }
+
+  &__etf-note {
+    flex: 1 1 16rem;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  // One block per category: name | now-vs-target bar | target %, then its funds
+  // as tick chips (always visible), and the split rule when more than one gets money.
+  &__cats {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    @include m.wide {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: var(--space-6);
+    }
+  }
+
+  &__cat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
+    border-bottom: var(--border-width) solid var(--color-border);
+
+    &--idle &__cat-funds {
+      opacity: 0.6;
+    }
+  }
+
+  &__cat-head {
+    display: grid;
+    grid-template-areas: "who bar pct";
+    grid-template-columns: minmax(7rem, 1fr) minmax(6rem, 1.2fr) 5.25rem;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+
+    @include m.phone {
+      grid-template-areas:
+        "who pct"
+        "bar bar";
+      grid-template-columns: minmax(0, 1fr) 5.25rem;
+    }
+  }
+
+  &__sr {
+    @include m.visually-hidden;
+  }
+
+  &__cat-funds {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__fund {
+    padding-right: var(--space-2);
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+
+    &--on {
+      color: var(--color-fg);
+    }
+
+    &--locked {
+      border-style: dashed;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+  }
+
+  &__fund-symbol {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__fund-kind {
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__fund-pct {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__cat-split {
+    margin-left: auto;
+  }
+
+  // -- Plan by category ---------------------------------------------------------
+
+  &__plan {
+    display: grid;
+    gap: var(--space-5);
+
+    @include m.wide {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: var(--space-6);
+      align-items: start;
+    }
+  }
+
+  &__plan-cat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  // Name | now -> after (target) | Buy / Sell totals.
+  &__plan-cat-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title total"
+      "shift shift";
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+
+    & > :nth-child(1) {
+      grid-area: title;
+    }
+
+    & > :nth-child(2) {
+      grid-area: shift;
+    }
+
+    & > :nth-child(3) {
+      grid-area: total;
+    }
+  }
+
+  &__cat-total {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0 var(--space-3);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__cat-buy {
+    color: var(--color-pos);
+  }
+
+  &__cat-sell {
+    color: var(--color-neg);
+  }
+
+  &__nowafter {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__nowafter-target {
+    margin-left: var(--space-1);
+    color: var(--color-faint);
+  }
+
+  // Trades: action | fund | now -> after | shares | amount, the same columns for every row.
+  &__trades {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    @include m.tablet-up {
+      grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    }
+  }
+
+  &__trade {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    grid-template-areas:
+      "action who shares amount"
+      "action shift shift shift";
+    align-items: baseline;
+    column-gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-top: var(--border-width) solid var(--color-border);
+    font-size: var(--font-size-sm);
+
+    @include m.tablet-up {
+      grid-template-areas: "action who shift shares amount";
+    }
+  }
+
+  &__action {
+    grid-area: action;
+    min-width: 3.25em;
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.04em;
+    text-align: center;
+    text-transform: uppercase;
+
+    &--buy {
+      background: var(--color-pos-soft);
+      color: var(--color-pos);
+    }
+
+    &--sell {
+      background: var(--color-neg-soft);
+      color: var(--color-neg);
+    }
+  }
+
+  &__trade-who {
+    display: flex;
+    grid-area: who;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  &__trade-symbol {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__trade-name {
+    @include m.truncate;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__trade-shift {
+    grid-area: shift;
+  }
+
+  &__trade-shares {
+    grid-area: shares;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  &__trade-amount {
+    grid-area: amount;
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  &__kept {
+    &:not(:last-child)::after {
+      content: ", ";
+    }
   }
 }

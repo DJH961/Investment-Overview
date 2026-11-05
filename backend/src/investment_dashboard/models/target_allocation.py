@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from investment_dashboard.models.base import ConfigBase as Base
@@ -35,6 +35,11 @@ class TargetAllocation(Base):
     # nullable so legacy rows fall back to the app's default currency.
     allow_sell: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     display_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # The calculator mix the target was saved from (JSON text, v6 only): mode,
+    # per-category weight / split / funds that get new money, "Invest only in
+    # ETFs". Loading the target restores exactly that selection. ``NULL`` for
+    # older targets (their fund weights + no-buy flags are the whole story).
+    builder_state: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False),
         server_default=func.current_timestamp(),

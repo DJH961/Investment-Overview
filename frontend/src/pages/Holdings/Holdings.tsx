@@ -5,14 +5,7 @@ import { Card } from "../../components/Card";
 import { Chart } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
 import { EmptyState } from "../../components/EmptyState";
-import {
-  formatStamp,
-  holdingPriceTime,
-  latestInstant,
-  priceAsOf,
-  PriceStamps,
-  type PriceTime,
-} from "../../components/Freshness";
+import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick } from "../../components/Freshness";
 import { ErrorState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
 import { Money } from "../../components/Money";
@@ -38,7 +31,7 @@ import { useShellStatus } from "../../lib/shell";
 import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { HoldingMobileRow } from "./HoldingMobileRow";
-import { Flags, HoldingDetails, tintClass, WeightCell } from "./HoldingParts";
+import { Flags, HoldingDetails, RowStamp, tintClass, WeightCell } from "./HoldingParts";
 import { HoldingsKpis } from "./HoldingsKpis";
 import "./Holdings.scss";
 
@@ -189,18 +182,6 @@ function FlagNotice({ rows }: { rows: HoldingRowDto[] }) {
   );
 }
 
-/** The book's freshest price time and fetch time (for the top bar and the page header). */
-function bookStamps(rows: HoldingRowDto[], asOf: string | undefined): { price: PriceTime | null; updated: string | null } {
-  const updated = latestInstant(...rows.map((r) => r.updated_at));
-  const live = rows.find((r) => r.updated_at === updated && r.market_open && !r.daily_is_stale);
-  const date = rows.reduce<string | null>((best, r) => (r.price_as_of && (!best || r.price_as_of > best) ? r.price_as_of : best), null);
-  if (!updated && !date && !asOf) return { price: null, updated: null };
-  return {
-    price: live ? holdingPriceTime(live) : { instant: updated, date: date ?? asOf ?? null, marketOpen: false },
-    updated,
-  };
-}
-
 export function Holdings() {
   const { currency } = usePrefs();
   const isPhone = useMediaQuery(PHONE_QUERY);
@@ -214,10 +195,16 @@ export function Holdings() {
   const data = query.data;
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
   const timeZone = useTimeZone();
-  const stamps = useMemo(() => bookStamps(data?.holdings ?? [], data?.as_of), [data]);
-  const priceText = stamps.price ? priceAsOf(stamps.price, { timeZone }) : null;
+  // The price time is said once (page header + top bar); a row says its own only when it differs.
+  const stamps = useMemo(() => foldStamps(data?.holdings ?? [], { timeZone }), [data, timeZone]);
+  const priceText = stamps.price;
+  const marks = useMemo(() => holdingMarks(data?.holdings ?? [], { timeZone }), [data, timeZone]);
   const label = data ? `Prices as of ${priceText ?? formatDate(data.as_of)}` : query.isPending ? "Loading" : "Offline";
-  const short = data ? (priceText ?? formatAxisDate(Date.parse(data.as_of), 0)) : undefined;
+  const shortText = useMemo(
+    () => foldStamps(data?.holdings ?? [], { timeZone, weekdays: true }).price,
+    [data, timeZone],
+  );
+  const short = data ? (shortText ?? formatAxisDate(Date.parse(data.as_of), 0)) : undefined;
   const updated = stamps.updated ? `Updated ${formatStamp(stamps.updated, { timeZone })}` : undefined;
   useShellStatus(status, label, () => void query.refetch(), query.isFetching, short, updated);
   const maxWeight = useMemo(() => Math.max(0, ...(data?.holdings ?? []).map((h) => toNum(h.weight_pct) ?? 0)), [data]);
@@ -316,15 +303,15 @@ export function Holdings() {
         group: "Position",
         align: "right",
         sortValue: (r) => toNum(r.price_native),
-        cell: (r) => formatMoney(toNum(r.price_native), r.native_currency, { unmasked: true }),
-      },
-      {
-        key: "asof",
-        header: "Price as of",
-        group: "Position",
-        nowrap: true,
-        sortValue: (r) => r.updated_at ?? r.price_as_of ?? "",
-        cell: (r) => <PriceStamps price={holdingPriceTime(r)} updated={r.updated_at} layout="stack" terse />,
+        cell: (r) => (
+          <span className="holdings-page__stack">
+            <span className="holdings-page__price">
+              {formatMoney(toNum(r.price_native), r.native_currency, { unmasked: true })}
+              <PriceTick title={marks.tick(r)} />
+            </span>
+            <RowStamp text={stamps.rowPrice(r)} />
+          </span>
+        ),
       },
       {
         key: "expense",
@@ -407,14 +394,21 @@ export function Holdings() {
         group: "Period",
         align: "right",
         sortValue: (r) => toNum(r.today_pct),
-        cell: (r) => (
-          <span className={clsx("holdings-page__stack", r.daily_is_stale && "holdings-page__today--stale")}>
-            <Percent ratio={toNum(r.today_pct)} signed colored={!r.daily_is_stale} />
-            <span className="holdings-page__stack-sub">
-              <Money amount={toNum(r.today_move)} currency={currency} signed />
+        cell: (r) => {
+          const note = marks.staleMove(r);
+          return (
+            <span
+              className={clsx("holdings-page__stack", note && "holdings-page__today--stale")}
+              title={note ?? undefined}
+            >
+              <Percent ratio={toNum(r.today_pct)} signed colored={!note} />
+              <span className="holdings-page__stack-sub">
+                <Money amount={toNum(r.today_move)} currency={currency} signed />
+              </span>
+              {note && <span className="holdings-page__sr">{note}</span>}
             </span>
-          </span>
-        ),
+          );
+        },
       },
       {
         key: "mtd",
@@ -433,7 +427,7 @@ export function Holdings() {
         cell: (r) => <Percent ratio={toNum(r.ytd_growth)} signed colored />,
       },
     ],
-    [currency, maxWeight],
+    [currency, maxWeight, stamps, marks],
   );
 
   if (query.isError && !data) {
@@ -473,7 +467,15 @@ export function Holdings() {
   const phoneList = (list: HoldingRowDto[]) => (
     <ul className="holdings-page__list">
       {list.map((r) => (
-        <HoldingMobileRow key={r.instrument_id} row={r} ccy={currency} onOpenChart={setSelected} />
+        <HoldingMobileRow
+          key={r.instrument_id}
+          row={r}
+          ccy={currency}
+          stamp={stamps.rowPrice(r)}
+          tick={marks.tick(r)}
+          staleMove={marks.staleMove(r)}
+          onOpenChart={setSelected}
+        />
       ))}
     </ul>
   );
@@ -484,7 +486,7 @@ export function Holdings() {
         title="Holdings"
         subtitle="Every position in full detail"
         actions={
-          data ? <PriceStamps price={stamps.price ?? undefined} updated={stamps.updated} options={{ timeZone }} /> : undefined
+          data ? <PriceStamps priceText={stamps.price} updated={stamps.updated} options={{ timeZone }} /> : undefined
         }
       />
 
