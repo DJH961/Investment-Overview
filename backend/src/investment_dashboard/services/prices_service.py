@@ -86,7 +86,7 @@ def _resolve_tiingo_token() -> str | None:
 REFRESH_TTL_SECONDS: dict[str, int] = {
     "etf": 2 * 60,
     "stock": 2 * 60,
-    "mutual_fund": 30 * 60,
+    "mutual_fund": 10 * 60,
     "cash": 24 * 60 * 60,
     "savings": 24 * 60 * 60,
 }

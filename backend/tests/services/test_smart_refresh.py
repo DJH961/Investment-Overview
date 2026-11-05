@@ -62,8 +62,8 @@ def test_instruments_due_respects_ttl_etf(session: Session) -> None:
 def test_instruments_due_respects_ttl_mutual_fund(session: Session) -> None:
     instr = instruments_repo.get_or_create(session, symbol="VSMPX", asset_class="mutual_fund")
     now = _utc_naive(datetime.now(UTC))
-    # 10 minutes ago: under the 30-minute mutual-fund TTL.
-    price_cache_repo.upsert_last_refreshed_at(session, instr.id, now - timedelta(minutes=10))
+    # 5 minutes ago: under the 10-minute mutual-fund TTL.
+    price_cache_repo.upsert_last_refreshed_at(session, instr.id, now - timedelta(minutes=5))
     session.flush()
     assert prices_service.instruments_due_for_refresh(session, now=now) == []
 

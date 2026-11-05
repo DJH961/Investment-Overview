@@ -4,21 +4,24 @@ One asyncio loop; every job is blocking code run through ``asyncio.to_thread``.
 Decisions use the New York exchange clock from :mod:`domain.market_hours`
 (never ``date.today()``):
 
-Stocks and currencies are polled on two separate clocks, each with an "open" and
-a "closed" interval from Settings:
+Stocks and currencies run on two separate clocks. While a market trades it is
+polled at its interval from Settings; while it is closed nothing is fetched
+unless data is actually missing (an outage, a restart):
 
 * stocks (US market, ``is_us_market_open``): while open a ``tick`` every
   ``live_refresh_interval_seconds`` (default 60 s): a price refresh and an intraday
   sample (``auto_refresh.tick_refresh``, which also runs the Tiingo fallback inside
   ``prices_service``), then a ``tick`` event. While closed, ``eod`` once per
   settled session date (closes, splits, benchmark, snapshots, cache janitor; a
-  ``refresh`` event), then a price ``tick`` without a sample every
-  ``scheduler.closed_interval_minutes`` (default 10);
-* currencies (24/5, ``is_forex_market_open``): the live EUR/USD spot (``fx``
-  event) every ``scheduler.fx_interval_minutes`` (default 1) while the currency
-  market trades, whatever the stock market does (so on a Tuesday night it is still
-  checked every minute), and every ``scheduler.fx_closed_interval_minutes``
-  (default 10) over the weekend.
+  ``refresh`` event). After that a price ``tick`` (no sample) runs only when
+  ``prices_service`` reports an instrument still due (checked at most once a
+  minute): a missing settled close, or a mutual-fund NAV not yet published (re-asked
+  every ``prices.ttl_seconds.mutual_fund``, default 10 min). Once every close and
+  NAV is in, nothing is fetched until the next session;
+* currencies (24/5, ``is_forex_market_open``): the live EUR/USD spot (``fx`` event)
+  every ``scheduler.fx_interval_minutes`` (default 1) while it trades, whatever the
+  stock market does. Over the weekend only if no good reading exists since
+  Friday's 17:00 close (retried every minute until one lands).
 
 A tick or FX check that changed nothing (same prices, same rate, no new sample)
 is published with ``unchanged: True``: clients still see the check, but the read
@@ -57,9 +60,9 @@ log = logging.getLogger(__name__)
 POLL_SECONDS = 5.0
 #: Fallback when the ``scheduler.fx_interval_minutes`` setting cannot be read.
 FX_INTERVAL = timedelta(minutes=1)
-#: Fallback when the ``scheduler.closed_interval_minutes`` /
-#: ``scheduler.fx_closed_interval_minutes`` settings cannot be read.
-CLOSED_INTERVAL = timedelta(minutes=10)
+#: While a market is closed: how often to ask "is anything missing?" (and the
+#: retry gap for a missing weekend FX reading).
+MISSING_CHECK = timedelta(minutes=1)
 #: Event fields that say whether a tick / FX check changed anything.
 _CHANGE_KEYS = ("total_value_eur", "fx_eur_usd", "prices", "point")
 JOB_NAMES: tuple[str, ...] = ("tick", "fx", "eod", "backup")
@@ -241,18 +244,13 @@ def default_fx_interval() -> timedelta:
     return FX_INTERVAL if minutes is None else timedelta(minutes=int(minutes))
 
 
-def default_closed_interval() -> timedelta:
-    from investment_dashboard.services import settings_service  # noqa: PLC0415
+def default_prices_due() -> bool:
+    """Whether any instrument still needs a pull (missing close / NAV, TTL passed)."""
+    from investment_dashboard.db import cache_session_scope, ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import prices_service  # noqa: PLC0415
 
-    minutes = settings_service.get_or("scheduler.closed_interval_minutes", None)
-    return CLOSED_INTERVAL if minutes is None else timedelta(minutes=int(minutes))
-
-
-def default_fx_closed_interval() -> timedelta:
-    from investment_dashboard.services import settings_service  # noqa: PLC0415
-
-    minutes = settings_service.get_or("scheduler.fx_closed_interval_minutes", None)
-    return CLOSED_INTERVAL if minutes is None else timedelta(minutes=int(minutes))
+    with ledger_session_scope() as ledger, cache_session_scope() as cache:
+        return bool(prices_service.instruments_due_for_refresh(ledger, cache))
 
 
 def default_heavy_busy() -> str | None:
@@ -349,10 +347,8 @@ class Jobs:
     backup_due: Callable[[datetime], bool] = default_backup_due
     interval_seconds: Callable[[], int] = default_interval
     fx_interval: Callable[[], timedelta] = default_fx_interval
-    #: Price checks while the US stock market is closed.
-    closed_interval: Callable[[], timedelta] = default_closed_interval
-    #: FX checks while the currency market is closed (weekends).
-    fx_closed_interval: Callable[[], timedelta] = default_fx_closed_interval
+    #: While the US market is closed: does any instrument still need a pull?
+    prices_due: Callable[[], bool] = default_prices_due
     #: Name of a running heavy maintenance job (market jobs wait), or ``None``.
     heavy_busy: Callable[[], str | None] = default_heavy_busy
 
@@ -361,6 +357,10 @@ class Jobs:
 class State:
     last_tick: datetime | None = None
     last_fx: datetime | None = None
+    #: Last FX run that did not fail (a weekend reading must be a good one).
+    last_fx_ok: datetime | None = None
+    #: Last "is anything missing?" check while the US market was closed.
+    last_due_check: datetime | None = None
     last_eod_session: date | None = None
     last_backup: datetime | None = None
     running: set[str] = field(default_factory=set)
@@ -454,27 +454,35 @@ class Scheduler:
         st = self.state
         if market_hours.is_us_market_open(now):
             every = timedelta(seconds=interval_seconds)
-        elif st.last_eod_session != market_hours.latest_settled_session_date(now):
+            return ["tick"] if st.last_tick is None or now - st.last_tick >= every else []
+        if st.last_eod_session != market_hours.latest_settled_session_date(now):
             return ["eod"]
-        else:
-            every = self._interval(self.jobs.closed_interval, CLOSED_INTERVAL)
-        return ["tick"] if st.last_tick is None or now - st.last_tick >= every else []
+        # Closed and the day's eod is done: pull only what is still missing.
+        if st.last_due_check is not None and now - st.last_due_check < MISSING_CHECK:
+            return []
+        st.last_due_check = now
+        try:
+            missing = self.jobs.prices_due()
+        except Exception:
+            log.warning("could not check for missing prices", exc_info=True)
+            return []
+        return ["tick"] if missing else []
 
     def _due_fx(self, now: datetime) -> list[str]:
         """The currency clock (24/5), independent of the stock market."""
         st = self.state
         if market_hours.is_forex_market_open(now):
-            every = self._interval(self.jobs.fx_interval, FX_INTERVAL)
-        else:
-            every = self._interval(self.jobs.fx_closed_interval, CLOSED_INTERVAL)
-        return ["fx"] if st.last_fx is None or now - st.last_fx >= every else []
-
-    @staticmethod
-    def _interval(read: Callable[[], timedelta], fallback: timedelta) -> timedelta:
-        try:
-            return read()
-        except Exception:
-            return fallback
+            try:
+                every = self.jobs.fx_interval()
+            except Exception:
+                every = FX_INTERVAL
+            return ["fx"] if st.last_fx is None or now - st.last_fx >= every else []
+        # Weekend: the rate is frozen at Friday's close. Fetch only if no good
+        # reading exists since then (retry every minute until one lands).
+        closed_at = market_hours.last_forex_close(now)
+        if st.last_fx_ok is not None and st.last_fx_ok >= closed_at:
+            return []
+        return ["fx"] if st.last_fx is None or now - st.last_fx >= MISSING_CHECK else []
 
     def _unchanged(self, etype: str, extra: dict[str, Any] | None) -> bool:
         """True when a tick / fx check carries exactly what the last one did."""
@@ -487,17 +495,21 @@ class Scheduler:
 
     # -- execution ---------------------------------------------------------
 
-    def _stamp(self, name: str, now: datetime) -> None:
+    def _stamp(self, name: str, now: datetime, *, failed: bool = False) -> None:
         """Record when each clock last ran (stocks: tick/eod, currencies: fx/eod)."""
         st = self.state
         if name == "tick":
             st.last_tick = now
         elif name == "fx":
             st.last_fx = now
+            if not failed:
+                st.last_fx_ok = now
         elif name == "eod":
             # It pulled the closes and the live spot: both clocks start over.
             st.last_eod_session = market_hours.latest_settled_session_date(now)
             st.last_fx = now
+            if not failed:
+                st.last_fx_ok = now
             st.last_tick = now
         elif name == "backup":
             st.last_backup = now
@@ -526,7 +538,7 @@ class Scheduler:
             # cadence instead of spinning every poll.
             st.last_runs[name] = now
             st.last_failed[name] = failed
-            self._stamp(name, now)
+            self._stamp(name, now, failed=failed)
             if failed or name == "backup":
                 return
             etype = {"tick": "tick", "fx": "fx", "eod": "refresh"}[name]

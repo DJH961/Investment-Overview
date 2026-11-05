@@ -445,3 +445,23 @@ def last_forex_reopen(now: datetime | None = None) -> datetime:
     while day.weekday() != _SUNDAY:
         day -= timedelta(days=1)
     return datetime.combine(day, _FOREX_REOPEN, tzinfo=_MARKET_TZ)
+
+
+def last_forex_close(now: datetime | None = None) -> datetime:
+    """The spot-FX market's **most recent** Friday 17:00 ET close at or before ``now``.
+
+    Over the weekend nothing newer than the rate at this instant can exist, so a
+    reading taken after it is final until the Sunday reopen (the scheduler uses
+    this to skip weekend FX calls unless that reading is missing). Returns an
+    exchange-time instant.
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
+    day = local.date()
+    while day.weekday() != _FRIDAY:
+        day -= timedelta(days=1)
+    close = datetime.combine(day, _FOREX_REOPEN, tzinfo=_MARKET_TZ)
+    if close > local.replace(tzinfo=_MARKET_TZ):
+        close -= timedelta(days=7)  # a Friday before 17:00: last week's close
+    return close

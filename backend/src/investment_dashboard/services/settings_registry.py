@@ -378,7 +378,7 @@ DEFS: tuple[SettingDef, ...] = (
     # -- data refresh ----------------------------------------------------------
     _ttl("etf", 120, "ETF price age"),
     _ttl("stock", 120, "Stock price age"),
-    _ttl("mutual_fund", 30 * 60, "Mutual-fund NAV re-check"),
+    _ttl("mutual_fund", 10 * 60, "Mutual-fund NAV re-check (until the NAV is in)"),
     _ttl("cash", 24 * 3600, "Cash price age"),
     _ttl("savings", 24 * 3600, "Savings price age"),
     _ttl("default", 24 * 3600, "Other asset classes"),
@@ -392,32 +392,6 @@ DEFS: tuple[SettingDef, ...] = (
             "EUR/USD trades around the clock on weekdays (Sunday 17:00 to Friday 17:00 "
             "New York time) on its own clock, separate from the stock market: it is "
             "checked at this pace whenever it trades, day or night."
-        ),
-        min=_D(1),
-        max=_D(720),
-        unit="min",
-    ),
-    SettingDef(
-        "scheduler.fx_closed_interval_minutes",
-        SettingType.INT,
-        10,
-        "data_refresh",
-        "Currency refresh while the currency market is closed",
-        help="How often EUR/USD is checked over the weekend, when it does not trade.",
-        min=_D(1),
-        max=_D(720),
-        unit="min",
-    ),
-    SettingDef(
-        "scheduler.closed_interval_minutes",
-        SettingType.INT,
-        10,
-        "data_refresh",
-        "Price refresh while the stock market is closed",
-        help=(
-            "How often prices are checked while the US stock market is closed "
-            "(nights, weekends, holidays). While it is open they follow the live "
-            "refresh interval."
         ),
         min=_D(1),
         max=_D(720),
