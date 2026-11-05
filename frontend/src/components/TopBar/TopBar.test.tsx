@@ -37,7 +37,8 @@ describe("TopBar on a phone", () => {
     fireEvent.click(refresh);
     expect(onRefresh).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "Account and sign out" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Reporting currency")).toBeInTheDocument();
+    // One tap swaps the currency on a phone.
+    expect(screen.getByRole("button", { name: "Showing EUR, switch to USD" })).toBeInTheDocument();
   });
 
   it("signs out from the account menu in two taps", async () => {
@@ -78,5 +79,24 @@ describe("TopBar on desktop", () => {
     renderBar({ compact: false });
     expect(screen.getByRole("link", { name: "Health & Repair" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Theme:/ })).toBeInTheDocument();
+  });
+
+  it("keeps the portfolio summary in the same place on every view (a placeholder until it loads)", () => {
+    renderBar({ compact: false });
+    expect(screen.getByLabelText("Portfolio summary")).toHaveTextContent("Portfolio…");
+  });
+
+  it("shows the value and day move when the shell has them", () => {
+    renderBar({ compact: false, summary: { value: 1234, currency: "EUR", pct: 0.01, move: 12, dayLabel: "today" } });
+    const box = screen.getByLabelText("Portfolio summary");
+    expect(box).toHaveTextContent("€1,234.00");
+    expect(box).toHaveTextContent("today");
+  });
+});
+
+describe("TopBar summary on a phone", () => {
+  it("shows the compact value and day % beside the title", () => {
+    renderBar({ summary: { value: 123456, currency: "EUR", pct: -0.001, move: -12, dayLabel: "today" } });
+    expect(screen.getByLabelText("Portfolio summary")).toHaveTextContent(/€123/);
   });
 });

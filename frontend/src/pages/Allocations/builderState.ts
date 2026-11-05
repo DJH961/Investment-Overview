@@ -53,3 +53,101 @@ export function savedNoBuy(target: TargetOut): Record<string, boolean> {
 export function isOff(total: number): boolean {
   return Math.abs(total - 100) > 0.005;
 }
+
+/** True for an exchange-traded fund (the calculator inputs carry each fund's asset class). */
+export const isEtfClass = (assetClass: string | null | undefined): boolean => (assetClass ?? "").toLowerCase() === "etf";
+
+/**
+ * The funds of a category that get new money. With "Invest only in ETFs" on,
+ * the ticked funds narrow to the ETFs (all of the category's ETFs when none of
+ * them is ticked); the other funds stay held and keep counting toward the
+ * category (the server credits held, un-ticked funds), but get no new money.
+ * A category without any ETF keeps its own ticks (`etfOnly` does not apply).
+ */
+export function effectiveSelection(
+  members: number[],
+  picked: number[],
+  etfOnly: boolean,
+  isEtf: (id: number) => boolean,
+): { ids: number[]; etfOnlyApplies: boolean } {
+  const etfs = members.filter(isEtf);
+  if (!etfOnly || etfs.length === 0) return { ids: picked, etfOnlyApplies: false };
+  const ticked = picked.filter(isEtf);
+  return { ids: ticked.length ? ticked : etfs, etfOnlyApplies: true };
+}
+
+/** A plan row's trade: + buys, - sells, 0 holds. */
+export interface Trade {
+  add_value?: string | null;
+}
+
+const addOf = (r: Trade) => Number(r.add_value ?? 0) || 0;
+
+/** Rows in reading order: the biggest buys first, then the biggest sells, then the rest. */
+export function orderTrades<T extends Trade>(rows: T[]): T[] {
+  const rank = (r: T) => (addOf(r) > 0 ? 0 : addOf(r) < 0 ? 1 : 2);
+  return [...rows].sort((a, b) => rank(a) - rank(b) || Math.abs(addOf(b)) - Math.abs(addOf(a)));
+}
+
+/** What a group of rows buys and sells (display only; each figure comes from the server rows). */
+export function tradeTotals(rows: Trade[]): { buy: number; sell: number } {
+  let buy = 0;
+  let sell = 0;
+  for (const r of rows) {
+    const v = addOf(r);
+    if (v > 0) buy += v;
+    else sell -= v;
+  }
+  return { buy, sell };
+}
+
+/** The calculator mix saved with a target (see `BuilderStateIO` in the API). */
+export interface SavedBuilder {
+  mode: Mode;
+  etf_only: boolean;
+  categories: { name: string; weight: string; split: Split; selected: number[] }[];
+}
+
+/** The category part of the editor, as it is saved with a target. */
+export interface CategoryEditor {
+  weights: Weights;
+  split: Record<string, Split>;
+  selected: Record<string, number[]>;
+}
+
+/** What to save with a target: the mode, ETF-only and every category's weight, split and ticked funds. */
+export function toSavedBuilder(mode: Mode, etfOnly: boolean, names: string[], ed: CategoryEditor): SavedBuilder {
+  return {
+    mode,
+    etf_only: etfOnly,
+    categories: names.map((name) => ({
+      name,
+      weight: ed.weights[name] ?? "0",
+      split: ed.split[name] ?? "value",
+      selected: [...(ed.selected[name] ?? [])],
+    })),
+  };
+}
+
+/**
+ * The category editor restored from a saved target. Categories the target does
+ * not know keep `fallback`; ticked ids that are no longer in the category drop out.
+ */
+export function fromSavedBuilder(
+  saved: SavedBuilder,
+  members: Record<string, number[]>,
+  fallback: CategoryEditor,
+): CategoryEditor {
+  const out: CategoryEditor = {
+    weights: { ...fallback.weights },
+    split: { ...fallback.split },
+    selected: { ...fallback.selected },
+  };
+  for (const c of saved.categories) {
+    if (!(c.name in members)) continue;
+    out.weights[c.name] = c.weight;
+    out.split[c.name] = c.split;
+    out.selected[c.name] = c.selected.filter((id) => members[c.name].includes(id));
+  }
+  return out;
+}

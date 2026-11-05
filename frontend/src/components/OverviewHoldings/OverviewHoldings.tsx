@@ -1,10 +1,10 @@
 import clsx from "clsx";
 import { ChevronDown } from "lucide-react";
-import { useId } from "react";
+import { useId, useMemo } from "react";
 import { Link } from "react-router";
 import { Card } from "../Card";
 import { ErrorState } from "../ErrorState";
-import { holdingPriceTime, PriceStamps } from "../Freshness";
+import { foldStamps, holdingMarks, isNavRow, PriceStamps, PriceTick, sentenceCase } from "../Freshness";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
@@ -36,17 +36,24 @@ function Row({
   row,
   ccy,
   badge,
-  timeZone,
+  stamp,
+  tick,
+  staleMove,
   maxWeight,
 }: {
   row: HoldingRowDto;
   ccy: string;
   badge?: "winner" | "loser";
-  timeZone?: string;
+  /** This row's price time, only when it differs from the card's (see `foldStamps`). */
+  stamp: string | null;
+  /** The up-to-date ✓ title while the market is shut, else null. */
+  tick: string | null;
+  /** Why the day move is greyed (an earlier session's), else null. */
+  staleMove: string | null;
   /** Largest weight in the list: the weight bars share its scale. */
   maxWeight: number;
 }) {
-  const stale = row.daily_is_stale;
+  const stale = staleMove !== null;
   const weight = toNum(row.weight_pct);
   const live = row.market_open && !stale;
   return (
@@ -55,7 +62,9 @@ function Row({
         <span className="overview-holdings__symbol">
           {row.symbol}
           {live && <span className="overview-holdings__pill overview-holdings__pill--live">live</span>}
-          {row.is_money_market && <span className="overview-holdings__pill">PAR</span>}
+          {row.is_money_market && <span className="overview-holdings__pill">CASH</span>}
+          {!row.is_money_market && isNavRow(row) && <span className="overview-holdings__pill">NAV</span>}
+          <PriceTick title={tick} />
           {row.value_warning && (
             <span className="overview-holdings__pill overview-holdings__pill--warn">stale value</span>
           )}
@@ -71,6 +80,11 @@ function Row({
         <span className="overview-holdings__name" title={row.name}>
           {row.name}
         </span>
+        {stamp && (
+          <span className="overview-holdings__asof" title={`Price as of ${stamp}`}>
+            <span className="overview-holdings__asof-key">Price as of</span> {sentenceCase(stamp)}
+          </span>
+        )}
       </span>
       <span className="overview-holdings__weight">
         <span className="overview-holdings__weight-bar" aria-hidden>
@@ -91,13 +105,17 @@ function Row({
           <Percent ratio={weight} digits={1} /> of portfolio
         </span>
       </span>
-      <span className={clsx("overview-holdings__cell", stale && "overview-holdings__today--stale")}>
+      <span
+        className={clsx("overview-holdings__cell", stale && "overview-holdings__today--stale")}
+        title={staleMove ?? undefined}
+      >
         <span className="overview-holdings__main">
           <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
         </span>
         <span className="overview-holdings__sub">
           <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
         </span>
+        {staleMove && <span className="overview-holdings__sr">{staleMove}</span>}
       </span>
       <span className="overview-holdings__cell overview-holdings__total">
         <span className="overview-holdings__main">
@@ -107,14 +125,6 @@ function Row({
           <Percent ratio={toNum(row.total_growth)} signed />
         </span>
       </span>
-      <PriceStamps
-        className="overview-holdings__asof"
-        price={holdingPriceTime(row)}
-        updated={row.updated_at}
-        layout="stack"
-        terse
-        options={{ timeZone }}
-      />
     </li>
   );
 }
@@ -135,10 +145,23 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const more = Math.max(0, all.length - OVERVIEW_HOLDINGS_LIMIT);
   const rows = open ? all : all.slice(0, OVERVIEW_HOLDINGS_LIMIT);
   const maxWeight = Math.max(0, ...all.map((r) => toNum(r.weight_pct) ?? 0));
+  // The price time is said once, in the header; a row only shows its own when it differs.
+  const stamps = useMemo(() => foldStamps(q.data?.holdings ?? [], { timeZone }), [q.data, timeZone]);
+  const marks = useMemo(() => holdingMarks(q.data?.holdings ?? [], { timeZone }), [q.data, timeZone]);
   return (
     <Card
       className="overview-holdings"
       title="Holdings"
+      subtitle={
+        stamps.price || stamps.updated ? (
+          <PriceStamps
+            className="overview-holdings__stamps"
+            priceText={stamps.price}
+            updated={stamps.updated}
+            options={{ timeZone }}
+          />
+        ) : undefined
+      }
       collapsibleId="overview.holdings"
       actions={
         <Link className="overview-holdings__link" to="/holdings">
@@ -159,14 +182,15 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
               <span className="overview-holdings__head-num">Value</span>
               <span className="overview-holdings__head-num">Day</span>
               <span className="overview-holdings__head-num overview-holdings__head-total">Since buying</span>
-              <span className="overview-holdings__head-asof">Price as of</span>
             </li>
             {rows.map((r) => (
               <Row
                 key={r.instrument_id}
                 row={r}
                 ccy={currency}
-                timeZone={timeZone}
+                stamp={stamps.rowPrice(r)}
+                tick={marks.tick(r)}
+                staleMove={marks.staleMove(r)}
                 maxWeight={maxWeight}
                 badge={winners.has(r.symbol) ? "winner" : losers.has(r.symbol) ? "loser" : undefined}
               />

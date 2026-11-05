@@ -1,4 +1,4 @@
-"""Migration 0022: instrument twin column + twin price cache (upgrade + downgrade)."""
+"""Migration 0023: instrument twin column + twin price cache (upgrade + downgrade)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 
-_BEFORE = "e5a91b7c3d28"  # 0021
-_AFTER = "f6b2d8a4c913"  # 0022
+_BEFORE = "f1c6b8a2d4e7"  # 0022
+_AFTER = "f6b2d8a4c913"  # 0023
 
 
 def _cfg() -> Config:
@@ -20,7 +20,7 @@ def _cfg() -> Config:
     return cfg
 
 
-def test_0022_up_and_down(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_0023_up_and_down(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     db_path = tmp_path / "ledger.sqlite"
     monkeypatch.setenv("INV_DASHBOARD_DB_PATH", str(db_path))
     from investment_dashboard.config import get_settings

@@ -38,6 +38,8 @@ class CalcInstrument:
     current_value_eur: Decimal
     current_pct: Decimal
     price_eur: Decimal | None
+    #: The effective asset class ("etf", "mutual_fund", ...); "" when unset.
+    asset_class: str = ""
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,7 @@ def build_calculator_data(session: Session) -> CalcData:
             current_value_eur=value_by_id.get(instr.id, ZERO),
             current_pct=pct_by_id.get(instr.id, ZERO),
             price_eur=_price_to_eur(prices.get(instr.id), instr.native_currency, fx_rate),
+            asset_class=eff.asset_class or "",
         )
         calc_instruments.append(ci)
         if category not in by_category:

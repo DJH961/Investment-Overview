@@ -1955,6 +1955,26 @@ export interface components {
              */
             target_pct: string;
         };
+        /**
+         * BuilderStateIO
+         * @description The calculator mix a target was saved from; loading the target restores it.
+         */
+        BuilderStateIO: {
+            /** Categories */
+            categories?: components["schemas"]["CategoryStateIO"][];
+            /**
+             * Etf Only
+             * @description "Invest only in ETFs"
+             * @default false
+             */
+            etf_only: boolean;
+            /**
+             * Mode
+             * @default fund
+             * @enum {string}
+             */
+            mode: "fund" | "category";
+        };
         /** ByCurrency[AllocationsResponse] */
         ByCurrency_AllocationsResponse_: {
             EUR: components["schemas"]["AllocationsResponse"];
@@ -2034,6 +2054,12 @@ export interface components {
         };
         /** CalcInstrumentOut */
         CalcInstrumentOut: {
+            /**
+             * Asset Class
+             * @description Effective asset class ("etf", "mutual_fund", ...)
+             * @default
+             */
+            asset_class: string;
             /** Category */
             category: string;
             /**
@@ -2099,6 +2125,31 @@ export interface components {
              * @description Target weight (fraction, 0.01 = 1%)
              */
             target_pct: string;
+        };
+        /**
+         * CategoryStateIO
+         * @description One category row of the calculator as saved with a target.
+         */
+        CategoryStateIO: {
+            /** Name */
+            name: string;
+            /**
+             * Selected
+             * @description Funds that get new money; the rest are deselected
+             */
+            selected?: number[];
+            /**
+             * Split
+             * @default value
+             * @enum {string}
+             */
+            split: "value" | "even";
+            /**
+             * Weight
+             * @description The typed target % (text, as entered)
+             * @default 0
+             */
+            weight: string;
         };
         /** CategoryWeightIn */
         CategoryWeightIn: {
@@ -3025,9 +3076,17 @@ export interface components {
             price_as_of?: string | null;
             /** Price Data Warning */
             price_data_warning: boolean;
+            /**
+             * Price Market At
+             * @description When the price is from (close print or NAV publish time), if known
+             */
+            price_market_at?: string | null;
             /** Price Native */
             price_native?: string | null;
-            /** Price Type */
+            /**
+             * Price Type
+             * @description "nav" for NAV-priced funds (and money market), else "market"
+             */
             price_type: string;
             /** Shares */
             shares: string;
@@ -5150,6 +5209,7 @@ export interface components {
              * @default false
              */
             allow_sell: boolean;
+            builder?: components["schemas"]["BuilderStateIO"] | null;
             /** Display Currency */
             display_currency?: ("EUR" | "USD") | null;
             /** Id */
@@ -5197,6 +5257,8 @@ export interface components {
             active: boolean;
             /** Allow Sell */
             allow_sell: boolean;
+            /** @description Calculator state saved with the target (null for older targets) */
+            builder?: components["schemas"]["BuilderStateIO"] | null;
             /** Display Currency */
             display_currency?: string | null;
             /** Id */

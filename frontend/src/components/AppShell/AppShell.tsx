@@ -25,6 +25,7 @@ import { updatingView } from "../Freshness";
 import { Sidebar } from "../Sidebar";
 import { TabBar } from "../TabBar";
 import { TopBar } from "../TopBar";
+import { usePortfolioSummary } from "./usePortfolioSummary";
 import "./AppShell.scss";
 import { useShellHealth } from "./useShellHealth";
 
@@ -77,7 +78,8 @@ export function AppShell() {
   const desktop = useIsDesktop();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { freshness: pageFreshness, refreshing: pageRefreshing, summary } = useShell();
+  const { freshness: pageFreshness, refreshing: pageRefreshing } = useShell();
+  const summary = usePortfolioSummary(currency, PREFETCH_DELAY_MS);
   // The top-bar refresh is always a real server pull (prices, FX, intraday sample).
   const server = useServerRefresh();
   const refresh = server.state;

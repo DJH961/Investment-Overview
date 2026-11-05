@@ -157,11 +157,40 @@ describe("Holdings page", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Stale or zero value: VWCE");
   });
 
-  it("on a phone shows the as-of stamp, today in money and the price chart button", () => {
+  it("says the price time once in the header and only on rows that differ", () => {
+    const fund = {
+      ...holdings.holdings[0],
+      instrument_id: 2,
+      symbol: "FXAIX",
+      name: "Index Fund",
+      asset_class: "mutual_fund",
+      price_as_of: "2026-10-29",
+      value_warning: false,
+    };
+    const etf2 = { ...holdings.holdings[0], instrument_id: 3, symbol: "VUSA", value_warning: false };
+    const saved = holdings.holdings;
+    holdings.holdings = [saved[0], etf2, fund];
+    try {
+      const { container } = render(<Holdings />);
+      expect(container.querySelector(".page-header .price-stamps")).toHaveTextContent(/Price as of .*\(close\)/);
+      const stamps = [...container.querySelectorAll(".holdings-page__row-stamp")];
+      // Only the fund (a NAV, from another day) carries its own stamp; never called a close.
+      expect(stamps).toHaveLength(1);
+      expect(stamps[0]).toHaveTextContent(/\(NAV\)/);
+      expect(stamps[0]).not.toHaveTextContent(/close/);
+      // The market is shut: the ETFs on the latest close get the tick, the fund behind them does not.
+      expect(container.querySelectorAll(".price-tick")).toHaveLength(2);
+      expect(container.querySelector(".price-tick")).toHaveAttribute("data-tick", "Up to date with the latest close");
+    } finally {
+      holdings.holdings = saved;
+    }
+  });
+
+  it("on a phone shows today in money and the price chart button", () => {
     phone.value = true;
     const { container } = render(<Holdings />);
-    // Price as of (a closed market: the close it belongs to), labelled for screen readers.
-    expect(container.querySelector(".holdings-page__chips .price-stamps")).toHaveTextContent(/Price as of/);
+    // One holding: its price time is the list's, said once in the header, not on the row.
+    expect(container.querySelector(".holdings-page__row-stamp")).toBeNull();
     expect(container.querySelector(".holdings-page__today")).toHaveTextContent("+€10.00"); // money move
     expect(container.querySelector(".holdings-page__today--stale")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /VWCE/ }));
@@ -175,6 +204,7 @@ describe("Holdings page", () => {
     try {
       const { container } = render(<Holdings />);
       expect(container.querySelector(".holdings-page__today--stale")).not.toBeNull();
+      expect(container.querySelector(".holdings-page__today--stale")).toHaveTextContent(/an earlier session's move/);
     } finally {
       holdings.holdings[0].daily_is_stale = false;
     }

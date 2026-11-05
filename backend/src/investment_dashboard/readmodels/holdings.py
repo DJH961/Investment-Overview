@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
+from investment_dashboard.domain.instruments import is_nav_priced
 from investment_dashboard.readmodels._context import build_context
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
@@ -108,7 +109,8 @@ def holding_row(
         "price_native": dec(card.current_price_native),
         "price_as_of": iso(card.price_as_of),
         "updated_at": iso(card.updated_at),
-        "price_type": "nav" if card.is_money_market else "market",
+        "price_market_at": iso(card.price_market_time),
+        "price_type": "nav" if card.is_money_market or is_nav_priced(asset_class) else "market",
         "is_money_market": card.is_money_market,
         "market_open": card.market_open,
         "expense_ratio": dec(card.expense_ratio),

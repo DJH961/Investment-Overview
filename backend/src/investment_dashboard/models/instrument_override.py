@@ -36,7 +36,7 @@ v6 adds two *pricing* fields (migration 0019):
   ``manual`` (never fetch; closes are entered as manual price fixes) or
   ``delisted`` (never fetch; the last known close keeps valuing it).
 
-v6 adds ``intraday_twin`` (migration 0022): an ETF symbol whose live price
+v6 adds ``intraday_twin`` (migration 0023): an ETF symbol whose live price
 estimates this mutual fund on the 1D graph until its NAV posts. Never a holding.
 
 Effective-value composition (override → ledger → default) is centralised

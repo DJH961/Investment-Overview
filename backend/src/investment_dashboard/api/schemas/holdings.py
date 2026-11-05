@@ -25,7 +25,13 @@ class HoldingRow(ApiModel):
     price_native: DecStr | None = None
     price_as_of: str | None = None
     updated_at: str | None = None
-    price_type: str
+    price_market_at: str | None = Field(
+        default=None,
+        description="When the price is from (close print or NAV publish time), if known",
+    )
+    price_type: str = Field(
+        description='"nav" for NAV-priced funds (and money market), else "market"'
+    )
     is_money_market: bool
     market_open: bool
     expense_ratio: DecStr | None = Field(default=None, description=f"Annual fee ({_FRAC})")

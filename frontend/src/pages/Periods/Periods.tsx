@@ -123,26 +123,18 @@ function buildColumns(
     { key: "flow", header: "Net flow", align: "right", sortValue: (r) => toNum(r.net_flow), cell: (r) => money(r.net_flow) },
     {
       key: "contrib",
-      header: "Contrib",
+      header: "Contributions",
       align: "right",
       sortValue: (r) => toNum(r.contributions),
       cell: (r) => money(r.contributions),
     },
     {
       key: "div",
-      header: "Div",
+      header: "Dividends",
       align: "right",
       phone: "hide",
       sortValue: (r) => toNum(r.dividends),
       cell: (r) => money(r.dividends),
-    },
-    {
-      key: "int",
-      header: "Int",
-      align: "right",
-      phone: "hide",
-      sortValue: (r) => toNum(r.interest),
-      cell: (r) => money(r.interest),
     },
   );
   return opts.withLabel ? cols : cols.filter((c) => c.key !== "label");
@@ -278,6 +270,12 @@ export function Periods() {
   );
 }
 
+/**
+ * A year's figures in one row next to its year-end value (wide screens), a
+ * two-column grid on a phone (spans: it sits in the card's subtitle line, so it
+ * stays visible while the year is folded): value, TWR, XIRR, net flow, contributions and
+ * dividends, each labelled. Server figures only.
+ */
 function YearSummary({
   row,
   currency,
@@ -288,34 +286,47 @@ function YearSummary({
   other: PeriodRowOut | undefined;
 }) {
   const second = otherCcy(currency);
-  const amt = (v: string | null) => <Money amount={toNum(v)} currency={currency} />;
   const o = toNum(other?.closing_value);
+  const money = (v: string | null) => (
+    <Maybe present={toNum(v) !== null} ccy={currency}>
+      <Money amount={toNum(v)} currency={currency} />
+    </Maybe>
+  );
+  const pct = (v: string | null) => (
+    <Maybe present={toNum(v) !== null} ccy={currency}>
+      <Percent ratio={toNum(v)} signed colored />
+    </Maybe>
+  );
   return (
     <span className="periods-page__summary" data-year={yearOf(row.label)}>
-      <span className="periods-page__summary-main">
-        <span className="periods-page__summary-value">
-          {amt(row.closing_value)}
-          {o !== null && (
-            <span className="periods-page__second">
-              <Money amount={o} currency={second} />
-            </span>
-          )}
-        </span>
-        <span className="periods-page__summary-growth">
-          <Percent ratio={toNum(row.growth_pct)} signed colored />
-          <span className="periods-page__chip-label"> TWR</span>
-        </span>
-      </span>
-      <span className="periods-page__chips">
-        {toNum(row.period_growth_xirr) !== null && (
-          <span className="periods-page__chip">
-            <span className="periods-page__chip-label">XIRR</span> <Percent ratio={toNum(row.period_growth_xirr)} signed colored />
+      <span className="periods-page__stat periods-page__stat--lead">
+        <span className="periods-page__stat-label">{row.is_current ? "Value now" : "Year-end value"}</span>
+        <span className="periods-page__stat-value">{money(row.closing_value)}</span>
+        {o !== null && (
+          <span className="periods-page__stat-sub">
+            <Money amount={o} currency={second} />
           </span>
         )}
-        <span className="periods-page__chip"><span className="periods-page__chip-label">Net flow</span> {amt(row.net_flow)}</span>
-        <span className="periods-page__chip"><span className="periods-page__chip-label">Contrib</span> {amt(row.contributions)}</span>
-        {toNum(row.dividends) ? <span className="periods-page__chip"><span className="periods-page__chip-label">Div</span> {amt(row.dividends)}</span> : null}
-        {toNum(row.interest) ? <span className="periods-page__chip"><span className="periods-page__chip-label">Int</span> {amt(row.interest)}</span> : null}
+      </span>
+      <span className="periods-page__stat">
+        <span className="periods-page__stat-label">Growth (TWR)</span>
+        <span className="periods-page__stat-value">{pct(row.growth_pct)}</span>
+      </span>
+      <span className="periods-page__stat">
+        <span className="periods-page__stat-label">XIRR</span>
+        <span className="periods-page__stat-value">{pct(row.period_growth_xirr)}</span>
+      </span>
+      <span className="periods-page__stat">
+        <span className="periods-page__stat-label">Net flow</span>
+        <span className="periods-page__stat-value">{money(row.net_flow)}</span>
+      </span>
+      <span className="periods-page__stat">
+        <span className="periods-page__stat-label">Contributions</span>
+        <span className="periods-page__stat-value">{money(row.contributions)}</span>
+      </span>
+      <span className="periods-page__stat">
+        <span className="periods-page__stat-label">Dividends</span>
+        <span className="periods-page__stat-value">{money(row.dividends)}</span>
       </span>
     </span>
   );

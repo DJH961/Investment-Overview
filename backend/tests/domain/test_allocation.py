@@ -5,6 +5,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from investment_dashboard.domain.allocation import (
     current_weights_pct,
@@ -344,3 +346,53 @@ def test_expand_category_instrument_in_two_categories_accumulates() -> None:
         current_values={1: Decimal(10)},
     )
     assert weights == {1: Decimal(100)}
+
+
+def test_whole_share_rebalance_never_spends_more_than_cash_plus_sales() -> None:
+    """Regression: truncated sales raise less than planned, so buys must give back shares.
+
+    A at 100 holds 1,000 (target 0 %), B at 30 holds 0 (target 100 %), cash 10.
+    Unrounded: sell 1,000 of A, buy 1,010 of B. A sells 10 shares (exact), B
+    would buy 33 shares = 990 <= 1,010. Make the sale truncate: A at 300 holding
+    1,000 sells only 3 shares (900); B buying 33 shares (990) would overspend
+    900 + 10 = 910, so B is trimmed to 30 shares (900).
+    """
+    plan = plan_rebalance(
+        Decimal(10),
+        {1: Decimal(0) + Decimal("0.0001"), 2: Decimal(100) - Decimal("0.0001")},
+        {1: Decimal(1000), 2: Decimal(0)},
+        {1: Decimal(300), 2: Decimal(30)},
+        allow_sell=True,
+    )
+    rows = {r.instrument_id: r for r in plan.rows}
+    assert rows[1].add_shares == -3
+    spent = sum((r.add_value for r in plan.rows), start=Decimal(0))
+    assert spent <= Decimal(10)
+    assert rows[2].add_shares == 30
+    assert plan.residual_cash == Decimal(10) - spent
+
+
+@given(
+    cash=st.decimals(min_value=0, max_value=5000, places=2),
+    values=st.lists(st.decimals(min_value=0, max_value=20000, places=2), min_size=2, max_size=5),
+    prices=st.lists(st.decimals(min_value=1, max_value=900, places=2), min_size=5, max_size=5),
+    weights=st.lists(st.integers(min_value=1, max_value=50), min_size=5, max_size=5),
+)
+def test_whole_share_rebalance_property_never_overspends(
+    cash: Decimal, values: list[Decimal], prices: list[Decimal], weights: list[int]
+) -> None:
+    n = len(values)
+    total_w = sum(weights[:n])
+    target = {i: Decimal(weights[i]) * Decimal(100) / Decimal(total_w) for i in range(n)}
+    # Make the weights sum to exactly 100 (the last absorbs the rounding).
+    target[n - 1] += Decimal(100) - sum(target.values(), start=Decimal(0))
+    plan = plan_rebalance(
+        cash,
+        target,
+        dict(enumerate(values)),
+        {i: prices[i] for i in range(n)},
+        allow_sell=True,
+    )
+    spent = sum((r.add_value for r in plan.rows), start=Decimal(0))
+    assert spent <= cash
+    assert all(r.add_shares == int(r.add_shares) for r in plan.rows)

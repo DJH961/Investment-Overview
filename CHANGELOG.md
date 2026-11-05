@@ -17,6 +17,65 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.6.0] — 2026-11-05
+
+### Added
+- **Saved targets remember the calculator selection.** Saving a target now also
+  stores the mode, every category's weight and split, which funds get new money
+  (deselected ones included) and "Invest only in ETFs"; "Load saved target"
+  restores all of it plus the rebalance switch, in either mode (new nullable
+  `target_allocations.builder_state`, migration `0022`; dropped by
+  `inv-dashboard-export-v5`).
+- **"Invest only in ETFs" in the by-category calculator.** One tap leaves mutual
+  funds and stocks out of the new money: they stay held and count toward their
+  category, but only the category's ETFs are bought (categories without an ETF
+  keep their own ticks). Remembered on the device. The calculator inputs now
+  carry each fund's asset class.
+- **Per-holding freshness marks (Overview holdings and Holdings, v5 web parity).**
+  A NAV pill for NAV-priced funds (CASH for money-market funds), a greyed day move
+  with "Not updated <day> — an earlier session's move" for a holding still on an
+  earlier session, and a small ✓ after the price while the US market is closed for
+  holdings that already have the latest close or NAV.
+- **Portfolio value and day move in the top bar on every view** (phone: compact
+  beside the title), always in the same place.
+
+### Changed
+- **Price times say exactly when and what.** "Yesterday's close" is gone: stamps
+  read "yesterday 22:00 (close)" (the US close in your timezone, DST-aware, or the
+  provider's market time for that session), "today 15:42 (live)", and a mutual
+  fund's NAV is never called a close: "yesterday 23:41 (NAV)" with the publish
+  time, or "Wed (NAV)". Holdings rows now carry `price_market_at`, and
+  `price_type` is "nav" for mutual funds too.
+- **The price time is said once** per list (Holdings header, Overview holdings card
+  header); a row only shows its own when it differs (a fund's NAV, a stale price).
+- **Holdings on a phone:** nothing is cut off at 360 / 390 px (label-over-value
+  figures, names wrap to two lines, the summary stats in a two-column grid instead
+  of a sideways strip).
+- **Periods:** the interest column and figure are gone; each year's figures sit in
+  one row beside its year-end value on wide screens.
+- **Risk page, desktop:** four headline tiles of one size, the equity curve beside
+  an "All metrics" table (grouped, aligned, tabular numbers), then attribution.
+- **By-category calculator:** funds are tick chips (with ETF / Fund / Stock
+  badges) under each category, always visible; the plan lists Buy / Sell per fund
+  in aligned columns with now → after per category and fund.
+- **Save target dialog:** a real form (Enter saves; name required and unique;
+  "Replace target" says what it replaces; the funds and weights to save are
+  listed; the active switch is a switch). Saving no longer wipes the mix you are
+  editing, and a category mix can only be saved from a plan computed for it.
+- **Sidebar on large screens:** wider (264 px from 1440, 296 px from 1920) with
+  roomier rows and type, the app version at the foot; short laptop windows stay
+  dense and scroll-free.
+
+### Fixed
+- **Rebalancing (allow selling) gave odd plans.** Held funds that were not ticked
+  vanished from a rebalance, so every target was measured against part of the
+  portfolio (over-buying the ticked funds and over-selling the rest); they now stay
+  held, count toward their category, and are neither bought nor sold. With whole
+  shares a rebalance could also spend more than the cash plus the sale proceeds
+  (sales round down too, so "Buying" exceeded "Selling + cash" and "Left over" read
+  0); the largest buys now give back shares until it fits. Sells read as "Sell",
+  largest first, with whole share counts.
+
 ## [6.5.3] — 2026-11-05
 
 ### Changed

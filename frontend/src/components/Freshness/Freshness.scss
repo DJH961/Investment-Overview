@@ -104,3 +104,23 @@
     opacity: 0.3;
   }
 }
+
+// The up-to-date tick after a holding's price (see PriceTick).
+.price-tick {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: var(--space-1);
+  color: var(--color-pos);
+  vertical-align: middle;
+
+  &__icon {
+    width: var(--font-size-xs);
+    height: var(--font-size-xs);
+    stroke-width: 3;
+  }
+
+  &__label {
+    @include m.visually-hidden;
+  }
+}

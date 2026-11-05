@@ -1,4 +1,5 @@
-import { holdingPriceTime, PriceStamps } from "../../components/Freshness";
+import clsx from "clsx";
+import { holdingPriceTime, PriceStamps, sentenceCase } from "../../components/Freshness";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { formatMoney, formatQuantity } from "../../lib/format";
@@ -13,6 +14,19 @@ export function Flags({ row }: { row: HoldingRowDto }) {
       {!row.is_money_market && row.price_type === "nav" && <span className="holdings-page__flag">NAV</span>}
       {row.value_warning && <span className="holdings-page__flag holdings-page__flag--warn">stale value</span>}
       {row.price_data_warning && <span className="holdings-page__flag holdings-page__flag--warn">bad history</span>}
+    </span>
+  );
+}
+
+/** A row's own price time, shown only when it differs from the header's (see `foldStamps`). */
+export function RowStamp({ text, labelled = false }: { text: string | null; labelled?: boolean }) {
+  if (!text) return null;
+  return (
+    <span className="holdings-page__row-stamp" title={`Price as of ${text}`}>
+      <span className={clsx("holdings-page__row-stamp-key", labelled && "holdings-page__row-stamp-key--shown")}>
+        Price as of
+      </span>{" "}
+      {labelled ? text : sentenceCase(text)}
     </span>
   );
 }

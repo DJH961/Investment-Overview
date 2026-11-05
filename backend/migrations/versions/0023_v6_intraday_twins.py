@@ -6,11 +6,11 @@
   session close, so the 1D estimate is rebuilt from stored prices at read time.
 
 Idempotent: a column / table is added only when absent and dropped on downgrade
-only when present (restores the 0021 schema). v6-only data:
+only when present (restores the 0022 schema). v6-only data:
 ``inv-dashboard-export-v5`` drops it.
 
 Revision ID: f6b2d8a4c913
-Revises: e5a91b7c3d28
+Revises: f1c6b8a2d4e7
 Create Date: 2026-11-05 12:00:00.000000
 """
 
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f6b2d8a4c913"
-down_revision: str | Sequence[str] | None = "e5a91b7c3d28"
+down_revision: str | Sequence[str] | None = "f1c6b8a2d4e7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
