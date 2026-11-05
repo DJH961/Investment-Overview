@@ -120,10 +120,13 @@ def _ttl(asset_class: str, default: int, label: str) -> SettingDef:
         default=default,
         section="data_refresh",
         label=label,
-        help="How old a cached price may get before the live refresh fetches it again.",
+        help=(
+            "How long the server waits before asking the provider again for this kind "
+            "of holding (only while a newer price can exist: during the session, or "
+            "after the close until the day's close / NAV is in)."
+        ),
         min=_D(30),
         max=_D(7 * 24 * 3600),
-        level="advanced",
         unit="s",
     )
 
@@ -221,9 +224,9 @@ DEFS: tuple[SettingDef, ...] = (
         "live_refresh_interval_seconds",
         SettingType.INT,
         60,
-        "display",
-        "Live refresh interval",
-        help="How often prices refresh while the US market is open.",
+        "data_refresh",
+        "Price refresh while the stock market is open",
+        help="How often prices refresh while the US stock market is open.",
         min=_D(15),
         max=_D(3600),
         unit="s",
@@ -375,7 +378,7 @@ DEFS: tuple[SettingDef, ...] = (
     # -- data refresh ----------------------------------------------------------
     _ttl("etf", 120, "ETF price age"),
     _ttl("stock", 120, "Stock price age"),
-    _ttl("mutual_fund", 6 * 3600, "Mutual-fund NAV age"),
+    _ttl("mutual_fund", 30 * 60, "Mutual-fund NAV re-check"),
     _ttl("cash", 24 * 3600, "Cash price age"),
     _ttl("savings", 24 * 3600, "Savings price age"),
     _ttl("default", 24 * 3600, "Other asset classes"),
