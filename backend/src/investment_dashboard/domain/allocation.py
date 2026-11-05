@@ -370,7 +370,49 @@ def plan_rebalance(
         )
         allocated_total += rows[-1].add_value
 
+    if allow_sell and not allow_fractional_shares:
+        rows = _trim_overspend(rows, cash_to_invest)
+        allocated_total = sum((r.add_value for r in rows), start=ZERO)
+
     residual = cash_to_invest - allocated_total
     if residual < 0:
         residual = ZERO
     return RebalancePlan(rows=rows, cash_to_invest=cash_to_invest, residual_cash=residual)
+
+
+def _trim_overspend(rows: list[RebalanceRow], cash_to_invest: Decimal) -> list[RebalanceRow]:
+    """Keep a whole-share rebalance within the cash plus the sale proceeds.
+
+    Whole shares truncate toward zero on both sides: a buy rounds down (never
+    over-buys) but so does a sale, which then raises less than its target. The
+    buys could therefore spend more than the cash + sale proceeds (the plan
+    showed "Buying" above "Selling + cash" and "Left over 0"). Here the largest
+    buys give back whole shares, one order at a time, until the net spend fits.
+    """
+    out = list(rows)
+    net = sum((r.add_value for r in out), start=ZERO)
+    while net > cash_to_invest:
+        over = net - cash_to_invest
+        buys = [
+            (k, r)
+            for k, r in enumerate(out)
+            if r.add_shares > ZERO and r.current_price is not None and r.current_price > ZERO
+        ]
+        if not buys:
+            break
+        k, r = max(buys, key=lambda kr: kr[1].add_value)
+        price = r.current_price
+        assert price is not None
+        cut = min(r.add_shares, Decimal(math.ceil(over / price)))
+        shares = r.add_shares - cut
+        out[k] = RebalanceRow(
+            instrument_id=r.instrument_id,
+            target_pct=r.target_pct,
+            current_value=r.current_value,
+            add_value=shares * price,
+            current_price=price,
+            add_shares=shares,
+            no_buy=r.no_buy,
+        )
+        net = sum((x.add_value for x in out), start=ZERO)
+    return out
