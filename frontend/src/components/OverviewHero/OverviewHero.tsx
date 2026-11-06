@@ -137,10 +137,11 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
   const lastEst = est && ls && ls.move_est != null ? ls : null;
   // The small official line: shut market, the official change since the previous close includes
   // the overnight currency (last_session.day_move); open market, the plain official day move.
-  // Only the percentage is shown — the headline already carries a signed money figure, and a
-  // second one here was read as a competing total rather than as context.
+  // Its change is given as money and percent together, since "how far off is the estimate"
+  // is a money question; both stay uncoloured so the line reads as context, not a second headline.
   const offShut = marketClosed && ls?.day_move != null;
   const officialPct = offShut ? ls?.day_move_pct : k.daily_growth_pct;
+  const officialMove = offShut ? ls?.day_move : k.daily_move;
   const secTotal = est2 ? est2.total_value : k2?.total_value;
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
@@ -180,8 +181,10 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
           <p className="overview-hero__official" data-testid="hero-official">
             <span>Official</span>
             <Money amount={toNum(k.total_value)} currency={currency} />
-            <span>
-              (<Percent ratio={toNum(officialPct ?? null)} signed />)
+            <span className="overview-hero__official-change" data-testid="hero-official-change">
+              (<Money amount={toNum(officialMove ?? null)} currency={currency} signed />
+              {" · "}
+              <Percent ratio={toNum(officialPct ?? null)} signed />)
             </span>
           </p>
         )}

@@ -9,6 +9,9 @@
 
   &__header {
     display: flex;
+    // Wraps so a long meta note drops to its own line instead of being squeezed
+    // under the title: its items are nowrap, so a squeezed one overlaps the title.
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
@@ -97,6 +100,23 @@
     margin-top: var(--space-1);
     color: var(--color-muted);
     font-size: var(--font-size-sm);
+  }
+
+  // A note on the title line rather than under it (price time, "Today"): quiet,
+  // right-aligned, and kept when the card is folded so the figures stay dated.
+  &__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1) var(--space-3);
+    // No `min-width: 0`: shrinking below its own content made the (nowrap) note
+    // run under the title. It keeps its width and wraps to its own line instead,
+    // where `margin-left: auto` keeps it in the right-hand corner.
+    margin: 0 0 0 auto;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    text-align: right;
   }
 
   &__actions {

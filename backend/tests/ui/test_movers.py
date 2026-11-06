@@ -7,11 +7,31 @@ from decimal import Decimal
 
 from investment_dashboard.readmodels.queries.overview_query import (
     HoldingCard,
+    MoverEstimate,
     build_movers,
 )
 
 _TODAY = date(2024, 6, 3)
 _PREV = date(2024, 6, 2)
+
+
+def _estimate(
+    twin: str,
+    *,
+    move_eur: Decimal | None,
+    pct_eur: Decimal | None,
+    move_usd: Decimal | None = None,
+    pct_usd: Decimal | None = None,
+    as_of: date | None = _TODAY,
+) -> MoverEstimate:
+    return MoverEstimate(
+        twin_symbol=twin,
+        move_eur=move_eur,
+        move_usd=move_usd if move_usd is not None else move_eur,
+        pct_eur=pct_eur,
+        pct_usd=pct_usd if pct_usd is not None else pct_eur,
+        as_of=as_of,
+    )
 
 
 def _card(
@@ -149,3 +169,112 @@ def test_movers_top_percent_pick_uses_display_currency() -> None:
     ]
     assert [e.symbol for e in build_movers(cards, "EUR").winners] == ["BIG", "AAA"]
     assert [e.symbol for e in build_movers(cards, "USD").winners] == ["BIG", "BBB"]
+
+
+def test_pending_fund_competes_on_its_twin_estimate_and_names_the_twin() -> None:
+    """A late NAV is lagging, not absent: rank it on the estimate and say whose."""
+    fund = _card(
+        "FUND",
+        move_eur=Decimal("5"),
+        pct_eur=Decimal("0.001"),
+        daily_as_of=_PREV,
+        daily_is_stale=True,
+    )
+    live = _card("LIVE", move_eur=Decimal("300"), pct_eur=Decimal("0.03"))
+    movers = build_movers(
+        [fund, live],
+        "EUR",
+        {fund.instrument_id: _estimate("VOO", move_eur=Decimal("900"), pct_eur=Decimal("0.02"))},
+    )
+    # It beats the live holding on money, and does so on the ESTIMATE (900), never
+    # on its own stale last-published move (5).
+    assert [(e.symbol, e.reason) for e in movers.winners] == [
+        ("FUND", "total"),
+        ("LIVE", "percent"),
+    ]
+    top = movers.winners[0]
+    assert top.twin == "VOO"
+    assert top.move_eur == Decimal("900")
+    assert top.pct_eur == Decimal("0.02")
+    # The board is dated by the session being estimated, not the fund's last print.
+    assert movers.basis_date == _TODAY
+    assert movers.eligible_count == 2
+    # A holding with no estimate is untouched.
+    assert movers.winners[1].twin is None
+
+
+def test_pending_fund_can_be_a_loser_on_its_estimate() -> None:
+    """The side is decided by the estimated EUR move, not the stale official one."""
+    fund = _card(
+        "FUND",
+        move_eur=Decimal("40"),
+        pct_eur=Decimal("0.004"),
+        daily_as_of=_PREV,
+        daily_is_stale=True,
+    )
+    movers = build_movers(
+        [fund],
+        "EUR",
+        {fund.instrument_id: _estimate("VOO", move_eur=Decimal("-700"), pct_eur=Decimal("-0.03"))},
+    )
+    assert movers.winners == []
+    assert [(e.symbol, e.twin) for e in movers.losers] == [("FUND", "VOO")]
+
+
+def test_pending_fund_stays_out_when_its_estimate_is_flat_or_unusable() -> None:
+    """No usable estimate means no entry — never a fallback to the stale print."""
+    flat = _card(
+        "FLAT",
+        move_eur=Decimal("900"),
+        pct_eur=Decimal("0.5"),
+        daily_as_of=_PREV,
+        daily_is_stale=True,
+    )
+    gone = _card(
+        "GONE",
+        move_eur=Decimal("800"),
+        pct_eur=Decimal("0.4"),
+        daily_as_of=_PREV,
+        daily_is_stale=True,
+    )
+    movers = build_movers(
+        [flat, gone],
+        "EUR",
+        {
+            flat.instrument_id: _estimate("VOO", move_eur=Decimal("0"), pct_eur=Decimal("0")),
+            gone.instrument_id: _estimate("IVV", move_eur=None, pct_eur=None),
+        },
+    )
+    assert movers.winners == []
+    assert movers.losers == []
+    assert movers.eligible_count == 0
+
+
+def test_estimated_top_percent_pick_uses_display_currency() -> None:
+    """An estimate is FX-variant too: the "top %" pick must follow the screen."""
+    big = _card("BIG", move_eur=Decimal("900"), pct_eur=Decimal("0.01"))
+    a = _card(
+        "AAA", move_eur=Decimal("1"), pct_eur=Decimal("0"), daily_as_of=_PREV, daily_is_stale=True
+    )
+    b = _card(
+        "BBB", move_eur=Decimal("1"), pct_eur=Decimal("0"), daily_as_of=_PREV, daily_is_stale=True
+    )
+    est = {
+        a.instrument_id: _estimate(
+            "VOO",
+            move_eur=Decimal("50"),
+            pct_eur=Decimal("0.08"),
+            move_usd=Decimal("55"),
+            pct_usd=Decimal("0.03"),
+        ),
+        b.instrument_id: _estimate(
+            "IVV",
+            move_eur=Decimal("40"),
+            pct_eur=Decimal("0.05"),
+            move_usd=Decimal("44"),
+            pct_usd=Decimal("0.09"),
+        ),
+    }
+    cards = [big, a, b]
+    assert [e.symbol for e in build_movers(cards, "EUR", est).winners] == ["BIG", "AAA"]
+    assert [e.symbol for e in build_movers(cards, "USD", est).winners] == ["BIG", "BBB"]

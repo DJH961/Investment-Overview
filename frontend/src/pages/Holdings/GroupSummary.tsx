@@ -60,7 +60,9 @@ export function GroupSummary({ group, ccy }: { group: HoldingGroupDto; ccy: stri
         )}
       </div>
       <div className="holdings-page__gcell holdings-page__gcell--gain">
-        <span className="holdings-page__gkey">P/L</span>
+        {/* Named for what it is: dividends are stripped out of it, so a cash group
+            reads 0 here while "Total return" beside it carries the income it earned. */}
+        <span className="holdings-page__gkey">Unrealised gain</span>
         <span className="holdings-page__gfig">
           <Money amount={toNum(group.capital_gain)} currency={ccy} signed colored />
         </span>

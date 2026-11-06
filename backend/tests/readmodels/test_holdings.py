@@ -11,6 +11,7 @@ from api._seed import RATE_NOW, seed_ledger
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels import holdings
 from investment_dashboard.readmodels.queries.overview_query import (
+    HoldingCard,
     build_holding_cards,
     compute_instrument_metrics,
 )
@@ -117,3 +118,78 @@ def test_group_total_growth_is_total_return_over_cost_basis(session: Session) ->
     assert holdings.build_groups(rows, broken, "currency", "USD")[0]["total_growth"] is None
     zero = [replace(c, cost_basis_usd=D(0)) for c in cards]
     assert holdings.build_groups(rows, zero, "currency", "USD")[0]["total_growth"] is None
+
+
+def _mm_card(
+    symbol: str,
+    *,
+    unrealised: Decimal,
+    income: Decimal,
+    is_money_market: bool = True,
+) -> HoldingCard:
+    """A holding carrying only the return-split fields ``_summary`` classifies on."""
+    return HoldingCard(
+        instrument_id=abs(hash(symbol)) % 100000,
+        symbol=symbol,
+        name=f"{symbol} Fund",
+        category="",
+        native_currency="USD",
+        is_money_market=is_money_market,
+        value_warning=False,
+        price_data_warning=False,
+        shares=D("10240"),
+        current_price_native=D("1"),
+        avg_price_native=D("1"),
+        expense_ratio=None,
+        value_eur=D("10240"),
+        value_usd=D("10240"),
+        cost_basis_eur=D("10000"),
+        cost_basis_usd=D("10000"),
+        capital_gain_eur=None,
+        capital_gain_usd=None,
+        total_growth_eur=None,
+        total_growth_usd=None,
+        xirr_eur=None,
+        xirr_usd=None,
+        daily_growth_eur=None,
+        daily_growth_usd=None,
+        daily_move_eur=None,
+        daily_move_usd=None,
+        ytd_growth_eur=None,
+        ytd_growth_usd=None,
+        weight=None,
+        price_as_of=None,
+        updated_at=None,
+        income_eur=income,
+        income_usd=income,
+        unrealised_gain_eur=unrealised,
+        unrealised_gain_usd=unrealised,
+    )
+
+
+def test_cash_fund_earning_only_dividends_counts_as_in_profit() -> None:
+    """A money-market fund holds its NAV at par: all of its return is income.
+
+    Classifying on the capital gain left such a holding in neither bucket (or, on a
+    rounding cent the wrong way, in "in loss") while its own Total return column
+    read clearly positive. It is judged on total return.
+    """
+    cash = _mm_card("VMFXX", unrealised=D("0"), income=D("240"))
+    summary = holdings._summary([], [cash], "EUR")
+    assert summary["in_profit"] == 1
+    assert summary["in_loss"] == 0
+
+
+def test_cash_fund_with_a_rounding_cent_against_it_is_still_in_profit() -> None:
+    """An FX-leg cent of unrealised loss must not outvote $240 of dividends."""
+    cash = _mm_card("VMFXX", unrealised=D("-0.37"), income=D("240"))
+    assert holdings._summary([], [cash], "EUR")["in_profit"] == 1
+    assert holdings._summary([], [cash], "EUR")["in_loss"] == 0
+
+
+def test_a_genuinely_losing_holding_is_still_counted_as_in_loss() -> None:
+    """The fix must not make everything "in profit": dividends can be outweighed."""
+    losing = _mm_card("XXXX", unrealised=D("-900"), income=D("240"), is_money_market=False)
+    summary = holdings._summary([], [losing], "EUR")
+    assert summary["in_profit"] == 0
+    assert summary["in_loss"] == 1

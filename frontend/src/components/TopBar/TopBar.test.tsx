@@ -87,16 +87,39 @@ describe("TopBar on desktop", () => {
   });
 
   it("shows the value and day move when the shell has them", () => {
-    renderBar({ compact: false, summary: { value: 1234, currency: "EUR", pct: 0.01, move: 12, dayLabel: "today" } });
+    renderBar({
+      compact: false,
+      summary: { value: 1234, currency: "EUR", pct: 0.01, move: 12, dayLabel: "today", estimated: false },
+    });
     const box = screen.getByLabelText("Portfolio summary");
     expect(box).toHaveTextContent("€1,234.00");
     expect(box).toHaveTextContent("today");
+    expect(box).not.toHaveTextContent("≈");
+  });
+
+  it("marks an ETF-twin estimate so the bar is never read as the official book", () => {
+    renderBar({
+      compact: false,
+      summary: { value: 1234, currency: "EUR", pct: 0.01, move: 12, dayLabel: "today", estimated: true },
+    });
+    const box = screen.getByLabelText("Portfolio summary, estimated");
+    expect(box).toHaveTextContent("≈");
+    expect(box).toHaveTextContent("€1,234.00");
   });
 });
 
 describe("TopBar summary on a phone", () => {
   it("shows the compact value and day % beside the title", () => {
-    renderBar({ summary: { value: 123456, currency: "EUR", pct: -0.001, move: -12, dayLabel: "today" } });
+    renderBar({
+      summary: { value: 123456, currency: "EUR", pct: -0.001, move: -12, dayLabel: "today", estimated: false },
+    });
     expect(screen.getByLabelText("Portfolio summary")).toHaveTextContent(/€123/);
+  });
+
+  it("carries the estimate mark into the phone's mini summary too", () => {
+    renderBar({
+      summary: { value: 123456, currency: "EUR", pct: -0.001, move: -12, dayLabel: "today", estimated: true },
+    });
+    expect(screen.getByLabelText("Portfolio summary, estimated")).toHaveTextContent("≈");
   });
 });

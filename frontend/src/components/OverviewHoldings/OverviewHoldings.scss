@@ -337,9 +337,24 @@
     }
   }
 
+  // Under the list: the fold on the left, the way out to the full table in the
+  // bottom-right corner. With nothing to fold the link alone keeps that corner.
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+  }
+
   &__link {
+    margin-left: auto;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
+
+    &:hover {
+      color: var(--color-fg);
+    }
   }
 
   // Inline fold under the list: same card, same grid, no navigation.
@@ -348,7 +363,6 @@
     align-items: center;
     gap: var(--space-1);
     min-height: var(--control-height-sm);
-    margin: var(--space-2) 0 0;
     padding: 0 var(--space-2) 0 0;
     color: var(--color-muted);
     font: inherit;

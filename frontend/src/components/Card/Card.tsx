@@ -10,6 +10,11 @@ export const FOLD_KEY_PREFIX = "fold.";
 export interface CardProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   title?: ReactNode;
   subtitle?: ReactNode;
+  /**
+   * A quiet right-aligned note on the title line (a price time, "Today"): keeps
+   * the header one line tall instead of two, and stays readable while folded.
+   */
+  meta?: ReactNode;
   /** Right-aligned header actions (buttons, segmented control). Hidden while folded. */
   actions?: ReactNode;
   /** Remove body padding (tables that run edge to edge). */
@@ -28,6 +33,7 @@ export interface CardProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
 export function Card({
   title,
   subtitle,
+  meta,
   actions,
   flush = false,
   collapsible = false,
@@ -44,7 +50,7 @@ export function Card({
   );
   const open = !foldable || storedOpen;
   const bodyId = useId();
-  const hasHeader = title || subtitle || actions;
+  const hasHeader = title || subtitle || meta || actions;
 
   return (
     <section className={clsx("card", foldable && "card--collapsible", !open && "card--collapsed", className)} {...rest}>
@@ -71,6 +77,7 @@ export function Card({
             )}
             {subtitle && <p className="card__subtitle">{subtitle}</p>}
           </div>
+          {meta && <p className="card__meta">{meta}</p>}
           {actions && open && <div className="card__actions">{actions}</div>}
         </header>
       )}

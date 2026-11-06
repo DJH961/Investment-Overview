@@ -8,6 +8,11 @@ export interface ShellSummary {
   /** Day move as a fraction. */
   pct: number | null;
   move: number | null;
+  /**
+   * These are an ETF twin's estimate of funds whose NAV is still unpublished,
+   * not the official book: the bar marks them "≈" so they are never read as final.
+   */
+  estimated: boolean;
   /** "today" or "Last session · Tue". */
   dayLabel: string;
 }

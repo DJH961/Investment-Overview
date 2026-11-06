@@ -4225,6 +4225,11 @@ export interface components {
             reason: string;
             /** Symbol */
             symbol: string;
+            /**
+             * Twin
+             * @description ETF twin standing in for a fund whose NAV has not posted: this entry's move and pct are that twin's estimate, not an official print. Show it as one.
+             */
+            twin?: string | null;
         };
         /** Movers */
         Movers: {

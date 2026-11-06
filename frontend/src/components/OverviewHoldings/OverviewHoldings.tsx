@@ -243,7 +243,7 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
     <Card
       className="overview-holdings"
       title="Holdings"
-      subtitle={
+      meta={
         stamps.price || stamps.updated ? (
           <PriceStamps
             className="overview-holdings__stamps"
@@ -254,11 +254,6 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
         ) : undefined
       }
       collapsibleId="overview.holdings"
-      actions={
-        <Link className="overview-holdings__link" to="/holdings">
-          Full table
-        </Link>
-      }
     >
       {q.isError && !q.data ? (
         <ErrorState message={q.error.message} onRetry={() => void q.refetch()} />
@@ -289,21 +284,27 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
               </Fragment>
             ))}
           </ul>
-          {more > 0 && (
-            <button
-              type="button"
-              className="overview-holdings__fold"
-              aria-expanded={open}
-              aria-controls={listId}
-              onClick={() => setOpen((v) => !v)}
-            >
-              <ChevronDown
-                className={clsx("overview-holdings__fold-icon", open && "overview-holdings__fold-icon--open")}
-                aria-hidden
-              />
-              {open ? "Show fewer" : `Show all ${all.length} holdings`}
-            </button>
-          )}
+          {/* Footer: the inline fold stays with the list it opens, the way out sits in the corner. */}
+          <div className="overview-holdings__footer">
+            {more > 0 && (
+              <button
+                type="button"
+                className="overview-holdings__fold"
+                aria-expanded={open}
+                aria-controls={listId}
+                onClick={() => setOpen((v) => !v)}
+              >
+                <ChevronDown
+                  className={clsx("overview-holdings__fold-icon", open && "overview-holdings__fold-icon--open")}
+                  aria-hidden
+                />
+                {open ? "Show fewer" : `Show all ${all.length} holdings`}
+              </button>
+            )}
+            <Link className="overview-holdings__link" to="/holdings">
+              Full table
+            </Link>
+          </div>
         </>
       )}
     </Card>

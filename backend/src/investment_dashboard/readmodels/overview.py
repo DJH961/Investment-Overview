@@ -25,6 +25,7 @@ from investment_dashboard.readmodels.queries.overview_query import (
     HoldingFreshness,
     InstrumentMetrics,
     MoverEntry,
+    MoverEstimate,
     allocation_treemap,
     build_holding_cards,
     build_movers,
@@ -159,7 +160,49 @@ def _mover(entry: MoverEntry, ccy: str) -> dict[str, Any]:
         "move": dec(holdings.pick(entry.move_eur, entry.move_usd, ccy)),
         "pct": dec(holdings.pick(entry.pct_eur, entry.pct_usd, ccy)),
         "reason": entry.reason,
+        "twin": entry.twin,
     }
+
+
+def _mover_estimates(
+    session: Session,
+    estimates: dict[int, intraday_snapshots_service.TwinEstimate],
+    *,
+    now: datetime,
+    fx_now: Decimal | None,
+) -> dict[int, MoverEstimate]:
+    """Each pending fund's estimated day move, in both currencies, for the movers board.
+
+    💱 Both legs come from
+    :func:`~investment_dashboard.services.intraday_snapshots_service.estimate_day_move`,
+    which values today at the rate now and the previous close at that close's own rate.
+    Each currency is built from its own legs — never one currency's move converted into
+    the other — so the board's "top %" stays honest in whichever currency is on screen.
+
+    ``fx_now`` is the context's one rate, the same one the holdings rows and the hero's
+    estimated total use, so the board cannot disagree with the row it came from.
+    """
+    if not estimates:
+        return {}
+    session_date = intraday_snapshots_service.last_session_date(now)
+    fx_prev = intraday_snapshots_service.previous_close_fx(session, session_date)
+    out: dict[int, MoverEstimate] = {}
+    for iid, est in estimates.items():
+        move_eur, pct_eur = intraday_snapshots_service.estimate_day_move(
+            est, fx_now, fx_prev, "EUR"
+        )
+        move_usd, pct_usd = intraday_snapshots_service.estimate_day_move(
+            est, fx_now, fx_prev, "USD"
+        )
+        out[iid] = MoverEstimate(
+            twin_symbol=est.twin_symbol,
+            move_eur=move_eur,
+            move_usd=move_usd,
+            pct_eur=pct_eur,
+            pct_usd=pct_usd,
+            as_of=est.session_date,
+        )
+    return out
 
 
 def _local_date(now: datetime, tz: tzinfo | None) -> date:
@@ -538,7 +581,13 @@ def build_overview(
         freshness=freshness,
         price_anomaly_ids=anomalies,
     )
-    movers = build_movers(cards, ccy)
+    # Pending mutual funds valued from their ETF twin (same memoised plan as the
+    # holdings, the tick and the 1D line): the hero's estimated total, and the
+    # estimated day move that lets a late fund compete on the movers board.
+    estimates = intraday_snapshots_service.twin_estimates(session, now)
+    movers = build_movers(
+        cards, ccy, _mover_estimates(session, estimates, now=now, fx_now=ctx.fx_rate_eur_usd)
+    )
 
     # Both sides of the verdict are computed in the reporting currency (the
     # benchmark simulation supports EUR and USD), never converted across.
@@ -554,9 +603,6 @@ def build_overview(
         as_of=metrics.as_of,
     )
     other = "EUR" if usd else "USD"
-    # Pending mutual funds valued from their ETF twin (same memoised plan as the
-    # holdings, the tick and the 1D line): the hero's estimated total.
-    estimates = intraday_snapshots_service.twin_estimates(session, now)
     estimate = _estimate(
         metrics, ccy, estimates=estimates, fx_rate=ctx.fx_rate_eur_usd, split=split
     )

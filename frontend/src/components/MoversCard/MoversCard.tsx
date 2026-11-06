@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { TrendingDown, TrendingUp } from "lucide-react";
+import { Link2, TrendingDown, TrendingUp } from "lucide-react";
 import { Card } from "../Card";
 import { lastSessionLabel } from "../Freshness";
 import { Money } from "../Money";
@@ -27,14 +27,31 @@ export function moversBasisLabel(basis: string | null | undefined, opts: { timeZ
 function MoverRow({ m, ccy, tone }: { m: Mover; ccy: string; tone: "pos" | "neg" }) {
   const byMoney = m.reason === "total";
   const Arrow = tone === "pos" ? TrendingUp : TrendingDown;
+  // A fund ranked on its ETF twin's estimate: every figure on the row is that
+  // estimate, so both carry "≈" and the pair is named in the chip beside the symbol.
+  const twin = m.twin ?? null;
+  const approx = twin ? (
+    <span className="movers-card__approx" aria-hidden>
+      ≈
+    </span>
+  ) : null;
   const pct = <Percent ratio={toNum(m.pct)} signed colored />;
   const money = <Money amount={toNum(m.move)} currency={ccy} signed colored compact />;
   return (
-    <li className={clsx("movers-card__row", `movers-card__row--${tone}`)}>
+    <li className={clsx("movers-card__row", `movers-card__row--${tone}`)} data-symbol={m.symbol}>
       <Arrow className="movers-card__icon" aria-label={tone === "pos" ? "Up" : "Down"} />
       <span className="movers-card__who">
         <span className="movers-card__symbol-line">
           <span className="movers-card__symbol">{m.symbol}</span>
+          {twin && (
+            <span
+              className="movers-card__est"
+              data-testid="mover-twin"
+              title={`Estimated from ${twin}: ${m.symbol} has not published today's NAV yet, so its ETF twin stands in.`}
+            >
+              <Link2 className="movers-card__est-icon" aria-hidden />≈ {twin}
+            </span>
+          )}
           <span className="movers-card__tag">{moverTag(m.reason)}</span>
         </span>
         {m.name && (
@@ -44,8 +61,14 @@ function MoverRow({ m, ccy, tone }: { m: Mover; ccy: string; tone: "pos" | "neg"
         )}
       </span>
       {/* The figure it earned its slot on leads; the other trails. */}
-      <span className="movers-card__lead">{byMoney ? money : pct}</span>
-      <span className="movers-card__trail">{byMoney ? pct : money}</span>
+      <span className="movers-card__lead">
+        {approx}
+        {byMoney ? money : pct}
+      </span>
+      <span className="movers-card__trail">
+        {approx}
+        {byMoney ? pct : money}
+      </span>
     </li>
   );
 }
@@ -85,12 +108,16 @@ export interface MoversCardProps {
  * Overview "Top movers": winners beside losers (stacked on a phone), one
  * aligned row per mover: arrow, symbol + ranking tag, name, then the figure it
  * ranked on and the other one. Open by default, foldable.
+ *
+ * A fund whose NAV is still pending competes on its ETF twin's estimate (the
+ * server decides), and says so: an "≈ VOO" chip on the symbol line and "≈" on
+ * both figures, so an estimate is never read as a published move.
  */
 export function MoversCard({ movers, currency, loading, className, now }: MoversCardProps) {
   const timeZone = useTimeZone();
   const basisLabel = moversBasisLabel(movers?.basis_date, { timeZone, now });
   return (
-    <Card className={clsx("movers-card", className)} title="Top movers" collapsibleId="overview.movers" subtitle={basisLabel}>
+    <Card className={clsx("movers-card", className)} title="Top movers" collapsibleId="overview.movers" meta={basisLabel}>
       {loading ? (
         <Skeleton height="6rem" />
       ) : (

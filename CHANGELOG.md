@@ -17,6 +17,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.11.0] — 2026-11-06
+
+### Added
+- **A fund whose NAV is still pending can now reach Top movers**, ranked on its ETF
+  twin's estimate instead of being dropped as stale. A late fund is often the day's
+  biggest mover, so leaving it out made the board quietly wrong. Such an entry is
+  marked: an `≈ VOO` chip beside the symbol names the twin standing in, and both its
+  figures carry `≈`, so an estimate is never read as a published move. A fund with no
+  usable estimate still stays out, and its own stale last-session move is never used.
+- **The top bar carries the estimated portfolio value** while a twin is standing in,
+  matching the Overview headline instead of quietly differing from it. It is marked
+  `≈` on every width, and the official book stays on the Overview's "Official" line.
+
+### Changed
+- **The Overview's "Official" line gives the day's change in money as well as percent**
+  (`Official €200,000.00 (+€1,380.00 · +0.69%)`). How far off the estimate is, is a
+  money question; both figures stay uncoloured so the line reads as context rather
+  than as a competing headline.
+- **"Today" in Top movers and the price time in Holdings moved to the top-right of
+  their card headers**, which makes each header one line instead of two. The Holdings
+  card's "Full table" link moved with it, down to the bottom-right corner, next to the
+  list it leaves. On a phone a long price time drops to its own line under the title.
+- The Holdings group subtotal's `P/L` cell is now labelled **Unrealised gain**, which
+  is what it has always contained — dividends stripped out. Sitting unlabelled beside
+  "Total return", it read as a cash group's whole profit when it is 0 by construction.
+
+### Fixed
+- **A cash fund that earns only dividends is no longer reported as flat or at a loss.**
+  "In profit / loss" and the Holdings row tint were judged on the *capital* gain, which
+  for a money-market fund is 0 by construction — its NAV is pinned at par and its entire
+  return arrives as income. A plainly profitable cash position therefore fell into
+  neither bucket and went untinted (or, on a rounding cent the wrong way, was tinted as
+  a loss) while its own "Total return" column read clearly positive. Both now judge on
+  total return. The underlying money maths was already correct; only the two
+  winner-or-loser classifications derived from it were reading the wrong half.
+- A card header no longer lets a long right-hand note overlap its title on a phone.
+
 ## [6.10.0] — 2026-11-06
 
 ### Added

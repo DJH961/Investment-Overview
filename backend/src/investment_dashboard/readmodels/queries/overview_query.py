@@ -1731,7 +1731,9 @@ class MoverEntry:
     Carries the raw per-currency money move and percentage move so the renderer
     can format for the active display currency and colour by sign. ``reason``
     records why the holding earned its slot: ``"total"`` = biggest money move,
-    ``"percent"`` = biggest percentage move.
+    ``"percent"`` = biggest percentage move. ``twin`` names the ETF standing in
+    for a fund whose NAV has not posted: its figures are that twin's estimate,
+    not an official print, and must be shown as such.
     """
 
     symbol: str
@@ -1741,6 +1743,26 @@ class MoverEntry:
     pct_eur: Decimal | None
     pct_usd: Decimal | None
     reason: str
+    twin: str | None = None
+
+
+@dataclass(frozen=True)
+class MoverEstimate:
+    """A pending fund's ETF-twin estimate of today's move, for the movers board.
+
+    Built where the twin estimates and the FX rates live (``readmodels.overview``)
+    from :func:`~investment_dashboard.services.intraday_snapshots_service.estimate_day_move`,
+    so the board ranks a late fund on the same estimated move the holdings row and
+    the hero already show, rather than on its stale last-published session.
+    """
+
+    twin_symbol: str
+    move_eur: Decimal | None
+    move_usd: Decimal | None
+    pct_eur: Decimal | None
+    pct_usd: Decimal | None
+    #: The session the estimate is for (today's), not the fund's last published date.
+    as_of: date | None
 
 
 @dataclass(frozen=True)
@@ -1762,7 +1784,25 @@ class MoversView:
     eligible_count: int
 
 
-def _to_mover_entry(card: HoldingCard, reason: str) -> MoverEntry:
+#: No fund is estimating: the plain official board.
+_NO_ESTIMATES: dict[int, MoverEstimate] = {}
+
+
+def _to_mover_entry(
+    card: HoldingCard, reason: str, estimates: dict[int, MoverEstimate]
+) -> MoverEntry:
+    est = estimates.get(card.instrument_id)
+    if est is not None:
+        return MoverEntry(
+            symbol=card.symbol,
+            name=card.name,
+            move_eur=est.move_eur,
+            move_usd=est.move_usd,
+            pct_eur=est.pct_eur,
+            pct_usd=est.pct_usd,
+            reason=reason,
+            twin=est.twin_symbol,
+        )
     return MoverEntry(
         symbol=card.symbol,
         name=card.name,
@@ -1774,27 +1814,45 @@ def _to_mover_entry(card: HoldingCard, reason: str) -> MoverEntry:
     )
 
 
-def _move_for_currency(card: HoldingCard, currency: str) -> Decimal:
+def _move_for_currency(
+    card: HoldingCard, currency: str, estimates: dict[int, MoverEstimate] = _NO_ESTIMATES
+) -> Decimal:
     """The money move to rank on, in ``currency`` (falls back to EUR)."""
+    est = estimates.get(card.instrument_id)
+    if est is not None:
+        if currency.upper() == "USD" and est.move_usd is not None:
+            return est.move_usd
+        return est.move_eur or ZERO
     if currency.upper() == "USD" and card.daily_move_usd is not None:
         return card.daily_move_usd
     return card.daily_move_eur or ZERO
 
 
-def _pct_for_currency(card: HoldingCard, currency: str) -> Decimal:
+def _pct_for_currency(
+    card: HoldingCard, currency: str, estimates: dict[int, MoverEstimate] = _NO_ESTIMATES
+) -> Decimal:
     """The percentage move to rank on, in ``currency`` (falls back to EUR).
 
     Unlike the money move, the daily percentage is genuinely FX-variant (EUR and
     USD percentages differ as the day's FX drifts), so the "top %" pick must be
     made in the display currency — the crux of the cross-currency discrepancy.
     """
+    est = estimates.get(card.instrument_id)
+    if est is not None:
+        if currency.upper() == "USD" and est.pct_usd is not None:
+            return est.pct_usd
+        return est.pct_eur or ZERO
     if currency.upper() == "USD" and card.daily_growth_usd is not None:
         return card.daily_growth_usd
     return card.daily_growth_eur or ZERO
 
 
 def _pick_mover_side(
-    pool: list[HoldingCard], *, descending: bool, currency: str
+    pool: list[HoldingCard],
+    *,
+    descending: bool,
+    currency: str,
+    estimates: dict[int, MoverEstimate] = _NO_ESTIMATES,
 ) -> list[MoverEntry]:
     """Pick up to two leaderboard entries from one side (winners or losers).
 
@@ -1807,10 +1865,14 @@ def _pick_mover_side(
     """
     if not pool:
         return []
-    by_money = sorted(pool, key=lambda c: _move_for_currency(c, currency), reverse=descending)
-    by_pct = sorted(pool, key=lambda c: _pct_for_currency(c, currency), reverse=descending)
+    by_money = sorted(
+        pool, key=lambda c: _move_for_currency(c, currency, estimates), reverse=descending
+    )
+    by_pct = sorted(
+        pool, key=lambda c: _pct_for_currency(c, currency, estimates), reverse=descending
+    )
     top_total = by_money[0]
-    entries = [_to_mover_entry(top_total, "total")]
+    entries = [_to_mover_entry(top_total, "total", estimates)]
     # The biggest-% holding, or — when it is also the biggest-money one — the
     # next holding by percentage, so a second, distinct name surfaces.
     top_pct = next(
@@ -1818,11 +1880,15 @@ def _pick_mover_side(
         by_pct[0],
     )
     if top_pct.instrument_id != top_total.instrument_id:
-        entries.append(_to_mover_entry(top_pct, "percent"))
+        entries.append(_to_mover_entry(top_pct, "percent", estimates))
     return entries
 
 
-def build_movers(cards: list[HoldingCard], currency: str = "EUR") -> MoversView:
+def build_movers(
+    cards: list[HoldingCard],
+    currency: str = "EUR",
+    estimates: dict[int, MoverEstimate] | None = None,
+) -> MoversView:
     """Build today's winners/losers leaderboard from the holding cards.
 
     Ranked in the active display ``currency``. Only holdings that repriced on the
@@ -1831,26 +1897,61 @@ def build_movers(cards: list[HoldingCard], currency: str = "EUR") -> MoversView:
     printed today. Ranking in the display currency (rather than always EUR) keeps
     the EUR and USD views — and the desktop and web apps — in agreement about who
     the biggest mover was. See :class:`MoversView`.
+
+    ``estimates`` lets a fund whose NAV has not posted compete on its ETF twin's
+    estimate instead of being dropped as stale: a late fund can easily be the day's
+    biggest mover, and leaving it out made the board quietly wrong. Such an entry
+    carries its ``twin`` so the UI can mark it as an estimate; its own stale
+    official move is never used, and a fund with no usable estimate stays out.
     """
+    estimates = estimates or {}
     eligible = [
         c
         for c in cards
-        if not c.daily_is_stale
-        and c.daily_move_eur is not None
-        and c.daily_growth_eur is not None
-        and c.daily_move_eur != ZERO
+        if (
+            _estimated_move(c, estimates) is not None
+            if c.instrument_id in estimates
+            else (
+                not c.daily_is_stale
+                and c.daily_move_eur is not None
+                and c.daily_growth_eur is not None
+                and c.daily_move_eur != ZERO
+            )
+        )
     ]
-    basis_date = max(
-        (c.daily_growth_as_of for c in eligible if c.daily_growth_as_of is not None),
-        default=None,
-    )
+    # An estimate is for today's session, so it dates the board; a fund's own
+    # ``daily_growth_as_of`` is the last date it actually published.
+    dates = [
+        estimates[c.instrument_id].as_of if c.instrument_id in estimates else c.daily_growth_as_of
+        for c in eligible
+    ]
+    basis_date = max((d for d in dates if d is not None), default=None)
     # Sign (winner vs loser) is FX-invariant, so the canonical EUR move decides
     # the side; the in-currency figures only reorder within a side.
-    winners_pool = [c for c in eligible if (c.daily_move_eur or ZERO) > ZERO]
-    losers_pool = [c for c in eligible if (c.daily_move_eur or ZERO) < ZERO]
+    winners_pool = [c for c in eligible if _side_move(c, estimates) > ZERO]
+    losers_pool = [c for c in eligible if _side_move(c, estimates) < ZERO]
     return MoversView(
-        winners=_pick_mover_side(winners_pool, descending=True, currency=currency),
-        losers=_pick_mover_side(losers_pool, descending=False, currency=currency),
+        winners=_pick_mover_side(
+            winners_pool, descending=True, currency=currency, estimates=estimates
+        ),
+        losers=_pick_mover_side(
+            losers_pool, descending=False, currency=currency, estimates=estimates
+        ),
         basis_date=basis_date,
         eligible_count=len(eligible),
     )
+
+
+def _estimated_move(card: HoldingCard, estimates: dict[int, MoverEstimate]) -> Decimal | None:
+    """An estimating fund's EUR move, or ``None`` when it is missing or flat."""
+    est = estimates.get(card.instrument_id)
+    if est is None or est.move_eur is None or est.move_eur == ZERO:
+        return None
+    return est.move_eur
+
+
+def _side_move(card: HoldingCard, estimates: dict[int, MoverEstimate]) -> Decimal:
+    """The EUR move that decides winner vs loser (the estimate when there is one)."""
+    if card.instrument_id in estimates:
+        return _estimated_move(card, estimates) or ZERO
+    return card.daily_move_eur or ZERO

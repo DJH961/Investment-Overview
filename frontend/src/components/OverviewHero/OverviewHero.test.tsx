@@ -94,10 +94,13 @@ describe("OverviewHero", () => {
     const official = screen.getByTestId("hero-official");
     expect(official).toHaveTextContent("Official");
     expect(official).toHaveTextContent("€200,000.00");
-    // Shut market: the official change since the previous close (incl. overnight currency),
-    // as a percentage only — the headline already carries the signed money figure.
-    expect(official).toHaveTextContent("+0.69%");
-    expect(official).not.toHaveTextContent("1,380");
+    // Shut market: the official change since the previous close (incl. overnight
+    // currency), as money AND percent — "how far off is the estimate" is a money
+    // question, so the figure to compare the headline against is given in money.
+    const change = screen.getByTestId("hero-official-change");
+    expect(change).toHaveTextContent("+€1,380.00");
+    expect(change).toHaveTextContent("+0.69%");
+    // The open-market day move is not what a shut market reports.
     expect(official).not.toHaveTextContent("1,500");
     // Secondary currency follows its own estimate.
     expect(screen.getByText("US$217,728.00")).toBeInTheDocument();
@@ -109,8 +112,12 @@ describe("OverviewHero", () => {
       freshness: { ...base.freshness, market_state: "open" },
     } as unknown as OverviewDto;
     render(<OverviewHero data={open} currency="EUR" loading={false} now={NOW} />);
-    expect(screen.getByTestId("hero-official")).toHaveTextContent("+0.75%");
-    expect(screen.getByTestId("hero-official")).not.toHaveTextContent("1,500");
+    // Open market: the plain official day move, money and percent.
+    const change = screen.getByTestId("hero-official-change");
+    expect(change).toHaveTextContent("+€1,500.00");
+    expect(change).toHaveTextContent("+0.75%");
+    // Not the shut-market figure, which folds in the overnight currency.
+    expect(change).not.toHaveTextContent("1,380");
   });
 
   it("shut market, estimating: the day figure includes overnight and the split lines add up to it", () => {
