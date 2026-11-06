@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { api } from "../api";
 import type { components } from "../api-types";
 import { subscribeLiveEvents } from "../live";
+import { invalidateFor } from "./invalidation";
 
 type S = components["schemas"];
 export type JobCatalogue = S["JobCatalogue"];
@@ -219,7 +220,8 @@ export function useSaveFix() {
   return useMutation({
     mutationFn: ({ kind, subject, date, value }: { kind: FixKind; subject: string; date: string; value: string }) =>
       api<unknown>(`${seriesPath(kind, subject)}/${date}`, { method: "PUT", body: { [FIX_FIELD[kind]]: value } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [M] }),
+    // A corrected close, rate or split changes values and returns everywhere.
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: [M] }), invalidateFor(qc, "refresh")]).then(() => undefined),
   });
 }
 
@@ -228,7 +230,7 @@ export function useDeleteFix() {
   return useMutation({
     mutationFn: ({ kind, subject, date }: { kind: FixKind; subject: string; date: string }) =>
       api<void>(`${seriesPath(kind, subject)}/${date}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [M] }),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: [M] }), invalidateFor(qc, "refresh")]).then(() => undefined),
   });
 }
 

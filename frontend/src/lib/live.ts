@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
-import { markStaleAndRefetch, scheduleRefetchAllActive } from "./queries/invalidation";
+import { jobAffectsReports, markStaleAndRefetch, scheduleRefetchAllActive, settingsAffectReports } from "./queries/invalidation";
 import { api } from "./api";
 import { applyTick, patchGraphPoint, patchOverviewFromEvent, type TickLike, type TickPointDto } from "./tickPatch";
 import type { components } from "./api-types";
@@ -203,6 +203,17 @@ export function handleLiveEvent(queryClient: QueryClient, data: string): void {
     markStaleAndRefetch(queryClient, "refresh");
   } else if (type === "graphs" && typeof ev.range === "string") {
     void queryClient.invalidateQueries({ queryKey: ["graphs", ev.range] });
+  } else if (type === "job") {
+    // A repair / maintenance job finished (from any page): the prices, FX or ledger
+    // it touched feed every report; the Health & Repair page tracks the run itself.
+    if (ev.status !== "running") {
+      void queryClient.invalidateQueries({ queryKey: ["diagnostics"] });
+      if (jobAffectsReports(ev.job)) markStaleAndRefetch(queryClient, "refresh");
+    }
+  } else if (type === "settings") {
+    // Another device (or this one) changed a setting; presentation-only ones leave reports alone.
+    const keys = Array.isArray(ev.keys) ? ev.keys.map(String) : [];
+    if (settingsAffectReports(keys)) markStaleAndRefetch(queryClient, "refresh");
   } else if (type === "server") {
     handleServerEvent(queryClient, ev);
   }
