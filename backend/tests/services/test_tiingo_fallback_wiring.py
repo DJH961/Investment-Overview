@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy.orm import Session
@@ -188,6 +189,92 @@ def test_rate_limit_exhausts_the_hourly_budget(
     assert after.hour_used == after.hourly_cap
     assert after.budget().has_room() is False
     assert after.rate_limited_at == _NOW
+
+
+def test_state_save_lock_does_not_poison_ledger_session_or_abort_fallback(
+    tmp_path: Path,
+) -> None:
+    """Regression test for the Nov 2026 "Scheduled live refresh: PendingRollbackError"
+    production incident.
+
+    In production ``apply_desktop_fallback`` is handed two *different* Session
+    objects (the scheduler's ``ledger`` and ``cache`` sessions — see
+    ``services/auto_refresh.tick_refresh``), often sharing one physical SQLite
+    file. A plain writer/writer collision between them — ``cache``'s recovered-
+    close write is still uncommitted when ``ledger`` tries to flush the
+    ``tiingo_desktop_state`` counters — can fail that flush with
+    ``OperationalError: database is locked``. Before the fix, that exception
+    propagated out of ``_save_state_best_effort`` without a rollback, leaving
+    the ledger session "pending rollback": the *next* flush/commit on it (the
+    scheduler's own ambient ``session.commit()`` when its ``with
+    ledger_session_scope()`` block exits) then raised ``PendingRollbackError``
+    and could abort the refresh, even though the recovered Tiingo closes had
+    already landed fine on the separate cache session.
+
+    Uses two real ``Session`` objects bound to one *file-backed* engine (not
+    the single shared ``session`` fixture most of this file uses, and not the
+    ``:memory:`` ``engine`` fixture either — SQLite gives every connection to
+    ``:memory:`` its own private database, so two sessions on it are never
+    truly independent the way two production sessions sharing one on-disk file
+    are) with no mocking: the lock is the real, natural one between the two
+    sessions' own uncommitted writes.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from investment_dashboard.models import ALL_METADATAS
+    from investment_dashboard.repositories import tiingo_state_repo as state_repo
+
+    db_path = tmp_path / "wiring.sqlite"
+    # timeout=0: fail a lock collision immediately instead of retrying for the
+    # DBAPI's default few seconds (keeps this test fast and deterministic).
+    file_engine = create_engine(
+        f"sqlite:///{db_path.as_posix()}", future=True, connect_args={"timeout": 0}
+    )
+    for md in ALL_METADATAS:
+        md.create_all(file_engine)
+    factory = sessionmaker(bind=file_engine, autoflush=False, expire_on_commit=False)
+    ledger = factory()
+    cache = factory()
+    try:
+        instr_id = _due_etf(ledger)
+        # A confirmed repeat failure (matches test_yfinance_failure_recovers_via_tiingo)
+        # so the fallback's worth-it gate actually fetches VTI.
+        state = state_repo.load(ledger, _NOW)
+        state.stale_since["VTI"] = _NOW - timedelta(hours=2)
+        state_repo.save(ledger, state)
+        ledger.commit()  # committed so the separate `cache` connection can see it
+
+        def _fake_tiingo(symbols, start, end, *, token):
+            return {s: {_TODAY: Decimal("123.45")} for s in symbols}
+
+        # cache's recovered-close write lands (and stays uncommitted) before
+        # ledger's quota-state write is attempted — the real collision.
+        result, _outcome = wiring.apply_desktop_fallback(
+            ledger,
+            cache,
+            due=instruments_repo.list_instruments(ledger),
+            now_utc=_NOW,
+            today=_TODAY,
+            primary_closes={},
+            token="tok",
+            fetch_closes_impl=_fake_tiingo,
+        )
+
+        # The recovered close still landed — it was written on the unaffected
+        # `cache` session/connection, independent of the ledger session's lock.
+        assert result.get("VTI", 0) >= 1
+        cache.commit()
+        assert prices_repo.latest_price_dates(cache, [instr_id]).get(instr_id) == _TODAY
+
+        # The ledger session must still be cleanly usable — this is the actual
+        # regression: previously this commit raised PendingRollbackError and
+        # took down the whole scheduled refresh.
+        ledger.commit()
+    finally:
+        ledger.close()
+        cache.close()
+        file_engine.dispose()
 
 
 def test_fallback_error_is_swallowed(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:

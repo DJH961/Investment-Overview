@@ -189,6 +189,46 @@ def _peer_published(
     )
 
 
+def _save_state_best_effort(session: Session, state: state_repo.TiingoDesktopState) -> None:
+    """Persist the budget/stamp blob without letting a lock abort the whole refresh.
+
+    ``state_repo.save`` flushes a single-row UPDATE/INSERT into ``app_config``
+    on the caller's long-lived pull session — the scheduler's tick holds this
+    ledger session open alongside a sibling ``cache`` session, on the same
+    physical SQLite file, for the whole refresh cycle (see
+    ``services/auto_refresh.tick_refresh``). A transient SQLite writer/writer
+    collision between those two sessions can fail this flush with
+    ``OperationalError: database is locked``.
+
+    That used to propagate out of this call, get caught by the caller's broad
+    ``except Exception`` (``prices_service._maybe_run_tiingo_fallback``) and be
+    logged — but *without* a rollback, leaving the session in SQLAlchemy's
+    "pending rollback" state. The next operation against that same session
+    then blew up too: in production, the scheduler's own ambient
+    ``session.commit()`` when its ``with ledger_session_scope()`` block
+    exited, surfacing as a top-level ``PendingRollbackError`` that aborted the
+    *entire* refresh (zero prices written) — see the Nov 2026 "Scheduled live
+    refresh: PendingRollbackError" incident.
+
+    A failed save here is harmless on its own: the counters self-heal on the
+    next successful load via :meth:`TiingoDesktopState.normalize`. So: catch
+    the flush failure, roll the session back to a clean, reusable state, log
+    it, and let the refresh continue. Note this also discards any other
+    not-yet-flushed change on this session from earlier in the same pull cycle
+    (e.g. the feed-stall detector's best-effort bookkeeping) — an acceptable
+    trade next to aborting the whole refresh.
+    """
+    try:
+        state_repo.save(session, state)
+    except Exception:
+        session.rollback()
+        log.warning(
+            "Tiingo quota-state save failed (likely a transient DB lock); "
+            "rolled back and continuing — budget counters self-heal next load",
+            exc_info=True,
+        )
+
+
 def apply_desktop_fallback(
     session: Session,
     cache: Session,
@@ -268,7 +308,7 @@ def apply_desktop_fallback(
         # persist before re-raising, so no further call fires until the next :00
         # reset and Settings can show the budget as maxed/rate-limited.
         state_repo.exhaust_hour(state, now_utc)
-        state_repo.save(session, state)
+        _save_state_best_effort(session, state)
         raise
 
     write_cutoff = expected - timedelta(days=int(write_days))
@@ -281,7 +321,7 @@ def apply_desktop_fallback(
         result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
         price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now_utc)
 
-    state_repo.save(session, state)
+    _save_state_best_effort(session, state)
 
     round_ = pull_log.current()
     if outcome.switched:
