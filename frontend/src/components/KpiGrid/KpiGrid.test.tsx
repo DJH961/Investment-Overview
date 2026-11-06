@@ -33,13 +33,14 @@ describe("KpiGrid", () => {
     render(<KpiGrid data={data({ beating: true, portfolio_return: "0.25", benchmark_return: "0.2" })} currency="EUR" loading={false} />);
     // "Price move" leads: the day is what you look at first. "Dividend income" is
     // gone — the stat strip right below already carries dividend return and yield.
-    for (const l of ["Price move", "Invested", "Total return", "XIRR", "Total growth", "YTD", "MTD", "Vs market"]) {
+    // Total growth and Vs market sit together because both carry two lines beneath
+    // them; the plain period figures finish the grid.
+    for (const l of ["Price move", "Invested", "Total return", "XIRR", "Total growth", "Vs market", "YTD", "MTD"]) {
       expect(screen.getByText(l)).toBeInTheDocument();
     }
     expect(screen.getByText("€100,000.00")).toBeInTheDocument();
     expect(screen.getByText("US$110,000.00")).toBeInTheDocument();
     expect(screen.getByText("+6.00%")).toBeInTheDocument(); // YTD in USD
-    expect(screen.getByText("YTD +5.00%")).toBeInTheDocument();
     expect(screen.getByText("Beating")).toBeInTheDocument();
     // One comparison per line: "You +25.00%" over "VT +20.00%".
     expect(screen.getByText("You").parentElement).toHaveTextContent("You+25.00%");
@@ -80,5 +81,13 @@ describe("KpiGrid", () => {
     expect(split).toHaveTextContent("Investment +30.00%");
     expect(split).not.toHaveTextContent("Currency");
     expect(screen.getByText("Total growth")).toBeInTheDocument();
+  });
+
+  it("reports the year once: no second, unlike YTD figure under the XIRR tile", () => {
+    // The XIRR tile used to carry a year-to-date XIRR as a hint. Beside a tile
+    // literally called YTD reporting growth since 1 January, two different numbers
+    // under the same word read as a contradiction rather than as two measures.
+    render(<KpiGrid data={data({ beating: true })} currency="EUR" loading={false} />);
+    expect(screen.getAllByText(/^YTD/)).toHaveLength(1);
   });
 });

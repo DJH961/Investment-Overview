@@ -149,7 +149,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={pct(k?.xirr)}
           secondary={pct2(k2?.xirr)}
-          hint={k?.ytd_xirr ? `YTD ${formatPercent(toNum(k.ytd_xirr), { signed: true })}` : undefined}
         />
         <KpiTile
           label="Total growth"
@@ -158,20 +157,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           value={pct(k?.total_growth_compounded)}
           secondary={pct2(k2?.total_growth_compounded)}
           hint={growthSplit}
-        />
-        <KpiTile
-          label="YTD"
-          tooltip={KPI_TIPS.ytd}
-          loading={loading}
-          value={pct(k?.ytd_growth)}
-          secondary={pct2(k2?.ytd_growth)}
-        />
-        <KpiTile
-          label="MTD"
-          tooltip={KPI_TIPS.mtd}
-          loading={loading}
-          value={pct(k?.mtd_growth)}
-          secondary={pct2(k2?.mtd_growth)}
         />
         <KpiTile
           label="Vs market"
@@ -193,6 +178,20 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
               </span>
             ) : undefined
           }
+        />
+        <KpiTile
+          label="YTD"
+          tooltip={KPI_TIPS.ytd}
+          loading={loading}
+          value={pct(k?.ytd_growth)}
+          secondary={pct2(k2?.ytd_growth)}
+        />
+        <KpiTile
+          label="MTD"
+          tooltip={KPI_TIPS.mtd}
+          loading={loading}
+          value={pct(k?.mtd_growth)}
+          secondary={pct2(k2?.mtd_growth)}
         />
       </div>
       {!loading && k && (
