@@ -4083,7 +4083,7 @@
                 "type": "null"
               }
             ],
-            "description": "value - cost_basis (unrealised, excludes dividends)",
+            "description": "Unrealised gain on this holding (value - cost basis), no dividends",
             "title": "Capital Gain"
           },
           "category": {
@@ -4127,7 +4127,7 @@
                 "type": "null"
               }
             ],
-            "description": "Cash dividends received",
+            "description": "Lifetime dividends of this holding (cash and reinvested)",
             "title": "Dividends"
           },
           "expense_ratio": {
@@ -4577,7 +4577,7 @@
                 "type": "null"
               }
             ],
-            "description": "Sum of value - cost_basis over holdings",
+            "description": "Whole-portfolio capital gain, the same number as the overview: realised plus unrealised price gain after fees, no dividends. total_unrealised_gain + total_realised_other",
             "title": "Total Capital Gain"
           },
           "total_cost_basis": {
@@ -4603,7 +4603,7 @@
                 "type": "null"
               }
             ],
-            "description": "Sum of dividends",
+            "description": "Sum of the listed holdings' dividends",
             "title": "Total Dividends"
           },
           "total_growth": {
@@ -4619,6 +4619,19 @@
             "description": "Portfolio compounded growth (fraction, 0.01 = 1%)",
             "title": "Total Growth"
           },
+          "total_realised_other": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "total_capital_gain - total_unrealised_gain: gains realised by selling, closed positions, cash and savings balances, fees",
+            "title": "Total Realised Other"
+          },
           "total_return": {
             "anyOf": [
               {
@@ -4629,8 +4642,21 @@
                 "type": "null"
               }
             ],
-            "description": "total_capital_gain + total_dividends. Differs from the overview total_return by cash not invested in positions and gains realised on closed positions.",
+            "description": "Whole-portfolio total return, the same number as the overview: total_capital_gain + dividend_income",
             "title": "Total Return"
+          },
+          "total_unrealised_gain": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sum of the listed holdings' capital_gain (still held)",
+            "title": "Total Unrealised Gain"
           },
           "total_value": {
             "anyOf": [

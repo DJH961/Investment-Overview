@@ -38,9 +38,12 @@ class HoldingRow(ApiModel):
     cost_basis: DecStr | None = None
     value: DecStr | None = None
     capital_gain: DecStr | None = Field(
-        default=None, description="value - cost_basis (unrealised, excludes dividends)"
+        default=None,
+        description="Unrealised gain on this holding (value - cost basis), no dividends",
     )
-    dividends: DecStr | None = Field(default=None, description="Cash dividends received")
+    dividends: DecStr | None = Field(
+        default=None, description="Lifetime dividends of this holding (cash and reinvested)"
+    )
     total_return: DecStr | None = Field(
         default=None, description="capital_gain + dividends (same basis as the overview)"
     )
@@ -115,14 +118,31 @@ class HoldingsResponse(ApiModel):
     total_value: DecStr | None = None
     total_cost_basis: DecStr | None = Field(default=None, description="Sum of cost bases")
     total_capital_gain: DecStr | None = Field(
-        default=None, description="Sum of value - cost_basis over holdings"
+        default=None,
+        description=(
+            "Whole-portfolio capital gain, the same number as the overview: realised plus "
+            "unrealised price gain after fees, no dividends. "
+            "total_unrealised_gain + total_realised_other"
+        ),
     )
-    total_dividends: DecStr | None = Field(default=None, description="Sum of dividends")
+    total_unrealised_gain: DecStr | None = Field(
+        default=None, description="Sum of the listed holdings' capital_gain (still held)"
+    )
+    total_realised_other: DecStr | None = Field(
+        default=None,
+        description=(
+            "total_capital_gain - total_unrealised_gain: gains realised by selling, closed "
+            "positions, cash and savings balances, fees"
+        ),
+    )
+    total_dividends: DecStr | None = Field(
+        default=None, description="Sum of the listed holdings' dividends"
+    )
     total_return: DecStr | None = Field(
         default=None,
         description=(
-            "total_capital_gain + total_dividends. Differs from the overview total_return by "
-            "cash not invested in positions and gains realised on closed positions."
+            "Whole-portfolio total return, the same number as the overview: "
+            "total_capital_gain + dividend_income"
         ),
     )
     xirr: DecStr | None = Field(default=None, description=f"Portfolio XIRR ({_FRAC})")

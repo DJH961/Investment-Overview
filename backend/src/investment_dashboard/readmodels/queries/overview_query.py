@@ -703,6 +703,13 @@ class InstrumentMetrics:
     current_value_usd: Decimal | None = ZERO
     capital_gain_eur: Decimal = ZERO
     capital_gain_usd: Decimal | None = ZERO
+    #: Return split: lifetime dividend income (cash + reinvested) and the
+    #: unrealised gain with that income stripped out (``unrealised + income`` is
+    #: the holding's total return). The Holdings page reads these.
+    income_eur: Decimal | None = None
+    income_usd: Decimal | None = None
+    unrealised_gain_eur: Decimal | None = None
+    unrealised_gain_usd: Decimal | None = None
     total_growth_eur: Decimal | None = None
     total_growth_usd: Decimal | None = None
     xirr_eur: Decimal | None = None
@@ -826,10 +833,14 @@ def compute_instrument_metrics(  # noqa: PLR0915
     ytd_invested_usd: dict[int, Decimal] = {}
     mtd_invested_eur: dict[int, Decimal] = {}
     mtd_invested_usd: dict[int, Decimal] = {}
+    reinv_eur: dict[int, Decimal] = {}
+    reinv_usd: dict[int, Decimal] = {}
     for (_acct, lot_iid), lot in lots.items():
         if lot_iid is None:
             continue
         for acc, value in (
+            (reinv_eur, lot.reinv_eur),
+            (reinv_usd, lot.reinv_usd),
             (cost_eur, lot.cost_eur),
             (cost_usd, lot.cost_usd),
             (div_eur, lot.div_eur),
@@ -900,6 +911,21 @@ def compute_instrument_metrics(  # noqa: PLR0915
         d_usd = div_usd.get(iid, ZERO)
         gain_eur = _round_cent(cv_eur + d_eur - c_eur)
         gain_usd = _round_cent(cv_usd + d_usd - c_usd) if cv_usd is not None else None
+        # Return split (same basis as the overview): income = cash + reinvested
+        # dividends; unrealised = value - cost with the income stripped out. A
+        # reinvested distribution already sits in ``cost`` except for money-market
+        # funds, where it is part of ``value`` and must come back out.
+        r_eur = reinv_eur.get(iid, ZERO)
+        r_usd = reinv_usd.get(iid, ZERO)
+        in_value = iid in mm_iids
+        income_eur = _round_cent(d_eur + r_eur)
+        income_usd = _round_cent(d_usd + r_usd) if cv_usd is not None else None
+        unreal_eur = _round_cent(cv_eur - c_eur - (r_eur if in_value else ZERO))
+        unreal_usd = (
+            _round_cent(cv_usd - c_usd - (r_usd if in_value else ZERO))
+            if cv_usd is not None
+            else None
+        )
         xirr_eur = xirr(eur_flows.get(iid, []), as_of=as_of, terminal_value=cv_eur)
         xirr_usd = (
             xirr(usd_flows.get(iid, []), as_of=as_of, terminal_value=cv_usd)
@@ -999,6 +1025,10 @@ def compute_instrument_metrics(  # noqa: PLR0915
             current_value_usd=_round_cent(cv_usd) if cv_usd is not None else None,
             capital_gain_eur=gain_eur,
             capital_gain_usd=gain_usd,
+            income_eur=income_eur,
+            income_usd=income_usd,
+            unrealised_gain_eur=unreal_eur,
+            unrealised_gain_usd=unreal_usd,
             total_growth_eur=growth_eur,
             total_growth_usd=growth_usd,
             xirr_eur=xirr_eur,
@@ -1562,6 +1592,11 @@ class HoldingCard:
     #: last session's move, not today's, and the overview greys it out. Resolved
     #: across the book in :func:`build_holding_cards`.
     daily_is_stale: bool = False
+    #: Return split (see :class:`InstrumentMetrics`); ``None`` without metrics.
+    income_eur: Decimal | None = None
+    income_usd: Decimal | None = None
+    unrealised_gain_eur: Decimal | None = None
+    unrealised_gain_usd: Decimal | None = None
 
 
 def build_holding_cards(
@@ -1642,6 +1677,10 @@ def build_holding_cards(
                 ytd_growth_eur=ytd_eur,
                 ytd_growth_usd=ytd_usd,
                 weight=None,
+                income_eur=im.income_eur if im is not None else None,
+                income_usd=im.income_usd if im is not None else None,
+                unrealised_gain_eur=im.unrealised_gain_eur if im is not None else None,
+                unrealised_gain_usd=im.unrealised_gain_usd if im is not None else None,
                 price_as_of=fr.price_as_of if fr is not None else None,
                 updated_at=fr.updated_at if fr is not None else None,
                 market_open=fr.market_open if fr is not None else False,

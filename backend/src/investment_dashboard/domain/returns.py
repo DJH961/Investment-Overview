@@ -288,6 +288,18 @@ def capital_gain(
     return current_value + cumulative_dividends_cash - contributions
 
 
+def capital_gain_excl_income(total_return: Decimal, dividend_income: Decimal) -> Decimal:
+    """Capital gain = total return minus all dividend income (cash and reinvested).
+
+    The one definition behind the Overview and Holdings "Capital gain": realised
+    plus unrealised price gain after fees, with no dividends in it. Every
+    distribution is income exactly once (cash paid out or reinvested), so
+    ``capital_gain + dividend_income == total_return`` holds by construction.
+    All inputs are in the same currency, each built from that currency's own legs.
+    """
+    return total_return - dividend_income
+
+
 # -----------------------------------------------------------------------------
 # Total Growth (compounded XIRR) — v2.5 canonical headline metric
 # -----------------------------------------------------------------------------
