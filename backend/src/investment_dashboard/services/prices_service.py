@@ -817,7 +817,13 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
             detail=f"{len(due)} due",
         )
         try:
-            closes_by_symbol = fetch_closes(symbols_to_fetch, fetch_start, fetch_end)
+            closes_by_symbol = fetch_closes(
+                symbols_to_fetch,
+                fetch_start,
+                fetch_end,
+                # NAV funds publish hours after the close: empty is "waiting", not a fault.
+                expected_gaps={fetch_sym[i.id] for i in due if i.asset_class in _NAV_ASSET_CLASSES},
+            )
         except YFinanceError as exc:
             # A hard yfinance failure no longer ends the cycle: fall through with
             # no primary data so the Tiingo fallback can still cover the gap. Every

@@ -90,6 +90,22 @@ def _build_file_handler(
     return handler
 
 
+#: Third-party loggers that are harmless but noisy, and the level they are held at.
+#: ``bs4.dammit`` (BeautifulSoup inside yfinance) warns "Some characters could not
+#: be decoded" whenever Yahoo serves a page with odd encoding.
+_QUIET_LOGGERS: dict[str, int] = {
+    "bs4": logging.ERROR,
+    "bs4.dammit": logging.ERROR,
+    "charset_normalizer": logging.WARNING,
+}
+
+
+def quiet_third_party_loggers() -> None:
+    """Hold known-noisy third-party loggers at a higher level."""
+    for name, level in _QUIET_LOGGERS.items():
+        logging.getLogger(name).setLevel(level)
+
+
 def configure_logging() -> None:
     settings = get_settings()
     root = logging.getLogger()
@@ -126,6 +142,7 @@ def configure_logging() -> None:
     root.addHandler(status_handler)
 
     root.setLevel(settings.log_level)
+    quiet_third_party_loggers()
 
     # Per-subject activity files (auth, market data, imports, ...), kept 90 days.
     from investment_dashboard.activity_log import configure_activity_logs  # noqa: PLC0415
