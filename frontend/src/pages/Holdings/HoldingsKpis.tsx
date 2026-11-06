@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
+import { InfoTip } from "../../components/InfoTip";
 import { Skeleton } from "../../components/Skeleton";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { formatStamp } from "../../components/Freshness";
 import { formatNumber } from "../../lib/format";
 import type { HoldingsDto } from "../../lib/queries/holdings";
+import { glossaryText } from "../../lib/glossary";
 import { toNum } from "../../lib/queries/portfolio";
 
 interface Props {
@@ -24,6 +26,8 @@ interface Stat {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
+  /** Plain-language definition shown in an info button next to the label. */
+  tip?: ReactNode;
 }
 
 /**
@@ -41,12 +45,24 @@ export function HoldingsKpis({ data, currency }: Props) {
     {
       label: "Total return",
       value: <Money amount={toNum(data?.total_return)} currency={currency} signed colored />,
-      hint: "incl. dividends",
+      hint: "whole portfolio, incl. sold",
+      tip: glossaryText("total_return"),
     },
     {
       label: "Capital gain",
       value: <Money amount={toNum(data?.total_capital_gain)} currency={currency} signed colored />,
-      hint: "excl. dividends",
+      hint: (
+        <>
+          <Money amount={toNum(data?.total_unrealised_gain)} currency={currency} signed digits={0} /> unrealised
+        </>
+      ),
+      tip: (
+        <>
+          {glossaryText("capital_gain")} Unrealised gain on what you still hold, plus{" "}
+          <Money amount={toNum(data?.total_realised_other)} currency={currency} signed digits={0} /> realised and other
+          (sold positions, cash and savings, fees). The table below lists the unrealised part per holding.
+        </>
+      ),
     },
     { label: "Total growth", value: <Percent ratio={toNum(data?.total_growth)} signed colored />, hint: "compounded" },
     { label: "XIRR", value: <Percent ratio={toNum(data?.xirr)} signed colored />, hint: "per year" },
@@ -119,7 +135,10 @@ export function HoldingsKpis({ data, currency }: Props) {
     <dl className="holdings-page__stats" aria-label="Portfolio summary">
       {stats.map((st) => (
         <div key={st.label} className="holdings-page__stat">
-          <dt className="holdings-page__stat-label">{st.label}</dt>
+          <dt className="holdings-page__stat-label">
+            {st.label}
+            {st.tip && <InfoTip label={st.label} content={st.tip} />}
+          </dt>
           <dd className="holdings-page__stat-value">{loading ? <Skeleton height="1.1rem" width="70%" /> : st.value}</dd>
           <dd className="holdings-page__stat-hint">{loading ? null : (st.hint ?? " ")}</dd>
         </div>

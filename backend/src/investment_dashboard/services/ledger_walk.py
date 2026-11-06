@@ -46,6 +46,10 @@ class Lot:
     cost_usd: Decimal = ZERO
     div_eur: Decimal = ZERO
     div_usd: Decimal = ZERO
+    #: Reinvested dividend income (qty x price at the reinvest date's rate), any
+    #: instrument. Joins ``cost_*`` except for money-market funds.
+    reinv_eur: Decimal = ZERO
+    reinv_usd: Decimal = ZERO
     ytd_invested_eur: Decimal = ZERO
     ytd_invested_usd: Decimal = ZERO
     mtd_invested_eur: Decimal = ZERO
@@ -125,11 +129,15 @@ def walk(  # noqa: PLR0912, PLR0915
                 lot.cost_native += qty * t.price_native
             if resolver is not None and t.price_native is not None:
                 lot.shares_dual += qty
-                if iid not in money_market_ids and iid is not None:
+                if iid is not None:
                     native = t.account.native_currency if t.account else "EUR"
                     e, u = resolver.convert_native(qty * t.price_native, native, t.date)
-                    lot.cost_eur += e
-                    lot.cost_usd += u
+                    # Reinvested income at its own date's rate (every instrument).
+                    lot.reinv_eur += e
+                    lot.reinv_usd += u
+                    if iid not in money_market_ids:
+                        lot.cost_eur += e
+                        lot.cost_usd += u
         elif kind == TransactionKind.DIVIDEND_CASH.value:
             if (t.account_id, iid, t.date) not in reinvest_keys:
                 lot.dividends_cash_native += net

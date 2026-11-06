@@ -360,16 +360,9 @@ def _kpis(metrics: PortfolioMetrics, ccy: str, *, fx_rate: Decimal | None) -> di
         rate = fx_rate
         expense_cost = expense_cost * rate if rate is not None else None
 
-    # Total return = value + realized cash dividends - net contributions (the
-    # ledger identity in ``domain.returns.capital_gain``); capital gain is the
-    # same without dividends: value - net contributions.
-    total_return = pick(metrics.capital_gain_eur, metrics.capital_gain_usd, ccy)
-    total_value = pick(metrics.total_value_eur, metrics.total_value_usd, ccy)
-    invested = pick(metrics.total_contributions_eur, metrics.total_contributions_usd, ccy)
-    capital_gain: Decimal | None = None
-    if total_return is not None and total_value is not None and invested is not None:
-        dividends_realized = total_return - total_value + invested
-        capital_gain = total_return - dividends_realized
+    # Total return = value + realised cash dividends - net contributions; capital
+    # gain = total return - all dividend income (see ``portfolio_return_split``).
+    total_return, capital_gain, _income = holdings.portfolio_return_split(metrics, ccy)
 
     return {
         "total_value": dec(pick(metrics.total_value_eur, metrics.total_value_usd, ccy)),

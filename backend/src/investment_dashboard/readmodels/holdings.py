@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.instruments import is_nav_priced
+from investment_dashboard.domain.returns import capital_gain_excl_income
 from investment_dashboard.readmodels._context import build_context
 from investment_dashboard.readmodels._serialize import dec, iso
 from investment_dashboard.readmodels.queries.overview_query import (
@@ -71,12 +72,18 @@ def pick(eur: Decimal | None, usd: Decimal | None, ccy: str) -> Decimal | None:
 def _gain_split(
     card: HoldingCard, ccy: str
 ) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
-    """``(capital_gain, dividends, total_return)`` for one holding in ``ccy``.
+    """``(capital_gain, income, total_return)`` for one holding in ``ccy``.
 
-    The card's gain already includes cash dividends (``value + dividends -
-    cost``): that is the *total return*. Capital gain is ``value - cost basis``;
-    dividends are the remainder.
+    Capital gain is the unrealised gain on what is still held, with dividends
+    stripped out; income is the holding's lifetime dividends (cash and
+    reinvested); total return is their sum. Same basis as the overview's
+    portfolio figures, restricted to the positions listed here.
     """
+    unrealised = pick(card.unrealised_gain_eur, card.unrealised_gain_usd, ccy)
+    income = pick(card.income_eur, card.income_usd, ccy)
+    if unrealised is not None and income is not None:
+        return unrealised, income, unrealised + income
+    # No metrics for this card: fall back to value + cash dividends - cost.
     total_return = pick(card.capital_gain_eur, card.capital_gain_usd, ccy)
     value = pick(card.value_eur, card.value_usd, ccy)
     cost = pick(card.cost_basis_eur, card.cost_basis_usd, ccy)
@@ -84,6 +91,24 @@ def _gain_split(
         return None, None, total_return
     capital_gain = value - cost
     return capital_gain, total_return - capital_gain, total_return
+
+
+def portfolio_return_split(
+    pm: Any, ccy: str
+) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+    """``(total_return, capital_gain, dividend_income)`` for the whole portfolio.
+
+    One definition for the Overview and the Holdings page: total return is
+    ``value + realised cash dividends - net contributions`` (``pm.capital_gain_*``
+    in the service's legacy naming); capital gain is that minus all dividend
+    income, so ``capital_gain + dividend_income == total_return``. Each currency
+    is built from its own legs; nothing is converted.
+    """
+    total_return = pick(pm.capital_gain_eur, pm.capital_gain_usd, ccy)
+    income = pick(pm.total_dividends_cash_eur, pm.total_dividends_cash_usd, ccy)
+    if total_return is None or income is None:
+        return total_return, None, income
+    return total_return, capital_gain_excl_income(total_return, income), income
 
 
 def holding_row(
@@ -270,9 +295,14 @@ def build(
     ]
     total_value = _sum([pick(c.value_eur, c.value_usd, ccy) for c in cards])
     splits = [_gain_split(c, ccy) for c in cards]
-    total_gain = _sum([s[0] for s in splits])
-    total_dividends = _sum([s[1] for s in splits])
-    total_return = _sum([s[2] for s in splits])
+    unrealised = _sum([s[0] for s in splits])
+    held_income = _sum([s[1] for s in splits])
+    total_return, total_gain, _income = portfolio_return_split(pm, ccy)
+    # Whatever the listed positions do not explain: gains realised by selling,
+    # closed positions, cash and savings balances, fees.
+    realised_other = (
+        total_gain - unrealised if total_gain is not None and unrealised is not None else None
+    )
     total_cost = _sum([pick(c.cost_basis_eur, c.cost_basis_usd, ccy) for c in cards])
     return {
         "ccy": ccy,
@@ -281,7 +311,9 @@ def build(
         "total_value": dec(total_value),
         "total_cost_basis": dec(total_cost),
         "total_capital_gain": dec(total_gain),
-        "total_dividends": dec(total_dividends),
+        "total_unrealised_gain": dec(unrealised),
+        "total_realised_other": dec(realised_other),
+        "total_dividends": dec(held_income),
         "total_return": dec(total_return),
         "xirr": dec(pick(pm.xirr, pm.xirr_usd, ccy)),
         "total_growth": dec(

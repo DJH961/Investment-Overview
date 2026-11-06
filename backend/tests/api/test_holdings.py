@@ -90,22 +90,22 @@ def test_holdings_and_overview_agree(api_client: TestClient, seeded: None, ccy: 
     approx = pytest.approx
     tol = Decimal("0.01")
     assert Decimal(hold["total_value"]) == approx(Decimal(over["total_value"]), abs=tol)
-    # capital gain = value - cost basis; total return = capital gain + dividends.
-    assert Decimal(hold["total_capital_gain"]) == approx(
-        Decimal(hold["total_value"]) - Decimal(hold["total_cost_basis"]), abs=tol
-    )
-    assert Decimal(hold["total_return"]) == approx(
-        Decimal(hold["total_capital_gain"]) + Decimal(hold["total_dividends"]), abs=tol
-    )
+    # Whole-portfolio figures are the overview's numbers, under the same names.
+    assert Decimal(hold["total_capital_gain"]) == approx(Decimal(over["capital_gain"]), abs=tol)
+    assert Decimal(hold["total_return"]) == approx(Decimal(over["total_return"]), abs=tol)
     assert Decimal(over["total_return"]) == approx(
         Decimal(over["capital_gain"]) + Decimal(over["dividend_income"]), abs=tol
     )
-    # Overview measures against all net contributions; holdings against position
-    # cost bases. The gap is exactly the contributed cash not held in positions
-    # (fixture: 5050 deposited, 4550 invested, no sales or dividends).
+    # The listed holdings explain the unrealised part: value - cost basis.
+    assert Decimal(hold["total_unrealised_gain"]) == approx(
+        Decimal(hold["total_value"]) - Decimal(hold["total_cost_basis"]), abs=tol
+    )
+    # The rest is realised/other. Fixture: 5050 deposited, 4550 invested, no sales
+    # or dividends, so it is exactly the contributed cash not held in positions.
     uninvested = Decimal(over["total_invested"]) - Decimal(hold["total_cost_basis"])
-    assert Decimal(over["capital_gain"]) == approx(
-        Decimal(hold["total_capital_gain"]) - uninvested, abs=tol
+    assert Decimal(hold["total_realised_other"]) == approx(-uninvested, abs=tol)
+    assert Decimal(hold["total_unrealised_gain"]) + Decimal(hold["total_realised_other"]) == approx(
+        Decimal(hold["total_capital_gain"]), abs=tol
     )
     # Per-row consistency and today/total split.
     for row in hold["holdings"]:
@@ -147,13 +147,17 @@ def test_group_subtotals_add_up_to_totals(
     for field, total in (
         ("value", "total_value"),
         ("cost_basis", "total_cost_basis"),
-        ("capital_gain", "total_capital_gain"),
+        ("capital_gain", "total_unrealised_gain"),
         ("dividends", "total_dividends"),
-        ("total_return", "total_return"),
     ):
         assert sum(Decimal(g[field]) for g in groups) == pytest.approx(
             Decimal(body[total]), abs=Decimal("0.0001")
         )
+    # Groups cover held positions only: their return is unrealised gain + dividends.
+    assert sum(Decimal(g["total_return"]) for g in groups) == pytest.approx(
+        Decimal(body["total_unrealised_gain"]) + Decimal(body["total_dividends"]),
+        abs=Decimal("0.0001"),
+    )
     members = [i for g in groups for i in g["instrument_ids"]]
     assert sorted(members) == sorted(r["instrument_id"] for r in body["holdings"])
 

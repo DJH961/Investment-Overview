@@ -88,7 +88,7 @@ function Subtotals({ group, ccy }: { group: HoldingGroupDto; ccy: string }) {
         </dd>
       </div>
       <div>
-        <dt>Capital gain</dt>
+        <dt>Unrealised gain</dt>
         <dd>
           <Money amount={toNum(group.capital_gain)} currency={ccy} signed colored />
         </dd>
@@ -349,7 +349,7 @@ export function Holdings() {
       },
       {
         key: "gain",
-        header: "Capital gain",
+        header: "Unrealised gain",
         group: "Return",
         align: "right",
         sortValue: (r) => toNum(r.capital_gain),

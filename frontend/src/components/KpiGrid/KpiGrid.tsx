@@ -30,8 +30,9 @@ const STRIP_TIPS = {
 
 export const KPI_TIPS = {
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
-  capitalGain: "Current value minus net invested. Excludes dividends.",
-  totalReturn: "Capital gain plus cash dividends received.",
+  capitalGain:
+    "Realised plus unrealised price gain after fees, no dividends: Total return minus dividend income. Includes sold positions and cash.",
+  totalReturn: "Capital gain plus dividend income (cash and reinvested): current value + cash dividends received − net invested.",
   xirr: "Money-weighted annual return: accounts for when each deposit and withdrawal happened.",
   vsMarket: "Your compounded growth versus the benchmark over the same cashflows.",
   totalGrowth: "Compounded growth since the first purchase: (1 + XIRR)^years − 1.",
