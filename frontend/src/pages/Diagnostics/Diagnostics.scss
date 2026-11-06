@@ -569,21 +569,42 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // Native <progress>, restyled: track and fill from tokens.
   &__bar {
+    display: block;
+    width: 100%;
     height: var(--space-2);
     overflow: hidden;
+    border: 0;
     border-radius: var(--radius-full);
     background: var(--color-surface-2);
-  }
+    color: var(--color-accent);
+    appearance: none;
 
-  &__fill {
-    display: block;
-    height: 100%;
-    border-radius: var(--radius-full);
-    background: var(--color-accent);
+    &::-webkit-progress-bar {
+      background: var(--color-surface-2);
+    }
+
+    &::-webkit-progress-value {
+      border-radius: var(--radius-full);
+      background: var(--color-accent);
+    }
+
+    &::-moz-progress-bar {
+      border-radius: var(--radius-full);
+      background: var(--color-accent);
+    }
 
     &--full {
-      background: var(--color-warn);
+      color: var(--color-warn);
+
+      &::-webkit-progress-value {
+        background: var(--color-warn);
+      }
+
+      &::-moz-progress-bar {
+        background: var(--color-warn);
+      }
     }
   }
 

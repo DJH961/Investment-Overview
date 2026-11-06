@@ -14,16 +14,12 @@ function Meter({ label, used, cap, resets }: { label: string; used: number; cap:
           {used} of {cap} used · {Math.max(0, cap - used)} left · resets {resets}
         </span>
       </div>
-      <div
-        className="tiingo__bar"
-        role="progressbar"
+      <progress
+        className={`tiingo__bar${pct >= 100 ? " tiingo__bar--full" : ""}`}
         aria-label={`${label}: ${used} of ${cap} requests used`}
-        aria-valuemin={0}
-        aria-valuemax={cap}
-        aria-valuenow={used}
-      >
-        <span className={`tiingo__fill${pct >= 100 ? " tiingo__fill--full" : ""}`} style={{ width: `${pct}%` }} />
-      </div>
+        max={Math.max(cap, 1)}
+        value={Math.min(used, cap)}
+      />
     </div>
   );
 }
@@ -49,7 +45,7 @@ function Body({ u }: { u: TiingoUsage }) {
         {u.remaining} request{u.remaining === 1 ? "" : "s"} can be made right now. NAV checks today: {u.nav_probes_today}.
       </p>
       {u.rate_limited_at && (
-        <p className="tiingo__warn" role="status">
+        <p className="tiingo__warn">
           ⚠ Tiingo refused a request at {formatTime(u.rate_limited_at)}: its own allowance for this hour is used up
           (maybe another app uses the same key). Nothing more is sent until the hourly reset.
         </p>

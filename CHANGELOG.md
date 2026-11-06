@@ -50,6 +50,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   months sit indented under their year with a guide line, each with its total
   shown prominently, tight chips, and the growth figure as before. Zero figures
   are left out. Desktop is unchanged.
+- **Overview shows Total return where Capital gain was** (second tile, next to
+  Invested); Capital gain stays on Holdings. The last tile, which showed Total
+  return, now shows lifetime Dividend income so Total return isn't shown twice.
 - **Roomier desktop sidebar:** wider (264 / 288 / 312 px by screen size), 40 px
   rows, more space between items and groups, more padding.
 - Tiingo request caps are ordinary settings now (no longer hidden as advanced)

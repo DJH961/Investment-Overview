@@ -31,7 +31,7 @@ function data(verdict: Partial<OverviewDto["market_verdict"]>): OverviewDto {
 describe("KpiGrid", () => {
   it("shows the NiceGUI tile set with both currencies", () => {
     render(<KpiGrid data={data({ beating: true, portfolio_return: "0.25", benchmark_return: "0.2" })} currency="EUR" loading={false} />);
-    for (const l of ["Invested", "Capital gain", "XIRR", "Vs market", "Total growth", "YTD", "MTD", "Total return"]) {
+    for (const l of ["Invested", "Total return", "XIRR", "Vs market", "Total growth", "YTD", "MTD", "Dividend income"]) {
       expect(screen.getByText(l)).toBeInTheDocument();
     }
     expect(screen.getByText("€100,000.00")).toBeInTheDocument();
