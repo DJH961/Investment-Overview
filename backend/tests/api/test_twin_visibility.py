@@ -42,7 +42,11 @@ TWIN_ROWS = {
     datetime(2024, 5, 31, 20, 0): D("100"),  # Friday close (naive UTC)
     datetime(2024, 6, 3, 13, 30): D("100"),
     datetime(2024, 6, 3, 17, 0): D("102"),
-    datetime(2024, 6, 3, 20, 0): D("105"),  # Monday close
+    # 15:59 ET, not 16:00: the live capture only runs while the market is open
+    # (`t < 16:00`), so the last sample of a session is always *before* the bell.
+    # Seeding the bell itself hid a bug where the ✓ required a sample at or after
+    # it — a timestamp production never produces.
+    datetime(2024, 6, 3, 19, 59): D("105"),  # Monday, last tick before the close
 }
 
 
@@ -195,7 +199,7 @@ def test_after_close_before_nav_the_split_runs_on_the_estimated_book(api_db: Pat
     twin = _fund_row(page)["twin"]
     assert twin["pending"] is True
     assert D(twin["est_price"]) == D("210")  # the twin closed +5 %
-    assert twin["at"].startswith("2024-06-03T20:00:00")
+    assert twin["at"].startswith("2024-06-03T19:59:00")
     for body, ccy in ((usd, "USD"), (eur, "EUR")):
         ls = body["last_session"]
         assert ls["estimated_funds"] == ["FUNDX"]
@@ -257,6 +261,26 @@ def test_after_close_before_nav_the_split_runs_on_the_estimated_book(api_db: Pat
         - D(eur["last_session"]["day_move"])
         - D("100") / D("1.20")
     ) < D("1e-9")
+
+
+def test_the_row_marks_the_estimate_settled_once_the_twin_s_market_shuts(
+    api_db: Path,
+) -> None:
+    """The ✓ follows the market being shut, not a sample stamped at the bell.
+
+    The live capture runs only while `is_us_market_open` is true, which ends at
+    `t < 16:00`, and writes `min(now, close_at)` — so the newest sample of a
+    session is always a poll interval *before* the close. Requiring one at or
+    after the bell made the mark unreachable every evening.
+    """
+    _seed(official_nav=None)
+    with ledger_session_scope() as s:
+        shut = holdings.build(s, ccy="USD", as_of=TUE, now=AFTER_CLOSE)
+        open_ = holdings.build(s, ccy="USD", as_of=MON, now=DURING)
+    # Shut, holding a sample struck before the bell: settled until the next open.
+    assert _fund_row(shut)["twin"]["at_close"] is True
+    # Still trading: the twin can move again, so no promise is made.
+    assert _fund_row(open_)["twin"]["at_close"] is False
 
 
 def test_nav_posted_the_estimate_is_gone_and_the_row_reports_the_miss(api_db: Path) -> None:

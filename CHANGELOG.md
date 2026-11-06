@@ -26,6 +26,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   when the last session is three days back), and the "Updated" stamp moves into the
   tooltip rather than competing for the same line. Folded or open, it holds the
   top-right corner on the title's line.
+- **The ETF-twin line never showed its ✓, in any circumstance.** The mark promises
+  the twin's own close is in hand and the estimate will not move again until the
+  next open, but it asked for a price sample struck at or after the closing bell —
+  which the capture path cannot produce: it runs only while the market is open
+  (strictly before 16:00 ET) and stamps `min(now, close_at)`, so the last sample of
+  a session is always a poll interval early. The mark now follows the market being
+  shut, which is what it was always meant to mean. The test that should have caught
+  this had seeded a sample at the bell itself, a timestamp production never writes.
 - The weekday form is now honoured on every path that builds a stamp. One of the
   two (`relativeDay`) ignored the option, so a fund priced at its NAV, or a holding
   with no closing bell, could print "yesterday" beside a neighbour's "Fri" in the
