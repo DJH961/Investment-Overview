@@ -2284,8 +2284,15 @@ class EstimateLeg:
 
     currency: str  # the account's native currency (what ``shares x price`` is booked in)
     shares: Decimal
-    #: EUR per native unit of this holding, used only for currencies other than EUR / USD.
+    #: EUR per native unit of this holding NOW, used only for currencies other than
+    #: EUR / USD (an EUR/USD leg is converted through ``fx_eur_usd`` instead).
     eur_per_native: Decimal
+    #: EUR per native unit of this holding at the PREVIOUS session's close, for the
+    #: same non-EUR/USD currencies — :func:`estimate_day_move`'s previous-close mark
+    #: must use that close's own rate, never today's (the currency rule: a past
+    #: valuation is never re-struck at a later rate). ``None`` falls back to
+    #: ``eur_per_native`` (no historical rate available) rather than failing.
+    eur_per_native_prev_close: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -2346,13 +2353,37 @@ def twin_estimates(session: Session, now: datetime | None = None) -> dict[int, T
     return memo_twin_estimates_at(session, last_session_date(now), now)
 
 
+def eur_per_native_at(session: Session, day: date, currency: str) -> Decimal | None:
+    """EUR value of one unit of ``currency`` on ``day`` — for a leg not in EUR/USD.
+
+    We only capture *intraday* EUR/USD bars, so a non-EUR/USD leg's previous-close
+    mark (:func:`estimate_day_move`) can only use that day's settled (EOD)
+    EUR-> ``currency`` reference rate, inverted to native-per-EUR. ``None`` when no
+    rate is available at all.
+    """
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+    if currency == "EUR":
+        return Decimal(1)
+    rate = fx_service.get_rate_eur_to_quote(session, day, quote=currency)
+    return Decimal(1) / rate if rate else None
+
+
 def _twin_estimates(session: Session, session_date: date, at: datetime) -> dict[int, TwinEstimate]:
     from investment_dashboard.domain.late_data import estimate_value  # noqa: PLC0415
 
+    if not estimates_enabled(session):
+        # The master switch: no estimates at all, so every caller derived from
+        # this (``kpis.estimate``, the holdings rows' ``TwinView``, the group
+        # ``est_*`` fields, the scheduler tick) is empty/None and the official
+        # figures carry the page unchanged. The twin-accuracy/divergence stats
+        # are untouched — they do not come from here (see ``fund_divergence``).
+        return {}
     plans = _fund_plans(session, session_date=session_date, strict=False)
     if plans is None:
         return {}
-    prev_close_at = _session_close_utc(previous_trading_session(session_date))
+    prev_date = previous_trading_session(session_date)
+    prev_close_at = _session_close_utc(prev_date)
     out: dict[int, TwinEstimate] = {}
     for f in plans.funds:
         if not f.pending or f.twin is None or f.twin_prev_close is None:
@@ -2361,10 +2392,16 @@ def _twin_estimates(session: Session, session_date: date, at: datetime) -> dict[
         seen = [t for t in f.session_rows if t <= at]
         twin_now = f.twin_at(at) or f.twin_prev_close
         est_px = estimate_value(f.prev_nav, twin_now, f.twin_prev_close)
+        currency = p.account.native_currency.upper()
         eur_per_native = (
             p.current_value_eur / p.current_value_native if p.current_value_native else Decimal(0)
         )
-        leg = EstimateLeg(p.account.native_currency.upper(), p.shares, eur_per_native)
+        eur_per_native_prev = (
+            eur_per_native_at(session, prev_date, currency)
+            if currency not in {"EUR", "USD"}
+            else None
+        )
+        leg = EstimateLeg(currency, p.shares, eur_per_native, eur_per_native_prev)
         iid = p.instrument.id
         previous = out.get(iid)
         if previous is not None:
@@ -2411,14 +2448,26 @@ def estimate_adjustment(
 
 
 def _leg_value(
-    leg: EstimateLeg, price: Decimal, fx_eur_usd: Decimal | None, ccy: str
+    leg: EstimateLeg,
+    price: Decimal,
+    fx_eur_usd: Decimal | None,
+    ccy: str,
+    *,
+    eur_per_native: Decimal | None = None,
 ) -> Decimal | None:
-    """``shares x price`` of one leg in ``ccy`` at ONE EUR/USD rate (``None``: rate needed, missing)."""
+    """``shares x price`` of one leg in ``ccy`` at ONE EUR/USD rate (``None``: rate needed, missing).
+
+    ``eur_per_native`` overrides ``leg.eur_per_native`` for a non-EUR/USD leg: the
+    previous-close mark (:func:`estimate_day_move`) must use THAT close's own
+    rate, not ``leg.eur_per_native`` (today's valuation ratio) — see
+    :class:`EstimateLeg`.
+    """
     amount = leg.shares * price
     if leg.currency == ccy:
         return amount
     if leg.currency not in {"EUR", "USD"}:
-        eur = amount * leg.eur_per_native
+        rate = eur_per_native if eur_per_native is not None else leg.eur_per_native
+        eur = amount * rate
         if ccy == "EUR":
             return eur
         return eur * fx_eur_usd if fx_eur_usd and fx_eur_usd > 0 else None
@@ -2428,15 +2477,16 @@ def _leg_value(
 
 
 def previous_close_fx(session: Session, session_date: date) -> Decimal | None:
-    """EUR/USD (USD per EUR) the previous session's valuation uses: the daily rate of the
-    trading day before ``session_date`` (forward-filled), the same mark the holding cards'
-    and the hero's "day move" value their previous close at.
-    """
-    from investment_dashboard.services import fx_service  # noqa: PLC0415
+    """EUR/USD (USD per EUR) the previous session's valuation uses: the rate beside that
+    session's last intraday sample, falling back to its daily rate.
 
-    return fx_service.get_rate_eur_to_quote(
-        session, previous_trading_session(session_date), quote="USD"
-    )
+    This must stay ``session_close_rate`` of the previous trading day, because that is
+    what ``metrics_service`` values the previous close at. Using the daily rate here
+    instead made the Holdings rows' ``est_today_move`` and the hero's ``move_est``
+    disagree by the gap between the two marks whenever intraday samples existed — that
+    is, always in production, and never in a fixture that has no intraday FX.
+    """
+    return session_close_rate(session, previous_trading_session(session_date))
 
 
 def estimate_day_move(
@@ -2454,12 +2504,19 @@ def estimate_day_move(
     previous close is part of the day move, exactly as for a stock, and no return is
     ever converted. The fraction is that value ratio minus 1. The holding's stale
     last-session move is never involved. ``(None, None)`` when a needed rate is missing.
+
+    A leg booked in a third currency (not EUR/USD) is marked "now" at
+    ``leg.eur_per_native`` and at the previous close with
+    ``leg.eur_per_native_prev_close`` — two different rates, so the overnight move
+    in that currency is not dropped (see :class:`EstimateLeg`).
     """
     now_value = Decimal(0)
     prev_value = Decimal(0)
     for leg in est.legs:
         now = _leg_value(leg, est.est_px, fx_now, ccy)
-        prev = _leg_value(leg, est.prev_nav, fx_prev_close, ccy)
+        prev = _leg_value(
+            leg, est.prev_nav, fx_prev_close, ccy, eur_per_native=leg.eur_per_native_prev_close
+        )
         if now is None or prev is None:
             return None, None
         now_value += now
@@ -2487,27 +2544,89 @@ class FundDivergence:
     last_prev_nav: Decimal
 
 
-#: A twin price this close to the 16:00 close (or earlier in the last 5-minute bar)
-#: counts as that session's close when no exact close row was stored.
+#: A twin price this close to the session's TRUE close (or earlier in the last
+#: 5-minute bar) counts as that session's close when no exact close row was stored.
 _CLOSE_TOLERANCE = timedelta(minutes=10)
 
+#: Clock time (ET) of an NYSE "half day" close — 13:00 instead of the regular
+#: 16:00 — observed the Friday after Thanksgiving and, when they fall on a
+#: weekday, July 3rd and December 24th (see :func:`_is_early_close_day`). Not
+#: exhaustive — the NYSE occasionally adds an ad hoc half day — but it covers the
+#: recurring ones that would otherwise silently drop a whole session from the
+#: twin-divergence stats: no stored twin row ever lands near the (wrong) 16:00
+#: instant (:func:`twin_session_closes`).
+_EARLY_CLOSE = time(13, 0)
 
-def twin_session_closes(rows: dict[datetime, Decimal]) -> dict[date, Decimal]:
-    """``{session date: twin close}`` from stored twin rows (naive UTC instants).
 
-    A session's close is its newest row within :data:`_CLOSE_TOLERANCE` before the
-    16:00 close (the exact close row, else the last 5-minute bar); sessions the
-    server never watched have none.
+def _nth_weekday_of_month(year: int, month: int, weekday: int, nth: int) -> date:
+    """The ``nth`` ``weekday`` (Mon=0 … Sun=6) of ``month`` in ``year``."""
+    first = date(year, month, 1)
+    offset = (weekday - first.weekday()) % 7
+    return first + timedelta(days=offset + (nth - 1) * 7)
+
+
+def _is_early_close_day(day: date) -> bool:
+    """Whether NYSE trades a shortened (13:00 ET close) session on ``day``.
+
+    Covers the recurring half days: the Friday after Thanksgiving, and — when
+    they fall on a weekday and are not themselves a full holiday — July 3rd and
+    December 24th. An ad hoc half day the NYSE occasionally adds outside these is
+    not modelled.
+    """
+    if day.weekday() >= _SATURDAY:
+        return False
+    thanksgiving = _nth_weekday_of_month(day.year, 11, 3, 4)  # 4th Thursday of November
+    if day == thanksgiving + timedelta(days=1):
+        return True
+    return day in (date(day.year, 7, 3), date(day.year, 12, 24)) and not is_us_market_holiday(day)
+
+
+def _session_actual_close_utc(session_date: date) -> datetime:
+    """Naive-UTC instant of ``session_date``'s TRUE close.
+
+    13:00 ET on an early-close day (see :func:`_is_early_close_day`), else the
+    regular 16:00 ET close (:func:`_session_close_utc`). Used only where the
+    session's genuine close instant matters — the twin-divergence stats
+    (:func:`twin_session_closes`) and the retention that must keep exactly what
+    they accept (:func:`prune_twin_prices`) — the rest of this module's 16:00
+    assumption (live capture, reconstruction, curve bounds) is intentionally left
+    as-is (see the market-hours module docstring).
+    """
+    if _is_early_close_day(session_date):
+        close_local = datetime.combine(session_date, _EARLY_CLOSE, tzinfo=_MARKET_TZ)
+        return close_local.astimezone(UTC).replace(tzinfo=None)
+    return _session_close_utc(session_date)
+
+
+def _session_close_rows(rows: dict[datetime, Decimal]) -> dict[date, tuple[datetime, Decimal]]:
+    """``{session date: (captured_at, price)}`` — the stored row nearest that
+    session's TRUE close (early-close aware), within :data:`_CLOSE_TOLERANCE`.
+
+    Shared by :func:`twin_session_closes` (the divergence stats) and
+    :func:`prune_twin_prices` (retention must keep exactly what this would
+    accept — never a row the reader would select as a close that pruning then
+    discards because it wasn't at the nominal 16:00 instant).
     """
     best: dict[date, tuple[datetime, Decimal]] = {}
     for at, price in rows.items():
         if price <= 0:
             continue
         day = session_date_of(at)
-        close_at = _session_close_utc(day)
+        close_at = _session_actual_close_utc(day)
         if close_at - _CLOSE_TOLERANCE <= at <= close_at and (day not in best or at > best[day][0]):
             best[day] = (at, price)
-    return {day: price for day, (_at, price) in best.items()}
+    return best
+
+
+def twin_session_closes(rows: dict[datetime, Decimal]) -> dict[date, Decimal]:
+    """``{session date: twin close}`` from stored twin rows (naive UTC instants).
+
+    A session's close is its newest row within :data:`_CLOSE_TOLERANCE` of that
+    session's TRUE close — the regular 16:00 ET close, or 13:00 ET on a half day
+    (:func:`_is_early_close_day`) — else the last 5-minute bar; sessions the
+    server never watched have none.
+    """
+    return {day: price for day, (_at, price) in _session_close_rows(rows).items()}
 
 
 def divergence_window() -> int:
@@ -2520,6 +2639,35 @@ def divergence_window() -> int:
         return max(1, int(configured))
     except (TypeError, ValueError):  # pragma: no cover - settings unreadable
         return DEFAULT_DIVERGENCE_WINDOW
+
+
+#: Registry default (and fallback) for ``twin.estimates_enabled``: the estimate
+#: replaces the headline total by default; the owner opts out, not in.
+DEFAULT_ESTIMATES_ENABLED = True
+
+
+def estimates_enabled(session: Session) -> bool:
+    """Setting ``twin.estimates_enabled`` (Settings > Data refresh).
+
+    The single master switch for every ETF-twin *estimate* (as opposed to the
+    twin-accuracy / divergence figures, which keep tracking regardless): checked
+    once here, at the source :func:`_twin_estimates` reads from, rather than at
+    each of its callers (the overview's ``kpis.estimate``, the holdings rows'
+    ``TwinView``, the group ``est_*`` fields, and the scheduler tick all derive
+    from the same empty-when-off result). Takes ``session`` (rather than reading
+    through the process-wide settings cache like :func:`divergence_window`) so a
+    change is visible immediately within the same request/session that made it.
+    """
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    try:
+        return bool(
+            settings_service.get_or(
+                "twin.estimates_enabled", DEFAULT_ESTIMATES_ENABLED, session=session
+            )
+        )
+    except (TypeError, ValueError):  # pragma: no cover - settings unreadable
+        return DEFAULT_ESTIMATES_ENABLED
 
 
 def fund_divergence(
@@ -2571,6 +2719,50 @@ def fund_divergence(
     return memo(
         session, ("fund_divergence", instrument_id, twin_symbol, session_date, window), compute
     )
+
+
+def is_estimating(session: Session, instrument_id: int, now: datetime | None = None) -> bool:
+    """Whether ``instrument_id``'s fund is being estimated from its twin right now.
+
+    ``False`` when the fund is not currently held, its NAV for the session has
+    already posted, or :func:`estimates_enabled` is off (the same source every
+    other estimate consumer reads).
+    """
+    now = now or datetime.now(UTC)
+    return instrument_id in twin_estimates(session, now)
+
+
+def year_backfill_done(session: Session, symbol: str) -> bool:
+    """Whether the one-year daily-close backfill has completed for ``symbol``'s twin."""
+    return bool(app_config_service.get(session, f"{_TWIN_YEAR_PREFIX}{symbol}"))
+
+
+def twin_price_coverage(
+    session: Session, symbol: str, *, now: datetime | None = None
+) -> dict[str, object]:
+    """Stored-history summary for one twin: session-close coverage + newest raw instant.
+
+    Reads the same window :func:`fund_divergence` reads (intraday bars plus the
+    :data:`TWIN_CLOSE_RETENTION` window of session closes), so the counts here
+    agree with what the divergence stats actually see. ``last_price_at`` is the
+    newest stored instant of any kind (a live intraday bar counts, not only a
+    recognised session close), for "is this twin being fetched at all".
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+
+    today = last_session_date(now or datetime.now(UTC))
+    start = _session_start_utc(today - TWIN_CLOSE_RETENTION)
+    end = _session_close_utc(today)
+    with cache_read_session(session) as cache:
+        rows = twin_prices_repo.prices_in_range(cache, [symbol], start, end).get(symbol, {})
+    closes = twin_session_closes(rows)
+    return {
+        "stored_sessions": len(closes),
+        "first_session": min(closes) if closes else None,
+        "last_session": max(closes) if closes else None,
+        "last_price_at": max(rows) if rows else None,
+    }
 
 
 def live_point_adjustment_eur(
@@ -2720,6 +2912,66 @@ _TWIN_YEAR_DAYS = 365
 _YEAR_RETRY = timedelta(minutes=30)
 _year_attempts: dict[str, datetime] = {}
 
+#: After this many attempts that returned no rows, a twin's one-year backfill is
+#: abandoned (its "done" marker is set anyway) instead of being retried every 30
+#: minutes forever — a twin the provider can never serve (delisted, wrong ticker,
+#: a persistent outage) would otherwise burn 48 calls/day indefinitely.
+_YEAR_MAX_ATTEMPTS = 8
+
+#: ``app_config`` key prefix: ``{prefix}{symbol}`` -> failed-attempt count so far
+#: (cleared once a backfill succeeds or the twin is given up on).
+_TWIN_YEAR_ATTEMPTS_PREFIX = "intraday_twin_year_attempts:"
+
+#: ``app_config`` key prefix: ``{prefix}{symbol}`` -> "1" once a twin has been
+#: given up on (see :data:`_YEAR_MAX_ATTEMPTS`). Deliberately separate from the
+#: "done" marker (:data:`_TWIN_YEAR_PREFIX`), which means "has real data": a
+#: twin that never got any data would otherwise read as having a hole (its
+#: newest close is always "missing") and the staleness re-check
+#: (:func:`_stale_year_backfills`) would mark it due again forever, undoing the
+#: give-up.
+_TWIN_YEAR_ABANDONED_PREFIX = "intraday_twin_year_abandoned:"
+
+#: A "done" twin is re-backfilled once its newest stored session-close has fallen
+#: this many trading sessions behind the last completed session: downtime (the
+#: app off for a stretch) can leave a hole in the divergence history that the
+#: one-shot "done" marker would otherwise hide forever. Re-running is a plain
+#: re-fetch of the whole year (``upsert_prices`` safely overwrites any instant
+#: already stored), not a special gap-targeting path.
+_YEAR_STALE_TRADING_DAYS = 5
+
+
+def _trading_days_before(day: date, n: int) -> date:
+    """``n`` trading sessions (holiday-aware) strictly before ``day``."""
+    for _ in range(n):
+        day = previous_trading_session(day)
+    return day
+
+
+def _stale_year_backfills(
+    session: Session, done_symbols: list[str], *, last_done: date
+) -> set[str]:
+    """``done_symbols`` whose newest stored session-close has fallen behind ``last_done``.
+
+    Reads only the small recent window needed to judge staleness (see
+    :data:`_YEAR_STALE_TRADING_DAYS`), not the whole year.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+
+    if not done_symbols:
+        return set()
+    cutoff = _trading_days_before(last_done, _YEAR_STALE_TRADING_DAYS)
+    with cache_read_session(session) as cache:
+        recent = twin_prices_repo.prices_in_range(
+            cache, done_symbols, _session_start_utc(cutoff), _session_close_utc(last_done)
+        )
+    return {
+        symbol
+        for symbol in done_symbols
+        if (newest := max(_session_close_rows(recent.get(symbol, {})), default=None)) is None
+        or newest < cutoff
+    }
+
 
 def backfill_twin_year_closes(
     session: Session,
@@ -2733,9 +2985,12 @@ def backfill_twin_year_closes(
     The twin-divergence statistics compare the fund's official NAV return with the
     twin's close-to-close return; the twin's close rows otherwise exist only for
     days the server was running. One daily-closes call per tick covers every twin
-    not done yet; a twin is marked done (``app_config``) once rows came back, and
-    one that returned nothing is retried at most every 30 minutes. Returns rows
-    written.
+    not done yet (plus any "done" twin whose stored history has fallen stale, see
+    :func:`_stale_year_backfills`); a twin is marked done (``app_config``) once
+    rows came back. One that returns nothing is retried at most every 30 minutes,
+    up to :data:`_YEAR_MAX_ATTEMPTS` before it is abandoned. Every attempt — rows
+    stored, nothing came back, or giving up — leaves an activity line. Returns
+    rows written.
     """
     from investment_dashboard.activity_log import activity  # noqa: PLC0415
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
@@ -2743,20 +2998,27 @@ def backfill_twin_year_closes(
     from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
 
     keys = {s: f"{_TWIN_YEAR_PREFIX}{s}" for s in twins}
+    abandoned_keys = {s: f"{_TWIN_YEAR_ABANDONED_PREFIX}{s}" for s in twins}
     done = app_config_service.get_many(session, list(keys.values()))
+    abandoned = app_config_service.get_many(session, list(abandoned_keys.values()))
     never = datetime.min.replace(tzinfo=UTC)
+    session_date = last_session_date(now)
+    # A daily bar of a session still running is its price now, not its close.
+    last_done = session_date - timedelta(days=1) if is_us_market_open(now) else session_date
+    stale = _stale_year_backfills(
+        session, [s for s in twins if done.get(keys[s])], last_done=last_done
+    )
     due = [
         s
         for s in twins
-        if not done.get(keys[s]) and now - _year_attempts.get(s, never) >= _YEAR_RETRY
+        if not abandoned.get(abandoned_keys[s])
+        and (not done.get(keys[s]) or s in stale)
+        and now - _year_attempts.get(s, never) >= _YEAR_RETRY
     ]
     if not due:
         return 0
     for symbol in due:
         _year_attempts[symbol] = now
-    session_date = last_session_date(now)
-    # A daily bar of a session still running is its price now, not its close.
-    last_done = session_date - timedelta(days=1) if is_us_market_open(now) else session_date
     fetch_closes = fetcher or yfinance_client.fetch_closes
     closes = fetch_closes(
         due, session_date - timedelta(days=_TWIN_YEAR_DAYS), session_date + timedelta(days=1)
@@ -2773,13 +3035,41 @@ def backfill_twin_year_closes(
             if rows:
                 written += twin_prices_repo.upsert_prices(cache, symbol, rows)
                 stored[symbol] = len(rows)
+    attempt_keys = {s: f"{_TWIN_YEAR_ATTEMPTS_PREFIX}{s}" for s in due}
     for symbol, count in stored.items():
         app_config_service.set_value(session, keys[symbol], "1")
+        app_config_service.delete_key(session, attempt_keys[symbol])
         activity("market_data").info(
             "twin prices: stored %d daily close(s) of the last year for %s (divergence history)",
             count,
             symbol,
         )
+    failed = [s for s in due if s not in stored]
+    if failed:
+        counts = app_config_service.get_many(session, [attempt_keys[s] for s in failed])
+        for symbol in failed:
+            attempts = int(counts.get(attempt_keys[symbol]) or 0) + 1
+            if attempts >= _YEAR_MAX_ATTEMPTS:
+                # Give up for good: the divergence stats simply run without that
+                # twin's history. NOT the "done" marker (that means "has real
+                # data" and would make the staleness re-check revive the retry).
+                app_config_service.set_value(session, abandoned_keys[symbol], "1")
+                app_config_service.delete_key(session, attempt_keys[symbol])
+                activity("market_data").warning(
+                    "twin prices: giving up on %s's 1-year close backfill after %d attempt(s) "
+                    "with no data",
+                    symbol,
+                    attempts,
+                )
+            else:
+                app_config_service.set_value(session, attempt_keys[symbol], str(attempts))
+                activity("market_data").info(
+                    "twin prices: 1-year close backfill for %s returned no rows "
+                    "(attempt %d/%d, retrying)",
+                    symbol,
+                    attempts,
+                    _YEAR_MAX_ATTEMPTS,
+                )
     return written
 
 
@@ -2787,22 +3077,52 @@ def prune_twin_prices(session: Session, *, now: datetime) -> None:
     """Drop twin rows past retention.
 
     Intraday bars go once older than the 1W window (plus 7 days); the session-close
-    rows stay for :data:`TWIN_CLOSE_RETENTION`.
+    rows stay for :data:`TWIN_CLOSE_RETENTION`. The rows kept in that older window
+    are exactly the ones :func:`twin_session_closes` would accept as a session's
+    close (same tolerance, early-close aware) — read from what is actually
+    stored, never a synthetic "exact 16:00" instant — so a close row the
+    provider landed a few minutes off the nominal close (or on a half day) is
+    never pruned out from under the divergence stats.
     """
-    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.activity_log import activity  # noqa: PLC0415
+    from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
     from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
 
     bars_cutoff = week_window_start_utc(now) - timedelta(days=7)
     oldest = _to_naive_utc(now) - TWIN_CLOSE_RETENTION
-    day = oldest.date()
-    keep: list[datetime] = []
-    while day <= bars_cutoff.date():
-        if _is_trading_day(day):
-            keep.append(_session_close_utc(day))
-        day += timedelta(days=1)
+    with cache_read_session(session) as cache:
+        symbols = twin_prices_repo.distinct_symbols(cache)
+        stored = twin_prices_repo.prices_in_range(cache, symbols, oldest, bars_cutoff)
+    keep = {at for rows in stored.values() for at, _price in _session_close_rows(rows).values()}
     with cache_write_session(session) as cache:
-        twin_prices_repo.delete_before(cache, bars_cutoff, keep=keep)
-        twin_prices_repo.delete_before(cache, oldest)
+        dropped = twin_prices_repo.delete_before(cache, bars_cutoff, keep=list(keep))
+        dropped += twin_prices_repo.delete_before(cache, oldest)
+    if dropped:
+        activity("market_data").info(
+            "twin prices: pruned %d row(s) past retention (kept %d session-close row(s))",
+            dropped,
+            len(keep),
+        )
+
+
+#: ``app_config`` key recording the exchange date twin-price retention last ran,
+#: so the ~400-day scan + two full-table deletes happen at most once a day
+#: rather than on every refresh tick.
+_TWIN_PRUNE_KEY = "intraday_twin_pruned_day"
+
+
+def _maybe_prune_twin_prices(session: Session, *, now: datetime) -> None:
+    """Run :func:`prune_twin_prices` at most once per exchange day.
+
+    Called unconditionally from :func:`refresh_twin_prices` (even with no twins
+    currently held) so removing the last twin does not strand its rows forever —
+    the table still decays on its usual retention schedule.
+    """
+    today = exchange_today(now)
+    if app_config_service.get(session, _TWIN_PRUNE_KEY) == today.isoformat():
+        return
+    prune_twin_prices(session, now=now)
+    app_config_service.set_value(session, _TWIN_PRUNE_KEY, today.isoformat())
 
 
 def refresh_twin_prices(
@@ -2829,6 +3149,10 @@ def refresh_twin_prices(
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
+    # Unconditional: must still run with no twins held (otherwise removing the
+    # last one strands its rows forever), and is cheap to call every tick since
+    # it self-limits to once per exchange day.
+    _maybe_prune_twin_prices(session, now=now)
     twins = twin_symbols(positions_service.compute_positions(session))
     if not twins:
         return 0
@@ -2887,7 +3211,6 @@ def refresh_twin_prices(
         written += backfill_twin_year_closes(session, twins, now=now, fetcher=fetcher)
     except Exception:  # best-effort: the divergence stats then use what is stored
         log.warning("twin prices: 1-year close backfill failed", exc_info=True)
-    prune_twin_prices(session, now=now)
     if written:
         log.info(
             "twin prices: %d row(s) stored for %s (%s)", written, session_date, ", ".join(twins)
@@ -2907,20 +3230,87 @@ def record_twin_prices(*, now: datetime | None = None) -> int:
         return 0
 
 
+def force_twin_year_backfill(
+    session: Session, *, now: datetime | None = None, fetcher: object | None = None
+) -> dict[str, object]:
+    """Manually re-run the one-year close backfill for every currently-held twin.
+
+    The manual escape hatch behind the "Re-download ETF twin history" repair job:
+    clears the "done", "abandoned" and attempt-count markers for each twin
+    currently held, bypasses the inter-attempt throttle, then runs
+    :func:`backfill_twin_year_closes` again. The automatic staleness re-check
+    (:func:`_stale_year_backfills`) handles an ordinary gap on its own; this is
+    for a twin that was abandoned (see :data:`_YEAR_MAX_ATTEMPTS`), or when the
+    owner wants a clean re-pull right now rather than waiting for the next tick.
+    Returns ``{"twins": [...], "written": n}``.
+    """
+    from investment_dashboard.services import positions_service  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    twins = twin_symbols(positions_service.compute_positions(session))
+    if not twins:
+        return {"twins": [], "written": 0}
+    for symbol in twins:
+        app_config_service.delete_key(session, f"{_TWIN_YEAR_PREFIX}{symbol}")
+        app_config_service.delete_key(session, f"{_TWIN_YEAR_ABANDONED_PREFIX}{symbol}")
+        app_config_service.delete_key(session, f"{_TWIN_YEAR_ATTEMPTS_PREFIX}{symbol}")
+        _year_attempts.pop(symbol, None)
+    written = backfill_twin_year_closes(session, twins, now=now, fetcher=fetcher)
+    return {"twins": twins, "written": written}
+
+
+def clear_twin_prices(session: Session) -> int:
+    """Wipe every stored ETF-twin price (intraday bars and session closes).
+
+    Resets every backfill/retention marker too (week, year, abandoned, attempts,
+    prune) so a bad twin mapping — the wrong ETF set, or fixed after a typo —
+    starts clean: the next refresh re-fetches everything from scratch instead of
+    mixing in stale prices for a mapping that no longer applies. Returns rows
+    deleted.
+    """
+    from investment_dashboard.activity_log import activity  # noqa: PLC0415
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+
+    with cache_write_session(session) as cache:
+        deleted = twin_prices_repo.delete_all(cache)
+    for prefix in (
+        _TWIN_BACKFILLED_PREFIX,
+        _TWIN_WEEK_PREFIX,
+        _TWIN_YEAR_PREFIX,
+        _TWIN_YEAR_ATTEMPTS_PREFIX,
+        _TWIN_YEAR_ABANDONED_PREFIX,
+    ):
+        app_config_service.delete_by_prefix(session, prefix)
+    app_config_service.delete_key(session, _TWIN_PRUNE_KEY)
+    _year_attempts.clear()
+    _week_attempts.clear()
+    activity("market_data").info(
+        "twin prices: cleared %d stored row(s) and reset every backfill marker", deleted
+    )
+    return deleted
+
+
 def session_close_rate(session: Session, session_date: date) -> Decimal | None:
     """EUR/USD (USD per 1 EUR) at ``session_date``'s 16:00 close.
 
     The rate stored beside the session's last intraday sample (captured at or just
     before the close), else that date's daily rate.
+
+    Memoised per request: a Holdings build asks for the same session's rate once per
+    fund row (``_divergence_view``), and each miss scans a whole session of samples.
     """
-    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+    from investment_dashboard.db import cache_read_session, memo  # noqa: PLC0415
     from investment_dashboard.services import fx_service  # noqa: PLC0415
 
-    with cache_read_session(session) as cache:
-        rows = intraday_repo.list_in_range(
-            cache, _session_open_utc(session_date), _session_close_utc(session_date)
-        )
-    for row in reversed(rows):
-        if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
-            return row.fx_eur_usd
-    return fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+    def compute() -> Decimal | None:
+        with cache_read_session(session) as cache:
+            rows = intraday_repo.list_in_range(
+                cache, _session_open_utc(session_date), _session_close_utc(session_date)
+            )
+        for row in reversed(rows):
+            if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
+                return row.fx_eur_usd
+        return fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+
+    return memo(session, ("session_close_rate", session_date), compute)

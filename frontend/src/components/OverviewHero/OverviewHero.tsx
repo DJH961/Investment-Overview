@@ -137,8 +137,9 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
   const lastEst = est && ls && ls.move_est != null ? ls : null;
   // The small official line: shut market, the official change since the previous close includes
   // the overnight currency (last_session.day_move); open market, the plain official day move.
+  // Only the percentage is shown — the headline already carries a signed money figure, and a
+  // second one here was read as a competing total rather than as context.
   const offShut = marketClosed && ls?.day_move != null;
-  const officialMove = offShut ? ls?.day_move : k.daily_move;
   const officialPct = offShut ? ls?.day_move_pct : k.daily_growth_pct;
   const secTotal = est2 ? est2.total_value : k2?.total_value;
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
@@ -179,8 +180,6 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
           <p className="overview-hero__official" data-testid="hero-official">
             <span>Official</span>
             <Money amount={toNum(k.total_value)} currency={currency} />
-            <span aria-hidden>·</span>
-            <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
             <span>
               (<Percent ratio={toNum(officialPct ?? null)} signed />)
             </span>
@@ -203,21 +202,33 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
             </span>
           )}
         </div>
-        {lastEst && (
-          <p className="overview-hero__overnight" data-testid="last-session-est">
-            <span className="overview-hero__muted">Last session ≈</span>
-            <Money amount={toNum(lastEst.move_est ?? null)} currency={currency} signed colored />
-            <span className="overview-hero__muted">
-              (<Percent ratio={toNum(lastEst.move_pct_est ?? null)} signed />)
+        {/*
+          The day's breakdown. While a twin estimates the book and the market is shut, the
+          headline move is last session's result plus the overnight currency drift: show them
+          as one "Today = a · b" line so the arithmetic is visible instead of implied by two
+          separate rows. With no estimate only the overnight part exists.
+        */}
+        {lastEst && overnight !== null ? (
+          <p className="overview-hero__breakdown" data-testid="day-breakdown">
+            <span className="overview-hero__muted">Of which</span>
+            <span className="overview-hero__part" data-testid="last-session-est">
+              <span className="overview-hero__muted">Last session</span>
+              <Money amount={toNum(lastEst.move_est ?? null)} currency={currency} signed colored />
             </span>
+            <span className="overview-hero__part" data-testid="overnight-currency">
+              <span className="overview-hero__muted">Overnight FX</span>
+              <Money amount={overnight} currency={currency} signed colored />
+            </span>
+            <InfoTip label="the day's breakdown" content={OVERNIGHT_TIP} />
           </p>
-        )}
-        {overnight !== null && (
-          <p className="overview-hero__overnight" data-testid="overnight-currency">
-            <span className="overview-hero__muted">Overnight currency</span>
-            <Money amount={overnight} currency={currency} signed colored />
-            <InfoTip label="overnight currency" content={OVERNIGHT_TIP} />
-          </p>
+        ) : (
+          overnight !== null && (
+            <p className="overview-hero__breakdown" data-testid="overnight-currency">
+              <span className="overview-hero__muted">Overnight currency</span>
+              <Money amount={overnight} currency={currency} signed colored />
+              <InfoTip label="overnight currency" content={OVERNIGHT_TIP} />
+            </p>
+          )
         )}
         <PriceStamps className="overview-hero__stamps" price={heroPriceTime(data)} updated={fetched} options={opts} />
         {split && (split.investment_return != null || split.currency_effect_pp != null) && (

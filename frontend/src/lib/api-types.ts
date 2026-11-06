@@ -1301,6 +1301,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maintenance/twins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Twin Health
+         * @description ETF-twin settings and, per mapped fund, its live status, stored history and accuracy.
+         */
+        get: operations["twin_health_api_maintenance_twins_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/onboarding": {
         parameters: {
             query?: never;
@@ -3097,6 +3117,11 @@ export interface components {
              */
             est_today_move?: string | null;
             /**
+             * Est Today Pct
+             * @description est_today_move over the group's estimated previous value (fraction, 0.01 = 1%)
+             */
+            est_today_pct?: string | null;
+            /**
              * Est Value
              * @description value with pending mutual funds at their twin estimate
              */
@@ -3115,7 +3140,7 @@ export interface components {
             today_move?: string | null;
             /**
              * Today Pct
-             * @description today_move over the group's previous value (fraction, 0.01 = 1%)
+             * @description today_move over the group's previous value (fraction, 0.01 = 1%). A pending-NAV member contributes its last published move, so prefer est_today_pct when it is set
              */
             today_pct?: string | null;
             /**
@@ -5879,6 +5904,114 @@ export interface components {
             window: number;
         };
         /**
+         * TwinDivergenceStats
+         * @description Twin-vs-fund divergence over the configured look-back window.
+         *
+         *     Every figure here is in PERCENTAGE POINTS (``0.03`` = 0.03 pp — the same
+         *     convention as ``TwinDivergence`` in the Holdings API), never a fraction like
+         *     ``currency_effect_pp`` elsewhere (``/api/overview``) despite the similar name.
+         *     Gaps are ``twin return - fund return``: positive means the twin ran ahead,
+         *     i.e. the estimate was too high. Sessions with a dividend or distribution are
+         *     left out.
+         */
+        TwinDivergenceStats: {
+            /**
+             * Bias Pp
+             * @description Mean signed gap over the window, in pp (positive: twin ran ahead)
+             */
+            bias_pp: string;
+            /**
+             * Last Date
+             * @description Session the last_gap_pp figure is from (ISO date)
+             */
+            last_date: string;
+            /**
+             * Last Gap Pp
+             * @description Newest usable session's gap, in percentage points
+             */
+            last_gap_pp: string;
+            /**
+             * Median Abs Pp
+             * @description Median absolute gap over the window, in pp
+             */
+            median_abs_pp: string;
+            /**
+             * Sessions
+             * @description Sessions actually used (at most the configured window)
+             */
+            sessions: number;
+        };
+        /**
+         * TwinFundHealth
+         * @description One fund's ETF-twin mapping: live status + stored history + accuracy.
+         */
+        TwinFundHealth: {
+            /** @description Null when there are not enough shared sessions yet */
+            divergence?: components["schemas"]["TwinDivergenceStats"] | null;
+            /**
+             * Estimating
+             * @description Being estimated from the twin right now (NAV pending, held, estimates on)
+             */
+            estimating: boolean;
+            /**
+             * First Session
+             * @description Oldest stored twin session-close date (ISO), or null
+             */
+            first_session?: string | null;
+            /** Instrument Id */
+            instrument_id: number;
+            /**
+             * Last Price At
+             * @description Instant of the newest stored twin price of any kind (ISO UTC), or null
+             */
+            last_price_at?: string | null;
+            /**
+             * Last Session
+             * @description Newest stored twin session-close date (ISO), or null
+             */
+            last_session?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Stored Sessions
+             * @description Session-close rows stored for this twin
+             */
+            stored_sessions: number;
+            /**
+             * Symbol
+             * @description The fund's own ticker
+             */
+            symbol: string;
+            /**
+             * Twin Symbol
+             * @description The mapped ETF twin's ticker
+             */
+            twin_symbol: string;
+            /**
+             * Year Backfill Done
+             * @description Whether the one-year daily-close backfill has completed for this twin
+             */
+            year_backfill_done: boolean;
+        };
+        /**
+         * TwinHealth
+         * @description ETF-twin settings + one entry per fund with a twin mapping, for Health & Repair.
+         */
+        TwinHealth: {
+            /**
+             * Enabled
+             * @description Setting twin.estimates_enabled
+             */
+            enabled: boolean;
+            /** Funds */
+            funds: components["schemas"]["TwinFundHealth"][];
+            /**
+             * Window
+             * @description Setting twin.divergence_window, in sessions
+             */
+            window: number;
+        };
+        /**
          * TwinSuggestionDto
          * @description A built-in ETF twin for a fund (a suggestion only, never applied automatically).
          *
@@ -8482,6 +8615,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TiingoUsage"];
+                };
+            };
+        };
+    };
+    twin_health_api_maintenance_twins_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwinHealth"];
                 };
             };
         };

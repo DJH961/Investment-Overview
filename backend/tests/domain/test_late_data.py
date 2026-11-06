@@ -7,11 +7,14 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from hypothesis import given
+from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from investment_dashboard.domain import index_twins
 from investment_dashboard.domain.late_data import (
+    MAX_OUTLIER_SHARE,
+    MIN_OUTLIER_SAMPLES,
+    OUTLIER_SPREAD_FACTOR,
     Holding,
     corrected_value,
     divergences,
@@ -278,6 +281,35 @@ def test_a_perfect_twin_never_diverges(values: list[Decimal], scale: Decimal) ->
     assert abs(d.bias) < Decimal("1e-20")
 
 
+def _keep_after_outlier_rejection(
+    candidates: list[tuple[int, Decimal]],
+) -> list[tuple[int, Decimal]]:
+    """The documented rejection rule, restated here so the property pins it down.
+
+    Sessions more than ``OUTLIER_SPREAD_FACTOR`` deviations from the median
+    are distributions rather than tracking error; too small a sample or a zero spread
+    leaves everything in place.
+    """
+    if len(candidates) < MIN_OUTLIER_SAMPLES:
+        return candidates
+    values = [g for _k, g in candidates]
+    mid = statistics.median(values)
+    deviations = [abs(v - mid) for v in values]
+    spread = statistics.median(deviations) or sum(deviations) / len(deviations)
+    if spread <= 0:
+        return candidates
+    limit = OUTLIER_SPREAD_FACTOR * spread
+    furthest = sorted(
+        range(len(candidates)), key=lambda i: abs(candidates[i][1] - mid), reverse=True
+    )
+    dropped = {
+        i
+        for i in furthest[: len(candidates) // MAX_OUTLIER_SHARE]
+        if abs(candidates[i][1] - mid) > limit
+    }
+    return [c for i, c in enumerate(candidates) if i not in dropped]
+
+
 @given(
     fund_values=close_series,
     twin_seed=st.lists(
@@ -298,17 +330,101 @@ def test_divergence_statistics_are_consistent(
         assert d is None
         return
     assert d is not None
-    assert d.sessions == min(window, len(usable))
     assert d.window == window
     assert d.last_date not in excluded
-    assert d.last_date == D0 + timedelta(days=usable[-1])
-    # Sign convention: twin return minus fund return, as a fraction.
-    last = usable[-1]
-    expected = twin_seed[last] / twin_seed[last - 1] - fund_values[last] / fund_values[last - 1]
-    assert d.last_gap == expected
-    gaps = [
-        twin_seed[k] / twin_seed[k - 1] - fund_values[k] / fund_values[k - 1]
+    candidates = [
+        (k, twin_seed[k] / twin_seed[k - 1] - fund_values[k] / fund_values[k - 1])
         for k in usable[-window:]
     ]
+    kept = _keep_after_outlier_rejection(candidates)
+    assert d.sessions == len(kept)
+    assert d.sessions <= min(window, len(usable))
+    # The newest *kept* session, which is the newest usable one unless it was rejected.
+    last, last_gap = kept[-1]
+    assert d.last_date == D0 + timedelta(days=last)
+    assert d.last_gap == last_gap  # sign: twin return minus fund return, as a fraction
+    gaps = [g for _k, g in kept]
     assert d.median_abs == statistics.median(abs(g) for g in gaps)
     assert abs(d.bias - sum(gaps) / len(gaps)) < Decimal("1e-20")
+
+
+def _flat_pair(sessions: int) -> tuple[list[str], list[str]]:
+    """A fund and twin that both sit still: every gap is exactly zero."""
+    return ["100"] * (sessions + 1), ["50"] * (sessions + 1)
+
+
+def _tracking_pair(gaps: list[str]) -> tuple[dict[date, Decimal], dict[date, Decimal]]:
+    """A flat fund and a twin whose each-session return is the matching ``gaps`` entry."""
+    fund = ["100"] * (len(gaps) + 1)
+    twin = [Decimal(50)]
+    for g in gaps:
+        twin.append(twin[-1] * (Decimal(1) + Decimal(g)))
+    return _series(fund), {D0 + timedelta(days=i): v for i, v in enumerate(twin)}
+
+
+def test_divergence_rejects_a_twin_distribution_day() -> None:
+    """One ETF ex-dividend day must not pass as tracking error.
+
+    The twin is never held, so its distributions can never reach ``excluded`` from the
+    ledger. Ten sessions of ±0.02 pp noise plus one -0.35 % drop: without rejection the
+    mean is dragged an order of magnitude past the real tracking error.
+    """
+    noise = ["0.0002", "-0.0002"] * 5
+    fund, twin = _tracking_pair([*noise, "-0.0035"])
+    d = divergences(fund, twin)
+    assert d is not None
+    # The distribution session is dropped: ten noise sessions remain...
+    assert d.sessions == 10
+    # ...so the bias stays at the noise level instead of ~-0.00032.
+    assert abs(d.bias) < Decimal("1e-9")
+    # ...and the newest usable session is a real one, not the distribution.
+    assert abs(d.last_gap) == Decimal("0.0002")
+    assert d.last_date == D0 + timedelta(days=10)
+
+
+def test_divergence_keeps_everything_below_the_outlier_sample_floor() -> None:
+    """Too few sessions to tell an outlier from noise: nothing is rejected."""
+    fund, twin = _tracking_pair(["0.0002", "-0.0002", "0.0002", "-0.0035"])
+    d = divergences(fund, twin)
+    assert d is not None
+    assert d.sessions == 4
+    assert d.last_gap == Decimal("-0.0035")
+
+
+def test_divergence_keeps_a_perfect_tracker() -> None:
+    """A zero spread would make every session an outlier of itself: leave it alone."""
+    fund_v, twin_v = _flat_pair(10)
+    fund, twin = _series(fund_v), _series(twin_v)
+    d = divergences(fund, twin)
+    assert d is not None
+    assert d.sessions == 10
+    assert d.bias == Decimal(0)
+    assert d.median_abs == Decimal(0)
+
+
+@given(
+    noise=st.lists(
+        st.decimals(min_value="-0.0005", max_value="0.0005", places=6),
+        min_size=12,
+        max_size=20,
+    ),
+    shock=st.decimals(min_value="0.01", max_value="0.2", places=6),
+)
+def test_one_distribution_cannot_drag_the_bias(noise: list[Decimal], shock: Decimal) -> None:
+    """Adding a single far-outlier session leaves ``bias`` where the noise alone put it."""
+    mid = statistics.median(noise)
+    devs = [abs(v - mid) for v in noise]
+    spread = statistics.median(devs) or sum(devs) / len(devs)
+    # The degenerate shapes have their own tests: an identical-gap sample, and a
+    # two-peaked one whose sessions are real tracking error rather than contamination.
+    assume(spread > 0)
+    assume(not any(d > OUTLIER_SPREAD_FACTOR * spread for d in devs))
+    clean_f, clean_t = _tracking_pair([str(v) for v in noise])
+    clean = divergences(clean_f, clean_t, window=50)
+    shocked_f, shocked_t = _tracking_pair([str(v) for v in noise] + [str(-shock)])
+    shocked = divergences(shocked_f, shocked_t, window=50)
+    assert clean is not None
+    assert shocked is not None
+    # Rejected, so the bias stays inside the noise band. Averaged in instead it would
+    # move by shock/n, which is an order of magnitude past that band.
+    assert abs(shocked.bias - clean.bias) < Decimal("0.0005")

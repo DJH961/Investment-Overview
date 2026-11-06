@@ -200,6 +200,16 @@ def _median(values: list[Decimal]) -> Decimal:
 #: ``twin.divergence_window``).
 DEFAULT_DIVERGENCE_WINDOW = 20
 
+#: A session whose gap sits more than this many deviations from the median is a
+#: distribution artifact, not tracking error (see ``divergences``).
+OUTLIER_SPREAD_FACTOR = Decimal(4)
+
+#: Below this many sessions the spread is too thin to tell an outlier from noise.
+MIN_OUTLIER_SAMPLES = 8
+
+#: At most ``1 / MAX_OUTLIER_SHARE`` of a window may be rejected as distributions.
+MAX_OUTLIER_SHARE = 5
+
 
 @dataclass(frozen=True)
 class Divergence:
@@ -222,6 +232,40 @@ class Divergence:
     window: int
 
 
+def _without_distributions(
+    gaps: list[tuple[date, date, Decimal]],
+) -> list[tuple[date, date, Decimal]]:
+    """``gaps`` without far outliers — a distribution on either side of the pair.
+
+    The scale is the median absolute deviation, which the outliers themselves barely
+    move (unlike a mean and standard deviation, where one ex-dividend day widens the
+    band enough to hide itself). When a repeated value holds the middle the median
+    deviation collapses to zero even though the sample does vary, so the mean deviation
+    stands in: a lone distribution day inflates it far less than it would corrupt the
+    bias. Only a sample whose every gap is identical — a perfect tracker, with nothing
+    to reject — is left alone, as is one too short to tell an outlier from noise.
+    """
+    if len(gaps) < MIN_OUTLIER_SAMPLES:
+        return gaps
+    values = [g for _p, _c, g in gaps]
+    mid = _median(values)
+    deviations = [abs(v - mid) for v in values]
+    spread = _median(deviations) or sum(deviations, start=ZERO) / len(deviations)
+    if spread <= ZERO:
+        return gaps
+    # Distributions are rare by nature, so only a few sessions can be them: drop the
+    # furthest out, and never more than a fifth of the window. Refusing to drop
+    # anything once too many sessions sit outside the band would lose the protection
+    # exactly when it is needed — a distribution day shifts the median enough to carry
+    # a borderline neighbour out with it, and then the distribution itself survives.
+    limit = OUTLIER_SPREAD_FACTOR * spread
+    furthest = sorted(range(len(gaps)), key=lambda i: abs(gaps[i][2] - mid), reverse=True)
+    dropped = {
+        i for i in furthest[: len(gaps) // MAX_OUTLIER_SHARE] if abs(gaps[i][2] - mid) > limit
+    }
+    return [g for i, g in enumerate(gaps) if i not in dropped]
+
+
 def divergences(
     fund_closes: Mapping[date, Decimal],
     twin_closes: Mapping[date, Decimal],
@@ -235,6 +279,13 @@ def divergences(
     session ending on an ``excluded`` date (a dividend / distribution: the fund's
     NAV and the ETF's price drop on different days, so the gap is not tracking
     error) is dropped, as is one with a non-positive starting price.
+
+    ``excluded`` cannot catch every distribution: the twin ETF is never held, so it
+    has no ledger rows at all, and a fund's ledger date is its *pay* date rather than
+    the ex-date its NAV drops on. Both leave one session far outside the tracking-error
+    spread, so far outliers are rejected on the shape of the data as well — otherwise a
+    single ETF ex-dividend day moves ``bias`` by as much as the tracking error it is
+    meant to measure, and can make ``last_gap`` report a distribution as a bad estimate.
     """
     shared = sorted(d for d in fund_closes if d in twin_closes)
     gaps: list[tuple[date, date, Decimal]] = []
@@ -247,7 +298,7 @@ def divergences(
             continue
         gaps.append((prev, cur, (t1 / t0) - (f1 / f0)))
     size = max(window, 1)
-    recent = gaps[-size:]
+    recent = _without_distributions(gaps[-size:])
     if not recent:
         return None
     values = [g for _p, _c, g in recent]

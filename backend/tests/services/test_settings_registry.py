@@ -24,6 +24,7 @@ from investment_dashboard.services import (
     scheduler,
     tiingo_fallback_wiring,
 )
+from investment_dashboard.services import intraday_snapshots_service as iss
 from investment_dashboard.services import settings_registry as reg
 
 
@@ -65,6 +66,7 @@ def test_defaults_match_code_constants() -> None:
     )
     assert _default("diagnostics.frozen_leg_tolerance") == diagnostics_service.FROZEN_LEG_TOLERANCE
     assert _default("twin.divergence_window") == late_data.DEFAULT_DIVERGENCE_WINDOW
+    assert _default("twin.estimates_enabled") == iss.DEFAULT_ESTIMATES_ENABLED
     assert _default("projection.scenarios") == projection_query.DEFAULT_SCENARIOS
     assert _default("projection.fallback_rate") == projection_model.FALLBACK_EXPECTED_RATE
     assert _default("risk.var_alpha") == risk_extras.DEFAULT_VAR_ALPHA

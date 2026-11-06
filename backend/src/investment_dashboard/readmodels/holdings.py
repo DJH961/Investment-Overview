@@ -8,6 +8,7 @@ instrument's native currency. A USD leg that does not exist is ``None``.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -256,6 +257,12 @@ def build_groups(
         )
         delta = sum((est_deltas.get(c.instrument_id, ZERO) for c in group_cards), start=ZERO)
         estimating = any(c.instrument_id in est_deltas for c in group_cards)
+        # ``today_move`` sums each card's official move, and a pending-NAV fund's official
+        # move is its own last *published* session's (see ``_daily_move`` in
+        # overview_query) — real, but not today's. The row greys it; a subtotal cannot, so
+        # the group carries the estimated percentage alongside the estimated move rather
+        # than leaving ``today_pct`` as the only one on screen.
+        est_value = value + delta if estimating and value is not None else None
         out.append(
             {
                 "key": key,
@@ -270,8 +277,9 @@ def build_groups(
                 "weight_pct": _sum(weights),
                 "today_move": move,
                 "today_pct": move_pct(value, move),
-                "est_value": value + delta if estimating and value is not None else None,
+                "est_value": est_value,
                 "est_today_move": est_move if estimating else None,
+                "est_today_pct": move_pct(est_value, est_move) if estimating else None,
             }
         )
     out.sort(key=lambda g: (-(g["value"] if g["value"] is not None else ZERO), g["key"]))
@@ -301,24 +309,44 @@ def _delta_in(
 
 
 def _divergence_view(
+    session: Session,
     fd: intraday_snapshots_service.FundDivergence,
     legs: tuple[intraday_snapshots_service.EstimateLeg, ...],
     *,
-    fx: Decimal | None,
     ccy: str,
 ) -> dict[str, Any]:
-    """The ``twin.divergence`` block. Gaps are percentage points (fraction x 100)."""
+    """The ``twin.divergence`` block. Gaps are percentage points (fraction x 100).
+
+    💱 ``last_money`` is the gap on ``stats.last_date`` — possibly weeks ago, not
+    "today" — so it is valued at THAT session's own close rate
+    (:func:`intraday_snapshots_service.session_close_rate`), never the rate now:
+    a past valuation is never re-struck at a later rate (the currency rule).
+    """
     stats = fd.stats
     hundred = Decimal(100)
     money: Decimal | None = None
+    fx = intraday_snapshots_service.session_close_rate(session, stats.last_date)
     if fx is not None and fx > 0:
         # Estimate minus official value of the holding at the last session's close,
-        # valued at the one rate now.
+        # valued at that session's own close rate.
         step = fd.last_prev_nav * stats.last_gap
-        held = [
-            Holding(leg.currency, leg.shares * step, leg.shares * step * leg.eur_per_native)
-            for leg in legs
-        ]
+        # A leg outside EUR/USD carries ``eur_per_native`` struck now, which would put
+        # a present rate on a past gap just as the EUR/USD mark above would. Use that
+        # session's own settled rate, and drop the leg if none exists rather than
+        # silently valuing it at today's.
+        held = []
+        for leg in legs:
+            native = leg.shares * step
+            per_native = (
+                leg.eur_per_native
+                if leg.currency in {"EUR", "USD"}
+                else intraday_snapshots_service.eur_per_native_at(
+                    session, stats.last_date, leg.currency
+                )
+            )
+            if per_native is None:
+                continue
+            held.append(Holding(leg.currency, native, native * per_native))
         eur, usd = value_at_rate(held, fx)
         money = pick(eur, usd, ccy)
     return {
@@ -343,6 +371,7 @@ def _twin_view(
     fx: Decimal | None,
     fx_prev: Decimal | None,
     ccy: str,
+    account_positions: Sequence[Position] = (),
 ) -> tuple[dict[str, Any] | None, Decimal | None, Decimal | None]:
     """``(twin view, value delta in ccy, estimated day move in ccy)`` for one holding.
 
@@ -350,6 +379,13 @@ def _twin_view(
     estimate (rate now) minus its value at the previous NAV (previous close's rate),
     the same figure the tick's ``pct`` is built from; the card's own daily move is the
     stale last-session move of an unposted NAV and is not used.
+
+    ``account_positions`` are this instrument's *unmerged* per-account positions
+    (before :func:`merge_positions_by_instrument`), needed only by the NAV-posted
+    branch below: a fund held in several accounts can be booked in more than one
+    currency, and ``position`` (the merged row) keeps only the first account's
+    currency with every account's shares summed, which would book the whole
+    divergence money in one arbitrary currency.
     """
     est = estimates.get(card.instrument_id)
     twin = (
@@ -374,18 +410,35 @@ def _twin_view(
             "est_today_pct": dec(est_pct),
             "at": est.at.isoformat(),
             "pending": True,
-            "divergence": _divergence_view(fd, est.legs, fx=fx, ccy=ccy) if fd else None,
+            "divergence": _divergence_view(session, fd, est.legs, ccy=ccy) if fd else None,
         }
         return view, delta, est_move
     # NAV posted: until the next open the row only keeps how far the twin was off.
     if fd is None or fd.stats.last_date != session_date:
         return None, None, None
-    leg = intraday_snapshots_service.EstimateLeg(
-        position.account.native_currency.upper(),
-        position.shares,
-        position.current_value_eur / position.current_value_native
-        if position.current_value_native
-        else ZERO,
+    # One leg per *account*, not one leg from the merged row (see the docstring):
+    # each account's own currency and share count, so a fund split across a EUR
+    # and a USD account books its divergence money correctly in both, instead of
+    # all of it in whichever account the merge happened to keep. ``session_date``
+    # is exactly ``fd.stats.last_date`` here (the gate above), so these current
+    # shares are the shares actually held on the session the gap is about — no
+    # staleness to guard against.
+    legs = tuple(
+        intraday_snapshots_service.EstimateLeg(
+            p.account.native_currency.upper(),
+            p.shares,
+            p.current_value_eur / p.current_value_native if p.current_value_native else ZERO,
+        )
+        for p in account_positions
+        if p.shares > ZERO
+    ) or (
+        intraday_snapshots_service.EstimateLeg(
+            position.account.native_currency.upper(),
+            position.shares,
+            position.current_value_eur / position.current_value_native
+            if position.current_value_native
+            else ZERO,
+        ),
     )
     return (
         {
@@ -397,7 +450,7 @@ def _twin_view(
             "est_today_pct": None,
             "at": None,
             "pending": False,
-            "divergence": _divergence_view(fd, (leg,), fx=fx, ccy=ccy),
+            "divergence": _divergence_view(session, fd, legs, ccy=ccy),
         },
         None,
         None,
@@ -445,7 +498,14 @@ def build(
     now = now or datetime.now(UTC)
     ctx = build_context(session, as_of=as_of)
     pm = compute_portfolio_metrics(session, as_of=ctx.as_of)
-    positions = merge_positions_by_instrument(compute_positions(session, as_of=ctx.as_of))
+    raw_positions = compute_positions(session, as_of=ctx.as_of)
+    positions = merge_positions_by_instrument(raw_positions)
+    # Unmerged, per-account positions by instrument — the twin-divergence view
+    # needs each account's own currency and share count (see ``_twin_view``), not
+    # the merged row's arbitrary single currency and summed shares.
+    by_instrument_unmerged: dict[int, list[Position]] = {}
+    for p in raw_positions:
+        by_instrument_unmerged.setdefault(p.instrument.id, []).append(p)
     metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of)
     freshness = holding_freshness(session, positions)
     anomalies = prices_service.instruments_with_price_anomalies(
@@ -461,11 +521,19 @@ def build(
     # Mutual funds with an ETF twin: the estimate while the NAV is pending, the
     # twin's accuracy once it posted. Money is valued at the one rate now.
     estimates = intraday_snapshots_service.twin_estimates(session, now)
+    # Switched off, the whole sub-row goes, not only the estimate half: a "twin was
+    # 0.3 pp off" line under a holding is twin machinery too, and reads oddly for a
+    # feature that is disabled. The accuracy figures stay available where you would
+    # go to judge them, Health & Repair > ETF twins, which reads them directly.
+    twins_on = intraday_snapshots_service.estimates_enabled(session)
     session_date = intraday_snapshots_service.last_session_date(now)
     fx_prev = intraday_snapshots_service.previous_close_fx(session, session_date)
     est_deltas: dict[int, Decimal] = {}
     est_moves: dict[int, Decimal | None] = {}
     for card, row in zip(cards, rows, strict=True):
+        if not twins_on:
+            row["twin"] = None
+            continue
         view, delta, est_move = _twin_view(
             session,
             card=card,
@@ -476,6 +544,7 @@ def build(
             fx=ctx.fx_rate_eur_usd,
             fx_prev=fx_prev,
             ccy=ccy,
+            account_positions=by_instrument_unmerged.get(card.instrument_id, []),
         )
         row["twin"] = view
         if delta is not None:

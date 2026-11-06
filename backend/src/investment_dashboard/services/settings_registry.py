@@ -415,6 +415,21 @@ DEFS: tuple[SettingDef, ...] = (
         unit="s",
     ),
     SettingDef(
+        "twin.estimates_enabled",
+        SettingType.BOOL,
+        True,
+        "data_refresh",
+        "Estimate pending mutual-fund NAVs from their ETF twin",
+        help=(
+            "While a mutual fund's NAV for the session has not posted yet, its ETF twin "
+            "estimates it, and that estimate replaces the headline portfolio value (and "
+            "the Holdings rows' twin figures) everywhere on the Overview and Holdings "
+            "pages. Turn this off to show only the official total, with its last posted "
+            "NAV, until the real NAV lands — the twin-accuracy figures below still "
+            "track how the twin has been doing, they are just not blended into the total."
+        ),
+    ),
+    SettingDef(
         "twin.divergence_window",
         SettingType.INT,
         20,

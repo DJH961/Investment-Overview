@@ -38,6 +38,7 @@ from investment_dashboard.api.schemas.maintenance import (
     SchedulerState,
     SplitsDto,
     TiingoUsage,
+    TwinHealth,
 )
 from investment_dashboard.errors import ValidationError
 from investment_dashboard.services import (
@@ -103,6 +104,14 @@ def tiingo_usage(_actor: SessionActorDep) -> dict[str, Any]:
     from investment_dashboard.services import tiingo_usage_service  # noqa: PLC0415
 
     return tiingo_usage_service.usage()
+
+
+@router.get("/twins", response_model=TwinHealth)
+def twin_health(_actor: SessionActorDep) -> dict[str, Any]:
+    """ETF-twin settings and, per mapped fund, its live status, stored history and accuracy."""
+    from investment_dashboard.services import twin_health_service  # noqa: PLC0415
+
+    return twin_health_service.health()
 
 
 @router.post("/probe", response_model=ProbeResult)

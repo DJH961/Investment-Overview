@@ -217,6 +217,13 @@ def test_after_close_before_nav_the_split_runs_on_the_estimated_book(api_db: Pat
         assert abs(D(est["daily_move"]) - total_change) < D("1e-9")
         assert abs(D(est["daily_move"]) - (D(ls["value_now_est"]) - prev)) < D("1e-9")
         assert abs(D(est["daily_growth_pct"]) - total_change / prev) < D("1e-9")
+        # issue #9: ``total_value`` comes from ``metrics.total_value`` (computed by
+        # ``compute_portfolio_metrics``), but ``daily_move``/``daily_growth_pct`` come
+        # from the independently-computed last-session split (``metrics_service._book_holdings``,
+        # valued ``as_of=session_date``). Nothing asserts the two books agree; this pins
+        # the relationship every consumer assumes: subtracting the move off the total
+        # must land back on the SAME previous-close value ``daily_growth_pct`` divides by.
+        assert abs(D(est["total_value"]) - D(est["daily_move"]) - prev) < D("1e-9")
         # The official total change (overnight currency included) mirrors the estimate:
         # their difference is exactly the twin adjustment, also when the rate moved.
         assert abs(D(ls["day_move"]) - (D(ls["move"]) + D(ls["overnight_currency"]))) < D("1e-9")
@@ -411,3 +418,192 @@ def test_estimated_day_move_ignores_the_stale_last_session_move(api_db: Path) ->
                 assert got[2] == want[2]
 
         check()
+
+
+# -- the divergence's money is a PAST session's gap: it must use THAT session's rate ----
+
+
+def test_divergence_money_uses_the_last_sessions_own_rate_not_now(api_db: Path) -> None:
+    """``stats.last_date`` can be weeks old: the gap money must be struck at THAT
+    session's close rate, never "now"'s (the currency rule — a past valuation is
+    never re-struck at a later rate). Regression for issue #1: this used to value
+    the gap at ``ctx.fx_rate_eur_usd`` (today's rate).
+
+    Thu->Fri: fund NAV 190->200 (+5.263 %), twin 100->105 (+5 %): the twin ran
+    0.2632 pp behind, worth -0.5 native per share (190 x (105/100 - 200/190)).
+    Friday's close rate is 1.10; "now" (Monday) is 1.30 -- a world apart, so the
+    bug and the fix give very different numbers.
+    """
+    thu, fri = date(2024, 5, 30), date(2024, 5, 31)
+    with ledger_session_scope() as s:
+        acct = accounts_repo.create_account(
+            s,
+            broker="fidelity",
+            account_label="Main",
+            native_currency="USD",
+            account_type="brokerage",
+        )
+        fund = instruments_repo.get_or_create(
+            s, symbol="FUNDX", asset_class="mutual_fund", native_currency="USD"
+        )
+        prices_repo.upsert_closes(s, fund.id, {thu: D("190"), fri: D("200")})  # MON: pending
+        fx_repo.upsert_rates(s, {thu: D("1.05"), fri: D("1.10"), MON: D("1.30")})
+        instrument_overrides_repo.upsert(s, fund.id, intraday_twin="TWN")
+        legs = {"fx_rate_to_eur": D("1.10")}
+        s.add_all(
+            [
+                Transaction(
+                    account_id=acct.id,
+                    date=fri,
+                    kind="deposit",
+                    source=TransactionSource.MANUAL,
+                    net_native=D("2000"),
+                    net_usd=D("2000"),
+                    net_eur=D("1818.18"),
+                    **legs,
+                ),
+                Transaction(
+                    account_id=acct.id,
+                    date=fri,
+                    kind="buy",
+                    source=TransactionSource.MANUAL,
+                    instrument_id=fund.id,
+                    quantity=D("10"),
+                    price_native=D("200"),
+                    net_native=D("-2000"),
+                    net_usd=D("-2000"),
+                    net_eur=D("-1818.18"),
+                    **legs,
+                ),
+            ]
+        )
+        s.flush()
+        with cache_write_session(s) as cache:
+            twin_prices_repo.upsert_prices(
+                cache,
+                "TWN",
+                {
+                    datetime(2024, 5, 30, 20, 0): D("100"),  # Thursday close
+                    datetime(2024, 5, 31, 20, 0): D("105"),  # Friday close
+                    datetime(2024, 6, 3, 13, 30): D("105"),  # Monday: no move yet
+                    datetime(2024, 6, 3, 17, 0): D("107"),  # Monday, during the session
+                },
+            )
+    with ledger_session_scope() as s:
+        page = holdings.build(s, ccy="EUR", as_of=MON, now=DURING)
+    twin = _fund_row(page)["twin"]
+    assert twin["pending"] is True
+    div = twin["divergence"]
+    assert div is not None
+    assert div["last_date"] == fri.isoformat()
+    # -0.5 native per share x 10 sh = -5 USD, valued at FRIDAY's close rate (1.10).
+    assert abs(D(div["last_money"]) - (D("-5") / D("1.10"))) < D("1e-9")
+    # Not the buggy value (valued at "now"'s Monday rate, 1.30).
+    assert abs(D(div["last_money"]) - (D("-5") / D("1.30"))) > D("1e-3")
+
+
+def test_divergence_money_sums_every_account_not_just_the_merged_one(api_db: Path) -> None:
+    """A fund held in both a USD and a EUR account must book its posted-NAV
+    divergence money across BOTH legs, not all of it in whichever account the
+    (shares-summing) merge happened to keep (issue #2).
+
+    Fund NAV posts Monday at 209 (prev 200, +4.5 %); twin closed at 105 (+5 %):
+    the twin ran 0.5 pp high. 10 USD-booked shares + 5 EUR-booked shares each see
+    the same native price step (+1 per share): 10 USD native, 5 EUR native.
+    """
+    with ledger_session_scope() as s:
+        acct_usd = accounts_repo.create_account(
+            s,
+            broker="fidelity",
+            account_label="USD",
+            native_currency="USD",
+            account_type="brokerage",
+        )
+        acct_eur = accounts_repo.create_account(
+            s,
+            broker="vanguard",
+            account_label="EUR",
+            native_currency="EUR",
+            account_type="brokerage",
+        )
+        fund = instruments_repo.get_or_create(
+            s, symbol="FUNDX", asset_class="mutual_fund", native_currency="USD"
+        )
+        prices_repo.upsert_closes(s, fund.id, {FRI: D("200"), MON: D("209")})
+        fx_repo.upsert_rates(s, {FRI: D("1.10"), MON: D("1.10")})
+        instrument_overrides_repo.upsert(s, fund.id, intraday_twin="TWN")
+        legs = {"fx_rate_to_eur": D("1.10")}
+        s.add_all(
+            [
+                Transaction(
+                    account_id=acct_usd.id,
+                    date=FRI,
+                    kind="deposit",
+                    source=TransactionSource.MANUAL,
+                    net_native=D("2000"),
+                    net_usd=D("2000"),
+                    net_eur=D("1818.18"),
+                    **legs,
+                ),
+                Transaction(
+                    account_id=acct_usd.id,
+                    date=FRI,
+                    kind="buy",
+                    source=TransactionSource.MANUAL,
+                    instrument_id=fund.id,
+                    quantity=D("10"),
+                    price_native=D("200"),
+                    net_native=D("-2000"),
+                    net_usd=D("-2000"),
+                    net_eur=D("-1818.18"),
+                    **legs,
+                ),
+                Transaction(
+                    account_id=acct_eur.id,
+                    date=FRI,
+                    kind="deposit",
+                    source=TransactionSource.MANUAL,
+                    net_native=D("1000"),
+                    net_usd=D("1100"),
+                    net_eur=D("1000"),
+                    **{"fx_rate_to_eur": D("1")},
+                ),
+                Transaction(
+                    account_id=acct_eur.id,
+                    date=FRI,
+                    kind="buy",
+                    source=TransactionSource.MANUAL,
+                    instrument_id=fund.id,
+                    quantity=D("5"),
+                    price_native=D("200"),
+                    net_native=D("-1000"),
+                    net_usd=D("-1100"),
+                    net_eur=D("-1000"),
+                    **{"fx_rate_to_eur": D("1")},
+                ),
+            ]
+        )
+        s.flush()
+        with cache_write_session(s) as cache:
+            twin_prices_repo.upsert_prices(
+                cache,
+                "TWN",
+                {
+                    datetime(2024, 5, 31, 20, 0): D("100"),  # Friday close
+                    datetime(2024, 6, 3, 20, 0): D("105"),  # Monday close: +5 %
+                },
+            )
+    with ledger_session_scope() as s:
+        usd_page = holdings.build(
+            s, ccy="USD", as_of=MON, now=datetime(2024, 6, 3, 22, 0, tzinfo=UTC)
+        )
+        eur_page = holdings.build(
+            s, ccy="EUR", as_of=MON, now=datetime(2024, 6, 3, 22, 0, tzinfo=UTC)
+        )
+    usd_div = _fund_row(usd_page)["twin"]["divergence"]
+    eur_div = _fund_row(eur_page)["twin"]["divergence"]
+    assert D(usd_div["last_pp"]) == D("0.5")
+    # 10 USD (FX-free) + 5 EUR converted at 1.10 = 10 + 5.5 = 15.5 USD, never just
+    # 10 or 15 (which is what summing shares under one arbitrary currency gives).
+    assert D(usd_div["last_money"]) == D("15.5")
+    assert abs(D(eur_div["last_money"]) - (D("10") / D("1.10") + D("5"))) < D("1e-9")

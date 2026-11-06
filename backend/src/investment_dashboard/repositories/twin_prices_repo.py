@@ -54,6 +54,11 @@ def prices_in_range(
     return out
 
 
+def distinct_symbols(session: Session) -> list[str]:
+    """Every symbol with at least one stored row (intraday bar or session close)."""
+    return sorted(session.scalars(select(IntradayTwinPrice.symbol).distinct()).all())
+
+
 def delete_before(session: Session, cutoff: datetime, *, keep: Collection[datetime] = ()) -> int:
     """Delete rows older than ``cutoff``, except those captured exactly at an instant in ``keep``."""
     stmt = delete(IntradayTwinPrice).where(IntradayTwinPrice.captured_at < cutoff)

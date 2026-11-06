@@ -8,6 +8,7 @@ import { useJobCatalogue, type JobInfo, type JobRun } from "../../lib/queries/ma
 import { defaultParams, JobParamsForm, type JobParams } from "./JobParamsForm";
 import { RunJob } from "./RunJob";
 import { TiingoCard } from "./TiingoCard";
+import { TwinsCard } from "./TwinsCard";
 
 /** What survives: the one difference people must not miss. */
 export const JOB_NOTES: Record<string, string> = {
@@ -63,6 +64,7 @@ export function RepairTab() {
         {c.heavy_job && <strong> A heavy job is running now ({c.heavy_job}); others wait.</strong>}
       </p>
       <TiingoCard />
+      <TwinsCard />
       {c.groups.map((g) => {
         const jobs = c.jobs.filter((j) => j.group === g.id);
         if (jobs.length === 0) return null;

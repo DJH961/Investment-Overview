@@ -15,6 +15,8 @@ const check = (over: Record<string, unknown>) => ({
   ...over,
 });
 
+const TWINS = { enabled: true, window: 20, funds: [] };
+
 const DIAG = {
   status: "warning",
   count: 2,
@@ -116,6 +118,7 @@ beforeEach(() => {
         return json({ id: "run-x", job: "x", status: "succeeded", actor: "s", params: {}, result: { updated: 3 }, error: null, started_at: "2025-05-01T10:00:00Z", finished_at: "2025-05-01T10:00:05Z" });
       if (url.includes("/api/maintenance/jobs")) return json(CATALOGUE);
       if (url.includes("/api/maintenance/tiingo")) return json(TIINGO);
+      if (url.includes("/api/maintenance/twins")) return json(TWINS);
       if (url.includes("/problems/")) return json({ dismissed: 1 });
       if (url.includes("/api/diagnostics")) return json(DIAG);
       if (url.includes("/refresh")) return json({ running: false });

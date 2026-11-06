@@ -17,6 +17,9 @@ const EST_HELP =
 export function GroupSummary({ group, ccy }: { group: HoldingGroupDto; ccy: string }) {
   const estValue = toNum(group.est_value);
   const estMove = toNum(group.est_today_move);
+  // A pending-NAV member contributes its last published move to today_move, so while an
+  // estimate exists the estimated percentage is the one that describes today.
+  const estPct = toNum(group.est_today_pct);
   return (
     <section className="holdings-page__gsum" aria-label={`Subtotal ${group.key}`}>
       <div className="holdings-page__gcell holdings-page__gcell--value">
@@ -48,6 +51,11 @@ export function GroupSummary({ group, ccy }: { group: HoldingGroupDto; ccy: stri
           <span className="holdings-page__gest" data-testid="group-est-move">
             <EstChip />
             <Money amount={estMove} currency={ccy} signed />
+            {estPct !== null && (
+              <span className="holdings-page__gpct">
+                (<Percent ratio={estPct} signed colored />)
+              </span>
+            )}
           </span>
         )}
       </div>

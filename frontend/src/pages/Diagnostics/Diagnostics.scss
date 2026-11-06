@@ -627,3 +627,102 @@
     font-weight: var(--font-weight-semibold);
   }
 }
+
+// Health & Repair > ETF twins: one block per fund that leans on a twin.
+.twins {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  &__lead {
+    margin: 0;
+    font-size: var(--font-size-sm);
+  }
+
+  &__muted {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__fund {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+  }
+
+  &__fund-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  &__pair {
+    font-size: var(--font-size-md);
+  }
+
+  // Estimating right now carries the same colour the Overview marks an estimate with.
+  &__state {
+    padding: 0 var(--space-2);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    white-space: nowrap;
+
+    &--on {
+      border-color: var(--color-estimate);
+      background: var(--color-estimate-soft);
+    }
+  }
+
+  &__name {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: var(--space-1) var(--space-4);
+    margin: var(--space-1) 0 0;
+  }
+
+  &__fact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+  }
+
+  &__fact-key {
+    color: var(--color-muted);
+  }
+
+  &__fact-value {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__gap {
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -166,7 +166,11 @@ class HoldingGroup(ApiModel):
         default=None, description="Sum of the members' official day moves (null if one lacks it)"
     )
     today_pct: DecStr | None = Field(
-        default=None, description=f"today_move over the group's previous value ({_FRAC})"
+        default=None,
+        description=(
+            f"today_move over the group's previous value ({_FRAC}). A pending-NAV member "
+            "contributes its last published move, so prefer est_today_pct when it is set"
+        ),
     )
     est_value: DecStr | None = Field(
         default=None, description="value with pending mutual funds at their twin estimate"
@@ -174,6 +178,10 @@ class HoldingGroup(ApiModel):
     est_today_move: DecStr | None = Field(
         default=None,
         description="today_move with pending funds at their twin estimate (null: none pending)",
+    )
+    est_today_pct: DecStr | None = Field(
+        default=None,
+        description=f"est_today_move over the group's estimated previous value ({_FRAC})",
     )
 
 

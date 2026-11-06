@@ -38,11 +38,6 @@ function TwinLink() {
   return <span className="overview-holdings__twin-link" aria-hidden />;
 }
 
-/**
- * One quiet line under a NAV fund whose ETF twin is estimating it (NAV not posted yet):
- * `└┄ [≈ est.] VOO · today 14:02   ≈value   ≈+0.61% ≈+€254`. Once the NAV posted it
- * only says how far the twin was off, until the next open. Nothing here is official.
- */
 /** Whether the row carries a twin line (estimate while pending, else how far off it was). */
 export function hasTwinLine(row: HoldingRowDto): boolean {
   const t = row.twin;
@@ -50,6 +45,11 @@ export function hasTwinLine(row: HoldingRowDto): boolean {
   return t.pending ? t.est_value != null : toNum(t.divergence?.last_pp ?? null) !== null;
 }
 
+/**
+ * One quiet line under a NAV fund whose ETF twin is estimating it (NAV not posted yet):
+ * `└┄ [≈ est.] VOO · today 14:02   ≈value   ≈+0.61% ≈+€254`. Once the NAV posted it
+ * only says how far the twin was off, until the next open. Nothing here is official.
+ */
 function TwinSubRow({ row, ccy, timeZone }: { row: HoldingRowDto; ccy: string; timeZone?: string }) {
   const twin = row.twin;
   if (!twin) return null;
