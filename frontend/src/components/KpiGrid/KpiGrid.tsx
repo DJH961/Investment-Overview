@@ -3,10 +3,11 @@ import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
-import { formatPercent } from "../../lib/format";
+import { formatPercent, formatPp } from "../../lib/format";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
+import { DayFacts } from "./DayFacts";
 
 type Kpis = OverviewDto["kpis"];
 type Verdict = OverviewDto["market_verdict"];
@@ -75,11 +76,29 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     ) : undefined;
   const v = data?.market_verdict;
 
+  // The lifetime return split, under the tile it explains. The GROWTH figure is the
+  // tile's own value and shows in every currency — never hide in one view a number
+  // the other shows. The currency clause is gated on the VALUE, not on the currency
+  // name: a dollar return has no exchange-rate leg, so the server reports an effect
+  // of 0 and the clause simply does not apply. Gating on the figure rather than on
+  // "is this EUR" keeps the two views structurally identical (the Overview currency
+  // test asserts that) and still works for a EUR-native holding viewed in USD.
+  const split = data?.currency?.return_split;
+  const effect = toNum(split?.currency_effect_pp ?? null);
+  const growthSplit = split ? (
+    <span data-testid="hero-split">
+      Investment {formatPercent(toNum(split.investment_return), { signed: true })}
+      {effect !== null && Math.abs(effect) >= 0.00005 && <> · Currency {formatPp(effect)}</>}
+    </span>
+  ) : undefined;
+
   const expense = toNum(k?.weighted_expense_ratio);
   const ttm = toNum(k?.dividends_ttm);
 
   return (
     <div className="kpi-grid">
+      {/* Today's figures first: they explain the headline immediately above. */}
+      <DayFacts data={data} currency={currency} />
       <div className="kpi-grid__tiles">
         <KpiTile
           label="Invested"
@@ -130,6 +149,7 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={pct(k?.total_growth_compounded)}
           secondary={pct2(k2?.total_growth_compounded)}
+          hint={growthSplit}
         />
         <KpiTile
           label="YTD"

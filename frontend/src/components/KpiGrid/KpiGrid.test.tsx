@@ -52,4 +52,31 @@ describe("KpiGrid", () => {
     rerender(<KpiGrid data={data({ beating: null })} currency="EUR" loading={false} />);
     expect(screen.getByText("Need VT history")).toBeInTheDocument();
   });
+
+  // The split explains the Total growth tile: reporting growth == investment
+  // return + currency effect. The server takes the effect against whichever
+  // currency is on screen, so neither view is missing a figure the other has.
+  const withSplit = (effect: string) =>
+    ({
+      ...data({ beating: true }),
+      currency: { return_split: { investment_return: "0.3", currency_effect_pp: effect } },
+    }) as unknown as OverviewDto;
+
+  it("explains Total growth with the investment / currency split in EUR", () => {
+    render(<KpiGrid data={withSplit("-0.012")} currency="EUR" loading={false} />);
+    const split = screen.getByTestId("hero-split");
+    expect(split).toHaveTextContent("Investment +30.00%");
+    expect(split).toHaveTextContent("Currency -1.20 pp");
+  });
+
+  it("drops only the currency clause when the rate did nothing — never the growth", () => {
+    // A dollar return has no exchange-rate leg, so the server reports an effect of
+    // 0 and the clause does not apply. The investment figure stays, so the USD view
+    // is not missing a number the EUR view shows.
+    render(<KpiGrid data={withSplit("0")} currency="USD" loading={false} />);
+    const split = screen.getByTestId("hero-split");
+    expect(split).toHaveTextContent("Investment +30.00%");
+    expect(split).not.toHaveTextContent("Currency");
+    expect(screen.getByText("Total growth")).toBeInTheDocument();
+  });
 });

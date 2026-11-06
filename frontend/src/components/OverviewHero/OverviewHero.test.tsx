@@ -26,10 +26,16 @@ describe("OverviewHero", () => {
     expect(screen.getByText("+€1,500.00")).toBeInTheDocument();
     expect(screen.getByText("Last session · Fri")).toBeInTheDocument();
     // When the price is from vs when the app fetched it, both labelled.
+    // Compact in the hero: the day is kept because it is not today, "today" is
+    // dropped from the fetch time, and the full wording stays in the tooltip.
     const stamps = container.querySelector(".overview-hero__stamps");
-    expect(stamps).toHaveTextContent("Price as of Fri 20:00 (close)");
-    expect(stamps).toHaveTextContent("Updated today 08:00");
-    expect(screen.getByText("Investment +30.00% · Currency -1.20 pp")).toBeInTheDocument();
+    expect(stamps).toHaveTextContent("Fri 20:00 (close)");
+    expect(stamps).toHaveTextContent("Updated 08:00");
+    expect(stamps).not.toHaveTextContent("today");
+    // The supporting figures live in the KPI block now (see KpiGrid/DayFacts):
+    // the hero is the value, the other currency and one change row, nothing else.
+    expect(screen.queryByTestId("hero-split")).toBeNull();
+    expect(screen.queryByTestId("hero-official")).toBeNull();
   });
   it("shows the live corner stamp and the incomplete-total note", () => {
     const live = {
@@ -42,15 +48,11 @@ describe("OverviewHero", () => {
     expect(container.querySelector(".overview-hero__corner--live")).not.toBeNull();
     expect(screen.getByText(/total is incomplete/)).toBeInTheDocument();
   });
-  it("shows the overnight currency on its own line while the market is shut", () => {
+  it("carries no day facts of its own, in any market state", () => {
     const shut = { ...base, last_session: { overnight_currency: "-120.5" } } as unknown as OverviewDto;
     render(<OverviewHero data={shut} currency="EUR" loading={false} now={NOW} />);
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("Overnight currency");
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("120.50");
-  });
-  it("hides the overnight line when there is no last-session split", () => {
-    render(<OverviewHero data={base} currency="EUR" loading={false} now={NOW} />);
     expect(screen.queryByTestId("overnight-currency")).toBeNull();
+    expect(screen.queryByTestId("last-session-est")).toBeNull();
   });
 
   const estimate = {
@@ -86,61 +88,25 @@ describe("OverviewHero", () => {
     expect(screen.queryByTestId("last-session-est")).toBeNull();
   });
 
-  it("estimating: headline is the estimate with a chip, the official total sits in a small line", () => {
+  it("estimating: the headline is the estimate, chipped, in both currencies", () => {
     const { container } = render(<OverviewHero data={estimating} currency="EUR" loading={false} now={NOW} />);
     expect(container.querySelector(".overview-hero__value")).toHaveTextContent("€201,600.00");
     expect(screen.getByTestId("hero-estimate-chip")).toHaveTextContent("≈ est.");
     expect(screen.getByRole("button", { name: "About the estimated total" })).toBeInTheDocument();
-    const official = screen.getByTestId("hero-official");
-    expect(official).toHaveTextContent("Official");
-    expect(official).toHaveTextContent("€200,000.00");
-    // Shut market: the official change since the previous close (incl. overnight
-    // currency), as money AND percent — "how far off is the estimate" is a money
-    // question, so the figure to compare the headline against is given in money.
-    const change = screen.getByTestId("hero-official-change");
-    expect(change).toHaveTextContent("+€1,380.00");
-    expect(change).toHaveTextContent("+0.69%");
-    // The open-market day move is not what a shut market reports.
-    expect(official).not.toHaveTextContent("1,500");
     // Secondary currency follows its own estimate.
     expect(screen.getByText("US$217,728.00")).toBeInTheDocument();
+    // The official total is not here — the chip's tooltip and the KPI block carry it.
+    expect(screen.queryByTestId("hero-official")).toBeNull();
   });
 
-  it("open market, estimating: the small line is the plain official day move", () => {
-    const open = {
-      ...estimating,
-      freshness: { ...base.freshness, market_state: "open" },
-    } as unknown as OverviewDto;
-    render(<OverviewHero data={open} currency="EUR" loading={false} now={NOW} />);
-    // Open market: the plain official day move, money and percent.
-    const change = screen.getByTestId("hero-official-change");
-    expect(change).toHaveTextContent("+€1,500.00");
-    expect(change).toHaveTextContent("+0.75%");
-    // Not the shut-market figure, which folds in the overnight currency.
-    expect(change).not.toHaveTextContent("1,380");
-  });
-
-  it("shut market, estimating: the day figure includes overnight and the split lines add up to it", () => {
+  it("the change row is the estimated move, and the same row in every market state", () => {
     const { container } = render(<OverviewHero data={estimating} currency="EUR" loading={false} now={NOW} />);
     const move = container.querySelector(".overview-hero__move");
     expect(move).toHaveTextContent("+€3,100.00");
     expect(move).toHaveTextContent("+1.56%");
-    expect(screen.getByTestId("last-session-est")).toHaveTextContent("+€3,200.00");
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("100.00");
-    expect(screen.getByTestId("overnight-currency")).not.toHaveTextContent("120.50");
-    // Both halves sit on one "<day> = a · b" line, so the headline move is visibly
-    // their sum rather than a third unexplained figure.
-    const breakdown = screen.getByTestId("day-breakdown");
-    expect(breakdown).toHaveTextContent("Of which");
-    expect(screen.getByTestId("last-session-est")).toHaveTextContent("Last session");
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("Overnight FX");
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("-€100.00");
-  });
-
-  it("not estimating: the overnight line keeps its own label and no breakdown prefix", () => {
-    const shut = { ...base, last_session: { overnight_currency: "-120.5" } } as unknown as OverviewDto;
-    render(<OverviewHero data={shut} currency="EUR" loading={false} now={NOW} />);
-    expect(screen.queryByTestId("day-breakdown")).toBeNull();
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("Overnight currency");
+    // Its two halves (price move, overnight FX) are reported below, not here.
+    expect(move).not.toHaveTextContent("Price move");
+    expect(move).not.toHaveTextContent("Overnight");
+    expect(move).not.toHaveTextContent("3,200");
   });
 });
