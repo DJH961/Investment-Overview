@@ -1287,6 +1287,11 @@
             ],
             "title": "Current Value"
           },
+          "is_cash": {
+            "default": false,
+            "title": "Is Cash",
+            "type": "boolean"
+          },
           "members": {
             "items": {
               "type": "integer"
@@ -1349,6 +1354,12 @@
             "title": "Instrument Id",
             "type": "integer"
           },
+          "is_cash": {
+            "default": false,
+            "description": "Money-market fund or cash position (the Cash group)",
+            "title": "Is Cash",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1408,6 +1419,19 @@
             },
             "title": "Instruments",
             "type": "array"
+          },
+          "investable_cash": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cash held (money-market funds + cash positions) in `ccy`, at the spot rate",
+            "title": "Investable Cash"
           },
           "projection_defaults": {
             "$ref": "#/components/schemas/ProjectionDefaultsOut"
@@ -2900,6 +2924,11 @@
           "instrument_id": {
             "title": "Instrument Id",
             "type": "integer"
+          },
+          "is_cash": {
+            "default": false,
+            "title": "Is Cash",
+            "type": "boolean"
           },
           "key": {
             "title": "Key",
@@ -7902,6 +7931,12 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "use_held_cash": {
+            "default": false,
+            "description": "Fund the amount from the cash held (money-market / cash positions): those holdings fall by what is invested, so it is not counted twice.",
+            "title": "Use Held Cash",
+            "type": "boolean"
           }
         },
         "required": [
@@ -8089,6 +8124,32 @@
               }
             ],
             "title": "Cash"
+          },
+          "from_held_cash": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Part of the amount funded from held cash (null when not used)",
+            "title": "From Held Cash"
+          },
+          "held_cash": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cash the portfolio holds (money-market + cash), in `ccy`",
+            "title": "Held Cash"
           },
           "leftover": {
             "anyOf": [

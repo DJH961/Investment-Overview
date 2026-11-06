@@ -67,6 +67,8 @@ class DriftRow(ApiModel):
     current_value: DecStr | None = None
     #: Target value minus current value; positive = buy, negative = sell.
     delta_value: DecStr | None = None
+    #: Money-market / cash holding: never a rebalancing target unless given a target.
+    is_cash: bool = False
 
 
 class CategoryDriftRow(ApiModel):
@@ -174,6 +176,11 @@ class PlanRequest(ApiModel):
     mode: Literal["fund", "category"] = "fund"
     fund_weights: list[FundWeightIn] = Field(default_factory=list)
     category_weights: list[CategoryWeightIn] = Field(default_factory=list)
+    use_held_cash: bool = Field(
+        default=False,
+        description="Fund the amount from the cash held (money-market / cash positions): "
+        "those holdings fall by what is invested, so it is not counted twice.",
+    )
 
 
 class PlanSummaryOut(ApiModel):
@@ -188,6 +195,12 @@ class PlanSummaryOut(ApiModel):
     other_leftover: DecStr | None = None
     pct_of_wealth: DecStr | None = Field(
         default=None, description=f"Cash as a share of current portfolio value ({_FRAC})"
+    )
+    held_cash: DecStr | None = Field(
+        default=None, description="Cash the portfolio holds (money-market + cash), in `ccy`"
+    )
+    from_held_cash: DecStr | None = Field(
+        default=None, description="Part of the amount funded from held cash (null when not used)"
     )
 
 

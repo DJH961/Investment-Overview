@@ -6,6 +6,7 @@ import { Card } from "../../components/Card";
 import { ErrorState } from "../../components/ErrorState";
 import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
+import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Switch } from "../../components/Switch";
@@ -22,6 +23,7 @@ import {
   fromSavedBuilder,
   toSavedBuilder,
   type SavedBuilder,
+  cashIn,
   isEtfClass,
   isOff,
   presetClear,
@@ -64,13 +66,17 @@ function PctInput({ label, value, onChange }: { label: string; value: string; on
 }
 
 /** A short kind badge for a fund chip ("ETF", "Fund", "Stock"). */
-function kindLabel(assetClass: string | null | undefined): string {
+function kindLabel(assetClass: string | null | undefined, isCash = false): string {
+  if (isCash) return "Cash";
   const c = (assetClass ?? "").toLowerCase();
   if (c === "etf") return "ETF";
   if (c === "mutual_fund") return "Fund";
   if (c === "stock" || c === "equity") return "Stock";
   return c ? c.replace(/_/g, " ") : "";
 }
+
+/** A preset over some rows, with every other row (cash) at an explicit 0. */
+const zeroFilled = (all: Weighable[], preset: Weights): Weights => ({ ...presetClear(all), ...preset });
 
 /** A typed percent as a fraction (junk counts as 0). */
 const typed = (v: string | undefined) => (Number(v) || 0) / 100;
@@ -90,6 +96,9 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   const [mode, setMode] = usePersistentState<Mode>("calc.mode", "fund", isMode);
   const [etfOnly, setEtfOnly] = usePersistentState<boolean>("calc.etfOnly", false, (v): v is boolean => typeof v === "boolean");
   const [saveOpen, setSaveOpen] = useState(false);
+  // True while the amount is the cash already held (the server then moves it out of the Cash group).
+  const [fromCash, setFromCash] = useState(false);
+  const heldCash = cashIn(inputs, ccy);
 
   const funds: Weighable[] = useMemo(
     () => inputs.instruments.map((i) => ({ key: String(i.instrument_id), current_pct: i.current_pct })),
@@ -97,6 +106,15 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   );
   const cats: Weighable[] = useMemo(
     () => inputs.categories.map((c) => ({ key: c.name, current_pct: c.current_pct })),
+    [inputs.categories],
+  );
+  // Presets never aim new money at cash; a Cash target is only set by typing one.
+  const presetFunds: Weighable[] = useMemo(
+    () => inputs.instruments.filter((i) => !i.is_cash).map((i) => ({ key: String(i.instrument_id), current_pct: i.current_pct })),
+    [inputs.instruments],
+  );
+  const presetCats: Weighable[] = useMemo(
+    () => inputs.categories.filter((c) => !c.is_cash).map((c) => ({ key: c.name, current_pct: c.current_pct })),
     [inputs.categories],
   );
   const byId = useMemo(() => new Map(inputs.instruments.map((i) => [i.instrument_id, i])), [inputs.instruments]);
@@ -114,7 +132,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   }, [inputs.categories, inputs.instruments, byId]);
   const active = allocations.targets.find((t) => t.id === allocations.active_target_id);
 
-  const [fundW, setFundW] = useState<Weights>(() => (active ? presetSaved(funds, active) : presetCurrent(funds)));
+  const [fundW, setFundW] = useState<Weights>(() => (active ? presetSaved(funds, active) : zeroFilled(funds, presetCurrent(presetFunds))));
   const [noBuy, setNoBuy] = useState<Record<string, boolean>>(() => (active ? savedNoBuy(active) : {}));
   const memberMap = useMemo(
     () => Object.fromEntries(inputs.categories.map((c) => [c.name, c.members])),
@@ -123,10 +141,11 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   // The category editor starts from the active target's saved selection when it has one.
   const [initialCats] = useState<CategoryEditor>(() => {
     const fresh: CategoryEditor = {
-      weights: presetCurrent(cats),
+      weights: zeroFilled(cats, presetCurrent(presetCats)),
       split: {},
       selected: Object.fromEntries(
         inputs.categories.map((c) => {
+          if (c.is_cash) return [c.name, []];
           const held = c.members.filter((m) => Number(byId.get(m)?.current_pct ?? 0) > 0);
           return [c.name, held.length ? held : c.members];
         }),
@@ -159,6 +178,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   const effectiveFor = (cat: string) => effectiveSelection(memberIds(cat), selected[cat] ?? [], etfOnly, isEtfId);
 
   const rows = mode === "fund" ? funds : cats;
+  const presetRows = mode === "fund" ? presetFunds : presetCats;
   const weights = mode === "fund" ? fundW : catW;
   const setWeights = mode === "fund" ? setFundW : setCatW;
   const total = totalWeight(weights);
@@ -169,6 +189,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   const request = (): PlanRequest => ({
     amount: amount || "0",
     ccy,
+    use_held_cash: fromCash && heldCash > 0,
     fractional,
     allow_sell: allowSell,
     mode,
@@ -230,7 +251,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
         <div className="allocations__step">
           <div className="allocations__amount">
             <Field label={`Cash to invest (${ccy})`}>
-              {(c) => <Input {...c} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />}
+              {(c) => <Input {...c} inputMode="decimal" value={amount} onChange={(e) => { setFromCash(false); setAmount(e.target.value); }} />}
             </Field>
             <SegmentedControl
               ariaLabel="Cash currency"
@@ -239,8 +260,25 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
                 { value: "USD", label: "USD" },
               ]}
               value={ccy}
-              onChange={setCcy}
+              onChange={(v) => {
+                setFromCash(false);
+                setCcy(v);
+              }}
             />
+            {heldCash > 0 && (
+              <button
+                type="button"
+                className="allocations__cash-chip"
+                aria-pressed={fromCash}
+                title="Fill the amount with the money-market and cash you hold; it moves out of Cash into your targets."
+                onClick={() => {
+                  setAmount(String(Math.floor(heldCash * 100) / 100));
+                  setFromCash(true);
+                }}
+              >
+                Use my cash: <Money amount={heldCash} currency={ccy} digits={0} />
+              </button>
+            )}
           </div>
           <div className="allocations__switches">
             <Switch
@@ -277,10 +315,10 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
         }
       >
         <div className="allocations__presets">
-          <Button size="sm" variant="secondary" onClick={() => setWeights(presetCurrent(rows))}>
+          <Button size="sm" variant="secondary" onClick={() => setWeights(zeroFilled(rows, presetCurrent(presetRows)))}>
             Match current mix
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => setWeights(presetEqual(rows))}>
+          <Button size="sm" variant="secondary" onClick={() => setWeights(zeroFilled(rows, presetEqual(presetRows)))}>
             Equal weight
           </Button>
           {active && (mode === "fund" || active.builder) && (
@@ -423,7 +461,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
                               {on ? <Check className="allocations__fund-icon" /> : null}
                             </span>
                             <span className="allocations__fund-symbol">{inst?.symbol ?? m}</span>
-                            <span className="allocations__fund-kind">{kindLabel(inst?.asset_class)}</span>
+                            <span className="allocations__fund-kind">{kindLabel(inst?.asset_class, inst?.is_cash)}</span>
                             <span className="allocations__fund-pct">
                               <Percent ratio={Number(inst?.current_pct ?? 0)} digits={1} />
                             </span>

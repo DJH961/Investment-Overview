@@ -215,10 +215,15 @@ def compute_plan(
     category_of: dict[int, str] | None,
     allow_fractional: bool,
     allow_sell: bool,
+    current_values: Mapping[int, Decimal] | None = None,
 ) -> RebalancePlan:
-    """Run :func:`plan_rebalance` against the calculator data (EUR basis)."""
+    """Run :func:`plan_rebalance` against the calculator data (EUR basis).
+
+    ``current_values`` overrides the marks (used when held cash is being invested).
+    """
     by_id = data.by_id()
-    current_values = {i.instrument_id: i.current_value_eur for i in data.instruments}
+    if current_values is None:
+        current_values = {i.instrument_id: i.current_value_eur for i in data.instruments}
     no_buy_ids = set(no_buy) | extra_no_buy
     current_prices = {
         mid: by_id[mid].price_eur
@@ -467,8 +472,31 @@ def _shape_rows(
     return rows, category_rows
 
 
+def _spend_held_cash(data: CalcData, cash_eur: Decimal) -> tuple[dict[int, Decimal], Decimal]:
+    """Marks with ``cash_eur`` taken out of the cash holdings, and the amount taken.
+
+    Investing cash you already hold is a move out of the Cash group, not new money:
+    the cash positions fall by what is invested (pro rata, never below zero) so a
+    targeted Cash row is not counted twice. Returns ``(values, taken)``.
+    """
+    values = {i.instrument_id: i.current_value_eur for i in data.instruments}
+    held = data.cash_eur
+    taken = min(cash_eur, held) if held > ZERO else ZERO
+    if taken > ZERO:
+        for i in data.instruments:
+            if i.is_cash and i.current_value_eur > ZERO:
+                values[i.instrument_id] = i.current_value_eur * (held - taken) / held
+    return values, taken
+
+
 def _summary(
-    plan: RebalancePlan, *, amount: Decimal, cash_eur: Decimal, ccy: str, data: CalcData
+    plan: RebalancePlan,
+    *,
+    amount: Decimal,
+    cash_eur: Decimal,
+    ccy: str,
+    data: CalcData,
+    from_cash_eur: Decimal | None = None,
 ) -> dict[str, object]:
     """Plan KPIs in ``ccy`` and restated in the other currency at the same spot."""
     fx = data.fx_rate_usd_per_eur
@@ -487,6 +515,8 @@ def _summary(
         "other_selling": _ccy_out(sells, other, fx),
         "other_leftover": _ccy_out(plan.residual_cash, other, fx),
         "pct_of_wealth": dec(cash_eur / wealth) if wealth > ZERO else None,
+        "held_cash": _ccy_out(data.cash_eur, ccy, fx),
+        "from_held_cash": _ccy_out(from_cash_eur, ccy, fx) if from_cash_eur is not None else None,
     }
 
 
@@ -501,6 +531,7 @@ def build_builder_plan(
     fund_weights: Mapping[int, Decimal] | None = None,
     fund_no_buy: set[int] | None = None,
     categories: list[CategoryInput] | None = None,
+    use_held_cash: bool = False,
 ) -> dict[str, object]:
     """Plan for the builder's current (unsaved) mix, by fund or by category.
 
@@ -509,6 +540,10 @@ def build_builder_plan(
     back out at that same rate (a single-instant valuation conversion). The
     summary also restates the figures in the other currency at that rate.
     Percentages are fractions (0.01 = 1 %). Raises :class:`RebalanceInputError`.
+
+    ``use_held_cash``: the amount is funded from the cash the portfolio holds
+    (money-market funds and cash positions). Those holdings drop by what is
+    invested, so the money is moved, not counted twice.
     """
     if amount < ZERO or (amount == ZERO and not allow_sell):
         raise RebalanceInputError(
@@ -520,6 +555,10 @@ def build_builder_plan(
         raise RebalanceInputError("FX rate unavailable")
     by_id = data.by_id()
     current_values = {i.instrument_id: i.current_value_eur for i in data.instruments}
+    cash_eur = amount if ccy == "EUR" else amount / fx  # type: ignore[operator]
+    from_cash_eur: Decimal | None = None
+    if use_held_cash:
+        current_values, from_cash_eur = _spend_held_cash(data, cash_eur)
     category_by_id = {i.instrument_id: i.category for i in data.instruments}
     category_mode = mode == "category"
     no_buy: set[int] = set()
@@ -557,7 +596,6 @@ def build_builder_plan(
         cat_members=cat_members,
         category_by_id=category_by_id,
     )
-    cash_eur = amount if ccy == "EUR" else amount / fx  # type: ignore[operator]
     if category_mode and allow_sell:
         target_pct, extra_no_buy = held_unticked_kept(
             target_pct,
@@ -578,6 +616,7 @@ def build_builder_plan(
             category_of=category_of,
             allow_fractional=allow_fractional,
             allow_sell=allow_sell,
+            current_values=current_values,
         )
     except ValueError as exc:
         raise RebalanceInputError(str(exc)) from exc
@@ -597,7 +636,9 @@ def build_builder_plan(
         extra_no_buy=extra_no_buy,
         cat_order=cat_targets if category_mode else None,
     )
-    summary = _summary(plan, amount=amount, cash_eur=cash_eur, ccy=ccy, data=data)
+    summary = _summary(
+        plan, amount=amount, cash_eur=cash_eur, ccy=ccy, data=data, from_cash_eur=from_cash_eur
+    )
     extras = sorted(by_id[i].symbol for i in extra_no_buy if i in by_id)
     return {
         "ccy": ccy,
