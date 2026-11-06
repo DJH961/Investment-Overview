@@ -27,6 +27,10 @@ const SPLIT_TIP =
   "Since you started. Investment: the return of your holdings in the currency they trade in (mostly USD). " +
   "Currency: how much the EUR/USD exchange rate added (+) or took away (−) from your EUR return, in percentage points.";
 
+const OVERNIGHT_TIP =
+  "US markets are shut, so your dollar holdings stand still at the last close. This is how much the " +
+  "EUR/USD rate has changed their value since that close. Last session's move plus this is the total change since the previous close.";
+
 function moveTip(ccy: string, ccy2: string, closed: boolean, lastSession: boolean): string {
   return (
     `The change since the previous close, in ${ccy}. ${ccy2}: the same change measured in ${ccy2}, ` +
@@ -88,6 +92,9 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
   const lastSession = dayLabel !== "Today";
   // While US markets are shut the dollar value cannot move: say so instead of "0.00%".
   const usdFlat = marketClosed && !lastSession && toNum(k2?.daily_growth_pct ?? null) === 0;
+  // Market shut: the headline move is the last session's; the EUR/USD change since
+  // its 16:00 close is a separate line, so the two are never blended.
+  const overnight = data.last_session ? toNum(data.last_session.overnight_currency) : null;
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
     <section className={cls} aria-label="Portfolio value">
@@ -128,6 +135,13 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
             </span>
           )}
         </div>
+        {overnight !== null && (
+          <p className="overview-hero__overnight" data-testid="overnight-currency">
+            <span className="overview-hero__muted">Overnight currency</span>
+            <Money amount={overnight} currency={currency} signed colored />
+            <InfoTip label="overnight currency" content={OVERNIGHT_TIP} />
+          </p>
+        )}
         <PriceStamps className="overview-hero__stamps" price={heroPriceTime(data)} updated={fetched} options={opts} />
         {split && (split.investment_return != null || split.currency_effect_pp != null) && (
           <p className="overview-hero__split">

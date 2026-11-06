@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -744,6 +744,122 @@ def with_last_session_daily_growth(
         daily_growth_prev_as_of=daily.prev_date,
         daily_growth_fx_eur_usd=daily.fx_last,
         daily_growth_fx_eur_usd_prev=daily.fx_prev,
+    )
+
+
+@dataclass(frozen=True)
+class LastSessionSplit:
+    """The hero day move outside the session: last session's move + overnight currency.
+
+    ``move_*`` is the official closes/NAVs of ``session_date`` vs ``prev_date``,
+    each book valued at its own session's 16:00 EUR/USD rate. ``overnight_*`` is
+    the same holdings at the same official prices revalued from that close rate to
+    the rate now: the only thing that moves overnight is the currency. Per
+    currency, ``move + overnight == value_now - prev_close_value`` exactly. A fund
+    whose NAV for the session has not posted counts at its previous NAV (official
+    prices only, never an estimate).
+    """
+
+    session_date: date
+    prev_date: date
+    fx_close: Decimal
+    fx_prev_close: Decimal
+    fx_now: Decimal
+    move_eur: Decimal
+    move_usd: Decimal
+    pct_eur: Decimal | None
+    pct_usd: Decimal | None
+    overnight_eur: Decimal
+    overnight_usd: Decimal
+    value_now_eur: Decimal
+    value_now_usd: Decimal
+
+
+def _book_holdings(session: Session, on: date) -> list[Any]:
+    """The whole book on ``on`` (official closes, forward-filled) as native holdings."""
+    from investment_dashboard.domain.late_data import Holding  # noqa: PLC0415
+
+    holdings = [
+        Holding(p.account.native_currency, p.current_value_native, p.current_value_eur)
+        for p in positions_service.compute_positions(session, as_of=on)
+        if p.current_value_native
+    ]
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type not in {"savings", "cash"}:
+            continue
+        balance = positions_service.compute_cash_balance(session, account.id, as_of=on)
+        if not balance:
+            continue
+        ccy = account.native_currency.upper()
+        fallback = ZERO
+        if ccy not in {"EUR", "USD"}:
+            rate = fx_service.get_rate_eur_to_quote(session, on, quote=ccy)
+            fallback = balance / rate if rate else ZERO
+        holdings.append(Holding(ccy, balance, fallback))
+    return holdings
+
+
+def last_session_split(
+    session: Session,
+    *,
+    now: datetime,
+    fx_now: Decimal | None,
+) -> LastSessionSplit | None:
+    """Split the hero day move into the last session + overnight currency (market shut).
+
+    ``None`` while the US market is open (the live move is one figure then) or
+    when a rate is missing. FX-aware: each mark is valued at its own rate, never a
+    converted return.
+    """
+    from investment_dashboard.domain.late_data import (  # noqa: PLC0415
+        split_day_change,
+        value_at_rate,
+    )
+    from investment_dashboard.domain.market_hours import is_us_market_open  # noqa: PLC0415
+
+    if is_us_market_open(now) or fx_now is None or fx_now <= 0:
+        return None
+    session_date = intraday_snapshots_service.last_session_date(now)
+    prev_date = intraday_snapshots_service.previous_trading_session(session_date)
+    fx_close = intraday_snapshots_service.session_close_rate(session, session_date)
+    fx_prev = intraday_snapshots_service.session_close_rate(session, prev_date)
+    if not fx_close or not fx_prev or fx_close <= 0 or fx_prev <= 0:
+        return None
+    last_book = _book_holdings(session, session_date)
+    prev_eur, prev_usd = value_at_rate(_book_holdings(session, prev_date), fx_prev)
+    last_eur, last_usd = value_at_rate(last_book, fx_close)
+    now_eur, now_usd = value_at_rate(last_book, fx_now)
+    if prev_eur <= 0:
+        return None
+    eur = split_day_change(prev_eur, last_eur, now_eur)
+    usd = split_day_change(prev_usd, last_usd, now_usd)
+    return LastSessionSplit(
+        session_date=session_date,
+        prev_date=prev_date,
+        fx_close=fx_close,
+        fx_prev_close=fx_prev,
+        fx_now=fx_now,
+        move_eur=eur.move,
+        move_usd=usd.move,
+        pct_eur=eur.pct,
+        pct_usd=usd.pct,
+        overnight_eur=eur.overnight,
+        overnight_usd=usd.overnight,
+        value_now_eur=now_eur,
+        value_now_usd=now_usd,
+    )
+
+
+def with_last_session_split(metrics: PortfolioMetrics, split: LastSessionSplit) -> PortfolioMetrics:
+    """``metrics`` with the hero day move set to the split's last-session move."""
+    return replace(
+        metrics,
+        daily_growth_pct=split.pct_eur,
+        daily_growth_pct_usd=split.pct_usd,
+        daily_growth_money_eur=split.move_eur,
+        daily_growth_money_usd=split.move_usd,
+        daily_growth_as_of=split.session_date,
+        daily_growth_prev_as_of=split.prev_date,
     )
 
 

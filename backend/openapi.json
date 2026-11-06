@@ -3620,6 +3620,19 @@
             ],
             "title": "Direction"
           },
+          "estimated_funds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Estimated Funds",
+            "type": "array"
+          },
+          "funds_estimated": {
+            "default": false,
+            "title": "Funds Estimated",
+            "type": "boolean"
+          },
           "growth": {
             "anyOf": [
               {
@@ -5977,6 +5990,18 @@
             "title": "Id",
             "type": "integer"
           },
+          "intraday_twin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ETF whose live price estimates this fund on the 1D graph until its NAV posts.",
+            "title": "Intraday Twin"
+          },
           "latest_price_date": {
             "anyOf": [
               {
@@ -6056,6 +6081,28 @@
           "transaction_count": {
             "title": "Transaction Count",
             "type": "integer"
+          },
+          "twin_daily_gap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Typical daily gap fund vs its twin from cached closes (fraction), if known.",
+            "title": "Twin Daily Gap"
+          },
+          "twin_suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TwinSuggestionDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6136,6 +6183,17 @@
             ],
             "description": "Fraction, e.g. \"0.0003\".",
             "title": "Expense Ratio"
+          },
+          "intraday_twin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intraday Twin"
           },
           "name": {
             "anyOf": [
@@ -6579,6 +6637,67 @@
           }
         },
         "title": "JobStart",
+        "type": "object"
+      },
+      "LastSessionMove": {
+        "description": "Outside the session: the day move split into the last session + overnight currency.\n\n``move`` is the official closes/NAVs of ``session_date`` vs ``prev_date``, each\nvalued at its own session's 16:00 EUR/USD rate; ``overnight_currency`` the same\nholdings revalued from that close rate to the rate now. ``move +\novernight_currency`` is the change in ``value_now`` since the previous close.\nAmounts in the response currency (each computed in it, never converted).",
+        "properties": {
+          "fx_close": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fx Close",
+            "type": "string"
+          },
+          "fx_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fx Now",
+            "type": "string"
+          },
+          "move": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Move",
+            "type": "string"
+          },
+          "move_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Pct"
+          },
+          "overnight_currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Overnight Currency",
+            "type": "string"
+          },
+          "prev_date": {
+            "title": "Prev Date",
+            "type": "string"
+          },
+          "session_date": {
+            "title": "Session Date",
+            "type": "string"
+          },
+          "value_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_date",
+          "prev_date",
+          "move",
+          "overnight_currency",
+          "value_now",
+          "fx_close",
+          "fx_now"
+        ],
+        "title": "LastSessionMove",
         "type": "object"
       },
       "LiveResponse": {
@@ -7272,6 +7391,16 @@
           },
           "kpis_secondary": {
             "$ref": "#/components/schemas/OverviewKpis"
+          },
+          "last_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastSessionMove"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "market_verdict": {
             "$ref": "#/components/schemas/MarketVerdict"
@@ -11647,6 +11776,46 @@
         "title": "TransactionWriteResult",
         "type": "object"
       },
+      "TwinSuggestionDto": {
+        "description": "A built-in ETF twin for a fund (a suggestion only, never applied automatically).\n\n``same_index``: the fund and ETF track the exact same index (or are share\nclasses of one Vanguard portfolio). ``close``: a different index whose daily\nmoves were measured to follow the fund as tightly as an identical pair.",
+        "properties": {
+          "etf": {
+            "title": "Etf",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "same_index",
+              "close"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
+          "typical_daily_gap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Measured typical daily gap (fraction), close tier only.",
+            "title": "Typical Daily Gap"
+          }
+        },
+        "required": [
+          "etf",
+          "tier",
+          "index"
+        ],
+        "title": "TwinSuggestionDto",
+        "type": "object"
+      },
       "UnknownAction": {
         "properties": {
           "action": {
@@ -11779,7 +11948,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.6.0"
+    "version": "6.7.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -14413,6 +14582,32 @@
           }
         },
         "summary": "List Instruments",
+        "tags": [
+          "instruments"
+        ]
+      }
+    },
+    "/api/instruments/twin-suggestions": {
+      "get": {
+        "description": "The built-in fund -> ETF twin list (identical-index pairs, then measured close twins).",
+        "operationId": "twin_suggestions_api_instruments_twin_suggestions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/TwinSuggestionDto"
+                  },
+                  "title": "Response Twin Suggestions Api Instruments Twin Suggestions Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Twin Suggestions",
         "tags": [
           "instruments"
         ]

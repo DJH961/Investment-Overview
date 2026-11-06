@@ -737,7 +737,7 @@ def instruments_due_for_refresh(
     return due
 
 
-def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start to end
+def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, narrated start to end
     session: Session,
     cache_session: Session | None = None,
     *,
@@ -823,6 +823,12 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
 
         result: dict[str, int] = {}
         written_ids: list[int] = []
+        # Closes that are new or changed (a NAV that just posted, a final close):
+        # while the market is shut they rebuild the stored daily points below.
+        before = prices_repo.recent_closes_by_instrument(
+            cache, [i.id for i in due], on_or_before=today, limit=10
+        )
+        changed_from: date | None = None
         # When the whole yfinance batch fails (hard error), skip the per-symbol
         # write loop entirely so the result stays ``{}`` (the long-standing
         # "nothing happened" contract) and the Tiingo fallback alone decides what
@@ -832,6 +838,11 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
                 closes = closes_by_symbol.get(fetch_sym[instr.id], {})
                 cutoff = earliest_per_symbol.get(fetch_sym[instr.id], fetch_start)
                 filtered = {d: c for d, c in closes.items() if d >= cutoff}
+                known = dict(before.get(instr.id, []))
+                fresh = [d for d, c in filtered.items() if d <= today and known.get(d) != c]
+                if fresh:
+                    first = min(fresh)
+                    changed_from = first if changed_from is None else min(changed_from, first)
                 result[instr.symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
                 if result[instr.symbol]:
                     written_ids.append(instr.id)
@@ -861,10 +872,41 @@ def refresh_due_prices(  # noqa: PLR0915 - one cohesive pull round, narrated sta
             },
             result=result,
         )
+        if changed_from is not None:
+            rebuild_settled_snapshots(session, changed_from, today=today, now=now)
         return result
     finally:
         if owns_round:
             pull_log.end(round_)
+
+
+def rebuild_settled_snapshots(
+    session: Session, start: date, *, today: date, now: datetime | None = None
+) -> int:
+    """Recompute the stored daily points from ``start`` to ``today`` after a late close.
+
+    A mutual-fund NAV posts hours after the 16:00 close (and a correction can land
+    later still). While the market is shut, a pull that writes a new or changed
+    close for a past or the current session recomputes those days' snapshots, so
+    the daily graphs are right even if no device was open, and publishes a
+    ``refresh`` so the read cache is bumped. During the session today's point is
+    recomputed on every read anyway, so nothing is done then. Returns days rebuilt.
+    """
+    from investment_dashboard.services import refresh_status, snapshots_service  # noqa: PLC0415
+
+    instant = now or datetime.now(UTC)
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=UTC)  # callers pass naive UTC
+    if is_us_market_open(instant) or start > today:
+        return 0
+    try:
+        rebuilt = snapshots_service.warm_range(session, start, today, force=True)
+    except Exception:  # pragma: no cover - defensive: never break the price pull
+        log.warning("snapshot rebuild after a late close failed", exc_info=True)
+        return 0
+    log.info("late close: rebuilt %d daily point(s) from %s", rebuilt, start)
+    refresh_status._publish({"type": "refresh", "reason": "late close"})
+    return rebuilt
 
 
 def _maybe_run_tiingo_fallback(

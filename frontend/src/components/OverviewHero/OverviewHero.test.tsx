@@ -42,4 +42,14 @@ describe("OverviewHero", () => {
     expect(container.querySelector(".overview-hero__corner--live")).not.toBeNull();
     expect(screen.getByText(/total is incomplete/)).toBeInTheDocument();
   });
+  it("shows the overnight currency on its own line while the market is shut", () => {
+    const shut = { ...base, last_session: { overnight_currency: "-120.5" } } as unknown as OverviewDto;
+    render(<OverviewHero data={shut} currency="EUR" loading={false} now={NOW} />);
+    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("Overnight currency");
+    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("120.50");
+  });
+  it("hides the overnight line when there is no last-session split", () => {
+    render(<OverviewHero data={base} currency="EUR" loading={false} now={NOW} />);
+    expect(screen.queryByTestId("overnight-currency")).toBeNull();
+  });
 });

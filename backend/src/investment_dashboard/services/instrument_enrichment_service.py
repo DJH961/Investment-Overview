@@ -79,6 +79,8 @@ class EffectiveInstrument:
     #: ``auto`` | ``manual`` | ``delisted`` (see ``domain.instruments``).
     pricing_mode: str = "auto"
     active: bool = True
+    #: ETF whose live price estimates this fund on the 1D graph (never a holding).
+    intraday_twin: str | None = None
 
 
 def effective_instrument(
@@ -119,6 +121,7 @@ def effective_instrument(
         provider_symbol=override.provider_symbol,
         pricing_mode=override.pricing_mode or "auto",
         active=bool(override.active),
+        intraday_twin=override.intraday_twin,
     )
 
 

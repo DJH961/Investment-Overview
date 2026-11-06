@@ -88,6 +88,13 @@ describe("ValueChartCard", () => {
     expect(xs.every((x) => /^\d\d:\d\d$/.test(x ?? ""))).toBe(true);
   });
 
+  it("1D: says which funds are estimated from their ETF twin", () => {
+    graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX"] };
+    render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
+    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent("Funds estimated");
+    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent("FXAIX");
+  });
+
   it("draws the other currency by default on a right axis and remembers the toggle", () => {
     graphData = {
       ...day,

@@ -37,6 +37,7 @@ from investment_dashboard.services import (
     intraday_snapshots_service,
     investing_power_service,
     live_bus,
+    metrics_service,
     prices_service,
     refresh_status,
     timezone_service,
@@ -460,6 +461,11 @@ def build_overview(
     metrics = with_last_session_daily_growth(
         session, metrics, session_date=intraday_snapshots_service.last_session_date(now)
     )
+    # Market shut: the hero move is the last session's official closes/NAVs (each
+    # book at its own session's closing rate); the overnight currency is separate.
+    split = metrics_service.last_session_split(session, now=now, fx_now=ctx.fx_rate_eur_usd)
+    if split is not None:
+        metrics = metrics_service.with_last_session_split(metrics, split)
     usd = ccy == "USD"
     pick = holdings.pick
 
@@ -543,4 +549,23 @@ def build_overview(
             "bad_history": [c.symbol for c in cards if c.price_data_warning],
             "missing_fx": ["EUR/USD"] if ctx.fx_rate_eur_usd is None else [],
         },
+        "last_session": _last_session(split, ccy),
+    }
+
+
+def _last_session(
+    split: metrics_service.LastSessionSplit | None, ccy: str
+) -> dict[str, Any] | None:
+    if split is None:
+        return None
+    usd = ccy == "USD"
+    return {
+        "session_date": split.session_date.isoformat(),
+        "prev_date": split.prev_date.isoformat(),
+        "move": dec(split.move_usd if usd else split.move_eur),
+        "move_pct": dec(split.pct_usd if usd else split.pct_eur),
+        "overnight_currency": dec(split.overnight_usd if usd else split.overnight_eur),
+        "value_now": dec(split.value_now_usd if usd else split.value_now_eur),
+        "fx_close": dec(split.fx_close),
+        "fx_now": dec(split.fx_now),
     }

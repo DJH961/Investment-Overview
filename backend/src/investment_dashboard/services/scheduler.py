@@ -167,6 +167,11 @@ def _tick_point(session: Any, total_eur: Decimal, rate: Decimal | None) -> dict[
         if t == live_state.last_point_t():
             return None  # no new sample this tick (market closed / dedupe floor)
         fx = fx or rate
+        # The 1D line draws mutual funds on their late-NAV line (ETF estimate until
+        # the NAV posts); the point must sit on that line, not on the official total.
+        total_eur = total_eur + intraday_snapshots_service.live_point_adjustment_eur(
+            session, at=at, fx=fx
+        )
         if fx is None or fx == 0:
             return {"t": t, "EUR": _dec(total_eur), "USD": None}
         usd = total_eur * fx

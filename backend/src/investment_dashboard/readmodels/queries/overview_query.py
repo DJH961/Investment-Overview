@@ -316,17 +316,16 @@ def build_window_value_series(
         rate = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote=currency)
 
     multi_session = sessions > 1
-    nav_now = ZERO
+    # Pull the day-drifting NAV funds out of the flat base: each session reapplies
+    # them at its own value (the 1D session as the late-NAV line: ETF estimate until
+    # the NAV posts, then linearly corrected to the official close; earlier week
+    # sessions at their dated NAV). ``base`` then keeps only the genuinely constant
+    # cash + savings + money-market remainder.
+    nav_now = intraday_snapshots_service.nav_drift_value_eur(positions)
+    base = total_now - market_now - nav_now
     if multi_session:
-        # Pull the day-drifting NAV funds out of the flat base so each session can
-        # reapply its own dated NAV (sloping per-day) instead of riding flat at
-        # today's. ``base`` then keeps only the genuinely constant cash + savings +
-        # money-market remainder.
-        nav_now = intraday_snapshots_service.nav_drift_value_eur(positions)
-        base = total_now - market_now - nav_now
         samples = intraday_snapshots_service.week_series_with_fx(session, now=now)
     else:
-        base = total_now - market_now
         samples = intraday_snapshots_service.day_series_with_fx(session, now=now)
 
     # Cap the curve with the live current value so the tip equals the headline
@@ -345,7 +344,8 @@ def build_window_value_series(
     if not samples:
         return []
 
-    nav_components: dict[datetime, tuple[Decimal, Decimal | None]] | None = None
+    nav_components: dict[datetime, tuple[Decimal, Decimal | None]] = {}
+    nav_fx_today = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote="USD")
     if multi_session:
         # Per-session NAV-fund track, mapped onto each sample by its exchange date,
         # so every point gets the fund sleeve's value *as published that day*
@@ -353,7 +353,6 @@ def build_window_value_series(
         # ``live_fallback`` (today's live NAV value + spot EUR/USD) is a last-resort
         # stand-in for a window day whose NAV/FX hasn't been cached yet, re-derived
         # each render so a later good close/FX pull patches the gap.
-        nav_fx_today = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote="USD")
         nav_by_date = intraday_snapshots_service.week_nav_drift_with_fx(
             session, now=now, live_fallback=(nav_now, nav_fx_today)
         )
@@ -363,9 +362,35 @@ def build_window_value_series(
             )
             for at_utc, _market, _fx in samples
         }
+    if nav_now != ZERO or nav_components:
+        # The session drawn by the 1D range (also the last session of the 1W):
+        # funds follow their late-NAV line (domain.late_data), built at read time
+        # from the stored twin prices and closes, never stored.
+        session_date = intraday_snapshots_service.last_session_date(now)
+        last_times = [
+            at
+            for at, _m, _fx in samples
+            if intraday_snapshots_service.session_date_of(at) == session_date
+        ]
+        sleeve = intraday_snapshots_service.late_nav_sleeve(
+            session,
+            session_date=session_date,
+            times=last_times,
+            rate=nav_fx_today,
+            sample_fx={at: fx for at, _m, fx in samples if fx},
+        )
+        if sleeve.components:
+            nav_components.update(sleeve.components)
+        elif not multi_session:
+            base += nav_now  # no fund sleeve to draw: keep them flat in the base
 
     points = _compose_currency_points(
-        samples, base=base, currency=currency, rate=rate, tz=tz, nav_components=nav_components
+        samples,
+        base=base,
+        currency=currency,
+        rate=rate,
+        tz=tz,
+        nav_components=nav_components or None,
     )
     if freeze_after_hours and appended_tip:
         points = _freeze_eur_live_tip(session, points, currency=currency, now=now)

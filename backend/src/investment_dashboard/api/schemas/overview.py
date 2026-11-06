@@ -249,6 +249,26 @@ class DailyCaption(ApiModel):
     updated_text: str | None = None
 
 
+class LastSessionMove(ApiModel):
+    """Outside the session: the day move split into the last session + overnight currency.
+
+    ``move`` is the official closes/NAVs of ``session_date`` vs ``prev_date``, each
+    valued at its own session's 16:00 EUR/USD rate; ``overnight_currency`` the same
+    holdings revalued from that close rate to the rate now. ``move +
+    overnight_currency`` is the change in ``value_now`` since the previous close.
+    Amounts in the response currency (each computed in it, never converted).
+    """
+
+    session_date: str
+    prev_date: str
+    move: DecStr
+    move_pct: DecStr | None = None
+    overnight_currency: DecStr
+    value_now: DecStr
+    fx_close: DecStr
+    fx_now: DecStr
+
+
 class OverviewResponse(ApiModel):
     ccy: Ccy
     as_of: str
@@ -272,3 +292,5 @@ class OverviewResponse(ApiModel):
     market_verdict: MarketVerdict
     movers: Movers
     warnings: OverviewWarnings
+    #: Market shut: last session's move + overnight currency (null while it trades).
+    last_session: LastSessionMove | None = None

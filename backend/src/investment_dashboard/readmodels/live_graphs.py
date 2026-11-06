@@ -849,6 +849,9 @@ def build_graph(
                 ),
             }
     days = _window_sessions(range_key, now) if intraday else []
+    estimated = (
+        list(intraday_snapshots_service.estimated_funds(session, now=now)) if intraday else []
+    )
     return {
         "ccy": ccy,
         "range": range_key,
@@ -864,6 +867,8 @@ def build_graph(
         "coverage": (
             _coverage(session, range_key=range_key, days=days, now=now) if intraday else None
         ),
+        "funds_estimated": bool(estimated),
+        "estimated_funds": estimated,
         "growth": _growth(
             range_key=range_key,
             ccy=ccy,
