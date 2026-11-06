@@ -55,7 +55,9 @@ class TickEvent(ApiModel):
     fx_eur_usd: DecStr | None = None
     #: When the last refresh brought in new prices (null: none yet in this process).
     last_update_at: str | None = None
-    #: Market open and a price landed within the live window.
+    #: When the newest stock/ETF price was struck on the exchange (provider time).
+    price_market_at: str | None = None
+    #: Market open, a fresh pull, a recent price and no frozen feed.
     prices_live: bool | None = None
 
 

@@ -17,8 +17,10 @@ export interface RefreshState {
   label: string | null;
   /** When new prices last landed (ISO), from `refresh_finished` / `tick`. */
   lastUpdateAt: string | null;
-  /** From the latest tick: market open and a price landed within the live window. */
+  /** From the latest tick: market open, a fresh pull and a recent (non-frozen) price. */
   pricesLive: boolean | null;
+  /** From the latest tick: when the newest stock/ETF price was struck (ISO). */
+  priceMarketAt: string | null;
 }
 
 export const IDLE_REFRESH: RefreshState = {
@@ -30,6 +32,7 @@ export const IDLE_REFRESH: RefreshState = {
   label: null,
   lastUpdateAt: null,
   pricesLive: null,
+  priceMarketAt: null,
 };
 
 let state: RefreshState = IDLE_REFRESH;
@@ -115,6 +118,7 @@ export function applyRefreshEvent(queryClient: QueryClient, ev: Record<string, u
       setRefreshState({
         ...(last ? { lastUpdateAt: last } : {}),
         ...(typeof ev.prices_live === "boolean" ? { pricesLive: ev.prices_live } : {}),
+        ...(str(ev.price_market_at) ? { priceMarketAt: str(ev.price_market_at) } : {}),
       });
       return false; // ticks also drive the live query invalidation
     }

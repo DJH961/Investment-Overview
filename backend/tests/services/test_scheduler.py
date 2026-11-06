@@ -255,6 +255,7 @@ def test_tick_freshness_payload(monkeypatch: pytest.MonkeyPatch) -> None:
         open_now = et(2026, 10, 28, 11)
         assert scheduler._price_freshness(open_now) == {
             "last_update_at": None,
+            "price_market_at": None,
             "prices_live": False,
         }
         refresh_status.finish("t", updated=True)

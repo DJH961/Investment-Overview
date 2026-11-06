@@ -186,23 +186,36 @@
       gap: 0;
     }
 
+    // Phone: the title block takes what the actions leave and truncates inside
+    // it (a long chip such as "Delayed · …" or the extra health badge on a data
+    // issue used to push the text past the screen edge).
     .top-bar__title-block {
+      flex: 1 1 0;
       flex-direction: column;
       align-items: flex-start;
       gap: 0;
+      overflow: hidden;
     }
 
     .top-bar__title-line {
+      flex-shrink: 1;
       gap: var(--space-2);
       max-width: 100%;
+      overflow: hidden;
     }
 
     .top-bar__title {
+      flex-shrink: 1;
       font-size: var(--font-size-md);
+    }
+
+    .top-bar__mini {
+      flex-shrink: 0;
     }
 
     .top-bar__freshness {
       max-width: 100%;
+      overflow: hidden;
     }
   }
 }

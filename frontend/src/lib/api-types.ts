@@ -2654,6 +2654,8 @@ export interface components {
          * @description How fresh the figures are (drives the Live / Updated / Updating... chip).
          */
         Freshness: {
+            /** Feed Stalled Since */
+            feed_stalled_since?: string | null;
             /**
              * Historical
              * @default false
@@ -2844,6 +2846,16 @@ export interface components {
             total: number;
         };
         /**
+         * GraphGap
+         * @description A stretch of an intraday graph without market data (UTC ISO instants).
+         */
+        GraphGap: {
+            /** End */
+            end: string;
+            /** Start */
+            start: string;
+        };
+        /**
          * GraphGrowth
          * @description Growth over the drawn window, computed in this line's own currency.
          */
@@ -2911,6 +2923,11 @@ export interface components {
              */
             ccy: "EUR" | "USD";
             coverage?: components["schemas"]["GraphCoverage"] | null;
+            /**
+             * Data Gaps
+             * @default []
+             */
+            data_gaps: components["schemas"]["GraphGap"][];
             /** Direction */
             direction?: ("up" | "down" | "flat") | null;
             /**
@@ -5355,6 +5372,8 @@ export interface components {
              */
             market_state: "open" | "closed" | "holiday";
             point?: components["schemas"]["TickPoint"] | null;
+            /** Price Market At */
+            price_market_at?: string | null;
             /** Prices */
             prices?: {
                 [key: string]: components["schemas"]["TickPrice"];
@@ -8667,6 +8686,8 @@ export interface operations {
                             /** T */
                             t: string;
                         } | null;
+                        /** Price Market At */
+                        price_market_at?: string | null;
                         /** Prices */
                         prices?: {
                             [key: string]: {

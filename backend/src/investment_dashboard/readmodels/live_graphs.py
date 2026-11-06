@@ -93,6 +93,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from itertools import pairwise
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -689,6 +690,54 @@ def _sessions_payload(days: list[date]) -> list[dict[str, str]]:
     ]
 
 
+#: A hole this long between two points inside a session is "no market data".
+_GAP_MIN_SECONDS = 15 * 60
+
+
+def _aware_utc(at: datetime) -> datetime:
+    return at if at.tzinfo is not None else at.replace(tzinfo=UTC)
+
+
+def _data_gaps(
+    session: Session, points: list[ValueSeriesPoint], days: list[date], now: datetime
+) -> list[dict[str, str]]:
+    """Stretches of the intraday window with no market data, ``[{start, end}]``.
+
+    Two sources, merged: holes of 15 min or more between consecutive points inside
+    a regular session (the provider served no bars there), and the price-feed
+    stall windows the refresh recorded (frozen quotes, see ``feed_stall_service``).
+    The chart marks them so a straight line across a hole isn't read as data.
+    """
+    from investment_dashboard.domain import feed_stall  # noqa: PLC0415
+    from investment_dashboard.services import feed_stall_service  # noqa: PLC0415
+
+    if not days:
+        return []
+    sessions = [
+        (
+            _aware_utc(market_hours.regular_session_open(d)),
+            _aware_utc(market_hours.regular_session_close(d)),
+        )
+        for d in days
+    ]
+    times = sorted(_aware_utc(p.date) for p in points if isinstance(p.date, datetime))
+    windows: list[tuple[datetime, datetime]] = []
+    for open_at, close_at in sessions:
+        inside = [t for t in times if open_at <= t <= close_at]
+        for a, b in pairwise(inside):
+            if (b - a).total_seconds() >= _GAP_MIN_SECONDS:
+                windows.append((a, b))
+    try:
+        windows.extend(
+            feed_stall_service.windows_between(session, sessions[0][0], _aware_utc(now), now=now)
+        )
+    except Exception:  # pragma: no cover - defensive: gaps are a hint only
+        log.debug("stall windows unavailable", exc_info=True)
+    return [
+        {"start": s.isoformat(), "end": e.isoformat()} for s, e in feed_stall.merge_windows(windows)
+    ]
+
+
 def _coverage(
     session: Session, *, range_key: str, days: list[date], now: datetime
 ) -> dict[str, Any] | None:
@@ -869,6 +918,7 @@ def build_graph(
         ),
         "funds_estimated": bool(estimated),
         "estimated_funds": estimated,
+        "data_gaps": _data_gaps(session, points, days, now) if intraday else [],
         "growth": _growth(
             range_key=range_key,
             ccy=ccy,

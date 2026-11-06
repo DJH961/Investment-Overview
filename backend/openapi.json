@@ -2932,6 +2932,17 @@
       "Freshness": {
         "description": "How fresh the figures are (drives the Live / Updated / Updating... chip).",
         "properties": {
+          "feed_stalled_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feed Stalled Since"
+          },
           "historical": {
             "default": false,
             "title": "Historical",
@@ -3437,6 +3448,25 @@
         "title": "GraphCoverage",
         "type": "object"
       },
+      "GraphGap": {
+        "description": "A stretch of an intraday graph without market data (UTC ISO instants).",
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "GraphGap",
+        "type": "object"
+      },
       "GraphGrowth": {
         "description": "Growth over the drawn window, computed in this line's own currency.",
         "properties": {
@@ -3603,6 +3633,14 @@
                 "type": "null"
               }
             ]
+          },
+          "data_gaps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphGap"
+            },
+            "title": "Data Gaps",
+            "type": "array"
           },
           "direction": {
             "anyOf": [
@@ -11104,6 +11142,17 @@
               }
             ]
           },
+          "price_market_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Market At"
+          },
           "prices": {
             "anyOf": [
               {
@@ -16462,6 +16511,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "price_market_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Price Market At"
                         },
                         "prices": {
                           "anyOf": [

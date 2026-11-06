@@ -376,8 +376,8 @@ DEFS: tuple[SettingDef, ...] = (
     ),
     *(_action_map(b) for b in ACTION_OVERRIDE_BROKERS),
     # -- data refresh ----------------------------------------------------------
-    _ttl("etf", 120, "ETF price age"),
-    _ttl("stock", 120, "Stock price age"),
+    _ttl("etf", 50, "ETF price age"),
+    _ttl("stock", 50, "Stock price age"),
     _ttl("mutual_fund", 10 * 60, "Mutual-fund NAV re-check (until the NAV is in)"),
     _ttl("cash", 24 * 3600, "Cash price age"),
     _ttl("savings", 24 * 3600, "Savings price age"),

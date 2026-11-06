@@ -75,6 +75,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain import feed_stall
 from investment_dashboard.domain.currency import usd_to_eur_at
 from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import (
@@ -591,7 +592,7 @@ def session_close_utc(now: datetime | None = None) -> datetime:
     return close.astimezone(UTC).replace(tzinfo=None)
 
 
-def record_if_market_open(*, now: datetime | None = None) -> bool:
+def record_if_market_open(*, now: datetime | None = None) -> bool:  # noqa: PLR0911
     """Append one intraday market-component sample when the US market is open.
 
     Stores only the EUR value of the intraday-priced holdings (stocks/ETFs); the
@@ -620,7 +621,17 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:
         cache_write_session,
         ledger_session_scope,
     )
-    from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
+    from investment_dashboard.services import (  # noqa: PLC0415
+        feed_stall_service,
+        fx_service,
+        positions_service,
+    )
+
+    # A stalled feed keeps answering with frozen quotes: a point now would draw a
+    # flat line and then a jump when quotes move again. Store nothing and leave a
+    # gap that the intraday re-pull can fill once the provider has the bars.
+    if feed_stall_service.is_stalled():
+        return False
 
     captured_at = _to_naive_utc(now)
     try:
@@ -817,11 +828,17 @@ def reconstruct_last_session(
     *,
     now: datetime | None = None,
     force: bool = False,
+    replace_disagreeing: bool = False,
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
     fx_fallback_fetcher: object | None = None,
 ) -> int:
     """Backfill the most recent session's intraday curve from the price feed.
+
+    ``replace_disagreeing`` (the manual reload) also drops live points that sit
+    on a provider bar's slot yet differ from it by more than
+    :data:`DISAGREE_FRACTION` (a bad print or half-loaded portfolio captured
+    live), so the bar takes their place.
 
     Fetches ~5-minute intraday bars for the held, intraday-priced instruments on
     the last trading day and records the *market component* per bar — the EUR
@@ -866,6 +883,7 @@ def reconstruct_last_session(
             written = _reconstruct_session(
                 session,
                 session_date,
+                replace_disagreeing=replace_disagreeing,
                 fetcher=fetcher,
                 fx_fetcher=fx_fetcher,
                 fx_fallback_fetcher=fx_fallback_fetcher,
@@ -925,6 +943,7 @@ def _reconstruct_session(
     fetcher: object | None,
     fx_fetcher: object | None = None,
     fx_fallback_fetcher: object | None = None,
+    replace_disagreeing: bool = False,
 ) -> int:
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
@@ -994,18 +1013,36 @@ def _reconstruct_session(
     # reconstructed bar that falls inside a live sample's slot, so a live-watched
     # stretch keeps its denser real points.
     with cache_read_session(session) as cache:
-        live_times = [
-            r.captured_at
+        live_rows = [
+            (r.captured_at, r.market_value_eur)
             for r in intraday_repo.list_in_range(
                 cache, _session_start_utc(session_date), bar_times[-1]
             )
         ]
+    live_times = [t for t, _ in live_rows]
 
     written = 0
     # Build each forward-fill lookup once (sorts per symbol a single time) so the
     # per-instant repricing below never re-sorts a symbol's bars per point.
     price_lookups = {sym: _make_forward_fill(bars) for sym, bars in bars_by_symbol.items()}
     fx_lookup = _make_forward_fill(fx_bars)
+
+    if replace_disagreeing and live_rows:
+        bar_values = _reconstruct_session_samples(
+            bar_times,
+            priced,
+            price_lookups,
+            fx_lookup,
+            base_fx=base_fx,
+            fx_present=bool(fx_bars),
+        )
+        bad = _disagreeing_live_points(live_rows, bar_values)
+        if bad:
+            with cache_write_session(session) as cache:
+                intraday_repo.delete_at(cache, bad)
+            log.info("replaced %d live graph point(s) that disagreed with the bars", len(bad))
+            dropped = set(bad)
+            live_times = [t for t in live_times if t not in dropped]
     # Reprice every bar instant via the *shared* per-session reconstruction core,
     # skipping any slot already covered by a live sample so a live-watched stretch
     # keeps its denser real points. The same core builds the 1W path's gap days
@@ -1062,6 +1099,37 @@ def _reconstruct_session_samples(
         market = _market_component_pivot_eur(priced, price_lookups, t, fx_t=fx_t, base_fx=base_fx)
         samples.append((t, market, point_fx))
     return samples
+
+
+#: A live point differing from the provider's bar in the same slot by more than
+#: this fraction of the value is treated as bad and replaced on a manual reload.
+#: 0.5 % of the market component is far beyond what a minute of trading moves a
+#: diversified ETF portfolio, yet catches a half-loaded or stale-blended capture.
+DISAGREE_FRACTION = Decimal("0.005")
+
+
+def _disagreeing_live_points(
+    live_rows: list[tuple[datetime, Decimal]],
+    bar_values: list[tuple[datetime, Decimal, Decimal | None]],
+) -> list[datetime]:
+    """Live instants whose value is far from the bar sharing their slot."""
+    bars = sorted((t, v) for t, v, _ in bar_values)
+    bar_times = [t for t, _ in bars]
+    out: list[datetime] = []
+    for at, value in live_rows:
+        i = bisect_right(bar_times, at)
+        nearest = [bars[k] for k in (i - 1, i) if 0 <= k < len(bars)]
+        near = [
+            v
+            for t, v in nearest
+            if abs((t - at).total_seconds()) <= RECONSTRUCT_COVERAGE_GAP_SECONDS
+        ]
+        if not near:
+            continue
+        ref = min(near, key=lambda v: abs(v - value))
+        if ref and abs(value - ref) / abs(ref) > DISAGREE_FRACTION:
+            out.append(at)
+    return out
 
 
 def _covered_by_live(live_times: list[datetime], at: datetime) -> bool:
@@ -1661,6 +1729,60 @@ def clear_week_samples(
     return deleted
 
 
+def _sample_key(row: IntradayValue) -> Decimal:
+    """The FX-free value of a sample (USD when stored), for frozen-run checks."""
+    return row.market_value_usd if row.market_value_usd is not None else row.market_value_eur
+
+
+def drop_frozen_samples(session: Session, start: datetime, end: datetime) -> int:
+    """Delete stored points that only repeat a frozen quote in ``[start, end]``.
+
+    See :func:`investment_dashboard.domain.feed_stall.frozen_points`: when the
+    provider kept serving the same prices, the live capture stored a flat line.
+    Removing it turns the stretch back into a gap that the intraday re-pull can
+    fill (or that the graph marks as "no market data"). Returns rows removed.
+    """
+    from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, start, end)
+        samples = [(r.captured_at, _sample_key(r)) for r in rows]
+    frozen = feed_stall.frozen_points(samples)
+    if not frozen:
+        return 0
+    with cache_write_session(session) as cache:
+        removed = intraday_repo.delete_at(cache, frozen)
+    log.info("removed %d frozen graph point(s) between %s and %s", removed, start, end)
+    return removed
+
+
+def drop_samples_after(session: Session, since: datetime, until: datetime) -> int:
+    """Delete live points captured in ``(since, until]`` (a stall just detected).
+
+    The detector needs a few identical pulls before it calls a stall, so the
+    points stored in the meantime already repeat the frozen quote. Never raises.
+    """
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    start = _to_naive_utc(since) + timedelta(seconds=1)
+    end = _to_naive_utc(until)
+    if end < start:
+        return 0
+    try:
+        with cache_write_session(session) as cache:
+            return intraday_repo.delete_in_range(cache, start, end)
+    except Exception:  # pragma: no cover - defensive
+        log.warning("could not remove frozen graph points", exc_info=True)
+        return 0
+
+
+def _prune_week(session: Session, *, now: datetime) -> None:
+    """Drop frozen runs across the week window and forget the fetch markers."""
+    drop_frozen_samples(session, week_window_start_utc(now), _to_naive_utc(now))
+    app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
+    app_config_service.delete_by_prefix(session, _WEEK_FETCHED_PREFIX)
+
+
 def reload_day_graph(
     session: Session,
     *,
@@ -1669,16 +1791,25 @@ def reload_day_graph(
     fx_fetcher: object | None = None,
     fx_fallback_fetcher: object | None = None,
 ) -> int:
-    """Wipe stored 1D intraday bars and re-pull them from scratch.
+    """Re-pull the 1D graph without losing the denser live points.
 
-    Returns the number of points reconstructed into cache.
+    Earlier this wiped every stored point and rebuilt the day from 5-minute bars,
+    which threw away the once-a-minute live captures (a coarser, less exact line)
+    and could not bring back anything the provider no longer serves. Now it keeps
+    the live points, drops only frozen-feed runs and points that disagree with the
+    provider's bars, then fills every gap from the bars. Returns points written.
     """
     now = now or datetime.now(UTC)
-    clear_day_samples(session, now=now)
+    day = last_session_date(now)
+    drop_frozen_samples(
+        session, _session_start_utc(day), _session_start_utc(day + timedelta(days=1))
+    )
+    app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
     return reconstruct_last_session(
         session,
         now=now,
         force=True,
+        replace_disagreeing=True,
         fetcher=fetcher,
         fx_fetcher=fx_fetcher,
         fx_fallback_fetcher=fx_fallback_fetcher,
@@ -1694,17 +1825,20 @@ def reload_week_graph(
     fx_fallback_fetcher: object | None = None,
     interval: str = WEEK_INTERVAL,
 ) -> int:
-    """Wipe stored 1W intraday bars and re-pull them from scratch.
+    """Re-pull the 1W graph, keeping the stored live points.
 
-    Rebuilds both the 1D session and the multi-session week sleeve.
-    Returns the total number of samples in the refreshed week curve.
+    Drops frozen-feed runs across the week, clears the per-day "fetched" markers
+    and re-pulls every day that is not fully covered (the 1D session included).
+    Nothing the provider no longer serves is thrown away (it used to wipe the
+    whole week first). Returns the total number of samples in the week curve.
     """
     now = now or datetime.now(UTC)
-    clear_week_samples(session, now=now)
+    _prune_week(session, now=now)
     reconstruct_last_session(
         session,
         now=now,
         force=True,
+        replace_disagreeing=True,
         fetcher=fetcher,
         fx_fetcher=fx_fetcher,
         fx_fallback_fetcher=fx_fallback_fetcher,
@@ -1729,18 +1863,21 @@ def reload_graphs(
     fx_fetcher: object | None = None,
     fx_fallback_fetcher: object | None = None,
 ) -> dict[str, int]:
-    """Reload all live graphs (1D and 1W) from scratch.
+    """Reload all live graphs (1D and 1W), keeping the stored live points.
 
-    Used by manual triggers and automatically after importing new transactions.
+    Used by the manual "Reload graphs" repair. An import or transaction edit
+    changes share counts, so those paths wipe the samples themselves
+    (:func:`clear_week_samples`) before the graphs rebuild.
     """
     from investment_dashboard.services import snapshots_service  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
-    clear_week_samples(session, now=now)
+    _prune_week(session, now=now)
     day_pts = reconstruct_last_session(
         session,
         now=now,
         force=True,
+        replace_disagreeing=True,
         fetcher=fetcher,
         fx_fetcher=fx_fetcher,
         fx_fallback_fetcher=fx_fallback_fetcher,

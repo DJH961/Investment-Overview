@@ -218,8 +218,11 @@ class Freshness(ApiModel):
     """How fresh the figures are (drives the Live / Updated / Updating... chip)."""
 
     market_state: Literal["open", "closed", "holiday"]
-    #: Market open AND a price landed within the live window (15 min).
+    #: Market open, a pull landed within 2.5 min, the newest price itself is at
+    #: most 2.5 min old and the feed is not serving frozen quotes.
     prices_live: bool
+    #: Start of a price-feed stall in progress (quotes frozen), else null.
+    feed_stalled_since: str | None = None
     #: When the last refresh brought in new prices (this server process).
     last_price_update_at: str | None = None
     #: Newest provider market time across holdings (when the prices are *from*).

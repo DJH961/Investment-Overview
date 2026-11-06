@@ -183,14 +183,20 @@ def _tick_point(session: Any, total_eur: Decimal, rate: Decimal | None) -> dict[
 
 def _price_freshness(now: datetime | None = None) -> dict[str, Any]:
     """``last_update_at`` + ``prices_live`` for the tick event (Live vs Updated chip)."""
-    from investment_dashboard.services import refresh_status  # noqa: PLC0415
+    from investment_dashboard.services import feed_stall_service, refresh_status  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
     last = refresh_status.snapshot().last_update_at
+    market_at = feed_stall_service.newest_market_time()
     return {
         "last_update_at": last.isoformat() if last is not None else None,
+        "price_market_at": market_at.isoformat() if market_at is not None else None,
         "prices_live": market_hours.is_live_now(
-            market_open=market_hours.is_us_market_open(now), last_update_at=last, now=now
+            market_open=market_hours.is_us_market_open(now),
+            last_update_at=last,
+            now=now,
+            price_market_at=market_at,
+            feed_stalled=feed_stall_service.is_stalled(),
         ),
     }
 

@@ -414,13 +414,21 @@ def _iso_utc(at: datetime | None) -> str | None:
 
 def _freshness(freshness: dict[int, HoldingFreshness], *, now: datetime) -> dict[str, Any]:
     """Live / Updated / Updating... state: market clock + refresh activity + price times."""
+    from investment_dashboard.services import feed_stall_service  # noqa: PLC0415
+
     snap = refresh_status.snapshot()
     market_open = market_hours.is_us_market_open(now)
+    stalled_since = feed_stall_service.stalled_since()
     return {
         "market_state": live_bus.market_state(now),
         "prices_live": market_hours.is_live_now(
-            market_open=market_open, last_update_at=snap.last_update_at, now=now
+            market_open=market_open,
+            last_update_at=snap.last_update_at,
+            now=now,
+            price_market_at=feed_stall_service.newest_market_time(),
+            feed_stalled=stalled_since is not None,
         ),
+        "feed_stalled_since": _iso_utc(stalled_since),
         "last_price_update_at": _iso_utc(snap.last_update_at),
         "price_market_at": _iso_utc(_max_time(f.price_market_time for f in freshness.values())),
         "price_observed_at": _iso_utc(_max_time(f.updated_at for f in freshness.values())),
