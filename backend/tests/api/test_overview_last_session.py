@@ -82,6 +82,20 @@ def test_pre_open_shows_last_session_move(api_db: Path) -> None:
     assert abs(D(eur["kpis"]["daily_growth_pct"]) - D("0.1")) < D("1e-9")
     assert abs(D(eur["kpis"]["daily_move"]) - D("1000") / D("1.10") * D("0.1")) < D("0.01")
     assert eur["daily_caption"]["title"] != "Today"
+    # Overnight currency is its own figure: Tuesday's 1,100 USD book revalued from
+    # the 1.10 close rate to the live 1.20, in each currency, never converted.
+    ls = eur["last_session"]
+    assert ls["session_date"] == TUE.isoformat()
+    assert ls["prev_date"] == MON.isoformat()
+    assert D(ls["fx_close"]) == D("1.10")
+    assert D(ls["fx_now"]) == D("1.20")
+    assert abs(D(ls["overnight_currency"]) - (D("1100") / D("1.20") - D("1100") / D("1.10"))) < D(
+        "0.01"
+    )
+    assert abs(
+        D(ls["move"]) + D(ls["overnight_currency"]) - (D(ls["value_now"]) - D("1000") / D("1.10"))
+    ) < D("0.01")
+    assert D(usd["last_session"]["overnight_currency"]) == D("0")
 
 
 def test_open_session_keeps_todays_move(api_db: Path) -> None:
@@ -91,3 +105,5 @@ def test_open_session_keeps_todays_move(api_db: Path) -> None:
     assert usd["kpis"]["daily_growth_as_of"] == WED.isoformat()
     assert D(usd["kpis"]["daily_growth_pct"]) == D("0.1")
     assert D(usd["kpis"]["daily_move"]) == D("110")
+    # While the market trades the live move is one figure: no split.
+    assert usd["last_session"] is None

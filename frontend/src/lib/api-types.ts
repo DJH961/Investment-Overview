@@ -3946,6 +3946,34 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * LastSessionMove
+         * @description Outside the session: the day move split into the last session + overnight currency.
+         *
+         *     ``move`` is the official closes/NAVs of ``session_date`` vs ``prev_date``, each
+         *     valued at its own session's 16:00 EUR/USD rate; ``overnight_currency`` the same
+         *     holdings revalued from that close rate to the rate now. ``move +
+         *     overnight_currency`` is the change in ``value_now`` since the previous close.
+         *     Amounts in the response currency (each computed in it, never converted).
+         */
+        LastSessionMove: {
+            /** Fx Close */
+            fx_close: string;
+            /** Fx Now */
+            fx_now: string;
+            /** Move */
+            move: string;
+            /** Move Pct */
+            move_pct?: string | null;
+            /** Overnight Currency */
+            overnight_currency: string;
+            /** Prev Date */
+            prev_date: string;
+            /** Session Date */
+            session_date: string;
+            /** Value Now */
+            value_now: string;
+        };
         /** LiveResponse */
         LiveResponse: {
             /** Missed Points */
@@ -4184,6 +4212,7 @@ export interface components {
             is_live: boolean;
             kpis: components["schemas"]["OverviewKpis"];
             kpis_secondary: components["schemas"]["OverviewKpis"];
+            last_session?: components["schemas"]["LastSessionMove"] | null;
             market_verdict: components["schemas"]["MarketVerdict"];
             movers: components["schemas"]["Movers"];
             /** Position Count */

@@ -17,6 +17,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **v7.0 planning docs.** `docs/v7_plan.md` is now the readable plan — the four
+  v7 themes, the release order and the open decisions. The previous draft moves
+  to `docs/v7_research.md` as the evidence file, corrected: the currency-effect
+  figures it called unsurfaced already ship on Overview, the German-tax
+  direction is struck (the owner is a US taxpayer), and the OpenRouter and
+  news-source facts it flagged as unverified are now verified. Docs only, no
+  app change.
+
+## [6.7.0] — 2026-11-06
+
 ### Added
 - **ETF twin per mutual fund.** Each instrument can carry an `intraday_twin`
   (an ETF symbol) in `/api/instruments`; its live price estimates the fund on
@@ -42,15 +53,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Daily graphs pick up a late NAV even with no device open.** When a close or
   NAV for a past or the current session lands while the market is shut, that
   day's stored point is rebuilt straight away.
-
-### Changed
-- **v7.0 planning docs.** `docs/v7_plan.md` is now the readable plan — the four
-  v7 themes, the release order and the open decisions. The previous draft moves
-  to `docs/v7_research.md` as the evidence file, corrected: the currency-effect
-  figures it called unsurfaced already ship on Overview, the German-tax
-  direction is struck (the owner is a US taxpayer), and the OpenRouter and
-  news-source facts it flagged as unverified are now verified. Docs only, no
-  app change.
+- **Overview hero outside the session.** The headline move is the last
+  session's official closes and NAVs ("Last session · Tue"), each book valued at
+  its own session's 16:00 EUR/USD rate; the exchange-rate change since that
+  close shows on its own "Overnight currency" line (`last_session` in
+  `/api/overview`), and the two add up to the change since the previous close.
+  The 1D chart says "Funds estimated from their ETF twin…" while a NAV is
+  pending.
 
 ## [6.6.0] — 2026-11-05
 

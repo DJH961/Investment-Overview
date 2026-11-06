@@ -136,6 +136,7 @@
     white-space: nowrap;
   }
 
+  &__overnight,
   &__split {
     display: flex;
     flex-wrap: wrap;
@@ -144,6 +145,7 @@
   }
 
   &__muted,
+  &__overnight,
   &__split,
   &__note {
     margin: 0;
