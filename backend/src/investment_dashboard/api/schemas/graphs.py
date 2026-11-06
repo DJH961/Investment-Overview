@@ -67,6 +67,13 @@ class GraphCoverage(ApiModel):
     complete: bool
 
 
+class GraphGap(ApiModel):
+    """A stretch of an intraday graph without market data (UTC ISO instants)."""
+
+    start: str
+    end: str
+
+
 class GraphResponse(ApiModel):
     ccy: Ccy
     range: GraphRange
@@ -89,6 +96,9 @@ class GraphResponse(ApiModel):
     funds_estimated: bool = False
     #: Symbols of those funds (empty when funds_estimated is false).
     estimated_funds: list[str] = []  # noqa: RUF012 - pydantic copies defaults
+    #: 1d/1w: stretches with no market data from the provider (holes of 15 min or
+    #: more inside a session, or a frozen-quote stall), oldest first.
+    data_gaps: list[GraphGap] = []  # noqa: RUF012 - pydantic copies defaults
 
 
 class GraphRangePref(ApiModel):

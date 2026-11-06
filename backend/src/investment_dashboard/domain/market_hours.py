@@ -46,12 +46,22 @@ _FOREX_REOPEN = time(17, 0)
 
 #: How recently a fresh price must have been pulled for a same-day figure to be
 #: called *live* (rather than merely settled-today) while the market is open.
-#: The live-price tick runs about once a minute, so a generous 15-minute window
-#: keeps a brief provider hiccup from flickering "live" off, while a genuinely
-#: stalled or unreachable feed (no fresh prices for many minutes) correctly stops
-#: claiming to be live. Shared by the header chip, the per-row "As Of" badge and
-#: the Daily Growth caption so all three agree on what "live" means.
-LIVE_PRICE_WINDOW_SECONDS = 900.0
+#: Stocks and ETFs are pulled about once a minute, so 2.5 minutes allows one
+#: missed pull plus the pull's own duration. Anything older is not live: a price
+#: from several minutes ago must never be labelled "Live". Shared by the header
+#: chip, the per-row "As Of" badge and the Daily Growth caption so all three agree.
+LIVE_PRICE_WINDOW_SECONDS = 150.0
+
+#: How old the *price itself* (the provider's market time: when the quote was
+#: struck on the exchange) may be for the figures to count as live. A pull can
+#: succeed while the provider keeps serving a frozen quote (seen 2026-11-05:
+#: yfinance served the same prices for 100 minutes), so a recent pull alone is
+#: not enough.
+QUOTE_LIVE_MAX_AGE_SECONDS = 150.0
+
+#: Clock skew tolerated between the provider's market time and our clock: a quote
+#: stamped a little "in the future" is still current, not invalid.
+_CLOCK_SKEW_SECONDS = 60.0
 
 
 def feed_is_fresh(
@@ -90,18 +100,32 @@ def is_live_now(
     last_update_at: datetime | None,
     now: datetime,
     window_seconds: float = LIVE_PRICE_WINDOW_SECONDS,
+    price_market_at: datetime | None = None,
+    feed_stalled: bool = False,
+    quote_max_age_seconds: float = QUOTE_LIVE_MAX_AGE_SECONDS,
 ) -> bool:
     """Whether the figures on screen are genuinely *live* right now.
 
-    Live only when the market is open **and** at least one fresh price landed
-    within ``window_seconds`` — i.e. the automatic refresh is actively pulling
-    current prices. Outside the session, or once the prices held have gone
-    stale, the figures are settled ("Updated …"), not moving. Shared by the
-    NiceGUI header chip and the v6 API freshness block.
+    Live only when the market is open, a pull landed within ``window_seconds``,
+    the newest price is itself recent (``price_market_at``, the provider's market
+    time, within :data:`QUOTE_LIVE_MAX_AGE_SECONDS`; skipped when unknown) and
+    the feed is not known to be serving frozen quotes (``feed_stalled``). Outside
+    the session, or once prices go stale, the figures are settled ("prices as
+    of ..."), not live. Shared by the header chip and the v6 API freshness block.
     """
-    if not market_open:
+    if not market_open or feed_stalled:
         return False
-    return feed_is_fresh(last_update_at, now, window_seconds=window_seconds)
+    if not feed_is_fresh(last_update_at, now, window_seconds=window_seconds):
+        return False
+    if price_market_at is None:
+        return True
+    # The provider's clock, not ours: a quote stamped a little ahead is current.
+    struck = (
+        price_market_at.replace(tzinfo=UTC) if price_market_at.tzinfo is None else price_market_at
+    )
+    current = now.replace(tzinfo=UTC) if now.tzinfo is None else now
+    age = (current - struck).total_seconds()
+    return -_CLOCK_SKEW_SECONDS <= age <= quote_max_age_seconds
 
 
 def _observed(holiday: date) -> date:

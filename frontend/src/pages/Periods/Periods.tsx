@@ -84,7 +84,7 @@ function buildColumns(
         const o = toNum(other.get(r.label)?.closing_value);
         return (
           <>
-            {money(r.closing_value)}
+            <span className="periods-page__value">{money(r.closing_value)}</span>
             {o !== null && (
               <span className="periods-page__second">
                 <Money amount={o} currency={second} />
@@ -215,6 +215,7 @@ export function Periods() {
             groups.map((g) => (
               <Card
                 key={g.year}
+                className="periods-page__year"
                 collapsibleId={`periods.year.${g.year}`}
                 defaultOpen={g.isCurrent}
                 title={
@@ -308,11 +309,11 @@ function YearSummary({
           </span>
         )}
       </span>
-      <span className="periods-page__stat">
+      <span className="periods-page__stat periods-page__stat--growth">
         <span className="periods-page__stat-label">Growth (TWR)</span>
         <span className="periods-page__stat-value">{pct(row.growth_pct)}</span>
       </span>
-      <span className="periods-page__stat">
+      <span className="periods-page__stat periods-page__stat--growth">
         <span className="periods-page__stat-label">XIRR</span>
         <span className="periods-page__stat-value">{pct(row.period_growth_xirr)}</span>
       </span>

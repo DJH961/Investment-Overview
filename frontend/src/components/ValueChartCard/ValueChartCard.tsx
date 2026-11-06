@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Card } from "../Card";
 import { Chart, type ChartSeries, type ChartXMode } from "../Chart";
 import { ErrorState } from "../ErrorState";
+import { formatStamp } from "../Freshness";
 import { IconButton } from "../IconButton";
 import { InfoTip } from "../InfoTip";
 import { Percent } from "../Percent";
@@ -14,7 +15,6 @@ import {
   formatDate,
   formatDayLabel,
   formatDayTime,
-  formatPercent,
   formatShortDay,
   formatTime,
   todayIn,
@@ -25,6 +25,7 @@ import type { ReportingCurrency } from "../../lib/prefs";
 import { useHideAmounts } from "../../lib/hideAmounts";
 import { useTimeZone } from "../../lib/timezone";
 import { usePersistentState } from "../../lib/usePersistentState";
+import { buildValueSeries } from "./valueSeries";
 import { useGraphReload } from "./useGraphReload";
 import "./ValueChartCard.scss";
 
@@ -101,8 +102,6 @@ export interface ValueChartCardProps {
   className?: string;
 }
 
-const pctFormat = (v: number) => formatPercent(v, { signed: true, digits: 1 });
-
 /** Overview value chart: live 1D, range picker remembered per device, optional second-currency line. */
 export function ValueChartCard({
   currency,
@@ -149,66 +148,15 @@ export function ValueChartCard({
   };
 
   const { hide } = useHideAmounts();
-  // Hide mode plots "% from range start" (the 1D previous close when known) on both lines.
-  const base = (pts: { v?: string | null }[], ref: number | null): number | null => {
-    const first = pts.map((p) => toNum(p.v)).find((v) => v !== null && v !== 0) ?? null;
-    return ref !== null && ref !== 0 ? ref : first;
-  };
-  const series = useMemo<ChartSeries[]>(() => {
-    if (!g) return [];
-    if (hide) {
-      const rel = (pts: typeof g.points, b: number | null) =>
-        pts.map((p) => {
-          const v = toNum(p.v);
-          return { t: p.t, v: v === null || b === null ? null : v / b - 1 };
-        });
-      const ref = g.range === "1d" ? toNum(g.reference) : null;
-      const out: ChartSeries[] = [{ id: "primary", label: g.ccy, points: rel(g.points, base(g.points, ref)) }];
-      const sec = g.secondary;
-      if (sec && sec.points.length) {
-        out.push({
-          id: "secondary",
-          label: sec.ccy,
-          points: rel(sec.points, base(sec.points, null)),
-          axis: "right",
-          valueFormat: pctFormat,
-          hidden: !showSecondary,
-        });
-      }
-      return out;
-    }
-    const out: ChartSeries[] = [
-      {
-        id: "primary",
-        label: g.ccy,
-        points: g.points.map((p) => ({ t: p.t, v: toNum(p.v) })),
-        // Full amounts in the readout; only the axis is compact ("€98k").
-        valueFormat: chartMoneyFormat(g.ccy, "tooltip"),
-      },
-    ];
-    const sec = g.secondary;
-    const scale = toNum(sec?.scale);
-    if (sec && scale !== null && scale > 0 && sec.points.length) {
-      // Shared start point: the server's scale maps the other currency onto the
-      // primary axis; the right axis and tooltip show its true values.
-      out.push({
-        id: "secondary",
-        label: sec.ccy,
-        points: sec.points.map((p) => ({ t: p.t, v: toNum(p.v) })),
-        scale,
-        axis: "right",
-        valueFormat: chartMoneyFormat(sec.ccy, "tooltip"),
-        hidden: !showSecondary,
-      });
-    }
-    return out;
-  }, [g, showSecondary, hide]);
+  // Same points, scale and baseline in both modes; hide mode only masks labels.
+  const built = useMemo(() => (g ? buildValueSeries(g, { hide, showSecondary }) : null), [g, showSecondary, hide]);
+  const series = useMemo<ChartSeries[]>(() => built?.series ?? [], [built]);
 
   const intraday = shown === "1d" || shown === "1w";
   const sessions = shown === "1w" ? (g?.sessions ?? []) : [];
   const xMode: ChartXMode = shown === "1d" ? "time" : sessions.length ? "session" : "date";
-  const axisFormat = hide ? pctFormat : chartMoneyFormat(currency, "axis");
-  const tipFormat = hide ? pctFormat : chartMoneyFormat(currency, "tooltip");
+  const axisFormat = hide && built ? built.formats.primary : chartMoneyFormat(currency, "axis");
+  const tipFormat = chartMoneyFormat(currency, "tooltip");
   const timeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w"
         ? formatShortDay(t, timeZone)
@@ -217,8 +165,7 @@ export function ValueChartCard({
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatDayTime(t, timeZone) : formatDate(new Date(t), "medium");
 
   const prevCloseRaw = shown === "1d" ? toNum(g?.reference) : null;
-  // Hide mode: the previous close is the 0% baseline.
-  const prevClose = hide && prevCloseRaw !== null ? 0 : prevCloseRaw;
+  const prevClose = prevCloseRaw;
   const trend = shown === "1d" && g?.direction ? g.direction : undefined;
   let subtitle: string | undefined;
   if (shown === "1d" && g?.session_date) {
@@ -267,7 +214,7 @@ export function ValueChartCard({
               prevClose !== null ? { value: prevClose, label: hide ? "Prev close" : `Prev close ${tipFormat(prevClose)}` } : undefined
             }
             trend={trend}
-            rightAxisFormat={hide ? pctFormat : chartMoneyFormat(other, "axis")}
+            rightAxisFormat={hide && built ? built.formats.secondary : chartMoneyFormat(other, "axis")}
             onToggleSeries={(id) => {
               if (id === "secondary") setShowSecondary((v) => !v);
             }}
@@ -285,6 +232,15 @@ export function ValueChartCard({
           />
           {(shown === "1d" || shown === "1w") && g?.funds_estimated && (
             <EstimatedNote funds={g.estimated_funds} week={shown === "1w"} />
+          )}
+          {(shown === "1d" || shown === "1w") && (g?.data_gaps?.length ?? 0) > 0 && (
+            <p className="value-chart-card__note" data-testid="data-gaps-note">
+              No market data from the price provider{" "}
+              {(g?.data_gaps ?? [])
+                .map((gap) => `${formatStamp(gap.start, { timeZone })}–${formatStamp(gap.end, { timeZone })}`)
+                .join(", ")}
+              ; the line is drawn straight across.
+            </p>
           )}
           {coverage && (
             <p className="value-chart-card__note">

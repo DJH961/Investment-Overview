@@ -2654,6 +2654,8 @@ export interface components {
          * @description How fresh the figures are (drives the Live / Updated / Updating... chip).
          */
         Freshness: {
+            /** Feed Stalled Since */
+            feed_stalled_since?: string | null;
             /**
              * Historical
              * @default false
@@ -2844,6 +2846,16 @@ export interface components {
             total: number;
         };
         /**
+         * GraphGap
+         * @description A stretch of an intraday graph without market data (UTC ISO instants).
+         */
+        GraphGap: {
+            /** End */
+            end: string;
+            /** Start */
+            start: string;
+        };
+        /**
          * GraphGrowth
          * @description Growth over the drawn window, computed in this line's own currency.
          */
@@ -2911,6 +2923,11 @@ export interface components {
              */
             ccy: "EUR" | "USD";
             coverage?: components["schemas"]["GraphCoverage"] | null;
+            /**
+             * Data Gaps
+             * @default []
+             */
+            data_gaps: components["schemas"]["GraphGap"][];
             /** Direction */
             direction?: ("up" | "down" | "flat") | null;
             /**
@@ -3066,7 +3083,7 @@ export interface components {
             avg_price_native?: string | null;
             /**
              * Capital Gain
-             * @description value - cost_basis (unrealised, excludes dividends)
+             * @description Unrealised gain on this holding (value - cost basis), no dividends
              */
             capital_gain?: string | null;
             /** Category */
@@ -3079,7 +3096,7 @@ export interface components {
             daily_is_stale: boolean;
             /**
              * Dividends
-             * @description Cash dividends received
+             * @description Lifetime dividends of this holding (cash and reinvested)
              */
             dividends?: string | null;
             /**
@@ -3233,7 +3250,7 @@ export interface components {
             summary: components["schemas"]["HoldingsSummary"];
             /**
              * Total Capital Gain
-             * @description Sum of value - cost_basis over holdings
+             * @description Whole-portfolio capital gain, the same number as the overview: realised plus unrealised price gain after fees, no dividends. total_unrealised_gain + total_realised_other
              */
             total_capital_gain?: string | null;
             /**
@@ -3243,7 +3260,7 @@ export interface components {
             total_cost_basis?: string | null;
             /**
              * Total Dividends
-             * @description Sum of dividends
+             * @description Sum of the listed holdings' dividends
              */
             total_dividends?: string | null;
             /**
@@ -3252,10 +3269,20 @@ export interface components {
              */
             total_growth?: string | null;
             /**
+             * Total Realised Other
+             * @description total_capital_gain - total_unrealised_gain: gains realised by selling, closed positions, cash and savings balances, fees
+             */
+            total_realised_other?: string | null;
+            /**
              * Total Return
-             * @description total_capital_gain + total_dividends. Differs from the overview total_return by cash not invested in positions and gains realised on closed positions.
+             * @description Whole-portfolio total return, the same number as the overview: total_capital_gain + dividend_income
              */
             total_return?: string | null;
+            /**
+             * Total Unrealised Gain
+             * @description Sum of the listed holdings' capital_gain (still held)
+             */
+            total_unrealised_gain?: string | null;
             /** Total Value */
             total_value?: string | null;
             /**
@@ -5355,6 +5382,8 @@ export interface components {
              */
             market_state: "open" | "closed" | "holiday";
             point?: components["schemas"]["TickPoint"] | null;
+            /** Price Market At */
+            price_market_at?: string | null;
             /** Prices */
             prices?: {
                 [key: string]: components["schemas"]["TickPrice"];
@@ -8667,6 +8696,8 @@ export interface operations {
                             /** T */
                             t: string;
                         } | null;
+                        /** Price Market At */
+                        price_market_at?: string | null;
                         /** Prices */
                         prices?: {
                             [key: string]: {

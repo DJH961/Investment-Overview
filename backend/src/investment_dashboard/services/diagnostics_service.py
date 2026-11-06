@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -477,6 +477,60 @@ def _check_intraday_graph(session: Session) -> HealthItem:
     )
 
 
+def _check_price_feed(session: Session) -> HealthItem:
+    """Stretches where the provider served frozen quotes (in the last 7 days).
+
+    A stalled feed still answers every pull, so the provider check above stays
+    green; this probe reports the stall windows the price refresh recorded (see
+    :mod:`investment_dashboard.services.feed_stall_service`). Read-only.
+    """
+    from investment_dashboard.services import feed_stall_service  # noqa: PLC0415
+
+    now = datetime.now(UTC)
+    windows = feed_stall_service.windows_between(session, now - timedelta(days=7), now, now=now)
+    since = feed_stall_service.stalled_since()
+    examples = [
+        f"{s.strftime('%a %d %b %H:%M')}-{e.strftime('%H:%M')} UTC "
+        f"({(e - s).total_seconds() / 60:.0f} min)"
+        for s, e in reversed(windows)
+    ]
+    if since is not None:
+        return HealthItem(
+            key="price_feed",
+            title="Live price feed",
+            severity="error",
+            count=len(windows),
+            detail=(
+                "The price provider keeps answering but its stock/ETF quotes have not "
+                f"moved since {since.strftime('%H:%M')} UTC. The figures are not shown as "
+                "Live and the 1 Day graph stores no points until it recovers; the gap is "
+                "re-pulled from the provider's minute bars afterwards, where it has them."
+            ),
+            examples=_examples(examples),
+        )
+    if windows:
+        return HealthItem(
+            key="price_feed",
+            title="Live price feed",
+            severity="warning",
+            count=len(windows),
+            detail=(
+                "The price provider served frozen quotes for a while in the last 7 days. "
+                "Those stretches show as a gap in the 1 Day / 1 Week graphs. Reload graphs "
+                "fills a gap when the provider later published its bars; if it never did, "
+                "no source has the data (a Tiingo token in Settings adds a backup)."
+            ),
+            examples=_examples(examples),
+        )
+    return HealthItem(
+        key="price_feed",
+        title="Live price feed",
+        severity="ok",
+        count=0,
+        detail="No frozen-quote stretches from the price provider in the last 7 days.",
+    )
+
+
 #: Log a warning (system activity log) when the app's resident memory passes this.
 RSS_WARN_BYTES = 400 * 1024 * 1024
 #: At most one such warning per this many seconds.
@@ -555,6 +609,7 @@ def check_health(session: Session) -> HealthReport:
         *_check_prices(session),
         _check_positions(session),
         _check_intraday_graph(session),
+        _check_price_feed(session),
         _check_providers(),
     ]
     memory = _check_memory()

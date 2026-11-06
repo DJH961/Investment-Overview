@@ -88,7 +88,7 @@ function Subtotals({ group, ccy }: { group: HoldingGroupDto; ccy: string }) {
         </dd>
       </div>
       <div>
-        <dt>Capital gain</dt>
+        <dt>Unrealised gain</dt>
         <dd>
           <Money amount={toNum(group.capital_gain)} currency={ccy} signed colored />
         </dd>
@@ -349,7 +349,7 @@ export function Holdings() {
       },
       {
         key: "gain",
-        header: "Capital gain",
+        header: "Unrealised gain",
         group: "Return",
         align: "right",
         sortValue: (r) => toNum(r.capital_gain),
@@ -485,9 +485,6 @@ export function Holdings() {
       <PageHeader
         title="Holdings"
         subtitle="Every position in full detail"
-        actions={
-          data ? <PriceStamps priceText={stamps.price} updated={stamps.updated} options={{ timeZone }} /> : undefined
-        }
       />
 
       <HoldingsKpis data={data} currency={currency} />
@@ -534,6 +531,12 @@ export function Holdings() {
       </div>
       {groupedReady && filtered && (
         <p className="holdings-page__muted">Subtotals cover every position in the group, not only the matches.</p>
+      )}
+
+      {data && (
+        <div className="holdings-page__stamps">
+          <PriceStamps priceText={stamps.price} updated={stamps.updated} options={{ timeZone }} />
+        </div>
       )}
 
       {query.isPending ? (

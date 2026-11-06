@@ -360,16 +360,9 @@ def _kpis(metrics: PortfolioMetrics, ccy: str, *, fx_rate: Decimal | None) -> di
         rate = fx_rate
         expense_cost = expense_cost * rate if rate is not None else None
 
-    # Total return = value + realized cash dividends - net contributions (the
-    # ledger identity in ``domain.returns.capital_gain``); capital gain is the
-    # same without dividends: value - net contributions.
-    total_return = pick(metrics.capital_gain_eur, metrics.capital_gain_usd, ccy)
-    total_value = pick(metrics.total_value_eur, metrics.total_value_usd, ccy)
-    invested = pick(metrics.total_contributions_eur, metrics.total_contributions_usd, ccy)
-    capital_gain: Decimal | None = None
-    if total_return is not None and total_value is not None and invested is not None:
-        dividends_realized = total_return - total_value + invested
-        capital_gain = total_return - dividends_realized
+    # Total return = value + realised cash dividends - net contributions; capital
+    # gain = total return - all dividend income (see ``portfolio_return_split``).
+    total_return, capital_gain, _income = holdings.portfolio_return_split(metrics, ccy)
 
     return {
         "total_value": dec(pick(metrics.total_value_eur, metrics.total_value_usd, ccy)),
@@ -414,13 +407,23 @@ def _iso_utc(at: datetime | None) -> str | None:
 
 def _freshness(freshness: dict[int, HoldingFreshness], *, now: datetime) -> dict[str, Any]:
     """Live / Updated / Updating... state: market clock + refresh activity + price times."""
+    from investment_dashboard.services import feed_stall_service  # noqa: PLC0415
+
     snap = refresh_status.snapshot()
     market_open = market_hours.is_us_market_open(now)
+    stalled_since = feed_stall_service.stalled_since()
     return {
         "market_state": live_bus.market_state(now),
         "prices_live": market_hours.is_live_now(
-            market_open=market_open, last_update_at=snap.last_update_at, now=now
+            market_open=market_open,
+            last_update_at=snap.last_update_at,
+            now=now,
+            price_market_at=feed_stall_service.newest_market_time(),
+            feed_stalled=stalled_since is not None,
+            window_seconds=feed_stall_service.live_max_age_seconds(),
+            quote_max_age_seconds=feed_stall_service.live_max_age_seconds(),
         ),
+        "feed_stalled_since": _iso_utc(stalled_since),
         "last_price_update_at": _iso_utc(snap.last_update_at),
         "price_market_at": _iso_utc(_max_time(f.price_market_time for f in freshness.values())),
         "price_observed_at": _iso_utc(_max_time(f.updated_at for f in freshness.values())),

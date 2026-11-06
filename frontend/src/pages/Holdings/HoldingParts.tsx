@@ -75,7 +75,7 @@ export function HoldingDetails({ id, row, ccy }: { id?: string; row: HoldingRowD
         </dd>
       </div>
       <div>
-        <dt>Capital gain</dt>
+        <dt>Unrealised gain</dt>
         <dd>
           <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored />
         </dd>

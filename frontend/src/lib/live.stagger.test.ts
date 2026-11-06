@@ -1,6 +1,6 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleLiveEvent, LOST_AFTER_MS, resetServerFlow, startLive, UPDATED_SHOWN_MS } from "./live";
+import { handleLiveEvent, LOST_AFTER_MS, resetServerFlow, shouldShowLost, startLive, UPDATED_SHOWN_MS } from "./live";
 import { getServerStatus, resetServerStatus } from "./serverStatus";
 
 const overview = (ccy: "EUR" | "USD") => ({
@@ -189,5 +189,37 @@ describe("server restarts", () => {
     FakeEventSource.instances.at(-1)!.onopen?.();
     expect(getServerStatus().kind).toBe("idle");
     stop();
+  });
+
+  it("never shows 'lost' when the stream has not connected yet (login, 401 before the cookie)", async () => {
+    const stop = startLive(qc);
+    FakeEventSource.instances[0]!.onerror?.(); // first attempt fails
+    await vi.advanceTimersByTimeAsync(LOST_AFTER_MS * 3);
+    FakeEventSource.instances.at(-1)!.onerror?.();
+    await vi.advanceTimersByTimeAsync(LOST_AFTER_MS * 3);
+    expect(getServerStatus().kind).toBe("idle");
+    stop();
+  });
+});
+
+describe("shouldShowLost", () => {
+  const base = { everConnected: true, liveStatus: "reconnecting" as const, serverKind: "idle", pathname: "/overview" };
+
+  it("shows after a connected stream dropped and did not come back", () => {
+    expect(shouldShowLost(base)).toBe(true);
+  });
+  it("waits for a first connection", () => {
+    expect(shouldShowLost({ ...base, everConnected: false })).toBe(false);
+  });
+  it("stays quiet on the login and onboarding pages", () => {
+    expect(shouldShowLost({ ...base, pathname: "/login" })).toBe(false);
+    expect(shouldShowLost({ ...base, pathname: "/onboarding/step" })).toBe(false);
+  });
+  it("stays quiet when reconnected or a restart is announced", () => {
+    expect(shouldShowLost({ ...base, liveStatus: "connected" })).toBe(false);
+    expect(shouldShowLost({ ...base, serverKind: "restarting" })).toBe(false);
+  });
+  it("uses a grace period of about ten seconds", () => {
+    expect(LOST_AFTER_MS).toBeGreaterThanOrEqual(10_000);
   });
 });

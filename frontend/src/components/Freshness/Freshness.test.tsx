@@ -182,11 +182,26 @@ describe("holdingMarks", () => {
 
 describe("describeFreshness", () => {
   it("says Live with the price time only when prices are live", () => {
-    expect(describeFreshness(base, opts)).toEqual({ status: "live", label: "Live · today 14:32", updated: undefined });
+    // Live names when the newest price was struck, not when it was pulled.
+    const struck = { ...base, price_market_at: "2026-11-02T14:31:00Z" };
+    expect(describeFreshness(struck, opts)).toEqual({
+      status: "live",
+      label: "Live · today 14:31",
+      updated: "Updated today 14:32",
+    });
     expect(describeFreshness({ ...base, prices_live: false }, opts)).toEqual({
       status: "closed",
       label: "Market open · prices as of today 14:30",
       short: "Open · today 14:30",
+      updated: "Updated today 14:32",
+    });
+  });
+  it("never says Live while the provider serves frozen quotes", () => {
+    const stalled = { ...base, prices_live: true, feed_stalled_since: "2026-11-02T14:11:00Z" };
+    expect(describeFreshness(stalled, opts)).toEqual({
+      status: "stale",
+      label: "Delayed · provider prices stuck since today 14:11",
+      short: "Delayed · today 14:11",
       updated: "Updated today 14:32",
     });
   });

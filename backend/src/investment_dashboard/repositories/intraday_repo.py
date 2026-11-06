@@ -85,6 +85,14 @@ def delete_in_range(session: Session, start: datetime, end: datetime) -> int:
     return int(result.rowcount or 0)
 
 
+def delete_at(session: Session, times: list[datetime]) -> int:
+    """Delete the samples captured exactly at ``times``. Returns rows removed."""
+    if not times:
+        return 0
+    result = session.execute(delete(IntradayValue).where(IntradayValue.captured_at.in_(times)))
+    return int(result.rowcount or 0)
+
+
 def delete_all(session: Session) -> int:
     """Delete all intraday samples. Returns rows removed."""
     result = session.execute(delete(IntradayValue))

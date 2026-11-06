@@ -84,8 +84,8 @@ def _resolve_tiingo_token() -> str | None:
 # publish ~once a day; ``cash`` / ``savings`` rows are synthetic Savings
 # balances with no yfinance ticker, so they get a sentinel large TTL.
 REFRESH_TTL_SECONDS: dict[str, int] = {
-    "etf": 2 * 60,
-    "stock": 2 * 60,
+    "etf": 50,
+    "stock": 50,
     "mutual_fund": 10 * 60,
     "cash": 24 * 60 * 60,
     "savings": 24 * 60 * 60,
@@ -303,6 +303,22 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
 
         by_symbol = {i.symbol: i for i in instruments}
         now = datetime.now(UTC).replace(tzinfo=None)
+        # Stamp *when each price is from* too (the provider's market time), as the
+        # live tick does: without it a manual re-pull (Fix -> Update prices) left
+        # the "prices as of" time where it was, so it looked as if nothing updated.
+        try:
+            market_times = fetch_market_times(symbols_to_fetch) if closes_by_symbol else {}
+        except Exception:  # pragma: no cover - defensive: never break the refresh
+            log.debug("market-time capture failed; continuing without it", exc_info=True)
+            market_times = {}
+        fetch_syms = {
+            instr.id: fetch_symbol(instr.symbol, provider_symbols.get(instr.id))
+            for instr in targets
+        }
+        if _observe_feed(
+            session, targets, fetch_syms, closes_by_symbol, market_times, now=now, today=today
+        ):
+            round_.note("price feed stalled: quotes unchanged / old market time")
         written_ids: list[int] = []
         for instr in targets:
             sym = fetch_symbol(instr.symbol, provider_symbols.get(instr.id))
@@ -315,7 +331,9 @@ def refresh_prices(  # noqa: PLR0915 - one cohesive pull round, narrated start t
             # Stamp every instrument we queried (see refresh_due_prices) so the
             # overview's per-symbol "updated" time advances even when the feed
             # returned nothing new for that symbol.
-            price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now)
+            price_cache_repo.upsert_last_refreshed_at(
+                cache, instr.id, now, market_time=market_times.get(sym)
+            )
         round_.settled("yfinance", result)
         _report_suspect_data(cache, by_symbol, written_ids, round_)
         return result
@@ -799,7 +817,13 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
             detail=f"{len(due)} due",
         )
         try:
-            closes_by_symbol = fetch_closes(symbols_to_fetch, fetch_start, fetch_end)
+            closes_by_symbol = fetch_closes(
+                symbols_to_fetch,
+                fetch_start,
+                fetch_end,
+                # NAV funds publish hours after the close: empty is "waiting", not a fault.
+                expected_gaps={fetch_sym[i.id] for i in due if i.asset_class in _NAV_ASSET_CLASSES},
+            )
         except YFinanceError as exc:
             # A hard yfinance failure no longer ends the cycle: fall through with
             # no primary data so the Tiingo fallback can still cover the gap. Every
@@ -820,6 +844,14 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
         except Exception:  # pragma: no cover - defensive: never break the refresh
             log.debug("market-time capture failed; continuing without it", exc_info=True)
             market_times = {}
+        stalled = _observe_feed(
+            session, due, fetch_sym, closes_by_symbol, market_times, now=now, today=today
+        )
+        if stalled:
+            round_.note(
+                "price feed stalled: quotes unchanged / old market time; "
+                "not Live, no graph points stored"
+            )
 
         result: dict[str, int] = {}
         written_ids: list[int] = []
@@ -865,8 +897,12 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
             now=now,
             today=today,
             # The fallback works in ledger symbols; re-key the provider's answer.
+            # While the feed is stalled, today's frozen intraday quotes are not
+            # real data: hide them so the backup covers those symbols.
             primary_closes={
-                i.symbol: closes_by_symbol[fetch_sym[i.id]]
+                i.symbol: _without_frozen_today(
+                    closes_by_symbol[fetch_sym[i.id]], i, today=today, stalled=stalled
+                )
                 for i in due
                 if fetch_sym[i.id] in closes_by_symbol
             },
@@ -878,6 +914,69 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
     finally:
         if owns_round:
             pull_log.end(round_)
+
+
+def _is_intraday_instrument(instr: Instrument) -> bool:
+    return (
+        instr.asset_class not in NAV_ASSET_CLASSES
+        and instr.asset_class not in SYNTHETIC_ASSET_CLASSES
+    )
+
+
+def _without_frozen_today(
+    closes: dict[date, Decimal], instr: Instrument, *, today: date, stalled: bool
+) -> dict[date, Decimal]:
+    if not stalled or not _is_intraday_instrument(instr):
+        return closes
+    return {d: c for d, c in closes.items() if d != today}
+
+
+def _observe_feed(
+    session: Session,
+    instruments: Sequence[Instrument],
+    fetch_sym: dict[int, str],
+    closes_by_symbol: dict[str, dict[date, Decimal]],
+    market_times: dict[str, datetime],
+    *,
+    now: datetime,
+    today: date,
+) -> bool:
+    """Feed this pull's stock/ETF quotes to the stall detector; ``True`` if stalled.
+
+    Never raises: stall detection must not break a price refresh.
+    """
+    from investment_dashboard.services import feed_stall_service  # noqa: PLC0415
+
+    try:
+        now_utc = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+        quotes: dict[str, Decimal] = {}
+        times: list[datetime] = []
+        for instr in instruments:
+            if not _is_intraday_instrument(instr):
+                continue
+            sym = fetch_sym[instr.id]
+            close = closes_by_symbol.get(sym, {}).get(today)
+            if close is not None:
+                quotes[sym] = close
+            if sym in market_times:
+                times.append(market_times[sym])
+        change = feed_stall_service.observe_pull(
+            session,
+            now=now_utc,
+            market_open=is_us_market_open(now_utc),
+            quotes=quotes,
+            newest_market_time=max(times) if times else None,
+        )
+        if change.started is not None:
+            # The points stored while the detector was still counting identical
+            # pulls already repeat the frozen quote: take them out again.
+            from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
+
+            intraday_snapshots_service.drop_samples_after(session, change.started, now_utc)
+        return feed_stall_service.is_stalled()
+    except Exception:  # pragma: no cover - defensive
+        log.warning("price-feed stall check failed", exc_info=True)
+        return False
 
 
 def rebuild_settled_snapshots(

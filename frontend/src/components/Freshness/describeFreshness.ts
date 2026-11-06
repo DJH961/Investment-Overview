@@ -79,11 +79,24 @@ export function describeFreshness(
   // The same moment twice says nothing new: show "Updated" only when it differs.
   const unlessSame = (when: string | null) => (when && updated === `Updated ${when}` ? undefined : updated);
   if (freshness.market_state === "open") {
-    if (pricesLive) {
-      const when = fetched ? formatStamp(fetched, stamp) : null;
+    // When the newest price was struck on the exchange (falls back to the pull time).
+    const struck = latestInstant(freshness.price_market_at, refresh.priceMarketAt);
+    if (pricesLive && !freshness.feed_stalled_since) {
+      const at = struck ?? fetched;
+      const when = at ? formatStamp(at, stamp) : null;
       return { status: "live", label: when ? `Live · ${when}` : "Live", updated: unlessSame(when) };
     }
-    const priceAt = latestInstant(freshness.price_market_at, freshness.price_observed_at);
+    if (freshness.feed_stalled_since) {
+      // The provider answers but its quotes are frozen: say so, never "Live".
+      const since = formatStamp(freshness.feed_stalled_since, stamp);
+      return {
+        status: "stale",
+        label: `Delayed · provider prices stuck since ${since}`,
+        short: `Delayed · ${since}`,
+        updated,
+      };
+    }
+    const priceAt = latestInstant(struck, freshness.price_observed_at);
     const when = priceAt ? formatStamp(priceAt, stamp) : null;
     return {
       status: "closed",

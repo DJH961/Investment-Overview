@@ -172,7 +172,7 @@ describe("Holdings page", () => {
     holdings.holdings = [saved[0], etf2, fund];
     try {
       const { container } = render(<Holdings />);
-      expect(container.querySelector(".page-header .price-stamps")).toHaveTextContent(/Price as of .*\(close\)/);
+      expect(container.querySelector(".holdings-page__stamps .price-stamps")).toHaveTextContent(/Price as of .*\(close\)/);
       const stamps = [...container.querySelectorAll(".holdings-page__row-stamp")];
       // Only the fund (a NAV, from another day) carries its own stamp; never called a close.
       expect(stamps).toHaveLength(1);

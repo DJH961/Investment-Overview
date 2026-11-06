@@ -17,14 +17,73 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.8.0] — 2026-11-06
+
+### Added
+- **Frozen price feed detection.** On 5 Nov the price provider (yfinance) kept
+  answering for 100 minutes (17:11–18:53 UTC) but served exactly the same stock,
+  ETF and EUR/USD prices every time. The app called that "Live", drew a flat 1 Day
+  line and then a jump, and Data Health saw nothing. Now a stall is detected after
+  about 4 minutes of unchanged quotes (or when the provider's own price time is
+  that old): the top bar says "Delayed · provider prices stuck since …", no graph
+  points are stored for that stretch, the Tiingo backup is asked for those
+  symbols (when a token is set), and the start and end are written to the
+  market-data activity log.
+- **Data Health: "Live price feed".** Lists every frozen-feed stretch of the last
+  7 days, and shows an error while one is in progress.
+- **The 1 Day / 1 Week graphs name their gaps.** "No market data from the price
+  provider 18:11–19:53; the line is drawn straight across", for stretches where
+  the provider has no bars at all (Yahoo still has none for 5 Nov 17:00–18:35 UTC,
+  so no reload could ever fill that hole).
+
 ### Changed
-- **v7.0 planning docs.** `docs/v7_plan.md` is now the readable plan — the four
-  v7 themes, the release order and the open decisions. The previous draft moves
-  to `docs/v7_research.md` as the evidence file, corrected: the currency-effect
-  figures it called unsurfaced already ship on Overview, the German-tax
-  direction is struck (the owner is a US taxpayer), and the OpenRouter and
-  news-source facts it flagged as unverified are now verified. Docs only, no
-  app change.
+- **"Live" means live.** Prices count as live only when a pull landed in the last
+  2.5 minutes (was 15) *and* the newest price itself was struck in the last
+  2.5 minutes. The Live chip shows when the price is from, not when it was pulled.
+  Stocks and ETFs are pulled every 50 s (was 120 s) so the price never ages past
+  that while the market is open. All three are in **Settings > Data refresh**:
+  "ETF price age" / "Stock price age" (how often prices are fetched), the new
+  "Live: newest price at most this old" (2.5 min) and the new "Frozen price
+  feed: alarm after" (4 min).
+- **Reload graph keeps your data.** Reloading the 1D / 1W graph (the graph's
+  reload button or Health & Repair) no longer deletes the once-a-minute live
+  points and rebuilds the day from 5-minute bars. It now removes only frozen-feed
+  runs and points more than 0.5 % away from the provider's bar for the same
+  moment, then fills the gaps from the bars. (An import or transaction edit still
+  rebuilds the graphs, since share counts change.)
+- **Capital gain and total return are one definition everywhere.** Overview and
+  Holdings show the same whole-portfolio "Capital gain" and "Total return", and
+  capital gain + dividend income = total return. Overview's capital gain no longer
+  includes reinvested dividends and money-market interest (they are dividend
+  income). The Holdings table's held-only columns are renamed "Unrealised gain",
+  each holding's dividends include reinvested distributions, and info buttons
+  explain every figure.
+- **One top bar on every screen.** The freshness chip comes from the same server
+  data on every view instead of each page writing its own ("Prices as of …",
+  "As of 5 Nov", "Import" …).
+- v7.0 planning docs: `docs/v7_plan.md` is the readable plan, the earlier draft
+  moves to `docs/v7_research.md` as the corrected evidence file (docs only).
+
+### Fixed
+- "Update prices" in Health & Repair now also refreshes when each price is from,
+  so the "prices as of" time moves after a manual update.
+- Phone top bar: the title, figures and price time truncate instead of running
+  past the screen edge (worst when the data-issue badge showed).
+- Hidden-numbers mode draws the value chart with exactly the same shape as normal
+  mode; only the labels become percentages.
+- Pages refresh by themselves after a repair job finishes, after saving or
+  deleting a price, FX or split fix, and after a setting that affects the reports
+  changes (on any open device).
+- Waiting for a mutual fund's NAV in the evening is no longer shown as a warning
+  or error; it is normal until the price is published.
+- "Connection to the server lost" no longer flashes during login; it shows only
+  after a working live connection has been down for about 10 seconds.
+- Silenced a harmless "Some characters could not be decoded" warning from the
+  price-data library.
+- Phone layouts: the Holdings update time sits right above the holdings list, the
+  Overview's top-winner / top-mover labels are no longer cut off, and Periods shows
+  each year's total in the top-right corner with growth figures first and larger
+  monthly totals.
 
 ## [6.7.2] — 2026-11-06
 

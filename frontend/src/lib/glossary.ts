@@ -24,6 +24,9 @@ export const GLOSSARY: GlossaryEntry[] = [
   { key: "risk_free", term: "Risk-free rate", definition: "The return on a very safe asset (a short-term government rate). Sharpe and Sortino measure your return above it." },
   { key: "benchmark", term: "Benchmark (funded)", definition: "A reference index fed with the same deposits on the same dates as your portfolio, so the comparison is fair. The gap shows how far ahead or behind you are." },
   { key: "attribution", term: "Attribution", definition: "How much each holding added to or took from the total return. Net added is the money you put in during the period." },
+  { key: "capital_gain", term: "Capital gain", definition: "Realised plus unrealised price gain after fees, with no dividends in it: total return minus dividend income. Includes gains locked in by selling and money held in cash or savings." },
+  { key: "unrealised_gain", term: "Unrealised gain", definition: "Value minus cost basis of what you still hold, without dividends. It is the part of the capital gain that is not yet locked in by a sale." },
+  { key: "total_return", term: "Total return", definition: "Capital gain plus dividend income (cash and reinvested), after fees, for the whole portfolio including sold positions. Same number on Overview and Holdings." },
   { key: "net_invested", term: "Net invested", definition: "Deposits minus withdrawals to date." },
 ];
 

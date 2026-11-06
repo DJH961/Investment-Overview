@@ -25,6 +25,7 @@ import { updatingView } from "../Freshness";
 import { Sidebar } from "../Sidebar";
 import { TabBar } from "../TabBar";
 import { TopBar } from "../TopBar";
+import { useGlobalFreshness } from "./useGlobalFreshness";
 import { usePortfolioSummary } from "./usePortfolioSummary";
 import "./AppShell.scss";
 import { useShellHealth } from "./useShellHealth";
@@ -83,7 +84,14 @@ export function AppShell() {
   // The top-bar refresh is always a real server pull (prices, FX, intraday sample).
   const server = useServerRefresh();
   const refresh = server.state;
-  const freshness = refresh.running ? updatingView(refresh) : pageFreshness;
+  // One chip for every view (the same server freshness everywhere); a page's own
+  // status wins only while that page cannot load its data (offline / failed).
+  const globalFreshness = useGlobalFreshness(currency, PREFETCH_DELAY_MS);
+  const freshness = refresh.running
+    ? updatingView(refresh)
+    : pageFreshness.status !== "stale" && globalFreshness
+      ? globalFreshness
+      : pageFreshness;
   const { toast } = useToast();
   // Always enabled, on every page: it never depends on a page registering a handler.
   // Offline, say so instead of spinning (the cached data stays on screen).

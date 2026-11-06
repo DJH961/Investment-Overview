@@ -11,6 +11,7 @@ Wraps ``yfinance.download`` with our preferred defaults:
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -106,8 +107,13 @@ def fetch_closes(
     *,
     downloader: Any = None,
     adjusted: bool = False,
+    expected_gaps: Collection[str] = (),
 ) -> dict[str, dict[date, Decimal]]:
     """Return ``{symbol: {date: close_decimal}}`` for the half-open range.
+
+    ``expected_gaps`` names symbols the caller expects may legitimately return
+    nothing yet (mutual funds before their NAV posts); an empty answer for them
+    is logged at INFO and never marks the provider status as partial/error.
 
     ``end`` follows yfinance's exclusive convention; we pass it through as-is.
     Symbols absent from the result are returned with empty dicts so callers
@@ -140,7 +146,9 @@ def fetch_closes(
     download = downloader or yf.download
 
     try:
-        result = _download_window(download, symbols, start, end, adjusted=adjusted)
+        result = _download_window(
+            download, symbols, start, end, adjusted=adjusted, expected_gaps=expected_gaps
+        )
     except YFinanceError as exc:
         _record_status(
             "error",
@@ -167,7 +175,12 @@ def fetch_closes(
             )
             try:
                 fallback = _download_window(
-                    download, missing, fallback_start, end, adjusted=adjusted
+                    download,
+                    missing,
+                    fallback_start,
+                    end,
+                    adjusted=adjusted,
+                    expected_gaps=expected_gaps,
                 )
             except YFinanceError as exc:
                 _record_status(
@@ -180,13 +193,16 @@ def fetch_closes(
                 if closes:
                     result[symbol] = closes
 
-    still_missing = [s for s in symbols if not result.get(s)]
+    # Symbols the caller expects to lag (NAV funds before their NAV posts) are
+    # waiting, not failing: they must not turn the provider status into an error.
+    still_missing = [s for s in symbols if not result.get(s) and s not in expected_gaps]
+    delivered = sum(1 for s in symbols if result.get(s))
     if not still_missing:
         msg = f"Fetched {len(symbols)} symbol(s) for {start}..{end}: {_format_symbols(symbols)}"
         if used_fallback:
             msg += " (last-close fallback used)"
         _record_status("ok", msg)
-    elif len(still_missing) == len(symbols):
+    elif delivered == 0:
         _record_status(
             "error",
             f"No data returned for any of {len(symbols)} symbol(s); "
@@ -195,7 +211,7 @@ def fetch_closes(
     else:
         _record_status(
             "partial",
-            f"{len(symbols) - len(still_missing)}/{len(symbols)} symbol(s) returned data; "
+            f"{delivered}/{len(symbols)} symbol(s) returned data; "
             f"missing: {still_missing[:5]}" + ("…" if len(still_missing) > 5 else ""),
         )
 
@@ -209,6 +225,7 @@ def _download_window(
     end: date,
     *,
     adjusted: bool = False,
+    expected_gaps: Collection[str] = (),
 ) -> dict[str, dict[date, Decimal]]:
     """Single yfinance ``download`` call, parsed into the adapter's shape."""
     try:
@@ -234,7 +251,10 @@ def _download_window(
     result: dict[str, dict[date, Decimal]] = {s: {} for s in symbols}
 
     if frame is None or getattr(frame, "empty", True):
-        log.warning("yfinance returned no data for %s..%s symbols=%s", start, end, symbols)
+        # An empty answer is routine when every symbol asked for is one the caller
+        # expects to lag (a fund whose NAV posts hours after the close).
+        level = logging.INFO if symbols and set(symbols) <= set(expected_gaps) else logging.WARNING
+        log.log(level, "yfinance returned no data for %s..%s symbols=%s", start, end, symbols)
         return result
 
     # ``group_by="ticker"`` makes yfinance return a column ``MultiIndex``

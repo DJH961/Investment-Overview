@@ -1411,34 +1411,45 @@ class TestReloadGraphs:
         assert app_config_repo.get(session, iss._RECONSTRUCTED_KEY) is None
         assert not iss._week_day_fetched(session, date(2024, 6, 3), date(2024, 6, 4))
 
-    def test_reload_day_graph_clears_and_reconstructs(
+    @staticmethod
+    def _seed_live_day(session: Session) -> tuple[list[datetime], list[datetime]]:
+        """Live points on the 2024-06-03 session: moving, then a 10-minute frozen run."""
+        moving = [datetime(2024, 6, 3, 14, m) for m in range(0, 10)]
+        for i, at in enumerate(moving):
+            intraday_repo.insert_sample(session, at, Decimal("1000.00") + i, None, None)
+        frozen = [datetime(2024, 6, 3, 14, m) for m in range(10, 21)]
+        for at in frozen:
+            intraday_repo.insert_sample(session, at, Decimal("999.50"), None, None)
+        return moving, frozen
+
+    def test_reload_day_graph_keeps_live_points_and_drops_frozen_run(
         self, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        moving, frozen = self._seed_live_day(session)
+        iss._mark_reconstructed(session, date(2024, 6, 3))
         called: dict[str, object] = {}
 
-        def _fake_clear(sess: Session, **kw: Any) -> int:
-            called["clear"] = True
-            return 1
-
         def _fake_reconstruct(sess: Session, **kw: Any) -> int:
-            called["reconstruct_force"] = kw.get("force")
+            called["force"] = kw.get("force")
+            called["replace_disagreeing"] = kw.get("replace_disagreeing")
             return 42
 
-        monkeypatch.setattr(iss, "clear_day_samples", _fake_clear)
         monkeypatch.setattr(iss, "reconstruct_last_session", _fake_reconstruct)
 
         written = iss.reload_day_graph(session, now=_NOW)
         assert written == 42
-        assert called == {"clear": True, "reconstruct_force": True}
+        assert called == {"force": True, "replace_disagreeing": True}
+        kept = [r.captured_at for r in intraday_repo.list_in_range(session, moving[0], frozen[-1])]
+        # Every moving live point and the first point of the frozen run survive.
+        assert kept == [*moving, frozen[0]]
+        assert app_config_repo.get(session, iss._RECONSTRUCTED_KEY) is None
 
-    def test_reload_week_graph_clears_and_reconstructs_both(
+    def test_reload_week_graph_keeps_live_points(
         self, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        moving, frozen = self._seed_live_day(session)
+        iss._mark_week_day_fetched(session, date(2024, 6, 3), date(2024, 6, 3))
         called: dict[str, object] = {}
-
-        def _fake_clear(sess: Session, **kw: Any) -> int:
-            called["clear_week"] = True
-            return 2
 
         def _fake_reconstruct(sess: Session, **kw: Any) -> int:
             called["reconstruct_force"] = kw.get("force")
@@ -1448,22 +1459,21 @@ class TestReloadGraphs:
             called["week_force"] = kw.get("force")
             return [1, 2, 3]
 
-        monkeypatch.setattr(iss, "clear_week_samples", _fake_clear)
         monkeypatch.setattr(iss, "reconstruct_last_session", _fake_reconstruct)
         monkeypatch.setattr(iss, "week_series_with_fx", _fake_week)
 
         count = iss.reload_week_graph(session, now=_NOW)
         assert count == 3
-        assert called == {"clear_week": True, "reconstruct_force": True, "week_force": True}
+        assert called == {"reconstruct_force": True, "week_force": True}
+        kept = [r.captured_at for r in intraday_repo.list_in_range(session, moving[0], frozen[-1])]
+        assert kept == [*moving, frozen[0]]
+        assert not iss._week_day_fetched(session, date(2024, 6, 3), date(2024, 6, 3))
 
     def test_reload_graphs_reloads_both_and_warms_snapshots(
         self, session: Session, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        moving, _frozen = self._seed_live_day(session)
         called: dict[str, object] = {}
-
-        def _fake_clear(sess: Session, **kw: Any) -> int:
-            called["clear_week"] = True
-            return 1
 
         def _fake_reconstruct(sess: Session, **kw: Any) -> int:
             called["reconstruct_force"] = kw.get("force")
@@ -1473,10 +1483,24 @@ class TestReloadGraphs:
             called["week_force"] = kw.get("force")
             return [1, 2, 3, 4]
 
-        monkeypatch.setattr(iss, "clear_week_samples", _fake_clear)
         monkeypatch.setattr(iss, "reconstruct_last_session", _fake_reconstruct)
         monkeypatch.setattr(iss, "week_series_with_fx", _fake_week)
 
         result = iss.reload_graphs(session, now=_NOW)
         assert result == {"day": 10, "week": 4}
-        assert called == {"clear_week": True, "reconstruct_force": True, "week_force": True}
+        assert called == {"reconstruct_force": True, "week_force": True}
+        assert len(intraday_repo.list_in_range(session, moving[0], moving[-1])) == len(moving)
+
+    def test_disagreeing_live_points_are_found(self) -> None:
+        t = datetime(2024, 6, 3, 14, 0)
+        live = [
+            (t, Decimal("1000")),
+            (t + timedelta(minutes=1), Decimal("1001")),
+            (t + timedelta(minutes=5), Decimal("1100")),  # 10 % off its bar: bad
+            (t + timedelta(minutes=30), Decimal("5")),  # no bar nearby: left alone
+        ]
+        bars = [
+            (t, Decimal("1000.5"), None),
+            (t + timedelta(minutes=5), Decimal("1000"), None),
+        ]
+        assert iss._disagreeing_live_points(live, bars) == [t + timedelta(minutes=5)]

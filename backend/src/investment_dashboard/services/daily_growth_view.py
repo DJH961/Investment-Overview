@@ -209,13 +209,19 @@ def build_daily_growth_caption(
             "awaiting two priced days", None, is_live=False, money_text=money_text
         )
 
-    # The freshest proof we have that the feed is genuinely live right now: prefer
-    # the most recent of our last successful pull and the exchange strike time.
-    freshest_pull = max(
-        (t for t in (price_observed_at, price_market_at) if t is not None),
-        default=None,
+    # Live only when the price itself is recent: the exchange strike time when the
+    # provider gives one (a recent pull of a frozen quote is not live), else our
+    # last successful pull; never while the feed is known to be stalled. The age
+    # limit is the Settings value "Live: newest price at most this old".
+    from investment_dashboard.services import feed_stall_service  # noqa: PLC0415
+
+    proof = price_market_at if price_market_at is not None else price_observed_at
+    is_live = (
+        market_open
+        and last_date == today
+        and not feed_stall_service.is_stalled()
+        and feed_is_fresh(proof, now, window_seconds=feed_stall_service.live_max_age_seconds())
     )
-    is_live = market_open and last_date == today and feed_is_fresh(freshest_pull, now)
     updated_text: str | None = None
     # The top-right corner stamp for the "Today" card: the bare clock the close
     # settled at (no "as of" label), or "live" while the session tracks now.
