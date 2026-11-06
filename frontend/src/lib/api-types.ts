@@ -1281,6 +1281,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maintenance/tiingo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tiingo Usage
+         * @description How the Tiingo backup is used and how many requests are left.
+         */
+        get: operations["tiingo_usage_api_maintenance_tiingo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/onboarding": {
         parameters: {
             query?: never;
@@ -5430,6 +5450,50 @@ export interface components {
             px: string;
         };
         /**
+         * TiingoUsage
+         * @description The Tiingo backup: key present, the app's own caps, calls used and left.
+         */
+        TiingoUsage: {
+            /** Configured */
+            configured: boolean;
+            /** Daily Cap */
+            daily_cap: number;
+            /** Day Resets At */
+            day_resets_at: string;
+            /** Day Used */
+            day_used: number;
+            /** Hour Resets At */
+            hour_resets_at: string;
+            /** Hour Used */
+            hour_used: number;
+            /** Hourly Cap */
+            hourly_cap: number;
+            /** Last At */
+            last_at?: string | null;
+            /** Last Message */
+            last_message?: string | null;
+            /** Last Status */
+            last_status?: string | null;
+            /**
+             * Nav Probes Today
+             * @default 0
+             */
+            nav_probes_today: number;
+            /** Rate Limited At */
+            rate_limited_at?: string | null;
+            /** Remaining */
+            remaining: number;
+            /** Uses */
+            uses: components["schemas"]["TiingoUse"][];
+        };
+        /** TiingoUse */
+        TiingoUse: {
+            /** Detail */
+            detail: string;
+            /** Title */
+            title: string;
+        };
+        /**
          * TransactionAll
          * @description The whole ledger in one answer (the client filters, sorts and pages it).
          */
@@ -8142,6 +8206,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tiingo_usage_api_maintenance_tiingo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TiingoUsage"];
                 };
             };
         };

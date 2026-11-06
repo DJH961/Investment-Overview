@@ -11327,6 +11327,130 @@
         "title": "TickPrice",
         "type": "object"
       },
+      "TiingoUsage": {
+        "description": "The Tiingo backup: key present, the app's own caps, calls used and left.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "daily_cap": {
+            "title": "Daily Cap",
+            "type": "integer"
+          },
+          "day_resets_at": {
+            "title": "Day Resets At",
+            "type": "string"
+          },
+          "day_used": {
+            "title": "Day Used",
+            "type": "integer"
+          },
+          "hour_resets_at": {
+            "title": "Hour Resets At",
+            "type": "string"
+          },
+          "hour_used": {
+            "title": "Hour Used",
+            "type": "integer"
+          },
+          "hourly_cap": {
+            "title": "Hourly Cap",
+            "type": "integer"
+          },
+          "last_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last At"
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          },
+          "nav_probes_today": {
+            "default": 0,
+            "title": "Nav Probes Today",
+            "type": "integer"
+          },
+          "rate_limited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limited At"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "uses": {
+            "items": {
+              "$ref": "#/components/schemas/TiingoUse"
+            },
+            "title": "Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configured",
+          "hourly_cap",
+          "daily_cap",
+          "hour_used",
+          "day_used",
+          "remaining",
+          "hour_resets_at",
+          "day_resets_at",
+          "uses"
+        ],
+        "title": "TiingoUsage",
+        "type": "object"
+      },
+      "TiingoUse": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "detail"
+        ],
+        "title": "TiingoUse",
+        "type": "object"
+      },
       "TransactionAll": {
         "description": "The whole ledger in one answer (the client filters, sorts and pages it).",
         "properties": {
@@ -15729,6 +15853,28 @@
           }
         },
         "summary": "Put Split",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/tiingo": {
+      "get": {
+        "description": "How the Tiingo backup is used and how many requests are left.",
+        "operationId": "tiingo_usage_api_maintenance_tiingo_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TiingoUsage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tiingo Usage",
         "tags": [
           "maintenance"
         ]

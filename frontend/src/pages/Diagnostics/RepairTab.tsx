@@ -7,6 +7,7 @@ import { formatDateTime } from "../../lib/format";
 import { useJobCatalogue, type JobInfo, type JobRun } from "../../lib/queries/maintenance";
 import { defaultParams, JobParamsForm, type JobParams } from "./JobParamsForm";
 import { RunJob } from "./RunJob";
+import { TiingoCard } from "./TiingoCard";
 
 /** What survives: the one difference people must not miss. */
 export const JOB_NOTES: Record<string, string> = {
@@ -61,6 +62,7 @@ export function RepairTab() {
         Fix data problems without touching the server. Destructive jobs ask you to type a word and take a backup first.
         {c.heavy_job && <strong> A heavy job is running now ({c.heavy_job}); others wait.</strong>}
       </p>
+      <TiingoCard />
       {c.groups.map((g) => {
         const jobs = c.jobs.filter((j) => j.group === g.id);
         if (jobs.length === 0) return null;

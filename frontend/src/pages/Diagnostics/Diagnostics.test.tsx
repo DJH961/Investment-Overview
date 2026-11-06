@@ -82,6 +82,23 @@ const CATALOGUE = {
 
 let calls: { url: string; method: string; body: unknown }[];
 
+const TIINGO = {
+  configured: true,
+  hourly_cap: 10,
+  daily_cap: 200,
+  hour_used: 3,
+  day_used: 12,
+  remaining: 7,
+  hour_resets_at: "2025-05-01T11:00:00Z",
+  day_resets_at: "2025-05-02T04:00:00Z",
+  rate_limited_at: null,
+  nav_probes_today: 2,
+  last_status: "ok",
+  last_message: "IEX VTI 78 intraday bar(s)",
+  last_at: "2025-05-01T10:30:00Z",
+  uses: [{ title: "Graph gap fill", detail: "Fills holes in the graphs." }],
+};
+
 beforeEach(() => {
   localStorage.clear();
   calls = [];
@@ -98,6 +115,7 @@ beforeEach(() => {
       if (url.includes("/api/maintenance/runs/"))
         return json({ id: "run-x", job: "x", status: "succeeded", actor: "s", params: {}, result: { updated: 3 }, error: null, started_at: "2025-05-01T10:00:00Z", finished_at: "2025-05-01T10:00:05Z" });
       if (url.includes("/api/maintenance/jobs")) return json(CATALOGUE);
+      if (url.includes("/api/maintenance/tiingo")) return json(TIINGO);
       if (url.includes("/problems/")) return json({ dismissed: 1 });
       if (url.includes("/api/diagnostics")) return json(DIAG);
       if (url.includes("/refresh")) return json({ running: false });
@@ -174,5 +192,15 @@ describe("useHealthStatus mapping", () => {
     expect(toHealthStatus({ severity: "ok", count: 0, problems: 0 })).toMatchObject({ attention: false, count: 0 });
     expect(toHealthStatus({ severity: "ok", count: 0, problems: 2 })).toMatchObject({ attention: true, severity: "warning", count: 2 });
     expect(toHealthStatus({ severity: "error", count: 1, problems: 0 }).label).toContain("1 item need");
+  });
+});
+
+describe("Health & Repair: Tiingo backup", () => {
+  it("shows how many Tiingo requests are used and left, and what the key is for", async () => {
+    renderPage("/diagnostics?tab=repair");
+    expect(await screen.findByText(/3 of 10 used · 7 left/)).toBeInTheDocument();
+    expect(screen.getByText(/12 of 200 used/)).toBeInTheDocument();
+    expect(screen.getByText("Graph gap fill.")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: /This hour: 3 of 10/ })).toBeInTheDocument();
   });
 });

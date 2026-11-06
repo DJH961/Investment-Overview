@@ -1776,6 +1776,147 @@ def drop_samples_after(session: Session, since: datetime, until: datetime) -> in
         return 0
 
 
+#: A hole this long inside a session (or at its open / close) is worth filling.
+GAP_FILL_MIN_SECONDS = 15 * 60
+
+
+def graph_gaps(session: Session, *, now: datetime | None = None) -> list[tuple[datetime, datetime]]:
+    """Holes in the stored 1D / 1W points, ``[(start, end)]`` naive UTC, oldest first.
+
+    Looks at every session of the week window: the open → first point, every gap
+    between points, and (for a finished session) the last point → close, when
+    the stretch is at least :data:`GAP_FILL_MIN_SECONDS`. Only sessions on which
+    stocks/ETFs were held count. Read-only.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    now_naive = _to_naive_utc(now or datetime.now(UTC))
+    gaps: list[tuple[datetime, datetime]] = []
+    for day in recent_trading_sessions(now):
+        open_at, close_at = _session_open_utc(day), _session_close_utc(day)
+        end = min(close_at, now_naive)
+        if end <= open_at or not _priced_intraday_positions(session, day):
+            continue
+        with cache_read_session(session) as cache:
+            times = [r.captured_at for r in intraday_repo.list_in_range(cache, open_at, end)]
+        edges = [open_at, *sorted(times), end]
+        for a, b in pairwise(edges):
+            if (b - a).total_seconds() >= GAP_FILL_MIN_SECONDS:
+                gaps.append((a, b))
+    return gaps
+
+
+class TiingoGapFillError(RuntimeError):
+    """The Tiingo gap fill cannot run (no token, or not enough budget left)."""
+
+
+def fill_gaps_from_tiingo(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    fetcher: object | None = None,
+    fx_fetcher: object | None = None,
+    token: str | None = None,
+) -> dict[str, object]:
+    """Fill the 1D / 1W graph holes from Tiingo's 5-minute IEX bars.
+
+    Costs one Tiingo request per held stock/ETF on the gap days plus one for
+    EUR/USD, all charged up front; refuses (:class:`TiingoGapFillError`) when the
+    budget left cannot cover them, so it never half-runs. Only instants inside a
+    hole are written: points the app captured itself are never replaced.
+    ``fetcher(symbol, start_day, end_day)`` / ``fx_fetcher(start_day, end_day)``
+    are injectable for tests. Returns a summary for the repair job and the log.
+    """
+    from investment_dashboard.activity_log import activity  # noqa: PLC0415
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.services import (  # noqa: PLC0415
+        fx_service,
+        prices_service,
+        tiingo_usage_service,
+    )
+
+    now = now or datetime.now(UTC)
+    gaps = graph_gaps(session, now=now)
+    if not gaps:
+        return {"gaps": 0, "points": 0, "calls": 0}
+    token = token if token is not None else prices_service._resolve_tiingo_token()
+    if not token and fetcher is None:
+        raise TiingoGapFillError("No Tiingo token: add one in Settings > Providers first.")
+
+    days = sorted({session_date_of(a.replace(tzinfo=UTC)) for a, _ in gaps})
+    priced_by_day = {d: _priced_intraday_positions(session, d) for d in days}
+    symbols = sorted({p.instrument.symbol for ps in priced_by_day.values() for p in ps})
+    needs_fx = any(_is_usd_native(p) for ps in priced_by_day.values() for p in ps)
+    calls = len(symbols) + (1 if needs_fx else 0)
+    if fetcher is None:
+        granted, left = tiingo_usage_service.reserve(calls)
+        if not granted:
+            raise TiingoGapFillError(
+                f"Filling {len(gaps)} gap(s) needs {calls} Tiingo request(s) "
+                f"({len(symbols)} holdings + EUR/USD) but only {left} are left "
+                "in this hour/day. Try after the hourly reset, or raise the caps in Settings."
+            )
+
+    if fetcher is None:
+        from investment_dashboard.adapters.tiingo_client import fetch_iex_intraday  # noqa: PLC0415
+
+        def fetcher(symbol: str, start_day: date, end_day: date) -> dict[datetime, Decimal]:
+            return fetch_iex_intraday(symbol, start_day, end_day, interval="5min", token=token)
+
+    def fetch_many(
+        syms: list[str], start_day: date, end_day: date
+    ) -> dict[str, dict[datetime, Decimal]]:
+        out: dict[str, dict[datetime, Decimal]] = {}
+        for sym in syms:
+            try:
+                out[sym] = fetcher(sym, start_day, end_day)  # type: ignore[operator]
+            except Exception:  # pragma: no cover - network churn: skip that symbol
+                log.warning("Tiingo intraday fetch failed for %s", sym, exc_info=True)
+                out[sym] = {}
+        return out
+
+    bars_by_symbol: dict[str, dict[datetime, Decimal]] = prices_service.via_provider_symbols(
+        session, fetch_many
+    )(symbols, days[0], days[-1])
+    fx_bars: dict[datetime, Decimal] = {}
+    if needs_fx:
+        if fx_fetcher is not None:
+            fx_bars = dict(fx_fetcher(days[0], days[-1]))  # type: ignore[operator]
+        else:
+            # Already charged above, so bypass the per-call gate.
+            fx_bars = fx_service.intraday_fx_bars_via_tiingo(
+                days[0], days[-1], interval=RECONSTRUCT_INTERVAL, charge_budget=lambda: True
+            )
+
+    def in_gap(t: datetime) -> bool:
+        return any(a < t < b for a, b in gaps)
+
+    written = 0
+    missing = [s for s in symbols if not bars_by_symbol.get(s)]
+    for day in days:
+        priced = priced_by_day[day]
+        # A holding without bars would be carried flat and bend the line: fill a
+        # day only when Tiingo had bars for every stock/ETF held that day.
+        if not priced or any(p.instrument.symbol in missing for p in priced):
+            continue
+        samples = _build_week_day_samples(session, day, priced, bars_by_symbol, fx_bars)
+        keep = [s for s in samples if in_gap(s[0])]
+        if not keep:
+            continue
+        with cache_write_session(session) as cache:
+            for t, market, point_fx in keep:
+                intraday_repo.insert_sample(cache, t, market, point_fx, _usd_of(market, point_fx))
+        written += len(keep)
+    activity("market_data").info(
+        "graph gap fill from Tiingo: %d gap(s), %d point(s) written, %d request(s)%s",
+        len(gaps),
+        written,
+        calls,
+        f"; no bars for {', '.join(missing)}" if missing else "",
+    )
+    return {"gaps": len(gaps), "points": written, "calls": calls, "no_bars": missing}
+
+
 def _prune_week(session: Session, *, now: datetime) -> None:
     """Drop frozen runs across the week window and forget the fetch markers."""
     drop_frozen_samples(session, week_window_start_utc(now), _to_naive_utc(now))

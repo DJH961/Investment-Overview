@@ -183,13 +183,35 @@ def _refresh_risk_free(_params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _reset_tiingo_state(_params: dict[str, Any]) -> dict[str, Any]:
-    from investment_dashboard.db import config_session_scope  # noqa: PLC0415
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
     from investment_dashboard.repositories.tiingo_state_repo import STATE_KEY  # noqa: PLC0415
     from investment_dashboard.services import app_config_service  # noqa: PLC0415
 
-    with config_session_scope() as session:
+    # The counters live in the ledger tier, where every Tiingo call charges them
+    # (this job used to clear the config tier, so the reset changed nothing).
+    with ledger_session_scope() as session:
         removed = app_config_service.delete_key(session, STATE_KEY)
     return {"cleared": removed}
+
+
+def _tiingo_fill_gaps(_params: dict[str, Any]) -> dict[str, Any]:
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
+
+    with ledger_session_scope() as session:
+        # A TiingoGapFillError (no token / not enough budget) fails the run with
+        # its plain message, shown on the Repair page.
+        return dict(iss.fill_gaps_from_tiingo(session))
+
+
+def _tiingo_refresh_prices(_params: dict[str, Any]) -> dict[str, Any]:
+    from investment_dashboard.db import cache_session_scope, ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import prices_service  # noqa: PLC0415
+
+    # No token raises TiingoNotConfiguredError: the run fails with that message.
+    with ledger_session_scope() as session, cache_session_scope() as cache:
+        rows, switched = prices_service.refresh_via_tiingo(session, cache)
+    return {"rows_written": sum(rows.values()), "used_tiingo": switched}
 
 
 def _backup_now(_params: dict[str, Any]) -> dict[str, Any]:
@@ -319,6 +341,24 @@ JOBS: tuple[JobSpec, ...] = (
         "providers",
         "Fetch the current risk-free rate.",
         _refresh_risk_free,
+    ),
+    JobSpec(
+        "tiingo.fill_graph_gaps",
+        "Fill graph gaps from Tiingo",
+        "providers",
+        "Fill holes in the 1 Day / 1 Week graphs where yfinance has no bars, from "
+        "Tiingo's 5-minute prices. Costs one Tiingo request per held stock/ETF plus one "
+        "for EUR/USD; refuses if the hourly/daily allowance can't cover it. Your own "
+        "live points are never replaced.",
+        _tiingo_fill_gaps,
+    ),
+    JobSpec(
+        "tiingo.refresh_prices",
+        "Re-pull prices from Tiingo",
+        "providers",
+        "Ask Tiingo for every holding whose price is behind (skips the ones already "
+        "current, so it only spends requests where Tiingo can add something).",
+        _tiingo_refresh_prices,
     ),
     JobSpec(
         "tiingo.reset_state",

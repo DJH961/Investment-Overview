@@ -17,6 +17,7 @@ export type LogsDto = S["LogsDto"];
 export type BackupsDto = S["BackupsDto"];
 export type SystemInfo = S["SystemInfo"];
 export type ProbeResult = S["ProbeResult"];
+export type TiingoUsage = S["TiingoUsage"];
 export type ProbeRequest = S["ProbeRequest"];
 export type InstrumentOut = S["InstrumentOut"];
 export type ClosePoint = S["ClosePoint"];
@@ -28,6 +29,18 @@ const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 export const backupDownloadUrl = (name: string) => `${BASE}/api/backup?name=${encodeURIComponent(name)}`;
 
 const M = "maintenance";
+
+// ---- Tiingo backup -----------------------------------------------------------
+
+/** The Tiingo key's uses and its request budget (used / left / resets). */
+export function useTiingoUsage() {
+  return useQuery({
+    queryKey: [M, "tiingo"],
+    queryFn: ({ signal }) => api<TiingoUsage>("/api/maintenance/tiingo", { signal }),
+    // Counters move with every backup call and repair job: keep them current.
+    refetchInterval: 30_000,
+  });
+}
 
 // ---- jobs ------------------------------------------------------------------
 
@@ -75,6 +88,7 @@ export function applyJobEvent(qc: QueryClient, ev: Record<string, unknown>): voi
   qc.setQueryData([M, "run", ev.id], run as unknown as JobRun);
   if (ev.status !== "running") {
     void qc.invalidateQueries({ queryKey: [M, "jobs"] });
+    void qc.invalidateQueries({ queryKey: [M, "tiingo"] });
     void qc.invalidateQueries({ queryKey: ["diagnostics"] });
     if (String(ev.job).startsWith("backup.")) void qc.invalidateQueries({ queryKey: [M, "backups"] });
   }
