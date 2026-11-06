@@ -98,6 +98,16 @@ export function formatStamp(value: Input | null | undefined, opts: StampOptions 
 /** Upper-case the first letter ("yesterday 22:00 (close)" -> "Yesterday 22:00 (close)") for a stamp that starts a line. */
 export const sentenceCase = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
+/**
+ * A stamp with "today" dropped, for a tight slot such as a card header:
+ * "today 22:00 (close)" -> "22:00 (close)", while "yesterday 22:00" and
+ * "Fri 22:00" keep their day because without it they would be ambiguous.
+ *
+ * Only a clock may lose its day, so "today (NAV)" (a day with no time) is left
+ * alone rather than reduced to a bare "(NAV)".
+ */
+export const shortStamp = (text: string): string => sentenceCase(text.replace(/^today (?=\d)/, ""));
+
 /** The closing bell a "close" refers to: US listings, 16:00 New York. */
 export const US_CLOSE = { zone: "America/New_York", hour: 16 } as const;
 
