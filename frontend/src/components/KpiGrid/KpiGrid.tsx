@@ -7,7 +7,6 @@ import { formatPercent, formatPp } from "../../lib/format";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
-import { DayFacts } from "./DayFacts";
 
 type Kpis = OverviewDto["kpis"];
 type Verdict = OverviewDto["market_verdict"];
@@ -30,6 +29,10 @@ const STRIP_TIPS = {
 };
 
 export const KPI_TIPS = {
+  priceMove:
+    "What your holdings' prices did over the session, each valued at that session's own exchange rate. " +
+    "While the market is shut, add the overnight FX figure under it and you get the headline change exactly. " +
+    "While a fund's NAV is pending, its ETF twin's estimate stands in for it.",
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
   totalReturn:
     "What the portfolio has earned in money: current value + cash dividends received − net invested. Reinvested dividends are in the value, so every dividend counts once. Holdings splits it into capital gain and dividends.",
@@ -92,14 +95,40 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     </span>
   ) : undefined;
 
+  // The day's move split into its two causes. The price move is what the holdings'
+  // prices did; the overnight FX leg is the same holdings at the same prices
+  // revalued at today's rate. Together they are the headline change exactly.
+  const ls = data?.last_session;
+  const est = k?.estimate ?? null;
+  const priceMove = est && ls?.move_est != null ? ls.move_est : k?.daily_move;
+  const overnight = ls
+    ? toNum(est && ls.overnight_currency_est != null ? ls.overnight_currency_est : ls.overnight_currency)
+    : null;
+  // A book reported in its own currency cannot drift overnight: the figure is a
+  // constant zero, so it is left out rather than printed as a finding. It is marked
+  // `data-ccy-specific` because that absence is correct, not a dropped section
+  // (see Overview.currency.test.tsx).
+  const overnightHint =
+    overnight !== null && Math.abs(overnight) >= 0.005 ? (
+      <span data-ccy-specific data-testid="overnight-currency">
+        Overnight FX <Money amount={overnight} currency={currency} signed />
+      </span>
+    ) : undefined;
+
   const expense = toNum(k?.weighted_expense_ratio);
   const ttm = toNum(k?.dividends_ttm);
 
   return (
     <div className="kpi-grid">
-      {/* Today's figures first: they explain the headline immediately above. */}
-      <DayFacts data={data} currency={currency} />
       <div className="kpi-grid__tiles">
+        <KpiTile
+          label="Price move"
+          tooltip={KPI_TIPS.priceMove}
+          loading={loading}
+          value={money(priceMove, true)}
+          secondary={money2(k2?.estimate && data?.last_session?.move_est != null ? data.last_session.move_est : k2?.daily_move, true)}
+          hint={overnightHint}
+        />
         <KpiTile
           label="Invested"
           tooltip={KPI_TIPS.invested}
@@ -121,27 +150,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           value={pct(k?.xirr)}
           secondary={pct2(k2?.xirr)}
           hint={k?.ytd_xirr ? `YTD ${formatPercent(toNum(k.ytd_xirr), { signed: true })}` : undefined}
-        />
-        <KpiTile
-          label="Vs market"
-          tooltip={KPI_TIPS.vsMarket}
-          loading={loading}
-          value={<VsMarket verdict={v} />}
-          hint={
-            v && v.portfolio_return != null && v.benchmark_return != null ? (
-              // One comparison per line, aligned: "You +76.86%" over "VT +79.06%".
-              <span className="kpi-grid__vs">
-                <span className="kpi-grid__vs-row">
-                  <span className="kpi-grid__vs-who">You</span>
-                  <Percent ratio={toNum(v.portfolio_return)} signed />
-                </span>
-                <span className="kpi-grid__vs-row">
-                  <span className="kpi-grid__vs-who">{v.benchmark_symbol}</span>
-                  <Percent ratio={toNum(v.benchmark_return)} signed />
-                </span>
-              </span>
-            ) : undefined
-          }
         />
         <KpiTile
           label="Total growth"
@@ -166,11 +174,25 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           secondary={pct2(k2?.mtd_growth)}
         />
         <KpiTile
-          label="Dividend income"
-          tooltip={KPI_TIPS.dividendIncome}
+          label="Vs market"
+          tooltip={KPI_TIPS.vsMarket}
           loading={loading}
-          value={money(k?.dividend_income)}
-          secondary={money2(k2?.dividend_income)}
+          value={<VsMarket verdict={v} />}
+          hint={
+            v && v.portfolio_return != null && v.benchmark_return != null ? (
+              // One comparison per line, aligned: "You +76.86%" over "VT +79.06%".
+              <span className="kpi-grid__vs">
+                <span className="kpi-grid__vs-row">
+                  <span className="kpi-grid__vs-who">You</span>
+                  <Percent ratio={toNum(v.portfolio_return)} signed />
+                </span>
+                <span className="kpi-grid__vs-row">
+                  <span className="kpi-grid__vs-who">{v.benchmark_symbol}</span>
+                  <Percent ratio={toNum(v.benchmark_return)} signed />
+                </span>
+              </span>
+            ) : undefined
+          }
         />
       </div>
       {!loading && k && (

@@ -126,6 +126,14 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
   // Its change is given as money and percent together, since "how far off is the estimate"
   // is a money question; both stay uncoloured so the line reads as context, not a second headline.
   const secTotal = est2 ? est2.total_value : k2?.total_value;
+  const ls = data.last_session ?? null;
+  // The official book, beside the headline because that is the number that is real:
+  // the estimate is only ever a stand-in for it. Shut market, the official change
+  // since the previous close already folds in the overnight currency; open market,
+  // the plain official day move.
+  const offShut = marketClosed && ls?.day_move != null;
+  const officialPct = offShut ? ls?.day_move_pct : k.daily_growth_pct;
+  const officialMove = offShut ? ls?.day_move : k.daily_move;
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
     <section className={cls} aria-label="Portfolio value">
@@ -173,6 +181,17 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
             </span>
           )}
         </div>
+        {est && (
+          <p className="overview-hero__official" data-testid="hero-official">
+            <span className="overview-hero__muted">Official</span>
+            <Money amount={toNum(k.total_value)} currency={currency} />
+            <span className="overview-hero__official-change" data-testid="hero-official-change">
+              <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
+              {" · "}
+              <Percent ratio={toNum(officialPct ?? null)} signed />
+            </span>
+          </p>
+        )}
         <div className="overview-hero__move">
           <DeltaBadge value={toNum(headPct)} />
           <Money amount={toNum(headMove)} currency={currency} signed colored />

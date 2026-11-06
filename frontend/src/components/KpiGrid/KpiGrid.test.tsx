@@ -31,7 +31,9 @@ function data(verdict: Partial<OverviewDto["market_verdict"]>): OverviewDto {
 describe("KpiGrid", () => {
   it("shows the NiceGUI tile set with both currencies", () => {
     render(<KpiGrid data={data({ beating: true, portfolio_return: "0.25", benchmark_return: "0.2" })} currency="EUR" loading={false} />);
-    for (const l of ["Invested", "Total return", "XIRR", "Vs market", "Total growth", "YTD", "MTD", "Dividend income"]) {
+    // "Price move" leads: the day is what you look at first. "Dividend income" is
+    // gone — the stat strip right below already carries dividend return and yield.
+    for (const l of ["Price move", "Invested", "Total return", "XIRR", "Total growth", "YTD", "MTD", "Vs market"]) {
       expect(screen.getByText(l)).toBeInTheDocument();
     }
     expect(screen.getByText("€100,000.00")).toBeInTheDocument();

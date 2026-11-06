@@ -35,6 +35,7 @@ describe("OverviewHero", () => {
     // The supporting figures live in the KPI block now (see KpiGrid/DayFacts):
     // the hero is the value, the other currency and one change row, nothing else.
     expect(screen.queryByTestId("hero-split")).toBeNull();
+    // Nothing is estimating here, so there is no official line to contrast with.
     expect(screen.queryByTestId("hero-official")).toBeNull();
   });
   it("shows the live corner stamp and the incomplete-total note", () => {
@@ -95,8 +96,14 @@ describe("OverviewHero", () => {
     expect(screen.getByRole("button", { name: "About the estimated total" })).toBeInTheDocument();
     // Secondary currency follows its own estimate.
     expect(screen.getByText("US$217,728.00")).toBeInTheDocument();
-    // The official total is not here — the chip's tooltip and the KPI block carry it.
-    expect(screen.queryByTestId("hero-official")).toBeNull();
+    // The official book sits with the headline: the estimate only ever stands in
+    // for it, so the real number belongs beside the one replacing it.
+    const official = screen.getByTestId("hero-official");
+    expect(official).toHaveTextContent("Official");
+    expect(official).toHaveTextContent("€200,000.00");
+    const change = screen.getByTestId("hero-official-change");
+    expect(change).toHaveTextContent("+€1,380.00");
+    expect(change).toHaveTextContent("+0.69%");
   });
 
   it("the change row is the estimated move, and the same row in every market state", () => {
