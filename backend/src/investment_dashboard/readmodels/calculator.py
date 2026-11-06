@@ -102,6 +102,7 @@ def build_inputs(
         "as_of": ctx.as_of.isoformat(),
         "fx_usd_per_eur": dec(data.fx_rate_usd_per_eur),
         "total_value": _val(data.total_value_eur),
+        "investable_cash": _val(data.cash_eur),
         "instruments": [
             {
                 "instrument_id": i.instrument_id,
@@ -111,6 +112,7 @@ def build_inputs(
                 "asset_class": i.asset_class,
                 "current_value": _val(i.current_value_eur),
                 "current_pct": dec(i.current_pct / Decimal(100)),
+                "is_cash": i.is_cash,
             }
             for i in data.instruments
         ],
@@ -120,6 +122,7 @@ def build_inputs(
                 "current_value": _val(c.current_value_eur),
                 "current_pct": dec(c.current_pct / Decimal(100)),
                 "members": [m.instrument_id for m in c.members],
+                "is_cash": c.is_cash,
             }
             for c in data.categories
         ],

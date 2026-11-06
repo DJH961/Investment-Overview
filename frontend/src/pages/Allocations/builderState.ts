@@ -28,6 +28,23 @@ export function presetCurrent(items: Weighable[]): Weights {
   return Object.fromEntries(items.map((i) => [i.key, pctText(Number(i.current_pct ?? 0) * 100, 1)]));
 }
 
+/**
+ * The cash the portfolio holds (money-market funds + cash positions) in `ccy`.
+ * The server sends it in the page currency with the spot rate of the same instant;
+ * showing it in the other currency is a single-instant conversion with that rate.
+ */
+export function cashIn(
+  inputs: { ccy: string; investable_cash?: string | null; fx_usd_per_eur?: string | null },
+  ccy: string,
+): number {
+  const held = Number(inputs.investable_cash ?? 0);
+  if (!(held > 0)) return 0;
+  if (inputs.ccy === ccy) return held;
+  const fx = Number(inputs.fx_usd_per_eur ?? 0);
+  if (!(fx > 0)) return 0;
+  return ccy === "USD" ? held * fx : held / fx;
+}
+
 /** "Equal weight": 100 / n each. */
 export function presetEqual(items: Weighable[]): Weights {
   const n = items.length;

@@ -17,6 +17,8 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.allocation import current_weights_pct
+from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.money_market import CASH_CATEGORY, is_cash_asset_class
 from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
 from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.instrument_enrichment_service import effective_instrument
@@ -40,6 +42,8 @@ class CalcInstrument:
     price_eur: Decimal | None
     #: The effective asset class ("etf", "mutual_fund", ...); "" when unset.
     asset_class: str = ""
+    #: Money-market fund or cash / savings position: grouped as Cash, never a buy candidate.
+    is_cash: bool = False
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,8 @@ class CalcCategory:
     current_value_eur: Decimal
     current_pct: Decimal
     members: list[CalcInstrument] = field(default_factory=list)
+    #: Every member is cash (the "Cash" group).
+    is_cash: bool = False
 
 
 @dataclass(frozen=True)
@@ -64,6 +70,11 @@ class CalcData:
     @property
     def total_value_eur(self) -> Decimal:
         return sum((i.current_value_eur for i in self.instruments), start=ZERO)
+
+    @property
+    def cash_eur(self) -> Decimal:
+        """Value of the cash held (money-market funds + cash / savings), EUR mark."""
+        return sum((i.current_value_eur for i in self.instruments if i.is_cash), start=ZERO)
 
     def by_id(self) -> dict[int, CalcInstrument]:
         return {i.instrument_id: i for i in self.instruments}
@@ -98,6 +109,9 @@ def build_calculator_data(session: Session) -> CalcData:
     don't yet own. Inactive instruments are skipped so the builder is not
     cluttered with retired tickers.
     """
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    mm_extra = tuple(settings_service.get_or("portfolio.money_market_symbols", (), session))
     default_ccy = display_currency_service.get_display_currency(session)
     fx_rate = display_currency_service.current_rate(session, quote="USD")
 
@@ -118,7 +132,10 @@ def build_calculator_data(session: Session) -> CalcData:
     by_category: dict[str, list[CalcInstrument]] = {}
     for instr in instruments:
         eff = effective_instrument(instr, overrides.get(instr.id))
-        category = _category_label(eff.category, eff.asset_class)
+        cash = is_cash_asset_class(eff.asset_class) or is_money_market_effective(
+            instr, eff, mm_extra
+        )
+        category = CASH_CATEGORY if cash else _category_label(eff.category, eff.asset_class)
         ci = CalcInstrument(
             instrument_id=instr.id,
             symbol=eff.symbol,
@@ -128,6 +145,7 @@ def build_calculator_data(session: Session) -> CalcData:
             current_pct=pct_by_id.get(instr.id, ZERO),
             price_eur=_price_to_eur(prices.get(instr.id), instr.native_currency, fx_rate),
             asset_class=eff.asset_class or "",
+            is_cash=cash,
         )
         calc_instruments.append(ci)
         if category not in by_category:
@@ -147,6 +165,7 @@ def build_calculator_data(session: Session) -> CalcData:
                 current_value_eur=cat_value,
                 current_pct=cat_pct,
                 members=members,
+                is_cash=all(m.is_cash for m in members),
             )
         )
     # Heaviest categories first so the builder leads with what matters.
