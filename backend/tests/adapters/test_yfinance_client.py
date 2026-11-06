@@ -311,6 +311,54 @@ def test_fetch_closes_records_error_on_full_failure() -> None:
     provider_status.reset()
 
 
+def test_expected_gap_funds_waiting_for_nav_are_not_an_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """NAV funds with no data yet are routine: INFO log, provider status stays ok."""
+    from investment_dashboard.services import provider_status
+
+    provider_status.reset()
+
+    def fake_download(**_: Any) -> pd.DataFrame:
+        return pd.DataFrame()
+
+    with caplog.at_level("INFO", logger="investment_dashboard.adapters.yfinance_client"):
+        fetch_closes(
+            ["VFIAX"],
+            date(2024, 1, 2),
+            date(2024, 1, 5),
+            downloader=fake_download,
+            expected_gaps={"VFIAX"},
+        )
+
+    event = provider_status.get_status("yfinance")
+    assert event is not None
+    assert event.status == "ok"
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+    provider_status.reset()
+
+
+def test_unexpected_missing_symbol_still_errors_next_to_expected_gap() -> None:
+    from investment_dashboard.services import provider_status
+
+    provider_status.reset()
+
+    def fake_download(**_: Any) -> pd.DataFrame:
+        return pd.DataFrame()
+
+    fetch_closes(
+        ["VFIAX", "VTI"],
+        date(2024, 1, 2),
+        date(2024, 1, 5),
+        downloader=fake_download,
+        expected_gaps={"VFIAX"},
+    )
+    event = provider_status.get_status("yfinance")
+    assert event is not None
+    assert event.status == "error"
+    provider_status.reset()
+
+
 def test_fetch_closes_records_error_on_download_exception() -> None:
     from investment_dashboard.services import provider_status
 

@@ -39,7 +39,29 @@ const STREAM_URL = "/api/stream";
 const HEALTH_URL = "/api/health";
 const HEALTH_POLL_MS = 2000;
 /** A dropped stream shows "connection lost" only after this long (no flash on brief blips). */
-export const LOST_AFTER_MS = 5000;
+export const LOST_AFTER_MS = 10_000;
+
+/** Pages shown before a session exists: a stream that cannot connect there is normal. */
+const PRE_AUTH_PATHS = ["/login", "/onboarding"];
+
+export interface LostCheck {
+  /** The stream opened at least once in this page session (so we were logged in and connected). */
+  everConnected: boolean;
+  liveStatus: LiveStatus;
+  serverKind: string;
+  pathname: string;
+}
+
+/**
+ * Whether a dropped stream should now read "Connection to the server lost".
+ * Never before the stream first connected (login, 401 before the cookie exists),
+ * never on the login/onboarding pages, and only while still not reconnected.
+ */
+export function shouldShowLost(c: LostCheck): boolean {
+  if (!c.everConnected) return false;
+  if (PRE_AUTH_PATHS.some((p) => c.pathname === p || c.pathname.startsWith(`${p}/`))) return false;
+  return c.serverKind === "idle" && c.liveStatus !== "connected";
+}
 /** "Updated to x" stays this long. */
 export const UPDATED_SHOWN_MS = 4000;
 
@@ -255,10 +277,17 @@ export function startLive(queryClient: QueryClient): () => void {
       const offline = typeof navigator !== "undefined" && navigator.onLine === false;
       setStatus(offline ? "offline" : "reconnecting");
       // A drop with no announced restart: say "lost" only if it lasts (no flash on blips).
-      if (!offline && !lostTimer && getServerStatus().kind === "idle") {
+      if (!offline && openedBefore && !lostTimer && getServerStatus().kind === "idle") {
         lostTimer = setTimeout(() => {
           lostTimer = undefined;
-          if (getServerStatus().kind === "idle" && getLiveStatus() !== "connected") {
+          if (
+            shouldShowLost({
+              everConnected: openedBefore,
+              liveStatus: getLiveStatus(),
+              serverKind: getServerStatus().kind,
+              pathname: window.location.pathname,
+            })
+          ) {
             setServerStatus({ kind: "lost", since: Date.now() });
           }
         }, LOST_AFTER_MS);
