@@ -37,6 +37,19 @@ export const INVALIDATION = {
 
 export type InvalidationKind = keyof typeof INVALIDATION;
 
+/** Settings no report depends on (mirrors `read_cache.PRESENTATION_SETTINGS` on the server). */
+export const PRESENTATION_SETTINGS: ReadonlySet<string> = new Set(["display_currency", "theme"]);
+
+/** True when a settings write touched anything a report is computed from. */
+export function settingsAffectReports(keys: readonly string[]): boolean {
+  return keys.length === 0 ? false : keys.some((k) => !PRESENTATION_SETTINGS.has(k));
+}
+
+/** Maintenance jobs that never change report data. */
+export function jobAffectsReports(job: unknown): boolean {
+  return !String(job).startsWith("backup.");
+}
+
 /** True for a query that belongs to one of `roots` (projection results excluded). */
 export function matchesRoots(queryKey: readonly unknown[], roots: readonly string[]): boolean {
   if (!roots.includes(String(queryKey[0]))) return false;

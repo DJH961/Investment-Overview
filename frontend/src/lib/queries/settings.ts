@@ -3,6 +3,7 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/r
 import { ApiError, api } from "../api";
 import type { components } from "../api-types";
 import { applyOptimistic, rollback, type OptimisticContext } from "./optimistic";
+import { invalidateFor, settingsAffectReports } from "./invalidation";
 
 type S = components["schemas"];
 export type SettingField = S["SettingField"];
@@ -62,6 +63,8 @@ function useSettingsWrite<TVars>(
     onError: (_e, _v, ctx) => rollback(qc, ctx),
     onSuccess: (data) => {
       qc.setQueryData(SETTINGS_VALUES_KEY, data.values);
+      // A setting a report depends on (fund twins, price sources...) redraws the reports.
+      if (settingsAffectReports(data.changed)) void invalidateFor(qc, "refresh");
       // Legacy `/api/settings` readers and the history list.
       return qc.invalidateQueries({
         predicate: (q) => q.queryKey[0] === "settings" && q.queryKey[1] !== "values" && q.queryKey[1] !== "schema",
