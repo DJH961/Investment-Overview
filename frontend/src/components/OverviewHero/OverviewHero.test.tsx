@@ -26,10 +26,11 @@ describe("OverviewHero", () => {
     expect(screen.getByText("+€1,500.00")).toBeInTheDocument();
     expect(screen.getByText("Last session · Fri")).toBeInTheDocument();
     // When the price is from vs when the app fetched it, both labelled.
-    // Compact in the hero: the day is kept because it is not today, "today" is
-    // dropped from the fetch time, and the full wording stays in the tooltip.
+    // Compact: an older session keeps its day and drops the clock, today keeps
+    // the clock and drops the word. The full wording stays in each tooltip.
     const stamps = container.querySelector(".overview-hero__stamps");
-    expect(stamps).toHaveTextContent("Fri 20:00 (close)");
+    expect(stamps).toHaveTextContent("Fri (close)");
+    expect(stamps).not.toHaveTextContent("20:00");
     expect(stamps).toHaveTextContent("Updated 08:00");
     expect(stamps).not.toHaveTextContent("today");
     // The supporting figures live in the KPI block now (see KpiGrid/DayFacts):

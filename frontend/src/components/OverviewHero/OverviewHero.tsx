@@ -192,30 +192,39 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
             </span>
           </p>
         )}
-        <div className="overview-hero__move">
-          <DeltaBadge value={toNum(headPct)} />
-          <Money amount={toNum(headMove)} currency={currency} signed colored />
-          <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
-          {secPct != null && (
-            <span className="overview-hero__muted overview-hero__usd">
-              {usdFlat ? (
-                `${ccy2} unchanged`
-              ) : (
-                <span>
-                  {ccy2} <Percent ratio={toNum(secPct)} signed />
-                </span>
-              )}
-              <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
-            </span>
-          )}
+        {/*
+          The change row and the price time share a line when there is room for both,
+          and the stamps fall to their own line when there is not — flex wrap decides
+          from the actual content, so no width has to be guessed. `space-between`
+          holds the stamps right while they share the line and lets them sit at the
+          left edge once they wrap, which is where they read best on a phone.
+        */}
+        <div className="overview-hero__line">
+          <div className="overview-hero__move">
+            <DeltaBadge value={toNum(headPct)} />
+            <Money amount={toNum(headMove)} currency={currency} signed colored />
+            <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
+            {secPct != null && (
+              <span className="overview-hero__muted overview-hero__usd">
+                {usdFlat ? (
+                  `${ccy2} unchanged`
+                ) : (
+                  <span>
+                    {ccy2} <Percent ratio={toNum(secPct)} signed />
+                  </span>
+                )}
+                <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
+              </span>
+            )}
+          </div>
+          <PriceStamps
+            className="overview-hero__stamps"
+            price={heroPriceTime(data)}
+            updated={fetched}
+            compact
+            options={opts}
+          />
         </div>
-        <PriceStamps
-          className="overview-hero__stamps"
-          price={heroPriceTime(data)}
-          updated={fetched}
-          compact
-          options={opts}
-        />
         {data.total_value_complete === false && (
           <p className="overview-hero__note">Some holdings have no live price yet; the total is incomplete.</p>
         )}

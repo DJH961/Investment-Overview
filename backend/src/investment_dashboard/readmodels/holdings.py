@@ -492,12 +492,18 @@ def _fx_block(
     native_currencies: set[str],
     today: date,
 ) -> dict[str, Any] | None:
-    """Current FX stamp for the second KPI row, or ``None`` when irrelevant.
+    """Current FX stamp for the second KPI row, or ``None`` when no rate exists.
 
-    Irrelevant when no rate exists or every holding already trades in ``ccy``.
     The move is a display-relative fraction (strength of the foreign currency).
+
+    This used to return ``None`` when every holding already traded in ``ccy``, on
+    the grounds that FX could not move such a book. But the page shows the rate in
+    that view anyway (from ``fx_eur_usd``) — it only lost the move beside it, so
+    one view carried a bare number where the other carried a number and its change.
+    The rate's own move is a fact whichever currency is being reported; whether it
+    moved *this* book is a separate question the total already answers.
     """
-    if live_fx is None or live_fx <= 0 or native_currencies <= {ccy}:
+    if live_fx is None or live_fx <= 0:
         return None
     in_usd = ccy == "USD"
     info = fx_service.eur_quote_as_of(session, quote="USD", today=today)

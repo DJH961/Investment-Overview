@@ -84,7 +84,7 @@ describe("Overview page", () => {
   it("renders every section as a collapsible card that remembers its state", async () => {
     overview = populated;
     const { unmount } = render(<Overview />);
-    for (const name of ["Currency · EUR ↔ USD", "Holdings", "Currency effect (lifetime)", "Value", "Top movers", "Allocation", "Asset classes"]) {
+    for (const name of ["Currency · EUR ↔ USD", "Holdings", "Currency effect (lifetime)", "Graph", "Top movers", "Allocation", "Asset classes"]) {
       expect(screen.getByRole("button", { name })).toHaveAttribute("aria-expanded", "true");
     }
     expect(screen.getByText("Portfolio value")).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe("Overview page", () => {
     unmount();
     render(<Overview />);
     expect(screen.getByRole("button", { name: "Top movers" })).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("button", { name: "Value" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Graph" })).toHaveAttribute("aria-expanded", "true");
   });
 
   it("hide mode masks the total and the day move", () => {

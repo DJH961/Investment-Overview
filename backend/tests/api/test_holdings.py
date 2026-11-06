@@ -183,12 +183,23 @@ def test_second_kpi_row_fields(api_client: TestClient, seeded: None, ccy: str) -
     assert body["dividends_ttm"] == over["dividends_ttm"]
 
 
-def test_fx_block_only_when_a_holding_is_foreign(api_client: TestClient, seeded: None) -> None:
-    usd = api_client.get("/api/holdings?ccy=USD").json()
-    assert usd["fx"] is None  # every holding is USD: nothing to show
+def test_fx_block_is_reported_in_both_currencies(api_client: TestClient, seeded: None) -> None:
+    """The rate and its move are facts in either view, not only the foreign one.
+
+    The block used to be withheld when every holding already traded in the reporting
+    currency. The page showed the rate in that view regardless (from ``fx_eur_usd``),
+    so all the omission achieved was a bare number in one view and a number with its
+    change in the other. Whether the rate moved *this* book is a different question,
+    and the total already answers it.
+    """
     eur = api_client.get("/api/holdings?ccy=EUR").json()
     assert eur["fx"]["pair"] == "USD/EUR"
     assert Decimal(eur["fx"]["spot"]) == pytest.approx(1 / RATE_NOW, rel=Decimal("1e-9"))
+    # Every holding is USD, but the rate still has a value and a move to report.
+    usd = api_client.get("/api/holdings?ccy=USD").json()
+    assert usd["fx"]["pair"] == "EUR/USD"
+    assert Decimal(usd["fx"]["spot"]) == pytest.approx(RATE_NOW, rel=Decimal("1e-9"))
+    assert usd["fx"]["move_pct"] is not None
 
 
 def test_history_requires_auth(anon_client: TestClient) -> None:

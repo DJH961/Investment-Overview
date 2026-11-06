@@ -17,6 +17,56 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.0] — 2026-11-07
+
+### Changed
+- **The Overview hero leads with one headline again.** It had grown four rows of
+  supporting figures, and which of them existed swung with the market's state, so
+  the card quietly rearranged itself through the day. It is back to the shape the
+  v5 app used: the value, the other currency, the official total beneath it, one
+  change badge, and the price time — the same five things in every state. The
+  headline figure is larger on desktop, where there is room for it to read as the
+  page's subject rather than as one stat among many.
+- **The day's figures moved into the KPI grid.** "Price move" now leads the tiles
+  and carries the overnight FX leg beneath it, so the two halves of the day's
+  change sit together and visibly add up to the headline. "Dividend income" left
+  the grid — the stat strip directly below already reports dividend return and
+  yield — and "Vs market" took its place beside "Total growth", the two tiles that
+  each carry two lines. "YTD" and "MTD" close the grid.
+- **The price time shares the change row when it fits** and drops to its own line
+  when it does not, decided by the content rather than by a guessed breakpoint.
+- The XIRR tile no longer carries a year-to-date XIRR. Two tiles along sits one
+  labelled "YTD" reporting growth since 1 January: two unlike numbers under the
+  same word read as a contradiction rather than as two measures.
+
+### Fixed
+- **The lifetime return split did not add up in a USD view.** It paired a
+  EUR-specific currency effect with a USD growth figure, so "investment + currency"
+  never reached the growth figure printed above it. The server now takes the effect
+  against the reporting currency, and the currency clause is shown only when the
+  rate actually moved something — so no view is left missing a figure another view
+  shows.
+- **The overnight FX figure printed a constant zero** whenever the reporting
+  currency was also the holdings' currency, which cannot drift overnight. It is now
+  left out where it does not exist, rather than reported as nothing happening.
+
+## [6.11.2] — 2026-11-06
+
+### Fixed
+- **A scheduled price refresh could land zero prices for the whole tick**, even
+  though Tiingo had just supplied good recovered prices and they'd already been
+  written to the cache. The scheduler holds a ledger session and a cache session
+  open side by side on the same SQLite file; without a busy timeout, a momentary
+  write collision between them failed instantly instead of waiting the few
+  milliseconds the other side needed, and a failed Tiingo quota-counter save on
+  top of that left the ledger session unable to commit anything else, aborting
+  the whole refresh. Every connection now waits up to 5 seconds for a lock to
+  clear, and a failed quota-counter save is rolled back and logged instead of
+  poisoning the session — the counters self-heal on the next load.
+- **The resulting error wrongly blamed Tiingo** ("Tiingo fallback unreachable —
+  showing last-known prices") for what was actually a local database lock. It
+  now says so plainly and notes the refresh will retry next tick.
+
 ## [6.11.1] — 2026-11-06
 
 ### Fixed

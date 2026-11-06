@@ -28,7 +28,10 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: var(--space-7);
-      align-items: center;
+      // Both columns start on the same line. Centred, the text floated whenever it
+      // lost a row — which it now does as soon as the price time fits beside the
+      // change badge — so its label no longer met the curve's heading.
+      align-items: start;
     }
 
     // No wide override: an even split is what both zones want. Giving the curve the
@@ -165,6 +168,17 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The change row and the price time, together while they fit. One flex line
+  // that wraps: `space-between` pushes the stamps to the right-hand edge while
+  // both share it, and leaves them at the left edge on their own wrapped line.
+  &__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-4);
+  }
+
   // The day's move on one line: badge, money, which day, the other currency.
   &__move {
     display: flex;
@@ -195,10 +209,9 @@
     white-space: nowrap;
   }
 
-  // One quiet line under the figures. Nothing sits beside it any more, so it
-  // simply starts at the left edge like the rest of the card.
   &__stamps {
-    margin-top: var(--space-1);
+    // Never the reason the line wraps: it yields its own width first.
+    flex: 0 1 auto;
   }
 
   &__muted,
