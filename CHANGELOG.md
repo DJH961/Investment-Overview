@@ -17,6 +17,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.1] — 2026-11-07
+
+### Fixed
+- **The Overview's Holdings header no longer wraps its price time under the title.**
+  The corner now carries that one fact and nothing else: an older session is named
+  by its weekday rather than "Yesterday" (also more honest after a long weekend,
+  when the last session is three days back), and the "Updated" stamp moves into the
+  tooltip rather than competing for the same line. Folded or open, it holds the
+  top-right corner on the title's line.
+- The weekday form is now honoured on every path that builds a stamp. One of the
+  two (`relativeDay`) ignored the option, so a fund priced at its NAV, or a holding
+  with no closing bell, could print "yesterday" beside a neighbour's "Fri" in the
+  same list.
+
 ## [6.12.0] — 2026-11-07
 
 ### Changed

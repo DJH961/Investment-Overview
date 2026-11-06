@@ -15,11 +15,17 @@ export interface PriceStampsProps {
   /** Drop the words "Price as of" / "Updated" (icons and the tooltip still say which is which). */
   terse?: boolean;
   /**
-   * For a tight slot (a card header): drop "today" from either stamp and the
-   * words "Price as of" from the price, keeping "Updated" so the two bare times
-   * are still told apart. The full wording stays in each item's tooltip.
+   * For a tight slot: the shortest unambiguous stamp, without the words
+   * "Price as of". The full wording stays in each item's tooltip.
    */
   compact?: boolean;
+  /**
+   * Draw the price time only. The fetch time is not dropped so much as demoted —
+   * it moves into the remaining item's tooltip. For a slot with room for exactly
+   * one fact (a card header's corner), where "when is this price from" is the one
+   * that changes what you conclude.
+   */
+  priceOnly?: boolean;
   options?: StampOptions;
   className?: string;
 }
@@ -35,6 +41,7 @@ export function PriceStamps({
   layout = "row",
   terse = false,
   compact = false,
+  priceOnly = false,
   options,
   className,
 }: PriceStampsProps) {
@@ -43,9 +50,14 @@ export function PriceStamps({
   // Same moment twice (a live quote fetched just now): say it once.
   const sameMoment = priceText !== null && priceText.replace(/ \((live|close|NAV)\)$/, "") === updatedText;
   if (!priceText && !updatedText) return null;
-  const priceTitle = priceText ? `Price as of ${priceText}` : undefined;
   const short = terse || compact;
   const updatedTitle = updatedText ? `Updated ${updatedText} (when the app last fetched it)` : undefined;
+  // Only one item is drawn, so its tooltip carries both facts.
+  const priceTitle = priceText
+    ? priceOnly && updatedText && !sameMoment
+      ? `Price as of ${priceText} · ${updatedTitle}`
+      : `Price as of ${priceText}`
+    : undefined;
   return (
     <span className={clsx("price-stamps", `price-stamps--${layout}`, className)}>
       {priceText && (
@@ -57,7 +69,7 @@ export function PriceStamps({
           </span>
         </span>
       )}
-      {updatedText && !sameMoment && (
+      {updatedText && !sameMoment && !priceOnly && (
         <span className="price-stamps__item" title={updatedTitle}>
           <RefreshCw className="price-stamps__icon" aria-hidden />
           <span className={clsx("price-stamps__key", terse && "price-stamps__key--hidden")}>Updated</span>{" "}
