@@ -26,6 +26,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   news-source facts it flagged as unverified are now verified. Docs only, no
   app change.
 
+## [6.7.1] — 2026-11-06
+
+### Added
+- **Pick an ETF twin on the Instruments page.** Mutual funds get an "ETF twin
+  (1D estimate)" field, a "1D twin" column, and the built-in suggestion with one
+  tap to use it ("VTI follows a different index … typically 0.02 % apart per
+  day"). Until now a twin could only be set through the API, so no fund used one.
+  Saving a twin redraws the 1D graph.
+
+### Fixed
+- **Late-data behaviour is now tested end to end.** New graph-level tests pin the
+  plan: a fund follows its twin while the session runs and is flagged, the line
+  starts at the previous close and ends exactly at the official NAV, no point is
+  drawn after the 16:00 close (also before the next open), and a late NAV
+  rebuilds the stored daily point only while the market is shut. No behaviour
+  change.
+
 ## [6.7.0] — 2026-11-06
 
 ### Added

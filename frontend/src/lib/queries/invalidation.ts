@@ -25,7 +25,8 @@ export const INVALIDATION = {
   /** Confirm or undo an import: also new instruments, accounts and the batch list. */
   importWrite: [...REPORT_ROOTS, "transactions", "transaction", "import-batches", "instruments", "diagnostics"],
   /** Names, classes and TERs show up in holdings, allocations, risk and the ledger rows. */
-  instrumentEdit: ["instruments", "overview", "holdings", "allocations", "analytics", "calculator", "deposits", "transactions"],
+  // "graphs": a changed ETF twin redraws the 1D line.
+  instrumentEdit: ["instruments", "overview", "holdings", "allocations", "analytics", "calculator", "deposits", "transactions", "graphs"],
   /** EUR returns are rebuilt server-side from the conversions; values and ledger rows are untouched. */
   fxConversionWrite: ["fx-conversions", "overview", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
   /** Prices or FX moved (tick, fx event): the live numbers. */
