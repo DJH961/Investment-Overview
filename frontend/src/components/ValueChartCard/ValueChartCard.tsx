@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Card } from "../Card";
 import { Chart, type ChartSeries, type ChartXMode } from "../Chart";
 import { ErrorState } from "../ErrorState";
+import { formatStamp } from "../Freshness";
 import { IconButton } from "../IconButton";
 import { Percent } from "../Percent";
 import { useToast } from "../Toast";
@@ -199,6 +200,15 @@ export function ValueChartCard({
             <p className="value-chart-card__note" data-testid="funds-estimated-note">
               {shown === "1w" ? "Latest session: funds" : "Funds"} estimated from their ETF twin until the official NAV posts
               {g.estimated_funds.length ? ` (${g.estimated_funds.join(", ")})` : ""}.
+            </p>
+          )}
+          {(shown === "1d" || shown === "1w") && (g?.data_gaps?.length ?? 0) > 0 && (
+            <p className="value-chart-card__note" data-testid="data-gaps-note">
+              No market data from the price provider{" "}
+              {(g?.data_gaps ?? [])
+                .map((gap) => `${formatStamp(gap.start, { timeZone })}–${formatStamp(gap.end, { timeZone })}`)
+                .join(", ")}
+              ; the line is drawn straight across.
             </p>
           )}
           {coverage && (
