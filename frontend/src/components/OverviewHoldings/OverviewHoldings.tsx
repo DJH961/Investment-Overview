@@ -10,6 +10,7 @@ import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
 import { formatPp } from "../../lib/format";
 import { toNum, useHoldings, type HoldingRowDto, type OverviewDto } from "../../lib/queries/portfolio";
+import { useDisplayPrefs } from "../../lib/displayPrefs";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useTimeZone } from "../../lib/timezone";
 import { usePersistentState } from "../../lib/usePersistentState";
@@ -20,7 +21,7 @@ export const OVERVIEW_HOLDINGS_LIMIT = 8;
 
 export interface OverviewHoldingsProps {
   currency: ReportingCurrency;
-  /** Overview movers, to badge the winners/losers in the list. */
+  /** Overview movers, to badge the winners/losers — only when the setting is on. */
   movers?: OverviewDto["movers"];
 }
 
@@ -105,6 +106,12 @@ function TwinSubRow({ row, ccy, timeZone }: { row: HoldingRowDto; ccy: string; t
             {age}
           </span>
         )}
+        {/* The twin's own close is in hand, so this estimate will not move again
+            until the next open — the same promise the ✓ makes on a priced row. */}
+        <PriceTick
+          className="overview-holdings__twin-tick"
+          title={twin.at_close ? `Up to date with ${twin.symbol}'s latest close` : null}
+        />
       </span>
       <span className="overview-holdings__cell overview-holdings__twin-value">
         <span className="overview-holdings__twin-num">
@@ -117,6 +124,15 @@ function TwinSubRow({ row, ccy, timeZone }: { row: HoldingRowDto; ccy: string; t
         </span>
         <span className="overview-holdings__twin-num overview-holdings__twin-sub">
           ≈<Money amount={toNum(twin.est_today_move ?? null)} currency={ccy} signed colored />
+        </span>
+      </span>
+      {/* Every other row reports money and percent since buying; so does this one. */}
+      <span className="overview-holdings__cell overview-holdings__total overview-holdings__twin-total">
+        <span className="overview-holdings__twin-num">
+          ≈<Money amount={toNum(twin.est_total_return ?? null)} currency={ccy} signed colored />
+        </span>
+        <span className="overview-holdings__twin-num overview-holdings__twin-sub">
+          ≈<Percent ratio={toNum(twin.est_total_growth ?? null)} signed />
         </span>
       </span>
     </li>
@@ -134,6 +150,7 @@ function Row({
 }: {
   row: HoldingRowDto;
   ccy: string;
+  /** "top winner" / "top loser" pill, off unless `display.mover_badges` is on. */
   badge?: "winner" | "loser";
   /** This row's price time, only when it differs from the card's (see `foldStamps`). */
   stamp: string | null;
@@ -230,8 +247,11 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const timeZone = useTimeZone();
   const listId = useId();
   const [open, setOpen] = usePersistentState<boolean>("overview.holdings.open", false);
-  const winners = new Set(movers?.winners.map((m) => m.symbol) ?? []);
-  const losers = new Set(movers?.losers.map((m) => m.symbol) ?? []);
+  // Off by default: the pill pushed the symbol line onto a second row too often,
+  // and the Top movers card above already names them (`display.mover_badges`).
+  const { moverBadges } = useDisplayPrefs();
+  const winners = new Set(moverBadges ? (movers?.winners.map((m) => m.symbol) ?? []) : []);
+  const losers = new Set(moverBadges ? (movers?.losers.map((m) => m.symbol) ?? []) : []);
   const all = q.data ? byValue(q.data.holdings) : [];
   const more = Math.max(0, all.length - OVERVIEW_HOLDINGS_LIMIT);
   const rows = open ? all : all.slice(0, OVERVIEW_HOLDINGS_LIMIT);
@@ -249,6 +269,7 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
             className="overview-holdings__stamps"
             priceText={stamps.price}
             updated={stamps.updated}
+            compact
             options={{ timeZone }}
           />
         ) : undefined

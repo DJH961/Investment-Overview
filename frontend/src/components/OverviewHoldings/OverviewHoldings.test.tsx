@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setHideAmounts } from "../../lib/format";
 import type { HoldingRowDto, OverviewDto } from "../../lib/queries/portfolio";
+import { DisplayPrefsProvider } from "../../lib/displayPrefs";
 
 const row = (i: number, extra: Partial<HoldingRowDto> = {}) =>
   ({
@@ -37,8 +38,10 @@ import { OverviewHoldings } from "./OverviewHoldings";
 afterEach(() => localStorage.clear());
 
 describe("OverviewHoldings", () => {
-  it("lists the largest positions with pills, mover badges and a full-table link", () => {
-    const movers = { winners: [{ symbol: "S9" }], losers: [] } as unknown as OverviewDto["movers"];
+  const movers = { winners: [{ symbol: "S9" }], losers: [] } as unknown as OverviewDto["movers"];
+  const SET_ON = { value: true, source: "db", default: false, env_value_present: false, modified_at: null, is_set: true, stored_invalid: false };
+
+  it("lists the largest positions with pills and a full-table link", () => {
     const { container } = render(
       <MemoryRouter>
         <OverviewHoldings currency="EUR" movers={movers} />
@@ -48,7 +51,10 @@ describe("OverviewHoldings", () => {
     expect(symbols).toEqual(["S20", "S9", "S8", "S7", "S6", "S5", "S4", "S3"]);
     expect(screen.getByText("CASH")).toBeInTheDocument();
     expect(screen.getByText("bad history")).toBeInTheDocument();
-    expect(screen.getByText("top winner")).toBeInTheDocument();
+    // `display.mover_badges` defaults off: the pill wrapped the symbol line too
+    // often, and the Top movers card above already names them.
+    expect(screen.queryByText("top winner")).toBeNull();
+    expect(screen.queryByText("top loser")).toBeNull();
     expect(container.querySelector('[data-symbol="S20"] .overview-holdings__today--stale')).not.toBeNull();
     // A greyed move says why (never colour alone).
     expect(container.querySelector('[data-symbol="S20"] .overview-holdings__today--stale')).toHaveTextContent(
@@ -57,6 +63,17 @@ describe("OverviewHoldings", () => {
     expect(screen.getByRole("link", { name: "Full table" })).toHaveAttribute("href", "/holdings");
     expect(screen.getByRole("button", { name: "Show all 10 holdings" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Holdings" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("shows the mover badges once display.mover_badges is turned on", () => {
+    render(
+      <DisplayPrefsProvider values={{ "display.mover_badges": SET_ON } as never}>
+        <MemoryRouter>
+          <OverviewHoldings currency="EUR" movers={movers} />
+        </MemoryRouter>
+      </DisplayPrefsProvider>,
+    );
+    expect(screen.getByText("top winner")).toBeInTheDocument();
   });
 
   it("folds the rest inline in the same list and remembers the choice", () => {
@@ -113,7 +130,10 @@ describe("OverviewHoldings", () => {
       est_value: "41270",
       est_today_move: "250",
       est_today_pct: "0.0061",
+      est_total_return: "9370",
+      est_total_growth: "0.2934",
       at: "2026-11-02T14:02:00Z",
+      at_close: true,
       pending: true,
       divergence: null,
     };
@@ -148,10 +168,15 @@ describe("OverviewHoldings", () => {
         expect(line).toHaveTextContent("≈€41,270.00");
         expect(line).toHaveTextContent("≈+0.61%");
         expect(line).toHaveTextContent("≈+€250.00");
-        // Sits right after its row; no weight bar / since-buying cells.
+        // Every other row reports a gain since buying in money and percent; so does this one.
+        expect(line).toHaveTextContent("≈+€9,370.00");
+        expect(line).toHaveTextContent("≈+29.34%");
+        // The twin's own close is in hand, so the estimate is final until the next open.
+        expect(line.querySelector(".overview-holdings__twin-tick")).not.toBeNull();
+        // Sits right after its row; still no weight bar (that belongs to the holding).
         const items = [...container.querySelectorAll(".overview-holdings__list > li")];
         expect(items[items.indexOf(line) - 1]).toHaveAttribute("data-symbol", "FXAIX");
-        expect(line.querySelector(".overview-holdings__weight, .overview-holdings__total")).toBeNull();
+        expect(line.querySelector(".overview-holdings__weight")).toBeNull();
         expect(container.querySelectorAll(".overview-holdings__row")).toHaveLength(2);
       });
     });

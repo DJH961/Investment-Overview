@@ -295,6 +295,10 @@
     font-variant-numeric: tabular-nums;
   }
 
+  &__twin-tick {
+    align-self: center;
+  }
+
   // Estimated money under the % on tablets and up; the phone keeps one compact line.
   &__twin-sub {
     font-size: var(--font-size-xs);
@@ -392,11 +396,13 @@
   }
 
   // Column visibility last, and scoped to the row, so it wins over the cell
-  // and stamp display rules above.
+  // and stamp display rules above. The twin line follows its parent row exactly,
+  // so its estimated figures sit under the columns they belong to.
   &__head &__head-weight,
   &__head &__head-total,
   &__row &__weight,
-  &__row &__total {
+  &__row &__total,
+  &__twin &__total {
     display: none;
   }
 
@@ -407,7 +413,8 @@
     }
 
     &__row &__weight,
-    &__row &__total {
+    &__row &__total,
+    &__twin &__total {
       display: flex;
     }
   }

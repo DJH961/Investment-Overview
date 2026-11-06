@@ -17,6 +17,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.11.1] — 2026-11-06
+
+### Fixed
+- **The ETF-twin line in Holdings reported only half its figures**: it gave today's
+  move but left the gain since buying blank, while every other row on the page shows
+  both. It now reports that gain in money and percent. The estimate moves only the
+  value, so it moves the gain by the same delta — the official total return
+  (dividends included) plus that delta.
+- **The twin line now carries the ✓ once the twin's own close is in hand** — its
+  market shut and the price struck at or after that session's bell — the same promise
+  the mark already makes on a directly priced holding: this will not move again until
+  the next open.
+- **The "top winner" / "top loser" pills pushed the symbol onto a second line** too
+  often. They are now off by default and controlled by `display.mover_badges`
+  (Settings → Display); the Top movers card above already names them with room to
+  spare. Turn the setting on to get them back.
+- **The Holdings card's price time did not fit the header's top-right corner** and
+  wrapped. It is now compact: "today" is dropped from both stamps (a bare
+  `22:00 (close)` reads as today), and a day is kept only when it is not today
+  (`Yesterday 22:00 (close)`, `Fri 22:00 (close)`). The full wording stays in the
+  tooltip.
+
 ## [6.11.0] — 2026-11-06
 
 ### Added
