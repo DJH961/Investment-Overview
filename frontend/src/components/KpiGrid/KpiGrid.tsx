@@ -3,7 +3,7 @@ import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
-import { formatPercent } from "../../lib/format";
+import { formatPercent, formatPp } from "../../lib/format";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
@@ -29,6 +29,10 @@ const STRIP_TIPS = {
 };
 
 export const KPI_TIPS = {
+  priceMove:
+    "What your holdings' prices did over the session, each valued at that session's own exchange rate. " +
+    "While the market is shut, add the overnight FX figure under it and you get the headline change exactly. " +
+    "While a fund's NAV is pending, its ETF twin's estimate stands in for it.",
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
   totalReturn:
     "What the portfolio has earned in money: current value + cash dividends received − net invested. Reinvested dividends are in the value, so every dividend counts once. Holdings splits it into capital gain and dividends.",
@@ -75,12 +79,56 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     ) : undefined;
   const v = data?.market_verdict;
 
+  // The lifetime return split, under the tile it explains. The GROWTH figure is the
+  // tile's own value and shows in every currency — never hide in one view a number
+  // the other shows. The currency clause is gated on the VALUE, not on the currency
+  // name: a dollar return has no exchange-rate leg, so the server reports an effect
+  // of 0 and the clause simply does not apply. Gating on the figure rather than on
+  // "is this EUR" keeps the two views structurally identical (the Overview currency
+  // test asserts that) and still works for a EUR-native holding viewed in USD.
+  const split = data?.currency?.return_split;
+  const effect = toNum(split?.currency_effect_pp ?? null);
+  const growthSplit = split ? (
+    <span data-testid="hero-split">
+      Investment {formatPercent(toNum(split.investment_return), { signed: true })}
+      {effect !== null && Math.abs(effect) >= 0.00005 && <> · Currency {formatPp(effect)}</>}
+    </span>
+  ) : undefined;
+
+  // The day's move split into its two causes. The price move is what the holdings'
+  // prices did; the overnight FX leg is the same holdings at the same prices
+  // revalued at today's rate. Together they are the headline change exactly.
+  const ls = data?.last_session;
+  const est = k?.estimate ?? null;
+  const priceMove = est && ls?.move_est != null ? ls.move_est : k?.daily_move;
+  const overnight = ls
+    ? toNum(est && ls.overnight_currency_est != null ? ls.overnight_currency_est : ls.overnight_currency)
+    : null;
+  // A book reported in its own currency cannot drift overnight: the figure is a
+  // constant zero, so it is left out rather than printed as a finding. It is marked
+  // `data-ccy-specific` because that absence is correct, not a dropped section
+  // (see Overview.currency.test.tsx).
+  const overnightHint =
+    overnight !== null && Math.abs(overnight) >= 0.005 ? (
+      <span data-ccy-specific data-testid="overnight-currency">
+        Overnight FX <Money amount={overnight} currency={currency} signed />
+      </span>
+    ) : undefined;
+
   const expense = toNum(k?.weighted_expense_ratio);
   const ttm = toNum(k?.dividends_ttm);
 
   return (
     <div className="kpi-grid">
       <div className="kpi-grid__tiles">
+        <KpiTile
+          label="Price move"
+          tooltip={KPI_TIPS.priceMove}
+          loading={loading}
+          value={money(priceMove, true)}
+          secondary={money2(k2?.estimate && data?.last_session?.move_est != null ? data.last_session.move_est : k2?.daily_move, true)}
+          hint={overnightHint}
+        />
         <KpiTile
           label="Invested"
           tooltip={KPI_TIPS.invested}
@@ -101,7 +149,14 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={pct(k?.xirr)}
           secondary={pct2(k2?.xirr)}
-          hint={k?.ytd_xirr ? `YTD ${formatPercent(toNum(k.ytd_xirr), { signed: true })}` : undefined}
+        />
+        <KpiTile
+          label="Total growth"
+          tooltip={KPI_TIPS.totalGrowth}
+          loading={loading}
+          value={pct(k?.total_growth_compounded)}
+          secondary={pct2(k2?.total_growth_compounded)}
+          hint={growthSplit}
         />
         <KpiTile
           label="Vs market"
@@ -125,13 +180,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           }
         />
         <KpiTile
-          label="Total growth"
-          tooltip={KPI_TIPS.totalGrowth}
-          loading={loading}
-          value={pct(k?.total_growth_compounded)}
-          secondary={pct2(k2?.total_growth_compounded)}
-        />
-        <KpiTile
           label="YTD"
           tooltip={KPI_TIPS.ytd}
           loading={loading}
@@ -144,13 +192,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={pct(k?.mtd_growth)}
           secondary={pct2(k2?.mtd_growth)}
-        />
-        <KpiTile
-          label="Dividend income"
-          tooltip={KPI_TIPS.dividendIncome}
-          loading={loading}
-          value={money(k?.dividend_income)}
-          secondary={money2(k2?.dividend_income)}
         />
       </div>
       {!loading && k && (

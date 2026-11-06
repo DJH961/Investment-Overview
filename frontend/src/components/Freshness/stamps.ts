@@ -99,14 +99,20 @@ export function formatStamp(value: Input | null | undefined, opts: StampOptions 
 export const sentenceCase = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
- * A stamp with "today" dropped, for a tight slot such as a card header:
- * "today 22:00 (close)" -> "22:00 (close)", while "yesterday 22:00" and
- * "Fri 22:00" keep their day because without it they would be ambiguous.
+ * The shortest form that is still unambiguous, for a tight slot such as a card
+ * header: today keeps its clock and loses the word ("today 22:00 (close)" ->
+ * "22:00 (close)"), any other day keeps the day and loses the clock
+ * ("yesterday 22:00 (close)" -> "Yesterday (close)", "Fri 20:00" -> "Fri").
  *
- * Only a clock may lose its day, so "today (NAV)" (a day with no time) is left
- * alone rather than reduced to a bare "(NAV)".
+ * A bare clock reads as today, and on an older session the day is what you want
+ * to know — the minute a week-old close was struck is noise. Whatever is dropped
+ * stays in the item's tooltip, which always spells the stamp out in full.
+ *
+ * "today" on its own (a calendar date, no clock) is left alone rather than
+ * reduced to nothing.
  */
-export const shortStamp = (text: string): string => sentenceCase(text.replace(/^today (?=\d)/, ""));
+export const shortStamp = (text: string): string =>
+  sentenceCase(/^today ./.test(text) ? text.replace(/^today /, "") : text.replace(/ \d{1,2}:\d{2}/, ""));
 
 /** The closing bell a "close" refers to: US listings, 16:00 New York. */
 export const US_CLOSE = { zone: "America/New_York", hour: 16 } as const;

@@ -254,5 +254,9 @@ docs/Comparison Files/*.xlsx
 # The personal master workbook was removed as un-fakeable; keep it local only.
 docs/Comparison Files/Investments.xlsx
 
+# Local UI previews and scratch screenshots (never committed).
+.previews/
+.tmp-shots/
+
 # Subagent git worktrees (never committed).
 .claude/worktrees/

@@ -28,7 +28,10 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: var(--space-7);
-      align-items: center;
+      // Both columns start on the same line. Centred, the text floated whenever it
+      // lost a row — which it now does as soon as the price time fits beside the
+      // change badge — so its label no longer met the curve's heading.
+      align-items: start;
     }
 
     // No wide override: an even split is what both zones want. Giving the curve the
@@ -85,6 +88,7 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-2) var(--space-4);
+    min-width: 0;
 
     @include m.phone {
       flex-direction: column;
@@ -94,6 +98,13 @@
 
   &__value {
     font-size: var(--font-size-3xl);
+
+    // Desktop has the room, and the v5 app led with a figure this size: the
+    // headline should read as the page's subject, not as one stat among many.
+    @include m.desktop {
+      font-size: var(--font-size-4xl);
+    }
+
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.02em;
     line-height: var(--line-height-tight);
@@ -135,7 +146,7 @@
     padding-left: var(--space-4);
   }
 
-  // The official (NAV-based) total, small and muted, only while the headline is an estimate.
+  // The official book under the estimate: quiet, one line, never wrapped apart.
   &__official {
     display: flex;
     flex-wrap: wrap;
@@ -147,8 +158,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // The official day change, money then percent: one unbreakable parenthesis so
-  // the two never land on different lines and read as separate facts.
   &__official-change {
     white-space: nowrap;
   }
@@ -159,6 +168,18 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The change row and the price time, together while they fit. One flex line
+  // that wraps: `space-between` pushes the stamps to the right-hand edge while
+  // both share it, and leaves them at the left edge on their own wrapped line.
+  &__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-4);
+  }
+
+  // The day's move on one line: badge, money, which day, the other currency.
   &__move {
     display: flex;
     flex-wrap: wrap;
@@ -188,34 +209,12 @@
     white-space: nowrap;
   }
 
-  &__split {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0 var(--space-2);
-  }
-
-  // The halves are told apart by their own labels and a wider gap, with no separator
-  // glyph: as a flex item a "·" can be left stranded at the end of a wrapped line.
-  &__breakdown {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0 var(--space-4);
-  }
-
-  // The two halves of the day's move, each kept whole so a wrap never splits a
-  // label from its figure.
-  &__part {
-    display: inline-flex;
-    align-items: baseline;
-    gap: var(--space-1);
-    white-space: nowrap;
+  &__stamps {
+    // Never the reason the line wraps: it yields its own width first.
+    flex: 0 1 auto;
   }
 
   &__muted,
-  &__breakdown,
-  &__split,
   &__note {
     margin: 0;
     color: var(--color-muted);

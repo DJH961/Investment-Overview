@@ -303,6 +303,20 @@ def _today_fx_view(
     return out
 
 
+def _currency_effect_for(metrics: PortfolioMetrics, ccy: str, lifetime: Any) -> Decimal | None:
+    """The lifetime currency effect against ``ccy``: its growth minus the USD growth.
+
+    💱 A difference between two independently computed returns, in fractional
+    points — never a return converted from one currency into another. For EUR this
+    is exactly ``lifetime.currency_effect_pp`` (``growth_eur - growth_usd``); it is
+    taken from there so the two can never drift apart. For USD it is 0: the
+    investment return IS the dollar return, so the rate contributed nothing.
+    """
+    if ccy != "USD":
+        return lifetime.currency_effect_pp
+    return ZERO if metrics.total_growth_compounded_usd is not None else None
+
+
 def _currency_block(
     session: Session,
     metrics: PortfolioMetrics,
@@ -383,12 +397,18 @@ def _currency_block(
             "breakeven_rate": dec(lifetime.breakeven_rate),
         },
         # Investment return (asset performance in the USD wallet) vs the currency
-        # effect (EUR return minus USD return). Both returns are computed
-        # independently per currency; nothing is converted.
+        # effect. Both returns are computed independently per currency; nothing is
+        # converted — the effect is the *difference* between two returns, in points.
+        #
+        # 💱 The effect is taken against the REPORTING currency, not always EUR, so
+        # the split reads the same way in either view: reporting growth ==
+        # investment_return + currency_effect_pp. In a USD view of a USD book the
+        # effect is 0 by construction (the rate did nothing to a dollar return),
+        # which is the honest answer rather than a reason to hide the split.
         "return_split": {
             "total_return_eur": dec(metrics.total_growth_compounded_eur),
             "investment_return": dec(metrics.total_growth_compounded_usd),
-            "currency_effect_pp": dec(lifetime.currency_effect_pp),
+            "currency_effect_pp": dec(_currency_effect_for(metrics, ccy, lifetime)),
         },
         "today": today,
     }

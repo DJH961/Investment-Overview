@@ -178,16 +178,27 @@ export function ValueChartCard({
   return (
     <Card
       className={clsx("value-chart-card", className)}
-      title="Value"
+      title="Graph"
       collapsibleId="overview.chart"
+      // The range's growth sits beside the title rather than over the plot: it is
+      // the one number this card exists to report. `actions` hides it when the card
+      // is folded, which is right — it describes a chart that is no longer on screen.
       actions={
-        <IconButton
-          size="sm"
-          label={`Reload ${RANGE_LABELS[range]} graph`}
-          icon={<RefreshCw aria-hidden className={clsx(reloading === range && "value-chart-card__spin")} />}
-          onClick={() => reload(range)}
-          disabled={reloading !== null}
-        />
+        <>
+          <span className="value-chart-card__growth" data-testid="range-growth">
+            {growth !== null && <Percent ratio={growth} signed colored />}
+            <span className="value-chart-card__growth-label">
+              {subtitle ? `${RANGE_LABELS[shown]} · ${subtitle}` : RANGE_LABELS[shown]}
+            </span>
+          </span>
+          <IconButton
+            size="sm"
+            label={`Reload ${RANGE_LABELS[range]} graph`}
+            icon={<RefreshCw aria-hidden className={clsx(reloading === range && "value-chart-card__spin")} />}
+            onClick={() => reload(range)}
+            disabled={reloading !== null}
+          />
+        </>
       }
     >
       {graph.isError && !g ? (
@@ -202,14 +213,6 @@ export function ValueChartCard({
             onRangeChange={changeRange}
             // One line for every range (the 1D day label sits here too), so
             // switching ranges never moves the chart up or down.
-            headerExtra={
-              <span className="value-chart-card__growth" data-testid="range-growth">
-                {growth !== null && <Percent ratio={growth} signed colored />}
-                <span className="value-chart-card__growth-label">
-                  {subtitle ? `${RANGE_LABELS[shown]} · ${subtitle}` : RANGE_LABELS[shown]}
-                </span>
-              </span>
-            }
             referenceLine={
               prevClose !== null ? { value: prevClose, label: hide ? "Prev close" : `Prev close ${tipFormat(prevClose)}` } : undefined
             }

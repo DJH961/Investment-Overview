@@ -86,6 +86,29 @@ def test_currency_effect_split(api_client: TestClient, seeded: None) -> None:
     assert set(body["currency"]["today"]["regime"]) >= {"market_open", "forex_frozen"}
 
 
+def test_currency_effect_is_taken_against_the_reporting_currency(
+    api_client: TestClient, seeded: None
+) -> None:
+    """The split reads the same way in either view, so neither is missing a figure.
+
+    ``reporting growth == investment_return + currency_effect_pp`` must hold in EUR
+    *and* in USD. The investment return is the dollar-wallet performance, so in a USD
+    view it already IS the reported growth and the effect is 0 — that is the honest
+    answer, not a reason to leave the USD view without a split at all.
+    """
+    for ccy in ("EUR", "USD"):
+        body = api_client.get(f"/api/overview?ccy={ccy}").json()
+        split = body["currency"]["return_split"]
+        investment = D(split["investment_return"])
+        effect = D(split["currency_effect_pp"])
+        growth = D(body["kpis"]["total_growth_compounded"])
+        assert growth == pytest.approx(investment + effect, rel=Decimal("1e-9")), ccy
+    usd = api_client.get("/api/overview?ccy=USD").json()["currency"]["return_split"]
+    assert D(usd["currency_effect_pp"]) == 0
+    eur = api_client.get("/api/overview?ccy=EUR").json()["currency"]["return_split"]
+    assert D(eur["currency_effect_pp"]) < 0
+
+
 def test_bad_ccy_is_422(api_client: TestClient) -> None:
     assert api_client.get("/api/overview?ccy=GBP").status_code == 422
 

@@ -168,11 +168,18 @@ import { Overview } from "./Overview";
  * without its text. Gain / loss modifiers are dropped (a move can flip sign
  * between currencies, and so can the 1D trend up / down; that recolours, it does
  * not move anything).
+ *
+ * `data-ccy-specific` marks a figure that genuinely exists in only one currency
+ * — the overnight FX move is the case: a dollar book reported in dollars cannot
+ * drift overnight, so the figure is not "missing" in USD, it does not exist.
+ * Those elements and their subtrees are left out of the comparison. The rule this
+ * test enforces is that a currency switch must not silently drop or reorder a
+ * section; it is not that both views must say the same number of things.
  */
 function structure(root: Element): string[] {
-  return [...root.querySelectorAll("*")].map(
-    (el) => `${el.tagName.toLowerCase()}.${(el.getAttribute("class") ?? "").replace(/--(pos|neg|flat|up|down)/g, "")}`,
-  );
+  return [...root.querySelectorAll("*")]
+    .filter((el) => el.closest("[data-ccy-specific]") === null)
+    .map((el) => `${el.tagName.toLowerCase()}.${(el.getAttribute("class") ?? "").replace(/--(pos|neg|flat|up|down)/g, "")}`);
 }
 
 function renderIn(c: "EUR" | "USD") {
