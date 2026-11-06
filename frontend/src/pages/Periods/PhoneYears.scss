@@ -1,0 +1,219 @@
+@use "../../styles/mixins" as m;
+
+// Phone "By year": one compact block per year, its months listed inside.
+.period-years {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.period-year {
+  overflow: hidden;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+
+  // The whole folded header is the toggle.
+  &__head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.01em;
+  }
+
+  &__chevron {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+    color: var(--color-muted);
+    transform: rotate(-90deg);
+    transition: transform 0.15s ease;
+  }
+
+  &--open &__chevron {
+    transform: none;
+  }
+
+  &__pill {
+    margin-left: var(--space-1);
+    color: var(--color-accent);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+
+  // Top-right corner: the year's total.
+  &__total {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    color: var(--color-fg);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__total-label {
+    @include m.eyebrow;
+  }
+
+  // The figures that matter most: big, side by side.
+  &__growths {
+    display: flex;
+    gap: var(--space-5);
+  }
+
+  &__growth {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__growth-label {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__growth-value {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  // Months sit inside their year: indented, with a guide line down the left.
+  &__months {
+    margin: 0 0 var(--space-2) var(--space-5);
+    padding: 0;
+    border-top: var(--border-width) solid var(--color-border);
+    border-left: 2px solid var(--color-border);
+    list-style: none;
+  }
+}
+
+// A small labelled figure (only shown when not zero).
+.period-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+
+  &__label {
+    color: var(--color-muted);
+  }
+
+  &__value {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &--muted {
+    color: var(--color-muted);
+  }
+}
+
+// One month: name + growth on top, its total under it, chips last; tight.
+.period-month {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-3);
+
+  & + & {
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  &__top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  &__name {
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__pill {
+    margin-left: var(--space-1);
+    color: var(--color-accent);
+    font-size: var(--font-size-xs);
+  }
+
+  // Growth per month: same size and weight as before.
+  &__growth {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__value {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    color: var(--color-fg);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__second {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: 2px;
+
+    &:empty {
+      display: none;
+    }
+  }
+}

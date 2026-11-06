@@ -7,7 +7,17 @@ vi.mock("@simplewebauthn/browser", () => ({
 
 import { startAuthentication } from "@simplewebauthn/browser";
 import { ApiError } from "./api";
-import { deletePasskey, listPasskeys, login, logout, passkeyLogin, registerPasskey, safeNext } from "./auth";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  deletePasskey,
+  invalidateAuth,
+  listPasskeys,
+  login,
+  logout,
+  passkeyLogin,
+  registerPasskey,
+  safeNext,
+} from "./auth";
 import { QUERY_CACHE_KEY, queryClient } from "./queries";
 
 function respond(status: number, body?: unknown) {
@@ -106,5 +116,28 @@ describe("auth", () => {
   it("safeNext rejects backslash tricks", () => {
     expect(safeNext("?next=/%5C%5Cevil.example")).toBe("/");
     expect(safeNext("?next=/settings")).toBe("/settings");
+  });
+});
+
+describe("invalidateAuth", () => {
+  it("a sign-in check sent before the login cannot land afterwards and bounce to /login", async () => {
+    const qc = new QueryClient();
+    let release: (v: { authenticated: boolean }) => void = () => {};
+    // A check started before the sign-in (no session cookie yet): answers "signed out" late.
+    const stale = qc
+      .fetchQuery({
+        queryKey: ["auth", "me"],
+        queryFn: ({ signal }) =>
+          new Promise<{ authenticated: boolean }>((resolve, reject) => {
+            release = resolve;
+            signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+      })
+      .catch(() => undefined);
+    await invalidateAuth(qc);
+    release({ authenticated: false });
+    await stale;
+    // Nothing cached: the guard asks the server again (now with the session cookie).
+    expect(qc.getQueryData(["auth", "me"])).toBeUndefined();
   });
 });

@@ -508,9 +508,14 @@ DEFS: tuple[SettingDef, ...] = (
         10,
         "providers",
         "Tiingo requests per hour",
+        help=(
+            "The app's own limit on Tiingo requests per hour, below Tiingo's free-plan "
+            "allowance so the key is never used up. Every Tiingo use (price backup, NAV "
+            "checks, EUR/USD bars, graph gap fill, probes) counts. Health & Repair shows "
+            "how many are used and left."
+        ),
         min=_D(1),
         max=_D(10_000),
-        level="advanced",
     ),
     SettingDef(
         "tiingo_daily_cap",
@@ -518,9 +523,14 @@ DEFS: tuple[SettingDef, ...] = (
         200,
         "providers",
         "Tiingo requests per day",
+        help=(
+            "The app's own limit on Tiingo requests per day (New York time), below Tiingo's free-plan "
+            "allowance so the key is never used up. Every Tiingo use (price backup, NAV "
+            "checks, EUR/USD bars, graph gap fill, probes) counts. Health & Repair shows "
+            "how many are used and left."
+        ),
         min=_D(1),
         max=_D(10_000),
-        level="advanced",
     ),
     SettingDef(
         "tiingo.fetch_lookback_days",

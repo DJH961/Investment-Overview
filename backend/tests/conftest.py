@@ -95,3 +95,13 @@ def _fresh_read_cache() -> Iterator[None]:
     read_cache.invalidate()
     yield
     read_cache.invalidate()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_feed_stall() -> Iterator[None]:
+    """The frozen-feed detector is process-wide: start every test with a clean one."""
+    from investment_dashboard.services import feed_stall_service
+
+    feed_stall_service.reset()
+    yield
+    feed_stall_service.reset()

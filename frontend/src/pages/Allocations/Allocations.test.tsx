@@ -14,6 +14,7 @@ import {
   fromSavedBuilder,
   presetSaved,
   toSavedBuilder,
+  cashIn,
   tradeTotals,
 } from "./builderState";
 import { freeName, nameError } from "./SaveTargetDialog";
@@ -293,5 +294,53 @@ describe("Allocations page", () => {
       Object.assign(allocations, savedAlloc);
       plan.mode = savedMode;
     }
+  });
+});
+
+describe("Use my cash", () => {
+  it("restates the server's held cash in the other currency at the same-payload rate", () => {
+    const i = { ccy: "EUR", investable_cash: "800", fx_usd_per_eur: "1.25" };
+    expect(cashIn(i, "EUR")).toBe(800);
+    expect(cashIn(i, "USD")).toBe(1000);
+    expect(cashIn({ ...i, ccy: "USD", investable_cash: "1000" }, "EUR")).toBe(800);
+    expect(cashIn({ ...i, investable_cash: "0" }, "EUR")).toBe(0);
+    expect(cashIn({ ccy: "EUR", investable_cash: "800" }, "USD")).toBe(0);
+  });
+
+  it("offers the chip, fills the amount and asks the server to move the cash", async () => {
+    const saved = { ...inputs };
+    Object.assign(inputs, {
+      investable_cash: "800",
+      instruments: [
+        ...saved.instruments,
+        { instrument_id: 9, symbol: "VMFXX", name: "Money market", category: "Cash", current_value: "800", current_pct: "0.14", is_cash: true },
+      ],
+      categories: [...saved.categories, { name: "Cash", current_value: "800", current_pct: "0.14", members: [9], is_cash: true }],
+    });
+    try {
+      const calls = stub();
+      wrap();
+      const chip = await screen.findByRole("button", { name: /Use my cash/ });
+      expect(chip).toHaveTextContent("800");
+      // "Match current mix" never aims at the money-market fund.
+      fireEvent.click(screen.getByRole("button", { name: "Match current mix" }));
+      expect(screen.getByLabelText("Target % for VMFXX")).toHaveValue("0");
+      fireEvent.click(chip);
+      expect(screen.getByLabelText("Cash to invest (EUR)")).toHaveValue("800");
+      fireEvent.click(screen.getByRole("button", { name: "Compute plan" }));
+      await screen.findByText("Plan summary");
+      const post = calls.find((c) => c.url.includes("/api/allocations/plan"));
+      expect(post?.body).toMatchObject({ amount: "800", use_held_cash: true });
+    } finally {
+      Object.assign(inputs, saved);
+      delete (inputs as Record<string, unknown>).investable_cash;
+    }
+  });
+
+  it("hides the chip when no cash is held", async () => {
+    stub();
+    wrap();
+    await screen.findByLabelText("Cash to invest (EUR)");
+    expect(screen.queryByRole("button", { name: /Use my cash/ })).not.toBeInTheDocument();
   });
 });

@@ -1281,6 +1281,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maintenance/tiingo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tiingo Usage
+         * @description How the Tiingo backup is used and how many requests are left.
+         */
+        get: operations["tiingo_usage_api_maintenance_tiingo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/onboarding": {
         parameters: {
             query?: never;
@@ -2067,6 +2087,11 @@ export interface components {
             current_pct: string | null;
             /** Current Value */
             current_value: string | null;
+            /**
+             * Is Cash
+             * @default false
+             */
+            is_cash: boolean;
             /** Members */
             members: number[];
             /** Name */
@@ -2091,6 +2116,12 @@ export interface components {
             current_value: string | null;
             /** Instrument Id */
             instrument_id: number;
+            /**
+             * Is Cash
+             * @description Money-market fund or cash position (the Cash group)
+             * @default false
+             */
+            is_cash: boolean;
             /** Name */
             name: string;
             /** Symbol */
@@ -2111,6 +2142,11 @@ export interface components {
             fx_usd_per_eur: string | null;
             /** Instruments */
             instruments: components["schemas"]["CalcInstrumentOut"][];
+            /**
+             * Investable Cash
+             * @description Cash held (money-market funds + cash positions) in `ccy`, at the spot rate
+             */
+            investable_cash?: string | null;
             projection_defaults: components["schemas"]["ProjectionDefaultsOut"];
             /** Total Value */
             total_value: string | null;
@@ -2639,6 +2675,11 @@ export interface components {
             drift_pp: string;
             /** Instrument Id */
             instrument_id: number;
+            /**
+             * Is Cash
+             * @default false
+             */
+            is_cash: boolean;
             /** Key */
             key: string;
             /** Label */
@@ -4476,6 +4517,12 @@ export interface components {
              * @enum {string}
              */
             mode: "fund" | "category";
+            /**
+             * Use Held Cash
+             * @description Fund the amount from the cash held (money-market / cash positions): those holdings fall by what is invested, so it is not counted twice.
+             * @default false
+             */
+            use_held_cash: boolean;
         };
         /** PlanResponse */
         PlanResponse: {
@@ -4536,6 +4583,16 @@ export interface components {
             buying?: string | null;
             /** Cash */
             cash?: string | null;
+            /**
+             * From Held Cash
+             * @description Part of the amount funded from held cash (null when not used)
+             */
+            from_held_cash?: string | null;
+            /**
+             * Held Cash
+             * @description Cash the portfolio holds (money-market + cash), in `ccy`
+             */
+            held_cash?: string | null;
             /** Leftover */
             leftover?: string | null;
             /** Other Buying */
@@ -5554,6 +5611,50 @@ export interface components {
              * @default false
              */
             stale_nav: boolean;
+        };
+        /**
+         * TiingoUsage
+         * @description The Tiingo backup: key present, the app's own caps, calls used and left.
+         */
+        TiingoUsage: {
+            /** Configured */
+            configured: boolean;
+            /** Daily Cap */
+            daily_cap: number;
+            /** Day Resets At */
+            day_resets_at: string;
+            /** Day Used */
+            day_used: number;
+            /** Hour Resets At */
+            hour_resets_at: string;
+            /** Hour Used */
+            hour_used: number;
+            /** Hourly Cap */
+            hourly_cap: number;
+            /** Last At */
+            last_at?: string | null;
+            /** Last Message */
+            last_message?: string | null;
+            /** Last Status */
+            last_status?: string | null;
+            /**
+             * Nav Probes Today
+             * @default 0
+             */
+            nav_probes_today: number;
+            /** Rate Limited At */
+            rate_limited_at?: string | null;
+            /** Remaining */
+            remaining: number;
+            /** Uses */
+            uses: components["schemas"]["TiingoUse"][];
+        };
+        /** TiingoUse */
+        TiingoUse: {
+            /** Detail */
+            detail: string;
+            /** Title */
+            title: string;
         };
         /**
          * TransactionAll
@@ -8361,6 +8462,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tiingo_usage_api_maintenance_tiingo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TiingoUsage"];
                 };
             };
         };

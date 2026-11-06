@@ -30,9 +30,10 @@ const STRIP_TIPS = {
 
 export const KPI_TIPS = {
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
-  capitalGain:
-    "Realised plus unrealised price gain after fees, no dividends: Total return minus dividend income. Includes sold positions and cash.",
-  totalReturn: "Capital gain plus dividend income (cash and reinvested): current value + cash dividends received − net invested.",
+  totalReturn:
+    "What the portfolio has earned in money: current value + cash dividends received − net invested. Reinvested dividends are in the value, so every dividend counts once. Holdings splits it into capital gain and dividends.",
+  dividendIncome:
+    "All dividends and interest received since the start, cash and reinvested. Part of Total return (the rest is the price gain, shown as Capital gain on Holdings).",
   xirr: "Money-weighted annual return: accounts for when each deposit and withdrawal happened.",
   vsMarket: "Your compounded growth versus the benchmark over the same cashflows.",
   totalGrowth: "Compounded growth since the first purchase: (1 + XIRR)^years − 1.",
@@ -88,11 +89,11 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           secondary={money2(k2?.total_invested)}
         />
         <KpiTile
-          label="Capital gain"
-          tooltip={KPI_TIPS.capitalGain}
+          label="Total return"
+          tooltip={KPI_TIPS.totalReturn}
           loading={loading}
-          value={money(k?.capital_gain, true)}
-          secondary={money2(k2?.capital_gain, true)}
+          value={money(k?.total_return, true)}
+          secondary={money2(k2?.total_return, true)}
         />
         <KpiTile
           label="XIRR"
@@ -145,11 +146,11 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           secondary={pct2(k2?.mtd_growth)}
         />
         <KpiTile
-          label="Total return"
-          tooltip={KPI_TIPS.totalReturn}
+          label="Dividend income"
+          tooltip={KPI_TIPS.dividendIncome}
           loading={loading}
-          value={money(k?.total_return, true)}
-          secondary={money2(k2?.total_return, true)}
+          value={money(k?.dividend_income)}
+          secondary={money2(k2?.dividend_income)}
         />
       </div>
       {!loading && k && (

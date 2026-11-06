@@ -56,6 +56,28 @@ describe("Login", () => {
     expect(await screen.findByText("holdings page")).toBeInTheDocument();
   });
 
+  it("checks the new session before leaving, so a stale 'signed out' cannot bounce back", async () => {
+    const order: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.endsWith("/api/auth/me")) {
+          order.push("me");
+          return new Response(JSON.stringify({ authenticated: true, passkeys: 1 }), { status: 200 });
+        }
+        if (u.endsWith("/api/auth/login")) order.push("login");
+        return new Response(null, { status: 204 });
+      }),
+    );
+    renderLogin();
+    await userEvent.type(screen.getByLabelText("Password"), "secret");
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByText("holdings page")).toBeInTheDocument();
+    // A fresh "am I signed in?" is asked after the login and before the page changes.
+    expect(order.slice(order.indexOf("login"))).toEqual(["login", "me"]);
+  });
+
   it("shows wrong-password and rate-limit errors", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ detail: "x" }), { status: 401 }));
     vi.stubGlobal("fetch", fetchMock);

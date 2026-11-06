@@ -9,6 +9,7 @@ import { Field } from "../../components/Field";
 import { IconButton } from "../../components/IconButton";
 import { Input } from "../../components/Input";
 import { ApiError, isNetworkError } from "../../lib/api";
+import { authMeQuery } from "../../lib/queries";
 import {
   clearSignedOutFlag,
   invalidateAuth,
@@ -71,6 +72,11 @@ export function Login() {
   const done = useCallback(async () => {
     clearSignedOutFlag();
     await invalidateAuth(queryClient);
+    // Ask the server once more, now with the session cookie, before leaving the
+    // page: the route guard then finds a fresh "signed in" answer and can never
+    // act on a check that was sent before the sign-in. A failed probe still lets
+    // the guard ask again itself.
+    await queryClient.fetchQuery(authMeQuery()).catch(() => undefined);
     navigate(safeNext(location.search), { replace: true });
   }, [queryClient, navigate, location.search]);
   // The effect below runs once per visit; it reads the latest `done` from here.

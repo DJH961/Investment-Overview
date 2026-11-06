@@ -1287,6 +1287,11 @@
             ],
             "title": "Current Value"
           },
+          "is_cash": {
+            "default": false,
+            "title": "Is Cash",
+            "type": "boolean"
+          },
           "members": {
             "items": {
               "type": "integer"
@@ -1349,6 +1354,12 @@
             "title": "Instrument Id",
             "type": "integer"
           },
+          "is_cash": {
+            "default": false,
+            "description": "Money-market fund or cash position (the Cash group)",
+            "title": "Is Cash",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1408,6 +1419,19 @@
             },
             "title": "Instruments",
             "type": "array"
+          },
+          "investable_cash": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cash held (money-market funds + cash positions) in `ccy`, at the spot rate",
+            "title": "Investable Cash"
           },
           "projection_defaults": {
             "$ref": "#/components/schemas/ProjectionDefaultsOut"
@@ -2900,6 +2924,11 @@
           "instrument_id": {
             "title": "Instrument Id",
             "type": "integer"
+          },
+          "is_cash": {
+            "default": false,
+            "title": "Is Cash",
+            "type": "boolean"
           },
           "key": {
             "title": "Key",
@@ -8145,6 +8174,12 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "use_held_cash": {
+            "default": false,
+            "description": "Fund the amount from the cash held (money-market / cash positions): those holdings fall by what is invested, so it is not counted twice.",
+            "title": "Use Held Cash",
+            "type": "boolean"
           }
         },
         "required": [
@@ -8332,6 +8367,32 @@
               }
             ],
             "title": "Cash"
+          },
+          "from_held_cash": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Part of the amount funded from held cash (null when not used)",
+            "title": "From Held Cash"
+          },
+          "held_cash": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cash the portfolio holds (money-market + cash), in `ccy`",
+            "title": "Held Cash"
           },
           "leftover": {
             "anyOf": [
@@ -11674,6 +11735,130 @@
         "title": "TickPrice",
         "type": "object"
       },
+      "TiingoUsage": {
+        "description": "The Tiingo backup: key present, the app's own caps, calls used and left.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "daily_cap": {
+            "title": "Daily Cap",
+            "type": "integer"
+          },
+          "day_resets_at": {
+            "title": "Day Resets At",
+            "type": "string"
+          },
+          "day_used": {
+            "title": "Day Used",
+            "type": "integer"
+          },
+          "hour_resets_at": {
+            "title": "Hour Resets At",
+            "type": "string"
+          },
+          "hour_used": {
+            "title": "Hour Used",
+            "type": "integer"
+          },
+          "hourly_cap": {
+            "title": "Hourly Cap",
+            "type": "integer"
+          },
+          "last_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last At"
+          },
+          "last_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          },
+          "nav_probes_today": {
+            "default": 0,
+            "title": "Nav Probes Today",
+            "type": "integer"
+          },
+          "rate_limited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limited At"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "uses": {
+            "items": {
+              "$ref": "#/components/schemas/TiingoUse"
+            },
+            "title": "Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configured",
+          "hourly_cap",
+          "daily_cap",
+          "hour_used",
+          "day_used",
+          "remaining",
+          "hour_resets_at",
+          "day_resets_at",
+          "uses"
+        ],
+        "title": "TiingoUsage",
+        "type": "object"
+      },
+      "TiingoUse": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "detail"
+        ],
+        "title": "TiingoUse",
+        "type": "object"
+      },
       "TransactionAll": {
         "description": "The whole ledger in one answer (the client filters, sorts and pages it).",
         "properties": {
@@ -12547,7 +12732,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.8.0"
+    "version": "6.9.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -16253,6 +16438,28 @@
           }
         },
         "summary": "Put Split",
+        "tags": [
+          "maintenance"
+        ]
+      }
+    },
+    "/api/maintenance/tiingo": {
+      "get": {
+        "description": "How the Tiingo backup is used and how many requests are left.",
+        "operationId": "tiingo_usage_api_maintenance_tiingo_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TiingoUsage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Tiingo Usage",
         "tags": [
           "maintenance"
         ]

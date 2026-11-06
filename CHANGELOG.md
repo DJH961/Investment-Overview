@@ -17,6 +17,62 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.9.1] — 2026-11-06
+
+### Fixed
+- Signing in could occasionally drop you straight back on the sign-in page: a
+  "am I signed in?" check sent *before* the sign-in could answer "no" after it.
+  Signing in now cancels such a check and asks again with the new session before
+  opening the page (seen as a flaky phone-login test in CI).
+
+## [6.9.0] — 2026-11-06
+
+### Added
+- **Tiingo backup panel.** Health & Repair → Repair opens with a "Tiingo backup"
+  card: whether the key is set, requests used and left this hour and today (with
+  the reset times: top of the hour, midnight New York), the last Tiingo call, a
+  warning when Tiingo itself refused a request, and a list of when the key is
+  used (live price backup, fund NAV checks, EUR/USD intraday bars, graph gap
+  fill, manual re-pull).
+- **Repair → Providers → "Fill graph gaps from Tiingo".** Fills holes in the
+  1 Day / 1 Week graphs where yfinance has no bars, from Tiingo's 5-minute
+  prices. It costs one request per held stock/ETF plus one for EUR/USD, all
+  checked against the allowance first (it refuses rather than half-running), and
+  it never replaces the app's own live points. It also runs by itself when a
+  frozen-feed stall ends.
+- **Repair → Providers → "Re-pull prices from Tiingo".** Asks Tiingo for every
+  holding whose price is behind.
+- **"Use my cash" in the allocation calculator.** A chip under the amount fills
+  in the cash you hold (money-market funds plus cash/savings, from the server);
+  the plan then moves that cash into your targets instead of counting it as new
+  money, and the summary says how much of it is invested and how much stays.
+
+### Changed
+- **Money-market funds are Cash in the allocation calculator,** not mutual
+  funds: their own Cash group in the drift view and the builder, never a preset
+  or buy candidate, and never suggested for rebalancing unless you set a cash
+  target.
+- **Periods on a phone, redesigned.** Each year is a compact block: its total in
+  the top-right corner, growth (TWR) and XIRR large on one line, contributions,
+  dividends and (only when it differs) net flow as small chips. Unfolded, the
+  months sit indented under their year with a guide line, each with its total
+  shown prominently, tight chips, and the growth figure as before. Zero figures
+  are left out. Desktop is unchanged.
+- **Overview shows Total return where Capital gain was** (second tile, next to
+  Invested); Capital gain stays on Holdings. The last tile, which showed Total
+  return, now shows lifetime Dividend income so Total return isn't shown twice.
+- **Roomier desktop sidebar:** wider (264 / 288 / 312 px by screen size), 40 px
+  rows, more space between items and groups, more padding.
+- Tiingo request caps are ordinary settings now (no longer hidden as advanced)
+  and explain what counts against them.
+
+### Fixed
+- "Reset Tiingo budget state" cleared the wrong database, so the counters never
+  reset; it now resets them.
+- The Tiingo probe on the Market data tab now counts against the Tiingo budget.
+- Phone top bar: the page title always shows in full again (6.8.0 let it shrink
+  to its first letter); the portfolio figures beside it truncate instead.
+
 ## [6.8.0] — 2026-11-06
 
 ### Added

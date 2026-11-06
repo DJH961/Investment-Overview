@@ -112,16 +112,19 @@ export interface AuthMe {
   passkeys: number;
 }
 
+/** The "am I signed in?" probe, shared by the route guard and the sign-in flow. */
+export const authMeQuery = () => ({
+  queryKey: ["auth", "me"] as const,
+  queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    const me = await api<AuthMe>("/api/auth/me", { signal, skipAuthRedirect: true });
+    setSignedInHint(me.authenticated);
+    // Signed in with no passkeys registered: nothing to auto-offer at login.
+    if (me.authenticated && me.passkeys === 0) forgetPasskeyDevice();
+    return me;
+  },
+  staleTime: 60_000,
+});
+
 export function useAuthMe() {
-  return useQuery({
-    queryKey: ["auth", "me"],
-    queryFn: async ({ signal }) => {
-      const me = await api<AuthMe>("/api/auth/me", { signal, skipAuthRedirect: true });
-      setSignedInHint(me.authenticated);
-      // Signed in with no passkeys registered: nothing to auto-offer at login.
-      if (me.authenticated && me.passkeys === 0) forgetPasskeyDevice();
-      return me;
-    },
-    staleTime: 60_000,
-  });
+  return useQuery(authMeQuery());
 }
