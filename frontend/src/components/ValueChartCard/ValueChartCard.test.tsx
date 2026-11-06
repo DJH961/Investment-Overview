@@ -24,6 +24,14 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
   rememberGraphRange: (r: GraphRange) => remembered.push(r),
 }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
+vi.mock("../../lib/queries/instruments", () => ({
+  useInstruments: () => ({
+    data: [
+      { symbol: "FXAIX", intraday_twin: "VOO" },
+      { symbol: "FSKAX", intraday_twin: "VTI" },
+    ],
+  }),
+}));
 
 import { ToastProvider } from "../Toast";
 import { handleLiveEvent } from "../../lib/live";
@@ -88,17 +96,28 @@ describe("ValueChartCard", () => {
     expect(xs.every((x) => /^\d\d:\d\d$/.test(x ?? ""))).toBe(true);
   });
 
-  it("1D: says which funds are estimated from their ETF twin", () => {
-    graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX"] };
+  it("1D: one short line however many funds are estimated, without naming them", () => {
+    graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX", "FSKAX"] };
     render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
-    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent("Funds estimated");
-    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent("FXAIX");
+    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent(/^NAVs estimated from ETF twins$/);
   });
 
-  it("1W: the note says it is the latest session that is estimated", () => {
+  it("the fund -> ETF twin mapping is in the tooltip", async () => {
+    graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX", "FSKAX"] };
+    render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
+    fireEvent.focus(screen.getByRole("button", { name: "About estimated NAVs" }));
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent("FXAIX → VOO");
+    expect(tip).toHaveTextContent("FSKAX → VTI");
+    expect(tip).not.toHaveTextContent("latest session only");
+  });
+
+  it("1W: same short line; the tooltip says only the latest session is estimated", async () => {
     graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX"] };
     render(<ValueChartCard currency="EUR" defaultRange="1w" marketOpen />);
-    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent("Latest session: funds estimated");
+    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent(/^NAVs estimated from ETF twins$/);
+    fireEvent.focus(screen.getByRole("button", { name: "About estimated NAVs" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("latest session only");
   });
 
   it("1M: no estimate note on the daily ranges", () => {

@@ -6,6 +6,7 @@ import { Chart, type ChartSeries, type ChartXMode } from "../Chart";
 import { ErrorState } from "../ErrorState";
 import { formatStamp } from "../Freshness";
 import { IconButton } from "../IconButton";
+import { InfoTip } from "../InfoTip";
 import { Percent } from "../Percent";
 import { useToast } from "../Toast";
 import {
@@ -18,6 +19,7 @@ import {
   formatTime,
   todayIn,
 } from "../../lib/format";
+import { useInstruments } from "../../lib/queries/instruments";
 import { GRAPH_RANGES, rememberGraphRange, toNum, useGraph, type GraphRange } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useHideAmounts } from "../../lib/hideAmounts";
@@ -37,6 +39,38 @@ export const RANGE_LABELS: Record<GraphRange, string> = {
   "1y": "1Y",
   all: "ALL",
 };
+
+/**
+ * "NAVs estimated from ETF twins": one short line however many funds are
+ * estimated; the fund -> twin mapping is in the (i) tooltip. Mounted only while
+ * an estimate is on screen, so the instruments list is fetched only then.
+ */
+export function EstimatedNote({ funds, week }: { funds: string[]; week: boolean }) {
+  const twins = useInstruments().data;
+  const twinOf = (symbol: string) => twins?.find((i) => i.symbol === symbol)?.intraday_twin ?? null;
+  return (
+    <p className="value-chart-card__note" data-testid="funds-estimated-note">
+      <span>NAVs estimated from ETF twins</span>
+      <InfoTip
+        label="estimated NAVs"
+        content={
+          <div className="value-chart-card__twins">
+            <p className="value-chart-card__twins-text">
+              Until a fund's official NAV posts, its line follows its ETF twin{week ? " (latest session only)" : ""}.
+            </p>
+            <ul className="value-chart-card__twins-list">
+              {funds.map((f) => (
+                <li key={f} className="value-chart-card__twins-item">
+                  {f} → {twinOf(f) ?? "…"}
+                </li>
+              ))}
+            </ul>
+          </div>
+        }
+      />
+    </p>
+  );
+}
 
 const RANGE_KEY = "chart.overview.range";
 const SECONDARY_KEY = "chart.overview.secondary";
@@ -197,10 +231,7 @@ export function ValueChartCard({
             ariaLabel="Portfolio value over time"
           />
           {(shown === "1d" || shown === "1w") && g?.funds_estimated && (
-            <p className="value-chart-card__note" data-testid="funds-estimated-note">
-              {shown === "1w" ? "Latest session: funds" : "Funds"} estimated from their ETF twin until the official NAV posts
-              {g.estimated_funds.length ? ` (${g.estimated_funds.join(", ")})` : ""}.
-            </p>
+            <EstimatedNote funds={g.estimated_funds} week={shown === "1w"} />
           )}
           {(shown === "1d" || shown === "1w") && (g?.data_gaps?.length ?? 0) > 0 && (
             <p className="value-chart-card__note" data-testid="data-gaps-note">

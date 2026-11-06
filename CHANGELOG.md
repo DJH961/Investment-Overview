@@ -11,7 +11,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 - **Release fast:** every feature or bug fix ships as its own dated release in the
-  same PR. `## [Unreleased]
+  same PR. `## [Unreleased]` is only short-lived storage for changes that don't
+  affect the running app (docs, CI, tests) and is folded into the next release
+  (see `AGENTS.md` → Workflow).
+
+## [Unreleased]
 
 ## [6.8.0] — 2026-11-06
 
@@ -77,6 +81,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Overview's top-winner / top-mover labels are no longer cut off, and Periods shows
   each year's total in the top-right corner with growth figures first and larger
   monthly totals.
+
+## [6.7.2] — 2026-11-06
+
+### Fixed
+- **The "funds estimated" note under the 1D and 1W graph is one short line.**
+  It reads "NAVs estimated from ETF twins" however many funds are estimated
+  (it used to list every ticker, which wrapped to several lines on a phone). The
+  fund → ETF twin mapping is in the (i) tooltip next to it (tap on mobile), which
+  also says on the 1W that only the latest session is estimated.
 
 ## [6.7.1] — 2026-11-06
 
