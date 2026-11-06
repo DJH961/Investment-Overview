@@ -81,6 +81,13 @@
     align-items: center;
     gap: var(--space-1);
     font-weight: var(--font-weight-semibold);
+
+    // Phone: badges drop to a second line instead of being clipped.
+    @include m.phone {
+      flex-wrap: wrap;
+      overflow: visible;
+      row-gap: 0;
+    }
   }
 
   &__name {

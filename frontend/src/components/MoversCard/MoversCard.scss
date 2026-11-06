@@ -84,6 +84,12 @@
     align-items: baseline;
     gap: var(--space-2);
     min-width: 0;
+
+    // Phone: the tag may drop to its own line rather than being clipped.
+    @include m.phone {
+      flex-wrap: wrap;
+      row-gap: 0;
+    }
   }
 
   &__symbol {
@@ -93,6 +99,11 @@
   &__tag {
     @include m.eyebrow;
     @include m.truncate;
+
+    @include m.phone {
+      overflow: visible;
+      white-space: normal;
+    }
   }
 
   &__name {

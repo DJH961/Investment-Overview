@@ -32,6 +32,22 @@
   }
 }
 
+// Phone month rows: the month's total reads as a figure, not a footnote.
+.periods-page__value {
+  @include m.phone {
+    color: var(--color-fg);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+}
+
+// Phone year card: the year-end total sits in the header's top-right corner.
+.periods-page__year {
+  @include m.phone {
+    position: relative;
+  }
+}
+
 .periods-page__link {
   color: var(--color-accent);
   font-size: var(--font-size-sm);
@@ -82,6 +98,78 @@
 .periods-page__stat-label {
   @include m.eyebrow;
   @include m.truncate;
+}
+
+// Phone summary: growth figures big on top, the rest as small chips; the
+// total is pinned top-right (beside the year title, so no extra line).
+@include m.phone {
+  .periods-page__summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+    margin: 0 0 var(--space-1);
+  }
+
+  .periods-page__stat {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-1);
+    padding: 1px var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    font-size: var(--font-size-xs);
+
+    .periods-page__stat-label {
+      overflow: visible;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: var(--font-size-xs);
+    }
+
+    .periods-page__stat-value {
+      font-size: var(--font-size-xs);
+    }
+
+    &--growth {
+      flex: 1 1 40%;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+      padding: 0;
+      border: 0;
+      background: none;
+
+      .periods-page__stat-value {
+        font-size: var(--font-size-lg);
+      }
+    }
+
+    &--lead {
+      position: absolute;
+      top: var(--space-3);
+      right: var(--space-4);
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0;
+      padding: 0;
+      border: 0;
+      background: none;
+      text-align: right;
+
+      .periods-page__stat-label {
+        @include m.eyebrow(var(--font-size-2xs));
+      }
+
+      .periods-page__stat-value {
+        font-size: var(--font-size-md);
+      }
+
+      .periods-page__stat-sub {
+        display: none;
+      }
+    }
+  }
 }
 
 .periods-page__stat-value {
