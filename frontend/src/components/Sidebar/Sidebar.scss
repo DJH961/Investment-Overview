@@ -7,7 +7,7 @@
   display: flex;
   flex-direction: column;
   width: var(--sidebar-width);
-  padding: var(--space-3);
+  padding: var(--space-5) var(--space-4);
   background: var(--color-surface);
   border-right: var(--border-width) solid var(--color-border);
   transition: width var(--duration-base) var(--ease-standard);
@@ -75,11 +75,11 @@
   }
 
   &__group {
-    margin-bottom: var(--space-3);
+    margin-bottom: var(--space-5);
   }
 
   &__group-title {
-    padding: var(--space-2);
+    padding: var(--space-3) var(--space-3) var(--space-2);
     color: var(--color-faint);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
@@ -90,14 +90,14 @@
   &__list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
   }
 
   &__link {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    height: var(--control-height);
+    height: var(--sidebar-item-height);
     padding: 0 var(--space-3);
     border-radius: var(--radius-sm);
     color: var(--color-muted);
@@ -116,6 +116,7 @@
     &--active {
       background: var(--color-accent-soft);
       color: var(--color-accent);
+      font-weight: var(--font-weight-semibold);
     }
   }
 
@@ -133,7 +134,8 @@
   &__footer {
     display: flex;
     justify-content: flex-end;
-    padding-top: var(--space-2);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
     border-top: var(--border-width) solid var(--color-border);
   }
 
@@ -144,24 +146,23 @@
   // Large monitors: roomier rows and type (the width grows with --sidebar-width).
   // Declared before the short-window rules so a short window stays dense.
   @include m.xl {
-    padding: var(--space-4);
+    padding: var(--space-6) var(--space-4);
 
     &__brand-text {
       font-size: var(--font-size-md);
     }
 
     &__link {
-      height: var(--control-height-lg);
       font-size: var(--font-size-md);
     }
 
     &__group {
-      margin-bottom: var(--space-4);
+      margin-bottom: var(--space-6);
     }
   }
 
   @include m.xxl {
-    padding: var(--space-5) var(--space-4);
+    padding: var(--space-6) var(--space-5);
 
     &__list {
       gap: var(--space-1);
@@ -169,6 +170,7 @@
 
     &__link {
       gap: var(--space-4);
+      height: var(--control-height-lg);
       padding: 0 var(--space-4);
     }
 
@@ -203,6 +205,8 @@
 
   // Laptop-height windows: denser rows so every item fits.
   @include m.short {
+    padding: var(--space-3) var(--space-4);
+
     &__brand {
       height: var(--control-height-lg);
     }
