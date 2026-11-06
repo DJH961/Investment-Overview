@@ -253,3 +253,6 @@ docs/Comparison Files/audit-export-*.json
 docs/Comparison Files/*.xlsx
 # The personal master workbook was removed as un-fakeable; keep it local only.
 docs/Comparison Files/Investments.xlsx
+
+# Subagent git worktrees (never committed).
+.claude/worktrees/

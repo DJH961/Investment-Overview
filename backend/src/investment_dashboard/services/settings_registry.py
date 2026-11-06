@@ -211,6 +211,19 @@ DEFS: tuple[SettingDef, ...] = (
         choices=GRAPH_RANGE_KEYS,
     ),
     SettingDef(
+        "display.mover_badges",
+        SettingType.BOOL,
+        False,
+        "display",
+        "Mark the day's top movers in the Holdings list",
+        help=(
+            "Adds a 'top winner' / 'top loser' pill beside the symbol of the biggest "
+            "movers in the Overview's Holdings list. Off by default: the pill often "
+            "pushes the symbol line onto a second row, and the Top movers card above "
+            "already names them."
+        ),
+    ),
+    SettingDef(
         "chart_pref.analytics_lookback",
         SettingType.INT,
         365,

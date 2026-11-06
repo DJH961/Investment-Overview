@@ -405,6 +405,12 @@ def _twin_view(
         value = pick(card.value_eur, card.value_usd, ccy)
         est_value = value + delta if value is not None and delta is not None else None
         est_move, est_pct = intraday_snapshots_service.estimate_day_move(est, fx, fx_prev, ccy)
+        # The estimate moves only the value, so it moves the gain since buying by the
+        # same delta: every other row on the page shows money AND percent there, and
+        # leaving the twin's cell blank made the estimated row look half-reported.
+        _gain, _income, total_return = _gain_split(card, ccy)
+        cost = pick(card.cost_basis_eur, card.cost_basis_usd, ccy)
+        est_total = total_return + delta if total_return is not None and delta is not None else None
         view: dict[str, Any] = {
             "symbol": twin,
             "tier": est.tier,
@@ -412,7 +418,20 @@ def _twin_view(
             "est_value": dec(est_value),
             "est_today_move": dec(est_move),
             "est_today_pct": dec(est_pct),
+            "est_total_return": dec(est_total),
+            "est_total_growth": dec(
+                est_total / cost
+                if est_total is not None and cost is not None and cost > ZERO
+                else None
+            ),
             "at": est.at.isoformat(),
+            # The twin's price is its settled close when its market is shut and the
+            # price we hold was struck at or after that session's closing bell. The
+            # row marks it ✓, the same promise a directly priced holding makes.
+            "at_close": (
+                not market_hours.is_us_market_open(now)
+                and est.at >= market_hours.regular_session_close(est.session_date)
+            ),
             "pending": True,
             "divergence": _divergence_view(session, fd, est.legs, ccy=ccy) if fd else None,
         }
@@ -452,7 +471,10 @@ def _twin_view(
             "est_value": None,
             "est_today_move": None,
             "est_today_pct": None,
+            "est_total_return": None,
+            "est_total_growth": None,
             "at": None,
+            "at_close": False,
             "pending": False,
             "divergence": _divergence_view(session, fd, legs, ccy=ccy),
         },

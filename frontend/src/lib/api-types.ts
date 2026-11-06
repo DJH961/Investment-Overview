@@ -6054,6 +6054,12 @@ export interface components {
              * @description When the twin price used was struck (ISO)
              */
             at?: string | null;
+            /**
+             * At Close
+             * @description The twin price used is its settled close (its market is shut and the price was struck at or after that session's bell), so the estimate is final until the next open — the row marks it with the same ✓ a priced holding gets
+             * @default false
+             */
+            at_close: boolean;
             divergence?: components["schemas"]["TwinDivergence"] | null;
             /**
              * Est Price
@@ -6070,6 +6076,16 @@ export interface components {
              * @description Estimated day move (fraction, 0.01 = 1%), reporting currency
              */
             est_today_pct?: string | null;
+            /**
+             * Est Total Growth
+             * @description est_total_return over cost basis (fraction, 0.01 = 1%)
+             */
+            est_total_growth?: string | null;
+            /**
+             * Est Total Return
+             * @description Estimated gain since buying in money, reporting currency: the official total return moved by the same delta the estimate moves the value by
+             */
+            est_total_return?: string | null;
             /**
              * Est Value
              * @description Estimated value of the holding, reporting currency

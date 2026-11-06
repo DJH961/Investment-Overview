@@ -12703,6 +12703,12 @@
             "description": "When the twin price used was struck (ISO)",
             "title": "At"
           },
+          "at_close": {
+            "default": false,
+            "description": "The twin price used is its settled close (its market is shut and the price was struck at or after that session's bell), so the estimate is final until the next open \u2014 the row marks it with the same \u2713 a priced holding gets",
+            "title": "At Close",
+            "type": "boolean"
+          },
           "divergence": {
             "anyOf": [
               {
@@ -12751,6 +12757,32 @@
             ],
             "description": "Estimated day move (fraction, 0.01 = 1%), reporting currency",
             "title": "Est Today Pct"
+          },
+          "est_total_growth": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "est_total_return over cost basis (fraction, 0.01 = 1%)",
+            "title": "Est Total Growth"
+          },
+          "est_total_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated gain since buying in money, reporting currency: the official total return moved by the same delta the estimate moves the value by",
+            "title": "Est Total Return"
           },
           "est_value": {
             "anyOf": [
@@ -12924,7 +12956,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.11.1"
+    "version": "6.11.2"
   },
   "openapi": "3.1.0",
   "paths": {
