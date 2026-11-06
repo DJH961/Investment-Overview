@@ -46,4 +46,25 @@ describe("MoversCard", () => {
     render(<MoversCard movers={{ ...movers, losers: [] }} currency="EUR" loading={false} />);
     expect(screen.getByText("No losers")).toBeInTheDocument();
   });
+
+  it("names the ETF twin a pending fund ranked on, and marks both its figures", () => {
+    const withTwin = {
+      ...movers,
+      winners: [{ symbol: "FXAIX", name: "Index Fund", pct: "0.02", move: "900", reason: "total", twin: "VOO" }],
+    } as OverviewDto["movers"];
+    const { container } = render(<MoversCard movers={withTwin} currency="EUR" loading={false} />);
+    const chip = screen.getByTestId("mover-twin");
+    expect(chip).toHaveTextContent("≈ VOO");
+    expect(chip).toHaveAttribute("title", expect.stringContaining("has not published today's NAV yet"));
+    // Both figures carry "≈": neither is a published move.
+    const row = container.querySelector('[data-symbol="FXAIX"]');
+    expect(row?.querySelector(".movers-card__lead")?.textContent).toBe("≈+€900");
+    expect(row?.querySelector(".movers-card__trail")?.textContent).toBe("≈+2.00%");
+  });
+
+  it("leaves an officially priced mover unmarked", () => {
+    const { container } = render(<MoversCard movers={movers} currency="EUR" loading={false} />);
+    expect(screen.queryByTestId("mover-twin")).toBeNull();
+    expect(container.querySelector(".movers-card__approx")).toBeNull();
+  });
 });

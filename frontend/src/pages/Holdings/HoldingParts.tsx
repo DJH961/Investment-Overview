@@ -48,9 +48,13 @@ export function WeightCell({ ratio, max, start = false }: { ratio: number | null
   );
 }
 
-/** Row class for holdings in profit / loss: an accent edge (blue / orange), never a full-row wash. */
+/**
+ * Row class for holdings in profit / loss: an accent edge (blue / orange), never a full-row wash.
+ * Judged on total return, so a cash fund that earns only dividends — its NAV pinned
+ * at par, its capital gain 0 — is tinted for the profit it is actually making.
+ */
 export function tintClass(row: HoldingRowDto): string | undefined {
-  const gain = toNum(row.capital_gain);
+  const gain = toNum(row.total_return);
   if (gain === null || gain === 0) return undefined;
   return gain > 0 ? "holdings-page__row--gain" : "holdings-page__row--loss";
 }

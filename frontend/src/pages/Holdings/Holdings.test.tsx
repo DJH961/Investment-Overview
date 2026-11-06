@@ -42,6 +42,8 @@ const holdings: HoldingsDto = {
       today_pct: "0.01",
       today_move: "10",
       capital_gain: "200",
+      dividends: "20",
+      total_return: "220",
       total_growth: "0.25",
       xirr: "0.1",
       updated_at: "2026-10-30T15:05:00Z",
@@ -172,8 +174,12 @@ describe("Holdings page", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Group by" }));
     fireEvent.click(screen.getByRole("option", { name: "By account" }));
     const sub = screen.getByLabelText("Subtotal A");
-    // One row in table order: value, weight, day, P/L, total return; cost basis / dividends sit behind an (i).
-    for (const key of ["Value", "Weight", "Day", "P/L", "Total return"]) expect(within(sub).getByText(key)).toBeInTheDocument();
+    // One row in table order: value, weight, day, unrealised gain, total return; cost
+    // basis / dividends sit behind an (i). The gain cell is named for what it is —
+    // dividends stripped out — so a cash group reading 0 there is not read as "no profit".
+    for (const key of ["Value", "Weight", "Day", "Unrealised gain", "Total return"])
+      expect(within(sub).getByText(key)).toBeInTheDocument();
+    expect(within(sub).queryByText("P/L")).toBeNull();
     expect(within(sub).queryByText("Cost basis")).toBeNull();
     expect(within(sub).queryByText("Dividends")).toBeNull();
     expect(within(sub).getByRole("button", { name: "About cost basis, dividends and the return percentage" })).toBeInTheDocument();
@@ -211,6 +217,21 @@ describe("Holdings page", () => {
     const { container } = render(<Holdings />);
     expect(container.querySelector(".holdings-page__row--gain")).not.toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("Stale or zero value: VWCE");
+  });
+
+  it("tints a dividends-only cash fund as a gain, not as flat", () => {
+    // A money-market fund holds its NAV at par: its capital gain is 0 by construction
+    // and its whole return is income. Tinting on capital gain left it untinted (or, on
+    // a rounding cent, orange) while its own Total return column read clearly positive.
+    const rows = holdings.holdings;
+    holdings.holdings = [{ ...rows[0], capital_gain: "-0.37", dividends: "240", total_return: "239.63" }];
+    try {
+      const { container } = render(<Holdings />);
+      expect(container.querySelector(".holdings-page__row--gain")).not.toBeNull();
+      expect(container.querySelector(".holdings-page__row--loss")).toBeNull();
+    } finally {
+      holdings.holdings = rows;
+    }
   });
 
   it("says the price time once in the header and only on rows that differ", () => {

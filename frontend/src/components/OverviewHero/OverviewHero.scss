@@ -147,6 +147,12 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The official day change, money then percent: one unbreakable parenthesis so
+  // the two never land on different lines and read as separate facts.
+  &__official-change {
+    white-space: nowrap;
+  }
+
   &__value2 {
     color: var(--color-muted);
     font-size: var(--font-size-lg);

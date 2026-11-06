@@ -112,6 +112,34 @@
     font-size: var(--font-size-xs);
   }
 
+  // "≈ VOO": this row ranked on its ETF twin's estimate, not a published NAV.
+  // Outlined in the estimate colour and spelled out — never colour alone.
+  &__est {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-1);
+    border: var(--border-width) solid var(--color-estimate);
+    border-radius: var(--radius-full);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  &__est-icon {
+    width: var(--font-size-2xs);
+    height: var(--font-size-2xs);
+  }
+
+  // The same "≈" on each estimated figure, so neither reads as a settled print.
+  &__approx {
+    margin-right: 0.1em;
+    color: var(--color-estimate);
+  }
+
   &__lead,
   &__trail {
     font-variant-numeric: tabular-nums;

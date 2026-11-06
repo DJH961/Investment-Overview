@@ -92,6 +92,14 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  // Marks an estimated figure: the same "≈" the Overview headline uses, in the
+  // estimate colour, so the bar never reads as the official book.
+  &__est {
+    margin-right: var(--space-1);
+    color: var(--color-estimate);
+    font-weight: var(--font-weight-medium);
+  }
+
   // The session label only on big monitors: below, the freshness chip says it
   // and the page title + price time need the room.
   &__summary-day {

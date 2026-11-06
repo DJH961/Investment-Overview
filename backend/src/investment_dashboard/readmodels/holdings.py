@@ -177,7 +177,11 @@ def _summary(rows: list[dict[str, Any]], cards: list[HoldingCard], ccy: str) -> 
     largest = max(cards, key=lambda c: c.weight or ZERO, default=None)
     gainers = sum(1 for c in cards if (c.daily_move_eur or ZERO) > ZERO)
     losers = sum(1 for c in cards if (c.daily_move_eur or ZERO) < ZERO)
-    splits = [_gain_split(c, ccy)[0] for c in cards]
+    # "In profit" is judged on TOTAL return, not the capital gain: a money-market
+    # fund earns its whole return as dividends and holds its NAV at par, so its
+    # capital gain is 0 by construction and counting on it reported a plainly
+    # profitable cash position as neither in profit nor in loss.
+    splits = [_gain_split(c, ccy)[2] for c in cards]
     in_profit = sum(1 for g in splits if g is not None and g > ZERO)
     in_loss = sum(1 for g in splits if g is not None and g < ZERO)
     return {

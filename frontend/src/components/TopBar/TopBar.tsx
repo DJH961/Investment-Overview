@@ -54,6 +54,22 @@ function healthLabel(h: HealthSummary | undefined): string {
   return `Health & Repair: ${h.count} ${kind}${h.count === 1 ? "" : "s"}`;
 }
 
+const EST_TITLE =
+  "Estimated: a fund's NAV has not been published yet, so its ETF twin stands in for it. The Overview explains which.";
+
+/** The "≈" that marks every estimated figure in the bar (the label says so for screen readers). */
+function EstMark() {
+  return (
+    <span className="top-bar__est" title={EST_TITLE} aria-hidden>
+      ≈
+    </span>
+  );
+}
+
+function summaryLabel(estimated: boolean): string {
+  return estimated ? "Portfolio summary, estimated" : "Portfolio summary";
+}
+
 function HealthBadge({ health }: { health?: HealthSummary }) {
   const bad = health && health.severity !== "ok";
   const Icon = bad ? TriangleAlert : HeartPulse;
@@ -106,7 +122,8 @@ export function TopBar({
         <div className="top-bar__title-line">
           <p className="top-bar__title">{title}</p>
           {compact && summary && (
-            <span className="top-bar__mini" aria-label="Portfolio summary">
+            <span className="top-bar__mini" aria-label={summaryLabel(summary.estimated)}>
+              {summary.estimated && <EstMark />}
               <Money amount={summary.value} currency={summary.currency} compact />
               <Percent ratio={summary.pct} signed colored />
             </span>
@@ -130,10 +147,15 @@ export function TopBar({
       {!compact && (
         // Always rendered (a placeholder until the figures load), so the bar's
         // items never shift between views.
-        <div className="top-bar__summary" aria-label="Portfolio summary" aria-busy={!summary || undefined}>
+        <div
+          className="top-bar__summary"
+          aria-label={summaryLabel(summary?.estimated ?? false)}
+          aria-busy={!summary || undefined}
+        >
           {summary ? (
             <>
               <span className="top-bar__summary-value">
+                {summary.estimated && <EstMark />}
                 <Money amount={summary.value} currency={summary.currency} />
               </span>
               <DeltaBadge value={summary.pct} />
