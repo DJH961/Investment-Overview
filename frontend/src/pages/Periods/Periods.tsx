@@ -17,10 +17,13 @@ import { formatDate } from "../../lib/format";
 import { type ReportingCurrency, usePrefs } from "../../lib/prefs";
 import { type PeriodRowOut, toNum, usePeriods } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
+import { useIsPhone } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { groupByYear, yearOf } from "./groupByYear";
 import { Maybe } from "./Maybe";
+import { PhoneYears } from "./PhoneYears";
 import "./Periods.scss";
+import "./PhoneYears.scss";
 
 export type View = "year" | "monthly" | "yearly";
 
@@ -146,6 +149,7 @@ function index(rows: PeriodRowOut[] | undefined): Map<string, PeriodRowOut> {
 
 export function Periods() {
   const { currency } = usePrefs();
+  const phone = useIsPhone();
   const [view, setView] = usePersistentState<View>("periods.view", "year", isView);
   const second = otherCcy(currency);
   const needMonthly = view !== "yearly";
@@ -211,7 +215,9 @@ export function Periods() {
               />
             </Card>
           )}
-          {view === "year" ? (
+          {view === "year" && phone ? (
+            <PhoneYears groups={groups} currency={currency} monthsOther={mOther} yearOther={yOther} />
+          ) : view === "year" ? (
             groups.map((g) => (
               <Card
                 key={g.year}

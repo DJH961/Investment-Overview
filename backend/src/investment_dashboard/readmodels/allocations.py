@@ -16,6 +16,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain.allocation import current_weights_pct
+from investment_dashboard.domain.instruments import is_money_market_effective
+from investment_dashboard.domain.money_market import CASH_CATEGORY, is_cash_asset_class
 from investment_dashboard.errors import ConflictError, ValidationError
 from investment_dashboard.readmodels._context import build_context
 from investment_dashboard.readmodels._serialize import dec
@@ -90,9 +92,13 @@ class _InstrumentAgg:
     category: str
     asset_class: str
     value_eur: Decimal
+    is_cash: bool = False
 
 
 def _aggregate(positions: list[Position]) -> dict[int, _InstrumentAgg]:
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    mm_extra = tuple(settings_service.get_or("portfolio.money_market_symbols", ()))
     out: dict[int, _InstrumentAgg] = {}
     for p in positions:
         eff = p.effective
@@ -100,13 +106,17 @@ def _aggregate(positions: list[Position]) -> dict[int, _InstrumentAgg]:
         name = (eff.name if eff is not None else p.instrument.name) or p.instrument.symbol
         agg = out.get(p.instrument.id)
         if agg is None:
+            cash = is_cash_asset_class(asset_class) or is_money_market_effective(
+                p.instrument, eff, mm_extra
+            )
             out[p.instrument.id] = _InstrumentAgg(
                 instrument_id=p.instrument.id,
                 symbol=p.instrument.symbol,
                 name=name,
-                category=p.category or asset_class or UNCATEGORIZED,
-                asset_class=asset_class or UNCATEGORIZED,
+                category=CASH_CATEGORY if cash else p.category or asset_class or UNCATEGORIZED,
+                asset_class=CASH_CATEGORY if cash else asset_class or UNCATEGORIZED,
                 value_eur=p.current_value_eur,
+                is_cash=cash,
             )
         else:
             agg.value_eur += p.current_value_eur
@@ -144,6 +154,7 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
     drift: list[dict[str, Any]] = []
     #: category -> [funds, current %, target %, current EUR, target EUR]
     by_cat: dict[str, list[Any]] = {}
+    cash_idle_cats: set[str] = set()
     active = next((t for t in targets if t["active"]), None)
     if active is not None:
         symbols = {i.id: i.symbol for i in instruments_repo.list_instruments(session)}
@@ -161,6 +172,10 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
             cur = current_pct[iid]
             target_value_eur = total * tgt / HUNDRED
             category = agg.category if agg else UNCATEGORIZED
+            # Cash is only a rebalancing target when the user gave it one.
+            idle_cash = agg is not None and agg.is_cash and tgt == ZERO
+            if idle_cash:
+                cash_idle_cats.add(category)
             acc = by_cat.setdefault(category, [0, ZERO, ZERO, ZERO, ZERO])
             acc[0] += 1
             acc[1] += cur
@@ -176,9 +191,12 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
                     "asset_class": agg.asset_class if agg else UNCATEGORIZED,
                     "current_pct": dec(cur / HUNDRED),
                     "target_pct": dec(tgt / HUNDRED),
-                    "drift_pp": dec(cur - tgt),
+                    "drift_pp": dec(ZERO if idle_cash else cur - tgt),
                     "current_value": dec(_val(values[iid], ccy, fx)),
-                    "delta_value": dec(_val(target_value_eur - values[iid], ccy, fx)),
+                    "delta_value": dec(
+                        _val(ZERO if idle_cash else target_value_eur - values[iid], ccy, fx)
+                    ),
+                    "is_cash": bool(agg and agg.is_cash),
                 }
             )
 
@@ -189,13 +207,14 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
             "funds": funds,
             "current_pct": dec(cur / HUNDRED),
             "target_pct": dec(tgt / HUNDRED),
-            "drift_pp": dec(cur - tgt),
+            "drift_pp": dec(ZERO if idle else cur - tgt),
             "current_value": dec(_val(cur_eur, ccy, fx)),
-            "delta_value": dec(_val(tgt_eur - cur_eur, ccy, fx)),
+            "delta_value": dec(_val(ZERO if idle else tgt_eur - cur_eur, ccy, fx)),
         }
         for name, (funds, cur, tgt, cur_eur, tgt_eur) in sorted(
             by_cat.items(), key=lambda kv: abs(kv[1][1] - kv[1][2]), reverse=True
         )
+        for idle in [name in cash_idle_cats and tgt == ZERO]
     ]
 
     agg_list = list(aggs.values())

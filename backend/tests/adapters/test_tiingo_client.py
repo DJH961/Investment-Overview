@@ -15,6 +15,7 @@ from investment_dashboard.adapters.tiingo_client import (
     fetch_closes,
     fetch_fx_intraday,
     fetch_fx_rate,
+    fetch_iex_intraday,
     fetch_latest_close,
     fetch_quotes,
 )
@@ -319,3 +320,38 @@ def test_fetch_fx_intraday_rejects_reversed_range() -> None:
 def test_fetch_fx_intraday_rejects_malformed_pair() -> None:
     with pytest.raises(ValueError, match="ISO currency"):
         fetch_fx_intraday(date(2024, 6, 7), date(2024, 6, 7), base="EU", token=_TOKEN)
+
+
+@respx.mock
+def test_fetch_iex_intraday_parses_bars_and_sends_token_in_header() -> None:
+    route = respx.get(f"{TIINGO_ROOT}/iex/vti/prices").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"date": "2026-11-05T17:15:00.000Z", "close": 364.1},
+                {"date": "2026-11-05T17:20:00.000Z", "close": 363.9},
+            ],
+        )
+    )
+    bars = fetch_iex_intraday("VTI", date(2026, 11, 5), date(2026, 11, 5), token=_TOKEN)
+    assert bars == {
+        datetime(2026, 11, 5, 17, 15): Decimal("364.1"),
+        datetime(2026, 11, 5, 17, 20): Decimal("363.9"),
+    }
+    request = route.calls.last.request
+    assert request.url.params["resampleFreq"] == "5min"
+    assert _TOKEN not in str(request.url)
+    assert request.headers["Authorization"] == f"Token {_TOKEN}"
+
+
+@respx.mock
+def test_fetch_iex_intraday_unknown_ticker_is_empty() -> None:
+    respx.get(f"{TIINGO_ROOT}/iex/nope/prices").mock(return_value=httpx.Response(404))
+    assert fetch_iex_intraday("NOPE", date(2026, 11, 5), date(2026, 11, 5), token=_TOKEN) == {}
+
+
+@respx.mock
+def test_fetch_iex_intraday_raises_on_server_error() -> None:
+    respx.get(f"{TIINGO_ROOT}/iex/vti/prices").mock(return_value=httpx.Response(500, text="boom"))
+    with pytest.raises(TiingoError):
+        fetch_iex_intraday("VTI", date(2026, 11, 5), date(2026, 11, 5), token=_TOKEN)

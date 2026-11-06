@@ -114,7 +114,8 @@
   --line-height-base: 1.5;
 
   // Sizes
-  --sidebar-width: 240px; // 264px at >= 1440, 296px at >= 1920 (below)
+  --sidebar-width: 264px; // 288px at >= 1440, 312px at >= 1920 (below)
+  --sidebar-item-height: 40px;
   --sidebar-rail-width: 64px;
   --topbar-height: 56px;
   --tabbar-height: 60px;
@@ -166,12 +167,12 @@
 // Large screens: the sidebar takes more of the room (the shell offset follows).
 @media (min-width: 1440px) {
   :root {
-    --sidebar-width: 264px;
+    --sidebar-width: 288px;
   }
 }
 
 @media (min-width: 1920px) {
   :root {
-    --sidebar-width: 296px;
+    --sidebar-width: 312px;
   }
 }

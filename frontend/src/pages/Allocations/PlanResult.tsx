@@ -196,6 +196,21 @@ export function PlanResult({ plan, stale = false }: { plan: BuilderPlan; stale?:
             <dd className="allocations__stat-sub">{selling ? "cash + sales − buys" : other(s.other_leftover)}</dd>
           </div>
         </dl>
+        {s.from_held_cash != null && (
+          <p className="allocations__notice" role="note">
+            You hold <Money amount={num(s.held_cash)} currency={plan.ccy} digits={0} /> in cash (money-market).
+            Investing <Money amount={num(s.from_held_cash)} currency={plan.ccy} digits={0} /> of it per your
+            targets
+            {Number(s.held_cash ?? 0) - Number(s.from_held_cash) > 0.5 ? (
+              <>
+                ; <Money amount={Number(s.held_cash ?? 0) - Number(s.from_held_cash)} currency={plan.ccy} digits={0} /> stays in
+                cash.
+              </>
+            ) : (
+              "."
+            )}
+          </p>
+        )}
         {plan.extras.length > 0 && (
           <p className="allocations__notice" role="note">
             Held, no new money: {plan.extras.join(", ")}. Their value counts toward their category

@@ -204,13 +204,16 @@
       overflow: hidden;
     }
 
+    // The page title always shows in full; the portfolio figures beside it
+    // give way (truncate) when space runs out.
     .top-bar__title {
-      flex-shrink: 1;
+      flex-shrink: 0;
       font-size: var(--font-size-md);
     }
 
     .top-bar__mini {
-      flex-shrink: 0;
+      flex-shrink: 1;
+      overflow: hidden;
     }
 
     .top-bar__freshness {

@@ -75,6 +75,19 @@ MONEY_MARKET_SYMBOLS: frozenset[str] = frozenset(
 )
 
 
+#: Group label the allocation calculators use for money-market funds and any
+#: cash / savings positions (never a NAV-fund bucket, never a buy candidate).
+CASH_CATEGORY = "Cash"
+
+#: Asset classes that are cash outright (besides money-market funds).
+CASH_ASSET_CLASSES: frozenset[str] = frozenset({"cash", "savings", "money_market", "money-market"})
+
+
+def is_cash_asset_class(asset_class: str | None) -> bool:
+    """``True`` when the asset class itself says cash / savings / money market."""
+    return bool(asset_class) and (asset_class or "").strip().lower() in CASH_ASSET_CLASSES
+
+
 def is_money_market(
     symbol: str | None,
     *,

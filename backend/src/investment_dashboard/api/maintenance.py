@@ -37,6 +37,7 @@ from investment_dashboard.api.schemas.maintenance import (
     SchedulerPause,
     SchedulerState,
     SplitsDto,
+    TiingoUsage,
 )
 from investment_dashboard.errors import ValidationError
 from investment_dashboard.services import (
@@ -96,6 +97,14 @@ def get_run(run_id: str) -> dict[str, Any]:
     return job_runner.run_view(run)
 
 
+@router.get("/tiingo", response_model=TiingoUsage)
+def tiingo_usage(_actor: SessionActorDep) -> dict[str, Any]:
+    """How the Tiingo backup is used and how many requests are left."""
+    from investment_dashboard.services import tiingo_usage_service  # noqa: PLC0415
+
+    return tiingo_usage_service.usage()
+
+
 @router.post("/probe", response_model=ProbeResult)
 def probe(body: ProbeRequest, _actor: SessionActorDep) -> dict[str, Any]:
     from investment_dashboard.services import price_probe_service  # noqa: PLC0415
@@ -104,9 +113,17 @@ def probe(body: ProbeRequest, _actor: SessionActorDep) -> dict[str, Any]:
     if body.provider == "yfinance":
         outcome = price_probe_service.probe_yfinance(symbol)
     else:
-        outcome = price_probe_service.probe_tiingo(
-            symbol, token=prices_service._resolve_tiingo_token()
-        )
+        token = prices_service._resolve_tiingo_token()
+        if token:
+            from investment_dashboard.services import tiingo_usage_service  # noqa: PLC0415
+
+            granted, _left = tiingo_usage_service.reserve(1)
+            if not granted:
+                raise HTTPException(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    "The Tiingo allowance for this hour/day is used up; try after the reset.",
+                )
+        outcome = price_probe_service.probe_tiingo(symbol, token=token)
     return {
         **outcome.__dict__,
         "price": None if outcome.price is None else format(outcome.price, "f"),

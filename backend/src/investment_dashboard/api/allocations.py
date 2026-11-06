@@ -109,6 +109,7 @@ def post_builder_plan(body: PlanRequest, session: SessionDep) -> PlanResponse:
                 )
                 for c in body.category_weights
             ],
+            use_held_cash=body.use_held_cash,
         )
     except rebalance.RebalanceInputError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

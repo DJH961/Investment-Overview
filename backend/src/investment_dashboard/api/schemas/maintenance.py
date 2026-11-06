@@ -111,6 +111,34 @@ class ProbeRequest(ApiModel):
     symbol: str = Field(min_length=1, max_length=20, pattern=r"^[A-Za-z0-9^.\-=]+$")
 
 
+class TiingoUse(ApiModel):
+    title: str
+    detail: str
+
+
+class TiingoUsage(ApiModel):
+    """The Tiingo backup: key present, the app's own caps, calls used and left."""
+
+    configured: bool
+    hourly_cap: int
+    daily_cap: int
+    hour_used: int
+    day_used: int
+    #: Calls still allowed now (the smaller of what is left this hour and today).
+    remaining: int
+    #: Next reset of the hourly bucket (top of the UTC hour) and the daily one
+    #: (midnight New York time), ISO UTC.
+    hour_resets_at: str
+    day_resets_at: str
+    #: Tiingo answered HTTP 429 (its own allowance spent) this hour, if it did.
+    rate_limited_at: str | None = None
+    nav_probes_today: int = 0
+    last_status: str | None = None
+    last_message: str | None = None
+    last_at: str | None = None
+    uses: list[TiingoUse]
+
+
 class ProbeResult(ApiModel):
     provider: str
     provider_label: str

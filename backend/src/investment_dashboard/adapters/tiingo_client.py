@@ -563,6 +563,60 @@ def fetch_fx_intraday(
     return bars
 
 
+def fetch_iex_intraday(
+    symbol: str,
+    start_day: date,
+    end_day: date,
+    *,
+    interval: str = "5min",
+    token: str,
+    client: httpx.Client | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[datetime, Decimal]:
+    """Return ``{bar_time_utc: close}`` of intraday IEX bars for one stock/ETF.
+
+    Wraps ``/iex/<ticker>/prices`` (historical intraday, resampled to
+    ``interval``) over ``[start_day, end_day]``. **One request per ticker**: the
+    historical endpoint has no multi-ticker form. Used to fill holes in the
+    1 Day / 1 Week graphs when yfinance has no bars (for example while its feed
+    was frozen). IEX prints are one venue's trades, a close match for liquid
+    ETFs. ``{}`` for an unknown ticker (404); raises :class:`TiingoError` on
+    other failures. Bar timestamps are naive UTC.
+    """
+    if end_day < start_day:
+        raise ValueError(f"end_day ({end_day}) precedes start_day ({start_day})")
+    url = f"{TIINGO_ROOT}/iex/{symbol.strip().lower()}/prices"
+    params = {
+        "startDate": start_day.isoformat(),
+        "endDate": end_day.isoformat(),
+        "resampleFreq": _fx_resample_freq(interval),
+        "columns": "close",
+        "format": "json",
+    }
+    owns_client = client is None
+    http = client or httpx.Client(timeout=timeout)
+    try:
+        response = _get_with_retry(http, url, params=params, headers=_auth_headers(token))
+    finally:
+        if owns_client:
+            http.close()
+    if response.status_code == 404:
+        return {}
+    if response.status_code != 200:
+        msg = f"Tiingo IEX prices returned HTTP {response.status_code} for {symbol}: {response.text[:200]}"
+        _record_status("error", msg)
+        raise TiingoError(msg)
+    try:
+        rows: Any = response.json()
+    except ValueError as exc:
+        raise TiingoError(f"Malformed Tiingo IEX prices payload for {symbol}: {exc}") from exc
+    if not isinstance(rows, list):
+        raise TiingoError("Unexpected Tiingo IEX prices payload (expected a list)")
+    bars = _parse_fx_price_rows(rows)
+    _record_status("ok", f"IEX {symbol.upper()} {len(bars)} intraday bar(s) {start_day}..{end_day}")
+    return bars
+
+
 def _parse_fx_price_rows(rows: list[Any]) -> dict[datetime, Decimal]:
     """Parse Tiingo FX price rows into ``{bar_time_utc: close}`` (positive closes only)."""
     bars: dict[datetime, Decimal] = {}

@@ -30,6 +30,9 @@ class CalcInstrumentOut(ApiModel):
     )
     current_value: DecStr | None
     current_pct: DecStr | None = Field(description="Share of total value (fraction, 0.01 = 1%)")
+    is_cash: bool = Field(
+        default=False, description="Money-market fund or cash position (the Cash group)"
+    )
 
 
 class CalcCategoryOut(ApiModel):
@@ -37,6 +40,7 @@ class CalcCategoryOut(ApiModel):
     current_value: DecStr | None
     current_pct: DecStr | None = Field(description="Share of total value (fraction, 0.01 = 1%)")
     members: list[int]
+    is_cash: bool = False
 
 
 class ProjectionDefaultsOut(ApiModel):
@@ -49,6 +53,10 @@ class CalculatorInputsOut(ApiModel):
     as_of: str
     fx_usd_per_eur: DecStr | None
     total_value: DecStr | None
+    investable_cash: DecStr | None = Field(
+        default=None,
+        description="Cash held (money-market funds + cash positions) in `ccy`, at the spot rate",
+    )
     instruments: list[CalcInstrumentOut]
     categories: list[CalcCategoryOut]
     projection_defaults: ProjectionDefaultsOut

@@ -931,6 +931,27 @@ def _without_frozen_today(
     return {d: c for d, c in closes.items() if d != today}
 
 
+def _fill_gaps_in_background() -> None:
+    """A stall just ended: fill its hole in the graphs from Tiingo, off the pull thread.
+
+    yfinance rarely publishes the missing bars afterwards (5 Nov 2026: never), so
+    with a Tiingo token the gap is filled right away. Budget-gated and best-effort.
+    """
+    import threading  # noqa: PLC0415
+
+    def run() -> None:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
+
+        try:
+            with ledger_session_scope() as session:
+                intraday_snapshots_service.fill_gaps_from_tiingo(session)
+        except Exception as exc:  # pragma: no cover - budget/network: log and move on
+            log.info("automatic Tiingo gap fill after a stall did not run: %s", exc)
+
+    threading.Thread(target=run, name="tiingo-gap-fill", daemon=True).start()
+
+
 def _observe_feed(
     session: Session,
     instruments: Sequence[Instrument],
@@ -973,6 +994,8 @@ def _observe_feed(
             from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
 
             intraday_snapshots_service.drop_samples_after(session, change.started, now_utc)
+        if change.ended is not None and _resolve_tiingo_token():
+            _fill_gaps_in_background()
         return feed_stall_service.is_stalled()
     except Exception:  # pragma: no cover - defensive
         log.warning("price-feed stall check failed", exc_info=True)
