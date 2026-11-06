@@ -89,6 +89,14 @@ interface FormState {
   active: boolean;
   provider_symbol: string;
   pricing_mode: PricingMode;
+  intraday_twin: string;
+}
+
+/** Why a suggested twin is (or is not) as good as the fund's own index. */
+export function twinSuggestionText(s: NonNullable<Instrument["twin_suggestion"]>): string {
+  if (s.tier === "same_index") return `${s.etf} tracks the same index (${s.index}).`;
+  const gap = s.typical_daily_gap ? `, typically ${formatPercent(Number(s.typical_daily_gap), { digits: 2 })} apart per day` : "";
+  return `${s.etf} follows a different index (${s.index}) but moves with it closely${gap}.`;
 }
 
 function initial(i: Instrument): FormState {
@@ -100,6 +108,7 @@ function initial(i: Instrument): FormState {
     active: i.active,
     provider_symbol: i.provider_symbol ?? "",
     pricing_mode: i.pricing_mode,
+    intraday_twin: i.intraday_twin ?? "",
   };
 }
 
@@ -117,6 +126,8 @@ export function buildPatch(i: Instrument, s: FormState): InstrumentPatch {
   if (s.provider_symbol.trim().toUpperCase() !== start.provider_symbol.toUpperCase())
     patch.provider_symbol = text(s.provider_symbol.toUpperCase());
   if (s.pricing_mode !== start.pricing_mode) patch.pricing_mode = s.pricing_mode;
+  if (s.intraday_twin.trim().toUpperCase() !== start.intraday_twin.toUpperCase())
+    patch.intraday_twin = text(s.intraday_twin.toUpperCase());
   return patch;
 }
 
@@ -130,6 +141,9 @@ function InstrumentForm({ instrument, onDone }: { instrument: Instrument; onDone
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setState((s) => ({ ...s, [k]: v }));
   const errors = update.isError ? instrumentErrors(update.error) : {};
   const mode = PRICING_MODES.find((m) => m.value === state.pricing_mode);
+  // Only funds priced once a day (NAV) have a late-data gap an ETF can estimate.
+  const suggestion = instrument.twin_suggestion ?? null;
+  const showTwin = state.asset_class === "mutual_fund" || Boolean(instrument.intraday_twin) || suggestion !== null;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -256,7 +270,32 @@ function InstrumentForm({ instrument, onDone }: { instrument: Instrument; onDone
             />
           )}
         </Field>
+        {showTwin && (
+          <Field
+            label="ETF twin (1D estimate)"
+            error={errors.intraday_twin}
+            hint="The ETF whose live price estimates this fund on the 1D graph until its official NAV posts. It never counts in totals or holdings."
+          >
+            {(c) => (
+              <Input
+                id={c.id}
+                value={state.intraday_twin}
+                placeholder="e.g. VTI"
+                invalid={c.invalid}
+                onChange={(e) => set("intraday_twin", e.target.value)}
+              />
+            )}
+          </Field>
+        )}
       </div>
+      {showTwin && suggestion && state.intraday_twin.trim().toUpperCase() !== suggestion.etf && (
+        <div className="instruments-page__twin-suggest" data-testid="twin-suggestion">
+          <span className="instruments-page__text">Suggested twin: {twinSuggestionText(suggestion)}</span>
+          <Button type="button" size="sm" variant="secondary" onClick={() => set("intraday_twin", suggestion.etf)}>
+            Use {suggestion.etf}
+          </Button>
+        </div>
+      )}
       <label className="instruments-page__check" title="Inactive instruments are not priced and are hidden from pickers; history stays.">
         <input type="checkbox" checked={state.active} onChange={(e) => set("active", e.target.checked)} />
         <span>Active (inactive: no price downloads, hidden from pickers; history stays)</span>
@@ -332,6 +371,27 @@ export function Instruments() {
         </span>
       ),
       sortValue: (i) => i.pricing_mode,
+    },
+    {
+      key: "twin",
+      header: "1D twin",
+      cell: (i) =>
+        i.intraday_twin ? (
+          i.intraday_twin
+        ) : i.twin_suggestion ? (
+          <button
+            type="button"
+            className="instruments-page__twin-link"
+            aria-label={`Set a twin for ${i.symbol} (suggested ${i.twin_suggestion.etf})`}
+            onClick={() => open(i.id)}
+          >
+            Suggested: {i.twin_suggestion.etf}
+          </button>
+        ) : (
+          "—"
+        ),
+      sortValue: (i) => i.intraday_twin,
+      phone: "hide",
     },
     {
       key: "price",

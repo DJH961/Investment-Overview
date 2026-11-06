@@ -1847,6 +1847,7 @@ def late_nav_sleeve(
     times: list[datetime],
     rate: Decimal | None,
     sample_fx: dict[datetime, Decimal | None] | None = None,
+    strict: bool = False,
 ) -> LateNavSleeve:
     """The NAV-fund sleeve of the 1D line at each of ``times`` (see the section note).
 
@@ -1854,6 +1855,12 @@ def late_nav_sleeve(
     sample without its own rate); ``sample_fx`` the per-instant rate stored beside
     each sample. Shares are those held on ``session_date``. Reads only cached
     closes and twin prices (no network). Empty when no drifting funds are held.
+
+    ``strict`` is for an *earlier* session of the 1W: the sleeve is returned only
+    when every held fund has this session's official NAV and a previous NAV (a
+    complete day) and at least one fund has its twin's bars for the session.
+    Otherwise it is empty and the caller keeps the per-day NAV (with its
+    gap-fill), so a half-cached day, or a week with no twin, is never redrawn.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
     from investment_dashboard.domain.late_data import (  # noqa: PLC0415
@@ -1885,22 +1892,30 @@ def late_nav_sleeve(
 
     plan: list[_FundPlan] = []
     estimated: set[str] = set()
+    has_twin_data = False
     for p in funds:
         closes = dict(recent.get(p.instrument.id, []))
         official = closes.get(session_date)
         earlier = [d for d in closes if d < session_date]
         prev_nav = closes[max(earlier)] if earlier else (official or p.current_price_native)
         if prev_nav is None or prev_nav <= 0:
+            if strict:
+                return LateNavSleeve(components={})
             continue
         twin = _twin_of(p)
         rows = twin_rows.get(twin, {}) if twin else {}
         twin_prev = _latest_at_or_before(rows, prev_close_at)
         session_rows = {t: v for t, v in rows.items() if t > prev_close_at}
         twin_close = _latest_at_or_before(session_rows, close_at)
+        if strict and (official is None or not earlier):
+            return LateNavSleeve(components={})
+        has_twin_data |= twin_prev is not None and bool(session_rows)
         if official is None and twin_prev is not None and session_rows:
             estimated.add(p.instrument.symbol)
         plan.append(_FundPlan(p, prev_nav, official, _stepper(session_rows), twin_prev, twin_close))
 
+    if strict and not has_twin_data:
+        return LateNavSleeve(components={})
     components: dict[datetime, tuple[Decimal, Decimal | None]] = {}
     for at in times:
         fx_t = (sample_fx or {}).get(at) or rate
@@ -1979,20 +1994,102 @@ def _store_twin_closes(
     return written
 
 
+#: ``app_config`` key prefix: ``{prefix}{symbol}:{session date}`` -> "1" once that
+#: earlier week session's twin bars are stored (a past session never changes).
+_TWIN_WEEK_PREFIX = "intraday_twin_week:"
+
+#: Minimum gap between two backfill attempts of one twin that returned nothing
+#: (a provider hiccup must not turn into a request every tick).
+_WEEK_RETRY = timedelta(minutes=30)
+_week_attempts: dict[str, datetime] = {}
+
+
+def backfill_week_twin_prices(
+    session: Session,
+    twins: list[str],
+    *,
+    now: datetime,
+    range_fetcher: object | None = None,
+) -> int:
+    """Store the twins' intraday bars for the *earlier* sessions of the 1W window.
+
+    The 1W graph draws every session's funds from their twin; the last session is
+    filled by :func:`refresh_twin_prices`, the others (plus the session before the
+    window, whose close is the first session's reference) are fetched here in one
+    multi-day download per tick, and only for twin/session pairs not yet stored.
+    A pair is marked done once bars came back; one that returned nothing is retried
+    at most every :data:`_WEEK_RETRY`. Returns rows written.
+    """
+    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
+    from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
+    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+
+    window = recent_trading_sessions(now)
+    sessions = [previous_trading_session(window[0]), *window[:-1]]
+    with cache_read_session(session) as cache:
+        stored = twin_prices_repo.prices_in_range(
+            cache, twins, _session_start_utc(sessions[0]), _session_close_utc(sessions[-1])
+        )
+    keys = {(s, d): f"{_TWIN_WEEK_PREFIX}{s}:{d.isoformat()}" for s in twins for d in sessions}
+    done = app_config_service.get_many(session, list(keys.values()))
+    missing: dict[str, list[date]] = {}
+    for symbol in twins:
+        for day in sessions:
+            lo, hi = _session_start_utc(day), _session_close_utc(day)
+            have = sum(1 for t in stored.get(symbol, {}) if lo <= t <= hi)
+            if have < 2 and not done.get(keys[(symbol, day)]):
+                missing.setdefault(symbol, []).append(day)
+    due = [
+        s
+        for s in missing
+        if now - _week_attempts.get(s, datetime.min.replace(tzinfo=UTC)) >= _WEEK_RETRY
+    ]
+    if not due:
+        return 0
+    for symbol in due:
+        _week_attempts[symbol] = now
+    first = min(d for s in due for d in missing[s])
+    last = max(d for s in due for d in missing[s])
+    fetch_bars = range_fetcher or yfinance_client.fetch_intraday_closes_range
+    bars = fetch_bars(due, first, last, interval=RECONSTRUCT_INTERVAL)  # type: ignore[operator]
+    written = 0
+    got: list[tuple[str, date]] = []
+    with cache_write_session(session) as cache:
+        for symbol in due:
+            wanted = set(missing[symbol])
+            rows: dict[datetime, Decimal] = {}
+            days_seen: dict[date, int] = {}
+            for at, price in (bars.get(symbol) or {}).items():
+                day = session_date_of(at)
+                if price > 0 and day in wanted and at <= _session_close_utc(day):
+                    rows[at] = price
+                    days_seen[day] = days_seen.get(day, 0) + 1
+            written += twin_prices_repo.upsert_prices(cache, symbol, rows)
+            got += [(symbol, d) for d, n in days_seen.items() if n >= 2]
+    for symbol, day in got:
+        app_config_service.set_value(session, keys[(symbol, day)], "1")
+    if written:
+        log.info("twin prices: backfilled %d earlier-session row(s) for the 1W", written)
+    return written
+
+
 def refresh_twin_prices(
     session: Session,
     *,
     now: datetime | None = None,
     fetcher: object | None = None,
     intraday_fetcher: object | None = None,
+    range_fetcher: object | None = None,
 ) -> int:
     """Fetch and store the twins' prices for the current / last session.
 
     While the market is open: one daily-closes call for all twins gives the
     previous close and the price now. A session without intraday twin rows yet
     (twin just set, a restart) is backfilled once from 5-minute bars, also after
-    the close. Returns rows written. ``fetcher`` / ``intraday_fetcher`` replace
-    the yfinance calls in tests. A no-op (no network) without twins.
+    the close; the earlier sessions of the 1W window are backfilled likewise
+    (:func:`backfill_week_twin_prices`). Returns rows written. ``fetcher`` /
+    ``intraday_fetcher`` / ``range_fetcher`` replace the yfinance calls in tests.
+    A no-op (no network) without twins.
     """
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
@@ -2050,6 +2147,10 @@ def refresh_twin_prices(
         log.info(
             "twin prices: backfilled %s for %s from 5-minute bars", ", ".join(sparse), session_date
         )
+    try:
+        written += backfill_week_twin_prices(session, twins, now=now, range_fetcher=range_fetcher)
+    except Exception:  # best-effort: the 1W then keeps its per-day NAV steps
+        log.warning("twin prices: 1W backfill failed", exc_info=True)
     with cache_write_session(session) as cache:
         twin_prices_repo.delete_before(cache, week_window_start_utc(now) - timedelta(days=7))
     if written:

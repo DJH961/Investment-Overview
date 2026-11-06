@@ -42,6 +42,7 @@ exports[`write -> invalidated keys > instrumentEdit 1`] = `
   "calculator/inputs",
   "deposits/both",
   "deposits/dividends",
+  "graphs/1d",
   "holdings/both",
   "holdings/history",
   "instruments",

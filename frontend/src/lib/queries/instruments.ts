@@ -41,6 +41,7 @@ export function useUpdateInstrument() {
         if (patch.category !== undefined) edit.category = patch.category;
         if (patch.active !== undefined && patch.active !== null) edit.active = patch.active;
         if (patch.pricing_mode) edit.pricing_mode = patch.pricing_mode;
+        if (patch.intraday_twin !== undefined) edit.intraday_twin = patch.intraday_twin;
         return (old as Instrument[]).map((i) => (i.id === id ? { ...i, ...edit } : i));
       }),
     onError: (_e, _v, ctx) => rollback(client, ctx),
