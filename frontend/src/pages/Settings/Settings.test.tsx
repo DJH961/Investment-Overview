@@ -42,6 +42,7 @@ const val = (value: unknown, over: Record<string, unknown> = {}) => ({
 const SCHEMA = {
   sections: [
     { id: "display", label: "Display" },
+    { id: "data_refresh", label: "Data refresh" },
     { id: "providers", label: "Providers" },
   ],
   fields: [
@@ -57,6 +58,16 @@ const SCHEMA = {
       unit: "s",
     }),
     field({ key: "boot.backfill_days", type: "int", section: "display", label: "Boot backfill", level: "advanced" }),
+    field({
+      key: "twin.divergence_window",
+      type: "int",
+      section: "data_refresh",
+      label: "ETF twin accuracy: look back over",
+      help: "The Holdings page shows how far the twin was from the real NAV.",
+      min: "5",
+      max: "250",
+      unit: "sessions",
+    }),
     field({ key: "tiingo.api_token", type: "string", section: "providers", label: "Tiingo API token", secret: true, nullable: true }),
   ],
 };
@@ -72,6 +83,7 @@ beforeEach(() => {
     theme: val("auto"),
     live_refresh_interval_seconds: val(60, { source: "db", default: 60 }),
     "boot.backfill_days": val(14),
+    "twin.divergence_window": val(20),
     "tiingo.api_token": val(null, { is_set: true, source: "db" }),
   };
   patchResponse = () => new Response(JSON.stringify({ changed: [], values }), { status: 200 });
@@ -137,6 +149,21 @@ describe("Settings (schema form)", () => {
     expect(await screen.findByText("too fast for the provider")).toBeInTheDocument();
     const patch = calls.find((c) => c.method === "PATCH");
     expect(patch?.body).toEqual({ changes: { live_refresh_interval_seconds: 20 } });
+  });
+
+  it("shows the ETF twin divergence window in Data refresh with its range and help", async () => {
+    localStorage.setItem("iv.settings.section", JSON.stringify("data_refresh"));
+    renderPage();
+    const input = await screen.findByLabelText("ETF twin accuracy: look back over");
+    expect(input).toHaveValue("20");
+    expect(screen.getByText(/Range 5–250 sessions/)).toBeInTheDocument();
+    expect(screen.getByText(/how far the twin was from the real NAV/)).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "3" } });
+    expect(screen.getByText("At least 5")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "40" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ changes: { "twin.divergence_window": 40 } });
   });
 
   it("resets one field to its default", async () => {

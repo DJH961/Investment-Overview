@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from investment_dashboard.api import ops
 from investment_dashboard.config import Settings
-from investment_dashboard.domain import risk_extras
+from investment_dashboard.domain import late_data, risk_extras
 from investment_dashboard.domain.settings_schema import check_catalogue
 from investment_dashboard.domain.tiingo_fallback import DESKTOP_DAILY_CAP, DESKTOP_HOURLY_CAP
 from investment_dashboard.readmodels.live_graphs import GRAPH_RANGES
@@ -64,6 +64,7 @@ def test_defaults_match_code_constants() -> None:
         == diagnostics_service._MUTUAL_FUND_STALE_GRACE_TRADING_DAYS
     )
     assert _default("diagnostics.frozen_leg_tolerance") == diagnostics_service.FROZEN_LEG_TOLERANCE
+    assert _default("twin.divergence_window") == late_data.DEFAULT_DIVERGENCE_WINDOW
     assert _default("projection.scenarios") == projection_query.DEFAULT_SCENARIOS
     assert _default("projection.fallback_rate") == projection_model.FALLBACK_EXPECTED_RATE
     assert _default("risk.var_alpha") == risk_extras.DEFAULT_VAR_ALPHA

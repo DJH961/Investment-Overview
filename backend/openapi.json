@@ -2929,6 +2929,27 @@
         "title": "DriftRow",
         "type": "object"
       },
+      "EstimateFund": {
+        "description": "One fund currently valued from its ETF twin.",
+        "properties": {
+          "symbol": {
+            "description": "The mutual fund's ticker",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "twin": {
+            "description": "The ETF twin's ticker",
+            "title": "Twin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "twin"
+        ],
+        "title": "EstimateFund",
+        "type": "object"
+      },
       "Freshness": {
         "description": "How fresh the figures are (drives the Live / Updated / Updating... chip).",
         "properties": {
@@ -3947,6 +3968,32 @@
             ],
             "title": "Dividends"
           },
+          "est_today_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "today_move with pending funds at their twin estimate (null: none pending)",
+            "title": "Est Today Move"
+          },
+          "est_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "value with pending mutual funds at their twin estimate",
+            "title": "Est Value"
+          },
           "instrument_ids": {
             "description": "Members, in the order of ``holdings``",
             "items": {
@@ -3958,6 +4005,45 @@
           "key": {
             "title": "Key",
             "type": "string"
+          },
+          "today_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sum of the members' official day moves (null if one lacks it)",
+            "title": "Today Move"
+          },
+          "today_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "today_move over the group's previous value (fraction, 0.01 = 1%)",
+            "title": "Today Pct"
+          },
+          "total_growth": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "total_return / cost_basis of the group (fraction, 0.01 = 1%), in the response currency; a simple return on cost (not the members' compounded total_growth). Null when the cost basis is not positive or a member lacks a leg",
+            "title": "Total Growth"
           },
           "total_return": {
             "anyOf": [
@@ -4279,6 +4365,17 @@
             ],
             "description": "capital_gain + dividends (same basis as the overview)",
             "title": "Total Return"
+          },
+          "twin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TwinView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ETF-twin estimate / accuracy for a mutual fund with a twin; one row per fund"
           },
           "updated_at": {
             "anyOf": [
@@ -6706,6 +6803,38 @@
       "LastSessionMove": {
         "description": "Outside the session: the day move split into the last session + overnight currency.\n\n``move`` is the official closes/NAVs of ``session_date`` vs ``prev_date``, each\nvalued at its own session's 16:00 EUR/USD rate; ``overnight_currency`` the same\nholdings revalued from that close rate to the rate now. ``move +\novernight_currency`` is the change in ``value_now`` since the previous close.\nAmounts in the response currency (each computed in it, never converted).",
         "properties": {
+          "day_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Move"
+          },
+          "day_move_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Move Pct"
+          },
+          "estimated_funds": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Estimated Funds",
+            "type": "array"
+          },
           "fx_close": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Fx Close",
@@ -6721,6 +6850,18 @@
             "title": "Move",
             "type": "string"
           },
+          "move_est": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Est"
+          },
           "move_pct": {
             "anyOf": [
               {
@@ -6733,10 +6874,34 @@
             ],
             "title": "Move Pct"
           },
+          "move_pct_est": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Pct Est"
+          },
           "overnight_currency": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Overnight Currency",
             "type": "string"
+          },
+          "overnight_currency_est": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overnight Currency Est"
           },
           "prev_date": {
             "title": "Prev Date",
@@ -6750,6 +6915,18 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Value Now",
             "type": "string"
+          },
+          "value_now_est": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Now Est"
           }
         },
         "required": [
@@ -7160,6 +7337,61 @@
         "title": "OnboardingOut",
         "type": "object"
       },
+      "OverviewEstimate": {
+        "description": "The book valued with every pending mutual fund at its ETF-twin estimate.\n\nPresent only while at least one fund's NAV for the last session has not posted\nand has a twin with data. ``adjustment`` is ``total_value - kpis.total_value``,\ni.e. ``sum(shares x (est_price - previous NAV))`` over ``funds`` valued at one\nEUR/USD rate; it equals the 1D graph's last point and the tick's\n``total_value_est_*``. XIRR / TWR / gains stay official (``kpis``).",
+        "properties": {
+          "adjustment": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Adjustment",
+            "type": "string"
+          },
+          "daily_growth_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Day move of the estimated book (fraction, 0.01 = 1%)",
+            "title": "Daily Growth Pct"
+          },
+          "daily_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total change of the estimated book since the previous close (market open: official move + adjustment; market shut: ``last_session.move_est + last_session.overnight_currency_est``, the overnight currency included)",
+            "title": "Daily Move"
+          },
+          "funds": {
+            "items": {
+              "$ref": "#/components/schemas/EstimateFund"
+            },
+            "title": "Funds",
+            "type": "array"
+          },
+          "total_value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "total_value",
+          "funds",
+          "adjustment"
+        ],
+        "title": "OverviewEstimate",
+        "type": "object"
+      },
       "OverviewKpis": {
         "description": "KPIs in the requested ccy. Ratios are fractions (``0.12`` = 12 %).",
         "properties": {
@@ -7273,6 +7505,17 @@
               }
             ],
             "title": "Dividends Ttm"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverviewEstimate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The same book with pending mutual funds at their ETF-twin estimate (null when none is estimating). Everything above stays official."
           },
           "mtd_growth": {
             "anyOf": [
@@ -11123,9 +11366,84 @@
         "title": "TargetOut",
         "type": "object"
       },
+      "TickEstimate": {
+        "description": "One pending mutual fund valued from its ETF twin (native price per share).",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "est_px": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Est Px",
+            "type": "string"
+          },
+          "pct": {
+            "$ref": "#/components/schemas/TickEstimatePct"
+          },
+          "prev_nav": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Prev Nav",
+            "type": "string"
+          }
+        },
+        "required": [
+          "est_px",
+          "prev_nav",
+          "pct",
+          "at"
+        ],
+        "title": "TickEstimate",
+        "type": "object"
+      },
+      "TickEstimatePct": {
+        "description": "The estimated move since the previous close, a fraction per currency.",
+        "properties": {
+          "EUR": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur"
+          },
+          "USD": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd"
+          }
+        },
+        "title": "TickEstimatePct",
+        "type": "object"
+      },
       "TickEvent": {
         "description": "A market-hours poll finished: prices, FX and the intraday sample are fresh.",
         "properties": {
+          "estimates": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/TickEstimate"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimates"
+          },
           "fx_eur_usd": {
             "anyOf": [
               {
@@ -11214,6 +11532,30 @@
               }
             ],
             "title": "Seq"
+          },
+          "total_value_est_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Value Est Eur"
+          },
+          "total_value_est_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Value Est Usd"
           },
           "total_value_eur": {
             "anyOf": [
@@ -11318,6 +11660,11 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Px",
             "type": "string"
+          },
+          "stale_nav": {
+            "default": false,
+            "title": "Stale Nav",
+            "type": "boolean"
           }
         },
         "required": [
@@ -11851,6 +12198,79 @@
         "title": "TransactionWriteResult",
         "type": "object"
       },
+      "TwinDivergence": {
+        "description": "How far a fund's ETF twin strayed from the fund's official NAV return.\n\nGaps are ``twin return - fund return``: positive means the twin ran ahead, i.e.\nthe estimate was too high. Percentage points (``0.03`` = 0.03 pp), not fractions.\nSessions with a dividend or distribution are left out.",
+        "properties": {
+          "bias_pp": {
+            "description": "Mean signed gap over the window, pp (positive: twin high)",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Bias Pp",
+            "type": "string"
+          },
+          "last_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Session the last_* figures are from",
+            "title": "Last Date"
+          },
+          "last_money": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "That gap in money (estimate minus official value of the holding, reporting currency, at the rate now)",
+            "title": "Last Money"
+          },
+          "last_pp": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Newest usable session's gap, in percentage points",
+            "title": "Last Pp"
+          },
+          "median_abs_pp": {
+            "description": "Median absolute gap over the window, pp",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Median Abs Pp",
+            "type": "string"
+          },
+          "sessions": {
+            "description": "Sessions actually used (at most ``window``)",
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "window": {
+            "description": "Setting twin.divergence_window, in sessions",
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "median_abs_pp",
+          "bias_pp",
+          "sessions",
+          "window"
+        ],
+        "title": "TwinDivergence",
+        "type": "object"
+      },
       "TwinSuggestionDto": {
         "description": "A built-in ETF twin for a fund (a suggestion only, never applied automatically).\n\n``same_index``: the fund and ETF track the exact same index (or are share\nclasses of one Vanguard portfolio). ``close``: a different index whose daily\nmoves were measured to follow the fund as tightly as an identical pair.",
         "properties": {
@@ -11889,6 +12309,110 @@
           "index"
         ],
         "title": "TwinSuggestionDto",
+        "type": "object"
+      },
+      "TwinView": {
+        "description": "A mutual fund's ETF-twin estimate (``pending``) and/or its accuracy record.\n\n``pending`` true: the fund's NAV for the last session has not posted; the ``est_*``\nfields value the holding from the twin. ``pending`` false: the NAV posted (until\nthe next open the row only carries ``divergence``; ``est_*`` and ``at`` are null).",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the twin price used was struck (ISO)",
+            "title": "At"
+          },
+          "divergence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TwinDivergence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "est_price": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated NAV per share, native currency",
+            "title": "Est Price"
+          },
+          "est_today_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated day move in money, reporting currency",
+            "title": "Est Today Move"
+          },
+          "est_today_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated day move (fraction, 0.01 = 1%), reporting currency",
+            "title": "Est Today Pct"
+          },
+          "est_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated value of the holding, reporting currency",
+            "title": "Est Value"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "symbol": {
+            "description": "The twin ETF's ticker",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "same_index",
+              "close",
+              "manual"
+            ],
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "tier",
+          "pending"
+        ],
+        "title": "TwinView",
         "type": "object"
       },
       "UnknownAction": {
@@ -16461,6 +16985,75 @@
                     {
                       "description": "A market-hours poll finished: prices, FX and the intraday sample are fresh.",
                       "properties": {
+                        "estimates": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": {
+                                "description": "One pending mutual fund valued from its ETF twin (native price per share).",
+                                "properties": {
+                                  "at": {
+                                    "title": "At",
+                                    "type": "string"
+                                  },
+                                  "est_px": {
+                                    "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                    "title": "Est Px",
+                                    "type": "string"
+                                  },
+                                  "pct": {
+                                    "description": "The estimated move since the previous close, a fraction per currency.",
+                                    "properties": {
+                                      "EUR": {
+                                        "anyOf": [
+                                          {
+                                            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "title": "Eur"
+                                      },
+                                      "USD": {
+                                        "anyOf": [
+                                          {
+                                            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ],
+                                        "title": "Usd"
+                                      }
+                                    },
+                                    "title": "TickEstimatePct",
+                                    "type": "object"
+                                  },
+                                  "prev_nav": {
+                                    "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                    "title": "Prev Nav",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "est_px",
+                                  "prev_nav",
+                                  "pct",
+                                  "at"
+                                ],
+                                "title": "TickEstimate",
+                                "type": "object"
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Estimates"
+                        },
                         "fx_eur_usd": {
                           "anyOf": [
                             {
@@ -16575,6 +17168,11 @@
                                     "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
                                     "title": "Px",
                                     "type": "string"
+                                  },
+                                  "stale_nav": {
+                                    "default": false,
+                                    "title": "Stale Nav",
+                                    "type": "boolean"
                                   }
                                 },
                                 "required": [
@@ -16613,6 +17211,30 @@
                             }
                           ],
                           "title": "Seq"
+                        },
+                        "total_value_est_eur": {
+                          "anyOf": [
+                            {
+                              "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Total Value Est Eur"
+                        },
+                        "total_value_est_usd": {
+                          "anyOf": [
+                            {
+                              "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Total Value Est Usd"
                         },
                         "total_value_eur": {
                           "anyOf": [

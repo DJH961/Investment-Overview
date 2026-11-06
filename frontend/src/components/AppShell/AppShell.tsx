@@ -16,6 +16,7 @@ import { useServerRefresh } from "../../lib/refresh";
 import { useShell } from "../../lib/shell";
 import { PULL_THRESHOLD, usePullToRefresh } from "../../lib/usePullToRefresh";
 import { useShortcuts } from "../../lib/useShortcuts";
+import { useTabTitle } from "../../lib/useTabTitle";
 import { useIsDesktop, useIsPhone, useMediaQuery } from "../../lib/useMediaQuery";
 import { IconButton } from "../IconButton";
 import { Dialog } from "../Dialog";
@@ -81,6 +82,7 @@ export function AppShell() {
   const { pathname } = useLocation();
   const { freshness: pageFreshness, refreshing: pageRefreshing } = useShell();
   const summary = usePortfolioSummary(currency, PREFETCH_DELAY_MS);
+  useTabTitle(currency);
   // The top-bar refresh is always a real server pull (prices, FX, intraday sample).
   const server = useServerRefresh();
   const refresh = server.state;

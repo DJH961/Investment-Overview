@@ -52,4 +52,75 @@ describe("OverviewHero", () => {
     render(<OverviewHero data={base} currency="EUR" loading={false} now={NOW} />);
     expect(screen.queryByTestId("overnight-currency")).toBeNull();
   });
+
+  const estimate = {
+    total_value: "201600",
+    daily_move: "3100",
+    daily_growth_pct: "0.0156",
+    adjustment: "1600",
+    funds: [{ symbol: "FXAIX", twin: "VOO" }],
+  };
+  const estimating = {
+    ...base,
+    kpis: { ...base.kpis, estimate },
+    kpis_secondary: {
+      ...base.kpis_secondary,
+      estimate: { ...estimate, total_value: "217728", daily_move: "3348", daily_growth_pct: "0.0158" },
+    },
+    // Shut market: last session (est.) + overnight currency (est.) = the headline day figure.
+    last_session: {
+      overnight_currency: "-120.5",
+      overnight_currency_est: "-100",
+      day_move: "1380",
+      day_move_pct: "0.0069",
+      move_est: "3200",
+      move_pct_est: "0.016",
+      estimated_funds: ["FXAIX"],
+    },
+  } as unknown as OverviewDto;
+
+  it("without an estimate there is no chip and no official line", () => {
+    render(<OverviewHero data={base} currency="EUR" loading={false} now={NOW} />);
+    expect(screen.queryByTestId("hero-estimate-chip")).toBeNull();
+    expect(screen.queryByTestId("hero-official")).toBeNull();
+    expect(screen.queryByTestId("last-session-est")).toBeNull();
+  });
+
+  it("estimating: headline is the estimate with a chip, the official total sits in a small line", () => {
+    const { container } = render(<OverviewHero data={estimating} currency="EUR" loading={false} now={NOW} />);
+    expect(container.querySelector(".overview-hero__value")).toHaveTextContent("€201,600.00");
+    expect(screen.getByTestId("hero-estimate-chip")).toHaveTextContent("≈ est.");
+    expect(screen.getByRole("button", { name: "About the estimated total" })).toBeInTheDocument();
+    const official = screen.getByTestId("hero-official");
+    expect(official).toHaveTextContent("Official");
+    expect(official).toHaveTextContent("€200,000.00");
+    // Shut market: the official change since the previous close (incl. overnight currency).
+    expect(official).toHaveTextContent("+€1,380.00");
+    expect(official).toHaveTextContent("+0.69%");
+    expect(official).not.toHaveTextContent("1,500");
+    // Secondary currency follows its own estimate.
+    expect(screen.getByText("US$217,728.00")).toBeInTheDocument();
+  });
+
+  it("open market, estimating: the small line is the plain official day move", () => {
+    const open = {
+      ...estimating,
+      freshness: { ...base.freshness, market_state: "open" },
+    } as unknown as OverviewDto;
+    render(<OverviewHero data={open} currency="EUR" loading={false} now={NOW} />);
+    expect(screen.getByTestId("hero-official")).toHaveTextContent("+€1,500.00");
+    expect(screen.getByTestId("hero-official")).toHaveTextContent("+0.75%");
+  });
+
+  it("shut market, estimating: the day figure includes overnight and the split lines add up to it", () => {
+    const { container } = render(<OverviewHero data={estimating} currency="EUR" loading={false} now={NOW} />);
+    const move = container.querySelector(".overview-hero__move");
+    expect(move).toHaveTextContent("+€3,100.00");
+    expect(move).toHaveTextContent("+1.56%");
+    expect(screen.getByTestId("last-session-est")).toHaveTextContent("+€3,200.00");
+    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("100.00");
+    expect(screen.getByTestId("overnight-currency")).not.toHaveTextContent("120.50");
+    // 3,200 (last session) + (-100) (overnight) = 3,100 (headline).
+    expect(3200 + -100).toBe(3100);
+  });
 });

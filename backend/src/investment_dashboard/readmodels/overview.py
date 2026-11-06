@@ -394,6 +394,60 @@ def _kpis(metrics: PortfolioMetrics, ccy: str, *, fx_rate: Decimal | None) -> di
     }
 
 
+def _estimate(
+    metrics: PortfolioMetrics,
+    ccy: str,
+    *,
+    estimates: dict[int, intraday_snapshots_service.TwinEstimate],
+    fx_rate: Decimal | None,
+    split: metrics_service.LastSessionSplit | None,
+) -> dict[str, Any] | None:
+    """``kpis.estimate``: the book with pending mutual funds at their ETF-twin estimate.
+
+    Official total + ``sum(shares x (est_price - previous NAV))`` valued at the one
+    rate now (a single instant), in ``ccy``'s own legs; ``None`` when no fund is
+    estimating. The day move is the official one plus the same adjustment while the
+    market runs; while it is shut it is the total change since the previous close, the
+    last session's estimated move plus the overnight currency move
+    (``split.move_est + split.overnight_est``).
+    """
+    if not estimates:
+        return None
+    adjustment = intraday_snapshots_service.estimate_adjustment(estimates.values(), fx_rate)
+    total = holdings.pick(metrics.total_value_eur, metrics.total_value_usd, ccy)
+    if total is None:
+        return None
+    delta = holdings.pick(adjustment[0], adjustment[1], ccy)
+    if delta is None:
+        return None
+    move = holdings.pick(metrics.daily_growth_money_eur, metrics.daily_growth_money_usd, ccy)
+    est_move: Decimal | None = None
+    est_pct: Decimal | None = None
+    if split is not None and split.move_est_eur is not None:
+        usd = ccy == "USD"
+        # Shut market: the TOTAL change of the estimated book since the previous close,
+        # last session's estimated move plus the overnight currency move, i.e.
+        # ``value_now_est - previous-close value`` (the split lines stay in ``last_session``).
+        est_move = (split.move_est_usd if usd else split.move_est_eur) or ZERO
+        est_move += (split.overnight_est_usd if usd else split.overnight_est_eur) or ZERO
+        value_now_est = split.value_now_est_usd if usd else split.value_now_est_eur
+        prev_value = value_now_est - est_move if value_now_est is not None else None
+        est_pct = est_move / prev_value if prev_value is not None and prev_value > ZERO else None
+    elif move is not None:
+        est_move = move + delta
+        est_pct = holdings.move_pct(total + delta, est_move)
+    return {
+        "total_value": dec(total + delta),
+        "daily_move": dec(est_move),
+        "daily_growth_pct": dec(est_pct),
+        "funds": [
+            {"symbol": e.symbol, "twin": e.twin_symbol}
+            for e in sorted(estimates.values(), key=lambda e: e.symbol)
+        ],
+        "adjustment": dec(delta),
+    }
+
+
 def _max_time(times: Any) -> datetime | None:
     present = [t for t in times if t is not None]
     return max(present) if present else None
@@ -500,6 +554,12 @@ def build_overview(
         as_of=metrics.as_of,
     )
     other = "EUR" if usd else "USD"
+    # Pending mutual funds valued from their ETF twin (same memoised plan as the
+    # holdings, the tick and the 1D line): the hero's estimated total.
+    estimates = intraday_snapshots_service.twin_estimates(session, now)
+    estimate = _estimate(
+        metrics, ccy, estimates=estimates, fx_rate=ctx.fx_rate_eur_usd, split=split
+    )
     tz = timezone_service.resolve_tzinfo(timezone_service.get_timezone(session))
     fresh_view = _freshness(freshness, now=now)
     caption = build_daily_growth_caption(
@@ -521,9 +581,18 @@ def build_overview(
         "fx_eur_usd": dec(ctx.fx_rate_eur_usd),
         "is_live": market_hours.is_us_market_open(now),
         "position_count": len(cards),
-        "kpis": _kpis(metrics, ccy, fx_rate=ctx.fx_rate_eur_usd),
+        "kpis": {**_kpis(metrics, ccy, fx_rate=ctx.fx_rate_eur_usd), "estimate": estimate},
         "secondary_ccy": other,
-        "kpis_secondary": _kpis(metrics, other, fx_rate=ctx.fx_rate_eur_usd),
+        "kpis_secondary": {
+            **_kpis(metrics, other, fx_rate=ctx.fx_rate_eur_usd),
+            "estimate": _estimate(
+                metrics,
+                other,
+                estimates=estimates,
+                fx_rate=ctx.fx_rate_eur_usd,
+                split=split,
+            ),
+        },
         "freshness": fresh_view,
         "daily_caption": {
             "title": caption.title,
@@ -562,7 +631,14 @@ def _last_session(
     if split is None:
         return None
     usd = ccy == "USD"
+    move = split.move_usd if usd else split.move_eur
+    overnight = split.overnight_usd if usd else split.overnight_eur
+    value_now = split.value_now_usd if usd else split.value_now_eur
+    day_move = move + overnight
+    prev_value = value_now - day_move
     return {
+        "day_move": dec(day_move),
+        "day_move_pct": dec(day_move / prev_value if prev_value > ZERO else None),
         "session_date": split.session_date.isoformat(),
         "prev_date": split.prev_date.isoformat(),
         "move": dec(split.move_usd if usd else split.move_eur),
@@ -571,4 +647,9 @@ def _last_session(
         "value_now": dec(split.value_now_usd if usd else split.value_now_eur),
         "fx_close": dec(split.fx_close),
         "fx_now": dec(split.fx_now),
+        "move_est": dec(split.move_est_usd if usd else split.move_est_eur),
+        "move_pct_est": dec(split.pct_est_usd if usd else split.pct_est_eur),
+        "overnight_currency_est": dec(split.overnight_est_usd if usd else split.overnight_est_eur),
+        "value_now_est": dec(split.value_now_est_usd if usd else split.value_now_est_eur),
+        "estimated_funds": list(split.estimated_funds),
     }

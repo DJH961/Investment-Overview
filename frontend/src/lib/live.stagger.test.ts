@@ -82,12 +82,12 @@ describe("tick handling", () => {
     const fn = vi.fn(() => ({}));
     qc.setQueryDefaults(["holdings"], { queryFn: async () => fn() });
     qc.setQueryData(["holdings", "both", "none"], { rows: [] });
-    qc.setQueryData(["periods", "monthly", "both"], 1);
+    qc.setQueryData(["analytics", "both", 365], 1);
     handleLiveEvent(qc, JSON.stringify({ type: "fx", fx_eur_usd: "1.09" }));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(fn).not.toHaveBeenCalled();
     expect(qc.getQueryState(["holdings", "both", "none"])?.isInvalidated).toBe(true);
-    expect(qc.getQueryState(["periods", "monthly", "both"])?.isInvalidated).toBe(false);
+    expect(qc.getQueryState(["analytics", "both", 365])?.isInvalidated).toBe(false);
   });
 
   it("appends the point to cached 1d graphs on both sides and updates holdings prices", () => {

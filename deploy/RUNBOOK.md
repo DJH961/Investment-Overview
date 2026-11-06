@@ -117,7 +117,7 @@ The app keeps one log per subject in the data volume, `/data/logs/activity/`:
 | File | What is in it |
 | --- | --- |
 | `auth.log` | logins (password/passkey), **failed logins**, logouts, passkey and password changes |
-| `market_data.log` | price, FX and benchmark polling, provider fallbacks, every scheduler job |
+| `market_data.log` | price, FX and benchmark polling, provider fallbacks, every scheduler job, ETF-twin price jobs (including the one-time one-year close backfill per twin that feeds the twin-accuracy figures) |
 | `imports.log` | broker file uploads, import confirms/discards |
 | `changes.log` | manual edits: transactions, accounts, deposits, settings |
 | `backups.log` | sealed snapshots, backup downloads, restores |

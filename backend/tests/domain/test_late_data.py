@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import statistics
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -13,6 +14,7 @@ from investment_dashboard.domain import index_twins
 from investment_dashboard.domain.late_data import (
     Holding,
     corrected_value,
+    divergences,
     estimate_value,
     fund_value_at,
     session_fraction,
@@ -198,3 +200,115 @@ def test_twin_list_tiers() -> None:
         assert index_twins.suggest_twin(fund) is None
     funds = [s.fund for s in index_twins.all_suggestions()]
     assert len(funds) == len(set(funds))  # one suggestion per fund
+
+
+# -- twin divergence ---------------------------------------------------------------
+
+D0 = date(2026, 3, 2)
+
+
+def _series(values: list[str]) -> dict[date, Decimal]:
+    return {D0 + timedelta(days=i): Decimal(v) for i, v in enumerate(values)}
+
+
+def test_divergence_golden() -> None:
+    # Fund +1.5 % then +0.5 %; twin +1 % then +1 %: the twin ran 0.5 pp BEHIND the
+    # fund on day one (gap -0.005) and 0.5 pp AHEAD on day two (gap +0.005).
+    fund = _series(["100", "101.5", "102.0075"])
+    twin = _series(["500", "505", "510.05"])
+    d = divergences(fund, twin)
+    assert d is not None
+    assert (d.last_prev_date, d.last_date) == (D0 + timedelta(days=1), D0 + timedelta(days=2))
+    assert d.last_gap == Decimal("0.005")
+    assert d.median_abs == Decimal("0.005")
+    assert d.bias == Decimal(0)
+    assert (d.sessions, d.window) == (2, 20)
+
+
+def test_divergence_window_and_sign() -> None:
+    # Three sessions with gaps -0.01, +0.02, +0.04 (twin return minus fund return).
+    fund = _series(["100", "101", "101", "101"])
+    twin = _series(["100", "100", "102", "106.08"])
+    d = divergences(fund, twin, window=2)
+    assert d is not None
+    assert d.last_gap == Decimal("0.04")
+    assert d.sessions == 2
+    assert d.median_abs == Decimal("0.03")  # median of 0.02 and 0.04
+    assert d.bias == Decimal("0.03")  # mean signed: both positive -> the twin ran high
+    all3 = divergences(fund, twin, window=10)
+    assert all3 is not None
+    assert all3.sessions == 3
+    assert all3.median_abs == Decimal("0.02")
+    assert abs(all3.bias - Decimal("0.05") / 3) < Decimal("1e-20")
+
+
+def test_divergence_skips_dividend_sessions() -> None:
+    fund = _series(["100", "101", "90", "91"])  # a 10 % distribution on day 2
+    twin = _series(["100", "101", "101", "102"])
+    ex = D0 + timedelta(days=2)
+    plain = divergences(fund, twin)
+    assert plain is not None
+    assert plain.sessions == 3
+    clean = divergences(fund, twin, excluded={ex})
+    assert clean is not None
+    assert clean.sessions == 2
+    assert ex != clean.last_date
+    # The distribution day's huge gap no longer skews the bias.
+    assert abs(clean.bias) < Decimal("0.02")
+    assert plain.bias > Decimal("0.03")
+    # Nothing left once every session is excluded; no shared returns at all -> None.
+    assert divergences(fund, twin, excluded=set(fund)) is None
+    assert divergences(fund, {}) is None
+    assert divergences({D0: Decimal(1)}, {D0: Decimal(1)}) is None
+
+
+close_series = st.lists(
+    st.decimals(min_value="1", max_value="1000", places=4), min_size=2, max_size=40
+)
+
+
+@given(values=close_series, scale=st.decimals(min_value="0.5", max_value="20", places=3))
+def test_a_perfect_twin_never_diverges(values: list[Decimal], scale: Decimal) -> None:
+    fund = {D0 + timedelta(days=i): v for i, v in enumerate(values)}
+    twin = {d: v * scale for d, v in fund.items()}
+    d = divergences(fund, twin)
+    assert d is not None
+    assert abs(d.last_gap) < Decimal("1e-20")
+    assert d.median_abs < Decimal("1e-20")
+    assert abs(d.bias) < Decimal("1e-20")
+
+
+@given(
+    fund_values=close_series,
+    twin_seed=st.lists(
+        st.decimals(min_value="1", max_value="1000", places=4), min_size=40, max_size=40
+    ),
+    window=st.integers(min_value=1, max_value=30),
+    skip=st.sets(st.integers(min_value=0, max_value=39), max_size=10),
+)
+def test_divergence_statistics_are_consistent(
+    fund_values: list[Decimal], twin_seed: list[Decimal], window: int, skip: set[int]
+) -> None:
+    fund = {D0 + timedelta(days=i): v for i, v in enumerate(fund_values)}
+    twin = {d: twin_seed[i] for i, d in enumerate(fund)}
+    excluded = {D0 + timedelta(days=i) for i in skip}
+    d = divergences(fund, twin, window=window, excluded=excluded)
+    usable = [i for i in range(1, len(fund_values)) if i not in skip]
+    if not usable:
+        assert d is None
+        return
+    assert d is not None
+    assert d.sessions == min(window, len(usable))
+    assert d.window == window
+    assert d.last_date not in excluded
+    assert d.last_date == D0 + timedelta(days=usable[-1])
+    # Sign convention: twin return minus fund return, as a fraction.
+    last = usable[-1]
+    expected = twin_seed[last] / twin_seed[last - 1] - fund_values[last] / fund_values[last - 1]
+    assert d.last_gap == expected
+    gaps = [
+        twin_seed[k] / twin_seed[k - 1] - fund_values[k] / fund_values[k - 1]
+        for k in usable[-window:]
+    ]
+    assert d.median_abs == statistics.median(abs(g) for g in gaps)
+    assert abs(d.bias - sum(gaps) / len(gaps)) < Decimal("1e-20")

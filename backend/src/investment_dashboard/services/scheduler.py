@@ -64,7 +64,14 @@ FX_INTERVAL = timedelta(minutes=1)
 #: retry gap for a missing weekend FX reading).
 MISSING_CHECK = timedelta(minutes=1)
 #: Event fields that say whether a tick / FX check changed anything.
-_CHANGE_KEYS = ("total_value_eur", "fx_eur_usd", "prices", "point")
+_CHANGE_KEYS = (
+    "total_value_eur",
+    "total_value_est_eur",
+    "fx_eur_usd",
+    "prices",
+    "point",
+    "estimates",
+)
 JOB_NAMES: tuple[str, ...] = ("tick", "fx", "eod", "backup")
 PAUSE_KEY = "scheduler.pause"
 #: Longest pause accepted (a pause always expires).
@@ -106,6 +113,7 @@ def default_tick_job() -> dict[str, Any] | None:
         total_eur = positions_service.total_portfolio_value(session, as_of=today)
         prices = _tick_prices(session, today)
         point = _tick_point(session, total_eur, rate) if session_open else None
+        estimated = _tick_estimates(session, total_eur, rate)
     return {
         "total_value_eur": _dec(total_eur),
         # One instant (value now x spot now), so EUR -> USD is a valid conversion.
@@ -113,38 +121,96 @@ def default_tick_job() -> dict[str, Any] | None:
         "fx_eur_usd": _dec(rate),
         "prices": prices,
         "point": point,
+        **estimated,
         **_price_freshness(),
     }
 
 
-def _tick_prices(session: Any, today: date) -> dict[str, Any] | None:
+def _tick_prices(session: Any, today: date, now: datetime | None = None) -> dict[str, Any] | None:
     """Latest native price + previous close per held instrument (best effort)."""
     try:
         from investment_dashboard.services import (  # noqa: PLC0415
+            intraday_snapshots_service,
             positions_service,
             prices_service,
         )
 
         latest: dict[int, tuple[Decimal, str]] = {}
+        fund_ids: set[int] = set()
         for pos in positions_service.compute_positions(session, as_of=today):
             price = pos.current_price_native
             if price is not None and pos.shares != 0:
                 latest[pos.instrument.id] = (price, pos.instrument.native_currency)
+                if intraday_snapshots_service.is_drifting_nav(pos):
+                    fund_ids.add(pos.instrument.id)
         recent = prices_service.recent_closes_by_instrument(
             session, list(latest), on_or_before=today, limit=3
         )
+        session_date = intraday_snapshots_service.last_session_date(now)
         out: dict[str, Any] = {}
         for iid, (price, ccy) in latest.items():
-            prev = [c for d, c in sorted(recent.get(iid, []), reverse=True) if d < today]
+            closes = sorted(recent.get(iid, []), reverse=True)
+            prev = [c for d, c in closes if d < today]
+            # A mutual fund whose NAV for the last session has not posted: its price is
+            # the previous NAV, so "previous close" would equal the price and a client
+            # would zero its day move. Flag it and send no previous close instead.
+            stale = iid in fund_ids and bool(closes) and closes[0][0] < session_date
             out[str(iid)] = {
                 "px": format(price, "f"),
                 "ccy": ccy,
-                "prev_close": format(prev[0], "f") if prev else None,
+                "prev_close": None if stale else (format(prev[0], "f") if prev else None),
+                "stale_nav": stale,
             }
         return out
     except Exception:
         log.warning("tick prices unavailable", exc_info=True)
         return None
+
+
+def _tick_estimates(
+    session: Any, total_eur: Decimal, rate: Decimal | None, now: datetime | None = None
+) -> dict[str, Any]:
+    """The estimated total and per-fund estimates of this tick (all ``None`` when none).
+
+    Official ``total_eur`` plus ``sum(shares x (est_px - prev_nav))`` of the pending
+    mutual funds at the rate now: the same figure as the overview's
+    ``kpis.estimate.total_value`` and the 1D line's last point.
+    """
+    empty: dict[str, Any] = {
+        "total_value_est_eur": None,
+        "total_value_est_usd": None,
+        "estimates": None,
+    }
+    try:
+        from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
+
+        now = now or datetime.now(UTC)
+        estimates = iss.twin_estimates(session, now)
+        if not estimates:
+            return empty
+        fx_prev = iss.previous_close_fx(session, iss.last_session_date(now))
+        per_fund: dict[str, Any] = {}
+        for iid, est in estimates.items():
+            pct = iss.estimate_move_pct(est, rate, fx_prev)
+            per_fund[str(iid)] = {
+                "est_px": _dec(est.est_px),
+                "prev_nav": _dec(est.prev_nav),
+                "pct": {"EUR": _dec(pct["EUR"]), "USD": _dec(pct["USD"])},
+                "at": est.at.isoformat(),
+            }
+        adjustment = iss.estimate_adjustment(estimates.values(), rate)
+        total_est = total_eur + adjustment[0] if adjustment[0] is not None else None
+        return {
+            "total_value_est_eur": _dec(total_est),
+            # One instant (estimated total x the spot now): EUR -> USD is valid.
+            "total_value_est_usd": (
+                _dec(total_est * rate) if total_est is not None and rate is not None else None
+            ),
+            "estimates": per_fund,
+        }
+    except Exception:
+        log.warning("tick estimates unavailable", exc_info=True)
+        return empty
 
 
 def _tick_point(session: Any, total_eur: Decimal, rate: Decimal | None) -> dict[str, Any] | None:

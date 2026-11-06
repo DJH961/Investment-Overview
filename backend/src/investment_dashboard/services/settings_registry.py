@@ -415,6 +415,22 @@ DEFS: tuple[SettingDef, ...] = (
         unit="s",
     ),
     SettingDef(
+        "twin.divergence_window",
+        SettingType.INT,
+        20,
+        "data_refresh",
+        "ETF twin accuracy: look back over",
+        help=(
+            "A mutual fund's estimate (while its NAV is not posted yet) comes from its "
+            "ETF twin. The Holdings page shows how far the twin was from the real NAV: "
+            "the last session, and the typical gap and bias over this many recent "
+            "sessions. Sessions with a dividend or distribution are left out."
+        ),
+        min=_D(5),
+        max=_D(250),
+        unit="sessions",
+    ),
+    SettingDef(
         "scheduler.fx_interval_minutes",
         SettingType.INT,
         1,

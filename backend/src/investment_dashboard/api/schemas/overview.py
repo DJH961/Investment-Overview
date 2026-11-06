@@ -13,6 +13,39 @@ from investment_dashboard.api.schemas.graphs import GraphRange
 _FRAC = "fraction, 0.01 = 1%"
 
 
+class EstimateFund(ApiModel):
+    """One fund currently valued from its ETF twin."""
+
+    symbol: str = Field(description="The mutual fund's ticker")
+    twin: str = Field(description="The ETF twin's ticker")
+
+
+class OverviewEstimate(ApiModel):
+    """The book valued with every pending mutual fund at its ETF-twin estimate.
+
+    Present only while at least one fund's NAV for the last session has not posted
+    and has a twin with data. ``adjustment`` is ``total_value - kpis.total_value``,
+    i.e. ``sum(shares x (est_price - previous NAV))`` over ``funds`` valued at one
+    EUR/USD rate; it equals the 1D graph's last point and the tick's
+    ``total_value_est_*``. XIRR / TWR / gains stay official (``kpis``).
+    """
+
+    total_value: DecStr
+    daily_move: DecStr | None = Field(
+        default=None,
+        description=(
+            "Total change of the estimated book since the previous close (market open: "
+            "official move + adjustment; market shut: ``last_session.move_est + "
+            "last_session.overnight_currency_est``, the overnight currency included)"
+        ),
+    )
+    daily_growth_pct: DecStr | None = Field(
+        default=None, description=f"Day move of the estimated book ({_FRAC})"
+    )
+    funds: list[EstimateFund]
+    adjustment: DecStr
+
+
 class OverviewKpis(ApiModel):
     """KPIs in the requested ccy. Ratios are fractions (``0.12`` = 12 %)."""
 
@@ -49,6 +82,13 @@ class OverviewKpis(ApiModel):
     )
     dividend_yield_ttm_pct: DecStr | None = Field(
         default=None, description=f"Trailing-12-month dividend yield ({_FRAC})"
+    )
+    estimate: OverviewEstimate | None = Field(
+        default=None,
+        description=(
+            "The same book with pending mutual funds at their ETF-twin estimate "
+            "(null when none is estimating). Everything above stays official."
+        ),
     )
 
 
@@ -270,6 +310,19 @@ class LastSessionMove(ApiModel):
     value_now: DecStr
     fx_close: DecStr
     fx_now: DecStr
+    #: OFFICIAL total change since the previous close, overnight currency included:
+    #: ``move + overnight_currency`` = ``value_now`` minus the previous-close value (at
+    #: the previous close's rate). Mirrors ``kpis.estimate.daily_move`` /
+    #: ``daily_growth_pct``: their difference is exactly ``kpis.estimate.adjustment``.
+    day_move: DecStr | None = None
+    day_move_pct: DecStr | None = None
+    #: The same split on the estimated book (null / empty when no fund is estimating):
+    #: ``move_est + overnight_currency_est == value_now_est - previous-close value``.
+    move_est: DecStr | None = None
+    move_pct_est: DecStr | None = None
+    overnight_currency_est: DecStr | None = None
+    value_now_est: DecStr | None = None
+    estimated_funds: list[str] = []  # noqa: RUF012 - pydantic copies defaults
 
 
 class OverviewResponse(ApiModel):

@@ -527,6 +527,23 @@ The server sends both values anyway (dual currency), so the client doesn't divid
 }
 ```
 
+**Twin estimates (6.9):** a mutual fund whose NAV for the last session has not
+posted is valued from its ETF twin. The tick carries that as extra fields, all
+`null` when no fund is estimating:
+
+```jsonc
+  "total_value_est_eur": "…", "total_value_est_usd": "…",  // official total + Σ shares×(est_px − prev_nav)
+  "estimates": { "12": { "est_px": "204.00", "prev_nav": "200.00",
+                         "pct": { "EUR": "0.0183", "USD": "0.0200" }, "at": "…" } }
+```
+
+`total_value_est_eur` equals `point.EUR` and the overview's `kpis.estimate.total_value`;
+`"estimates"` and `"total_value_est_eur"` are in the scheduler's change keys, so an
+estimate that moves is not an "unchanged" tick. A `prices` row of such a fund has
+`"stale_nav": true` and `prev_close: null` (its `px` is the previous NAV, so
+`px − prev_close` would read 0): the client keeps the server's day move for that
+row and takes the estimate from `estimates`. XIRR/TWR stay official.
+
 About 1–3 KB for a typical portfolio. After it lands, the client changes these
 with `setQueryData`, in one render: holdings rows (`qty × px`, day change vs
 `prev_close`), totals, the currency box, the overview KPIs, and today's point on

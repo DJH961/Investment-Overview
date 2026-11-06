@@ -66,7 +66,7 @@ from __future__ import annotations
 import logging
 import threading
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from itertools import pairwise
@@ -78,6 +78,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import feed_stall
 from investment_dashboard.domain.currency import usd_to_eur_at
 from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
+from investment_dashboard.domain.late_data import Divergence, Holding, value_at_rate
 from investment_dashboard.domain.market_hours import (
     exchange_today,
     is_us_market_holiday,
@@ -89,7 +90,7 @@ from investment_dashboard.repositories import intraday_repo
 from investment_dashboard.services import app_config_service
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
     from investment_dashboard.models import IntradayValue
     from investment_dashboard.services.positions_service import Position
@@ -1907,7 +1908,9 @@ def reload_graphs(
 # starts at the previous close and ends at the official close
 # (:mod:`investment_dashboard.domain.late_data`). Built at read time from the stored
 # twin prices (``intraday_twin_prices``), so nothing estimated is ever stored and
-# totals / history never see an estimate.
+# history / KPIs never see an estimate. :func:`twin_estimates` exposes the same
+# per-fund plan as an estimate per fund (the hero's estimated total, the tick, the
+# holdings' twin rows); the official total itself stays official.
 
 #: ``app_config`` key prefix: ``{prefix}{symbol}`` -> session date of the last
 #: intraday backfill of that twin, so a missing session is fetched once, not every tick.
@@ -1937,6 +1940,11 @@ def _twin_of(position: Position) -> str | None:
     effective = position.effective
     twin = getattr(effective, "intraday_twin", None) if effective is not None else None
     return twin.upper() if twin else None
+
+
+def twin_symbol_of(position: Position) -> str | None:
+    """The ETF twin set for ``position``'s fund (upper case), if any."""
+    return _twin_of(position)
 
 
 def twin_symbols(positions: list[Position]) -> list[str]:
@@ -1975,6 +1983,86 @@ class _FundPlan:
     twin_at: Callable[[datetime], Decimal | None]
     twin_prev_close: Decimal | None
     twin_close: Decimal | None
+    #: The twin's own symbol and its rows after the previous close (naive UTC).
+    twin: str | None = None
+    session_rows: dict[datetime, Decimal] = field(default_factory=dict)
+
+    @property
+    def pending(self) -> bool:
+        """The session's NAV has not posted and the twin has data to estimate from."""
+        return (
+            self.official is None and self.twin_prev_close is not None and bool(self.session_rows)
+        )
+
+
+@dataclass(frozen=True)
+class _Plans:
+    funds: list[_FundPlan]
+    has_twin_data: bool
+
+
+def _fund_plans(session: Session, *, session_date: date, strict: bool) -> _Plans | None:
+    """The per-fund plan shared by the 1D sleeve and :func:`twin_estimates`.
+
+    ``None`` when no sleeve can be drawn: no drifting funds are held, or (``strict``)
+    a held fund lacks the session's official NAV or a previous NAV. Reads only
+    cached closes and twin prices (no network).
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.services import positions_service, prices_service  # noqa: PLC0415
+
+    positions = positions_service.compute_positions(session, as_of=session_date)
+    funds = [p for p in positions if p.shares > _MIN_SHARES and is_drifting_nav(p)]
+    if not funds:
+        return None
+    prev_date = previous_trading_session(session_date)
+    prev_close_at = _session_close_utc(prev_date)
+    close_at = _session_close_utc(session_date)
+    recent = prices_service.recent_closes_by_instrument(
+        session,
+        sorted({p.instrument.id for p in funds}),
+        on_or_before=session_date,
+        limit=_NAV_LOOKBACK,
+    )
+    twins = sorted({t for p in funds if (t := _twin_of(p))})
+    with cache_read_session(session) as cache:
+        twin_rows = twin_prices_repo.prices_in_range(
+            cache, twins, _session_start_utc(prev_date), close_at
+        )
+
+    plan: list[_FundPlan] = []
+    has_twin_data = False
+    for p in funds:
+        closes = dict(recent.get(p.instrument.id, []))
+        official = closes.get(session_date)
+        earlier = [d for d in closes if d < session_date]
+        prev_nav = closes[max(earlier)] if earlier else (official or p.current_price_native)
+        if prev_nav is None or prev_nav <= 0:
+            if strict:
+                return None
+            continue
+        twin = _twin_of(p)
+        rows = twin_rows.get(twin, {}) if twin else {}
+        twin_prev = _latest_at_or_before(rows, prev_close_at)
+        session_rows = {t: v for t, v in rows.items() if t > prev_close_at}
+        twin_close = _latest_at_or_before(session_rows, close_at)
+        if strict and (official is None or not earlier):
+            return None
+        has_twin_data |= twin_prev is not None and bool(session_rows)
+        plan.append(
+            _FundPlan(
+                p,
+                prev_nav,
+                official,
+                _stepper(session_rows),
+                twin_prev,
+                twin_close,
+                twin=twin,
+                session_rows=session_rows,
+            )
+        )
+    return _Plans(plan, has_twin_data)
 
 
 def late_nav_sleeve(
@@ -1999,60 +2087,20 @@ def late_nav_sleeve(
     Otherwise it is empty and the caller keeps the per-day NAV (with its
     gap-fill), so a half-cached day, or a week with no twin, is never redrawn.
     """
-    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
     from investment_dashboard.domain.late_data import (  # noqa: PLC0415
         fund_value_at,
         session_fraction,
     )
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
-    from investment_dashboard.services import positions_service, prices_service  # noqa: PLC0415
 
-    positions = positions_service.compute_positions(session, as_of=session_date)
-    funds = [p for p in positions if p.shares > _MIN_SHARES and is_drifting_nav(p)]
-    if not funds:
+    plans = _fund_plans(session, session_date=session_date, strict=strict)
+    if plans is None:
         return LateNavSleeve(components={})
-    prev_date = previous_trading_session(session_date)
+    if strict and not plans.has_twin_data:
+        return LateNavSleeve(components={})
+    plan = plans.funds
+    estimated = {f.position.instrument.symbol for f in plan if f.pending}
     open_at = _session_open_utc(session_date)
     close_at = _session_close_utc(session_date)
-    prev_close_at = _session_close_utc(prev_date)
-    recent = prices_service.recent_closes_by_instrument(
-        session,
-        sorted({p.instrument.id for p in funds}),
-        on_or_before=session_date,
-        limit=_NAV_LOOKBACK,
-    )
-    twins = sorted({t for p in funds if (t := _twin_of(p))})
-    with cache_read_session(session) as cache:
-        twin_rows = twin_prices_repo.prices_in_range(
-            cache, twins, _session_start_utc(prev_date), close_at
-        )
-
-    plan: list[_FundPlan] = []
-    estimated: set[str] = set()
-    has_twin_data = False
-    for p in funds:
-        closes = dict(recent.get(p.instrument.id, []))
-        official = closes.get(session_date)
-        earlier = [d for d in closes if d < session_date]
-        prev_nav = closes[max(earlier)] if earlier else (official or p.current_price_native)
-        if prev_nav is None or prev_nav <= 0:
-            if strict:
-                return LateNavSleeve(components={})
-            continue
-        twin = _twin_of(p)
-        rows = twin_rows.get(twin, {}) if twin else {}
-        twin_prev = _latest_at_or_before(rows, prev_close_at)
-        session_rows = {t: v for t, v in rows.items() if t > prev_close_at}
-        twin_close = _latest_at_or_before(session_rows, close_at)
-        if strict and (official is None or not earlier):
-            return LateNavSleeve(components={})
-        has_twin_data |= twin_prev is not None and bool(session_rows)
-        if official is None and twin_prev is not None and session_rows:
-            estimated.add(p.instrument.symbol)
-        plan.append(_FundPlan(p, prev_nav, official, _stepper(session_rows), twin_prev, twin_close))
-
-    if strict and not has_twin_data:
-        return LateNavSleeve(components={})
     components: dict[datetime, tuple[Decimal, Decimal | None]] = {}
     for at in times:
         fx_t = (sample_fx or {}).get(at) or rate
@@ -2089,24 +2137,331 @@ def estimated_funds(session: Session, *, now: datetime | None = None) -> tuple[s
         return ()
 
 
+@dataclass(frozen=True)
+class EstimateLeg:
+    """One account's holding of an estimated fund (a fund can sit in several accounts)."""
+
+    currency: str  # the account's native currency (what ``shares x price`` is booked in)
+    shares: Decimal
+    #: EUR per native unit of this holding, used only for currencies other than EUR / USD.
+    eur_per_native: Decimal
+
+
+@dataclass(frozen=True)
+class TwinEstimate:
+    """A fund whose official NAV for the last session has not posted, valued from its twin.
+
+    ``est_px = prev_nav x twin_now / twin_prev_close`` (native, per share). The
+    estimate exists only for funds that have a twin *with data* and no official
+    NAV for ``session_date`` yet; once the NAV posts the fund drops out (its
+    adjustment is 0 and the divergence is reported instead).
+    """
+
+    instrument_id: int
+    symbol: str
+    twin_symbol: str
+    tier: str  # "same_index" | "close" | "manual"
+    currency: str  # the instrument's native (price) currency
+    session_date: date
+    prev_nav: Decimal
+    est_px: Decimal
+    twin_now: Decimal
+    twin_prev_close: Decimal
+    at: datetime  # aware UTC: when the twin price used was struck
+    legs: tuple[EstimateLeg, ...]
+
+    @property
+    def shares(self) -> Decimal:
+        return sum((leg.shares for leg in self.legs), start=Decimal(0))
+
+    def delta_holdings(self) -> list[Holding]:
+        """``shares x (est_px - prev_nav)`` per leg, as holdings to value at one rate."""
+        step = self.est_px - self.prev_nav
+        return [
+            Holding(leg.currency, leg.shares * step, leg.shares * step * leg.eur_per_native)
+            for leg in self.legs
+        ]
+
+
+def twin_tier(fund_symbol: str, twin_symbol: str) -> str:
+    from investment_dashboard.domain.index_twins import suggest_twin  # noqa: PLC0415
+
+    suggestion = suggest_twin(fund_symbol)
+    if suggestion is not None and suggestion.etf.upper() == twin_symbol.upper():
+        return suggestion.tier
+    return "manual"
+
+
+def twin_estimates(session: Session, now: datetime | None = None) -> dict[int, TwinEstimate]:
+    """Funds estimated from their ETF twin right now, by instrument id.
+
+    Only funds whose official NAV for the last session has NOT posted and that
+    have twin data (a previous close and at least one price since). Built from the
+    same per-fund plan as the 1D line (:func:`late_nav_sleeve`) and memoised on the
+    session, so one request / tick computes it once whatever number of readers
+    (overview in both currencies, holdings, tick, graph) ask. Read-only.
+    """
+    now = now or datetime.now(UTC)
+    return memo_twin_estimates_at(session, last_session_date(now), now)
+
+
+def _twin_estimates(session: Session, session_date: date, at: datetime) -> dict[int, TwinEstimate]:
+    from investment_dashboard.domain.late_data import estimate_value  # noqa: PLC0415
+
+    plans = _fund_plans(session, session_date=session_date, strict=False)
+    if plans is None:
+        return {}
+    prev_close_at = _session_close_utc(previous_trading_session(session_date))
+    out: dict[int, TwinEstimate] = {}
+    for f in plans.funds:
+        if not f.pending or f.twin is None or f.twin_prev_close is None:
+            continue
+        p = f.position
+        seen = [t for t in f.session_rows if t <= at]
+        twin_now = f.twin_at(at) or f.twin_prev_close
+        est_px = estimate_value(f.prev_nav, twin_now, f.twin_prev_close)
+        eur_per_native = (
+            p.current_value_eur / p.current_value_native if p.current_value_native else Decimal(0)
+        )
+        leg = EstimateLeg(p.account.native_currency.upper(), p.shares, eur_per_native)
+        iid = p.instrument.id
+        previous = out.get(iid)
+        if previous is not None:
+            out[iid] = replace(previous, legs=(*previous.legs, leg))
+            continue
+        out[iid] = TwinEstimate(
+            instrument_id=iid,
+            symbol=p.instrument.symbol,
+            twin_symbol=f.twin,
+            tier=twin_tier(p.instrument.symbol, f.twin),
+            currency=p.instrument.native_currency.upper(),
+            session_date=session_date,
+            prev_nav=f.prev_nav,
+            est_px=est_px,
+            twin_now=twin_now,
+            twin_prev_close=f.twin_prev_close,
+            at=(max(seen) if seen else prev_close_at).replace(tzinfo=UTC),
+            legs=(leg,),
+        )
+    return out
+
+
+def estimate_adjustment(
+    estimates: Iterable[TwinEstimate], fx_eur_usd: Decimal | None
+) -> tuple[Decimal | None, Decimal | None]:
+    """``(eur, usd)`` to add to the official total: ``sum(shares x (est_px - prev_nav))``.
+
+    Valued at ONE EUR/USD rate (USD per 1 EUR), never converting a return: USD
+    legs are FX-free in USD and divided by the rate for EUR, EUR legs the reverse.
+    Without a usable rate only an all-EUR book has a EUR figure (the USD one, and
+    the EUR one of a USD fund, is ``None``). Exactly ``(0, 0)`` for no estimates
+    (a posted NAV).
+    """
+    holdings: list[Holding] = []
+    for est in estimates:
+        holdings.extend(est.delta_holdings())
+    if not holdings:
+        return Decimal(0), Decimal(0)
+    if fx_eur_usd is None or fx_eur_usd <= 0:
+        if all(h.currency.upper() == "EUR" for h in holdings):
+            return sum((h.native_value for h in holdings), start=Decimal(0)), None
+        return None, None
+    return value_at_rate(holdings, fx_eur_usd)
+
+
+def _leg_value(
+    leg: EstimateLeg, price: Decimal, fx_eur_usd: Decimal | None, ccy: str
+) -> Decimal | None:
+    """``shares x price`` of one leg in ``ccy`` at ONE EUR/USD rate (``None``: rate needed, missing)."""
+    amount = leg.shares * price
+    if leg.currency == ccy:
+        return amount
+    if leg.currency not in {"EUR", "USD"}:
+        eur = amount * leg.eur_per_native
+        if ccy == "EUR":
+            return eur
+        return eur * fx_eur_usd if fx_eur_usd and fx_eur_usd > 0 else None
+    if not fx_eur_usd or fx_eur_usd <= 0:
+        return None
+    return amount / fx_eur_usd if leg.currency == "USD" else amount * fx_eur_usd
+
+
+def previous_close_fx(session: Session, session_date: date) -> Decimal | None:
+    """EUR/USD (USD per EUR) the previous session's valuation uses: the daily rate of the
+    trading day before ``session_date`` (forward-filled), the same mark the holding cards'
+    and the hero's "day move" value their previous close at.
+    """
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+    return fx_service.get_rate_eur_to_quote(
+        session, previous_trading_session(session_date), quote="USD"
+    )
+
+
+def estimate_day_move(
+    est: TwinEstimate,
+    fx_now: Decimal | None,
+    fx_prev_close: Decimal | None,
+    ccy: str,
+) -> tuple[Decimal | None, Decimal | None]:
+    """``(money, fraction)``: a pending fund's estimated day move since its last official NAV.
+
+    The ONE definition used by the holdings row, the group, and the tick. It follows
+    the convention of a live-priced holding's day move: today's value (at ``est_px``)
+    valued at the rate now, minus yesterday's value (at ``prev_nav``) valued at the
+    previous close's rate, in ``ccy``. So in the other currency the FX move since the
+    previous close is part of the day move, exactly as for a stock, and no return is
+    ever converted. The fraction is that value ratio minus 1. The holding's stale
+    last-session move is never involved. ``(None, None)`` when a needed rate is missing.
+    """
+    now_value = Decimal(0)
+    prev_value = Decimal(0)
+    for leg in est.legs:
+        now = _leg_value(leg, est.est_px, fx_now, ccy)
+        prev = _leg_value(leg, est.prev_nav, fx_prev_close, ccy)
+        if now is None or prev is None:
+            return None, None
+        now_value += now
+        prev_value += prev
+    money = now_value - prev_value
+    return money, (money / prev_value if prev_value > 0 else None)
+
+
+def estimate_move_pct(
+    est: TwinEstimate, fx_now: Decimal | None, fx_prev_close: Decimal | None
+) -> dict[str, Decimal | None]:
+    """:func:`estimate_day_move`'s fraction for both currencies (the tick's ``pct``)."""
+    return {c: estimate_day_move(est, fx_now, fx_prev_close, c)[1] for c in ("EUR", "USD")}
+
+
+@dataclass(frozen=True)
+class FundDivergence:
+    """A fund's twin divergence (see :func:`investment_dashboard.domain.late_data.divergences`).
+
+    ``last_prev_nav`` is the fund's NAV before ``stats.last_date``, to turn the last
+    gap (a fraction) into money: ``shares x last_prev_nav x stats.last_gap``.
+    """
+
+    stats: Divergence
+    last_prev_nav: Decimal
+
+
+#: A twin price this close to the 16:00 close (or earlier in the last 5-minute bar)
+#: counts as that session's close when no exact close row was stored.
+_CLOSE_TOLERANCE = timedelta(minutes=10)
+
+
+def twin_session_closes(rows: dict[datetime, Decimal]) -> dict[date, Decimal]:
+    """``{session date: twin close}`` from stored twin rows (naive UTC instants).
+
+    A session's close is its newest row within :data:`_CLOSE_TOLERANCE` before the
+    16:00 close (the exact close row, else the last 5-minute bar); sessions the
+    server never watched have none.
+    """
+    best: dict[date, tuple[datetime, Decimal]] = {}
+    for at, price in rows.items():
+        if price <= 0:
+            continue
+        day = session_date_of(at)
+        close_at = _session_close_utc(day)
+        if close_at - _CLOSE_TOLERANCE <= at <= close_at and (day not in best or at > best[day][0]):
+            best[day] = (at, price)
+    return {day: price for day, (_at, price) in best.items()}
+
+
+def divergence_window() -> int:
+    """Setting ``twin.divergence_window`` (Settings > Data refresh), in sessions."""
+    from investment_dashboard.domain.late_data import DEFAULT_DIVERGENCE_WINDOW  # noqa: PLC0415
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    try:
+        configured = settings_service.get_or("twin.divergence_window", DEFAULT_DIVERGENCE_WINDOW)
+        return max(1, int(configured))
+    except (TypeError, ValueError):  # pragma: no cover - settings unreadable
+        return DEFAULT_DIVERGENCE_WINDOW
+
+
+def fund_divergence(
+    session: Session, *, instrument_id: int, twin_symbol: str, now: datetime | None = None
+) -> FundDivergence | None:
+    """How far ``twin_symbol`` strayed from the fund's official NAV over recent sessions.
+
+    Fund NAVs come from the stored daily closes, twin closes from the stored twin
+    rows (kept 400 days, backfilled once for a year); sessions with a dividend or
+    distribution in the ledger are left out. ``None`` without a shared return.
+    """
+    from investment_dashboard.db import cache_read_session, memo  # noqa: PLC0415
+    from investment_dashboard.domain.late_data import divergences  # noqa: PLC0415
+    from investment_dashboard.repositories import (  # noqa: PLC0415
+        transactions_repo,
+        twin_prices_repo,
+    )
+    from investment_dashboard.services import prices_service  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    session_date = last_session_date(now)
+    window = divergence_window()
+
+    def compute() -> FundDivergence | None:
+        fund_closes = {
+            d: v
+            for d, v in prices_service.closes_for_instrument(session, instrument_id).items()
+            if d <= session_date
+        }
+        start = _session_start_utc(session_date - TWIN_CLOSE_RETENTION)
+        with cache_read_session(session) as cache:
+            rows = twin_prices_repo.prices_in_range(
+                cache, [twin_symbol], start, _session_close_utc(session_date)
+            )
+        twin_closes = twin_session_closes(rows.get(twin_symbol, {}))
+        excluded = {
+            t.date
+            for t in transactions_repo.list_transactions(
+                session,
+                instrument_id=instrument_id,
+                kinds=("dividend_cash", "dividend_reinvest"),
+            )
+        }
+        stats = divergences(fund_closes, twin_closes, window=window, excluded=excluded)
+        if stats is None:
+            return None
+        return FundDivergence(stats, fund_closes[stats.last_prev_date])
+
+    return memo(
+        session, ("fund_divergence", instrument_id, twin_symbol, session_date, window), compute
+    )
+
+
 def live_point_adjustment_eur(
     session: Session, *, at: datetime, fx: Decimal | None, now: datetime | None = None
 ) -> Decimal:
     """1D-line value minus the official total at instant ``at`` (the fund estimate).
 
     The scheduler's live graph point is the official total; adding this gives
-    the point on the 1D line itself (estimated / corrected fund sleeve).
+    the point on the 1D line itself. While the session runs no fund's NAV has
+    posted, so this equals the hero's estimate adjustment at the same instant.
     """
-    from investment_dashboard.services import positions_service  # noqa: PLC0415
-
     now = now or datetime.now(UTC)
-    sleeve = late_nav_sleeve(
-        session, session_date=last_session_date(now), times=[at], rate=fx, sample_fx={at: fx}
+    aware_at = at if at.tzinfo is not None else at.replace(tzinfo=UTC)
+    # The session comes from ``now``, the twin price from the sample instant ``at``.
+    session_date = last_session_date(now)
+    estimates = memo_twin_estimates_at(session, session_date, aware_at)
+    adjustment = estimate_adjustment(estimates.values(), fx)
+    return adjustment[0] or Decimal(0)
+
+
+def memo_twin_estimates_at(
+    session: Session, session_date: date, at: datetime
+) -> dict[int, TwinEstimate]:
+    """:func:`twin_estimates` for an explicit session and twin-price instant (memoised)."""
+    from investment_dashboard.db import memo  # noqa: PLC0415
+
+    naive = _to_naive_utc(at)
+    return memo(
+        session,
+        ("twin_estimates", session_date, naive.replace(microsecond=0)),
+        lambda: _twin_estimates(session, session_date, naive),
     )
-    if at not in sleeve.components:
-        return Decimal(0)
-    official_now = nav_drift_value_eur(positions_service.compute_positions(session))
-    return sleeve.components[at][0] - official_now
 
 
 def _store_twin_closes(
@@ -2210,6 +2565,105 @@ def backfill_week_twin_prices(
     return written
 
 
+#: How long a twin's session-close rows are kept (the divergence statistics read them);
+#: the intraday bars around them are pruned to the 1W window as before.
+TWIN_CLOSE_RETENTION = timedelta(days=400)
+
+#: ``app_config`` key prefix: ``{prefix}{symbol}`` -> "1" once that twin's one-year
+#: daily-close backfill stored rows (a one-time job per twin).
+_TWIN_YEAR_PREFIX = "intraday_twin_year_closes:"
+
+#: Days of daily closes fetched once per twin for the divergence statistics.
+_TWIN_YEAR_DAYS = 365
+
+_YEAR_RETRY = timedelta(minutes=30)
+_year_attempts: dict[str, datetime] = {}
+
+
+def backfill_twin_year_closes(
+    session: Session,
+    twins: list[str],
+    *,
+    now: datetime,
+    fetcher: object | None = None,
+) -> int:
+    """Store one year of each twin's daily closes (at the session-close instant), once.
+
+    The twin-divergence statistics compare the fund's official NAV return with the
+    twin's close-to-close return; the twin's close rows otherwise exist only for
+    days the server was running. One daily-closes call per tick covers every twin
+    not done yet; a twin is marked done (``app_config``) once rows came back, and
+    one that returned nothing is retried at most every 30 minutes. Returns rows
+    written.
+    """
+    from investment_dashboard.activity_log import activity  # noqa: PLC0415
+    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+
+    keys = {s: f"{_TWIN_YEAR_PREFIX}{s}" for s in twins}
+    done = app_config_service.get_many(session, list(keys.values()))
+    never = datetime.min.replace(tzinfo=UTC)
+    due = [
+        s
+        for s in twins
+        if not done.get(keys[s]) and now - _year_attempts.get(s, never) >= _YEAR_RETRY
+    ]
+    if not due:
+        return 0
+    for symbol in due:
+        _year_attempts[symbol] = now
+    session_date = last_session_date(now)
+    # A daily bar of a session still running is its price now, not its close.
+    last_done = session_date - timedelta(days=1) if is_us_market_open(now) else session_date
+    fetch_closes = fetcher or yfinance_client.fetch_closes
+    closes = fetch_closes(
+        due, session_date - timedelta(days=_TWIN_YEAR_DAYS), session_date + timedelta(days=1)
+    )  # type: ignore[operator]
+    written = 0
+    stored: dict[str, int] = {}
+    with cache_write_session(session) as cache:
+        for symbol in due:
+            rows = {
+                _session_close_utc(day): price
+                for day, price in (closes.get(symbol) or {}).items()
+                if price > 0 and day <= last_done and _is_trading_day(day)
+            }
+            if rows:
+                written += twin_prices_repo.upsert_prices(cache, symbol, rows)
+                stored[symbol] = len(rows)
+    for symbol, count in stored.items():
+        app_config_service.set_value(session, keys[symbol], "1")
+        activity("market_data").info(
+            "twin prices: stored %d daily close(s) of the last year for %s (divergence history)",
+            count,
+            symbol,
+        )
+    return written
+
+
+def prune_twin_prices(session: Session, *, now: datetime) -> None:
+    """Drop twin rows past retention.
+
+    Intraday bars go once older than the 1W window (plus 7 days); the session-close
+    rows stay for :data:`TWIN_CLOSE_RETENTION`.
+    """
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+
+    bars_cutoff = week_window_start_utc(now) - timedelta(days=7)
+    oldest = _to_naive_utc(now) - TWIN_CLOSE_RETENTION
+    day = oldest.date()
+    keep: list[datetime] = []
+    while day <= bars_cutoff.date():
+        if _is_trading_day(day):
+            keep.append(_session_close_utc(day))
+        day += timedelta(days=1)
+    with cache_write_session(session) as cache:
+        twin_prices_repo.delete_before(cache, bars_cutoff, keep=keep)
+        twin_prices_repo.delete_before(cache, oldest)
+
+
 def refresh_twin_prices(
     session: Session,
     *,
@@ -2288,8 +2742,11 @@ def refresh_twin_prices(
         written += backfill_week_twin_prices(session, twins, now=now, range_fetcher=range_fetcher)
     except Exception:  # best-effort: the 1W then keeps its per-day NAV steps
         log.warning("twin prices: 1W backfill failed", exc_info=True)
-    with cache_write_session(session) as cache:
-        twin_prices_repo.delete_before(cache, week_window_start_utc(now) - timedelta(days=7))
+    try:
+        written += backfill_twin_year_closes(session, twins, now=now, fetcher=fetcher)
+    except Exception:  # best-effort: the divergence stats then use what is stored
+        log.warning("twin prices: 1-year close backfill failed", exc_info=True)
+    prune_twin_prices(session, now=now)
     if written:
         log.info(
             "twin prices: %d row(s) stored for %s (%s)", written, session_date, ", ".join(twins)

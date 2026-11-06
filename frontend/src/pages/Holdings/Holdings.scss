@@ -475,14 +475,159 @@
     font-size: var(--font-size-sm);
   }
 
-  &__subtotals {
+  // A group's subtotals: ONE calm row in the table's column order (value, weight,
+  // day, P/L, total return); no box, just a hairline under it. Phone: two lines.
+  &__gsum {
     display: grid;
-    gap: var(--space-3);
-    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-    margin: 0;
+    gap: var(--space-2) var(--space-4);
+    grid-template-columns: minmax(7rem, 1.2fr) minmax(6rem, 0.9fr) minmax(8rem, 1.2fr) repeat(2, minmax(7rem, 1fr));
+    align-items: start;
     padding: var(--space-3) var(--space-4);
-    background: var(--color-surface-2);
+    border-bottom: var(--border-width) solid var(--color-border);
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      grid-template-areas:
+        "value weight day"
+        "gain gain ret";
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 1.2fr);
+      padding: var(--space-3);
+    }
+  }
+
+  &__gcell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+
+    @include m.phone {
+      &--value {
+        grid-area: value;
+      }
+
+      &--weight {
+        grid-area: weight;
+      }
+
+      &--day {
+        grid-area: day;
+      }
+
+      &--gain {
+        grid-area: gain;
+      }
+
+      &--return {
+        grid-area: ret;
+      }
+    }
+  }
+
+  &__gkey {
+    color: var(--color-faint);
+    font-size: var(--font-size-2xs);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  &__gfig {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-1);
+    align-items: center;
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+  }
+
+  &__gpct {
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__gest {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    align-items: center;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-style: italic;
+    white-space: nowrap;
+  }
+
+  // Estimate cue: a small outlined "≈" pill (outline + text, never colour alone).
+  &__est {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--space-1);
+    border: var(--border-width) solid var(--color-estimate, var(--color-muted));
+    border-radius: var(--radius-full);
+    background: var(--color-estimate-soft, transparent);
+    color: var(--color-estimate, var(--color-muted));
+    font-size: var(--font-size-2xs);
+    font-style: italic;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-base);
+    white-space: nowrap;
+  }
+
+  &__weight--start {
+    align-items: flex-start;
+  }
+
+  // The muted "≈ VOO +0.42%" line under a NAV fund's symbol while its twin estimates.
+  &__twin-line {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-style: italic;
+    white-space: nowrap;
+  }
+
+  &__twin {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border-top: var(--border-width) dashed var(--color-border);
+    font-size: var(--font-size-sm);
+  }
+
+  &__twin-title,
+  &__twin-sub {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__twin-sub {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  &__twin-grid {
+    display: grid;
+    gap: var(--space-2) var(--space-4);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
+  }
+
+  &__twin-move {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-2);
+  }
+
+  &__item-twin {
+    padding: 0 0 var(--space-1);
   }
 
   &__group {

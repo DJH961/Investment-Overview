@@ -12,6 +12,58 @@ from investment_dashboard.api.schemas.common import ApiModel, DecStr
 _FRAC = "fraction, 0.01 = 1%"
 
 
+class TwinDivergence(ApiModel):
+    """How far a fund's ETF twin strayed from the fund's official NAV return.
+
+    Gaps are ``twin return - fund return``: positive means the twin ran ahead, i.e.
+    the estimate was too high. Percentage points (``0.03`` = 0.03 pp), not fractions.
+    Sessions with a dividend or distribution are left out.
+    """
+
+    last_pp: DecStr | None = Field(
+        default=None, description="Newest usable session's gap, in percentage points"
+    )
+    last_money: DecStr | None = Field(
+        default=None,
+        description=(
+            "That gap in money (estimate minus official value of the holding, reporting "
+            "currency, at the rate now)"
+        ),
+    )
+    last_date: str | None = Field(default=None, description="Session the last_* figures are from")
+    median_abs_pp: DecStr = Field(description="Median absolute gap over the window, pp")
+    bias_pp: DecStr = Field(description="Mean signed gap over the window, pp (positive: twin high)")
+    sessions: int = Field(description="Sessions actually used (at most ``window``)")
+    window: int = Field(description="Setting twin.divergence_window, in sessions")
+
+
+class TwinView(ApiModel):
+    """A mutual fund's ETF-twin estimate (``pending``) and/or its accuracy record.
+
+    ``pending`` true: the fund's NAV for the last session has not posted; the ``est_*``
+    fields value the holding from the twin. ``pending`` false: the NAV posted (until
+    the next open the row only carries ``divergence``; ``est_*`` and ``at`` are null).
+    """
+
+    symbol: str = Field(description="The twin ETF's ticker")
+    tier: Literal["same_index", "close", "manual"]
+    est_price: DecStr | None = Field(
+        default=None, description="Estimated NAV per share, native currency"
+    )
+    est_value: DecStr | None = Field(
+        default=None, description="Estimated value of the holding, reporting currency"
+    )
+    est_today_move: DecStr | None = Field(
+        default=None, description="Estimated day move in money, reporting currency"
+    )
+    est_today_pct: DecStr | None = Field(
+        default=None, description=f"Estimated day move ({_FRAC}), reporting currency"
+    )
+    at: str | None = Field(default=None, description="When the twin price used was struck (ISO)")
+    pending: bool
+    divergence: TwinDivergence | None = None
+
+
 class HoldingRow(ApiModel):
     instrument_id: int
     symbol: str
@@ -62,6 +114,10 @@ class HoldingRow(ApiModel):
     )
     value_warning: bool
     price_data_warning: bool
+    twin: TwinView | None = Field(
+        default=None,
+        description="ETF-twin estimate / accuracy for a mutual fund with a twin; one row per fund",
+    )
 
 
 class HoldingsSummary(ApiModel):
@@ -97,7 +153,28 @@ class HoldingGroup(ApiModel):
     capital_gain: DecStr | None = None
     dividends: DecStr | None = None
     total_return: DecStr | None = None
+    total_growth: DecStr | None = Field(
+        default=None,
+        description=(
+            f"total_return / cost_basis of the group ({_FRAC}), in the response currency; "
+            "a simple return on cost (not the members' compounded total_growth). "
+            "Null when the cost basis is not positive or a member lacks a leg"
+        ),
+    )
     weight_pct: DecStr | None = Field(default=None, description=f"Summed weight ({_FRAC})")
+    today_move: DecStr | None = Field(
+        default=None, description="Sum of the members' official day moves (null if one lacks it)"
+    )
+    today_pct: DecStr | None = Field(
+        default=None, description=f"today_move over the group's previous value ({_FRAC})"
+    )
+    est_value: DecStr | None = Field(
+        default=None, description="value with pending mutual funds at their twin estimate"
+    )
+    est_today_move: DecStr | None = Field(
+        default=None,
+        description="today_move with pending funds at their twin estimate (null: none pending)",
+    )
 
 
 class HoldingsFx(ApiModel):

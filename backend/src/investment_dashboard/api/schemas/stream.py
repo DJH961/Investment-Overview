@@ -26,6 +26,28 @@ class TickPrice(ApiModel):
     ccy: str
     #: Previous session close (native), for the day change; null if unknown.
     prev_close: DecStr | None = None
+    #: A mutual fund whose NAV for the last session has not posted: ``px`` is the
+    #: previous NAV, so ``px - prev_close`` would read 0 (and ``prev_close`` is then
+    #: null). Clients keep the server's day move for this row; its estimate (if it
+    #: has a twin) arrives in ``estimates``.
+    stale_nav: bool = False
+
+
+class TickEstimatePct(ApiModel):
+    """The estimated move since the previous close, a fraction per currency."""
+
+    EUR: DecStr | None = None
+    USD: DecStr | None = None
+
+
+class TickEstimate(ApiModel):
+    """One pending mutual fund valued from its ETF twin (native price per share)."""
+
+    est_px: DecStr
+    prev_nav: DecStr
+    pct: TickEstimatePct
+    #: When the twin price behind the estimate was struck (ISO).
+    at: str
 
 
 class TickPoint(ApiModel):
@@ -53,6 +75,14 @@ class TickEvent(ApiModel):
     total_value_usd: DecStr | None = None
     #: Live EUR->USD rate at ``ts`` (USD per EUR).
     fx_eur_usd: DecStr | None = None
+    #: The total with pending mutual funds at their ETF-twin estimate (null when none
+    #: is estimating). ``total_value_est_eur - total_value_eur`` is the adjustment;
+    #: equals the overview's ``kpis.estimate.total_value`` and ``point.EUR``.
+    total_value_est_eur: DecStr | None = None
+    #: ``total_value_est_eur`` x the live spot at ``ts`` (single instant).
+    total_value_est_usd: DecStr | None = None
+    #: Pending mutual funds by instrument id (as a string key); null/empty when none.
+    estimates: dict[str, TickEstimate] | None = None
     #: When the last refresh brought in new prices (null: none yet in this process).
     last_update_at: str | None = None
     #: When the newest stock/ETF price was struck on the exchange (provider time).

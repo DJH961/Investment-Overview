@@ -2,12 +2,13 @@
 
 Intraday prices (and the previous session close) of the ETF twins that estimate
 mutual funds on the 1D graph. Append/overwrite per ``(symbol, captured_at)``;
-pruned to the rolling 1W window.
+intraday rows are pruned to the rolling 1W window, the session-close rows are kept
+for 400 days (the twin-divergence statistics read them).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from datetime import datetime
 from decimal import Decimal
 
@@ -53,10 +54,12 @@ def prices_in_range(
     return out
 
 
-def delete_before(session: Session, cutoff: datetime) -> int:
-    result = session.execute(
-        delete(IntradayTwinPrice).where(IntradayTwinPrice.captured_at < cutoff)
-    )
+def delete_before(session: Session, cutoff: datetime, *, keep: Collection[datetime] = ()) -> int:
+    """Delete rows older than ``cutoff``, except those captured exactly at an instant in ``keep``."""
+    stmt = delete(IntradayTwinPrice).where(IntradayTwinPrice.captured_at < cutoff)
+    if keep:
+        stmt = stmt.where(IntradayTwinPrice.captured_at.not_in(list(keep)))
+    result = session.execute(stmt)
     return int(result.rowcount or 0)
 
 

@@ -53,6 +53,7 @@ from investment_dashboard.services import (
 from investment_dashboard.services.instrument_enrichment_service import effective_instrument
 
 if TYPE_CHECKING:
+    from investment_dashboard.domain.late_data import DaySplit
     from investment_dashboard.models import Transaction
 
 ZERO = Decimal(0)
@@ -773,6 +774,56 @@ class LastSessionSplit:
     overnight_usd: Decimal
     value_now_eur: Decimal
     value_now_usd: Decimal
+    #: The same split on the *estimated* book, set only while a fund's NAV for the
+    #: session is still pending and its ETF twin estimates it (``estimated_funds``):
+    #: the fund counts at ``prev_nav x twin_now / twin_prev_close`` instead of its
+    #: previous NAV, valued at the close rate (move) / the rate now (value). Per
+    #: currency ``move_est + overnight_est == value_now_est - prev_close_value``.
+    estimated_funds: tuple[str, ...] = ()
+    move_est_eur: Decimal | None = None
+    move_est_usd: Decimal | None = None
+    pct_est_eur: Decimal | None = None
+    pct_est_usd: Decimal | None = None
+    overnight_est_eur: Decimal | None = None
+    overnight_est_usd: Decimal | None = None
+    value_now_est_eur: Decimal | None = None
+    value_now_est_usd: Decimal | None = None
+
+
+def _estimated_split(
+    session: Session,
+    *,
+    now: datetime,
+    eur: DaySplit,
+    usd: DaySplit,
+    prev: tuple[Decimal, Decimal],
+    value_now: tuple[Decimal, Decimal],
+    fx_close: Decimal,
+    fx_now: Decimal,
+) -> dict[str, Any]:
+    """The ``*_est`` fields of :class:`LastSessionSplit` (empty without an estimate)."""
+    estimates = intraday_snapshots_service.twin_estimates(session, now)
+    if not estimates:
+        return {}
+    at_close = intraday_snapshots_service.estimate_adjustment(estimates.values(), fx_close)
+    at_now = intraday_snapshots_service.estimate_adjustment(estimates.values(), fx_now)
+    (close_eur, close_usd), (now_eur, now_usd) = at_close, at_now
+    if close_eur is None or close_usd is None or now_eur is None or now_usd is None:
+        return {}
+    (prev_eur, prev_usd), (value_eur, value_usd) = prev, value_now
+    move_eur, move_usd = eur.move + close_eur, usd.move + close_usd
+    return {
+        "estimated_funds": tuple(sorted(e.symbol for e in estimates.values())),
+        "move_est_eur": move_eur,
+        "move_est_usd": move_usd,
+        "pct_est_eur": move_eur / prev_eur if prev_eur > 0 else None,
+        "pct_est_usd": move_usd / prev_usd if prev_usd > 0 else None,
+        # overnight on the estimated book: its change in value since the close rate.
+        "overnight_est_eur": eur.overnight + (now_eur - close_eur),
+        "overnight_est_usd": usd.overnight + (now_usd - close_usd),
+        "value_now_est_eur": value_eur + now_eur,
+        "value_now_est_usd": value_usd + now_usd,
+    }
 
 
 def _book_holdings(session: Session, on: date) -> list[Any]:
@@ -834,6 +885,16 @@ def last_session_split(
     eur = split_day_change(prev_eur, last_eur, now_eur)
     usd = split_day_change(prev_usd, last_usd, now_usd)
     return LastSessionSplit(
+        **_estimated_split(
+            session,
+            now=now,
+            eur=eur,
+            usd=usd,
+            prev=(prev_eur, prev_usd),
+            value_now=(now_eur, now_usd),
+            fx_close=fx_close,
+            fx_now=fx_now,
+        ),
         session_date=session_date,
         prev_date=prev_date,
         fx_close=fx_close,

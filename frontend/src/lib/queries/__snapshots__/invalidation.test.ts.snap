@@ -74,6 +74,7 @@ exports[`write -> invalidated keys > tick 1`] = `
   "holdings/both",
   "holdings/history",
   "overview/both",
+  "periods/monthly",
 ]
 `;
 
