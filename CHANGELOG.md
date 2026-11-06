@@ -26,6 +26,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   news-source facts it flagged as unverified are now verified. Docs only, no
   app change.
 
+## [6.7.2] — 2026-11-06
+
+### Fixed
+- **The "funds estimated" note under the 1D and 1W graph is one short line.**
+  It reads "NAVs estimated from ETF twins" however many funds are estimated
+  (it used to list every ticker, which wrapped to several lines on a phone). The
+  fund → ETF twin mapping is in the (i) tooltip next to it (tap on mobile), which
+  also says on the 1W that only the latest session is estimated.
+
 ## [6.7.1] — 2026-11-06
 
 ### Added
