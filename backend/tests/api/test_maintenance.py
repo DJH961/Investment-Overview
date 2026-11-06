@@ -237,3 +237,195 @@ def test_system_info(api_client: TestClient) -> None:
 def test_requires_auth(anon_client: TestClient) -> None:
     assert anon_client.get("/api/maintenance/jobs").status_code == 401
     assert anon_client.get("/api/system").status_code == 401
+
+
+# -- ETF twins: repair jobs + health endpoint ---------------------------------------
+
+
+def test_twins_refresh_job_wraps_refresh_twin_prices(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from investment_dashboard.services import intraday_snapshots_service as iss
+
+    _as(monkeypatch, "session")
+    monkeypatch.setattr(iss, "refresh_twin_prices", lambda session: 7)
+    run = api_client.post("/api/maintenance/jobs/twins.refresh", json={})
+    assert run.status_code == 202, run.text
+    done = _wait(api_client, run.json()["id"])
+    assert done["status"] == "succeeded"
+    assert done["result"] == {"rows_written": 7}
+
+
+def test_twins_backfill_job_forces_the_year_backfill(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from investment_dashboard.services import intraday_snapshots_service as iss
+
+    _as(monkeypatch, "session")
+    monkeypatch.setattr(
+        iss, "force_twin_year_backfill", lambda session: {"twins": ["TWN"], "written": 5}
+    )
+    run = api_client.post("/api/maintenance/jobs/twins.backfill", json={})
+    assert run.status_code == 202, run.text
+    done = _wait(api_client, run.json()["id"])
+    assert done["status"] == "succeeded"
+    assert done["result"] == {"twins": ["TWN"], "written": 5}
+
+
+def test_twins_clear_job_needs_confirm_and_deletes_every_stored_row(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import datetime
+    from decimal import Decimal
+
+    from investment_dashboard.db import cache_write_session, ledger_session_scope
+    from investment_dashboard.repositories import twin_prices_repo
+
+    _as(monkeypatch, "session")
+    with ledger_session_scope() as s, cache_write_session(s) as cache:
+        twin_prices_repo.upsert_prices(
+            cache,
+            "TWN",
+            {
+                datetime(2024, 5, 31, 20, 0): Decimal("100"),
+                datetime(2024, 6, 3, 20, 0): Decimal("105"),
+            },
+        )
+    # No confirmation: the server refuses before running anything.
+    no_confirm = api_client.post("/api/maintenance/jobs/twins.clear", json={})
+    assert no_confirm.status_code == 422
+    run = api_client.post("/api/maintenance/jobs/twins.clear", json={"confirm": "yes"})
+    assert run.status_code == 202, run.text
+    done = _wait(api_client, run.json()["id"])
+    assert done["status"] == "succeeded"
+    assert done["result"] == {"deleted": 2}
+    with ledger_session_scope() as s:
+        from investment_dashboard.db import cache_read_session
+
+        with cache_read_session(s) as cache:
+            left = twin_prices_repo.prices_in_range(
+                cache, ["TWN"], datetime(2020, 1, 1), datetime(2030, 1, 1)
+            )
+    assert left == {"TWN": {}}
+
+
+def test_twin_health_endpoint_shape(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from investment_dashboard.db import ledger_session_scope
+    from investment_dashboard.repositories import instrument_overrides_repo
+
+    _as(monkeypatch, "session")
+    with ledger_session_scope() as s:
+        fund = Instrument(
+            symbol="EURFUND", name="Euro Fund", asset_class="mutual_fund", native_currency="EUR"
+        )
+        s.add(fund)
+        s.flush()
+        instrument_overrides_repo.upsert(s, fund.id, intraday_twin="TWN")
+        fund_id = fund.id
+
+    resp = api_client.get("/api/maintenance/twins")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert set(data) == {"enabled", "window", "funds"}
+    assert data["enabled"] is True
+    assert data["window"] == 20
+    assert len(data["funds"]) == 1
+    entry = data["funds"][0]
+    assert entry["instrument_id"] == fund_id
+    assert entry["symbol"] == "EURFUND"
+    assert entry["name"] == "Euro Fund"
+    assert entry["twin_symbol"] == "TWN"
+    assert entry["estimating"] is False  # not held: nothing to estimate
+    assert entry["stored_sessions"] == 0
+    assert entry["first_session"] is None
+    assert entry["last_session"] is None
+    assert entry["last_price_at"] is None
+    assert entry["year_backfill_done"] is False
+    assert entry["divergence"] is None
+
+
+def test_twin_health_requires_auth(anon_client: TestClient) -> None:
+    assert anon_client.get("/api/maintenance/twins").status_code == 401
+
+
+def test_twin_health_reports_estimating_and_divergence(api_db: Path) -> None:
+    """A held, currently-estimating fund with real divergence history.
+
+    Calls the service directly (not over HTTP): the health page always reads
+    *now*, so a fixture dated in the past needs an explicit ``now`` to land
+    inside the twin-price retention window, which only the service call
+    accepts (the router, correctly, never takes a caller-supplied "now").
+    """
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from investment_dashboard.db import cache_write_session, ledger_session_scope
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.models.transaction import TransactionSource
+    from investment_dashboard.repositories import (
+        accounts_repo,
+        fx_repo,
+        instrument_overrides_repo,
+        prices_repo,
+        twin_prices_repo,
+    )
+    from investment_dashboard.services import twin_health_service
+
+    thu, fri, mon = date(2024, 5, 30), date(2024, 5, 31), date(2024, 6, 3)
+    with ledger_session_scope() as s:
+        acct = accounts_repo.create_account(
+            s,
+            broker="fidelity",
+            account_label="Main",
+            native_currency="USD",
+            account_type="brokerage",
+        )
+        fund = Instrument(
+            symbol="FUNDX", name="Fund X", asset_class="mutual_fund", native_currency="USD"
+        )
+        s.add(fund)
+        s.flush()
+        fund_id = fund.id
+        instrument_overrides_repo.upsert(s, fund_id, intraday_twin="TWN")
+        prices_repo.upsert_closes(s, fund_id, {thu: Decimal("190"), fri: Decimal("200")})
+        fx_repo.upsert_rates(s, {thu: Decimal("1.10"), fri: Decimal("1.10"), mon: Decimal("1.10")})
+        s.add(
+            Transaction(
+                account_id=acct.id,
+                date=fri,
+                kind="buy",
+                source=TransactionSource.MANUAL,
+                instrument_id=fund_id,
+                quantity=Decimal("10"),
+                price_native=Decimal("200"),
+                net_native=Decimal("-2000"),
+                net_usd=Decimal("-2000"),
+                net_eur=Decimal("-1818.18"),
+            )
+        )
+        s.flush()
+        with cache_write_session(s) as cache:
+            twin_prices_repo.upsert_prices(
+                cache,
+                "TWN",
+                {
+                    datetime(2024, 5, 30, 20, 0): Decimal("100"),
+                    datetime(2024, 5, 31, 20, 0): Decimal("105"),
+                    datetime(2024, 6, 3, 13, 30): Decimal("105"),
+                },
+            )
+
+    data = twin_health_service.health(now=datetime(2024, 6, 3, 22, 0, tzinfo=UTC))
+    entry = next(f for f in data["funds"] if f["symbol"] == "FUNDX")
+    assert entry["estimating"] is True  # held, NAV not posted, twin has data
+    assert entry["stored_sessions"] == 2
+    assert entry["first_session"] == thu.isoformat()
+    assert entry["last_session"] == fri.isoformat()
+    assert entry["last_price_at"] is not None
+    assert entry["year_backfill_done"] is False
+    div = entry["divergence"]
+    assert div is not None
+    assert div["last_date"] == fri.isoformat()
+    assert Decimal(div["last_gap_pp"]) < 0  # twin ran 0.26 pp behind

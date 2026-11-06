@@ -18,6 +18,8 @@ export type BackupsDto = S["BackupsDto"];
 export type SystemInfo = S["SystemInfo"];
 export type ProbeResult = S["ProbeResult"];
 export type TiingoUsage = S["TiingoUsage"];
+export type TwinHealth = S["TwinHealth"];
+export type TwinFundHealth = S["TwinFundHealth"];
 export type ProbeRequest = S["ProbeRequest"];
 export type InstrumentOut = S["InstrumentOut"];
 export type ClosePoint = S["ClosePoint"];
@@ -39,6 +41,18 @@ export function useTiingoUsage() {
     queryFn: ({ signal }) => api<TiingoUsage>("/api/maintenance/tiingo", { signal }),
     // Counters move with every backup call and repair job: keep them current.
     refetchInterval: 30_000,
+  });
+}
+
+// ---- ETF twins ---------------------------------------------------------------
+
+/** Which funds a twin stands in for, how much twin history is stored, and how far off it ran. */
+export function useTwinHealth() {
+  return useQuery({
+    queryKey: [M, "twins"],
+    queryFn: ({ signal }) => api<TwinHealth>("/api/maintenance/twins", { signal }),
+    // Coverage and divergence move when a twin refresh, backfill or clear job runs.
+    refetchInterval: 60_000,
   });
 }
 

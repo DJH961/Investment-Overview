@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HoldingsDto } from "../../lib/queries/holdings";
 
@@ -52,6 +52,8 @@ const holdings: HoldingsDto = {
   summary: { in_profit: 1, in_loss: 0, gainers: 1, losers: 0 },
 };
 
+let groupOver: Record<string, unknown> = {};
+
 const accountGroups = (): HoldingsDto => ({
   ...holdings,
   group_by: "account",
@@ -66,9 +68,53 @@ const accountGroups = (): HoldingsDto => ({
       dividends: "20",
       total_return: "220",
       weight_pct: "1",
+      total_growth: "0.275",
+      today_move: "10",
+      today_pct: "0.01",
+      est_value: null,
+      est_today_move: null,
+      ...groupOver,
     },
   ],
 });
+
+const twinRow = (over: Record<string, unknown> = {}) => ({
+  ...holdings.holdings[0],
+  instrument_id: 7,
+  symbol: "FXAIX",
+  name: "Index Fund",
+  price_type: "nav",
+  asset_class: "mutual_fund",
+  value_warning: false,
+  cost_basis: "800",
+  dividends: "20",
+  total_return: "220",
+  mtd_growth: "0.02",
+  ytd_growth: "0.12",
+  expense_ratio: "0.0015",
+  weight_pct: "0.5",
+  twin: {
+    symbol: "VOO",
+    tier: "same_index",
+    est_price: "101.5",
+    est_value: "1015",
+    est_today_move: "15",
+    est_today_pct: "0.0042",
+    at: "2026-10-30T20:00:00Z",
+    pending: true,
+    divergence: {
+      last_pp: "0.034",
+      last_money: "-3.4",
+      last_date: "2026-10-29",
+      median_abs_pp: "0.052",
+      bias_pp: "0.021",
+      sessions: 17,
+      window: 20,
+    },
+  },
+  ...over,
+});
+
 
 vi.mock("../../lib/useMediaQuery", async (orig) => ({
   ...(await orig<typeof import("../../lib/useMediaQuery")>()),
@@ -108,6 +154,7 @@ import { Holdings } from "./Holdings";
 
 beforeEach(() => {
   phone.value = false;
+  groupOver = {};
   localStorage.clear();
 });
 
@@ -124,7 +171,16 @@ describe("Holdings page", () => {
     expect(screen.queryByLabelText(/^Subtotal/)).toBeNull();
     fireEvent.click(screen.getByRole("combobox", { name: "Group by" }));
     fireEvent.click(screen.getByRole("option", { name: "By account" }));
-    expect(screen.getByLabelText("Subtotal A")).toBeInTheDocument();
+    const sub = screen.getByLabelText("Subtotal A");
+    // One row in table order: value, weight, day, P/L, total return; cost basis / dividends sit behind an (i).
+    for (const key of ["Value", "Weight", "Day", "P/L", "Total return"]) expect(within(sub).getByText(key)).toBeInTheDocument();
+    expect(within(sub).queryByText("Cost basis")).toBeNull();
+    expect(within(sub).queryByText("Dividends")).toBeNull();
+    expect(within(sub).getByRole("button", { name: "About cost basis, dividends and the return percentage" })).toBeInTheDocument();
+    expect(within(sub).getByText("+€10.00")).toBeInTheDocument();
+    expect(within(sub).getByText("+€220.00")).toBeInTheDocument();
+    expect(within(sub).getByText("+27.50%")).toBeInTheDocument(); // simple return on cost
+    expect(within(sub).queryByText("≈ est.")).toBeNull();
     expect(localStorage.getItem("iv.holdings.group")).toBe('"account"');
   });
 
@@ -216,6 +272,118 @@ describe("Holdings page", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByLabelText("VWCE price against cost basis")).toBeInTheDocument();
     expect(screen.getByText("Cost basis", { selector: "text" })).toBeInTheDocument();
+  });
+
+  it("shows money only when the group return on cost is null", () => {
+    groupOver = { total_growth: null };
+    render(<Holdings />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Group by" }));
+    fireEvent.click(screen.getByRole("option", { name: "By account" }));
+    const sub = screen.getByLabelText("Subtotal A");
+    expect(within(sub).getByText("+€220.00")).toBeInTheDocument();
+    expect(within(sub).queryByText(/27\.50/)).toBeNull();
+  });
+
+  it("shows an estimate chip in the group value and day cells when funds are pending", () => {
+    groupOver = { est_value: "1015", est_today_move: "25" };
+    render(<Holdings />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Group by" }));
+    fireEvent.click(screen.getByRole("option", { name: "By account" }));
+    const sub = screen.getByLabelText("Subtotal A");
+    expect(within(screen.getByTestId("group-est-value")).getByText("≈ est.")).toBeInTheDocument();
+    expect(within(screen.getByTestId("group-est-value")).getByText("€1,015.00")).toBeInTheDocument();
+    expect(within(screen.getByTestId("group-est-move")).getByText("+€25.00")).toBeInTheDocument();
+    expect(within(sub).getByRole("button", { name: "About the estimated value" })).toBeInTheDocument();
+  });
+
+  it("lists a pending twin quietly in the symbol cell, and drops the line once the NAV posted", () => {
+    const saved = holdings.holdings;
+    holdings.holdings = [twinRow()] as typeof saved;
+    try {
+      const { container, unmount } = render(<Holdings />);
+      const line = container.querySelector(".holdings-page__twin-line");
+      expect(line).toHaveTextContent(/≈\s*VOO\s*\+0\.42%/);
+      unmount();
+      holdings.holdings = [twinRow({ twin: { ...twinRow().twin, pending: false, est_price: null, est_value: null, est_today_move: null, est_today_pct: null, at: null } })] as typeof saved;
+      const again = render(<Holdings />);
+      expect(again.container.querySelector(".holdings-page__twin-line")).toBeNull();
+    } finally {
+      holdings.holdings = saved;
+    }
+  });
+
+  it("shows the Twin block with estimate and divergence in the desktop drawer", () => {
+    const saved = holdings.holdings;
+    holdings.holdings = [twinRow()] as typeof saved;
+    try {
+      render(<Holdings />);
+      fireEvent.click(screen.getByRole("button", { name: "Details for FXAIX" }));
+      const block = screen.getByLabelText("ETF twin of FXAIX");
+      expect(within(block).getByText(/Same index/)).toBeInTheDocument();
+      expect(within(block).getByText("Estimated value")).toBeInTheDocument();
+      expect(within(block).getByText("€1,015.00")).toBeInTheDocument();
+      expect(within(block).getByText("+0.03 pp")).toBeInTheDocument(); // last session
+      expect(within(block).getByText("-€3.40")).toBeInTheDocument();
+      expect(within(block).getByText(/over 17 of 20 sessions/)).toBeInTheDocument();
+      expect(within(block).getByText(/twin runs high/)).toBeInTheDocument();
+      expect(within(block).getByRole("button", { name: "About twin divergence" })).toBeInTheDocument();
+    } finally {
+      holdings.holdings = saved;
+    }
+  });
+
+  it("says so when there is not enough history for a divergence, and hides the estimate once posted", () => {
+    const saved = holdings.holdings;
+    holdings.holdings = [twinRow({ twin: { ...twinRow().twin, pending: false, divergence: null } })] as typeof saved;
+    try {
+      render(<Holdings />);
+      fireEvent.click(screen.getByRole("button", { name: "Details for FXAIX" }));
+      const block = screen.getByLabelText("ETF twin of FXAIX");
+      expect(within(block).getByText(/Not enough history yet/)).toBeInTheDocument();
+      expect(within(block).queryByText("Estimated value")).toBeNull();
+    } finally {
+      holdings.holdings = saved;
+    }
+  });
+
+  it("phone expansion shows only what the chips do not, plus the twin block", () => {
+    phone.value = true;
+    const saved = holdings.holdings;
+    holdings.holdings = [twinRow()] as typeof saved;
+    try {
+      const { container } = render(<Holdings />);
+      expect(container.querySelector(".holdings-page__twin-line")).toHaveTextContent(/VOO/);
+      fireEvent.click(screen.getByRole("button", { name: /FXAIX/ }));
+      const detail = container.querySelector(".holdings-page__detail") as HTMLElement;
+      const keys = [...detail.querySelectorAll("dt")].map((d) => d.textContent);
+      for (const dup of ["Price", "Shares", "Unrealised gain", "Growth", "XIRR", "Weight"]) expect(keys).not.toContain(dup);
+      for (const key of ["Avg price", "Cost basis", "Dividends", "MTD", "YTD", "Expense", "Account"]) expect(keys).toContain(key);
+      expect(keys.some((k) => k?.startsWith("Total return"))).toBe(true);
+      expect(screen.getByLabelText("ETF twin of FXAIX")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Price chart" })).toBeInTheDocument();
+    } finally {
+      holdings.holdings = saved;
+    }
+  });
+
+  it("hide mode masks twin money but keeps the percentages", () => {
+    localStorage.setItem("iv.privacy.hideAmounts", "true");
+    const saved = holdings.holdings;
+    holdings.holdings = [twinRow()] as typeof saved;
+    try {
+      const { container } = render(
+        <HideAmountsProvider>
+          <Holdings />
+        </HideAmountsProvider>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Details for FXAIX" }));
+      const text = container.ownerDocument.body.textContent ?? "";
+      expect(text).not.toMatch(/1,015|3\.40/);
+      expect(text).toContain("+0.42%");
+      expect(text).toContain("+0.03 pp");
+    } finally {
+      holdings.holdings = saved;
+    }
   });
 
   it("hide mode leaves no amount or share count in the DOM", () => {

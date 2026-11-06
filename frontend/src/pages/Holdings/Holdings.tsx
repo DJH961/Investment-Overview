@@ -19,7 +19,6 @@ import { formatAxisDate, formatDate, formatMoney, formatQuantity } from "../../l
 import { usePrefs } from "../../lib/prefs";
 import {
   type HistoryRange,
-  type HoldingGroupDto,
   type HoldingRowDto,
   type HoldingsGroupBy,
   useHoldingHistory,
@@ -31,7 +30,8 @@ import { useShellStatus } from "../../lib/shell";
 import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { HoldingMobileRow } from "./HoldingMobileRow";
-import { Flags, HoldingDetails, RowStamp, tintClass, WeightCell } from "./HoldingParts";
+import { GroupSummary } from "./GroupSummary";
+import { Flags, HoldingDetails, RowStamp, TwinBlock, TwinLine, tintClass, WeightCell } from "./HoldingParts";
 import { HoldingsKpis } from "./HoldingsKpis";
 import "./Holdings.scss";
 
@@ -69,50 +69,6 @@ function sortNumber(row: HoldingRowDto, key: SortKey): number {
     symbol: null,
   }[key];
   return toNum(pick) ?? Number.NEGATIVE_INFINITY;
-}
-
-/** Server-computed subtotals of one group (never summed in the browser). */
-function Subtotals({ group, ccy }: { group: HoldingGroupDto; ccy: string }) {
-  return (
-    <dl className="holdings-page__subtotals" aria-label={`Subtotal ${group.key}`}>
-      <div>
-        <dt>Value</dt>
-        <dd>
-          <Money amount={toNum(group.value)} currency={ccy} />
-        </dd>
-      </div>
-      <div>
-        <dt>Cost basis</dt>
-        <dd>
-          <Money amount={toNum(group.cost_basis)} currency={ccy} />
-        </dd>
-      </div>
-      <div>
-        <dt>Unrealised gain</dt>
-        <dd>
-          <Money amount={toNum(group.capital_gain)} currency={ccy} signed colored />
-        </dd>
-      </div>
-      <div>
-        <dt>Dividends</dt>
-        <dd>
-          <Money amount={toNum(group.dividends)} currency={ccy} />
-        </dd>
-      </div>
-      <div>
-        <dt>Total return</dt>
-        <dd>
-          <Money amount={toNum(group.total_return)} currency={ccy} signed colored />
-        </dd>
-      </div>
-      <div>
-        <dt>Weight</dt>
-        <dd>
-          <Percent ratio={toNum(group.weight_pct)} digits={1} />
-        </dd>
-      </div>
-    </dl>
-  );
 }
 
 const HISTORY_RANGES: HistoryRange[] = ["1m", "3m", "6m", "ytd", "1y", "all"];
@@ -155,6 +111,7 @@ function HoldingDrawer({ row, ccy, onClose }: { row: HoldingRowDto | null; ccy: 
           </p>
           <HoldingDrawerChart row={row} />
           <HoldingDetails row={row} ccy={ccy} />
+          <TwinBlock row={row} ccy={ccy} />
         </div>
       )}
     </Sheet>
@@ -272,6 +229,7 @@ export function Holdings() {
             <span className="holdings-page__holding-name" title={r.name}>
               {r.name}
             </span>
+            <TwinLine row={r} />
           </span>
         ),
       },
@@ -552,7 +510,7 @@ export function Holdings() {
             collapsibleId={`holdings.group.${groupBy}.${group.key}`}
             flush
           >
-            <Subtotals group={group} ccy={currency} />
+            <GroupSummary group={group} ccy={currency} />
             {isPhone ? phoneList(members) : table(members, `Holdings: ${group.key}`)}
           </Card>
         ))

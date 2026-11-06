@@ -415,6 +415,37 @@ DEFS: tuple[SettingDef, ...] = (
         unit="s",
     ),
     SettingDef(
+        "twin.estimates_enabled",
+        SettingType.BOOL,
+        True,
+        "data_refresh",
+        "Estimate pending mutual-fund NAVs from their ETF twin",
+        help=(
+            "While a mutual fund's NAV for the session has not posted yet, its ETF twin "
+            "estimates it, and that estimate replaces the headline portfolio value (and "
+            "the Holdings rows' twin figures) everywhere on the Overview and Holdings "
+            "pages. Turn this off to show only the official total, with its last posted "
+            "NAV, until the real NAV lands — the twin-accuracy figures below still "
+            "track how the twin has been doing, they are just not blended into the total."
+        ),
+    ),
+    SettingDef(
+        "twin.divergence_window",
+        SettingType.INT,
+        20,
+        "data_refresh",
+        "ETF twin accuracy: look back over",
+        help=(
+            "A mutual fund's estimate (while its NAV is not posted yet) comes from its "
+            "ETF twin. The Holdings page shows how far the twin was from the real NAV: "
+            "the last session, and the typical gap and bias over this many recent "
+            "sessions. Sessions with a dividend or distribution are left out."
+        ),
+        min=_D(5),
+        max=_D(250),
+        unit="sessions",
+    ),
+    SettingDef(
         "scheduler.fx_interval_minutes",
         SettingType.INT,
         1,

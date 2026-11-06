@@ -38,6 +38,12 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   // previous-close guide (fg; muted is too close to pos for deutan / normal).
   { a: "--color-pos", b: "--color-fg", why: "up-day 1D line vs dashed previous close" },
   { a: "--color-neg", b: "--color-fg", why: "down-day 1D line vs dashed previous close" },
+  // Twin estimate (hero chip, Overview/Holdings twin rows): its outline / connector sits next
+  // to the pos/neg estimated figures, the warn "stale" pills and the primary text.
+  { a: "--color-estimate", b: "--color-pos", why: "twin badge/connector vs up-day estimated figures" },
+  { a: "--color-estimate", b: "--color-neg", why: "twin badge/connector vs down-day estimated figures" },
+  { a: "--color-estimate", b: "--color-warn", why: "twin badge vs stale-value / bad-history pills" },
+  { a: "--color-estimate", b: "--color-fg", why: "twin badge/connector vs the row's primary text" },
 ];
 
 /** Charts with 3+ untoned series (n2..n4) are rare; they get the lower bar plus dashes. */
@@ -50,7 +56,7 @@ export const RARE_PAIRS: { a: string; b: string }[] = [
 /** Text colours: >= 4.5:1 on surface and bg for normal vision, >= 3:1 as a protan sees it. */
 const TEXT_TOKENS = ["--color-pos", "--color-neg", "--color-warn"];
 /** Lines / marks: >= 3:1 on surface and bg, in normal vision and as a protan sees it. */
-const MARK_TOKENS = [...SERIES, "--color-muted"];
+const MARK_TOKENS = [...SERIES, "--color-muted", "--color-estimate"];
 
 const here = dirname(fileURLToPath(import.meta.url));
 const scss = readFileSync(join(here, "tokens.scss"), "utf8");

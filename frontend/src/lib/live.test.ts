@@ -29,7 +29,7 @@ describe("startLive", () => {
     qc = new QueryClient();
     qc.setQueryData(["overview", "EUR"], 1);
     qc.setQueryData(["holdings", "EUR"], 1);
-    qc.setQueryData(["periods", "EUR"], 1);
+    qc.setQueryData(["analytics", "EUR"], 1);
     qc.setQueryData(["auth", "me"], { authenticated: true });
   });
   afterEach(() => {
@@ -49,9 +49,9 @@ describe("startLive", () => {
     es.emit({ type: "tick" });
     expect(stale(["overview", "EUR"])).toBe(true);
     expect(stale(["holdings", "EUR"])).toBe(true);
-    expect(stale(["periods", "EUR"])).toBe(false);
+    expect(stale(["analytics", "EUR"])).toBe(false);
     es.emit({ type: "refresh" });
-    expect(stale(["periods", "EUR"])).toBe(true);
+    expect(stale(["analytics", "EUR"])).toBe(true);
     expect(stale(["auth", "me"])).toBe(false);
     stop();
   });
@@ -79,10 +79,10 @@ describe("startLive", () => {
     expect(getRefreshState()).toMatchObject({ running: true, source: "manual" });
     es.emit({ type: "refresh_progress", historical: true, progress_done: 2, progress_total: 5, progress_label: "Prices" });
     expect(getRefreshState()).toMatchObject({ running: true, historical: true, done: 2, total: 5, label: "Prices" });
-    expect(stale(["periods", "EUR"])).toBe(false);
+    expect(stale(["analytics", "EUR"])).toBe(false);
     es.emit({ type: "refresh_finished", source: "manual", updated: true, last_update_at: "2026-11-02T15:00:00Z" });
     expect(getRefreshState()).toMatchObject({ running: false, lastUpdateAt: "2026-11-02T15:00:00Z" });
-    expect(stale(["periods", "EUR"])).toBe(true);
+    expect(stale(["analytics", "EUR"])).toBe(true);
     expect(stale(["auth", "me"])).toBe(false);
     stop();
   });

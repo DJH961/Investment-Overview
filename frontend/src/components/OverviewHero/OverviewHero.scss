@@ -31,10 +31,9 @@
       align-items: center;
     }
 
-    // Wide screens: give the curve the larger share; the number needs little width.
-    @include m.wide {
-      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-    }
+    // No wide override: an even split is what both zones want. Giving the curve the
+    // larger share (2fr/3fr) starved the text column and wrapped every sub-line onto
+    // two; giving the text the larger share left it holding a block of dead space.
   }
 
   &--split &__aside {
@@ -101,6 +100,53 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The big number and, while a twin estimates a fund, its "≈ est." chip.
+  &__headline {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  // Subtle outlined pill: says the number is an estimate without shouting.
+  &__est-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    border: var(--border-width) solid var(--color-estimate);
+    border-radius: var(--radius-full);
+    background: var(--color-estimate-soft);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  &__est-tip {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__est-list {
+    margin: 0;
+    padding-left: var(--space-4);
+  }
+
+  // The official (NAV-based) total, small and muted, only while the headline is an estimate.
+  &__official {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
   &__value2 {
     color: var(--color-muted);
     font-size: var(--font-size-lg);
@@ -136,7 +182,6 @@
     white-space: nowrap;
   }
 
-  &__overnight,
   &__split {
     display: flex;
     flex-wrap: wrap;
@@ -144,8 +189,26 @@
     gap: 0 var(--space-2);
   }
 
+  // The halves are told apart by their own labels and a wider gap, with no separator
+  // glyph: as a flex item a "·" can be left stranded at the end of a wrapped line.
+  &__breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-4);
+  }
+
+  // The two halves of the day's move, each kept whole so a wrap never splits a
+  // label from its figure.
+  &__part {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    white-space: nowrap;
+  }
+
   &__muted,
-  &__overnight,
+  &__breakdown,
   &__split,
   &__note {
     margin: 0;

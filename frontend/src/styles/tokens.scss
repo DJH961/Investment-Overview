@@ -32,6 +32,9 @@
   --color-neg-soft: rgba(208, 120, 78, 0.16);
   --color-warn: #eacb5d;
   --color-warn-soft: rgba(234, 203, 93, 0.16);
+  // Twin estimate: badge outline and connector only (never text; values use fg/pos/neg).
+  --color-estimate: #8152e0;
+  --color-estimate-soft: rgba(129, 82, 224, 0.16);
   --color-overlay: rgba(4, 6, 10, 0.62);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
@@ -72,6 +75,8 @@
   --color-neg-soft: rgba(116, 33, 12, 0.12);
   --color-warn: #806912;
   --color-warn-soft: rgba(128, 105, 18, 0.12);
+  --color-estimate: #9c6ef7;
+  --color-estimate-soft: rgba(156, 110, 247, 0.12);
   --color-overlay: rgba(15, 22, 35, 0.4);
   --shadow-1: 0 1px 2px rgba(16, 22, 35, 0.05);
   --shadow-2: 0 12px 32px rgba(16, 22, 35, 0.14), 0 2px 6px rgba(16, 22, 35, 0.08);

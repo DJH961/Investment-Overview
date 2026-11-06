@@ -139,6 +139,63 @@ class TiingoUsage(ApiModel):
     uses: list[TiingoUse]
 
 
+class TwinDivergenceStats(ApiModel):
+    """Twin-vs-fund divergence over the configured look-back window.
+
+    Every figure here is in PERCENTAGE POINTS (``0.03`` = 0.03 pp — the same
+    convention as ``TwinDivergence`` in the Holdings API), never a fraction like
+    ``currency_effect_pp`` elsewhere (``/api/overview``) despite the similar name.
+    Gaps are ``twin return - fund return``: positive means the twin ran ahead,
+    i.e. the estimate was too high. Sessions with a dividend or distribution are
+    left out.
+    """
+
+    last_gap_pp: DecStr = Field(description="Newest usable session's gap, in percentage points")
+    last_date: str = Field(description="Session the last_gap_pp figure is from (ISO date)")
+    median_abs_pp: DecStr = Field(description="Median absolute gap over the window, in pp")
+    bias_pp: DecStr = Field(
+        description="Mean signed gap over the window, in pp (positive: twin ran ahead)"
+    )
+    sessions: int = Field(description="Sessions actually used (at most the configured window)")
+
+
+class TwinFundHealth(ApiModel):
+    """One fund's ETF-twin mapping: live status + stored history + accuracy."""
+
+    instrument_id: int
+    symbol: str = Field(description="The fund's own ticker")
+    name: str
+    twin_symbol: str = Field(description="The mapped ETF twin's ticker")
+    estimating: bool = Field(
+        description="Being estimated from the twin right now (NAV pending, held, estimates on)"
+    )
+    stored_sessions: int = Field(description="Session-close rows stored for this twin")
+    first_session: str | None = Field(
+        default=None, description="Oldest stored twin session-close date (ISO), or null"
+    )
+    last_session: str | None = Field(
+        default=None, description="Newest stored twin session-close date (ISO), or null"
+    )
+    last_price_at: str | None = Field(
+        default=None,
+        description="Instant of the newest stored twin price of any kind (ISO UTC), or null",
+    )
+    year_backfill_done: bool = Field(
+        description="Whether the one-year daily-close backfill has completed for this twin"
+    )
+    divergence: TwinDivergenceStats | None = Field(
+        default=None, description="Null when there are not enough shared sessions yet"
+    )
+
+
+class TwinHealth(ApiModel):
+    """ETF-twin settings + one entry per fund with a twin mapping, for Health & Repair."""
+
+    enabled: bool = Field(description="Setting twin.estimates_enabled")
+    window: int = Field(description="Setting twin.divergence_window, in sessions")
+    funds: list[TwinFundHealth]
+
+
 class ProbeResult(ApiModel):
     provider: str
     provider_label: str

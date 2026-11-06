@@ -30,7 +30,7 @@ export const INVALIDATION = {
   /** EUR returns are rebuilt server-side from the conversions; values and ledger rows are untouched. */
   fxConversionWrite: ["fx-conversions", "overview", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
   /** Prices or FX moved (tick, fx event): the live numbers. */
-  tick: ["overview", "holdings", "graphs", "allocations"],
+  tick: ["overview", "holdings", "graphs", "periods", "allocations"],
   /** End-of-day jobs or a price refresh finished: every report. */
   refresh: [...REPORT_ROOTS, "diagnostics"],
 } as const satisfies Record<string, readonly string[]>;

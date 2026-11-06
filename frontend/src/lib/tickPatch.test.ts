@@ -141,3 +141,123 @@ describe("applyTick golden", () => {
     expect(qc.getQueryCache().getAll()).toHaveLength(0);
   });
 });
+
+describe("applyTick twin estimates", () => {
+  const twin = {
+    symbol: "VOO",
+    tier: "same_index",
+    est_price: "100",
+    est_value: "1000",
+    est_today_move: "0",
+    est_today_pct: "0",
+    at: "2026-11-04T14:00:00Z",
+    pending: true,
+    divergence: null,
+  };
+
+  function seedTwin(): QueryClient {
+    const qc = seed();
+    const est = (total: string, official: string) => ({
+      total_value: total,
+      daily_move: "7",
+      daily_growth_pct: "0.01",
+      funds: [{ symbol: "FXAIX", twin: "VOO" }],
+      adjustment: String(Number(total) - Number(official)),
+    });
+    const ov = qc.getQueryData<any>(["overview", "both"]);
+    ov.EUR.kpis.estimate = est("9040", "9000");
+    ov.EUR.kpis_secondary.estimate = est("11300", "11250");
+    ov.USD.kpis.estimate = est("11300", "11250");
+    ov.USD.kpis_secondary.estimate = est("9040", "9000");
+    qc.setQueryData(["overview", "both"], ov);
+    const h = qc.getQueryData<any>(["holdings", "both"]);
+    for (const side of ["EUR", "USD"]) {
+      h[side] = {
+        ...h[side],
+        holdings: [
+          { ...h[side].holdings[0], today_pct: "0.05", today_move: "50", twin },
+          h[side].holdings[1],
+        ],
+      };
+    }
+    qc.setQueryData(["holdings", "both"], h);
+    return qc;
+  }
+
+  const estTick = {
+    ...tick,
+    prices: { "1": { px: "100", prev_close: null, ccy: "USD", stale_nav: true } },
+    total_value_est_eur: "9700",
+    total_value_est_usd: "12125",
+    estimates: {
+      "1": {
+        est_px: "103",
+        prev_nav: "100",
+        pct: { EUR: "0.0301", USD: "0.03" },
+        at: "2026-11-04T14:02:00Z",
+      },
+    },
+  };
+
+  it("hero estimate follows the tick's estimated totals; kpis stay official", () => {
+    const qc = seedTwin();
+    applyTick(qc, estTick);
+    const o = qc.getQueryData<any>(["overview", "both"]);
+    expect(o.EUR.kpis.total_value).toBe("9600");
+    expect(o.EUR.kpis.estimate.total_value).toBe("9700");
+    expect(Number(o.EUR.kpis.estimate.adjustment)).toBeCloseTo(100, 9);
+    expect(o.EUR.kpis_secondary.estimate.total_value).toBe("12125");
+    expect(o.USD.kpis.estimate.total_value).toBe("12125");
+    expect(Number(o.USD.kpis.estimate.adjustment)).toBeCloseTo(125, 9);
+    expect(o.USD.kpis_secondary.estimate.total_value).toBe("9700");
+  });
+
+  it("official totals only (no estimated fields): the estimate is left alone", () => {
+    const qc = seedTwin();
+    applyTick(qc, tick);
+    const o = qc.getQueryData<any>(["overview", "both"]);
+    expect(o.EUR.kpis.total_value).toBe("9600");
+    expect(o.EUR.kpis.estimate.total_value).toBe("9040");
+  });
+
+  it("never invents an estimate where the server sent none", () => {
+    const qc = seed();
+    applyTick(qc, estTick);
+    expect(qc.getQueryData<any>(["overview", "both"]).EUR.kpis.estimate).toBeUndefined();
+  });
+
+  it("NAV row: estimate = shares x est px x rate, % from the tick, official numbers kept", () => {
+    const qc = seedTwin();
+    applyTick(qc, estTick);
+    const h = qc.getQueryData<any>(["holdings", "both"]);
+    const usd = h.USD.holdings[0];
+    expect(usd.twin.est_price).toBe("103");
+    expect(Number(usd.twin.est_value)).toBeCloseTo(1030, 9);
+    expect(Number(usd.twin.est_today_move)).toBeCloseTo(30, 9);
+    expect(usd.twin.est_today_pct).toBe("0.03");
+    expect(usd.twin.at).toBe("2026-11-04T14:02:00Z");
+    const eur = h.EUR.holdings[0];
+    expect(Number(eur.twin.est_value)).toBeCloseTo(824, 9); // 1030 / 1.25
+    expect(Number(eur.twin.est_today_move)).toBeCloseTo(24, 9);
+    expect(eur.twin.est_today_pct).toBe("0.0301");
+  });
+
+  it("a stale-NAV price keeps the server's day move (no zeroing)", () => {
+    const qc = seedTwin();
+    applyTick(qc, estTick);
+    const row = qc.getQueryData<any>(["holdings", "both"]).USD.holdings[0];
+    expect(row.today_pct).toBe("0.05");
+    expect(row.today_move).toBe("50");
+    expect(row.price_native).toBe("100");
+    expect(Number(row.value)).toBeCloseTo(1000, 9);
+  });
+
+  it("a row whose twin is no longer pending is not re-estimated", () => {
+    const qc = seedTwin();
+    const h = qc.getQueryData<any>(["holdings", "both"]);
+    h.USD.holdings[0].twin = { ...twin, pending: false, est_value: null };
+    qc.setQueryData(["holdings", "both"], h);
+    applyTick(qc, estTick);
+    expect(qc.getQueryData<any>(["holdings", "both"]).USD.holdings[0].twin.est_value).toBeNull();
+  });
+});

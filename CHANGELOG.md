@@ -17,6 +17,60 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.10.0] — 2026-11-06
+
+### Added
+- **Mutual funds are valued from their ETF twin while their NAV is late.** US funds
+  publish one NAV a day, hours after the market shuts, so until it lands the fund's
+  value is yesterday's. Each such fund is now valued from a correlated ETF's live
+  price, and the Overview headline becomes that estimate, marked "≈ est." with the
+  official total beside it. Holdings gains a quiet line under each estimated fund
+  showing which twin stands in and how far it was off last time.
+- **Settings → Data refresh → "Estimate late fund NAVs from ETF twins".** The master
+  switch for the above. Turned off, every page shows the official NAV even while it is
+  stale, and the twin lines disappear; the twins' accuracy keeps being measured so you
+  can judge a twin before switching estimates back on.
+- **Health & Repair → ETF twins.** Which fund leans on which twin, whether it is
+  estimating right now, how much twin history is stored and over what range, whether
+  the year backfill has run, and how far the twin has strayed (last gap, typical gap
+  and bias over the recent sessions).
+- **Three twin repair jobs:** refresh twin prices now, re-download twin history (the
+  manual fix when downtime left a hole), and clear stored twin prices to reset a bad
+  mapping.
+- **Settings → Data refresh → "ETF twin accuracy: look back over".** How many recent
+  sessions the twin-accuracy figures cover.
+
+### Changed
+- **The Overview headline is calmer while a NAV is pending.** It showed four signed
+  money figures at once — the day's move, the official move, last session's and the
+  overnight currency drift — with nothing saying that two of them add up to a third.
+  The official line now carries the total and its percentage only, and the day's move
+  is followed by one "Of which" line holding its two parts. On wide screens the
+  numbers and the day's curve share the space evenly instead of the curve taking three
+  fifths and wrapping every line beside it.
+- Holdings subtotals carry an estimated percentage next to the estimated move, so a
+  group holding a pending fund no longer shows only a percentage built from that
+  fund's last published move.
+
+### Fixed
+- **Twin accuracy counted the ETF's own dividend days as tracking error.** The twin is
+  never held, so its distributions could not be excluded from the ledger, and a single
+  ex-dividend day moved the reported bias by as much as the tracking error it measures.
+  Sessions far outside the normal spread are now left out of the statistics.
+- **The previous close was valued at two different exchange rates**, so the Holdings
+  rows and the Overview headline disagreed about the same day's move whenever
+  intraday rates had been captured — that is, always.
+- Twin accuracy in money valued a past session's gap at today's exchange rate, and a
+  fund held in several accounts booked all of it in one arbitrary currency.
+- A holding booked in neither euros nor dollars lost the overnight currency move from
+  its estimate.
+- Shortened trading days (the Friday after Thanksgiving, and July 3rd / December 24th
+  when they fall on a weekday) vanished from the twin-accuracy history, and stored
+  closes could be cleaned up while still in use.
+- Twin history is re-fetched when downtime has left a gap, a twin that never returns
+  data is no longer retried forever, and the clean-up now runs once a day instead of
+  on every refresh — including when the last twin has been removed.
+
 ## [6.9.1] — 2026-11-06
 
 ### Fixed

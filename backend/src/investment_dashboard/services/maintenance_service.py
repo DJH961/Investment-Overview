@@ -214,6 +214,33 @@ def _tiingo_refresh_prices(_params: dict[str, Any]) -> dict[str, Any]:
     return {"rows_written": sum(rows.values()), "used_tiingo": switched}
 
 
+def _twins_refresh(_params: dict[str, Any]) -> dict[str, Any]:
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
+
+    with ledger_session_scope() as session:
+        written = iss.refresh_twin_prices(session)
+    return {"rows_written": written}
+
+
+def _twins_backfill(_params: dict[str, Any]) -> dict[str, Any]:
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
+
+    with ledger_session_scope() as session:
+        result = iss.force_twin_year_backfill(session)
+    return result
+
+
+def _twins_clear(_params: dict[str, Any]) -> dict[str, Any]:
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
+
+    with ledger_session_scope() as session:
+        deleted = iss.clear_twin_prices(session)
+    return {"deleted": deleted}
+
+
 def _backup_now(_params: dict[str, Any]) -> dict[str, Any]:
     from investment_dashboard.services import backup_service  # noqa: PLC0415
 
@@ -367,6 +394,37 @@ JOBS: tuple[JobSpec, ...] = (
         "Forget the Tiingo request counters and learned NAV timings (caps stay).",
         _reset_tiingo_state,
         danger="confirm",
+    ),
+    JobSpec(
+        "twins.refresh",
+        "Refresh ETF twin prices now",
+        "providers",
+        "Fetch the twins' prices for the current/last session (previous close and the "
+        "price now while the market is open), backfill any missing earlier-week bars, "
+        "and top up the one-year close history the twin-accuracy figures read.",
+        _twins_refresh,
+        heavy=True,
+    ),
+    JobSpec(
+        "twins.backfill",
+        "Re-download ETF twin history",
+        "providers",
+        "Force the one-year daily-close backfill to run again for every twin currently "
+        "held, even one already done or given up on after repeated failures — use this "
+        "after fixing a twin mapping, or to fill a gap downtime left in the history.",
+        _twins_backfill,
+        heavy=True,
+    ),
+    JobSpec(
+        "twins.clear",
+        "Clear stored twin prices",
+        "cache",
+        "Delete every stored ETF-twin price (intraday bars and session closes) and "
+        "reset its backfill markers; the next refresh fills them in again. Use this to "
+        "reset a bad twin mapping.",
+        _twins_clear,
+        danger="confirm",
+        heavy=True,
     ),
     JobSpec(
         "backup.now",

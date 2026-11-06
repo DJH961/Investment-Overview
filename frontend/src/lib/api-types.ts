@@ -1301,6 +1301,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maintenance/twins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Twin Health
+         * @description ETF-twin settings and, per mapped fund, its live status, stored history and accuracy.
+         */
+        get: operations["twin_health_api_maintenance_twins_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/onboarding": {
         parameters: {
             query?: never;
@@ -2691,6 +2711,22 @@ export interface components {
             target_pct: string;
         };
         /**
+         * EstimateFund
+         * @description One fund currently valued from its ETF twin.
+         */
+        EstimateFund: {
+            /**
+             * Symbol
+             * @description The mutual fund's ticker
+             */
+            symbol: string;
+            /**
+             * Twin
+             * @description The ETF twin's ticker
+             */
+            twin: string;
+        };
+        /**
          * Freshness
          * @description How fresh the figures are (drives the Live / Updated / Updating... chip).
          */
@@ -3076,12 +3112,42 @@ export interface components {
             /** Dividends */
             dividends?: string | null;
             /**
+             * Est Today Move
+             * @description today_move with pending funds at their twin estimate (null: none pending)
+             */
+            est_today_move?: string | null;
+            /**
+             * Est Today Pct
+             * @description est_today_move over the group's estimated previous value (fraction, 0.01 = 1%)
+             */
+            est_today_pct?: string | null;
+            /**
+             * Est Value
+             * @description value with pending mutual funds at their twin estimate
+             */
+            est_value?: string | null;
+            /**
              * Instrument Ids
              * @description Members, in the order of ``holdings``
              */
             instrument_ids: number[];
             /** Key */
             key: string;
+            /**
+             * Today Move
+             * @description Sum of the members' official day moves (null if one lacks it)
+             */
+            today_move?: string | null;
+            /**
+             * Today Pct
+             * @description today_move over the group's previous value (fraction, 0.01 = 1%). A pending-NAV member contributes its last published move, so prefer est_today_pct when it is set
+             */
+            today_pct?: string | null;
+            /**
+             * Total Growth
+             * @description total_return / cost_basis of the group (fraction, 0.01 = 1%), in the response currency; a simple return on cost (not the members' compounded total_growth). Null when the cost basis is not positive or a member lacks a leg
+             */
+            total_growth?: string | null;
             /** Total Return */
             total_return?: string | null;
             /** Value */
@@ -3197,6 +3263,8 @@ export interface components {
              * @description capital_gain + dividends (same basis as the overview)
              */
             total_return?: string | null;
+            /** @description ETF-twin estimate / accuracy for a mutual fund with a twin; one row per fund */
+            twin?: components["schemas"]["TwinView"] | null;
             /** Updated At */
             updated_at?: string | null;
             /** Value */
@@ -4025,22 +4093,39 @@ export interface components {
          *     Amounts in the response currency (each computed in it, never converted).
          */
         LastSessionMove: {
+            /** Day Move */
+            day_move?: string | null;
+            /** Day Move Pct */
+            day_move_pct?: string | null;
+            /**
+             * Estimated Funds
+             * @default []
+             */
+            estimated_funds: string[];
             /** Fx Close */
             fx_close: string;
             /** Fx Now */
             fx_now: string;
             /** Move */
             move: string;
+            /** Move Est */
+            move_est?: string | null;
             /** Move Pct */
             move_pct?: string | null;
+            /** Move Pct Est */
+            move_pct_est?: string | null;
             /** Overnight Currency */
             overnight_currency: string;
+            /** Overnight Currency Est */
+            overnight_currency_est?: string | null;
             /** Prev Date */
             prev_date: string;
             /** Session Date */
             session_date: string;
             /** Value Now */
             value_now: string;
+            /** Value Now Est */
+            value_now_est?: string | null;
         };
         /** LiveResponse */
         LiveResponse: {
@@ -4181,6 +4266,34 @@ export interface components {
             targets: boolean;
         };
         /**
+         * OverviewEstimate
+         * @description The book valued with every pending mutual fund at its ETF-twin estimate.
+         *
+         *     Present only while at least one fund's NAV for the last session has not posted
+         *     and has a twin with data. ``adjustment`` is ``total_value - kpis.total_value``,
+         *     i.e. ``sum(shares x (est_price - previous NAV))`` over ``funds`` valued at one
+         *     EUR/USD rate; it equals the 1D graph's last point and the tick's
+         *     ``total_value_est_*``. XIRR / TWR / gains stay official (``kpis``).
+         */
+        OverviewEstimate: {
+            /** Adjustment */
+            adjustment: string;
+            /**
+             * Daily Growth Pct
+             * @description Day move of the estimated book (fraction, 0.01 = 1%)
+             */
+            daily_growth_pct?: string | null;
+            /**
+             * Daily Move
+             * @description Total change of the estimated book since the previous close (market open: official move + adjustment; market shut: ``last_session.move_est + last_session.overnight_currency_est``, the overnight currency included)
+             */
+            daily_move?: string | null;
+            /** Funds */
+            funds: components["schemas"]["EstimateFund"][];
+            /** Total Value */
+            total_value: string;
+        };
+        /**
          * OverviewKpis
          * @description KPIs in the requested ccy. Ratios are fractions (``0.12`` = 12 %).
          */
@@ -4215,6 +4328,8 @@ export interface components {
             dividend_yield_ttm_pct?: string | null;
             /** Dividends Ttm */
             dividends_ttm?: string | null;
+            /** @description The same book with pending mutual funds at their ETF-twin estimate (null when none is estimating). Everything above stays official. */
+            estimate?: components["schemas"]["OverviewEstimate"] | null;
             /**
              * Mtd Growth
              * @description Month-to-date growth (fraction, 0.01 = 1%)
@@ -5425,10 +5540,37 @@ export interface components {
             name: string;
         };
         /**
+         * TickEstimate
+         * @description One pending mutual fund valued from its ETF twin (native price per share).
+         */
+        TickEstimate: {
+            /** At */
+            at: string;
+            /** Est Px */
+            est_px: string;
+            pct: components["schemas"]["TickEstimatePct"];
+            /** Prev Nav */
+            prev_nav: string;
+        };
+        /**
+         * TickEstimatePct
+         * @description The estimated move since the previous close, a fraction per currency.
+         */
+        TickEstimatePct: {
+            /** Eur */
+            EUR?: string | null;
+            /** Usd */
+            USD?: string | null;
+        };
+        /**
          * TickEvent
          * @description A market-hours poll finished: prices, FX and the intraday sample are fresh.
          */
         TickEvent: {
+            /** Estimates */
+            estimates?: {
+                [key: string]: components["schemas"]["TickEstimate"];
+            } | null;
             /** Fx Eur Usd */
             fx_eur_usd?: string | null;
             /** Last Update At */
@@ -5449,6 +5591,10 @@ export interface components {
             prices_live?: boolean | null;
             /** Seq */
             seq?: number | null;
+            /** Total Value Est Eur */
+            total_value_est_eur?: string | null;
+            /** Total Value Est Usd */
+            total_value_est_usd?: string | null;
             /** Total Value Eur */
             total_value_eur?: string | null;
             /** Total Value Usd */
@@ -5485,6 +5631,11 @@ export interface components {
             prev_close?: string | null;
             /** Px */
             px: string;
+            /**
+             * Stale Nav
+             * @default false
+             */
+            stale_nav: boolean;
         };
         /**
          * TiingoUsage
@@ -5708,6 +5859,159 @@ export interface components {
             warnings?: string[];
         };
         /**
+         * TwinDivergence
+         * @description How far a fund's ETF twin strayed from the fund's official NAV return.
+         *
+         *     Gaps are ``twin return - fund return``: positive means the twin ran ahead, i.e.
+         *     the estimate was too high. Percentage points (``0.03`` = 0.03 pp), not fractions.
+         *     Sessions with a dividend or distribution are left out.
+         */
+        TwinDivergence: {
+            /**
+             * Bias Pp
+             * @description Mean signed gap over the window, pp (positive: twin high)
+             */
+            bias_pp: string;
+            /**
+             * Last Date
+             * @description Session the last_* figures are from
+             */
+            last_date?: string | null;
+            /**
+             * Last Money
+             * @description That gap in money (estimate minus official value of the holding, reporting currency, at the rate now)
+             */
+            last_money?: string | null;
+            /**
+             * Last Pp
+             * @description Newest usable session's gap, in percentage points
+             */
+            last_pp?: string | null;
+            /**
+             * Median Abs Pp
+             * @description Median absolute gap over the window, pp
+             */
+            median_abs_pp: string;
+            /**
+             * Sessions
+             * @description Sessions actually used (at most ``window``)
+             */
+            sessions: number;
+            /**
+             * Window
+             * @description Setting twin.divergence_window, in sessions
+             */
+            window: number;
+        };
+        /**
+         * TwinDivergenceStats
+         * @description Twin-vs-fund divergence over the configured look-back window.
+         *
+         *     Every figure here is in PERCENTAGE POINTS (``0.03`` = 0.03 pp — the same
+         *     convention as ``TwinDivergence`` in the Holdings API), never a fraction like
+         *     ``currency_effect_pp`` elsewhere (``/api/overview``) despite the similar name.
+         *     Gaps are ``twin return - fund return``: positive means the twin ran ahead,
+         *     i.e. the estimate was too high. Sessions with a dividend or distribution are
+         *     left out.
+         */
+        TwinDivergenceStats: {
+            /**
+             * Bias Pp
+             * @description Mean signed gap over the window, in pp (positive: twin ran ahead)
+             */
+            bias_pp: string;
+            /**
+             * Last Date
+             * @description Session the last_gap_pp figure is from (ISO date)
+             */
+            last_date: string;
+            /**
+             * Last Gap Pp
+             * @description Newest usable session's gap, in percentage points
+             */
+            last_gap_pp: string;
+            /**
+             * Median Abs Pp
+             * @description Median absolute gap over the window, in pp
+             */
+            median_abs_pp: string;
+            /**
+             * Sessions
+             * @description Sessions actually used (at most the configured window)
+             */
+            sessions: number;
+        };
+        /**
+         * TwinFundHealth
+         * @description One fund's ETF-twin mapping: live status + stored history + accuracy.
+         */
+        TwinFundHealth: {
+            /** @description Null when there are not enough shared sessions yet */
+            divergence?: components["schemas"]["TwinDivergenceStats"] | null;
+            /**
+             * Estimating
+             * @description Being estimated from the twin right now (NAV pending, held, estimates on)
+             */
+            estimating: boolean;
+            /**
+             * First Session
+             * @description Oldest stored twin session-close date (ISO), or null
+             */
+            first_session?: string | null;
+            /** Instrument Id */
+            instrument_id: number;
+            /**
+             * Last Price At
+             * @description Instant of the newest stored twin price of any kind (ISO UTC), or null
+             */
+            last_price_at?: string | null;
+            /**
+             * Last Session
+             * @description Newest stored twin session-close date (ISO), or null
+             */
+            last_session?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Stored Sessions
+             * @description Session-close rows stored for this twin
+             */
+            stored_sessions: number;
+            /**
+             * Symbol
+             * @description The fund's own ticker
+             */
+            symbol: string;
+            /**
+             * Twin Symbol
+             * @description The mapped ETF twin's ticker
+             */
+            twin_symbol: string;
+            /**
+             * Year Backfill Done
+             * @description Whether the one-year daily-close backfill has completed for this twin
+             */
+            year_backfill_done: boolean;
+        };
+        /**
+         * TwinHealth
+         * @description ETF-twin settings + one entry per fund with a twin mapping, for Health & Repair.
+         */
+        TwinHealth: {
+            /**
+             * Enabled
+             * @description Setting twin.estimates_enabled
+             */
+            enabled: boolean;
+            /** Funds */
+            funds: components["schemas"]["TwinFundHealth"][];
+            /**
+             * Window
+             * @description Setting twin.divergence_window, in sessions
+             */
+            window: number;
+        };
+        /**
          * TwinSuggestionDto
          * @description A built-in ETF twin for a fund (a suggestion only, never applied automatically).
          *
@@ -5730,6 +6034,54 @@ export interface components {
              * @description Measured typical daily gap (fraction), close tier only.
              */
             typical_daily_gap?: string | null;
+        };
+        /**
+         * TwinView
+         * @description A mutual fund's ETF-twin estimate (``pending``) and/or its accuracy record.
+         *
+         *     ``pending`` true: the fund's NAV for the last session has not posted; the ``est_*``
+         *     fields value the holding from the twin. ``pending`` false: the NAV posted (until
+         *     the next open the row only carries ``divergence``; ``est_*`` and ``at`` are null).
+         */
+        TwinView: {
+            /**
+             * At
+             * @description When the twin price used was struck (ISO)
+             */
+            at?: string | null;
+            divergence?: components["schemas"]["TwinDivergence"] | null;
+            /**
+             * Est Price
+             * @description Estimated NAV per share, native currency
+             */
+            est_price?: string | null;
+            /**
+             * Est Today Move
+             * @description Estimated day move in money, reporting currency
+             */
+            est_today_move?: string | null;
+            /**
+             * Est Today Pct
+             * @description Estimated day move (fraction, 0.01 = 1%), reporting currency
+             */
+            est_today_pct?: string | null;
+            /**
+             * Est Value
+             * @description Estimated value of the holding, reporting currency
+             */
+            est_value?: string | null;
+            /** Pending */
+            pending: boolean;
+            /**
+             * Symbol
+             * @description The twin ETF's ticker
+             */
+            symbol: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "same_index" | "close" | "manual";
         };
         /** UnknownAction */
         UnknownAction: {
@@ -8267,6 +8619,26 @@ export interface operations {
             };
         };
     };
+    twin_health_api_maintenance_twins_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwinHealth"];
+                };
+            };
+        };
+    };
     get_onboarding_api_onboarding_get: {
         parameters: {
             query?: never;
@@ -8800,6 +9172,27 @@ export interface operations {
                          */
                         type: "hello";
                     } | {
+                        /** Estimates */
+                        estimates?: {
+                            [key: string]: {
+                                /** At */
+                                at: string;
+                                /** Est Px */
+                                est_px: string;
+                                /**
+                                 * TickEstimatePct
+                                 * @description The estimated move since the previous close, a fraction per currency.
+                                 */
+                                pct: {
+                                    /** Eur */
+                                    EUR?: string | null;
+                                    /** Usd */
+                                    USD?: string | null;
+                                };
+                                /** Prev Nav */
+                                prev_nav: string;
+                            };
+                        } | null;
                         /** Fx Eur Usd */
                         fx_eur_usd?: string | null;
                         /** Last Update At */
@@ -8828,12 +9221,21 @@ export interface operations {
                                 prev_close?: string | null;
                                 /** Px */
                                 px: string;
+                                /**
+                                 * Stale Nav
+                                 * @default false
+                                 */
+                                stale_nav: boolean;
                             };
                         } | null;
                         /** Prices Live */
                         prices_live?: boolean | null;
                         /** Seq */
                         seq?: number | null;
+                        /** Total Value Est Eur */
+                        total_value_est_eur?: string | null;
+                        /** Total Value Est Usd */
+                        total_value_est_usd?: string | null;
                         /** Total Value Eur */
                         total_value_eur?: string | null;
                         /** Total Value Usd */

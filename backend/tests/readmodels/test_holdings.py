@@ -88,3 +88,32 @@ def test_pick_selects_the_requested_leg() -> None:
     assert holdings.pick(D(1), D(2), "EUR") == 1
     assert holdings.pick(D(1), D(2), "USD") == 2
     assert holdings.pick(D(1), None, "USD") is None  # a missing USD leg stays missing
+
+
+def test_group_total_growth_is_total_return_over_cost_basis(session: Session) -> None:
+    from dataclasses import replace
+
+    seed_ledger(session)
+    usd = holdings.build(session, ccy="USD", group_by="currency")
+    (group,) = usd["groups"]
+    # VTI +700 and BND -100 on cost 3,050 + 1,500: 600 / 4,550 (a simple return on cost).
+    assert group["count"] == 2
+    assert D(group["total_return"]) == D("600")
+    assert D(group["cost_basis"]) == D("4550")
+    assert D(group["total_growth"]) == D("600") / D("4550")
+    # EUR is built from its own legs (never the USD return converted).
+    (eur_group,) = holdings.build(session, ccy="EUR", group_by="currency")["groups"]
+    assert D(eur_group["total_growth"]) == D(eur_group["total_return"]) / D(eur_group["cost_basis"])
+
+    # Null when a member lacks the cost leg, or the cost basis is not positive.
+    as_of = exchange_today()
+    positions = holdings.merge_positions_by_instrument(compute_positions(session, as_of=as_of))
+    cards = build_holding_cards(
+        positions, metrics=compute_instrument_metrics(session, positions, as_of=as_of)
+    )
+    by_id = {p.instrument.id: p for p in positions}
+    rows = [holdings.holding_row(c, by_id[c.instrument_id], None, "USD") for c in cards]
+    broken = [replace(cards[0], cost_basis_usd=None), *cards[1:]]
+    assert holdings.build_groups(rows, broken, "currency", "USD")[0]["total_growth"] is None
+    zero = [replace(c, cost_basis_usd=D(0)) for c in cards]
+    assert holdings.build_groups(rows, zero, "currency", "USD")[0]["total_growth"] is None

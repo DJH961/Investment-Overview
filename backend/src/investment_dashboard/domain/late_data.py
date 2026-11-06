@@ -5,11 +5,18 @@ Pure maths (no I/O, ``Decimal`` only).
 A mutual fund's NAV belongs to the session it was struck in: it is the fund's
 16:00 New York close, just published late (about 16:00-20:00 New York). So:
 
-* Totals and stored history use **official prices only**.
-* The only estimate is the fund part of the **1D intraday line** while the
-  session runs: ``prev_value x twin_now / twin_prev_close`` when the fund has an
-  ETF twin (:mod:`investment_dashboard.domain.index_twins`), else flat at the
-  previous NAV.
+* Stored history, the KPIs (XIRR, TWR, cost, gains) and the official total use
+  **official prices only**: a fund whose NAV has not posted counts at its previous
+  NAV.
+* Alongside them the server now also serves an **estimated total** (the hero's
+  big number, the tick's ``total_value_est_*``, the holdings' twin rows and the
+  1D line's last point): the official total plus, for every fund whose NAV for the
+  last session has not posted, ``shares x (est_price - previous NAV)`` with
+  ``est_price = prev_nav x twin_now / twin_prev_close`` when the fund has an ETF
+  twin (:mod:`investment_dashboard.domain.index_twins`), else flat at the
+  previous NAV. Once the NAV posts the adjustment is 0 and the row reports how
+  far the twin was off (:func:`divergences`: last session, median absolute gap,
+  mean signed bias).
 * When the official NAV lands, the gap ``official - estimated_close`` is spread
   linearly across that session (0 at the open, all of it at the close), so the
   line starts at the previous close and ends exactly at the official close: no
@@ -23,7 +30,7 @@ overnight currency effect (the same holdings at the rate now vs that close).
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -177,8 +184,131 @@ def typical_daily_gap(
         gaps.append(abs((f1 / f0) - (t1 / t0)))
     if len(gaps) < max(min_samples, 1):
         return None
-    gaps.sort()
-    mid = len(gaps) // 2
-    if len(gaps) % 2:
-        return gaps[mid]
-    return (gaps[mid - 1] + gaps[mid]) / 2
+    return _median(gaps)
+
+
+def _median(values: list[Decimal]) -> Decimal:
+    """Median of a non-empty list (mean of the two middle values for an even count)."""
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+#: Sessions the twin-divergence statistics look back over by default (setting
+#: ``twin.divergence_window``).
+DEFAULT_DIVERGENCE_WINDOW = 20
+
+#: A session whose gap sits more than this many deviations from the median is a
+#: distribution artifact, not tracking error (see ``divergences``).
+OUTLIER_SPREAD_FACTOR = Decimal(4)
+
+#: Below this many sessions the spread is too thin to tell an outlier from noise.
+MIN_OUTLIER_SAMPLES = 8
+
+#: At most ``1 / MAX_OUTLIER_SHARE`` of a window may be rejected as distributions.
+MAX_OUTLIER_SHARE = 5
+
+
+@dataclass(frozen=True)
+class Divergence:
+    """How far a fund's official daily return strayed from its ETF twin's.
+
+    Every gap is ``twin return - fund return`` as a fraction (``0.0003`` = 0.03
+    percentage points): positive means the twin ran ahead of the fund, i.e. the
+    estimate was too high. ``last_*`` describe the newest usable session
+    (``last_prev_date`` -> ``last_date``); ``median_abs`` is the median absolute
+    gap and ``bias`` the mean signed gap over the ``sessions`` most recent usable
+    sessions (at most ``window``).
+    """
+
+    last_date: date
+    last_prev_date: date
+    last_gap: Decimal
+    median_abs: Decimal
+    bias: Decimal
+    sessions: int
+    window: int
+
+
+def _without_distributions(
+    gaps: list[tuple[date, date, Decimal]],
+) -> list[tuple[date, date, Decimal]]:
+    """``gaps`` without far outliers — a distribution on either side of the pair.
+
+    The scale is the median absolute deviation, which the outliers themselves barely
+    move (unlike a mean and standard deviation, where one ex-dividend day widens the
+    band enough to hide itself). When a repeated value holds the middle the median
+    deviation collapses to zero even though the sample does vary, so the mean deviation
+    stands in: a lone distribution day inflates it far less than it would corrupt the
+    bias. Only a sample whose every gap is identical — a perfect tracker, with nothing
+    to reject — is left alone, as is one too short to tell an outlier from noise.
+    """
+    if len(gaps) < MIN_OUTLIER_SAMPLES:
+        return gaps
+    values = [g for _p, _c, g in gaps]
+    mid = _median(values)
+    deviations = [abs(v - mid) for v in values]
+    spread = _median(deviations) or sum(deviations, start=ZERO) / len(deviations)
+    if spread <= ZERO:
+        return gaps
+    # Distributions are rare by nature, so only a few sessions can be them: drop the
+    # furthest out, and never more than a fifth of the window. Refusing to drop
+    # anything once too many sessions sit outside the band would lose the protection
+    # exactly when it is needed — a distribution day shifts the median enough to carry
+    # a borderline neighbour out with it, and then the distribution itself survives.
+    limit = OUTLIER_SPREAD_FACTOR * spread
+    furthest = sorted(range(len(gaps)), key=lambda i: abs(gaps[i][2] - mid), reverse=True)
+    dropped = {
+        i for i in furthest[: len(gaps) // MAX_OUTLIER_SHARE] if abs(gaps[i][2] - mid) > limit
+    }
+    return [g for i, g in enumerate(gaps) if i not in dropped]
+
+
+def divergences(
+    fund_closes: Mapping[date, Decimal],
+    twin_closes: Mapping[date, Decimal],
+    *,
+    window: int = DEFAULT_DIVERGENCE_WINDOW,
+    excluded: Collection[date] = (),
+) -> Divergence | None:
+    """Twin-vs-fund divergence over the last ``window`` sessions, or ``None``.
+
+    A session is one return between two consecutive dates both series have. A
+    session ending on an ``excluded`` date (a dividend / distribution: the fund's
+    NAV and the ETF's price drop on different days, so the gap is not tracking
+    error) is dropped, as is one with a non-positive starting price.
+
+    ``excluded`` cannot catch every distribution: the twin ETF is never held, so it
+    has no ledger rows at all, and a fund's ledger date is its *pay* date rather than
+    the ex-date its NAV drops on. Both leave one session far outside the tracking-error
+    spread, so far outliers are rejected on the shape of the data as well — otherwise a
+    single ETF ex-dividend day moves ``bias`` by as much as the tracking error it is
+    meant to measure, and can make ``last_gap`` report a distribution as a bad estimate.
+    """
+    shared = sorted(d for d in fund_closes if d in twin_closes)
+    gaps: list[tuple[date, date, Decimal]] = []
+    for prev, cur in pairwise(shared):
+        if cur in excluded:
+            continue
+        f0, f1 = fund_closes[prev], fund_closes[cur]
+        t0, t1 = twin_closes[prev], twin_closes[cur]
+        if f0 <= 0 or t0 <= 0:
+            continue
+        gaps.append((prev, cur, (t1 / t0) - (f1 / f0)))
+    size = max(window, 1)
+    recent = _without_distributions(gaps[-size:])
+    if not recent:
+        return None
+    values = [g for _p, _c, g in recent]
+    last_prev, last_date, last_gap = recent[-1]
+    return Divergence(
+        last_date=last_date,
+        last_prev_date=last_prev,
+        last_gap=last_gap,
+        median_abs=_median([abs(v) for v in values]),
+        bias=sum(values, start=ZERO) / len(values),
+        sessions=len(values),
+        window=size,
+    )
