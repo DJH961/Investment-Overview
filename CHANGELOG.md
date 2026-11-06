@@ -17,6 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.9.1] — 2026-11-06
+
+### Fixed
+- Signing in could occasionally drop you straight back on the sign-in page: a
+  "am I signed in?" check sent *before* the sign-in could answer "no" after it.
+  Signing in now cancels such a check and asks again with the new session before
+  opening the page (seen as a flaky phone-login test in CI).
+
 ## [6.9.0] — 2026-11-06
 
 ### Added

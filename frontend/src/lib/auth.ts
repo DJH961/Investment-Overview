@@ -88,9 +88,13 @@ export function safeNext(search: string): string {
   return next;
 }
 
-export function invalidateAuth(queryClient: QueryClient): Promise<void> {
+export async function invalidateAuth(queryClient: QueryClient): Promise<void> {
+  // First cancel a check that is still in flight: it was sent before the sign-in
+  // (no session cookie yet), so its `authenticated: false` would land after the
+  // removal below and bounce the user straight back to /login (seen as a flaky
+  // e2e login on a phone viewport).
+  await queryClient.cancelQueries({ queryKey: ["auth", "me"] });
   // Drop (not just invalidate) the cached answer: RequireAuth would otherwise
   // read the stale `authenticated: false` and bounce straight back to /login.
   queryClient.removeQueries({ queryKey: ["auth", "me"] });
-  return Promise.resolve();
 }
