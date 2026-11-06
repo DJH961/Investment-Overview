@@ -249,9 +249,9 @@ export function ValueChartCard({
             emptyMessage="No history for this range yet."
             ariaLabel="Portfolio value over time"
           />
-          {shown === "1d" && g?.funds_estimated && (
+          {(shown === "1d" || shown === "1w") && g?.funds_estimated && (
             <p className="value-chart-card__note" data-testid="funds-estimated-note">
-              Funds estimated from their ETF twin until the official NAV posts
+              {shown === "1w" ? "Latest session: funds" : "Funds"} estimated from their ETF twin until the official NAV posts
               {g.estimated_funds.length ? ` (${g.estimated_funds.join(", ")})` : ""}.
             </p>
           )}

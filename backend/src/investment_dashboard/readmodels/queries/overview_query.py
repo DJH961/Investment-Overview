@@ -363,26 +363,37 @@ def build_window_value_series(
             for at_utc, _market, _fx in samples
         }
     if nav_now != ZERO or nav_components:
-        # The session drawn by the 1D range (also the last session of the 1W):
-        # funds follow their late-NAV line (domain.late_data), built at read time
-        # from the stored twin prices and closes, never stored.
-        session_date = intraday_snapshots_service.last_session_date(now)
-        last_times = [
-            at
-            for at, _m, _fx in samples
-            if intraday_snapshots_service.session_date_of(at) == session_date
-        ]
-        sleeve = intraday_snapshots_service.late_nav_sleeve(
-            session,
-            session_date=session_date,
-            times=last_times,
-            rate=nav_fx_today,
-            sample_fx={at: fx for at, _m, fx in samples if fx},
+        # Funds follow their late-NAV line (domain.late_data), built at read time
+        # from the stored twin prices and closes, never stored: the 1D range draws
+        # its one session this way, and the 1W draws *every* session in its window
+        # (each from its previous NAV to its own, shaped by the ETF twin), so the
+        # week has the same intraday shape for funds as the 1D line instead of one
+        # NAV step per day.
+        sample_fx = {at: fx for at, _m, fx in samples if fx}
+        session_dates = (
+            sorted({intraday_snapshots_service.session_date_of(at) for at, _m, _fx in samples})
+            if multi_session
+            else [intraday_snapshots_service.last_session_date(now)]
         )
-        if sleeve.components:
-            nav_components.update(sleeve.components)
-        elif not multi_session:
-            base += nav_now  # no fund sleeve to draw: keep them flat in the base
+        last_session = intraday_snapshots_service.last_session_date(now)
+        for session_date in session_dates:
+            times = [
+                at
+                for at, _m, _fx in samples
+                if intraday_snapshots_service.session_date_of(at) == session_date
+            ]
+            sleeve = intraday_snapshots_service.late_nav_sleeve(
+                session,
+                session_date=session_date,
+                times=times,
+                rate=nav_fx_today,
+                sample_fx=sample_fx,
+                strict=session_date != last_session,
+            )
+            if sleeve.components:
+                nav_components.update(sleeve.components)
+            elif not multi_session:
+                base += nav_now  # no fund sleeve to draw: keep them flat in the base
 
     points = _compose_currency_points(
         samples,

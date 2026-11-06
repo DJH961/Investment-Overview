@@ -13,7 +13,7 @@ What the owner sees (the late-data plan):
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -180,3 +180,147 @@ def test_no_rebuild_while_the_session_runs(session: Session) -> None:
     session.flush()
     assert prices_service.rebuild_settled_snapshots(session, MON, today=MON, now=DURING) == 0
     assert _stored(session) == D("2000")
+
+
+# --- 1W: every session of the week draws its funds from the twin ----------------------
+
+THU, FRI_ = date(2024, 5, 30), date(2024, 5, 31)
+FRI_OPEN, FRI_MID, FRI_CLOSE = (
+    datetime(2024, 5, 31, 13, 30),
+    datetime(2024, 5, 31, 17, 0),
+    datetime(2024, 5, 31, 20, 0),
+)
+WEEK_TWIN_ROWS = {
+    datetime(2024, 5, 30, 20, 0): D("100"),  # Thursday close
+    FRI_OPEN: D("100"),
+    FRI_MID: D("102"),
+    FRI_CLOSE: D("105"),  # Friday +5 %
+    OPEN: D("105"),
+    MID: D("107"),
+    CLOSE: D("110.25"),  # Monday +5 %
+}
+
+
+def _seed_week(session: Session, *, twin: str | None) -> None:
+    """Fund NAV 190 (Thu) -> 200 (Fri) -> 210 (Mon), all official; stock flat at 1,000."""
+    account = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="EUR Brokerage",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    stock = instruments_repo.get_or_create(session, symbol="ACME", native_currency="EUR")
+    fund = instruments_repo.get_or_create(
+        session, symbol="EURFUND", asset_class="mutual_fund", native_currency="EUR"
+    )
+    for inst, qty, price in ((stock, D("10"), D("100")), (fund, D("5"), D("190"))):
+        session.add(
+            Transaction(
+                account_id=account.id,
+                instrument_id=inst.id,
+                date=date(2024, 5, 28),
+                kind="buy",
+                quantity=qty,
+                price_native=price,
+                net_native=-qty * price,
+                net_eur=-qty * price,
+                source="manual",
+            )
+        )
+    prices_repo.upsert_closes(
+        session, stock.id, {d: D("100") for d in (date(2024, 5, 28), THU, FRI_, MON)}
+    )
+    prices_repo.upsert_closes(
+        session,
+        fund.id,
+        {date(2024, 5, 28): D("190"), THU: D("190"), FRI_: D("200"), MON: D("210")},
+    )
+    if twin:
+        instrument_overrides_repo.upsert(session, fund.id, intraday_twin=twin)
+        twin_prices_repo.upsert_prices(session, twin, WEEK_TWIN_ROWS)
+    for day_open, day_mid, day_close in ((FRI_OPEN, FRI_MID, FRI_CLOSE), (OPEN, MID, CLOSE)):
+        for at in (day_open, day_mid, day_close):
+            intraday_repo.insert_sample(session, at, D("1000"))
+    session.flush()
+
+
+def _week_line(session: Session) -> dict[datetime, Decimal]:
+    from investment_dashboard.readmodels.queries.overview_query import build_week_value_series
+
+    points = build_week_value_series(session, currency="EUR", now=AFTER)
+    return {p.date.replace(tzinfo=None): p.value for p in points}  # type: ignore[attr-defined]
+
+
+def test_week_earlier_session_follows_the_twin_from_previous_to_official_nav(
+    session: Session,
+) -> None:
+    _seed_week(session, twin="TWN")
+    line = _week_line(session)
+    assert line[FRI_OPEN] == D("1950")  # 1,000 + 5 x 190 (Thursday's NAV)
+    assert line[FRI_CLOSE] == D("2000")  # 1,000 + 5 x 200 (Friday's official NAV)
+    assert line[OPEN] == D("2000")  # Monday starts where Friday ended: no step
+    assert line[CLOSE] == D("2050")
+    # Mid-Friday is the twin's shape (+2 % of a +5 % day), not a straight ramp.
+    ramp = D("1950") + D("50") * D("3.5") / D("6.5")
+    assert D("1950") < line[FRI_MID] < D("2000")
+    assert abs(line[FRI_MID] - ramp) > D("2")
+
+
+def test_week_without_a_twin_keeps_the_per_day_nav_step(session: Session) -> None:
+    _seed_week(session, twin=None)
+    line = _week_line(session)
+    # Earlier days are unchanged (their own NAV from the first point); only the last
+    # session is the late-NAV line (previous -> official NAV), as on the 1D graph.
+    assert line[FRI_OPEN] == line[FRI_CLOSE] == D("2000")
+    assert (line[OPEN], line[CLOSE]) == (D("2000"), D("2050"))
+
+
+# --- Backfill of the earlier sessions' twin bars --------------------------------------
+
+
+def test_backfill_stores_earlier_sessions_once_and_throttles_empty_answers(
+    session: Session,
+) -> None:
+    _seed_week(session, twin=None)
+    fund = instruments_repo.get_or_create(session, symbol="EURFUND", native_currency="EUR")
+    instrument_overrides_repo.upsert(session, fund.id, intraday_twin="TWN")
+    session.flush()
+    iss._week_attempts.clear()
+    calls: list[tuple[list[str], date, date]] = []
+
+    def fetcher(symbols, start, end, *, interval):  # type: ignore[no-untyped-def]
+        calls.append((list(symbols), start, end))
+        # Realistic: two or more bars on every requested day, plus the week's shape.
+        bars = dict(WEEK_TWIN_ROWS)
+        for n in range((end - start).days + 1):
+            day = start + timedelta(days=n)
+            bars.setdefault(datetime(day.year, day.month, day.day, 14, 0), D("100"))
+            bars.setdefault(datetime(day.year, day.month, day.day, 19, 30), D("100"))
+        return {"TWN": bars}
+
+    first = iss.backfill_week_twin_prices(session, ["TWN"], now=AFTER, range_fetcher=fetcher)
+    assert first > 0
+    assert len(calls) == 1
+    assert calls[0][0] == ["TWN"]
+    stored = twin_prices_repo.prices_in_range(session, ["TWN"], datetime(2024, 5, 29), CLOSE)
+    assert FRI_MID in stored["TWN"]  # an earlier session of the week is now there
+    # Stored sessions are not fetched again.
+    iss._week_attempts.clear()
+    assert iss.backfill_week_twin_prices(session, ["TWN"], now=AFTER, range_fetcher=fetcher) == 0
+    assert len(calls) == 1
+
+
+def test_backfill_retry_is_throttled_when_the_provider_returns_nothing(
+    session: Session,
+) -> None:
+    iss._week_attempts.clear()
+    calls: list[int] = []
+
+    def empty(symbols, start, end, *, interval):  # type: ignore[no-untyped-def]
+        calls.append(1)
+        return {}
+
+    assert iss.backfill_week_twin_prices(session, ["TWN"], now=AFTER, range_fetcher=empty) == 0
+    assert iss.backfill_week_twin_prices(session, ["TWN"], now=AFTER, range_fetcher=empty) == 0
+    assert len(calls) == 1  # the second tick, a moment later, does not ask again

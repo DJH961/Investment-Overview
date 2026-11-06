@@ -34,6 +34,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tap to use it ("VTI follows a different index … typically 0.02 % apart per
   day"). Until now a twin could only be set through the API, so no fund used one.
   Saving a twin redraws the 1D graph.
+- **The ETF twin now shapes the whole 1W graph.** Every session of the week draws
+  its funds from the previous NAV to its own official NAV along the twin's
+  intraday moves, instead of one NAV step per day, so the week matches the 1D
+  line. An earlier day is redrawn only when every held fund has that day's
+  official NAV and at least one fund has twin bars for it; otherwise (and for
+  anyone without a twin) it stays as before. The earlier sessions' twin bars are
+  fetched once per twin in one multi-day download, retried at most every 30
+  minutes if the provider returns nothing. The "Funds estimated…" note also shows
+  on the 1W ("Latest session: funds estimated…").
 
 ### Fixed
 - **Late-data behaviour is now tested end to end.** New graph-level tests pin the

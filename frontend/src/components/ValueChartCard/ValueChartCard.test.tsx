@@ -95,6 +95,18 @@ describe("ValueChartCard", () => {
     expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent("FXAIX");
   });
 
+  it("1W: the note says it is the latest session that is estimated", () => {
+    graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX"] };
+    render(<ValueChartCard currency="EUR" defaultRange="1w" marketOpen />);
+    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent("Latest session: funds estimated");
+  });
+
+  it("1M: no estimate note on the daily ranges", () => {
+    graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX"] };
+    render(<ValueChartCard currency="EUR" defaultRange="1m" marketOpen />);
+    expect(screen.queryByTestId("funds-estimated-note")).toBeNull();
+  });
+
   it("draws the other currency by default on a right axis and remembers the toggle", () => {
     graphData = {
       ...day,
