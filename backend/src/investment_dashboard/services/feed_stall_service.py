@@ -81,6 +81,7 @@ def observe_pull(
             market_open=market_open,
             quotes=quotes,
             newest_market_time=newest_market_time,
+            stall_after_seconds=stall_after_seconds(),
         )
     if change.started is not None:
         activity("market_data").warning(
@@ -103,6 +104,33 @@ def observe_pull(
             except Exception:  # pragma: no cover - defensive: history is best-effort
                 log.warning("could not save the price-feed stall window", exc_info=True)
     return change
+
+
+def stall_after_seconds() -> float:
+    """Setting ``prices.stall_after_seconds`` (Settings > Data refresh)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    try:
+        return float(
+            settings_service.get_or("prices.stall_after_seconds", feed_stall.STALL_AFTER_SECONDS)
+        )
+    except Exception:  # pragma: no cover - settings unreadable: keep the default
+        return feed_stall.STALL_AFTER_SECONDS
+
+
+def live_max_age_seconds() -> float:
+    """Setting ``prices.live_max_age_seconds`` (Settings > Data refresh)."""
+    from investment_dashboard.domain import market_hours  # noqa: PLC0415
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    try:
+        return float(
+            settings_service.get_or(
+                "prices.live_max_age_seconds", market_hours.LIVE_PRICE_WINDOW_SECONDS
+            )
+        )
+    except Exception:  # pragma: no cover - settings unreadable: keep the default
+        return market_hours.LIVE_PRICE_WINDOW_SECONDS
 
 
 def is_stalled() -> bool:

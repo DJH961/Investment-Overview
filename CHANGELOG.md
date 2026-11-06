@@ -41,7 +41,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   2.5 minutes (was 15) *and* the newest price itself was struck in the last
   2.5 minutes. The Live chip shows when the price is from, not when it was pulled.
   Stocks and ETFs are pulled every 50 s (was 120 s) so the price never ages past
-  that while the market is open.
+  that while the market is open. All three are in **Settings > Data refresh**:
+  "ETF price age" / "Stock price age" (how often prices are fetched), the new
+  "Live: newest price at most this old" (2.5 min) and the new "Frozen price
+  feed: alarm after" (4 min).
 - **Reload graph keeps your data.** Reloading the 1D / 1W graph (the graph's
   reload button or Health & Repair) no longer deletes the once-a-minute live
   points and rebuilds the day from 5-minute bars. It now removes only frozen-feed

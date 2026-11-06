@@ -197,6 +197,8 @@ def _price_freshness(now: datetime | None = None) -> dict[str, Any]:
             now=now,
             price_market_at=market_at,
             feed_stalled=feed_stall_service.is_stalled(),
+            window_seconds=feed_stall_service.live_max_age_seconds(),
+            quote_max_age_seconds=feed_stall_service.live_max_age_seconds(),
         ),
     }
 

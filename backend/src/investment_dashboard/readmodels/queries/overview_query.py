@@ -1427,7 +1427,14 @@ def _fmt_asof(
         return "—"
     today = today or exchange_today()
     if freshness.price_as_of == today:
-        if freshness.market_open and feed_is_fresh(freshness.updated_at, now):
+        from investment_dashboard.services import feed_stall_service  # noqa: PLC0415
+
+        proof = freshness.price_market_time or freshness.updated_at
+        if (
+            freshness.market_open
+            and not feed_stall_service.is_stalled()
+            and feed_is_fresh(proof, now, window_seconds=feed_stall_service.live_max_age_seconds())
+        ):
             return "LIVE"
         return "TODAY"
     return freshness.price_as_of.strftime("%d %b %Y")

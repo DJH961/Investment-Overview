@@ -59,3 +59,30 @@ def test_health_lists_recent_windows(session: Session) -> None:
 
 def test_health_ok_without_stalls(session: Session) -> None:
     assert diagnostics_service._check_price_feed(session).severity == "ok"
+
+
+def test_live_and_stall_limits_are_settings() -> None:
+    from investment_dashboard.services import settings_registry
+
+    live = settings_registry.BY_KEY["prices.live_max_age_seconds"]
+    stall = settings_registry.BY_KEY["prices.stall_after_seconds"]
+    # Visible in Settings > Data refresh, next to the price ages (fetch intervals).
+    assert live.section == stall.section == "data_refresh"
+    assert settings_registry.BY_KEY["prices.ttl_seconds.etf"].section == "data_refresh"
+    assert (live.default, stall.default) == (150, 240)
+
+
+def test_settings_drive_the_stall_detector(monkeypatch: pytest.MonkeyPatch) -> None:
+    from investment_dashboard.services import settings_service
+
+    values = {"prices.stall_after_seconds": 600, "prices.live_max_age_seconds": 300}
+    monkeypatch.setattr(
+        settings_service, "get_or", lambda key, fallback, session=None: values.get(key, fallback)
+    )
+    assert feed_stall_service.live_max_age_seconds() == 300
+    _pull(None, 0, Q)  # type: ignore[arg-type]
+    for minute in range(1, 6):  # 5 identical minutes: below the 10-minute setting
+        _pull(None, minute, Q)  # type: ignore[arg-type]
+    assert not feed_stall_service.is_stalled()
+    _pull(None, 11, Q)  # type: ignore[arg-type]
+    assert feed_stall_service.is_stalled()

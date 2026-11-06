@@ -420,6 +420,8 @@ def _freshness(freshness: dict[int, HoldingFreshness], *, now: datetime) -> dict
             now=now,
             price_market_at=feed_stall_service.newest_market_time(),
             feed_stalled=stalled_since is not None,
+            window_seconds=feed_stall_service.live_max_age_seconds(),
+            quote_max_age_seconds=feed_stall_service.live_max_age_seconds(),
         ),
         "feed_stalled_since": _iso_utc(stalled_since),
         "last_price_update_at": _iso_utc(snap.last_update_at),

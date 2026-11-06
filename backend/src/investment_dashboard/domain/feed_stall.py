@@ -71,6 +71,7 @@ def observe(  # noqa: PLR0911 - one exit per detector transition
     market_open: bool,
     quotes: Mapping[str, Decimal],
     newest_market_time: datetime | None,
+    stall_after_seconds: float = STALL_AFTER_SECONDS,
 ) -> tuple[StallState, StallChange]:
     """Fold one pull's result into ``state``.
 
@@ -93,15 +94,19 @@ def observe(  # noqa: PLR0911 - one exit per detector transition
         moved = replace(state, signature=signature, signature_since=now)
         # Moved prices end a stall only when the quotes are also recent: a frozen
         # feed can still flip one value (a late print) without being live again.
-        if state.stalled_since is not None and not _old(newest_market_time, now):
+        if state.stalled_since is not None and not _old(
+            newest_market_time, now, stall_after_seconds
+        ):
             return replace(moved, stalled_since=None), StallChange(ended=(state.stalled_since, now))
-        if state.stalled_since is None and _old(newest_market_time, now):
+        if state.stalled_since is None and _old(newest_market_time, now, stall_after_seconds):
             start = _aware(newest_market_time) if newest_market_time is not None else now
             return replace(moved, stalled_since=start), StallChange(started=start)
         return moved, StallChange()
 
     unchanged_for = (now - _aware(state.signature_since)).total_seconds()
-    stalled = unchanged_for >= STALL_AFTER_SECONDS or _old(newest_market_time, now)
+    stalled = unchanged_for >= stall_after_seconds or _old(
+        newest_market_time, now, stall_after_seconds
+    )
     if stalled and state.stalled_since is None:
         start = _aware(state.signature_since)
         if newest_market_time is not None:
@@ -110,10 +115,10 @@ def observe(  # noqa: PLR0911 - one exit per detector transition
     return state, StallChange()
 
 
-def _old(market_time: datetime | None, now: datetime) -> bool:
+def _old(market_time: datetime | None, now: datetime, limit: float) -> bool:
     if market_time is None:
         return False
-    return (now - _aware(market_time)).total_seconds() > STALL_AFTER_SECONDS
+    return (now - _aware(market_time)).total_seconds() > limit
 
 
 def frozen_points(

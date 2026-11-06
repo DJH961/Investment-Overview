@@ -383,6 +383,38 @@ DEFS: tuple[SettingDef, ...] = (
     _ttl("savings", 24 * 3600, "Savings price age"),
     _ttl("default", 24 * 3600, "Other asset classes"),
     SettingDef(
+        "prices.live_max_age_seconds",
+        SettingType.DURATION_S,
+        150,
+        "data_refresh",
+        "Live: newest price at most this old",
+        help=(
+            "The figures are called Live only while the market is open, the last price "
+            "pull is at most this old and the newest stock/ETF price itself was struck "
+            "on the exchange at most this long ago. Keep it above the ETF/stock price "
+            "age, or Live flickers between pulls."
+        ),
+        min=_D(60),
+        max=_D(3600),
+        unit="s",
+    ),
+    SettingDef(
+        "prices.stall_after_seconds",
+        SettingType.DURATION_S,
+        240,
+        "data_refresh",
+        "Frozen price feed: alarm after",
+        help=(
+            "When every stock/ETF price stays exactly unchanged (or the provider's own "
+            "price time is older) for this long while the market is open, the feed counts "
+            "as stalled: the top bar says Delayed, no 1 Day graph points are stored, and "
+            "Health & Repair lists the stretch."
+        ),
+        min=_D(120),
+        max=_D(3600),
+        unit="s",
+    ),
+    SettingDef(
         "scheduler.fx_interval_minutes",
         SettingType.INT,
         1,

@@ -102,6 +102,7 @@ def is_live_now(
     window_seconds: float = LIVE_PRICE_WINDOW_SECONDS,
     price_market_at: datetime | None = None,
     feed_stalled: bool = False,
+    quote_max_age_seconds: float = QUOTE_LIVE_MAX_AGE_SECONDS,
 ) -> bool:
     """Whether the figures on screen are genuinely *live* right now.
 
@@ -124,7 +125,7 @@ def is_live_now(
     )
     current = now.replace(tzinfo=UTC) if now.tzinfo is None else now
     age = (current - struck).total_seconds()
-    return -_CLOCK_SKEW_SECONDS <= age <= QUOTE_LIVE_MAX_AGE_SECONDS
+    return -_CLOCK_SKEW_SECONDS <= age <= quote_max_age_seconds
 
 
 def _observed(holiday: date) -> date:

@@ -36,7 +36,7 @@ def test_get_or_prefers_the_constant_until_set(session: Session) -> None:
 
 
 def test_price_ttls(session: Session) -> None:
-    assert prices_service.ttl_seconds_by_class(session)["etf"] == 120
+    assert prices_service.ttl_seconds_by_class(session)["etf"] == 50
     _set(session, "prices.ttl_seconds.etf", 600)
     ttls = prices_service.ttl_seconds_by_class(session)
     assert ttls["etf"] == 600
