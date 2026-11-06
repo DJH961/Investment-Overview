@@ -17,6 +17,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.11.2] — 2026-11-06
+
+### Fixed
+- **A scheduled price refresh could land zero prices for the whole tick**, even
+  though Tiingo had just supplied good recovered prices and they'd already been
+  written to the cache. The scheduler holds a ledger session and a cache session
+  open side by side on the same SQLite file; without a busy timeout, a momentary
+  write collision between them failed instantly instead of waiting the few
+  milliseconds the other side needed, and a failed Tiingo quota-counter save on
+  top of that left the ledger session unable to commit anything else, aborting
+  the whole refresh. Every connection now waits up to 5 seconds for a lock to
+  clear, and a failed quota-counter save is rolled back and logged instead of
+  poisoning the session — the counters self-heal on the next load.
+- **The resulting error wrongly blamed Tiingo** ("Tiingo fallback unreachable —
+  showing last-known prices") for what was actually a local database lock. It
+  now says so plainly and notes the refresh will retry next tick.
+
 ## [6.11.1] — 2026-11-06
 
 ### Fixed

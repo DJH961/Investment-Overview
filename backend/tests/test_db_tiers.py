@@ -91,3 +91,31 @@ def test_unified_mode_cache_is_durable(tmp_path: Path, monkeypatch: pytest.Monke
 
     assert _synchronous(db_mod.get_cache_engine()) == "2"  # FULL (shared with ledger)
     _reload_settings()
+
+
+def _busy_timeout(engine: object) -> int:
+    from sqlalchemy import text
+
+    with engine.connect() as conn:  # type: ignore[attr-defined]
+        return int(conn.execute(text("PRAGMA busy_timeout")).scalar())
+
+
+def test_engines_set_a_busy_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every SQLite connection waits out a transient writer lock instead of
+    failing immediately with ``OperationalError: database is locked``.
+
+    Regression test for the Nov 2026 "Scheduled live refresh" incident: the
+    scheduler holds a ledger session and a cache session open side by side
+    (often the same physical file), and with no busy timeout any momentary
+    writer/writer collision between them raised immediately instead of
+    waiting the few milliseconds the other side needed to commit.
+    """
+    monkeypatch.setenv("INV_DASHBOARD_LEDGER_PATH", str(tmp_path / "ledger.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CONFIG_PATH", str(tmp_path / "config.sqlite"))
+    monkeypatch.setenv("INV_DASHBOARD_CACHE_PATH", str(tmp_path / "cache.sqlite"))
+    _reload_settings()
+
+    assert _busy_timeout(db_mod.get_ledger_engine()) == db_mod._BUSY_TIMEOUT_MS
+    assert _busy_timeout(db_mod.get_config_engine()) == db_mod._BUSY_TIMEOUT_MS
+    assert _busy_timeout(db_mod.get_cache_engine()) == db_mod._BUSY_TIMEOUT_MS
+    _reload_settings()

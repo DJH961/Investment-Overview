@@ -130,6 +130,18 @@ def make_engine(
     return engine
 
 
+#: How long a connection waits for another connection's write lock to clear
+#: before raising ``OperationalError: database is locked`` (milliseconds).
+#: The ledger/config/cache tiers often share one physical SQLite file and are
+#: written from *different* Session objects (e.g. the scheduler's tick opens a
+#: ledger session and a cache session side by side — see
+#: ``services/auto_refresh.py``), so brief writer/writer contention between
+#: them is expected, not exceptional. Without a busy timeout, SQLite's default
+#: is to fail immediately instead of waiting the few milliseconds the other
+#: side needs to commit its (tiny) write.
+_BUSY_TIMEOUT_MS = 5000
+
+
 def _install_sqlite_pragmas(
     engine: Engine,
     db_path: Path | None,
@@ -145,6 +157,7 @@ def _install_sqlite_pragmas(
         # Encryption key MUST be the first statement on the connection.
         apply_sqlcipher_key(dbapi_conn, encryption)
         cursor = dbapi_conn.cursor()
+        cursor.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
         if use_truncate:
             cursor.execute("PRAGMA journal_mode=TRUNCATE")
         else:

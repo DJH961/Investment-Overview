@@ -1075,6 +1075,8 @@ def _maybe_run_tiingo_fallback(
         # the same token burned the real account quota) from an unreachable/
         # misconfigured proxy, since the user acts on each differently. The
         # primary result still stands (we return below), so last-known prices show.
+        from sqlalchemy.exc import OperationalError, PendingRollbackError  # noqa: PLC0415
+
         from investment_dashboard.adapters._retry import RateLimitedError  # noqa: PLC0415
         from investment_dashboard.services import runtime_status  # noqa: PLC0415
 
@@ -1082,6 +1084,15 @@ def _maybe_run_tiingo_fallback(
             message = (
                 f"Tiingo is rate-limited — its API credits look used up; showing "
                 f"last-known prices until the quota resets ({exc})."
+            )
+        elif isinstance(exc, OperationalError | PendingRollbackError):
+            # A local SQLite lock, not a provider/network problem — Tiingo itself
+            # may have answered fine. Say so plainly instead of blaming the
+            # provider (see the Nov 2026 "database is locked" postmortem).
+            message = (
+                f"Tiingo backup write was skipped this tick — the local database "
+                f"was briefly locked (not a Tiingo/network problem); showing "
+                f"last-known prices, will retry next tick ({exc})."
             )
         else:
             message = f"Tiingo fallback unreachable — showing last-known prices ({exc})."
