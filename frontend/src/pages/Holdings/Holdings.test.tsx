@@ -333,6 +333,31 @@ describe("Holdings page", () => {
     }
   });
 
+  it("puts the estimate under the published price and the value while the NAV is pending", () => {
+    // The official NAV is the last one the fund actually published; the estimate
+    // belongs beneath it, marked, so the figure that moved is never mistaken for
+    // the figure of record.
+    const saved = holdings.holdings;
+    holdings.holdings = [twinRow()] as typeof saved;
+    try {
+      const { container, unmount } = render(<Holdings />);
+      const subs = [...container.querySelectorAll(".holdings-page__stack-sub")].map((n) => n.textContent);
+      expect(subs.some((t) => t?.includes("101.50"))).toBe(true); // estimated price per share
+      expect(subs.some((t) => t?.includes("1,015"))).toBe(true); // the holding at that estimate
+      unmount();
+      // NAV posted: nothing to estimate, so neither line is drawn.
+      holdings.holdings = [
+        twinRow({ twin: { ...twinRow().twin, pending: false, est_price: null, est_value: null } }),
+      ] as typeof saved;
+      const again = render(<Holdings />);
+      const after = [...again.container.querySelectorAll(".holdings-page__stack-sub")].map((n) => n.textContent);
+      expect(after.some((t) => t?.includes("101.50"))).toBe(false);
+      expect(after.some((t) => t?.includes("1,015"))).toBe(false);
+    } finally {
+      holdings.holdings = saved;
+    }
+  });
+
   it("shows the Twin block with estimate and divergence in the desktop drawer", () => {
     const saved = holdings.holdings;
     holdings.holdings = [twinRow()] as typeof saved;

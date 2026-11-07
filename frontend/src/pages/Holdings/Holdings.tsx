@@ -31,7 +31,7 @@ import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { HoldingMobileRow } from "./HoldingMobileRow";
 import { GroupSummary } from "./GroupSummary";
-import { Flags, HoldingDetails, RowStamp, TwinBlock, TwinLine, tintClass, WeightCell } from "./HoldingParts";
+import { EstChip, Flags, HoldingDetails, RowStamp, TwinBlock, TwinLine, WeightCell, tintClass } from "./HoldingParts";
 import { HoldingsKpis } from "./HoldingsKpis";
 import "./Holdings.scss";
 
@@ -267,6 +267,18 @@ export function Holdings() {
               {formatMoney(toNum(r.price_native), r.native_currency, { unmasked: true })}
               <PriceTick title={marks.tick(r)} />
             </span>
+            {/* The price above is the last NAV the fund actually published; while
+                today's is still pending the twin's estimate of it sits underneath,
+                marked, so the official figure is never the one that moved. */}
+            {r.twin?.pending && toNum(r.twin.est_price) !== null && (
+              <span
+                className="holdings-page__stack-sub"
+                title={`Estimated from the ETF ${r.twin.symbol} until ${r.symbol}'s NAV posts`}
+              >
+                <EstChip>≈</EstChip>{" "}
+                {formatMoney(toNum(r.twin.est_price), r.native_currency, { unmasked: true })}
+              </span>
+            )}
             <RowStamp text={stamps.rowPrice(r)} />
           </span>
         ),
@@ -295,7 +307,19 @@ export function Holdings() {
         phone: "headline",
         emphasis: true,
         sortValue: (r) => toNum(r.value),
-        cell: (r) => <Money amount={toNum(r.value)} currency={currency} />,
+        cell: (r) => (
+          <span className="holdings-page__stack">
+            <Money amount={toNum(r.value)} currency={currency} />
+            {r.twin?.pending && toNum(r.twin.est_value) !== null && (
+              <span
+                className="holdings-page__stack-sub"
+                title={`The holding at ${r.twin.symbol}'s estimate, until ${r.symbol}'s NAV posts`}
+              >
+                <EstChip>≈</EstChip> <Money amount={toNum(r.twin.est_value)} currency={currency} />
+              </span>
+            )}
+          </span>
+        ),
       },
       {
         key: "weight",

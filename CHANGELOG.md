@@ -17,6 +17,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.3] — 2026-11-07
+
+### Fixed
+- **The ETF-twin line hid the day's money on a narrow screen.** The holding row
+  directly above it shows its own day money at every width, so the estimate line
+  reported half of what its parent did — a gap rather than a tidier line. It now
+  shows at every width. (Its neighbouring "since buying" figure stays hidden on a
+  phone for a different reason: that grid has only three columns, so a fourth cell
+  would overflow rather than merely crowd.)
+
+### Added
+- **The Holdings page shows the twin's estimate under the published figures** while
+  a fund's NAV is still pending: the estimated NAV per share beneath the last one
+  the fund actually published, and the holding valued at that estimate beneath its
+  official value. Both are marked "≈" and sit in the quieter second line, so the
+  official figure is never the one that appears to have moved.
+
 ## [6.12.2] — 2026-11-07
 
 ### Fixed
