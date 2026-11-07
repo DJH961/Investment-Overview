@@ -257,7 +257,11 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const rows = open ? all : all.slice(0, OVERVIEW_HOLDINGS_LIMIT);
   const maxWeight = Math.max(0, ...all.map((r) => toNum(r.weight_pct) ?? 0));
   // The price time is said once, in the header; a row only shows its own when it differs.
-  const stamps = useMemo(() => foldStamps(q.data?.holdings ?? [], { timeZone }), [q.data, timeZone]);
+  // `weekdays` renders an older session as "Fri" rather than "Yesterday": shorter
+  // for the header's corner, and it does not quietly mislead after a long weekend,
+  // when the previous session is three days back.
+  const stampOpts = useMemo(() => ({ timeZone, weekdays: true }) as const, [timeZone]);
+  const stamps = useMemo(() => foldStamps(q.data?.holdings ?? [], stampOpts), [q.data, stampOpts]);
   const marks = useMemo(() => holdingMarks(q.data?.holdings ?? [], { timeZone }), [q.data, timeZone]);
   return (
     <Card
@@ -270,7 +274,8 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
             priceText={stamps.price}
             updated={stamps.updated}
             compact
-            options={{ timeZone }}
+            priceOnly
+            options={stampOpts}
           />
         ) : undefined
       }
