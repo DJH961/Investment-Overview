@@ -299,13 +299,13 @@
     align-self: center;
   }
 
-  // Estimated money under the % on tablets and up; the phone keeps one compact line.
+  // The estimated money under the %, at every width. The holding row directly
+  // above shows its own day money on a phone, so hiding the estimate's made the
+  // twin line report half of what its parent did — a gap, not a tidier line.
+  // (Its neighbour `__twin-total` is a different case: the phone grid has only
+  // three columns, so a fourth cell would overflow rather than merely crowd.)
   &__twin-sub {
     font-size: var(--font-size-xs);
-
-    @include m.phone {
-      display: none;
-    }
   }
 
   &__pill {
