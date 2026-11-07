@@ -701,6 +701,36 @@ def get_rate_eur_to_quote(
     return lookup_rate_with_forward_fill(rates, target)
 
 
+def get_settled_rate(
+    session: Session,
+    target: date,
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+) -> Decimal | None:
+    """The **settled** ECB/Frankfurter EUR→quote rate for ``target``, forward-filled.
+
+    Unlike :func:`get_rate_eur_to_quote`, this never picks up :func:`get_rates`'s
+    live intraday overlay for *today* — it reads only the persisted
+    ``fx_history`` rows, which is exactly the real, dated, non-drifting anchor
+    a *freeze* needs (the web companion's ``settledPrevFx``). The overlay is
+    correct for a live valuation (the forex market trades on past the 16:00 ET
+    equity close, so the headline total should keep moving with it), but wrong
+    for a figure that must stop moving once a session has shut: forward-filling
+    ``get_rates``' overlaid series would otherwise silently re-admit the still-
+    ticking live spot the moment ``target`` is today, defeating the freeze.
+
+    Used by :func:`investment_dashboard.services.intraday_snapshots_service.session_close_rate`
+    as the settled fallback when no intraday sample reached the session's
+    close. Returns ``None`` if the database has no prior rate at all.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        rates = fx_repo.get_rates(cache, base=base, quote=quote)
+    return lookup_rate_with_forward_fill(rates, target)
+
+
 @dataclass(frozen=True)
 class FxAsOf:
     """Provenance of the EUR→``quote`` rate currently driving the UI.

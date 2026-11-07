@@ -575,11 +575,11 @@ def build_overview(
     """The ``GET /api/overview`` payload for reporting currency ``ccy``."""
     now = now or datetime.now(UTC)
     ctx = build_context(session, as_of=as_of)
-    metrics = compute_portfolio_metrics(session, as_of=ctx.as_of)
+    metrics = compute_portfolio_metrics(session, as_of=ctx.as_of, now=now)
     # Before the open the latest trading day has no prices yet: show the last
     # session's move (as the v5 web app did) instead of a flat 0 %.
     metrics = with_last_session_daily_growth(
-        session, metrics, session_date=intraday_snapshots_service.last_session_date(now)
+        session, metrics, session_date=intraday_snapshots_service.last_session_date(now), now=now
     )
     # Market shut: the hero move is the last session's official closes/NAVs (each
     # book at its own session's closing rate); the overnight currency is separate.

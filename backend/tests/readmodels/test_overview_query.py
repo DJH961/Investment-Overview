@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -122,9 +122,78 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
     assert im.daily_growth_eur != im.daily_growth_usd
 
 
-def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, seeded: None) -> None:
-    """A live intraday EUR/USD overlay moves *today's* FX leg of daily growth
-    while historical YTD figures (priced at past-date FX) stay put."""
+def test_instrument_daily_growth_prev_leg_matches_the_twin_estimate_anchor(
+    session: Session, seeded: None
+) -> None:
+    """The previous-close FX anchor behind a holding's EUR daily growth must be
+    the *same* rate the ETF-twin estimate uses for its previous-close leg
+    (:func:`intraday_snapshots_service.previous_close_fx` /
+    :func:`session_close_rate`) — not the bare ECB/Frankfurter fix, which
+    settles ~6 hours before the true 16:00 ET close.
+
+    This asserts the **FX anchor itself** is shared, not that the two
+    percentages come out equal — a holding's official close and its twin's
+    estimate can still differ on the *price* side (a separate, unrelated
+    question), and this test makes no claim about that.
+    """
+    from sqlalchemy import delete
+
+    from investment_dashboard.models import PriceHistory
+    from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
+    from investment_dashboard.repositories import intraday_repo
+    from investment_dashboard.services import intraday_snapshots_service as iss
+
+    vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
+    latest_price_date = iss.previous_trading_session(exchange_today() + timedelta(days=1))
+    previous_price_date = iss.previous_trading_session(latest_price_date)
+
+    session.execute(delete(PriceHistory).where(PriceHistory.instrument_id == vti.id))
+    prices_repo.upsert_closes(
+        session,
+        vti.id,
+        {previous_price_date: Decimal("220.00"), latest_price_date: Decimal("230.00")},
+    )
+    # The ECB/Frankfurter fix for the previous session: 1.20 — what the old
+    # code used directly for the previous-close leg.
+    fx_repo.upsert_rates(
+        session, {previous_price_date: Decimal("1.20"), latest_price_date: Decimal("1.25")}
+    )
+    # The session's *own* captured close sample, deliberately different: 1.30
+    # — the rate the twin's `previous_close_fx` actually anchors to, captured
+    # at/just before that session's 16:00 ET close (DST-safe: derived from the
+    # real session-close instant rather than a hardcoded UTC hour).
+    close_utc = iss._session_close_utc(previous_price_date) - timedelta(minutes=2)
+    intraday_repo.insert_sample(session, close_utc, Decimal("1000.00"), fx_eur_usd=Decimal("1.30"))
+    session.flush()
+
+    twin_anchor = iss.previous_close_fx(session, latest_price_date)
+    assert twin_anchor == Decimal("1.30")  # sanity: the twin sees the captured close, not 1.20
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    im = metrics[vti.id]
+    assert im.daily_growth_eur is not None
+    # The holding's own EUR growth must be struck at the SAME previous-close
+    # anchor (1.30) the twin estimate uses — not the bare ECB fix (1.20).
+    e_prev_twin_anchor = (Decimal("10") * Decimal("220.00")) / twin_anchor
+    e_prev_bare_ecb = (Decimal("10") * Decimal("220.00")) / Decimal("1.20")
+    e_last = (Decimal("10") * Decimal("230.00")) / Decimal("1.25")
+    growth_at_twin_anchor = (e_last - e_prev_twin_anchor) / e_prev_twin_anchor
+    growth_at_bare_ecb = (e_last - e_prev_bare_ecb) / e_prev_bare_ecb
+    assert abs(im.daily_growth_eur - growth_at_twin_anchor) < Decimal("0.0001")
+    # And, to make the fix visible: this is NOT what the bare ECB rate gives.
+    assert abs(im.daily_growth_eur - growth_at_bare_ecb) > Decimal("0.001")
+
+
+def test_live_eur_usd_spot_does_not_shift_daily_growth_once_shut(
+    session: Session, seeded: None
+) -> None:
+    """Once the US market has shut for the day, a live EUR/USD overlay must
+    **not** move the holding's daily-growth leg — only a session that is
+    still *trading right now* tracks the live rate; a shut one freezes to its
+    own settled close (AGENTS.md 💱 rule: growth must not drift with the
+    after-hours EUR/USD tick). Historical YTD figures (priced at past-date FX)
+    stay put either way, as before."""
     from unittest.mock import patch
 
     from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
@@ -144,15 +213,25 @@ def test_live_eur_usd_spot_shifts_daily_growth_not_history(session: Session, see
     fx_repo.upsert_rates(session, {yesterday: Decimal("1.20")})
     session.flush()
 
+    # Pinned well after the 16:00 ET close on today's real calendar date
+    # (23:00 UTC is 18:00-19:00 ET year-round), so market-open-ness is
+    # deterministic regardless of the real wall-clock *time* the test runs at.
+    shut_now = datetime.combine(exchange_today(), datetime.min.time(), tzinfo=UTC) + timedelta(
+        hours=23
+    )
+
     fx_service.clear_live_spot()
     try:
         with patch.object(intraday_snapshots_service, "_is_trading_day", mock_is_trading):
-            base = compute_instrument_metrics(session, get_positions(session))[vti.id]
-            # Live spot: EUR/USD jumps from today's ECB 1.25 to 1.32 intraday.
+            base = compute_instrument_metrics(session, get_positions(session), now=shut_now)[vti.id]
+            # Live spot: EUR/USD jumps from today's ECB 1.25 to 1.32 intraday —
+            # a genuine forex move, since the forex market trades on past the
+            # equity close.
             fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=exchange_today())
-            live = compute_instrument_metrics(session, get_positions(session))[vti.id]
-            # The EUR daily growth moved with the live FX; USD (FX-neutral) did not.
-            assert live.daily_growth_eur != base.daily_growth_eur
+            live = compute_instrument_metrics(session, get_positions(session), now=shut_now)[vti.id]
+            # Neither leg moved: the session has shut, so growth is frozen —
+            # the live spot only ever moves the *valuation*, never this figure.
+            assert live.daily_growth_eur == base.daily_growth_eur
             assert live.daily_growth_usd == base.daily_growth_usd
             # The YTD growth's start value is priced at the Jan FX (1.25), untouched
             # by the live spot — only the current mark revalues.

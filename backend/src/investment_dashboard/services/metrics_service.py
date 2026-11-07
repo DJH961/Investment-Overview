@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -289,6 +289,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     *,
     as_of: date | None = None,
     eur_overrides: Mapping[int, Decimal] | None = None,
+    now: datetime | None = None,
 ) -> PortfolioMetrics:
     as_of = as_of or exchange_today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
@@ -496,7 +497,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     )
 
     # Daily growth on the most recent completed trading day (dual currency).
-    daily = _compute_daily_growth(session, as_of=as_of, eur_to_usd=eur_to_usd, cache=cache)
+    daily = _compute_daily_growth(session, as_of=as_of, eur_to_usd=eur_to_usd, cache=cache, now=now)
 
     # Fund-fee figures from the live positions (value-weighted TER + €/yr cost).
     weighted_expense_ratio, annual_expense_cost_eur = _compute_expense_figures(
@@ -578,24 +579,26 @@ def _value_in_both(
     session: Session,
     on: date,
     *,
-    eur_to_usd: dict[date, Decimal],
+    fx: Decimal | None,
     cache: _ValuationCache | None = None,
 ) -> tuple[Decimal, Decimal | None]:
-    """Portfolio value on ``on`` in (EUR, USD), USD via that date's FX.
+    """Portfolio value on ``on`` in (EUR, USD), USD via the caller-resolved ``fx``.
 
-    When there is no EUR→USD rate to convert with, the USD leg degrades to
-    ``None`` (blank/unavailable) rather than relabelling the EUR figure as
-    USD — mirroring every other valuation site (lines 349/432/600,
-    ``_overview_query``, ``_period_query``). Returning the EUR value in the
-    USD slot silently reported the wrong daily-growth (USD) number.
+    ``fx`` is the EUR/USD anchor the caller has already resolved for ``on`` (see
+    :func:`_compute_daily_growth`'s :func:`intraday_snapshots_service.daily_growth_leg_fx`
+    call) — this function only applies it, so the growth/move legs stay in lock-step
+    with whichever anchor the caller chose. When there is no EUR→USD rate to convert
+    with, the USD leg degrades to ``None`` (blank/unavailable) rather than
+    relabelling the EUR figure as USD — mirroring every other valuation site (lines
+    349/432/600, ``_overview_query``, ``_period_query``). Returning the EUR value in
+    the USD slot silently reported the wrong daily-growth (USD) number.
     """
     eur = (
         cache.total_value(on)
         if cache is not None
         else positions_service.total_portfolio_value(session, as_of=on)
     )
-    fx = lookup_rate_with_forward_fill(eur_to_usd, on) or ZERO
-    usd: Decimal | None = eur * fx if fx != ZERO else None
+    usd: Decimal | None = eur * fx if fx is not None and fx > ZERO else None
     return eur, usd
 
 
@@ -627,6 +630,7 @@ def _compute_daily_growth(
     as_of: date,
     eur_to_usd: dict[date, Decimal],
     cache: _ValuationCache | None = None,
+    now: datetime | None = None,
 ) -> _DailyGrowth:
     """Single-day growth on the last completed market session (global baseline).
 
@@ -644,10 +648,22 @@ def _compute_daily_growth(
     only has the last close and nothing newer) reads 0% today rather than leaking
     an older session's move into the headline.
 
+    💱 Each leg's EUR→USD anchor is resolved by
+    :func:`intraday_snapshots_service.daily_growth_leg_fx` (ported from the web
+    companion's ``graphAnchorFx``), **not** a bare forward-filled ECB/Frankfurter
+    lookup: ``prev_date`` always uses its own settled session close (the
+    completeness-gated intraday sample, else that date's ECB rate), and
+    ``last_date`` uses the *live* rate only while ``last_date`` is today's
+    session and the US market is open right now — once that session has shut,
+    it freezes to its own settled close too, so the growth figure stops
+    drifting with the after-hours EUR/USD tick the instant the bell rings. This
+    governs the growth/move legs only; any holding/portfolio *current value*
+    elsewhere keeps re-marking at the live spot.
+
     Returns a :class:`_DailyGrowth` whose growth legs are ``None`` when there
     aren't two priced dates yet; the EUR→USD marks on each date are carried
     alongside so the UI can caption *which* FX rate (and its change) drove the
-    move (already live-overlaid for today by :func:`fx_service.get_rates`).
+    move.
     """
     positions = (
         cache.positions(as_of)
@@ -657,14 +673,20 @@ def _compute_daily_growth(
     held_ids = [p.instrument.id for p in positions]
     if not held_ids:
         return _DailyGrowth(None, None, None, None, None, None)
+    now = now or datetime.now(UTC)
     # One global baseline: the most recent market session on/before ``as_of`` and
     # the session before it (holiday-aware), matching the 1 Day chart's anchor.
     last_date = intraday_snapshots_service.previous_trading_session(as_of + timedelta(days=1))
     prev_date = intraday_snapshots_service.previous_trading_session(last_date)
-    fx_last = lookup_rate_with_forward_fill(eur_to_usd, last_date)
-    fx_prev = lookup_rate_with_forward_fill(eur_to_usd, prev_date)
-    last_eur, last_usd = _value_in_both(session, last_date, eur_to_usd=eur_to_usd, cache=cache)
-    prev_eur, prev_usd = _value_in_both(session, prev_date, eur_to_usd=eur_to_usd, cache=cache)
+
+    def _leg_fx(on: date) -> Decimal | None:
+        live = lookup_rate_with_forward_fill(eur_to_usd, on)
+        return intraday_snapshots_service.daily_growth_leg_fx(session, on, now=now, live_rate=live)
+
+    fx_last = _leg_fx(last_date)
+    fx_prev = _leg_fx(prev_date)
+    last_eur, last_usd = _value_in_both(session, last_date, fx=fx_last, cache=cache)
+    prev_eur, prev_usd = _value_in_both(session, prev_date, fx=fx_prev, cache=cache)
     growth_eur = (last_eur - prev_eur) / prev_eur if prev_eur > ZERO else None
     # USD growth is only meaningful when both marks could be valued in USD;
     # a missing EUR→USD rate on either date degrades the USD leg to ``None``
@@ -712,7 +734,11 @@ def _compute_daily_growth(
 
 
 def with_last_session_daily_growth(
-    session: Session, metrics: PortfolioMetrics, *, session_date: date
+    session: Session,
+    metrics: PortfolioMetrics,
+    *,
+    session_date: date,
+    now: datetime | None = None,
 ) -> PortfolioMetrics:
     """Re-base the day move onto ``session_date`` when the baseline day has not traded yet.
 
@@ -732,7 +758,7 @@ def with_last_session_daily_growth(
     if metrics.daily_growth_as_of is None or metrics.daily_growth_as_of <= session_date:
         return metrics
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-    daily = _compute_daily_growth(session, as_of=session_date, eur_to_usd=eur_to_usd)
+    daily = _compute_daily_growth(session, as_of=session_date, eur_to_usd=eur_to_usd, now=now)
     if daily.last_date is None:
         return metrics
     return replace(
