@@ -17,6 +17,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.5] — 2026-11-07
+
+### Fixed
+- **The ETF twin's estimate was measured to a minute before the close, not to the
+  close.** A twin's price was only ever captured while its market was open — which
+  ends strictly before 16:00 ET — so the last sample of a session was up to one
+  poll interval early, and nothing ever fetched the real closing print. A directly
+  held holding, by contrast, has its settled close re-fetched right after the bell.
+  The same ETF therefore reported two slightly different day moves on one screen:
+  the holding measured to the closing auction, its twin to a minute before it. A
+  twin now fetches its session's true close once the market shuts and stores it at
+  the close instant. The estimate exists to predict a NAV, and a NAV strikes at the
+  close, so this was a real miss rather than a display quirk. Note the error was
+  not one-directional, so recorded twin-divergence statistics absorbed it as extra
+  noise rather than as bias; past sessions' figures are not recomputed.
+
 ## [6.12.3] — 2026-11-07
 
 ### Fixed
