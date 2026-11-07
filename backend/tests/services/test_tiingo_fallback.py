@@ -10,7 +10,12 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+from hypothesis import given
+from hypothesis import strategies as st
+
 from investment_dashboard.services.tiingo_fallback import (
+    DESKTOP_GRACE,
+    MARKET_SYMBOL_COOLDOWN,
     Budget,
     MarketSymbolState,
     NavAction,
@@ -113,6 +118,82 @@ def test_market_eligible_fires_on_elapsed_after_app_reopen() -> None:
     # is already elapsed and it fires immediately.
     state = _market(stale_since=_NAV_WINDOW_UTC - timedelta(hours=5))
     assert market_symbol_eligible(state, now_utc=_NAV_WINDOW_UTC) is True
+
+
+# --------------------------------------------------------------------------- #
+# Market-symbol cooldown (gate D) — one stuck symbol on an always-on scheduler
+# must not re-ask Tiingo every tick.
+# --------------------------------------------------------------------------- #
+def test_market_no_last_attempt_is_eligible() -> None:
+    # Never asked before: nothing to cool down from.
+    state = _market(last_attempt_at=None)
+    assert market_symbol_eligible(state, now_utc=_NAV_WINDOW_UTC) is True
+
+
+def test_market_not_eligible_within_cooldown_of_last_attempt() -> None:
+    # Called 5 minutes ago (well inside the 15-minute cooldown): hold off even
+    # though grace + confirmed-repeat-failure both still hold.
+    state = _market(last_attempt_at=_NAV_WINDOW_UTC - timedelta(minutes=5))
+    assert market_symbol_eligible(state, now_utc=_NAV_WINDOW_UTC) is False
+
+
+def test_market_not_eligible_a_second_just_before_cooldown_elapses() -> None:
+    state = _market(last_attempt_at=_NAV_WINDOW_UTC - MARKET_SYMBOL_COOLDOWN + timedelta(seconds=1))
+    assert market_symbol_eligible(state, now_utc=_NAV_WINDOW_UTC) is False
+
+
+def test_market_eligible_once_cooldown_elapsed() -> None:
+    # Exactly the cooldown (or more) since the last call: a fresh attempt is due.
+    state = _market(last_attempt_at=_NAV_WINDOW_UTC - MARKET_SYMBOL_COOLDOWN)
+    assert market_symbol_eligible(state, now_utc=_NAV_WINDOW_UTC) is True
+
+
+def test_manual_market_bypasses_cooldown() -> None:
+    # An explicit user-initiated "Refresh via Tiingo now" fires immediately even
+    # seconds after the last automatic attempt — manual bypasses gates C/D, not B.
+    state = _market(last_attempt_at=_NAV_WINDOW_UTC - timedelta(seconds=1))
+    assert market_symbol_eligible(state, now_utc=_NAV_WINDOW_UTC, manual=True) is True
+
+
+@given(minutes_since_attempt=st.integers(min_value=0, max_value=180))
+def test_market_cooldown_property_no_second_call_until_elapsed(
+    minutes_since_attempt: int,
+) -> None:
+    """No second call for the same symbol within the cooldown; always allowed
+    the instant it elapses — holding every other gate satisfied."""
+    last_attempt_at = _NAV_WINDOW_UTC - timedelta(minutes=minutes_since_attempt)
+    state = _market(last_attempt_at=last_attempt_at)
+    eligible = market_symbol_eligible(state, now_utc=_NAV_WINDOW_UTC)
+    elapsed = _NAV_WINDOW_UTC - last_attempt_at
+    assert eligible is (elapsed >= MARKET_SYMBOL_COOLDOWN)
+
+
+@given(
+    behind=st.booleans(),
+    grace_elapsed_minutes=st.integers(min_value=0, max_value=60),
+    repeat_confirmed=st.booleans(),
+    cooldown_elapsed_minutes=st.integers(min_value=0, max_value=60),
+)
+def test_market_eligibility_still_respects_existing_gates(
+    behind: bool,
+    grace_elapsed_minutes: int,
+    repeat_confirmed: bool,
+    cooldown_elapsed_minutes: int,
+) -> None:
+    """The new cooldown gate composes with (never relaxes) gates A-C: eligible
+    iff behind the expected session, past grace, a confirmed repeat failure,
+    *and* past the cooldown since the last attempt."""
+    held_date = date(2026, 6, 19) if behind else date(2026, 6, 22)  # expected == 6/22
+    state = _market(
+        held_date=held_date,
+        stale_since=_NAV_WINDOW_UTC - timedelta(minutes=grace_elapsed_minutes),
+        repeat_failure_confirmed=repeat_confirmed,
+        last_attempt_at=_NAV_WINDOW_UTC - timedelta(minutes=cooldown_elapsed_minutes),
+    )
+    eligible = market_symbol_eligible(state, now_utc=_NAV_WINDOW_UTC)
+    grace_ok = timedelta(minutes=grace_elapsed_minutes) >= DESKTOP_GRACE
+    cooldown_ok = timedelta(minutes=cooldown_elapsed_minutes) >= MARKET_SYMBOL_COOLDOWN
+    assert eligible is (behind and grace_ok and repeat_confirmed and cooldown_ok)
 
 
 # --------------------------------------------------------------------------- #

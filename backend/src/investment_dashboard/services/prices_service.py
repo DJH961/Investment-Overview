@@ -890,6 +890,18 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
             round_.settled("yfinance", result)
             _report_suspect_data(cache, {i.symbol: i for i in due}, written_ids, round_)
 
+        # Commit the primary closes now, before the Tiingo fallback's HTTP call
+        # (10s timeout x 3 attempts with backoff -- tens of seconds worst case).
+        # ``cache`` and the caller's ``ledger`` session are typically the same
+        # physical SQLite file (single-file deployment); leaving this write
+        # uncommitted would hold the file's one writer lock for the whole
+        # fallback call, so any ledger write attempted in the meantime (e.g. the
+        # Tiingo quota-state save) would wait out the full HTTP round-trip
+        # instead of the few milliseconds ``busy_timeout`` expects. The cache
+        # tier is derived/rebuildable, so committing early here is safe even if
+        # a later step in this tick fails. See the Nov 2026 "Scheduled live
+        # refresh: PendingRollbackError" postmortem.
+        cache.commit()
         _maybe_run_tiingo_fallback(
             session,
             cache,
@@ -1079,6 +1091,19 @@ def _maybe_run_tiingo_fallback(
 
         from investment_dashboard.adapters._retry import RateLimitedError  # noqa: PLC0415
         from investment_dashboard.services import runtime_status  # noqa: PLC0415
+
+        # ``apply_desktop_fallback`` writes the recovered closes + refresh stamp
+        # on this same ``cache`` session with no guard of its own (unlike the
+        # quota-state save, which now uses its own short-lived session). A lock
+        # there raises here uncaught, which otherwise leaves ``cache`` in
+        # SQLAlchemy's "pending rollback" state for the rest of the tick — the
+        # next write, or the commit when ``auto_refresh.tick_refresh``'s ``with``
+        # block exits, would then fail too. Roll it back explicitly so the
+        # session is clean and reusable. This can only discard *this* fallback
+        # attempt's not-yet-committed write: the primary yfinance closes were
+        # already committed above, before the fallback was ever invoked, so a
+        # real already-persisted price is never at risk here.
+        cache.rollback()
 
         if isinstance(exc, RateLimitedError):
             message = (

@@ -34,7 +34,25 @@ DESKTOP_DAILY_CAP = 200
 #: Grace after a symbol first goes stale/missing before Tiingo may be considered.
 #: Short on purpose: the apps are usually open only briefly and the hourly cap
 #: self-regulates. Escalation *also* requires a confirmed repeat failure.
+#:
+#: NOTE: ``DESKTOP_GRACE`` was tuned for a desktop app that's open only briefly —
+#: the user closes it, so a stuck symbol can only burn so many calls before the
+#: process exits. On an always-on server the scheduler ticks every
+#: ``DEFAULT_INTERVAL_SECONDS`` (60s, see ``services/auto_refresh.py``)
+#: indefinitely, so once this grace elapses a single stuck symbol would
+#: otherwise fire a fresh Tiingo call *every tick* — see
+#: ``MARKET_SYMBOL_COOLDOWN`` below, which exists specifically to cap that.
 DESKTOP_GRACE = timedelta(minutes=3)
+#: Minimum gap between two Tiingo calls for the *same* market symbol, once gate
+#: C (grace + confirmed repeat failure) has already fired once. Without this, a
+#: 24/7 scheduler re-evaluates the same stuck symbol every tick and gate C stays
+#: satisfied forever, so it would ask Tiingo again and again — at the default
+#: 60s cadence that alone can exhaust ``DESKTOP_HOURLY_CAP`` (10/hr) in about
+#: ten minutes, starving every *other* symbol's fallback for the rest of the
+#: hour. 15 minutes matches the NAV path's in-window cooldown
+#: (``NAV_COOLDOWN_IN_WINDOW``): it caps one stuck symbol at ~4 calls/hour,
+#: leaving the remaining ~6 calls/hour of budget for other symbols.
+MARKET_SYMBOL_COOLDOWN = timedelta(minutes=15)
 
 # --- NAV-late: peer-confirmation + canary -------------------------------------
 #: No Fidelity NAV realistically strikes before this Eastern wall-clock time, so
@@ -111,6 +129,11 @@ class MarketSymbolState:
     primary_failed: bool
     stale_since: datetime | None
     repeat_failure_confirmed: bool
+    #: When Tiingo was last actually asked for this symbol (any outcome), or
+    #: ``None`` if never. Drives the cooldown below; independent of
+    #: ``stale_since`` (which is *when the symbol first went stale*, not when it
+    #: was last probed).
+    last_attempt_at: datetime | None = None
 
 
 def market_symbol_eligible(
@@ -118,9 +141,10 @@ def market_symbol_eligible(
     *,
     now_utc: datetime,
     grace: timedelta = DESKTOP_GRACE,
+    cooldown: timedelta = MARKET_SYMBOL_COOLDOWN,
     manual: bool = False,
 ) -> bool:
-    """Whether a market symbol has cleared gates A–C (budget applied separately).
+    """Whether a market symbol has cleared gates A–D (budget applied separately).
 
     * **A — Trigger:** the primary failed/over-quota, or we hold nothing, or what
       we hold is older than the latest settled session.
@@ -129,25 +153,30 @@ def market_symbol_eligible(
       expected session is therefore *not* worth a call.
     * **C — Timing:** past the stale-since grace **and** a confirmed repeat
       yfinance failure (not merely elapsed time on one bad poll).
+    * **D — Cooldown:** at least ``cooldown`` since the *last* Tiingo attempt for
+      this symbol, so a symbol that stays stuck for hours doesn't get asked
+      again on every single scheduler tick.
 
-    ``manual=True`` is a *user-initiated* refresh: it bypasses gate C (the grace
-    + confirmed-repeat-failure timing) but still enforces gate B (newer data must
-    actually exist), so a manual pull while already up to date is a no-op, never
-    a wasted call. Budget is applied by the caller regardless.
+    ``manual=True`` is a *user-initiated* refresh: it bypasses gates C and D
+    (the grace/confirmed-repeat-failure and cooldown timing) but still enforces
+    gate B (newer data must actually exist), so a manual pull while already up
+    to date is a no-op, never a wasted call. Budget is applied by the caller
+    regardless.
     """
     behind = state.held_date is None or state.held_date < state.expected_date
     triggered = state.primary_failed or behind
-    if not triggered:
+    if not triggered or not behind:  # gates A and B
         return False
-    if not behind:  # gate B: nothing newer to get
-        return False
-    if manual:  # gate C bypassed by explicit user action; B still held above
+    if manual:  # gates C/D bypassed by explicit user action; B still held above
         return True
-    if state.stale_since is None:
+    if state.stale_since is None or (now_utc - state.stale_since) < grace:
         return False
-    if (now_utc - state.stale_since) < grace:
+    if not state.repeat_failure_confirmed:
         return False
-    return state.repeat_failure_confirmed
+    within_cooldown = (
+        state.last_attempt_at is not None and (now_utc - state.last_attempt_at) < cooldown
+    )
+    return not within_cooldown
 
 
 def select_within_budget(symbols: Sequence[str], budget: Budget) -> list[str]:
