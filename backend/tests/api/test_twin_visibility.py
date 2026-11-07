@@ -43,9 +43,13 @@ TWIN_ROWS = {
     datetime(2024, 6, 3, 13, 30): D("100"),
     datetime(2024, 6, 3, 17, 0): D("102"),
     # 15:59 ET, not 16:00: the live capture only runs while the market is open
-    # (`t < 16:00`), so the last sample of a session is always *before* the bell.
-    # Seeding the bell itself hid a bug where the ✓ required a sample at or after
-    # it — a timestamp production never produces.
+    # (`t < 16:00`), so the last sample the live capture itself ever writes is
+    # *before* the bell. These fixtures seed exactly that moment — right after
+    # the bell, before `refresh_twin_prices`'s next scheduler pass has fetched
+    # the session's TRUE close (see
+    # `test_twin_estimates.test_refresh_twin_prices_captures_the_settled_close_after_the_bell`,
+    # which pins that follow-up fetch) — rather than a state production is
+    # permanently stuck in.
     datetime(2024, 6, 3, 19, 59): D("105"),  # Monday, last tick before the close
 }
 
@@ -269,9 +273,12 @@ def test_the_row_marks_the_estimate_settled_once_the_twin_s_market_shuts(
     """The ✓ follows the market being shut, not a sample stamped at the bell.
 
     The live capture runs only while `is_us_market_open` is true, which ends at
-    `t < 16:00`, and writes `min(now, close_at)` — so the newest sample of a
-    session is always a poll interval *before* the close. Requiring one at or
-    after the bell made the mark unreachable every evening.
+    `t < 16:00`, and writes `min(now, close_at)` — so the newest sample it
+    writes is always a poll interval *before* the close; the scheduler's next
+    pass then fetches the session's true close separately
+    (`refresh_twin_prices`'s "missing_close" branch). Requiring a sample at or
+    after the bell here, rather than just a shut market, would flicker the ✓
+    off for that gap every evening.
     """
     _seed(official_nav=None)
     with ledger_session_scope() as s:

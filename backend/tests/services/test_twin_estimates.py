@@ -492,6 +492,80 @@ def test_refresh_twin_prices_still_prunes_with_no_twins_held(
     assert calls == [1]
 
 
+def test_refresh_twin_prices_captures_the_settled_close_after_the_bell(
+    session: Session,
+) -> None:
+    """The first refresh after the bell must store the twin's TRUE settled close
+    at the close instant, not leave the session frozen at the last pre-close
+    intraday sample (issue #7).
+
+    Production's live capture only runs while ``is_us_market_open`` is true
+    (strictly ``t < 16:00``) and stamps ``min(now, close_at)``, so the newest
+    sample of a session is always a poll interval *before* the close. Before
+    this fix, :func:`iss.refresh_twin_prices` only re-fetched "today"'s close
+    while the market was open: once it shut (with the twin's previous close
+    already cached, the normal case), the close-fetch branch's
+    ``if market_open or missing_prev:`` guard was false, so the session's twin
+    estimate (``twin_now``) stayed pinned to the stale pre-close sample
+    forever -- unlike a directly-held holding, whose own settled close IS
+    re-fetched by the scheduler's ``eod`` job regardless of what is already
+    cached (``prices_service._force_refresh_window`` clamps the fetch window
+    back onto "today" even when it is already the cached date).
+    """
+    account = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="EUR Brokerage",
+        native_currency="EUR",
+        account_type="brokerage",
+    )
+    fund = instruments_repo.get_or_create(
+        session, symbol="EURFUND", asset_class="mutual_fund", native_currency="EUR"
+    )
+    session.add(
+        Transaction(
+            account_id=account.id,
+            instrument_id=fund.id,
+            date=FRI,
+            kind="buy",
+            quantity=D("5"),
+            price_native=D("200"),
+            net_native=D("-1000"),
+            net_eur=D("-1000"),
+            source="manual",
+        )
+    )
+    prices_repo.upsert_closes(session, fund.id, {FRI: D("200")})
+    instrument_overrides_repo.upsert(session, fund.id, intraday_twin="TWN")
+    # Neutralise the separate one-year-close backfill: without this, a *fresh*
+    # twin's first-ever refresh eagerly backfills a year of closes (including
+    # today's), which would store the true close through a different path and
+    # mask the bug this test targets.
+    app_config_service.set_value(session, f"{iss._TWIN_YEAR_PREFIX}TWN", "1")
+    twin_prices_repo.upsert_prices(
+        session,
+        "TWN",
+        {
+            datetime(2024, 5, 31, 20, 0): D("100"),  # Friday's true close
+            datetime(2024, 6, 3, 19, 59): D("103"),  # Monday, last tick before the bell
+        },
+    )
+    session.flush()
+
+    def fake_fetch_closes(
+        symbols: list[str], start: date, end: date
+    ) -> dict[str, dict[date, Decimal]]:
+        return {"TWN": {FRI: D("100"), MON: D("105")}}  # the closing auction moved it further
+
+    after_close = datetime(2024, 6, 3, 20, 30, tzinfo=UTC)  # 16:30 ET, market shut
+    iss.refresh_twin_prices(session, now=after_close, fetcher=fake_fetch_closes)
+
+    rows = twin_prices_repo.prices_in_range(
+        session, ["TWN"], datetime(2024, 6, 3, 0, 0), datetime(2024, 6, 4, 0, 0)
+    )["TWN"]
+    assert rows.get(datetime(2024, 6, 3, 20, 0)) == D("105")
+
+
 def test_year_backfill_runs_once_per_twin_and_stores_session_closes(session: Session) -> None:
     _seed(session, official_nav=None)
     iss._year_attempts.clear()
