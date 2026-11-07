@@ -37,6 +37,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   close the separately-reported gap between a holding's own day move and its
   ETF-twin estimate — that gap persists in USD too, where neither figure
   involves FX, and is being investigated separately.
+- **`tools/parity_check.py` broke against a v5-era ledger copy.** That copy's
+  `intraday_value` table predates the `fx_eur_usd` column (added well after
+  migration 0014, the v5 head), so the new session-close read above raised
+  `OperationalError: no such column: intraday_value.fx_eur_usd` instead of
+  falling through to the settled rate. A missing column on a legacy schema is
+  now treated the same as "no sample reached the close" and degrades to the
+  settled fallback; any other operational error still propagates.
 
 ### Added
 - `fx_service.get_settled_rate`: the settled ECB/Frankfurter EUR/USD rate for a
