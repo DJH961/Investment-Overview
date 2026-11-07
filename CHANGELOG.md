@@ -17,6 +17,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.2] — 2026-11-07
+
+### Fixed
+- **A scheduled refresh could still lose prices to a local database lock even
+  after the 6.11.2 busy-timeout fix.** The scheduler's cache-tier writes stayed
+  uncommitted across the whole Tiingo fallback call (its HTTP round-trip can
+  take tens of seconds), so a lock held that long could still outlast the
+  5-second busy timeout. The primary yfinance closes are now committed right
+  after they land, before the Tiingo fallback ever runs, and the Tiingo quota-
+  counter save now uses its own short-lived connection instead of riding the
+  long-lived pull session, so neither can block or be blocked by the other.
+  The Tiingo-recovered-closes write still has no commit of its own, so a lock
+  there is now caught and the cache session is explicitly rolled back to a
+  clean, reusable state — rather than left "pending rollback" to poison the
+  rest of the tick — without silently pretending the write had succeeded.
+- **One stuck symbol could exhaust the whole hourly Tiingo budget in about ten
+  minutes on an always-on server.** The automatic market-data fallback had no
+  cooldown between calls for the same symbol, only a 3-minute grace tuned for
+  a desktop app that's open briefly — on a scheduler that ticks every minute,
+  a symbol stuck past that grace got asked again on every single tick. A new
+  15-minute cooldown (matching the NAV path's in-window cooldown) now caps a
+  single stuck symbol at about 4 calls/hour, leaving budget for other symbols.
+- **Tiingo fallback activity never reached `market_data.log`** as
+  `deploy/RUNBOOK.md` promises. The DB-plumbing/wiring module's log lines (the
+  quota-state save and fallback warnings) and the pull narrator's hand-named
+  `investment_dashboard.pull` logger were both missing from the `market_data`
+  activity-log subject, so they only ever landed in the catch-all
+  `dashboard.log`.
+
 ## [6.12.0] — 2026-11-07
 
 ### Changed
