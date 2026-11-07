@@ -107,6 +107,11 @@ class TiingoDesktopState:
     earliest_habit: time | None = None
     peer_nav_seen_at: datetime | None = None
     stale_since: dict[str, datetime] = field(default_factory=dict)
+    #: When Tiingo was last actually asked for a given market symbol (any
+    #: outcome) — drives ``tiingo_fallback.MARKET_SYMBOL_COOLDOWN`` so a stuck
+    #: symbol on an always-on scheduler isn't re-asked every tick. Distinct from
+    #: ``stale_since`` (when the symbol *first* went stale).
+    last_market_attempt_at: dict[str, datetime] = field(default_factory=dict)
     #: When the provider last returned HTTP 429 (rate-limited) this hour, if at
     #: all. Set by :func:`mark_rate_limited` and surfaced in Settings; cleared at
     #: the next hourly reset (the quota frees up then). Not charged itself — the
@@ -167,6 +172,9 @@ class TiingoDesktopState:
                 "peer_nav_seen_at": _iso(self.peer_nav_seen_at),
                 "rate_limited_at": _iso(self.rate_limited_at),
                 "stale_since": {sym: dt.isoformat() for sym, dt in self.stale_since.items()},
+                "last_market_attempt_at": {
+                    sym: dt.isoformat() for sym, dt in self.last_market_attempt_at.items()
+                },
                 "publish_habits": {
                     sym: [t.strftime("%H:%M") for t in times]
                     for sym, times in self.publish_habits.items()
@@ -181,6 +189,7 @@ class TiingoDesktopState:
         data = json.loads(raw)
         habit_raw = data.get("earliest_habit")
         stale_raw = data.get("stale_since") or {}
+        attempt_raw = data.get("last_market_attempt_at") or {}
         habits_raw = data.get("publish_habits") or {}
         return cls(
             hour_stamp=_parse_dt(data.get("hour_stamp")),
@@ -195,6 +204,11 @@ class TiingoDesktopState:
             stale_since={
                 sym: dt
                 for sym, raw_dt in stale_raw.items()
+                if (dt := _parse_dt(raw_dt)) is not None
+            },
+            last_market_attempt_at={
+                sym: dt
+                for sym, raw_dt in attempt_raw.items()
                 if (dt := _parse_dt(raw_dt)) is not None
             },
             publish_habits={
@@ -296,9 +310,21 @@ def mark_stale(state: TiingoDesktopState, symbol: str, now_utc: datetime) -> Non
     state.stale_since.setdefault(symbol, now_utc)
 
 
+def record_market_attempt(state: TiingoDesktopState, symbol: str, now_utc: datetime) -> None:
+    """Stamp that Tiingo was just asked for ``symbol`` (any outcome).
+
+    Drives ``tiingo_fallback.MARKET_SYMBOL_COOLDOWN``: called for every symbol
+    actually selected for a call, *before* the call is made, so even a failed
+    or exception-raising attempt still starts the cooldown (otherwise a
+    persistently-erroring symbol would be retried every tick).
+    """
+    state.last_market_attempt_at[symbol] = now_utc
+
+
 def clear_stale(state: TiingoDesktopState, symbol: str) -> None:
-    """Forget a symbol's stale-since stamp once it refreshes successfully."""
+    """Forget a symbol's stale-since + last-attempt stamps once it refreshes."""
     state.stale_since.pop(symbol, None)
+    state.last_market_attempt_at.pop(symbol, None)
 
 
 def eastern_day_key(now_utc: datetime) -> str:

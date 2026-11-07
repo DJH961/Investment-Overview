@@ -97,6 +97,7 @@ def _run_market(
             # A *confirmed* repeat failure means it was already stale in a prior
             # cycle (not just this one) and is still failing now.
             repeat_failure_confirmed=cand.symbol in previously_stale,
+            last_attempt_at=state.last_market_attempt_at.get(cand.symbol),
         )
         if market_symbol_eligible(gate_state, now_utc=now_utc, manual=manual):
             eligible.append(cand.symbol)
@@ -104,6 +105,10 @@ def _run_market(
     selected = select_within_budget(eligible, state.budget())
     if not selected:
         return
+    # Stamp the attempt *before* calling out, so a failed/raised call still
+    # starts the cooldown (see ``record_market_attempt``).
+    for sym in selected:
+        state_repo.record_market_attempt(state, sym, now_utc)
     fetched = fetch_closes(selected)
     state_repo.record_spend(state, len(selected))
     for sym in _merge(outcome, fetched):

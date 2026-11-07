@@ -42,9 +42,22 @@ SUBJECTS: dict[str, tuple[str, ...]] = {
         f"{_PKG}.services.auto_refresh",
         f"{_PKG}.services.tiingo_fallback",
         f"{_PKG}.services.tiingo_fallback_runner",
+        # The Tiingo DB-plumbing/wiring module (budget save, cache writes, the
+        # "Tiingo quota-state save failed" / "Tiingo fallback raised" warnings)
+        # uses its own module logger — it was missing here, so every one of its
+        # log lines landed only in the catch-all dashboard.log, never in
+        # market_data.log where RUNBOOK says provider fallbacks are recorded.
+        f"{_PKG}.services.tiingo_fallback_wiring",
         f"{_PKG}.services.intraday_snapshots_service",
         f"{_PKG}.services.price_probe_service",
         f"{_PKG}.services.scheduler",
+        # adapters.pull_log narrates every pull (requested/settled/failed/
+        # fallback/budget) on a hand-picked logger name ("investment_dashboard.
+        # pull", not ".adapters.pull_log"), so it falls outside the
+        # f"{_PKG}.adapters" prefix above and needs its own explicit entry —
+        # without it, no pull narration (including every Tiingo fallback
+        # decision) reaches market_data.log at all.
+        "investment_dashboard.pull",
     ),
     "imports": (
         f"{_PKG}.services.importer_service",
