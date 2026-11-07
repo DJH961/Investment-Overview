@@ -766,6 +766,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
     positions: list[Position],
     *,
     as_of: date | None = None,
+    now: datetime | None = None,
 ) -> dict[int, InstrumentMetrics]:
     """Per-instrument returns in EUR **and** USD, keyed by instrument id.
 
@@ -775,8 +776,17 @@ def compute_instrument_metrics(  # noqa: PLR0915
     could cash out today vs what it cost me back then". XIRR, total growth,
     YTD growth and single-day (daily) growth are each computed twice, once per
     wallet, mirroring the portfolio-level KPIs.
+
+    💱 Single-day growth (``daily_growth_eur``/``usd``) is the one figure here
+    that must **not** keep re-marking at today's live FX after the US market
+    has shut (AGENTS.md 💱 rule — see :func:`_instrument_daily_growth`); every
+    other figure (cost basis, current value, XIRR, YTD/MTD growth) is
+    untouched and keeps using ``eur_to_usd`` / ``today_rate`` exactly as
+    before. ``now`` (defaults to the real wall clock) only feeds that one
+    growth calculation.
     """
     as_of = as_of or exchange_today()
+    now = now or datetime.now(UTC)
     txns = list(transactions_repo.list_transactions(session, end=as_of))
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
@@ -993,12 +1003,14 @@ def compute_instrument_metrics(  # noqa: PLR0915
         )
         daily_eur, daily_usd, daily_move_eur, daily_move_usd, daily_as_of = (
             _instrument_daily_growth(
+                session=session,
                 instrument_id=iid,
                 shares=shares,
                 native_currency=native,
                 eur_to_usd=eur_to_usd,
                 today_rate=today_rate,
                 recent_closes=recent_closes,
+                now=now,
                 latest_price_date=latest_price_date,
                 previous_price_date=previous_price_date,
                 is_money_market=is_mm,
@@ -1061,12 +1073,14 @@ def _round_cent(value: Decimal) -> Decimal:
 
 def _instrument_daily_growth(  # noqa: PLR0911
     *,
+    session: Session,
     instrument_id: int,
     shares: Decimal,
     native_currency: str,
     eur_to_usd: dict[date, Decimal],
     today_rate: Decimal | None,
     recent_closes: dict[int, list[tuple[date, Decimal]]],
+    now: datetime,
     latest_price_date: date | None = None,
     previous_price_date: date | None = None,
     is_money_market: bool = False,
@@ -1079,6 +1093,21 @@ def _instrument_daily_growth(  # noqa: PLR0911
     forward-filled to a zero price move; the staleness flag downstream greys it,
     so it reads as last session's move (never a misleading 0 %) even though it is
     left out of today's total growth.
+
+    💱 Each leg's EUR→USD conversion uses
+    :func:`intraday_snapshots_service.daily_growth_leg_fx` (see
+    :func:`metrics_service._compute_daily_growth`, which this mirrors at the
+    per-instrument level), **not** the bare ``eur_to_usd`` forward-fill: the
+    earlier leg always freezes to its own session's settled close, and the
+    later leg freezes too once *that* session has shut — only while it is
+    today's session and the market is open right now does it track the live
+    rate. Without this a holding's "today %" kept drifting all evening with the
+    after-hours EUR/USD tick even once the US market had closed, while the
+    previous leg was struck six hours before the close (the ECB/Frankfurter
+    fix). ``eur_to_usd`` / ``today_rate`` are passed through unchanged to
+    :func:`_convert_native` only as the final-resort fallback baked into the
+    resolver; every *other* figure in :func:`compute_instrument_metrics` (cost
+    basis, current value, XIRR, …) is untouched.
 
     Returns a 5-tuple ``(growth_eur, growth_usd, move_eur, move_usd,
     last_date)``: the two growth *fractions*, the two signed *money* moves (the
@@ -1106,6 +1135,18 @@ def _instrument_daily_growth(  # noqa: PLR0911
     if close_last is None:
         return None, None, None, None, None
 
+    def _leg_rate(on: date) -> Decimal | None:
+        live = lookup_rate_with_forward_fill(eur_to_usd, on)
+        resolved = intraday_snapshots_service.daily_growth_leg_fx(
+            session, on, now=now, live_rate=live if live is not None else today_rate
+        )
+        return resolved if resolved is not None else today_rate
+
+    def _convert(value_native: Decimal, on: date) -> tuple[Decimal, Decimal]:
+        rate = _leg_rate(on)
+        overrides = {on: rate} if rate is not None else {}
+        return _convert_native(value_native, native_currency, on, overrides, today_rate)
+
     if (
         latest_price_date is not None
         and previous_price_date is not None
@@ -1120,12 +1161,8 @@ def _instrument_daily_growth(  # noqa: PLR0911
         # even though it is excluded from today's total growth.
         if len(pairs) >= 2 and pairs[1][1] is not None:
             prev_date, close_prev = pairs[1]
-            e_last, u_last = _convert_native(
-                shares * close_last, native_currency, last_date, eur_to_usd, today_rate
-            )
-            e_prev, u_prev = _convert_native(
-                shares * close_prev, native_currency, prev_date, eur_to_usd, today_rate
-            )
+            e_last, u_last = _convert(shares * close_last, last_date)
+            e_prev, u_prev = _convert(shares * close_prev, prev_date)
             growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
             growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
             move_eur = _round_cent(e_last - e_prev)
@@ -1135,12 +1172,8 @@ def _instrument_daily_growth(  # noqa: PLR0911
         # (FX-only) forward-fill so the row still carries a date for the
         # staleness gate without inventing a price move.
         current_native = shares * close_last
-        e_last, u_last = _convert_native(
-            current_native, native_currency, latest_price_date, eur_to_usd, today_rate
-        )
-        e_prev, u_prev = _convert_native(
-            current_native, native_currency, previous_price_date, eur_to_usd, today_rate
-        )
+        e_last, u_last = _convert(current_native, latest_price_date)
+        e_prev, u_prev = _convert(current_native, previous_price_date)
         growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
         growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
         move_eur = _round_cent(e_last - e_prev)
@@ -1154,12 +1187,8 @@ def _instrument_daily_growth(  # noqa: PLR0911
         return None, None, None, None, None
     current_book_date = latest_price_date or last_date
     previous_book_date = previous_price_date or prev_date
-    e_last, u_last = _convert_native(
-        shares * close_last, native_currency, current_book_date, eur_to_usd, today_rate
-    )
-    e_prev, u_prev = _convert_native(
-        shares * close_prev, native_currency, previous_book_date, eur_to_usd, today_rate
-    )
+    e_last, u_last = _convert(shares * close_last, current_book_date)
+    e_prev, u_prev = _convert(shares * close_prev, previous_book_date)
     growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
     growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
     move_eur = _round_cent(e_last - e_prev)
