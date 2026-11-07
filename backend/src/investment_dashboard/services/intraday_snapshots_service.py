@@ -73,6 +73,7 @@ from itertools import pairwise
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import feed_stall
@@ -3372,15 +3373,31 @@ def session_close_rate(session: Session, session_date: date) -> Decimal | None:
 
     Memoised per request: a Holdings build asks for the same session's rate once per
     fund row (``_divergence_view``), and each miss scans a whole session of samples.
+
+    **Legacy-schema degrade.** ``tools/parity_check.py`` runs this against a
+    v5.3.1-era ledger copy whose ``intraday_value`` table predates the
+    ``fx_eur_usd`` column (added well after migration 0014, the v5 head) — the
+    read below then raises ``OperationalError: no such column:
+    intraday_value.fx_eur_usd`` instead of returning rows. That is just a
+    stronger form of "no sample reached the close": the column simply cannot
+    answer the question on that schema, so it is treated the same as an empty
+    result and falls through to the settled rate. Any *other* operational
+    error (a locked database, a corrupt file, a genuinely missing table) is not
+    this situation and still propagates.
     """
     from investment_dashboard.db import cache_read_session, memo  # noqa: PLC0415
     from investment_dashboard.services import fx_service  # noqa: PLC0415
 
     def compute() -> Decimal | None:
-        with cache_read_session(session) as cache:
-            rows = intraday_repo.list_in_range(
-                cache, _session_open_utc(session_date), _session_close_utc(session_date)
-            )
+        try:
+            with cache_read_session(session) as cache:
+                rows = intraday_repo.list_in_range(
+                    cache, _session_open_utc(session_date), _session_close_utc(session_date)
+                )
+        except OperationalError as exc:
+            if "no such column" not in str(exc):
+                raise
+            rows = []
         close_floor = _session_close_utc(session_date) - timedelta(
             seconds=_SESSION_CLOSE_REACHED_TOLERANCE_SECONDS
         )

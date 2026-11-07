@@ -7,9 +7,10 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 
-from investment_dashboard.models import Transaction
+from investment_dashboard.models import ALL_METADATAS, Transaction
 from investment_dashboard.readmodels.queries.overview_query import build_intraday_value_series
 from investment_dashboard.repositories import (
     accounts_repo,
@@ -923,6 +924,51 @@ class TestSessionCloseRateCompletenessGate:
 
     def test_none_when_nothing_at_all_is_available(self, session: Session) -> None:
         assert iss.session_close_rate(session, _SESSION_DAY) is None
+
+    def test_legacy_schema_missing_fx_eur_usd_degrades_to_the_settled_rate(self) -> None:
+        """``tools/parity_check.py`` runs against a v5-era ledger copy whose
+        ``intraday_value`` table predates the ``fx_eur_usd`` column (added well
+        after migration 0014, the v5 head). Before the fix, ``session_close_rate``
+        let the resulting ``OperationalError`` propagate instead of falling
+        through to the settled rate, exactly as:
+
+            OperationalError: (sqlite3.OperationalError) no such column:
+            intraday_value.fx_eur_usd
+            [SQL: SELECT intraday_value.captured_at, intraday_value.market_value_eur,
+            intraday_value.fx_eur_usd, intraday_value.market_value_usd
+            FROM intraday_value WHERE intraday_value.captured_at >= ? AND
+            intraday_value.captured_at <= ? ORDER BY intraday_value.captured_at]
+
+        A column this absent is just a stronger form of "no sample reached the
+        close", so it must degrade to the settled ECB/Frankfurter rate instead.
+        """
+        engine = create_engine(
+            "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+        )
+        try:
+            for md in ALL_METADATAS:
+                md.create_all(engine)
+            with engine.begin() as conn:
+                # Recreate on the pre-0017 (migration-0014, the v5 head) shape:
+                # only ``captured_at`` + ``market_value_eur``, no ``fx_eur_usd``.
+                conn.execute(text("DROP TABLE intraday_value"))
+                conn.execute(
+                    text(
+                        "CREATE TABLE intraday_value ("
+                        "captured_at DATETIME NOT NULL PRIMARY KEY, "
+                        "market_value_eur NUMERIC(18, 6) NOT NULL)"
+                    )
+                )
+            factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+            legacy_session = factory()
+            try:
+                fx_repo.upsert_rates(legacy_session, {_SESSION_DAY: Decimal("1.10")})
+                legacy_session.flush()
+                assert iss.session_close_rate(legacy_session, _SESSION_DAY) == Decimal("1.10")
+            finally:
+                legacy_session.close()
+        finally:
+            engine.dispose()
 
 
 class TestDailyGrowthLegFx:
