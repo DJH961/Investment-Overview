@@ -66,8 +66,14 @@ export function relativeDay(value: Input, opts: StampOptions = {}): string {
   const today = todayIn(tz, opts.now ?? new Date());
   const diff = dayDiff(day, today);
   if (diff === 0) return "today";
-  if (diff === 1) return "yesterday";
-  return dateWords(day, today, diff > 1 && diff < 7);
+  // `weekdays` is honoured here as well as in `formatStamp`: `priceAsOf` reaches
+  // one or the other depending on the holding (a NAV with no publish instant, or
+  // a listing with no closing bell, land here), and an option that applied to only
+  // some rows would print "Fri" beside "yesterday" in the same list.
+  if (diff === 1 && !opts.weekdays) return "yesterday";
+  // `diff >= 1`, not `> 1`: one day back only reaches here when `weekdays` asked
+  // for the weekday form, and it should get "Sun", not the full "Sun 1 Nov".
+  return dateWords(day, today, diff >= 1 && diff < 7);
 }
 
 /**

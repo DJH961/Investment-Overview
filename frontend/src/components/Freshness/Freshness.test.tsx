@@ -16,6 +16,7 @@ import {
   PriceStamps,
   relativeDay,
   sentenceCase,
+  shortStamp,
   zonedInstant,
 } from ".";
 
@@ -110,6 +111,25 @@ describe("stamps", () => {
   });
   it("capitalises a stamp that starts a line", () => {
     expect(sentenceCase("yesterday 22:00 (close)")).toBe("Yesterday 22:00 (close)");
+  });
+  it("shortens a stamp to the least that is still unambiguous", () => {
+    // Today keeps the clock and loses the word (a bare clock reads as today);
+    // any older session keeps the day and loses the clock, because the minute a
+    // week-old close was struck is not what you are checking.
+    expect(shortStamp("today 15:42 (live)")).toBe("15:42 (live)");
+    expect(shortStamp("yesterday 22:00 (close)")).toBe("Yesterday (close)");
+    expect(shortStamp("Fri 20:00 (close)")).toBe("Fri (close)");
+    // A day with no clock is left alone rather than reduced to nothing.
+    expect(shortStamp("today")).toBe("Today");
+    expect(shortStamp("Mon 2 Nov")).toBe("Mon 2 Nov");
+  });
+  it("names the weekday instead of 'yesterday' when asked, on every path", () => {
+    // `priceAsOf` reaches `formatStamp` or `relativeDay` depending on the holding,
+    // so the option has to hold for both or a list prints "Fri" beside "yesterday".
+    const w = { ...o, weekdays: true };
+    expect(formatStamp("2026-11-01T22:00:00Z", w)).toMatch(/^Sun /);
+    expect(relativeDay("2026-11-01", w)).toBe("Sun");
+    expect(relativeDay("2026-11-01", o)).toBe("yesterday");
   });
   it("labels a day move that is not today's as the last session", () => {
     expect(lastSessionLabel("2026-11-02", o)).toBeNull();
