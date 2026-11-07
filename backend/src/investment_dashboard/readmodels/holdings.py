@@ -428,15 +428,16 @@ def _twin_view(
             # The twin's price is its settled close once its market has shut. The
             # row marks it ✓, the same promise a directly priced holding makes.
             #
-            # Deliberately NOT also requiring a sample struck at or after the bell:
-            # that is unreachable. `is_us_market_open` ends at `t < 16:00` and the
-            # live capture only runs while it is true, writing `min(now, close_at)`
-            # — so the last sample of a session is always *before* the close, by up
-            # to one poll interval. The exact close instant is only stored the next
-            # morning, by which time this session is no longer the one being valued.
-            # The estimate's session is always `last_session_date(now)`, so "market
-            # shut" already means its regular hours are over and nothing more can
-            # move the twin until the next open, which is what the ✓ promises.
+            # Deliberately NOT keyed to whether a sample struck at or after the
+            # bell has landed *yet*: `refresh_twin_prices` only captures that
+            # genuine post-bell print on the scheduler's first pass after
+            # `is_us_market_open` flips false (a real fetch, not instant), so
+            # requiring it here would flicker the ✓ for the gap between the bell
+            # and that next tick. "Market shut" already means the twin's regular
+            # hours are over and nothing more can move its price until the next
+            # open, which is what the ✓ promises — the figure behind it still
+            # catches up to the true close moments later (see
+            # `refresh_twin_prices`'s "missing_close" branch).
             "at_close": not market_hours.is_us_market_open(now),
             "pending": True,
             "divergence": _divergence_view(session, fd, est.legs, ccy=ccy) if fd else None,

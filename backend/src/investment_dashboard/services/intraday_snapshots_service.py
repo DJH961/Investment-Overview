@@ -2803,9 +2803,15 @@ def _store_twin_closes(
     *,
     prev_date: date,
     session_date: date,
-    live_at: datetime | None,
+    live_at: datetime,
 ) -> int:
-    """Store each twin's previous close (at that close's instant) and, live, its price now."""
+    """Store each twin's previous close (at that close's instant) and today's price at ``live_at``.
+
+    ``live_at`` is the live sample instant while the session runs, or the
+    session's TRUE close instant once the market has shut and the caller is
+    capturing the settled print (see the "missing_close" branch in
+    :func:`refresh_twin_prices`).
+    """
     from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
 
     written = 0
@@ -2813,7 +2819,7 @@ def _store_twin_closes(
         rows: dict[datetime, Decimal] = {}
         if (prev := by_day.get(prev_date)) is not None and prev > 0:
             rows[_session_close_utc(prev_date)] = prev
-        if live_at is not None and (cur := by_day.get(session_date)) is not None and cur > 0:
+        if (cur := by_day.get(session_date)) is not None and cur > 0:
             rows[live_at] = cur
         written += twin_prices_repo.upsert_prices(cache, symbol, rows)
     return written
@@ -3136,9 +3142,15 @@ def refresh_twin_prices(
     """Fetch and store the twins' prices for the current / last session.
 
     While the market is open: one daily-closes call for all twins gives the
-    previous close and the price now. A session without intraday twin rows yet
-    (twin just set, a restart) is backfilled once from 5-minute bars, also after
-    the close; the earlier sessions of the 1W window are backfilled likewise
+    previous close and the price now. Once it shuts, the first refresh of the
+    new "closed" state makes one more daily-closes call to capture each twin's
+    TRUE settled close for the session that just ended (a genuine post-bell
+    print, not the last pre-close sample the live capture above was left
+    with) — the same "once after the bell" guarantee
+    :func:`prices_service.refresh_prices` already gives a directly-held
+    holding. A session without intraday twin rows yet (twin just set, a
+    restart) is backfilled once from 5-minute bars, also after the close; the
+    earlier sessions of the 1W window are backfilled likewise
     (:func:`backfill_week_twin_prices`). Returns rows written. ``fetcher`` /
     ``intraday_fetcher`` / ``range_fetcher`` replace the yfinance calls in tests.
     A no-op (no network) without twins.
@@ -3160,6 +3172,7 @@ def refresh_twin_prices(
     prev_date = previous_trading_session(session_date)
     prev_close_at = _session_close_utc(prev_date)
     close_at = _session_close_utc(session_date)
+    true_close_at = _session_actual_close_utc(session_date)
     market_open = is_us_market_open(now)
     with cache_read_session(session) as cache:
         stored = twin_prices_repo.prices_in_range(
@@ -3170,8 +3183,28 @@ def refresh_twin_prices(
     missing_prev = [
         s for s in twins if _latest_at_or_before(stored.get(s, {}), prev_close_at) is None
     ]
-    if market_open or missing_prev:
-        wanted = twins if market_open else missing_prev
+    # A twin whose session just ended needs its TRUE close captured once: the
+    # live capture above only ever writes a sample stamped *before* the bell
+    # (`is_us_market_open` is strictly `t < 16:00`, and the loop stops the
+    # moment it flips false), so without this `twin_now` would stay pinned to
+    # that stale pre-close sample forever once the market shuts — the next
+    # write to this twin isn't until tomorrow's session, by which point this
+    # session is no longer the one any estimate is built from. Checked against
+    # a genuine post-bell print (`>= true_close_at`), not the lenient
+    # close-tolerance window :func:`_session_close_rows` accepts elsewhere —
+    # that window is wide enough to count the very pre-close sample this is
+    # meant to replace.
+    missing_close = (
+        []
+        if market_open
+        else [
+            s
+            for s in twins
+            if not any(t >= true_close_at for t in stored.get(s, {}) if t > prev_close_at)
+        ]
+    )
+    if market_open or missing_prev or missing_close:
+        wanted = twins if market_open else sorted(set(missing_prev) | set(missing_close))
         closes = fetch_closes(wanted, prev_date, session_date + timedelta(days=1))  # type: ignore[operator]
         with cache_write_session(session) as cache:
             written += _store_twin_closes(
@@ -3179,7 +3212,7 @@ def refresh_twin_prices(
                 closes,
                 prev_date=prev_date,
                 session_date=session_date,
-                live_at=min(_to_naive_utc(now), close_at) if market_open else None,
+                live_at=min(_to_naive_utc(now), close_at) if market_open else true_close_at,
             )
     keys = {s: f"{_TWIN_BACKFILLED_PREFIX}{s}" for s in twins}
     done = app_config_service.get_many(session, list(keys.values()))
