@@ -17,6 +17,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.4] — 2026-11-07
+
+### Fixed
+- **A holding's "today %" and the portfolio hero's day move anchored their
+  previous-close EUR/USD rate to the bare ECB/Frankfurter fix** — struck
+  ~10:00 ET, six hours before the US market's true 16:00 ET close — while a
+  separate path (the ETF-twin estimate) already anchored to the session's own
+  captured close. Both legs now resolve through one completeness-gated
+  session-close read (ported from the web companion's `graphAnchorFx`): the
+  intraday sample that actually reached the close, else that date's settled
+  ECB rate, with a live rate only as the very last resort. The "now" leg of a
+  daily-growth figure also now **freezes** to that same settled close once its
+  session has shut, instead of continuing to drift all evening with the
+  still-ticking after-hours EUR/USD tick — it only tracks the live rate while
+  that session is still trading. Valuations (a holding's current value, the
+  headline total) are unaffected and still re-mark at the live rate; only the
+  growth/move figures stop drifting after the bell. This does not by itself
+  close the separately-reported gap between a holding's own day move and its
+  ETF-twin estimate — that gap persists in USD too, where neither figure
+  involves FX, and is being investigated separately.
+
+### Added
+- `fx_service.get_settled_rate`: the settled ECB/Frankfurter EUR/USD rate for a
+  date, forward-filled, **without** the live intraday overlay
+  `get_rates`/`get_rate_eur_to_quote` apply for today — the stable, non-drifting
+  anchor the completeness gate above falls back to.
+
 ## [6.12.3] — 2026-11-07
 
 ### Fixed

@@ -2489,6 +2489,47 @@ def previous_close_fx(session: Session, session_date: date) -> Decimal | None:
     return session_close_rate(session, previous_trading_session(session_date))
 
 
+def daily_growth_leg_fx(
+    session: Session,
+    on: date,
+    *,
+    now: datetime,
+    live_rate: Decimal | None,
+) -> Decimal | None:
+    """The EUR/USD anchor for one leg (``on``) of a single-day growth mark.
+
+    Ported from the web companion's ``graphAnchorFx`` chain
+    (``marketOpen ? liveFx : (sessionCloseFx ?? settledPrevFx ?? liveFx)``),
+    adapted to resolve *per leg date* rather than always "the current session",
+    because a daily-growth figure has two legs (the prior close and "now") that
+    can each be a different date:
+
+    * ``on`` is **today and the US market is open right now** — that session
+      hasn't settled yet, so its own live rate *is* the correct anchor (no
+      freeze: in-session FX movement belongs in the growth figure).
+    * **otherwise** — ``on``'s session has settled (it is a past session, or it
+      is today but the market has since closed), so the figure must not keep
+      drifting with the after-hours EUR/USD tick (forex trades on past the
+      16:00 ET close). Resolved via :func:`session_close_rate`, which already
+      implements the completeness-gated ``sessionCloseFx ?? settledPrevFx``
+      half of the chain (a captured intraday sample that actually reached the
+      close, else that date's settled ECB/Frankfurter rate); ``live_rate`` is
+      used only as the final resort when even that yields nothing (no FX
+      history at all for ``on``).
+
+    Used for the **growth** legs only — :func:`metrics_service._compute_daily_growth`
+    and ``readmodels.queries.overview_query._instrument_daily_growth`` — never for a
+    holding's *current value*, which must keep re-marking at the live rate even
+    after the close (💱 AGENTS.md: this resolver governs the growth/move figures,
+    not valuations, and never substitutes a different date's rate — it only
+    changes which *source* supplies ``on``'s own rate).
+    """
+    if on == exchange_today(now) and is_us_market_open(now):
+        return live_rate
+    resolved = session_close_rate(session, on)
+    return resolved if resolved is not None else live_rate
+
+
 def estimate_day_move(
     est: TwinEstimate,
     fx_now: Decimal | None,
@@ -3291,11 +3332,43 @@ def clear_twin_prices(session: Session) -> int:
     return deleted
 
 
+#: Tolerance (seconds) before a session's 16:00 ET close within which the newest
+#: stored intraday sample still counts as "having reached the close", for
+#: :func:`session_close_rate`'s completeness gate. Ported from the web
+#: companion's ``sessionTrackReachedClose`` completeness check
+#: (``web/src/session-fx.ts``), which exists precisely so a track last fetched
+#: *mid-session* can't masquerade as the settle. The web uses **zero**
+#: tolerance for FX, because EUR/USD trades on past the equity close and so a
+#: track that really was captured through the close always carries a bar at or
+#: after it. A v6 intraday sample is different: it is captured only *while the
+#: US market is open* (:func:`record_if_market_open` gates on
+#: :func:`domain.market_hours.is_us_market_open`, which flips at 16:00 ET
+#: sharp) or reconstructed on the 5-minute (:data:`RECONSTRUCT_INTERVAL`) grid,
+#: so a genuinely complete session's *last* bar lands within one bar width
+#: *before* the close rather than exactly at it — mirroring the web's
+#: *price*-bar tolerance (``sessionBarsComplete``), not its zero-tolerance FX
+#: one.
+_SESSION_CLOSE_REACHED_TOLERANCE_SECONDS = 5 * 60
+
+
 def session_close_rate(session: Session, session_date: date) -> Decimal | None:
     """EUR/USD (USD per 1 EUR) at ``session_date``'s 16:00 close.
 
-    The rate stored beside the session's last intraday sample (captured at or just
-    before the close), else that date's daily rate.
+    The rate stored beside the session's last intraday sample, **but only when
+    that session's samples actually reached the close** — the completeness gate
+    ported from the web companion's ``sessionCloseFxFromBars`` (see module
+    :data:`_SESSION_CLOSE_REACHED_TOLERANCE_SECONDS`). A track last captured
+    *mid-session* (the app wasn't open, or wasn't reconstructed, through to
+    16:00 ET for this particular date) ends short of the close, so its newest
+    sample is a stale mid-session rate, not the settle; handing that back would
+    silently short-circuit the fallback below with a wrong, frozen value. So
+    unless a sample actually reached the close, this falls straight through to
+    that date's settled ECB/Frankfurter rate (:func:`fx_service.get_settled_rate`,
+    forward-filled) — a real, always-available dated anchor, mirroring the web's
+    ``settledPrevFx`` fallback. Deliberately **not** :func:`fx_service.get_rate_eur_to_quote`:
+    that function overlays the still-ticking live intraday spot onto *today's*
+    date, which would silently re-admit the live rate (and defeat the freeze)
+    whenever ``session_date`` is today and no intraday sample exists yet.
 
     Memoised per request: a Holdings build asks for the same session's rate once per
     fund row (``_divergence_view``), and each miss scans a whole session of samples.
@@ -3308,9 +3381,17 @@ def session_close_rate(session: Session, session_date: date) -> Decimal | None:
             rows = intraday_repo.list_in_range(
                 cache, _session_open_utc(session_date), _session_close_utc(session_date)
             )
-        for row in reversed(rows):
-            if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
-                return row.fx_eur_usd
-        return fx_service.get_rate_eur_to_quote(session, session_date, quote="USD")
+        close_floor = _session_close_utc(session_date) - timedelta(
+            seconds=_SESSION_CLOSE_REACHED_TOLERANCE_SECONDS
+        )
+        reached_close = any(
+            r.captured_at >= close_floor and r.fx_eur_usd is not None and r.fx_eur_usd > 0
+            for r in rows
+        )
+        if reached_close:
+            for row in reversed(rows):
+                if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
+                    return row.fx_eur_usd
+        return fx_service.get_settled_rate(session, session_date, quote="USD")
 
     return memo(session, ("session_close_rate", session_date), compute)

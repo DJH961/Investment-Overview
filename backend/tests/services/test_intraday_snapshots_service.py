@@ -894,6 +894,99 @@ class TestSessionOpenFx:
         assert iss.session_open_fx(session, now=_NOW) is None
 
 
+class TestSessionCloseRateCompletenessGate:
+    """``session_close_rate`` must not mistake a mid-session sample for the settle."""
+
+    def test_mid_session_only_sample_falls_through_to_the_settled_rate(
+        self, session: Session
+    ) -> None:
+        # Last capture at 14:00 ET — hours short of the 16:00 ET close (e.g. the
+        # app/scheduler stopped running partway through the session).
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 18, 0), Decimal("1000.00"), fx_eur_usd=Decimal("1.40")
+        )
+        fx_repo.upsert_rates(session, {_SESSION_DAY: Decimal("1.10")})
+        session.flush()
+        # The stale 14:00 ET rate (1.40) must NOT masquerade as the close; the
+        # gate falls through to the settled ECB/Frankfurter rate (1.10).
+        assert iss.session_close_rate(session, _SESSION_DAY) == Decimal("1.10")
+
+    def test_a_sample_that_reached_the_close_is_trusted(self, session: Session) -> None:
+        # 19:58 UTC = 15:58 ET — within the completeness tolerance of the
+        # 16:00 ET close, so this genuinely is (close enough to) the settle.
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 19, 58), Decimal("1000.00"), fx_eur_usd=Decimal("1.40")
+        )
+        fx_repo.upsert_rates(session, {_SESSION_DAY: Decimal("1.10")})
+        session.flush()
+        assert iss.session_close_rate(session, _SESSION_DAY) == Decimal("1.40")
+
+    def test_none_when_nothing_at_all_is_available(self, session: Session) -> None:
+        assert iss.session_close_rate(session, _SESSION_DAY) is None
+
+
+class TestDailyGrowthLegFx:
+    """``daily_growth_leg_fx``: ``market_open ? live : (session_close ?? settled ?? live)``."""
+
+    #: Well after the 16:00 ET close on the fixed session day (20:00 ET = a
+    #: trading day's evening, forex still open, equities long shut).
+    _SHUT_NOW = datetime(2024, 6, 3, 23, 0, tzinfo=UTC)
+    #: Within regular trading hours (11:00 ET) on the same fixed session day.
+    _OPEN_NOW = datetime(2024, 6, 3, 15, 0, tzinfo=UTC)
+
+    def test_tracks_the_live_rate_while_the_session_is_open(self, session: Session) -> None:
+        fx_repo.upsert_rates(session, {_SESSION_DAY: Decimal("1.10")})
+        session.flush()
+        assert iss.daily_growth_leg_fx(
+            session, _SESSION_DAY, now=self._OPEN_NOW, live_rate=Decimal("1.50")
+        ) == Decimal("1.50")
+
+    def test_freezes_to_the_settled_close_once_the_session_has_shut(self, session: Session) -> None:
+        fx_repo.upsert_rates(session, {_SESSION_DAY: Decimal("1.10")})
+        session.flush()
+        # Shut: the live rate is ignored even though ``on`` is still "today".
+        assert iss.daily_growth_leg_fx(
+            session, _SESSION_DAY, now=self._SHUT_NOW, live_rate=Decimal("1.50")
+        ) == Decimal("1.10")
+
+    def test_a_captured_session_close_sample_outranks_the_settled_rate(
+        self, session: Session
+    ) -> None:
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 19, 58), Decimal("1000.00"), fx_eur_usd=Decimal("1.40")
+        )
+        fx_repo.upsert_rates(session, {_SESSION_DAY: Decimal("1.10")})
+        session.flush()
+        assert iss.daily_growth_leg_fx(
+            session, _SESSION_DAY, now=self._SHUT_NOW, live_rate=Decimal("1.50")
+        ) == Decimal("1.40")
+
+    def test_a_past_date_always_freezes_regardless_of_now(self, session: Session) -> None:
+        # ``on`` predates "today" (``_SHUT_NOW``'s date), so it is always a
+        # settled session — "market open right now" is a different day's
+        # question entirely.
+        past = date(2024, 6, 3)
+        fx_repo.upsert_rates(session, {past: Decimal("1.10")})
+        session.flush()
+        later_now = datetime(2024, 6, 4, 15, 0, tzinfo=UTC)  # 11:00 ET the next day, market open
+        assert iss.daily_growth_leg_fx(
+            session, past, now=later_now, live_rate=Decimal("1.50")
+        ) == Decimal("1.10")
+
+    def test_degrades_to_the_live_rate_only_as_a_last_resort(self, session: Session) -> None:
+        # Nothing stored anywhere (no sample, no FX history at all): degrades
+        # to the live rate, never a fabricated figure.
+        assert iss.daily_growth_leg_fx(
+            session, _SESSION_DAY, now=self._SHUT_NOW, live_rate=Decimal("1.50")
+        ) == Decimal("1.50")
+
+    def test_none_when_nothing_is_available_anywhere(self, session: Session) -> None:
+        assert (
+            iss.daily_growth_leg_fx(session, _SESSION_DAY, now=self._SHUT_NOW, live_rate=None)
+            is None
+        )
+
+
 class TestAfterHoursFreeze:
     """Once the market shuts, the EUR live tip freezes to the session-close FX."""
 
