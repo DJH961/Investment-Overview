@@ -141,6 +141,35 @@ def _active_instruments(session: Session) -> list[Instrument]:
     ]
 
 
+def _check_fx_live(session: Session) -> HealthItem:
+    """Whether today's EUR/USD rate is backed by the live/closing forex feed vs EOD fallback."""
+    info = fx_service.eur_quote_as_of(session)
+    if info is None or info.source == "live":
+        return HealthItem(
+            key="fx_live",
+            title="Current & live FX rate",
+            severity="ok",
+            count=0,
+            detail=(
+                f"Current EUR/USD rate is backed by the live forex feed (as of {info.as_of.isoformat()})."
+                if info is not None
+                else "Every current FX rate is up to date."
+            ),
+        )
+    return HealthItem(
+        key="fx_live",
+        title="Current & live FX rate",
+        severity="warning",
+        count=1,
+        detail=(
+            "Today's EUR/USD rate is currently using the settled ECB end-of-day reference "
+            f"rate ({info.as_of.isoformat()}) instead of the live/closing forex market feed. "
+            "Run 'Refresh live FX rate now' to fetch or backfill the latest EUR/USD market rate."
+        ),
+        examples=(info.as_of.isoformat(),),
+    )
+
+
 def _check_fx_legs(session: Session) -> HealthItem:
     """Transactions whose frozen EUR/USD legs are incomplete (an FX gap)."""
     dates: list[date] = transaction_fx_service.missing_fx_dates(session)
@@ -604,6 +633,7 @@ def check_health(session: Session) -> HealthReport:
     computed and reports the silent-degradation signals in one place.
     """
     items: list[HealthItem] = [
+        _check_fx_live(session),
         _check_fx_legs(session),
         _check_frozen_legs(session),
         *_check_prices(session),

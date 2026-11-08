@@ -96,7 +96,7 @@ def _dec(value: Decimal | None) -> str | None:
 def _live_fx() -> Decimal | None:
     from investment_dashboard.services import fx_service  # noqa: PLC0415
 
-    spot = fx_service.get_live_spot("USD")
+    spot = fx_service.active_live_spot("USD")
     return None if spot is None else spot.rate
 
 
@@ -272,7 +272,9 @@ def _price_freshness(now: datetime | None = None) -> dict[str, Any]:
 def default_fx_job() -> dict[str, Any] | None:
     from investment_dashboard.services import fx_service  # noqa: PLC0415
 
-    fx_service.refresh_live_spot()
+    rate = fx_service.refresh_live_spot()
+    if rate is None and fx_service.active_live_spot("USD") is None:
+        fx_service.backfill_live_spot()
     return {"fx_eur_usd": _dec(_live_fx())}
 
 

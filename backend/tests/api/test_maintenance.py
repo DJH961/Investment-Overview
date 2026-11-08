@@ -53,10 +53,54 @@ def _wait(client: TestClient, run_id: str) -> dict[str, Any]:
 def test_catalogue(api_client: TestClient) -> None:
     data = api_client.get("/api/maintenance/jobs").json()
     ids = {j["id"] for j in data["jobs"]}
-    assert {"prices.refresh", "cache.reset", "backup.now"} <= ids
+    assert {
+        "prices.refresh",
+        "fx.refresh_live",
+        "fx.backfill_intraday",
+        "cache.reset",
+        "backup.now",
+    } <= ids
     reset = next(j for j in data["jobs"] if j["id"] == "cache.reset")
     assert reset["danger"] == "typed"
     assert reset["confirm_word"] == "RESET"
+
+
+def test_fx_refresh_live_job_backfills_live_spot(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    from investment_dashboard.services import fx_service
+
+    _as(monkeypatch, "session")
+
+    def fake_backfill(_session: object) -> Decimal:
+        fx_service.set_live_spot(
+            "USD",
+            Decimal("1.1640"),
+            observed_on=date(2026, 11, 6),
+            observed_at=datetime(2026, 11, 6, 22, 0, tzinfo=UTC),
+        )
+        return Decimal("1.1640")
+
+    monkeypatch.setattr(fx_service, "backfill_live_spot", fake_backfill)
+    monkeypatch.setattr(
+        fx_service,
+        "eur_quote_as_of",
+        lambda _s: fx_service.FxAsOf(
+            as_of=date(2026, 11, 6),
+            source="live",
+            observed_at=datetime(2026, 11, 6, 22, 0, tzinfo=UTC),
+        ),
+    )
+    run = api_client.post("/api/maintenance/jobs/fx.refresh_live", json={})
+    assert run.status_code == 202, run.text
+    done = _wait(api_client, run.json()["id"])
+    assert done["status"] == "succeeded"
+    assert done["result"]["rate"] == "1.1640"
+    assert done["result"]["source"] == "live"
+    fx_service.clear_live_spot()
 
 
 def test_jobs_need_a_browser_session(

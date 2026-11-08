@@ -853,12 +853,21 @@ def _refresh_live_fx() -> None:
 
     Best-effort and keyless (yfinance ``EURUSD=X``): a failure just leaves the
     ECB daily rate in place. Kept separate from :func:`_refresh_fx` (which
-    persists the ECB history) because the live spot is in-memory only.
+    persists the ECB history) because the live spot is in-memory only. When
+    the server starts while the forex market is shut (or the live top-of-book
+    quote is unavailable), falls back to :func:`backfill_live_spot` so the
+    last session's closing rate is warmed instead of dropping to EOD FX.
     """
     try:
-        from investment_dashboard.services.fx_service import refresh_live_spot  # noqa: PLC0415
+        from investment_dashboard.services.fx_service import (  # noqa: PLC0415
+            active_live_spot,
+            backfill_live_spot,
+            refresh_live_spot,
+        )
 
         rate = refresh_live_spot()
+        if rate is None and active_live_spot("USD") is None:
+            rate = backfill_live_spot()
         if rate is not None:
             log.info("Live EUR/USD spot refreshed (%s)", rate)
     except Exception:
@@ -1094,6 +1103,12 @@ def run_server_boot_sequence() -> None:
     _run_migrations()
     _apply_persisted_log_level()
     _run_cache_janitor()
+    try:
+        from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+        fx_service.seed_live_spot_from_cache()
+    except Exception:
+        log.debug("Could not seed live FX spot on server boot", exc_info=True)
 
 
 def run_deferred_network_refresh(*, show_progress: bool = True) -> None:

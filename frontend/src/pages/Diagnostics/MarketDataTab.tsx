@@ -170,7 +170,11 @@ function ProbeCard() {
   const [symbol, setSymbol] = useState("");
   const r = probe.data;
   return (
-    <Card title="Test a price service" subtitle="Asks the provider for one symbol now (does not store anything)." collapsibleId="market.probe">
+    <Card
+      title="Test a price or FX service"
+      subtitle="Asks the provider for one symbol or currency pair (e.g. EUR/USD) right now (does not store anything)."
+      collapsibleId="market.probe"
+    >
       <form
         className="market__add"
         onSubmit={(e) => {
@@ -188,9 +192,22 @@ function ProbeCard() {
           value={provider}
           onChange={setProvider}
         />
-        <Field label="Symbol">{(c) => <Input {...c} value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />}</Field>
+        <Field label="Symbol or FX pair">
+          {(c) => <Input {...c} placeholder="e.g. VTI or EUR/USD" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} />}
+        </Field>
         <Button type="submit" loading={probe.isPending} disabled={!symbol.trim()}>
           Test
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          loading={probe.isPending}
+          onClick={() => {
+            setSymbol("EUR/USD");
+            probe.mutate({ provider, symbol: "EUR/USD" });
+          }}
+        >
+          Test EUR/USD
         </Button>
       </form>
       {probe.isError && <p className="repair__error" role="alert">{errorMessage(probe.error)}</p>}

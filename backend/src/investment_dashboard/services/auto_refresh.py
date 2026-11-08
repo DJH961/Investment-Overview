@@ -112,6 +112,8 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         from investment_dashboard.services import fx_service  # noqa: PLC0415
 
         spot = fx_service.refresh_live_spot()
+        if spot is None and fx_service.active_live_spot("USD") is None:
+            spot = fx_service.backfill_live_spot()
         if spot is not None:
             round_.note(f"FX: live EUR/USD spot {spot}")
         updated = any(refreshed.values())
