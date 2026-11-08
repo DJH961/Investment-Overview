@@ -181,12 +181,41 @@ describe("OverviewHoldings", () => {
       });
     });
 
-    it("after the NAV posts it only says how far off the twin was", () => {
-      withRows([row(1, { symbol: "FXAIX", twin: posted as HoldingRowDto["twin"] })], () => {
+    it("after the NAV posts it only says how far off the twin was if seen while pending and within 12h of NAV drop, and can be dismissed", () => {
+      const recentNavDrop = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
+      // 1. Not shown if the user never logged on while the twin was pending.
+      withRows([row(1, { symbol: "FXAIX", updated_at: recentNavDrop, twin: posted as HoldingRowDto["twin"] })], () => {
+        const u = view();
+        expect(screen.queryByLabelText("VOO twin accuracy for FXAIX")).toBeNull();
+        u.unmount();
+      });
+
+      // 2. User sees the pending twin first, then NAV posts within 12h -> shown, and × dismisses it.
+      withRows([row(1, { symbol: "FXAIX", updated_at: recentNavDrop, twin: pending as HoldingRowDto["twin"] })], () => {
+        const u = view();
+        expect(screen.getByLabelText("Estimate for FXAIX from VOO")).toBeInTheDocument();
+        u.unmount();
+      });
+      withRows([row(1, { symbol: "FXAIX", updated_at: recentNavDrop, twin: posted as HoldingRowDto["twin"] })], () => {
         view();
         const line = screen.getByLabelText("VOO twin accuracy for FXAIX");
         expect(line).toHaveTextContent("twin was +0.03 pp off (+€12)");
         expect(screen.queryByText("≈ est.")).toBeNull();
+        const dismissBtn = screen.getByRole("button", { name: "Dismiss VOO twin notice for FXAIX" });
+        fireEvent.click(dismissBtn);
+        expect(screen.queryByLabelText("VOO twin accuracy for FXAIX")).toBeNull();
+      });
+
+      // 3. Hidden if more than 12h have elapsed since the actual NAV price dropped.
+      localStorage.clear();
+      const oldNavDrop = new Date(Date.now() - 13 * 3600 * 1000).toISOString();
+      withRows([row(1, { symbol: "FXAIX", updated_at: oldNavDrop, twin: pending as HoldingRowDto["twin"] })], () => {
+        const u = view();
+        u.unmount();
+      });
+      withRows([row(1, { symbol: "FXAIX", updated_at: oldNavDrop, twin: posted as HoldingRowDto["twin"] })], () => {
+        view();
+        expect(screen.queryByLabelText("VOO twin accuracy for FXAIX")).toBeNull();
       });
     });
 

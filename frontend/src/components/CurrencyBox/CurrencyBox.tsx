@@ -65,35 +65,101 @@ export function legRows(
     : [{ ...nightRow, tag: liveTag }, { ...marketRow, tag: "last" }];
 }
 
-function AsOfStamp({ asOf, timeZone }: { asOf: Today["as_of"]; timeZone?: string }) {
-  if (!asOf) return null;
+/**
+ * Resolve an ISO timestamp for ``asOf``: live observation instant first, else
+ * ``spot_observed_at``, else the ECB 16:00 CET reference-fixing time on ``asOf.as_of``
+ * so even an EOD fallback always carries a timestamp from when its rate was fixed.
+ */
+function resolveIsoStamp(asOf: Today["as_of"], observedAt?: string | null): string | null {
+  if (asOf?.observed_at) return asOf.observed_at;
+  if (observedAt) return observedAt;
+  if (asOf?.as_of) return `${asOf.as_of}T15:00:00Z`;
+  return null;
+}
+
+function AsOfStamp({
+  asOf,
+  observedAt,
+  frozen,
+  timeZone,
+}: {
+  asOf: Today["as_of"];
+  observedAt?: string | null;
+  frozen?: boolean;
+  timeZone?: string;
+}) {
+  const isoStamp = resolveIsoStamp(asOf, observedAt);
+  if (!asOf && !isoStamp) return null;
   let label: string;
-  if (asOf.source === "live" && asOf.observed_at) label = formatTime(asOf.observed_at, timeZone);
-  else if (asOf.source === "live" || asOf.as_of === todayIn(timeZone)) label = "Today";
-  else label = formatAxisDate(Date.parse(asOf.as_of), 0);
+  if (frozen && isoStamp) {
+    label = formatWeekdayTime(isoStamp, timeZone);
+  } else if (asOf?.source === "eod" && asOf.as_of) {
+    const datePart = asOf.as_of === todayIn(timeZone) ? "Today" : formatAxisDate(Date.parse(asOf.as_of), 0);
+    label = isoStamp ? `${datePart}, ${formatTime(isoStamp, timeZone)}` : datePart;
+  } else if (isoStamp) {
+    label = formatTime(isoStamp, timeZone);
+  } else if (asOf?.source === "live" || asOf?.as_of === todayIn(timeZone)) {
+    label = "Today";
+  } else if (asOf) {
+    label = formatAxisDate(Date.parse(asOf.as_of), 0);
+  } else {
+    return null;
+  }
   return (
     <span className="currency-box__sub">
-      as of {label}
-      {asOf.source === "eod" && (
-        <span className="currency-box__eod" title="End-of-day ECB reference rate (no intraday observation)">
-          EOD FX
-        </span>
-      )}
+      <span className="currency-box__as-of">as of {label}</span>
     </span>
   );
+}
+
+function HeaderStamp({
+  asOf,
+  observedAt,
+  frozen,
+  timeZone,
+}: {
+  asOf: Today["as_of"];
+  observedAt?: string | null;
+  frozen?: boolean;
+  timeZone?: string;
+}) {
+  const isoStamp = resolveIsoStamp(asOf, observedAt);
+  const eodBadge =
+    asOf?.source === "eod" ? (
+      <span className="currency-box__eod" title="End-of-day ECB reference rate">
+        EOD FX
+      </span>
+    ) : null;
+  if (frozen) {
+    return (
+      <span className="currency-box__header-badges">
+        <span className="currency-box__closed">Market closed</span>
+        {eodBadge}
+      </span>
+    );
+  }
+  if (eodBadge) {
+    return <span className="currency-box__header-badges">{eodBadge}</span>;
+  }
+  if (asOf?.source === "live" && isoStamp) {
+    return (
+      <span className="currency-box__header-badges">
+        <span className="currency-box__stamp currency-box__stamp--live">Live · {formatTime(isoStamp, timeZone)}</span>
+      </span>
+    );
+  }
+  return null;
 }
 
 function EffectPanel({ data }: { data: OverviewDto }) {
   const today = data.currency.today;
   const phrase = sincePhrase(today.since_phrase);
-  // "Regular €100 · $118.87 today": shown under both panels, so EUR and USD
-  // views have the same lines and a currency switch never moves the page.
   const ip = today.investing_power_usd;
   const amount = toNum(ip?.amount_eur);
   const amountUsd = toNum(ip?.amount_usd);
   const amountLine =
-    amount !== null ? (
-      <p className="currency-box__amount">
+    data.ccy === "USD" && amount !== null ? (
+      <p className="currency-box__amount" data-ccy-specific>
         <span>
           Regular <Money amount={amount} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
         </span>
@@ -133,7 +199,6 @@ function EffectPanel({ data }: { data: OverviewDto }) {
         <span className="currency-box__effect-net">{fmt(net)}</span>
       </div>
       <DivergingBar rows={legRows(today, legs, fmt)} ariaLabel="Market hours versus overnight" />
-      {amountLine}
     </section>
   );
 }
@@ -156,7 +221,14 @@ export function CurrencyBox({ data }: CurrencyBoxProps) {
       className="currency-box"
       title="Currency · EUR ↔ USD"
       collapsibleId="overview.currency"
-      actions={frozen ? <span className="currency-box__closed">Market closed</span> : undefined}
+      actions={
+        <HeaderStamp
+          asOf={today.as_of}
+          observedAt={today.spot_observed_at}
+          frozen={frozen}
+          timeZone={timeZone}
+        />
+      }
     >
       <div className={effect ? "currency-box__body" : "currency-box__body currency-box__body--single"}>
         <div className="currency-box__left">
@@ -165,7 +237,12 @@ export function CurrencyBox({ data }: CurrencyBoxProps) {
               <dt className="currency-box__label">{today.pair ?? (data.ccy === "USD" ? "EUR/USD" : "USD/EUR")}</dt>
               <dd className="currency-box__value">{formatNumber(spot, 4)}</dd>
               <dd className="currency-box__meta">
-                <AsOfStamp asOf={today.as_of} timeZone={timeZone} />
+                <AsOfStamp
+                  asOf={today.as_of}
+                  observedAt={today.spot_observed_at}
+                  frozen={frozen}
+                  timeZone={timeZone}
+                />
               </dd>
             </div>
             {today.move && (

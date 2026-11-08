@@ -50,6 +50,10 @@ other doc.
   commands.
 - The owner does anything involving accounts, logins or secrets; agents prepare,
   check and explain.
+- **Subagents:** either invoke a subagent, wait for it to finish (end your turn and let
+  reactive wakeup deliver its result), and actually use its work — **or** do not spawn a
+  subagent at all. Never spawn a subagent only to do the same work yourself in parallel
+  or kill the subagent before it finishes.
 
 ## 💱 Currency rule
 

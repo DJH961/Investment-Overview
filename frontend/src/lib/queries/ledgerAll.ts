@@ -132,7 +132,9 @@ export function monthTotals(rows: readonly TransactionOut[]): Map<string, Ledger
     m.count += 1;
     m.net_eur += eur ?? 0;
     m.net_usd += usd ?? 0;
-    if (eur === null || usd === null) m.fx_incomplete = true;
+    if (r.kind !== "split" && r.net_native !== null && (eur === null || usd === null)) {
+      m.fx_incomplete = true;
+    }
     out.set(month, m);
   }
   return out;

@@ -300,3 +300,37 @@ def test_summary_excludes_hidden_sweeps(session: Session) -> None:
     # Only the deposit is counted; the hidden VMFXX buy leg is excluded.
     assert summary.count == 1
     assert summary.buy_count == 0
+
+
+def test_split_row_does_not_flag_month_as_fx_incomplete(session: Session) -> None:
+    from investment_dashboard.readmodels.queries.ledger_query import (
+        list_ledger_records,
+        month_totals,
+    )
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    instr = instruments_repo.get_or_create(session, symbol="NVDA")
+    session.add(
+        Transaction(
+            account_id=acct.id,
+            date=date(2024, 6, 10),
+            kind="split",
+            instrument_id=instr.id,
+            quantity=Decimal("90"),
+            price_native=None,
+            net_native=None,
+            source=TransactionSource.MANUAL,
+        )
+    )
+    session.flush()
+    records = list_ledger_records(session)
+    assert len(records) == 1
+    assert records[0].fx_incomplete is False
+    months = month_totals(records)
+    assert months["2024-06"].fx_incomplete is False

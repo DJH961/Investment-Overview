@@ -1,10 +1,54 @@
 @use "../../styles/mixins" as m;
 
 .currency-box {
+  &__header-badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1) var(--space-2);
+    margin-left: auto;
+  }
+
+  &__stamp,
+  &__eod,
+  &__closed {
+    padding: 0 var(--space-2);
+    background: var(--color-surface-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    @include m.phone {
+      padding: 0 var(--space-1);
+      font-size: var(--font-size-2xs);
+    }
+  }
+
+  &__stamp--live {
+    background: var(--color-pos-soft);
+    border-color: transparent;
+    color: var(--color-pos);
+  }
+
+  &__closed {
+    background: var(--color-warn-soft);
+    border-color: transparent;
+    color: var(--color-fg);
+  }
+
   &__body {
     display: grid;
     gap: var(--space-5);
     grid-template-columns: minmax(0, 1fr);
+
+    @include m.phone {
+      gap: var(--space-3);
+    }
 
     @include m.desktop {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -24,15 +68,22 @@
   &__stats {
     display: grid;
     gap: var(--space-3);
-    // Three equal columns at every width (pair, move, since), as in v5.
+    // Three columns at every width (pair, move, since), as in v5.
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin: 0;
+
+    @include m.phone {
+      gap: var(--space-2);
+      // Give the spot column slightly more room for "as of DD/MM, HH:MM" on 360-390px phones.
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.85fr);
+    }
   }
 
   &__stat {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    min-width: 0;
   }
 
   &__label {
@@ -44,6 +95,10 @@
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
+
+    @include m.phone {
+      font-size: var(--font-size-md);
+    }
   }
 
   &__meta {
@@ -55,26 +110,19 @@
     flex-wrap: wrap;
     align-items: center;
     row-gap: var(--space-1);
-    gap: var(--space-2);
+    column-gap: var(--space-2);
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+
+    @include m.phone {
+      column-gap: var(--space-1);
+      font-size: var(--font-size-2xs);
+    }
   }
 
-  &__eod,
-  &__closed {
-    padding: 0 var(--space-2);
-    background: var(--color-surface-2);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-full);
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
+  &__as-of {
     white-space: nowrap;
-  }
-
-  &__closed {
-    background: var(--color-warn-soft);
-    color: var(--color-fg);
   }
 
   &__reopen,
@@ -93,12 +141,28 @@
     display: flex;
     justify-content: space-between;
     gap: var(--space-3);
+    padding-top: var(--space-2);
+    border-top: var(--border-width) solid var(--color-border);
+    font-variant-numeric: tabular-nums;
   }
 
   &__effect {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+    padding-top: var(--space-4);
+    border-top: var(--border-width) solid var(--color-border);
+
+    @include m.phone {
+      padding-top: var(--space-3);
+    }
+
+    @include m.desktop {
+      padding-top: 0;
+      padding-left: var(--space-5);
+      border-top: 0;
+      border-left: var(--border-width) solid var(--color-border);
+    }
   }
 
   &__effect-head {
@@ -106,14 +170,28 @@
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
+
+    @include m.phone {
+      gap: var(--space-2);
+    }
   }
 
   &__effect-title {
     @include m.eyebrow;
+
+    @include m.phone {
+      letter-spacing: 0.02em;
+    }
   }
 
   &__effect-net {
+    flex-shrink: 0;
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+
+    @include m.phone {
+      font-size: var(--font-size-md);
+    }
   }
 }

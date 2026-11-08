@@ -38,7 +38,14 @@ import "./Transactions.scss";
 
 const PAGE_SIZE = 50;
 const ALL = "all";
-const KIND_LABEL: Record<string, string> = Object.fromEntries(KIND_OPTIONS.map((o) => [o.value, o.label]));
+const KIND_LABEL: Record<string, string> = {
+  ...Object.fromEntries(KIND_OPTIONS.map((o) => [o.value, o.label])),
+  dividend_cash: "Dividend",
+  dividend_reinvest: "Div. reinvest",
+  split: "Split",
+  transfer_in: "Transfer in",
+  transfer_out: "Transfer out",
+};
 
 type SortKey = NonNullable<TransactionFilters["sort"]>;
 type Order = NonNullable<TransactionFilters["order"]>;
@@ -407,8 +414,10 @@ export function Transactions() {
           subtitle={
             t && (
               <span className="transactions-page__month-sub">
-                {t.count} {t.count === 1 ? "transaction" : "transactions"} · net <Money amount={net} currency={currency} signed colored />
-                {t.fx_incomplete && " (some rows without a rate)"}
+                <span>
+                  {t.count} {t.count === 1 ? "transaction" : "transactions"} · net <Money amount={net} currency={currency} signed colored />
+                </span>
+                {t.fx_incomplete && <span className="transactions-page__fx-warn">some rows without a rate</span>}
               </span>
             )
           }

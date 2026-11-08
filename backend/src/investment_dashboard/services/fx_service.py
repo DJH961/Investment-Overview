@@ -106,6 +106,42 @@ def get_live_spot(quote: str = "USD") -> LiveSpot | None:
     return _LIVE_SPOT.get(quote.upper())
 
 
+def active_live_spot(
+    quote: str = "USD",
+    *,
+    today: date | None = None,
+    now: datetime | None = None,
+) -> LiveSpot | None:
+    """Return the active live/closing spot for ``quote``, or ``None``.
+
+    While the spot-FX market is open, a spot dated ``today`` (or the current
+    exchange date) is active. While the spot-FX market is closed for the
+    weekend (Friday 17:00 -> Sunday 17:00 ET), a spot captured on that Friday
+    session stays active as the frozen currency-market close (clamped to the
+    Friday 17:00 ET close instant).
+    """
+    live = _LIVE_SPOT.get(quote.upper())
+    if live is None:
+        return None
+    target = today or exchange_today(now)
+    if live.observed_on == target:
+        if now is not None and not market_hours.is_forex_market_open(now):
+            close_dt = market_hours.last_forex_close(now).astimezone(UTC)
+            obs = min(live.observed_at, close_dt) if live.observed_at else close_dt
+            return LiveSpot(observed_on=live.observed_on, rate=live.rate, observed_at=obs)
+        return live
+    if now is not None:
+        if market_hours.is_forex_market_open(now):
+            if live.observed_on >= exchange_today(now):
+                return live
+        else:
+            close_dt = market_hours.last_forex_close(now).astimezone(UTC)
+            if live.observed_on == close_dt.date():
+                obs = min(live.observed_at, close_dt) if live.observed_at else close_dt
+                return LiveSpot(observed_on=live.observed_on, rate=live.rate, observed_at=obs)
+    return None
+
+
 def clear_live_spot(quote: str | None = None) -> None:
     """Drop the live spot for ``quote`` (or all of them). Used by tests."""
     if quote is None:
@@ -181,9 +217,9 @@ def refresh_live_spot(
         record is not None
         and record.close is not None
         and record.close > 0
-        and record.date == today
+        and record.date >= today
     ):
-        set_live_spot(quote, record.close, observed_on=record.date)
+        set_live_spot(quote, record.close, observed_on=today)
         return record.close
     # The primary fell short. Only escalate to the Tiingo secondary FX provider
     # when the spot-FX market is genuinely open — a closed market has no live
@@ -680,9 +716,10 @@ def get_rates(
     # stored history exactly as before — adding a key dated today cannot change
     # any value forward-filled to an earlier date.
     if base == "EUR":
-        live = _LIVE_SPOT.get(quote.upper())
-        if live is not None and live.observed_on == exchange_today():
-            rates = {**rates, live.observed_on: live.rate}
+        today_et = exchange_today()
+        live = active_live_spot(quote.upper(), today=today_et)
+        if live is not None:
+            rates = {**rates, live.observed_on: live.rate, today_et: live.rate}
     return rates
 
 
@@ -765,31 +802,58 @@ def eur_quote_as_of(
     base: str = "EUR",
     quote: str = "USD",
     today: date | None = None,
+    now: datetime | None = None,
 ) -> FxAsOf | None:
     """Describe *which day's* EUR→``quote`` rate the UI is currently showing.
 
     Resolves the same way :func:`get_rate_eur_to_quote` resolves *today's* mark,
     then reports its provenance for an honest "as of" / "EOD FX" stamp:
 
-    * a today-dated live intraday spot (when overlaid by :func:`get_rates`) →
-      :class:`FxAsOf` ``source="live"``, ``as_of`` = today, ``observed_at`` = the
-      spot's capture instant (for a live "as of HH:MM" clock);
+    * a today-dated live intraday spot (when overlaid by :func:`get_rates`), or
+      Friday's final live spot while the weekend forex market is closed →
+      :class:`FxAsOf` ``source="live"``, ``as_of`` = ``live.observed_on``,
+      ``observed_at`` = the spot's capture instant (or the Friday 17:00 ET forex
+      close when frozen);
     * otherwise the most recent settled ECB fixing at or before today →
-      ``source="eod"``, ``as_of`` = that fixing's date.
+      ``source="eod"``, ``as_of`` = that fixing's date (with ``observed_at`` set
+      to the Friday 17:00 ET forex close when the weekend forex market is shut).
 
     Returns ``None`` only when no rate is available at all (an empty history with
     no live overlay), so the caller can simply omit the stamp.
     """
-    today = today or exchange_today()
+    today = today or exchange_today(now)
     if base == "EUR":
-        live = _LIVE_SPOT.get(quote.upper())
-        if live is not None and live.observed_on == today:
-            return FxAsOf(as_of=today, source="live", observed_at=live.observed_at)
+        live = active_live_spot(quote.upper(), today=today, now=now)
+        if live is not None:
+            return FxAsOf(as_of=live.observed_on, source="live", observed_at=live.observed_at)
     rates = get_rates(session, base=base, quote=quote)
     prior = [d for d in rates if d <= today]
     if not prior:
         return None
-    return FxAsOf(as_of=max(prior), source="eod")
+    fixing_date = max(prior)
+    observed_at: datetime | None = None
+    if now is not None:
+        from investment_dashboard.domain.market_hours import (  # noqa: PLC0415
+            is_forex_market_open,
+            last_forex_close,
+        )
+
+        if not is_forex_market_open(now):
+            observed_at = last_forex_close(now).astimezone(UTC)
+    if observed_at is None:
+        from zoneinfo import ZoneInfo  # noqa: PLC0415
+
+        # ECB daily reference rates are published around 16:00 CET/CEST
+        # (Frankfurt time) on the fixing date.
+        observed_at = datetime(
+            fixing_date.year,
+            fixing_date.month,
+            fixing_date.day,
+            16,
+            0,
+            tzinfo=ZoneInfo("Europe/Berlin"),
+        ).astimezone(UTC)
+    return FxAsOf(as_of=fixing_date, source="eod", observed_at=observed_at)
 
 
 # -- manual FX fixes (Health & Repair → Market data) -------------------------------

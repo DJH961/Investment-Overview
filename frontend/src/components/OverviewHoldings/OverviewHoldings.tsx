@@ -1,6 +1,6 @@
 import clsx from "clsx";
-import { ChevronDown, Link2 } from "lucide-react";
-import { Fragment, useId, useMemo } from "react";
+import { ChevronDown, Link2, X } from "lucide-react";
+import { Fragment, useEffect, useId, useMemo } from "react";
 import { Link } from "react-router";
 import { Card } from "../Card";
 import { ErrorState } from "../ErrorState";
@@ -18,6 +18,39 @@ import "./OverviewHoldings.scss";
 
 /** How many positions stay open above the fold (largest first). */
 export const OVERVIEW_HOLDINGS_LIMIT = 8;
+
+/** How long "twin was X.XX pp off" remains visible after the actual NAV price drops (12 hours). */
+export const TWIN_OFF_TTL_MS = 12 * 60 * 60 * 1000;
+
+export interface TwinWatchState {
+  /** Session key (`symbol:date`) for which the user saw the twin while it was pending. */
+  seenPending: Record<string, string>;
+  /** Session key (`symbol:date`) dismissed by the user via the × button. */
+  dismissed: Record<string, boolean>;
+}
+
+const DEFAULT_TWIN_WATCH: TwinWatchState = { seenPending: {}, dismissed: {} };
+
+function isTwinWatchState(v: unknown): v is TwinWatchState {
+  if (typeof v !== "object" || v === null) return false;
+  const obj = v as Record<string, unknown>;
+  return typeof obj.seenPending === "object" && obj.seenPending !== null && typeof obj.dismissed === "object" && obj.dismissed !== null;
+}
+
+/** Key identifying the session for a twin divergence reading. */
+export function twinSessionKey(row: HoldingRowDto): string {
+  const date = row.twin?.divergence?.last_date ?? row.price_as_of ?? "unknown";
+  return `${row.symbol}:${date}`;
+}
+
+/** Whether the actual NAV price drop is within the 12-hour display window. */
+export function isWithinNavDropWindow(row: HoldingRowDto, nowMs = Date.now()): boolean {
+  const droppedIso = row.updated_at ?? row.price_market_at ?? null;
+  if (!droppedIso) return true;
+  const droppedMs = Date.parse(droppedIso);
+  if (!Number.isFinite(droppedMs)) return true;
+  return nowMs - droppedMs <= TWIN_OFF_TTL_MS;
+}
 
 export interface OverviewHoldingsProps {
   currency: ReportingCurrency;
@@ -39,25 +72,46 @@ function TwinLink() {
   return <span className="overview-holdings__twin-link" aria-hidden />;
 }
 
-/** Whether the row carries a twin line (estimate while pending, else how far off it was). */
-export function hasTwinLine(row: HoldingRowDto): boolean {
+/** Whether the row carries a visible twin line (estimate while pending, or eligible post-NAV divergence). */
+export function hasTwinLine(row: HoldingRowDto, watch?: TwinWatchState, nowMs = Date.now()): boolean {
   const t = row.twin;
   if (!t) return false;
-  return t.pending ? t.est_value != null : toNum(t.divergence?.last_pp ?? null) !== null;
+  if (t.pending) return t.est_value != null;
+  if (toNum(t.divergence?.last_pp ?? null) === null) return false;
+  if (!isWithinNavDropWindow(row, nowMs)) return false;
+  if (!watch) return true;
+  const key = twinSessionKey(row);
+  if (watch.dismissed[key]) return false;
+  return Boolean(watch.seenPending[row.symbol]);
 }
 
 /**
  * One quiet line under a NAV fund whose ETF twin is estimating it (NAV not posted yet):
  * `└┄ [≈ est.] VOO · today 14:02   ≈value   ≈+0.61% ≈+€254`. Once the NAV posted it
- * only says how far the twin was off, until the next open. Nothing here is official.
+ * only says how far the twin was off (if the user watched the pending estimate and the
+ * NAV dropped within 12h), with an × button to dismiss. Nothing here is official.
  */
-function TwinSubRow({ row, ccy, timeZone }: { row: HoldingRowDto; ccy: string; timeZone?: string }) {
+function TwinSubRow({
+  row,
+  ccy,
+  timeZone,
+  watch,
+  onDismiss,
+}: {
+  row: HoldingRowDto;
+  ccy: string;
+  timeZone?: string;
+  watch: TwinWatchState;
+  onDismiss: (key: string) => void;
+}) {
   const twin = row.twin;
   if (!twin) return null;
   if (!twin.pending) {
+    if (!hasTwinLine(row, watch)) return null;
     const pp = toNum(twin.divergence?.last_pp ?? null);
     if (pp === null) return null;
     const money = toNum(twin.divergence?.last_money ?? null);
+    const key = twinSessionKey(row);
     return (
       <li
         className="overview-holdings__twin overview-holdings__twin--off"
@@ -77,6 +131,15 @@ function TwinSubRow({ row, ccy, timeZone }: { row: HoldingRowDto; ccy: string; t
               </>
             )}
           </span>
+          <button
+            type="button"
+            className="overview-holdings__twin-dismiss"
+            aria-label={`Dismiss ${twin.symbol} twin notice for ${row.symbol}`}
+            title="Hide twin accuracy note"
+            onClick={() => onDismiss(key)}
+          >
+            <X aria-hidden />
+          </button>
         </span>
       </li>
     );
@@ -147,6 +210,7 @@ function Row({
   tick,
   staleMove,
   maxWeight,
+  watch,
 }: {
   row: HoldingRowDto;
   ccy: string;
@@ -160,12 +224,13 @@ function Row({
   staleMove: string | null;
   /** Largest weight in the list: the weight bars share its scale. */
   maxWeight: number;
+  watch: TwinWatchState;
 }) {
   const stale = staleMove !== null;
   const weight = toNum(row.weight_pct);
   const live = row.market_open && !stale;
   return (
-    <li className={clsx("overview-holdings__row", hasTwinLine(row) && "overview-holdings__row--twin")} data-symbol={row.symbol}>
+    <li className={clsx("overview-holdings__row", hasTwinLine(row, watch) && "overview-holdings__row--twin")} data-symbol={row.symbol}>
       <span className="overview-holdings__who">
         <span className="overview-holdings__symbol">
           {row.symbol}
@@ -247,6 +312,11 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const timeZone = useTimeZone();
   const listId = useId();
   const [open, setOpen] = usePersistentState<boolean>("overview.holdings.open", false);
+  const [watch, setWatch] = usePersistentState<TwinWatchState>(
+    "overview.holdings.twinWatch",
+    DEFAULT_TWIN_WATCH,
+    isTwinWatchState,
+  );
   // Off by default: the pill pushed the symbol line onto a second row too often,
   // and the Top movers card above already names them (`display.mover_badges`).
   const { moverBadges } = useDisplayPrefs();
@@ -256,6 +326,32 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const more = Math.max(0, all.length - OVERVIEW_HOLDINGS_LIMIT);
   const rows = open ? all : all.slice(0, OVERVIEW_HOLDINGS_LIMIT);
   const maxWeight = Math.max(0, ...all.map((r) => toNum(r.weight_pct) ?? 0));
+
+  useEffect(() => {
+    if (!q.data) return;
+    const pendingRows = q.data.holdings.filter((r) => r.twin?.pending && r.twin.est_value != null);
+    if (pendingRows.length === 0) return;
+    setWatch((prev) => {
+      let changed = false;
+      const nextSeen = { ...prev.seenPending };
+      for (const r of pendingRows) {
+        const stamp = r.twin?.at ?? r.price_as_of ?? "pending";
+        if (nextSeen[r.symbol] !== stamp) {
+          nextSeen[r.symbol] = stamp;
+          changed = true;
+        }
+      }
+      return changed ? { ...prev, seenPending: nextSeen } : prev;
+    });
+  }, [q.data, setWatch]);
+
+  const dismissTwin = (key: string) => {
+    setWatch((prev) => ({
+      ...prev,
+      dismissed: { ...prev.dismissed, [key]: true },
+    }));
+  };
+
   // The price time is said once, in the header; a row only shows its own when it differs.
   // `weekdays` renders an older session as "Fri" rather than "Yesterday": shorter
   // for the header's corner, and it does not quietly mislead after a long weekend,
@@ -305,8 +401,9 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
                   staleMove={marks.staleMove(r)}
                   maxWeight={maxWeight}
                   badge={winners.has(r.symbol) ? "winner" : losers.has(r.symbol) ? "loser" : undefined}
+                  watch={watch}
                 />
-                <TwinSubRow row={r} ccy={currency} timeZone={timeZone} />
+                <TwinSubRow row={r} ccy={currency} timeZone={timeZone} watch={watch} onDismiss={dismissTwin} />
               </Fragment>
             ))}
           </ul>
