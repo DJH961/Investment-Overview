@@ -367,6 +367,60 @@ class TestEurQuoteAsOf:
         assert info.source == "eod"
         assert info.as_of == yesterday
 
+    def test_weekend_eod_fallback_stamps_ecb_1600_not_friday_forex_close(
+        self, session: Session
+    ) -> None:
+        friday = date(2024, 6, 7)
+        fx_repo.upsert_rates(session, {friday: Decimal("1.08")}, base="EUR", quote="USD")
+        session.flush()
+
+        info = fx_service.eur_quote_as_of(session, today=date(2024, 6, 8), now=FOREX_CLOSED)
+        assert info is not None
+        assert info.source == "eod"
+        assert info.as_of == friday
+        # 16:00 Europe/Berlin (CEST, UTC+2) on 2024-06-07 is 14:00 UTC, NOT 21:00 UTC (17:00 EDT).
+        assert info.observed_at == datetime(2024, 6, 7, 14, 0, tzinfo=UTC)
+
+    def test_weekend_backfill_recovers_friday_close_from_intraday_bars(
+        self, session: Session
+    ) -> None:
+        friday = date(2024, 6, 7)
+        fx_repo.upsert_rates(session, {friday: Decimal("1.0800")}, base="EUR", quote="USD")
+        session.flush()
+
+        bars = {
+            datetime(2024, 6, 7, 14, 0): Decimal("1.0810"),
+            datetime(2024, 6, 7, 20, 45): Decimal("1.0895"),
+        }
+        rate = fx_service.backfill_live_spot(
+            session,
+            now=FOREX_CLOSED,
+            intraday_fetcher=lambda d: bars if d == friday else {},
+        )
+        assert rate == Decimal("1.0895")
+        info = fx_service.eur_quote_as_of(session, today=date(2024, 6, 8), now=FOREX_CLOSED)
+        assert info is not None
+        assert info.source == "live"
+        assert info.as_of == friday
+        # Frozen at Friday's 17:00 EDT (21:00 UTC) forex close.
+        assert info.observed_at == datetime(2024, 6, 7, 21, 0, tzinfo=UTC)
+
+    def test_weekend_backfill_falls_back_to_daily_spot_close(self, session: Session) -> None:
+        friday = date(2024, 6, 7)
+        rate = fx_service.backfill_live_spot(
+            session,
+            now=FOREX_CLOSED,
+            intraday_fetcher=lambda _d: {},
+            spot_fetcher=lambda: PriceRecord(
+                symbol="EURUSD=X", date=friday, close=Decimal("1.0875")
+            ),
+        )
+        assert rate == Decimal("1.0875")
+        spot = fx_service.active_live_spot("USD", now=FOREX_CLOSED)
+        assert spot is not None
+        assert spot.rate == Decimal("1.0875")
+        assert spot.observed_on == friday
+
 
 class TestIntradayFxViaTiingo:
     """The Tiingo *secondary* for the graphs' per-minute EUR/USD overlay.

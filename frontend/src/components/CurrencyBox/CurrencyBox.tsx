@@ -91,11 +91,11 @@ function AsOfStamp({
   const isoStamp = resolveIsoStamp(asOf, observedAt);
   if (!asOf && !isoStamp) return null;
   let label: string;
-  if (frozen && isoStamp) {
-    label = formatWeekdayTime(isoStamp, timeZone);
-  } else if (asOf?.source === "eod" && asOf.as_of) {
+  if (asOf?.source === "eod" && asOf.as_of) {
     const datePart = asOf.as_of === todayIn(timeZone) ? "Today" : formatAxisDate(Date.parse(asOf.as_of), 0);
     label = isoStamp ? `${datePart}, ${formatTime(isoStamp, timeZone)}` : datePart;
+  } else if (frozen && isoStamp) {
+    label = formatWeekdayTime(isoStamp, timeZone);
   } else if (isoStamp) {
     label = formatTime(isoStamp, timeZone);
   } else if (asOf?.source === "live" || asOf?.as_of === todayIn(timeZone)) {
@@ -219,7 +219,7 @@ export function CurrencyBox({ data }: CurrencyBoxProps) {
   return (
     <Card
       className="currency-box"
-      title="Currency · EUR ↔ USD"
+      title={<span className="currency-box__title">Currency · EUR ↔ USD</span>}
       collapsibleId="overview.currency"
       actions={
         <HeaderStamp

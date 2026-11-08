@@ -82,9 +82,29 @@ describe("CurrencyBox", () => {
     expect(screen.getByText("since last open")).toBeInTheDocument();
     expect(screen.getByText("Since close")).toBeInTheDocument();
     expect(screen.getByText("EOD FX")).toBeInTheDocument();
+    expect(screen.getByText("as of 30/10, 15:00")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Currency effect on Friday" })).toBeInTheDocument();
     expect(container.querySelector(".diverging-bar__row")).toHaveAttribute("data-row", "overnight");
     expect(container.querySelector('[data-row="overnight"]')).toHaveTextContent("paused");
+  });
+
+  it("frozen weekend with live/backfilled Friday close: Market closed without EOD FX, weekday time", () => {
+    render(
+      <CurrencyBox
+        data={overview("EUR", {
+          regime: { ...regime, market_open: false, forex_open: false, forex_frozen: true },
+          reopen_at: "2026-11-01T22:00:00Z",
+          as_of: { as_of: "2026-10-30", source: "live", observed_at: "2026-10-30T21:00:00Z" },
+          spot_observed_at: "2026-10-30T21:00:00Z",
+          move: { pct: "0.001", anchor_kind: "session_open", label_kind: "weekday", session_date: "2026-10-30" },
+          since: { pct: "0.0005", kind: "close" },
+          since_phrase: { kind: "on_day", session_date: "2026-10-30" },
+        })}
+      />,
+    );
+    expect(screen.getByText("Market closed")).toBeInTheDocument();
+    expect(screen.queryByText("EOD FX")).toBeNull();
+    expect(screen.getByText("as of Fri 21:00")).toBeInTheDocument();
   });
 
   it("US holiday: single Market holiday bar and no since stat", () => {

@@ -338,7 +338,7 @@ def _currency_block(
     )
     live_fx = metrics.daily_growth_fx_eur_usd
     prev_fx = metrics.daily_growth_fx_eur_usd_prev
-    spot = fx_service.get_live_spot("USD")
+    spot = fx_service.active_live_spot("USD", now=now)
     regime = fx_effect.fx_box_regime(now)
     rate_move: Decimal | None = None
     if live_fx is not None and prev_fx is not None and prev_fx > 0:

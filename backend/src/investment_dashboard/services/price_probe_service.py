@@ -70,14 +70,24 @@ YfinanceFetcher = Callable[[str], "tuple[date, Decimal] | None"]
 TiingoFetcher = Callable[[str, str], "tuple[date, Decimal] | None"]
 
 
+#: FX aliases accepted by the price probe so users can test EUR/USD directly.
+_FX_ALIASES = frozenset({"EUR/USD", "EURUSD", "EURUSD=X"})
+
+
 def _default_yfinance_fetcher(symbol: str) -> tuple[date, Decimal] | None:
-    record = yfinance_client.fetch_latest_close(symbol)
+    target = yfinance_client.EUR_USD_YF_SYMBOL if symbol.upper() in _FX_ALIASES else symbol
+    record = yfinance_client.fetch_latest_close(target)
     if record is None:
         return None
     return record.date, record.close
 
 
 def _default_tiingo_fetcher(symbol: str, token: str) -> tuple[date, Decimal] | None:
+    if symbol.upper() in _FX_ALIASES:
+        quote = tiingo_client.fetch_fx_rate(base="EUR", quote="USD", token=token)
+        if quote is None or quote.rate is None or quote.rate <= 0:
+            return None
+        return quote.value_date or date.today(), quote.rate
     return tiingo_client.fetch_latest_close(symbol, token=token)
 
 

@@ -125,6 +125,39 @@ def _recalc_legs(params: dict[str, Any]) -> dict[str, Any]:
     return {"examined": res.examined, "updated": res.updated, "incomplete": res.incomplete}
 
 
+def _refresh_live_fx_job(_params: dict[str, Any]) -> dict[str, Any]:
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+    with ledger_session_scope() as session:
+        rate = fx_service.backfill_live_spot(session)
+        info = fx_service.eur_quote_as_of(session)
+    return {
+        "rate": None if rate is None else format(rate, "f"),
+        "source": None if info is None else info.source,
+        "as_of": None if info is None else info.as_of.isoformat(),
+        "observed_at": (
+            info.observed_at.isoformat()
+            if info is not None and info.observed_at is not None
+            else None
+        ),
+    }
+
+
+def _backfill_intraday_fx_job(_params: dict[str, Any]) -> dict[str, Any]:
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+    from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
+
+    with ledger_session_scope() as session:
+        rate = fx_service.backfill_live_spot(session)
+        graphs = dict(iss.reload_graphs(session))
+    return {
+        "live_rate": None if rate is None else format(rate, "f"),
+        **graphs,
+    }
+
+
 def _rebuild_snapshots(params: dict[str, Any]) -> dict[str, Any]:
     from investment_dashboard import boot  # noqa: PLC0415
     from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
@@ -288,6 +321,25 @@ JOBS: tuple[JobSpec, ...] = (
         "prices",
         "Download stock splits for every instrument again.",
         _boot_step("_refresh_splits"),
+        heavy=True,
+    ),
+    JobSpec(
+        "fx.refresh_live",
+        "Refresh live FX rate now",
+        "fx",
+        "Fetch the current EUR/USD market rate (or backfill the last forex session's closing "
+        "rate when the currency market is closed) from Yahoo Finance / Tiingo so today's "
+        "figures do not rely on the ECB end-of-day reference rate.",
+        _refresh_live_fx_job,
+    ),
+    JobSpec(
+        "fx.backfill_intraday",
+        "Backfill intraday FX rates (1D / 1W)",
+        "fx",
+        "Re-download the 5-minute EUR/USD bars for the last session and trailing week "
+        "(Yahoo Finance primary, Tiingo backup), warm the live/closing FX spot, and reload "
+        "the 1D and 1W currency-converted curves.",
+        _backfill_intraday_fx_job,
         heavy=True,
     ),
     JobSpec(

@@ -1,6 +1,14 @@
 @use "../../styles/mixins" as m;
 
 .currency-box {
+  &__title {
+    @include m.phone {
+      font-size: var(--font-size-sm);
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+    }
+  }
+
   &__header-badges {
     display: inline-flex;
     flex-wrap: wrap;
@@ -8,6 +16,11 @@
     justify-content: flex-end;
     gap: var(--space-1) var(--space-2);
     margin-left: auto;
+
+    @include m.phone {
+      flex-wrap: nowrap;
+      gap: var(--space-1);
+    }
   }
 
   &__stamp,

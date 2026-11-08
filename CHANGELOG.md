@@ -13,6 +13,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Release fast:** every feature or bug fix ships as its own dated release in the
   same PR. `## [Unreleased]
 
+## [6.12.7] — 2026-11-08
+
+### Fixed
+- **Backfill and warm live/closing FX spot over the weekend and after server restarts.**
+  Added `fx_service.backfill_live_spot` and `fx_service.seed_live_spot_from_cache` (wired
+  into server boot, `auto_refresh.tick_refresh`, and `scheduler.default_fx_job`) so that
+  when the server starts or refreshes while the currency market is closed for the weekend
+  (or when the live top-of-book quote misses), Friday's 17:00 ET (23:00 CET) closing
+  EUR/USD rate is recovered from 15-minute `EURUSD=X` intraday bars, daily spot close,
+  Tiingo settled FX bars, or the cached `intraday_value` sample in SQLite instead of
+  falling back to Friday's 16:00 CET ECB reference rate (`EOD FX`).
+- **Mutually exclusive `EOD FX` vs `Fri 23:00` provenance stamps.** Fixed
+  `fx_service.eur_quote_as_of` so the `source="eod"` fallback path reads `fx_repo` directly
+  and always stamps the 16:00 `Europe/Berlin` ECB fixing time on `fixing_date` (never
+  `last_forex_close`), and updated `AsOfStamp` in `CurrencyBox.tsx` so EOD fallback rates
+  always display their EOD date and time (`as of DD/MM, 16:00`) while frozen live rates
+  display `as of Fri 23:00` without `EOD FX`.
+- **Mobile `Currency · EUR ↔ USD` header formatting when multiple badges appear.**
+  Compacted `.currency-box__title`, `.card__toggle`, and `.currency-box__header-badges`
+  on mobile viewports so the title and header badges stay on a single line even if both
+  `Market closed` and `EOD FX` appear together on a phone screen.
+- **Health & Repair options for current and live FX prices.** Added `fx.refresh_live`
+  (*"Refresh live FX rate now"*) and `fx.backfill_intraday` (*"Backfill intraday FX
+  rates (1D / 1W)"*) to the **FX** repair group in `maintenance_service.py`, added the
+  `fx_live` (*"Current & live FX rate"*) check in Data Health with one-click fix actions
+  whenever the app is on `EOD FX` fallback, and updated `price_probe_service.py` and
+  `MarketDataTab.tsx` (`ProbeCard`) so `EUR/USD` can be tested directly against both
+  Yahoo Finance and Tiingo.
+
 ## [6.12.6] — 2026-11-08
 
 ### Fixed
