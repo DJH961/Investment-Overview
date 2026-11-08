@@ -172,13 +172,14 @@
         font-size: var(--font-size-xs);
       }
 
-      // Two chips per line, each half the row: the same number of lines in
-      // either currency (US$ amounts are longer), so a switch never reflows.
+      // Compact pills that hug their content and wrap cleanly across lines.
       &--chip {
-        flex: 0 0 calc((100% - var(--space-2)) / 2);
+        flex: 0 1 auto;
+        max-width: 100%;
         overflow: hidden;
         padding: 2px var(--space-2);
         white-space: nowrap;
+        text-overflow: ellipsis;
         border: var(--border-width) solid var(--color-border);
         border-radius: var(--radius-full);
         background: var(--color-surface-2);

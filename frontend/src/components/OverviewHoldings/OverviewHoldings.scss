@@ -272,6 +272,30 @@
     align-self: center;
   }
 
+  &__twin-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    padding: 2px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--color-surface-2);
+      color: var(--color-fg);
+    }
+
+    svg {
+      width: var(--font-size-xs);
+      height: var(--font-size-xs);
+    }
+  }
+
   // The "≈" before the ticker is the phone's stand-in for the badge.
   &__twin-approx {
     @include m.tablet-up {

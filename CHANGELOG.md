@@ -11,7 +11,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 - **Release fast:** every feature or bug fix ships as its own dated release in the
-  same PR. `## [Unreleased]` is only short-lived storage for changes that don't
+  same PR. `## [Unreleased]
+
+## [6.12.6] — 2026-11-08
+
+### Fixed
+- **Live EUR/USD spot rate and forex-close freeze across the Overview and Holdings
+  read-models.** `fx_service.active_live_spot` and `get_rates` now overlay the live
+  EUR/USD spot throughout the 24/5 forex session (including Sunday evening UTC after
+  the 17:00 ET reopen) and freeze cleanly at Friday's 17:00 ET forex close over the
+  weekend instead of falling back to Thursday's or Friday's 16:00 CET ECB reference
+  rate. `metrics_service` now sets `daily_growth_fx_eur_usd` from the live EUR/USD
+  rate rather than the previous close's EOD rate.
+- **Currency timestamp and redesigned `Currency · EUR ↔ USD` box.** The currency
+  box now displays the exact observation timestamp (`Live · HH:MM` in the header and
+  `as of HH:MM` / `as of Fri HH:MM` under the spot rate), and any EOD fallback rate
+  carries its 16:00 CET/CEST ECB fixing timestamp alongside an `EOD FX` header
+  badge. The `DivergingBar` rows (`Market hours` / `Overnight`) now share a 4-column
+  CSS subgrid so bar tracks, signed money figures, and status tags (`LIVE` / `LAST`
+  / `PAUSED`) align across rows on both desktop and 375px mobile screens. The
+  `Regular €X · $Y today` investing-power reference line now renders only in USD
+  view.
+- **"Twin was X.XX pp off" visibility window and dismiss button.** On Overview, the
+  post-NAV twin-accuracy sub-row now appears only if the user viewed the holding
+  while the twin estimate was actively pending for that session, expires 12 hours
+  after the actual NAV price drops (`updated_at ?? price_market_at`), and includes
+  an `×` button to dismiss it per session.
+- **Money-market ($1.00 par) average price, unrealised P&L, and reinvested dividend
+  display.** Reinvested dividends are now included in `lot.cost_eur` and
+  `lot.cost_usd` in `ledger_walk.py` so subsequent sell sweeps scale down cost basis
+  proportionally instead of leaving a phantom unrealised USD loss; `avg_price` stays
+  at `$1.00`, `unrealised_gain` in USD stays `$0.00`, and `total_return` equals the
+  earned dividends. In Transactions, par-`$1` reinvested dividends (`net_native == 0`)
+  now populate `cash_eur`, `cash_usd`, and `net_native` with their positive dividend
+  payout (`qty × price`).
+- **Transactions mobile pills and false `some rows without a rate` warning on stock
+  splits.** `split` and other non-cash rows are excluded from `fx_incomplete` in
+  both `ledger_query.py` and `ledgerAll.ts`, mobile filter chips hug their text
+  instead of stretching full width, and `.transactions-page__fx-warn` wraps cleanly
+  within narrow phone viewports.` is only short-lived storage for changes that don't
   affect the running app (docs, CI, tests) and is folded into the next release
   (see `AGENTS.md` → Workflow).
 

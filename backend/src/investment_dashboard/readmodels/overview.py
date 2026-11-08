@@ -251,7 +251,9 @@ def _today_fx_view(
         "since_phrase": {"kind": phrase_kind, "session_date": session_date.isoformat()},
         "anchor_missing": False,
     }
-    info = fx_service.eur_quote_as_of(session, quote="USD", today=local_today)
+    info = fx_service.eur_quote_as_of(
+        session, quote="USD", today=market_hours.exchange_today(now), now=now
+    )
     if info is not None:
         out["as_of"] = {
             "as_of": info.as_of.isoformat(),
@@ -364,6 +366,8 @@ def _currency_block(
         "investing_power_usd": None,
     }
     today.update(_today_fx_view(session, metrics, ccy=ccy, regime=regime, now=now, tz=tz))
+    if today["spot_observed_at"] is None and isinstance(today.get("as_of"), dict):
+        today["spot_observed_at"] = today["as_of"].get("observed_at")
     if live_fx is not None and live_fx > 0 and metrics.total_value_usd is not None:
         eur_effect = fx_effect.compute_eur_fx_effect(
             session, metrics, live_fx=live_fx, prev_fx=prev_fx, now=now

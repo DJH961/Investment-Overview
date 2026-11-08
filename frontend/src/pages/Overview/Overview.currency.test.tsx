@@ -203,6 +203,7 @@ describe("Overview currency switch", () => {
     const eur = renderIn("EUR");
     const eurShape = structure(eur.container);
     const eurCards = [...eur.container.querySelectorAll(".card__title, .overview-hero")].map((n) => n.textContent);
+    expect(eur.container.querySelectorAll(".currency-box__amount")).toHaveLength(0);
     eur.unmount();
     const usd = renderIn("USD");
     const usdShape = structure(usd.container);

@@ -1,19 +1,39 @@
 @use "../../styles/mixins" as m;
 
+// One grid for the whole list (rows are subgrids), so labels, tracks, money
+// figures and status tags (live / last / paused) line up across every row.
 .diverging-bar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: minmax(6.5rem, auto) minmax(4rem, 1fr) auto auto;
+  row-gap: var(--space-2);
+  column-gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 
+  @include m.phone {
+    grid-template-columns: minmax(5.25rem, auto) minmax(3.5rem, 1fr) auto auto;
+    column-gap: var(--space-2);
+  }
+
+  &--untagged {
+    grid-template-columns: minmax(6.5rem, auto) minmax(4rem, 1fr) auto;
+
+    @include m.phone {
+      grid-template-columns: minmax(5.25rem, auto) minmax(3.5rem, 1fr) auto;
+    }
+  }
+
   &__row {
     display: grid;
-    grid-template-columns: minmax(6.5rem, auto) minmax(4rem, 1fr) auto;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     align-items: center;
-    gap: var(--space-3);
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      font-size: var(--font-size-xs);
+    }
   }
 
   &__label {
@@ -67,10 +87,7 @@
   }
 
   &__value {
-    display: inline-flex;
-    align-items: baseline;
-    gap: var(--space-2);
-    justify-content: flex-end;
+    text-align: right;
     font-variant-numeric: tabular-nums;
     font-weight: var(--font-weight-semibold);
     white-space: nowrap;
@@ -79,6 +96,7 @@
   &__tag {
     @include m.eyebrow;
 
-    min-width: 2.5em;
+    text-align: right;
+    white-space: nowrap;
   }
 }

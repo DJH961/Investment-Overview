@@ -224,12 +224,14 @@ def month_totals(records: list[LedgerRecord]) -> dict[str, MonthTotal]:
     for month, rows in buckets.items():
         eur = [r.cash_eur for r in rows if r.cash_eur is not None]
         usd = [r.cash_usd for r in rows if r.cash_usd is not None]
+        cash_rows = [r for r in rows if r.kind != kinds.SPLIT and r.net_native is not None]
+        missing = any(r.cash_eur is None or r.cash_usd is None for r in cash_rows)
         out[month] = MonthTotal(
             month=month,
             count=len(rows),
             net_eur=sum(eur, Decimal(0)),
             net_usd=sum(usd, Decimal(0)),
-            fx_incomplete=len(eur) < len(rows) or len(usd) < len(rows),
+            fx_incomplete=missing,
         )
     return out
 
@@ -241,7 +243,8 @@ def _reinvested_dividend_value(t: Transaction) -> Decimal | None:
     cash that is immediately swept back into more shares at the constant $1.00
     NAV, so the row is booked as a ``dividend_reinvest`` whose *cash flow* nets
     to zero (``net_native == 0``). Valuing the currency legs off that zero makes
-    the Activity tab show a meaningless €0.00 / $0.00 for a real dividend.
+    the Activity / Transactions tab show a meaningless €0.00 / $0.00 for a real
+    dividend.
 
     The dividend's actual income is its reinvested value ``quantity × price``
     (shares bought at $1.00), which we surface here so the EUR/USD legs reflect
@@ -273,11 +276,8 @@ def _to_record(
     # that day rather than today's spot. ``fallback_rate`` (current spot) only
     # kicks in for rows older than the available FX history.
     native_ccy = (account.native_currency if account else "").upper()
-    # A money-market par-$1 reinvested dividend has a zero net cash flow but a
-    # real payout; value its legs off the reinvested amount so the Activity tab
-    # shows the dividend rather than €0.00. The stored (zero) net_eur/net_usd
-    # are dropped here so the legs are re-derived at the trade-date rate.
     reinvested_value = _reinvested_dividend_value(t)
+    display_net_native = reinvested_value if reinvested_value is not None else t.net_native
     if reinvested_value is not None:
         net_eur, net_usd = dual_currency_amounts(
             native_currency=native_ccy,
@@ -288,6 +288,7 @@ def _to_record(
             eur_to_usd=eur_to_usd or {},
             fallback_rate=fallback_rate,
         )
+        cash_eur, cash_usd = net_eur, net_usd
     else:
         net_eur, net_usd = dual_currency_amounts(
             native_currency=native_ccy,
@@ -298,6 +299,9 @@ def _to_record(
             eur_to_usd=eur_to_usd or {},
             fallback_rate=fallback_rate,
         )
+        cash_eur = cashflows.derived_eur(t, eur_to_usd)
+        cash_usd = cashflows.derived_usd(t, eur_to_usd)
+    is_non_cash = t.kind == kinds.SPLIT or display_net_native is None
     return LedgerRecord(
         id=t.id,
         date=t.date,
@@ -309,7 +313,7 @@ def _to_record(
         price_native=t.price_native,
         fees_native=t.fees_native,
         gross_native=t.gross_native,
-        net_native=t.net_native,
+        net_native=display_net_native,
         net_eur=net_eur,
         net_usd=net_usd,
         source=t.source,
@@ -319,9 +323,9 @@ def _to_record(
         description=t.description,
         external_id=t.external_id,
         is_settlement_leg=is_settlement_external_id(t.external_id),
-        fx_incomplete=t.net_eur is None or t.net_usd is None,
-        cash_eur=cashflows.derived_eur(t, eur_to_usd),
-        cash_usd=cashflows.derived_usd(t, eur_to_usd),
+        fx_incomplete=False if is_non_cash else (cash_eur is None or cash_usd is None),
+        cash_eur=cash_eur,
+        cash_usd=cash_usd,
     )
 
 

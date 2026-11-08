@@ -498,6 +498,7 @@ def _fx_block(
     prev_fx: Decimal | None,
     native_currencies: set[str],
     today: date,
+    now: datetime | None = None,
 ) -> dict[str, Any] | None:
     """Current FX stamp for the second KPI row, or ``None`` when no rate exists.
 
@@ -513,7 +514,7 @@ def _fx_block(
     if live_fx is None or live_fx <= 0:
         return None
     in_usd = ccy == "USD"
-    info = fx_service.eur_quote_as_of(session, quote="USD", today=today)
+    info = fx_service.eur_quote_as_of(session, quote="USD", today=today, now=now)
     move = fx_move_pct(live_fx, prev_fx, ccy)
     return {
         "pair": "EUR/USD" if in_usd else "USD/EUR",
@@ -625,10 +626,11 @@ def build(
         "fx": _fx_block(
             session,
             ccy=ccy,
-            live_fx=pm.daily_growth_fx_eur_usd or ctx.fx_rate_eur_usd,
+            live_fx=ctx.fx_rate_eur_usd or pm.daily_growth_fx_eur_usd,
             prev_fx=pm.daily_growth_fx_eur_usd_prev,
             native_currencies={r["native_currency"] for r in rows},
             today=ctx.as_of,
+            now=now,
         ),
         "group_by": group_by,
         "groups": build_groups(rows, cards, group_by, ccy, est_deltas, est_moves),

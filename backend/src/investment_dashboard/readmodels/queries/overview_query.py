@@ -923,17 +923,19 @@ def compute_instrument_metrics(  # noqa: PLR0915
         gain_usd = _round_cent(cv_usd + d_usd - c_usd) if cv_usd is not None else None
         # Return split (same basis as the overview): income = cash + reinvested
         # dividends; unrealised = value - cost with the income stripped out. A
-        # reinvested distribution already sits in ``cost`` except for money-market
-        # funds, where it is part of ``value`` and must come back out.
+        # reinvested distribution sits in ``cost`` for every holding (including
+        # par-$1 money-market funds, so cost basis stays $1.00/share and capital
+        # gain is $0.00 in USD while total return equals the dividend income).
         r_eur = reinv_eur.get(iid, ZERO)
         r_usd = reinv_usd.get(iid, ZERO)
-        in_value = iid in mm_iids
         income_eur = _round_cent(d_eur + r_eur)
         income_usd = _round_cent(d_usd + r_usd) if cv_usd is not None else None
-        unreal_eur = _round_cent(cv_eur - c_eur - (r_eur if in_value else ZERO))
-        unreal_usd = (
-            _round_cent(cv_usd - c_usd - (r_usd if in_value else ZERO))
-            if cv_usd is not None
+        unreal_eur = _round_cent(cv_eur - c_eur)
+        unreal_usd = _round_cent(cv_usd - c_usd) if cv_usd is not None else None
+        gain_eur = _round_cent(unreal_eur + income_eur)
+        gain_usd = (
+            _round_cent(unreal_usd + income_usd)
+            if (unreal_usd is not None and income_usd is not None)
             else None
         )
         xirr_eur = xirr(eur_flows.get(iid, []), as_of=as_of, terminal_value=cv_eur)
@@ -1660,7 +1662,12 @@ def build_holding_cards(
         fr = freshness.get(iid)
         eff = p.effective
         name = (eff.name if eff is not None else p.instrument.name) or p.instrument.symbol
-        avg_price = (p.cost_basis_native / p.shares) if p.shares else None
+        is_mm = fr.is_money_market if fr is not None else False
+        avg_price = (
+            Decimal(1)
+            if is_mm and p.shares
+            else ((p.cost_basis_native / p.shares) if p.shares else None)
+        )
         if im is not None:
             value_eur, value_usd = im.current_value_eur, im.current_value_usd
             cb_eur, cb_usd = im.cost_basis_eur, im.cost_basis_usd

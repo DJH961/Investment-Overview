@@ -135,9 +135,8 @@ def walk(  # noqa: PLR0912, PLR0915
                     # Reinvested income at its own date's rate (every instrument).
                     lot.reinv_eur += e
                     lot.reinv_usd += u
-                    if iid not in money_market_ids:
-                        lot.cost_eur += e
-                        lot.cost_usd += u
+                    lot.cost_eur += e
+                    lot.cost_usd += u
         elif kind == TransactionKind.DIVIDEND_CASH.value:
             if (t.account_id, iid, t.date) not in reinvest_keys:
                 lot.dividends_cash_native += net

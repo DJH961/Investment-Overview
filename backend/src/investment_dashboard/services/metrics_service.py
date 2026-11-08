@@ -728,8 +728,9 @@ def _compute_daily_growth(
         if (growth_usd is not None and last_usd is not None and prev_usd is not None)
         else None
     )
+    fx_live = lookup_rate_with_forward_fill(eur_to_usd, as_of) or fx_last
     return _DailyGrowth(
-        growth_eur, growth_usd, last_date, prev_date, fx_last, fx_prev, move_eur, move_usd
+        growth_eur, growth_usd, last_date, prev_date, fx_live, fx_prev, move_eur, move_usd
     )
 
 
@@ -769,7 +770,7 @@ def with_last_session_daily_growth(
         daily_growth_money_usd=daily.move_usd,
         daily_growth_as_of=daily.last_date,
         daily_growth_prev_as_of=daily.prev_date,
-        daily_growth_fx_eur_usd=daily.fx_last,
+        daily_growth_fx_eur_usd=metrics.daily_growth_fx_eur_usd or daily.fx_last,
         daily_growth_fx_eur_usd_prev=daily.fx_prev,
     )
 

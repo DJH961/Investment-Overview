@@ -18,6 +18,7 @@
     padding: var(--space-4) var(--space-5) 0;
 
     @include m.phone {
+      gap: var(--space-2);
       padding: var(--space-3) var(--space-4) 0;
     }
   }
@@ -33,6 +34,10 @@
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;
+
+    @include m.phone {
+      font-size: var(--font-size-md);
+    }
   }
 
   // Fold toggle: the whole title is the button (Enter/Space work natively).
@@ -124,6 +129,7 @@
     align-items: center;
     gap: var(--space-2);
     flex-shrink: 0;
+    margin-left: auto;
   }
 
   &__body {

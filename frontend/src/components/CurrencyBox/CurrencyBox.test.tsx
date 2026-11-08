@@ -49,11 +49,13 @@ describe("CurrencyBox", () => {
     expect(screen.getByText("USD/EUR")).toBeInTheDocument();
     expect(screen.getByText("0.9259")).toBeInTheDocument();
     expect(screen.getByText(/as of 14:31/)).toBeInTheDocument();
+    expect(screen.getByText("Live · 14:31")).toBeInTheDocument();
     expect(screen.getByText("Today")).toBeInTheDocument();
     expect(screen.getByText("since last close")).toBeInTheDocument();
     expect(screen.getByText("Since open")).toBeInTheDocument();
     const panel = screen.getByRole("region", { name: "Currency effect since yesterday" });
     expect(within(panel).getAllByText("-€120")[0]).toBeInTheDocument();
+    expect(within(panel).queryByText(/Regular/)).toBeNull();
     const rows = [...container.querySelectorAll(".diverging-bar__row")].map((r) => r.getAttribute("data-row"));
     expect(rows).toEqual(["market", "overnight"]);
     expect(container.querySelector('[data-row="market"]')).toHaveTextContent("live");

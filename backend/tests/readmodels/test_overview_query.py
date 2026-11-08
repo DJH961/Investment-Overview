@@ -1016,3 +1016,81 @@ def test_build_holding_cards_flags_lagging_daily_move_as_stale(
     assert cards["VFIAX"].daily_move_usd == Decimal("20.00")
     assert cards["VFIAX"].daily_growth_eur == Decimal("0.01")
     assert cards["VFIAX"].daily_growth_usd == Decimal("0.01")
+
+
+def test_money_market_sell_sweeps_keep_par_avg_price_and_zero_unrealised_loss(
+    session: Session,
+) -> None:
+    """After sell sweeps, a par-$1 money-market fund still has avg_price == $1.00,
+    $0.00 unrealised gain/loss in USD, and positive total return equal to dividends."""
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.models.transaction import TransactionSource
+    from investment_dashboard.readmodels.queries.overview_query import (
+        build_holding_cards,
+        compute_instrument_metrics,
+        get_positions,
+        holding_freshness,
+    )
+
+    acct = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="Fidelity",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    spaxx = instruments_repo.get_or_create(session, symbol="SPAXX")
+    fx_repo.upsert_rates(
+        session,
+        {
+            date(2024, 1, 5): Decimal("1.10"),
+            date(2024, 2, 5): Decimal("1.10"),
+            date(2024, 3, 5): Decimal("1.10"),
+            exchange_today(): Decimal("1.10"),
+        },
+    )
+    session.add_all(
+        [
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 1, 5),
+                kind="buy",
+                instrument_id=spaxx.id,
+                quantity=Decimal("1000"),
+                price_native=Decimal("1"),
+                net_native=Decimal("-1000"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 2, 5),
+                kind="dividend_reinvest",
+                instrument_id=spaxx.id,
+                quantity=Decimal("50"),
+                price_native=Decimal("1"),
+                net_native=Decimal("0"),
+                source=TransactionSource.MANUAL,
+            ),
+            Transaction(
+                account_id=acct.id,
+                date=date(2024, 3, 5),
+                kind="sell",
+                instrument_id=spaxx.id,
+                quantity=Decimal("-500"),
+                price_native=Decimal("1"),
+                net_native=Decimal("500"),
+                source=TransactionSource.MANUAL,
+            ),
+        ]
+    )
+    session.flush()
+
+    positions = get_positions(session)
+    metrics = compute_instrument_metrics(session, positions)
+    fresh = holding_freshness(session, positions)
+    cards = {c.symbol: c for c in build_holding_cards(positions, metrics=metrics, freshness=fresh)}
+    card = cards["SPAXX"]
+    assert card.avg_price_native == Decimal("1")
+    assert card.unrealised_gain_usd == Decimal("0.00")
+    assert card.income_usd == Decimal("50.00")
+    assert card.capital_gain_usd == Decimal("50.00")
