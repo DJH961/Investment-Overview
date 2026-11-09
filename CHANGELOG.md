@@ -22,6 +22,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   conversion↔deposit matching, conversion details on the Transactions tab,
   fees / spread / cost against the ECB reference, the conversion rate used
   everywhere, duplicate and backdate, plus four new owner decisions in §9.
+- v7 plan: holding EUR cost from the conversion pool rate is decided
+  (`domain/usd_cash_pool.py`, rollback setting); where the central conversion
+  numbers show up on Overview / Holdings without crowding them; §5 recast as
+  the Currency tab (live, today, lifetime, your conversions) with a direct
+  link to Conversions.
 
 ## [6.13.0] — 2026-11-09
 

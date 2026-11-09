@@ -308,21 +308,44 @@ waste dressed as innovation.
 
 ## 5. Theme C — the currency page (v7.5)
 
-The Overview already carries the headline FX numbers. The page is for the depth
-that is missing, and every panel below is either already computed or a
-read-time join — only one needs new money maths.
+The Overview already carries the headline FX numbers. The **Currency tab**
+(`/currency`, its own sidebar entry) is the one place that shows off
+everything the app knows about currency: live, today, lifetime and what your
+own conversions did. Every panel below is either already computed or a
+read-time join. The only new money maths is realised versus unrealised, plus
+the §5.1 modules it reuses.
+
+**Header:** live EUR/USD with its provenance stamp ("Live · 14:32",
+"Fri 23:00 close" or "EOD FX"), and a primary link **"Conversions →"**
+(`/conversions`) to add or edit. The conversions page links back with
+"Currency tab →", so editing stays where it is and analysis stays here.
+
+The page reads top to bottom from *now* to *lifetime* to *your conversions*:
 
 | Panel | State |
 |---|---|
-| Rate now: spot, as-of, live versus end-of-day, day move | Already computed |
+| **Now** | |
+| Rate now: live spot, as-of stamp, live vs end-of-day, the live-rate health status (6.13 check) | Already computed |
+| Today's currency effect on your money: the 6.13 `day_split` currency part, plus the market-hours / overnight legs `CurrencyBox` already has | Already computed |
+| 1D / 1W EUR/USD line from the stored per-minute rates, with the session boundaries | Already stored; needs a small read endpoint |
+| **Lifetime** | |
 | FX versus instruments split of lifetime return, both legs shown | Already computed |
-| EUR/USD history with **your own conversions marked on it** | Needs a history endpoint, no new storage |
-| What your conversions actually cost, against that day's ECB fixing | New pure-domain module, read-time join |
 | Where today's rate sits in your own holding period, as a percentile | New pure-domain module |
-| FX impact per holding | Already computed — both legs exist on every card, one is discarded at render |
-| FX on cash balances | Computable, needs a definition decision |
-| Conversion pool state | Already computed, reuse the existing endpoint |
+| FX impact per holding (EUR growth vs USD growth per holding, from the §5.1 pool rate) | Computed per card today; becomes exact with 7.5c |
+| FX on cash balances, and idle pool dollars (§5.1) | Computable, needs a definition decision |
 | Realised versus unrealised FX effect | **The only genuinely new maths** |
+| **Your conversions** (§5.1) | |
+| Your real rate vs the ECB average, total fees, spread, total cost, average distance from the ECB rate (EUR-weighted), best and worst | 7.5b `domain/fx_spread.py` |
+| EUR/USD history with **your own conversions marked on it** (marker size = amount, shape plus blue/orange = above or below the ECB rate) | Needs a history endpoint, no new storage |
+| Cost over time (cumulative) and per year | 7.5b |
+| Timing: your rate vs that month's average rate | 7.5b, read-time |
+| Cost by provider (if the optional field is used) | 7.5b |
+| Conversion pool state, deposits still on the ECB fallback (with "Add the conversion") | Already computed, reuse `GET /fx-conversions/pool` |
+
+Release order inside the tab: Now and Lifetime first (mostly already
+computed, so 7.5 can ship them on day one), then the conversions panels as
+7.5a–c land. The tab never shows a panel whose data isn't there yet: no
+empty "coming soon" boxes.
 
 Ship the cheap panels first and leave realised-versus-unrealised for last. It
 is the easiest place in the whole app to break the currency rule: it must be
@@ -451,24 +474,74 @@ of `fx_conversions` and `fx_history`.
 - **Invariant tests:** for every ledger, EUR invested on the Overview, the
   Deposits page and the sum of the Transactions tab's deposits must be equal.
   They can drift today.
-- **Holding level: your call (§9, item 8).** A dollar buy's EUR cost uses the
-  ECB rate of the buy date. Your real cost is what the dollars in the account
-  cost you to convert. Two honest options:
-  1. *Keep the buy-date rate* (today): simple, and stable for every past
-     figure. Holding EUR figures then don't add up exactly to the portfolio's
-     conversion-aware total, so label it.
-  2. *Pool rate:* treat the account's USD cash as a second FIFO layer
-     (deposits → buys), so each buy inherits the blended rate of the dollars
-     it spent. Correct to the cent, but new money maths in `ledger_walk`:
-     property tests, golden values and a v5 parity note. It moves every
-     per-holding EUR return.
+- **Holding level: the pool rate (decided 2026-11-09, §9 item 8).** Every
+  dollar holding's EUR cost is what *its* dollars cost you to convert, not
+  the ECB rate of the day it was bought. Holding EUR figures then add up to
+  the portfolio's conversion-aware total.
 
-  Recommended: option 1 now, option 2 only if you want holding EUR returns to
-  reconcile exactly.
+  **How it works: a second FIFO layer**, new pure module `domain/usd_cash_pool.py`
+  driven by `ledger_walk`. Each USD account keeps a queue of dollar lots, each
+  with its EUR cost:
+  - a **deposit** adds a lot at its matched EUR cost (the existing
+    `fx_pool` result: conversion slices, plus any ECB-fallback rest);
+  - a **buy** takes dollars from the oldest lots, and that EUR becomes the
+    buy's `cost_eur` (replacing `usd / ecb(buy date)`);
+  - a **sell, a cash dividend or interest** adds a lot valued at *its own
+    date's* rate. Proceeds are EUR at that instant (currency rule), not the
+    holding's old cost;
+  - **fees and withdrawals** take dollars like a buy does; withdrawals end
+    the EUR cost they carried;
+  - **money-market funds** (`is_money_market`, the cash sweep) are cash, not
+    an investment. Buying or selling one moves dollars between the account's
+    cash and the fund without consuming or creating lots. Otherwise every
+    sweep would re-price the pool;
+  - **reinvested dividends** add a lot at their date's rate and spend it on
+    the same day (net zero dollars, a real EUR cost basis). This matches the
+    6.12.6 cost-basis fix;
+  - **no lot left** (a buy before any recorded deposit, or imported history
+    that starts mid-way): the uncovered part uses the buy date's ECB rate and
+    is flagged, exactly like today's deposit fallback.
+
+  **What it changes.** Per-holding EUR cost basis, unrealised and realised EUR
+  gain, EUR XIRR flows and "Euro since buying". USD figures don't move, and
+  portfolio-level figures don't move (they already use the deposit-level
+  rate).
+
+  **Required with it:**
+  - property tests: dollars are conserved per account; EUR cost is conserved
+    from deposits to holdings plus remaining cash; the result doesn't depend
+    on input order;
+  - golden values worked by hand on a two-deposit, three-buy, one-sell
+    ledger;
+  - an invariant test: the sum of holding EUR cost basis plus the remaining
+    pool's EUR equals EUR invested minus realised EUR cost;
+  - a parity note: per-holding EUR returns deliberately diverge from v5,
+    and `tools/parity_check.py` learns to expect that.
+
+  **Rollback:** a setting `fx.holding_cost_basis = pool | buy_date` (default
+  `pool`), shown in Settings in a new "Currency" group. There is none today:
+  `fx.tracked_quotes` and `fx.stale_after_seconds` sit in Data refresh and
+  would move there with it. That keeps the old basis one switch away
+  while the new one earns trust. This is a basis choice, not a hidden knob.
+
+#### Where the central numbers show up (decided)
+
+Each page gets only what serves its question, so neither is crowded. The
+Currency tab gets the full story.
+
+| Where | What it gets | What it does not get |
+|---|---|---|
+| **Overview › "Currency effect (lifetime)" card** (6 rows today) | **One new row, "Your rate":** your real average conversion rate next to the ECB average over the same dates, e.g. "1.0812 · ECB 1.0841", with "conversions cost €X so far" as its sub-line. Break-even and "Euro since buying" switch to your real rate, with a label saying so. The card title links "More on the Currency tab →". | No cost chart, no per-conversion list, no new card |
+| **Holdings › KPI strip** (13 tiles today) | No new tile. The existing **"FX EUR/USD"** tile gets the hint "your rate 1.0812". | No cost or fee figures |
+| **Holdings › a holding's details** (phone expansion, desktop drawer; where P/L already lives since 6.12.8) | **"Your rate"** (the blended rate of the dollars that bought it, from the pool rate) and **"FX effect"** (its EUR growth minus its USD growth, in pp, the currency effect as a residual) | Nothing new in the table columns or the row chips |
+| **Transactions tab** | A deposit's details: which conversion(s) paid for it (7.5a) | — |
+| **Currency tab** | Everything: live rate, day and lifetime effects, costs, timing, pool, idle dollars, per-holding FX table (§5) | — |
+| **Conversions page** | Editing, matching, duplicate/backdate, statement import, and a link back to the Currency tab | Analytics (they live on the Currency tab) |
 
 #### Extras that make it work across the app
 
-Picked for value per line of code, cheapest first:
+All approved by you (2026-11-09). Picked for value per line of code, cheapest
+first:
 
 - **Data Health:** "N deposits valued at the ECB rate (no conversion found)",
   with the prefilled *Add the conversion* action. The fallback badge already
@@ -476,9 +549,9 @@ Picked for value per line of code, cheapest first:
 - **Idle dollars:** pool dollars converted but not yet deposited for more than
   30 days ("$420 converted on 2 Apr, not yet invested"). They carry currency
   exposure you may have forgotten.
-- **Overview's currency card uses your rate:** "Your real rate 1.0812 · ECB
-  average 1.0841", and the break-even rate built from it.
-- **Currency page (§5):** markers for your conversions on the EUR/USD chart.
+- **Overview's currency card uses your rate:** the one "Your rate" row from
+  the placement table above, and the break-even rate built from it.
+- **Currency tab (§5):** markers for your conversions on the EUR/USD chart.
   Size shows the amount; above/below the ECB line, cost or saving, is shown
   by marker shape plus blue/orange (CVD-safe). Plus a timing panel: your rate
   against that month's average rate, "converted 0.6% better than the month
@@ -659,8 +732,8 @@ this is the sequence I would pick, not a dependency graph.
 | **7.4** | **Holding deep-dive**: route, tabs, 1D/1W, tranche history, per-holding dividends | — |
 | 7.5a | **Conversions, clear matching**: names, order, deposit declarations, Transactions details, duplicate/backdate (§5.1) | — |
 | 7.5b | **Conversion costs**: `domain/fx_spread.py`, fees / spread / off-rate KPIs, cost over time (§5.1) | 7.5a |
-| 7.5c | **One rate everywhere**: Transactions tab on conversion rates, invariant tests, holding level per §9 item 8 (§5.1) | 7.5a |
-| **7.5** | **Currency page**, with conversion markers and the timing panel from §5.1 | 7.5b |
+| 7.5c | **One rate everywhere**: Transactions tab on conversion rates; holding EUR cost from the pool rate (`domain/usd_cash_pool.py`); invariant tests; the Overview "Your rate" row and the holding-details rows (§5.1) | 7.5a |
+| **7.5** | **Currency tab** (§5): Now + Lifetime panels, header link to Conversions; the conversion panels join as 7.5a–c land | — (conversion panels: 7.5b) |
 | **7.6** | **Instrument metadata** + sector/country/currency allocation, with AI-assisted fill | 7.1 for the fill |
 | **7.7** | **US tax pack**: realised gains by holding period, wash sales, sell planner | 7.4 |
 
@@ -692,9 +765,9 @@ roughly 90,000 lines of v5 code, which needs a parallel-run week first.
 6. **Onboarding — wire it in or delete it** (§7). It is finished code either
    way; leaving it orphaned is the only bad option.
 7. **Cutover timing** for the v5 deletion.
-8. **Holding-level EUR cost from your conversions** (§5.1, 7.5c): keep the
-   buy-date ECB rate (recommended for now, labelled) or the pool rate (exact,
-   new money maths, moves every per-holding EUR return).
+8. ~~**Holding-level EUR cost from your conversions**~~ — **decided
+   2026-11-09: the pool rate** (§5.1, 7.5c), with `fx.holding_cost_basis` as
+   the rollback switch.
 9. **Manual pinning** (§5.1): FIFO only (today), or also let a deposit be pinned
    to a specific conversion. Pinning needs a small link table (a relation, not
    a derived-currency column, so the currency rule allows it).
