@@ -5,8 +5,8 @@
 > competitor sources, verified API facts and everything that turned out to be
 > wrong — lives in [`v7_research.md`](v7_research.md).
 >
-> Nothing here is committed to code yet. Section 9 lists the handful of
-> decisions that are yours to make before the first line is written.
+> Nothing here is committed to code yet. Every decision is settled (section
+> 9, 2026-11-09); the first release can start without asking.
 
 ---
 
@@ -203,12 +203,12 @@ rather than interpolated into prose.
    routing to providers that do not log or train. This is a per-request lever,
    separate from the account setting, and belt-and-braces is the right posture
    here.
-4. **Worth asking support in writing:** whether a true zero-data-retention
-   agreement is available on a personal pay-as-you-go account, or whether it is
-   enterprise-only. The research could not find a ZDR toggle in the dashboard,
-   only ZDR as something individual providers offer. The v6 plan's Phase 5 note
-   assumed defaulting to ZDR providers was a setting; it appears to be a
-   routing consequence instead.
+4. **Nice to have, not a gate (decided 2026-11-09):** whether a true
+   zero-data-retention agreement is available on a personal pay-as-you-go
+   account. You will look into it; nothing waits on the answer. Items 1–3 plus
+   the no-amounts rule are what the AI releases ship on. The research could not
+   find a ZDR toggle in the dashboard, only ZDR as something individual
+   providers offer, so it is a routing consequence rather than a setting.
 
 Worth knowing: OpenRouter does not store prompts or responses by default. Its
 own retention is opt-in, and the provider-training setting is governed
@@ -332,7 +332,7 @@ The page reads top to bottom from *now* to *lifetime* to *your conversions*:
 | FX versus instruments split of lifetime return, both legs shown | Already computed |
 | Where today's rate sits in your own holding period, as a percentile | New pure-domain module |
 | FX impact per holding (EUR growth vs USD growth per holding, from the §5.1 pool rate) | Computed per card today; becomes exact with 7.5c |
-| FX on cash balances, and idle pool dollars (§5.1) | Computable, needs a definition decision |
+| FX on cash balances, and idle pool dollars (§5.1): EUR value now minus the EUR cost the pool gives those dollars (decided) | Computable once 7.5c's pool exists |
 | Realised versus unrealised FX effect | **The only genuinely new maths** |
 | **Your conversions** (§5.1) | |
 | Your real rate vs the ECB average, total fees, spread, total cost, average distance from the ECB rate (EUR-weighted), best and worst | 7.5b `domain/fx_spread.py` |
@@ -464,7 +464,7 @@ conversion, one date). Sums of EUR across dates are fine; never annualise
 the cost, never feed it to an XIRR. No new columns: it is a read-time join
 of `fx_conversions` and `fx_history`.
 
-#### 7.5c — One rate everywhere (money maths, needs a decision)
+#### 7.5c — One rate everywhere (money maths)
 
 - **Transactions tab: wire it.** `ledger_query` takes the same
   `eur_overrides` as the metrics, so a matched deposit's EUR column, the
@@ -538,6 +538,32 @@ Currency tab gets the full story.
 | **Currency tab** | Everything: live rate, day and lifetime effects, costs, timing, pool, idle dollars, per-holding FX table (§5) | — |
 | **Conversions page** | Editing, matching, duplicate/backdate, statement import, and a link back to the Currency tab | Analytics (they live on the Currency tab) |
 
+#### Matching rules (decided 2026-11-09)
+
+- **Pinning, on top of FIFO.** In a deposit's details, *Use this conversion*
+  pins a specific conversion (or several, with dollar amounts) to it. Pins
+  are applied first; FIFO then fills whatever is left, in date order, from
+  the dollars nobody pinned. A pin shows as "Pinned" (icon and label) in
+  both the deposit's declaration and the conversion's "used by" list, and
+  *Unpin* returns the deposit to FIFO. Storage: a small ledger-tier link
+  table `fx_conversion_pins(deposit_txn_id, conversion_id, usd)`. That is a
+  relation, not a derived-currency column. It needs a migration with a
+  working downgrade; its rows are v6-only data, so they go in the
+  `inv-dashboard-export-v5` "dropped" note until the cutover removes that
+  tool.
+- **No global matching window.** FIFO stays strict: only conversions dated on
+  or before a deposit. A *pin* may reach a conversion dated **up to 7 days
+  after** the deposit, for bank-vs-broker booking dates. The exception lives
+  exactly where you made it and cannot shift other deposits' matching.
+- **Dollars back to euros: release 7.5d,** after the pool. A conversion gets a
+  direction (`eur_to_usd`, the default for every existing row, or
+  `usd_to_eur`). A USD→EUR conversion takes dollars out of the 7.5c pool at
+  their EUR cost; the euros received minus that cost is your **realised FX
+  gain or loss**. That is the Currency tab's realised-versus-unrealised panel
+  (§5), built from real cashflows at their own dates, never a USD gain times a
+  rate change. Fees and the spread against the ECB rate (7.5b) work the same
+  in both directions.
+
 #### Extras that make it work across the app
 
 All approved by you (2026-11-09). Picked for value per line of code, cheapest
@@ -607,6 +633,15 @@ tranche history** — cost, age, gain against today's price per tranche —
 explicitly labelled as a FIFO view while the position's totals use average
 cost, and never let a lot number feed an aggregate.
 
+**Decided 2026-11-09: a tranche view inside the holding's details.** It is a
+"Tranches" tab of the deep-dive (§7). On a phone it is reachable from the
+row's expansion, so it is never more than one tap from where P/L already
+lives. Per purchase: date, shares left, cost (USD, and EUR from the 7.5c
+pool rate), age with a short-term / long-term marker at one year, and gain
+against today's price. The tab says plainly, once: "FIFO view per purchase;
+the holding's totals use average cost." Real FIFO cost basis stays out of
+v7.
+
 Snowball's answer is worth copying outright: a cost-basis selector that names,
 explicitly, which metrics change when you switch method. Don't hide the method;
 publish its consequences.
@@ -666,7 +701,7 @@ The problems are specific rather than systemic.
 | | What | Why |
 |---|---|---|
 | 1 | **The 404 page says "Coming soon"** | The catch-all route still renders a v6 build placeholder. Any typo'd URL shows it. Minutes to fix. |
-| 2 | **Onboarding is unreachable** | A complete six-step first-run checklist exists and fetches its own endpoint, and nothing routes to it. Wire it behind an empty-portfolio check, or delete it. |
+| 2 | **Onboarding is unreachable** | A complete six-step first-run checklist exists and fetches its own endpoint, and nothing routes to it. **Decided: keep it, non-intrusive.** It appears as a small dismissible card (never a full-page takeover) while setup steps are open. One click hides it for good (remembered on the server, so every device agrees). **"Restart setup guide"** in the account menu and in Settings brings it back. It never blocks a page. |
 | 3 | **The nav lies about the calculator** | The sidebar labels one page "Projection & calculator", but the actual calculator — amount, currency, fractional shares, allow-sell — is on another page entirely. |
 | 4 | **Empty states with no way out** | Two main pages show text-only empty states telling you to go somewhere else, with no button. A third page already does this correctly with a button. |
 | 5 | **Hand-rolled tabs** | One admin page builds its own tab bar instead of using the shared segmented control that four other pages use for the identical job. |
@@ -701,15 +736,56 @@ logic already prefix-match, per-id data already exists, and reusing the existing
 page chunk avoids a new load waterfall. Then add tabs using the segmented
 control the rest of the app uses: performance, transactions, dividends, lots.
 
-**1D and 1W per holding need a decision.** Portfolio-level intraday already
-exists, but the stored intraday data is a single portfolio-wide aggregate per
-instant, not a per-instrument series — so there is nothing on disk to serve a
-per-holding intraday chart from. Either fetch on demand per symbol through the
-existing adapter, cached per request, or add a per-instrument intraday cache
-table. Fetch-on-demand is right for v7. Before building either, check whether
-the snapshot reconstruction service already fetches per-instrument bars and
-aggregates them away — if it does, this is a small refactor rather than new
-plumbing, and that materially changes the estimate.
+**1D and 1W per holding: store what is already fetched (decided
+2026-11-09).** Checked in the code: the portfolio 1D/1W line already fetches
+every holding's minute bars (`bars_by_symbol` in
+`intraday_snapshots_service`'s reconstruction and week backfill), and the
+live capture prices every holding each tick. Only the *sum* is kept
+(`intraday_value`), so the per-holding series is computed and thrown away.
+And the ETF twins already have exactly the right table:
+`intraday_twin_prices(symbol, captured_at, price_native)`, cache tier, pruned
+to the 1W window.
+
+So the plan is a small refactor, no new fetching:
+
+- Generalise `intraday_twin_prices` into `intraday_symbol_prices` (same
+  columns, plus a `kind` of `holding` / `twin`), with a migration and a
+  working downgrade. Cache tier, so a reset simply rebuilds it.
+- The reconstruction, week backfill and live capture write each symbol's
+  price next to the portfolio sample they already write. Same bars, one more
+  insert.
+- **Size is a non-issue:** about 20 symbols × ~390 one-minute samples a
+  session × the 5 sessions the 1W window keeps ≈ 40,000 rows, roughly
+  2–3 MB with the index. The same pruning as `intraday_value` keeps it there.
+- A holding's 1D/1W chart is then a read: shares × price per instant, in the
+  holding's own currency. The EUR line uses the per-instant rate already
+  stored on `intraday_value`, never a converted return.
+- Gaps: a symbol with no stored bars falls back to the same gap-fill the
+  portfolio line uses (Yahoo, then Tiingo), so there is one repair path, not
+  two.
+
+**ETF twins for NAV funds on the holding page.** A mutual fund has no
+intraday price, only its daily NAV, which is why the twins exist. On a NAV
+fund's deep-dive:
+
+- **1D:** while the NAV is pending, the line is the twin's estimate
+  (`prev_NAV × twin_now / twin_prev_close`, rebuilt at read time from
+  `intraday_symbol_prices`, never stored as a price). It is dashed and
+  labelled "≈ estimate from VOO"; when the NAV posts, the official point lands
+  at the close and the estimate stays visible as a faint line for comparison
+  that day.
+- **1W:** past sessions show the official NAV points, with the twin's
+  intraday shape behind them in a muted line, so you can see how each day
+  moved.
+- **Twin panel:** which ETF stands in and why (same index, close index,
+  chosen by you), its live move, and the tracking record already computed
+  for Diagnostics (typical daily gap, bias "runs high/low", sessions counted),
+  plus the last few sessions' estimate-vs-NAV gaps as a small table.
+- **Change the twin** right there (the existing manual choice), instead of
+  only in Settings.
+
+Holdings without a twin simply show their own intraday price; funds without a
+twin show the NAV points with a short "no intraday price for this fund" note.
 
 **Connect the dividend data that already exists.** Per-holding dividend detail
 lives on the Activity page, is not filterable to one instrument, and is not
@@ -725,15 +801,17 @@ this is the sequence I would pick, not a dependency graph.
 | Release | What | Depends on |
 |---|---|---|
 | patches | The five cleanup items in §7 | — |
+| cutover | **v5 removed**, demo kept, `v5-archive` tag (§8 below) | — |
 | **7.0** | **Daily Brief**, deterministic: trigger rule, last-seen marker, window return, the card | — |
 | **7.1** | **AI foundation**: adapter, settings, kill switch, redaction layer, cost ledger, activity logging — plus the Brief's written summary as its first consumer | 7.0 |
 | **7.2** | **Assistant**: redacted tool surface, streaming, rate limiting | 7.1 |
 | **7.3** | **News tab**: news API ingestion, clustering, per-holding digests | 7.1 |
-| **7.4** | **Holding deep-dive**: route, tabs, 1D/1W, tranche history, per-holding dividends | — |
-| 7.5a | **Conversions, clear matching**: names, order, deposit declarations, Transactions details, duplicate/backdate (§5.1) | — |
+| **7.4** | **Holding deep-dive**: route, tabs, per-holding 1D/1W from `intraday_symbol_prices`, ETF-twin view for NAV funds, tranche tab, per-holding dividends | — |
+| 7.5a | **Conversions, clear matching**: names, order, deposit declarations, pinning, Transactions details, duplicate/backdate (§5.1) | — |
 | 7.5b | **Conversion costs**: `domain/fx_spread.py`, fees / spread / off-rate KPIs, cost over time (§5.1) | 7.5a |
 | 7.5c | **One rate everywhere**: Transactions tab on conversion rates; holding EUR cost from the pool rate (`domain/usd_cash_pool.py`); invariant tests; the Overview "Your rate" row and the holding-details rows (§5.1) | 7.5a |
-| **7.5** | **Currency tab** (§5): Now + Lifetime panels, header link to Conversions; the conversion panels join as 7.5a–c land | — (conversion panels: 7.5b) |
+| 7.5d | **Dollars back to euros**: conversion direction, realised FX gain from the pool (§5.1) | 7.5c |
+| **7.5** | **Currency tab** (§5): Now + Lifetime panels, header link to Conversions; the conversion panels join as 7.5a–d land | — (conversion panels: 7.5b; realised FX: 7.5d) |
 | **7.6** | **Instrument metadata** + sector/country/currency allocation, with AI-assisted fill | 7.1 for the fill |
 | **7.7** | **US tax pack**: realised gains by holding period, wash sales, sell planner | 7.4 |
 
@@ -742,41 +820,73 @@ thinnest non-trivial package, and the layer where bugs go silent), smoke tests
 for the nine untested UI primitives and the transaction form, and a coverage
 tool, which is currently not installed at all.
 
-**Still gated on your approval, unchanged from v6:** the cutover deletion of
-roughly 90,000 lines of v5 code, which needs a parallel-run week first.
+**The v5 cutover: approved 2026-11-09 ("v6 has delivered, v5 can die").** It
+ships as one clean-up release before 7.5c, so the pool-rate maths never needs
+a v5-parity exception.
+
+- **Kept:** the **demo website**. `web/` builds only the offline demo
+  (`VITE_DEMO_ONLY=1`), and GitHub Pages keeps serving it through its
+  workflow.
+- **Removed from `main`:**
+  - the NiceGUI desktop app and its `ui/` code;
+  - the Windows installer / portable bundle and the `release.yml` jobs that
+    build them (`tag-on-version-bump.yml`, `ci.yml`, `deploy.yml` and
+    `pages.yml` stay);
+  - the Cloudflare Worker (`web/proxy/`);
+  - the `live-data` release publishing, the encrypted-blob publish service
+    and its scheduled routines and GitHub Actions;
+  - the v5 export tool (`tools/export_v5_ledger.py`) and the
+    "downgrade to 0014" CI check;
+  - the v5 parity check (`tools/parity_check.py`);
+  - every v5-only test.
+- **Rules that end:**
+  - AGENTS.md's "until cutover" rules: the frozen `net_eur` / `net_usd` /
+    `fx_rate_to_eur` legs stop being written, the old EUR snapshot columns
+    stop being filled, and the export-v5 "dropped" notes go.
+  - The columns themselves are dropped in a later migration, once a release
+    has run without them.
+  - New migrations still need a working downgrade, back to the previous v6
+    revision.
+- **Owner steps (accounts, so yours):** delete the Worker in Cloudflare,
+  delete the `live-data` release and remove any secrets only v5 used. I
+  prepare the exact list with clicks; Pages stays on for the demo.
+- **The archive, for "do it like in v5":**
+  - the code stays one command away rather than in the tree, where it would
+    slow every search and invite agents to edit dead code;
+  - the last `main` commit that still has v5 is tagged **`v5-archive`**;
+    `legacy/v5` / `v5.3.1` stay as they are;
+  - `docs/legacy_v5.md` gains a "Comparing with v5" section:
+    `git grep <pattern> v5-archive`, `git show v5-archive:<path>`, and a
+    read-only worktree (`git worktree add ../Investment-Overview-v5
+    v5-archive`) for browsing in an editor;
+  - AGENTS.md points agents there whenever you say "like in v5".
+- **Rollback:** after the cutover there is no downgrade path back to a v5
+  ledger. The sealed pre-cutover v5 backup stays as the last resort, and
+  `legacy/v5` still runs it.
 
 ---
 
-## 9. What only you can decide
+## 9. Decisions (all settled 2026-11-09)
 
-1. **Detail level for the model** — rank order and core/mid/small buckets by
-   default, as described in §4.1. Exact weight percentages are a setting,
-   default off. Confirm that split is where you want it.
-2. **The tool-calling assistant is back on** (§4.2). I previously recommended
-   against it on privacy grounds and have reversed that. It means
-   `v6_one_app_plan.md` Phase 5 stands rather than being amended.
-3. **News discloses your holdings list to a news provider on a schedule**
-   (§4.3). Accept, or skip the news tab.
-4. **Ask OpenRouter about zero-data-retention** (§4.1, item 4) before the first
-   real call. This is the one open question I would not ship without.
-5. **Tranche history or real FIFO cost basis** (§6.1). Tranche history is
-   cheap and cosmetic; real FIFO touches every return number in the app.
-   Recommended: tranche history, clearly labelled.
-6. **Onboarding — wire it in or delete it** (§7). It is finished code either
-   way; leaving it orphaned is the only bad option.
-7. **Cutover timing** for the v5 deletion.
-8. ~~**Holding-level EUR cost from your conversions**~~ — **decided
-   2026-11-09: the pool rate** (§5.1, 7.5c), with `fx.holding_cost_basis` as
-   the rollback switch.
-9. **Manual pinning** (§5.1): FIFO only (today), or also let a deposit be pinned
-   to a specific conversion. Pinning needs a small link table (a relation, not
-   a derived-currency column, so the currency rule allows it).
-10. **Matching window** (§5.1): today a conversion must be dated on or before
-    the deposit. Allow it up to N days *after* (bank and broker booking dates
-    can differ), or keep it strict?
-11. **Dollars back to euros** (§5.1): conversions are EUR→USD only, and USD
-    withdrawals are ignored by the pool. Add the reverse direction, so
-    repatriation has a real rate too, or leave it out of v7?
+Nothing in v7 is waiting on a decision. New questions that come up while
+building go here, with a recommendation, and get settled before the release
+that needs them.
+
+| # | Question | Decided |
+|---|---|---|
+| 1 | What the model may see (§4.1) | Rank order + core/mid/small buckets; exact weights a setting, default off |
+| 2 | Tool-calling assistant (§4.2) | Yes, with redacted tools; `v6_one_app_plan.md` Phase 5 stands |
+| 3 | News tab discloses your symbol list (§4.3) | Accepted; server-side, batched, Finnhub first |
+| 4 | OpenRouter zero data retention (§4.1) | Nice to have, not a gate; you look into it when convenient |
+| 5 | Tranches (§6.1) | A tranche view inside the holding's details; totals stay average cost |
+| 6 | Onboarding (§7) | Keep it, as a dismissible card; "Restart setup guide" brings it back |
+| 7 | v5 cutover (§8) | Approved: v5 removed, demo website kept, code archived under the `v5-archive` tag |
+| 8 | Holding EUR cost (§5.1) | The pool rate, `fx.holding_cost_basis` as the rollback switch |
+| 9 | Manual pinning (§5.1) | Yes, pins first, FIFO fills the rest |
+| 10 | Matching window (§5.1) | Strict FIFO; only a pin may reach up to 7 days after a deposit |
+| 11 | Dollars back to euros (§5.1) | Yes, release 7.5d, with realised FX gain from the pool |
+| 12 | Per-holding 1D/1W (§7) | Store the per-symbol bars the 1D line already fetches; ETF-twin view for NAV funds |
+| 13 | FX on cash (§5) | EUR value now minus the pool's EUR cost of those dollars |
 
 ---
 

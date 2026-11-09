@@ -27,6 +27,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   numbers show up on Overview / Holdings without crowding them; §5 recast as
   the Currency tab (live, today, lifetime, your conversions) with a direct
   link to Conversions.
+- v7 plan: every open decision settled (§9 is now a table). Conversion pinning
+  and USD→EUR (7.5d); tranche view in holding details; dismissible, restartable
+  onboarding; per-holding 1D/1W from stored per-symbol bars, with an ETF-twin
+  view for NAV funds; v5 cutover approved (demo kept, `v5-archive` tag).
+  The v6 plan records the cutover approval.
 
 ## [6.13.0] — 2026-11-09
 
