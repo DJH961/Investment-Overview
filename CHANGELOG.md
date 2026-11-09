@@ -17,6 +17,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.13.0] — 2026-11-09
+
+### Changed
+- **The day move follows the live rate, split into price and currency.** While the
+  market is shut, the headline day move is now the whole change in value since the
+  previous close, overnight currency included, so the value and its move agree at
+  every instant (before, the move stopped at the last session while the value kept
+  moving with the rate). The "Price move" tile shows what the prices did, and the line
+  under it what the exchange rate did over the same time: "Overnight FX" while the
+  market is shut, "FX since close" while it trades (new: the split now exists during
+  the session too). The two always add up to the headline. Computed on the server
+  (`day_split` in `/api/overview`), each book valued at one rate, never a converted
+  return.
+- **The ECB rate is each date's official rate, nothing more.** Over the weekend Friday's
+  live forex close marks "now" but no longer overwrites Friday's own ECB fixing in the
+  rate history, so cashflows dated Friday keep the same official rate all weekend.
+- **Live FX health, simplified.** The weekend/restart backfill now tries the last
+  15-minute bar from Yahoo, then Tiingo, then the rate stored with the intraday
+  samples (the daily-close step and the loosely typed fetchers are gone). The
+  duplicate "Backfill intraday FX rates" repair job is removed; "Refresh live FX rate
+  now" fetches a fresh quote first. The Data Health check "Live EUR/USD rate" no
+  longer warns just because the ECB rate is in use: it warns when currencies trade
+  and the live rate is missing, not refreshed, or unchanged for longer than the new
+  setting **Settings › Data refresh › "Live EUR/USD rate: warn when stale after"**
+  (default 15 min), or when the weekend's closing rate is missing.
+
 ## [6.12.8] — 2026-11-09
 
 ### Fixed

@@ -27,10 +27,7 @@ from investment_dashboard.services import (
 
 #: Failing check id -> repair jobs offered next to it (job id, label, params).
 _JOB_ACTIONS: dict[str, tuple[tuple[str, str, dict[str, Any]], ...]] = {
-    "fx_live": (
-        ("fx.refresh_live", "Refresh live FX rate now", {}),
-        ("fx.backfill_intraday", "Backfill intraday FX rates (1D / 1W)", {}),
-    ),
+    "fx_live": (("fx.refresh_live", "Refresh live FX rate now", {}),),
     "fx_legs": (
         ("fx.refresh", "Re-download FX history", {}),
         ("fx.recalc_legs", "Recalculate missing FX legs", {"force": False}),

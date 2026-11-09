@@ -332,6 +332,25 @@ class LastSessionMove(ApiModel):
     estimated_funds: list[str] = []  # noqa: RUF012 - pydantic copies defaults
 
 
+class DaySplit(ApiModel):
+    """The headline day move (since the previous close) as price + currency.
+
+    ``price_move + currency_move`` is the headline move exactly (the estimated
+    book's when ``estimated``). ``overnight``: the market is shut, so ``price_move``
+    is the last session's move and ``currency_move`` the exchange-rate change since
+    its close; otherwise ``price_move`` is today's move at the previous close's rate
+    and ``currency_move`` the rate change since that close. ``*_secondary`` are the
+    same figures computed in ``secondary_ccy`` (never converted).
+    """
+
+    price_move: DecStr
+    currency_move: DecStr
+    price_move_secondary: DecStr
+    currency_move_secondary: DecStr
+    overnight: bool
+    estimated: bool = False
+
+
 class OverviewResponse(ApiModel):
     ccy: Ccy
     as_of: str
@@ -357,3 +376,5 @@ class OverviewResponse(ApiModel):
     warnings: OverviewWarnings
     #: Market shut: last session's move + overnight currency (null while it trades).
     last_session: LastSessionMove | None = None
+    #: The headline day move split into price and currency (null when not computable).
+    day_split: DaySplit | None = None

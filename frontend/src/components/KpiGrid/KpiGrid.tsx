@@ -30,8 +30,9 @@ const STRIP_TIPS = {
 
 export const KPI_TIPS = {
   priceMove:
-    "What your holdings' prices did over the session, each valued at that session's own exchange rate. " +
-    "While the market is shut, add the overnight FX figure under it and you get the headline change exactly. " +
+    "What your holdings' prices did since the previous close, without the exchange rate. " +
+    "The FX figure under it is what the exchange rate did over the same time (overnight while the market is shut); " +
+    "add the two and you get the headline change exactly. " +
     "While a fund's NAV is pending, its ETF twin's estimate stands in for it.",
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
   totalReturn:
@@ -95,23 +96,22 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     </span>
   ) : undefined;
 
-  // The day's move split into its two causes. The price move is what the holdings'
-  // prices did; the overnight FX leg is the same holdings at the same prices
-  // revalued at today's rate. Together they are the headline change exactly.
-  const ls = data?.last_session;
-  const est = k?.estimate ?? null;
-  const priceMove = est && ls?.move_est != null ? ls.move_est : k?.daily_move;
-  const overnight = ls
-    ? toNum(est && ls.overnight_currency_est != null ? ls.overnight_currency_est : ls.overnight_currency)
-    : null;
-  // A book reported in its own currency cannot drift overnight: the figure is a
+  // The day's move split into its two causes, both from the server (`day_split`):
+  // what the holdings' prices did, and what the exchange rate did since the
+  // previous close (overnight while the market is shut). Together they are the
+  // headline change exactly. Without a split the tile falls back to the whole move.
+  const ds = data?.day_split ?? null;
+  const priceMove = ds ? ds.price_move : k?.daily_move;
+  const priceMove2 = ds ? ds.price_move_secondary : k2?.daily_move;
+  const fxMove = ds ? toNum(ds.currency_move) : null;
+  // A book reported in its own currency has no currency leg: the figure is a
   // constant zero, so it is left out rather than printed as a finding. It is marked
   // `data-ccy-specific` because that absence is correct, not a dropped section
   // (see Overview.currency.test.tsx).
   const overnightHint =
-    overnight !== null && Math.abs(overnight) >= 0.005 ? (
+    fxMove !== null && Math.abs(fxMove) >= 0.005 ? (
       <span data-ccy-specific data-testid="overnight-currency">
-        Overnight FX <Money amount={overnight} currency={currency} signed />
+        {ds?.overnight ? "Overnight FX" : "FX since close"} <Money amount={fxMove} currency={currency} signed />
       </span>
     ) : undefined;
 
@@ -126,7 +126,7 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           tooltip={KPI_TIPS.priceMove}
           loading={loading}
           value={money(priceMove, true)}
-          secondary={money2(k2?.estimate && data?.last_session?.move_est != null ? data.last_session.move_est : k2?.daily_move, true)}
+          secondary={money2(priceMove2, true)}
           hint={overnightHint}
         />
         <KpiTile

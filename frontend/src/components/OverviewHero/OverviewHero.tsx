@@ -56,10 +56,11 @@ function moveTip(ccy: string, ccy2: string, closed: boolean, lastSession: boolea
     `The change since the previous close, in ${ccy}. ${ccy2}: the same change measured in ${ccy2}, ` +
     `so the gap between the two is the exchange-rate effect.` +
     (lastSession
-      ? ` The market has not traded yet today, so this is the last session's result.`
+      ? ` The market has not traded yet today, so this is the last session's result plus what the exchange rate did since its close.`
       : closed
         ? ` US markets are closed now, so dollar prices stand still and only the exchange rate moves.`
-        : "")
+        : "") +
+    ` Price move and FX below show the two parts.`
   );
 }
 

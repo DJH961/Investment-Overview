@@ -428,6 +428,23 @@ DEFS: tuple[SettingDef, ...] = (
         unit="s",
     ),
     SettingDef(
+        "fx.stale_after_seconds",
+        SettingType.DURATION_S,
+        900,
+        "data_refresh",
+        "Live EUR/USD rate: warn when stale after",
+        help=(
+            "While currencies trade (Sunday evening to Friday evening, New York time), "
+            "Health & Repair warns when the live EUR/USD rate is missing, has not been "
+            "refreshed for this long, or has stayed exactly the same for this long (a "
+            "frozen feed). The ECB rate is each day's official rate and never warns on "
+            "its own."
+        ),
+        min=_D(300),
+        max=_D(7200),
+        unit="s",
+    ),
+    SettingDef(
         "twin.estimates_enabled",
         SettingType.BOOL,
         True,

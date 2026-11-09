@@ -56,7 +56,6 @@ def test_catalogue(api_client: TestClient) -> None:
     assert {
         "prices.refresh",
         "fx.refresh_live",
-        "fx.backfill_intraday",
         "cache.reset",
         "backup.now",
     } <= ids
@@ -84,6 +83,7 @@ def test_fx_refresh_live_job_backfills_live_spot(
         )
         return Decimal("1.1640")
 
+    monkeypatch.setattr(fx_service, "refresh_live_spot", lambda *a, **k: None)
     monkeypatch.setattr(fx_service, "backfill_live_spot", fake_backfill)
     monkeypatch.setattr(
         fx_service,
