@@ -537,7 +537,7 @@ def _freshness(freshness: dict[int, HoldingFreshness], *, now: datetime) -> dict
         "market_state": live_bus.market_state(now),
         "prices_live": market_hours.is_live_now(
             market_open=market_open,
-            last_update_at=snap.last_update_at,
+            last_update_at=snap.last_price_update_at,
             now=now,
             price_market_at=feed_stall_service.newest_market_time(),
             feed_stalled=stalled_since is not None,

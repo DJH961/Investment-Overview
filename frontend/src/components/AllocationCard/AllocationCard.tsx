@@ -4,7 +4,7 @@ import { ErrorState } from "../ErrorState";
 import { SegmentedControl } from "../SegmentedControl";
 import { Skeleton } from "../Skeleton";
 import { Treemap, type TreemapItem } from "../Treemap";
-import { formatPercent } from "../../lib/format";
+import { formatMoney, formatPercent } from "../../lib/format";
 import { toNum, useHoldings } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { usePersistentState } from "../../lib/usePersistentState";
@@ -92,7 +92,13 @@ export function AllocationCard({ currency, height }: AllocationCardProps) {
       ) : holdings.isPending ? (
         <Skeleton height="12rem" />
       ) : (
-        <Treemap items={items} height={height} ariaLabel={view === "category" ? "Categories by value" : "Holdings by value"} />
+        <Treemap
+          items={items}
+          height={height}
+          valueFormat={(v) => formatMoney(v, currency, { compact: true })}
+          detailLabel="Today"
+          ariaLabel={view === "category" ? "Categories by value" : "Holdings by value"}
+        />
       )}
     </Card>
   );

@@ -51,11 +51,16 @@ class RefreshActivity:
     active: bool
     source: str | None
     seq: int
+    #: When this app last fetched new data of any kind (prices or the live FX
+    #: rate): the "Updated ..." stamp on the hero and top bar.
     last_update_at: datetime | None
     historical: bool = False
     progress_done: int = 0
     progress_total: int = 0
     progress_label: str | None = None
+    #: When new *prices* last landed (FX-only updates leave it). Liveness ("Live"
+    #: vs "prices as of") is judged on this, never on an FX pull.
+    last_price_update_at: datetime | None = None
 
 
 _lock = threading.Lock()
@@ -66,6 +71,7 @@ _state: dict[str, object] = {
     "source": None,
     "seq": 0,
     "last_update_at": None,
+    "last_price_update_at": None,
     "historical": False,
     "progress_done": 0,
     "progress_total": 0,
@@ -141,12 +147,14 @@ def set_progress(done: int, total: int, label: str | None = None) -> None:
     _publish(payload)
 
 
-def finish(source: str, *, updated: bool) -> None:
+def finish(source: str, *, updated: bool, fx_updated: bool = False) -> None:
     """Mark an automatic refresh as finished.
 
-    ``updated`` records whether the refresh actually brought in new data; when
+    ``updated`` records whether the refresh actually brought in new prices; when
     ``True`` the "last update" timestamp advances so the chip can reassure the
     user that fresh prices landed (a tick that found nothing due leaves it).
+    ``fx_updated`` (a fresh live EUR/USD rate) advances only the general
+    "Updated" stamp, not the price stamp liveness is judged on.
     """
     with _lock:
         _state["depth"] = max(0, int(_state["depth"]) - 1)
@@ -155,8 +163,10 @@ def finish(source: str, *, updated: bool) -> None:
             # The historic download (if any) is done — drop its progress so the
             # next quick tick shows the plain cue, not a stale full bar.
             _clear_progress()
-        if updated:
+        if updated or fx_updated:
             _state["last_update_at"] = datetime.now(UTC)
+        if updated:
+            _state["last_price_update_at"] = _state["last_update_at"]
         _state["seq"] = int(_state["seq"]) + 1
         idle = int(_state["depth"]) == 0
         last = _state["last_update_at"]
@@ -165,10 +175,21 @@ def finish(source: str, *, updated: bool) -> None:
             {
                 "type": "refresh_finished",
                 "source": source,
-                "updated": updated,
+                "updated": updated or fx_updated,
                 "last_update_at": _iso(last),
             }
         )
+
+
+def mark_fx_updated() -> None:
+    """A fresh live EUR/USD rate landed outside a price refresh (the FX job).
+
+    Advances the general "Updated" stamp so the hero/top bar show when the app
+    last fetched data, without touching the price stamp liveness is judged on.
+    """
+    with _lock:
+        _state["last_update_at"] = datetime.now(UTC)
+        _state["seq"] = int(_state["seq"]) + 1
 
 
 def snapshot() -> RefreshActivity:
@@ -183,6 +204,7 @@ def snapshot() -> RefreshActivity:
             progress_done=int(_state["progress_done"]),
             progress_total=int(_state["progress_total"]),
             progress_label=_state["progress_label"],  # type: ignore[arg-type]
+            last_price_update_at=_state["last_price_update_at"],  # type: ignore[arg-type]
         )
 
 
@@ -199,4 +221,5 @@ def reset() -> None:
         _state["source"] = None
         _state["seq"] = 0
         _state["last_update_at"] = None
+        _state["last_price_update_at"] = None
         _clear_progress()

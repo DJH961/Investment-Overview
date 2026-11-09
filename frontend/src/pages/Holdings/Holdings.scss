@@ -476,11 +476,11 @@
   }
 
   // A group's subtotals: ONE calm row in the table's column order (value, weight,
-  // day, P/L, total return); no box, just a hairline under it. Phone: two lines.
+  // day, total return); no box, just a hairline under it. Phone: two lines.
   &__gsum {
     display: grid;
     gap: var(--space-2) var(--space-4);
-    grid-template-columns: minmax(7rem, 1.2fr) minmax(6rem, 0.9fr) minmax(8rem, 1.2fr) repeat(2, minmax(7rem, 1fr));
+    grid-template-columns: minmax(7rem, 1.2fr) minmax(6rem, 0.9fr) minmax(8rem, 1.2fr) minmax(7rem, 1fr);
     align-items: start;
     padding: var(--space-3) var(--space-4);
     border-bottom: var(--border-width) solid var(--color-border);
@@ -489,7 +489,7 @@
     @include m.phone {
       grid-template-areas:
         "value weight day"
-        "gain gain ret";
+        "ret ret ret";
       grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.8fr) minmax(0, 1.2fr);
       padding: var(--space-3);
     }
@@ -513,10 +513,6 @@
 
       &--day {
         grid-area: day;
-      }
-
-      &--gain {
-        grid-area: gain;
       }
 
       &--return {

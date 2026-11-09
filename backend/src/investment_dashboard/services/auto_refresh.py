@@ -91,6 +91,7 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
 
     refresh_status.begin(source)
     updated = False
+    fx_updated = False
     mode = "manual full re-pull" if force else "auto (TTL-due only)"
     round_ = pull_log.begin(source, mode=mode)
     try:
@@ -115,6 +116,7 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         if spot is None and fx_service.active_live_spot("USD") is None:
             spot = fx_service.backfill_live_spot()
         if spot is not None:
+            fx_updated = True
             round_.note(f"FX: live EUR/USD spot {spot}")
         updated = any(refreshed.values())
         # Capture a point for the Overview "1 Day" intraday curve while the US
@@ -154,7 +156,7 @@ def tick_refresh(source: str = "Live price refresh", *, force: bool = False) -> 
         runtime_status.record_error(source, f"{type(exc).__name__}: {exc}")
     finally:
         pull_log.end(round_)
-        refresh_status.finish(source, updated=updated)
+        refresh_status.finish(source, updated=updated, fx_updated=fx_updated)
     return updated
 
 

@@ -330,14 +330,6 @@ export function Holdings() {
         cell: (r) => <WeightCell ratio={toNum(r.weight_pct)} max={maxWeight} />,
       },
       {
-        key: "gain",
-        header: "Unrealised gain",
-        group: "Return",
-        align: "right",
-        sortValue: (r) => toNum(r.capital_gain),
-        cell: (r) => <Money amount={toNum(r.capital_gain)} currency={currency} signed colored />,
-      },
-      {
         key: "divs",
         header: "Dividends",
         group: "Return",

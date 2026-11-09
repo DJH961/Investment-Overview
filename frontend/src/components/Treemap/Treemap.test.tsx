@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { squarify, Treemap } from "./Treemap";
 
@@ -43,5 +43,39 @@ describe("Treemap", () => {
     );
     expect(screen.getByTestId("cell-a")).toBeInTheDocument();
     expect(screen.getByTestId("cell-b")).toHaveClass("treemap__cell--neg");
+  });
+
+  it("names the tile's percentage in the tooltip next to the share", () => {
+    render(
+      <Treemap
+        detailLabel="Today"
+        valueFormat={(v) => `€${v}`}
+        items={[
+          { id: "a", label: "Alpha", value: 75, detail: "+1.20%" },
+          { id: "b", label: "Beta", value: 25 },
+        ]}
+      />,
+    );
+    const cell = screen.getByTestId("cell-a");
+    expect(cell).toHaveAccessibleName("Alpha, €75, 75.0% of total, Today +1.20%");
+    fireEvent.pointerEnter(cell);
+    const tip = document.querySelector(".treemap__tooltip") as HTMLElement;
+    expect(tip).toHaveTextContent("75.0% of total");
+    expect(tip).toHaveTextContent("Today +1.20%");
+  });
+
+  it("labels small tiles too, in the compact size", () => {
+    render(
+      <Treemap
+        height={100}
+        items={[
+          { id: "big", label: "Big", value: 95 },
+          { id: "small", label: "Small", value: 5 },
+        ]}
+      />,
+    );
+    const small = screen.getByTestId("cell-small");
+    expect(small).toHaveClass("treemap__cell--compact");
+    expect(small).toHaveTextContent("Small");
   });
 });

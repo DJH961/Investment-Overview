@@ -12956,7 +12956,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.12.7"
+    "version": "6.12.8"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -17775,6 +17775,17 @@
                             }
                           ],
                           "title": "Fx Eur Usd"
+                        },
+                        "last_update_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Last Update At"
                         },
                         "market_state": {
                           "enum": [
