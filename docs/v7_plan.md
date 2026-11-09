@@ -354,6 +354,150 @@ produced" versus "includes the effect of your contribution timing." That
 wording is better than anything currently in the app and the numbers are
 already computed.
 
+### 5.1 Conversions, finished (v7.5a–c, before the page)
+
+> Added 2026-11-09 against v6.13.0. Scoped from the code, not from memory:
+> `domain/fx_pool.py`, `services/fx_conversion_service.py`,
+> `services/cashflows.py`, `readmodels/queries/ledger_query.py`,
+> `pages/CurrencyConversions/`.
+
+Matching EUR→USD conversions to USD deposits is one of the app's best ideas:
+your real rate replaces the ECB guess. Today it is half-visible. It shows on
+the conversions page and quietly feeds the portfolio figures, but nowhere else
+can you see *which* conversion paid for *which* deposit, or what converting
+has cost you.
+
+**What exists today (checked):**
+
+| | State |
+|---|---|
+| FIFO matching: each USD deposit uses the oldest conversions dated on or before it; any rest at that day's ECB rate | Works (`fx_pool.match_deposits`) |
+| Portfolio figures use the matched EUR cost (XIRR, Invested, YTD/MTD, Periods, Deposits page, graphs, mobile export, benchmark) | Works (`cashflows.eur_overrides_for`) |
+| Transactions tab EUR column and month totals | **Not wired** — ECB rate of the deposit date (`ledger_query` uses `derived_eur`) |
+| Per-holding EUR cost basis, gain and XIRR | **Not wired** — ECB rate of each *buy* date (`ledger_walk`, `overview_query`) |
+| Matching card names conversions as "Conversion #12" (database id) | Unclear |
+| Batch "Effective rate" excludes fees; matching includes them | Inconsistent |
+| Fees stored per conversion, never summed | No analytics |
+| Spread against the ECB fixing | Not computed |
+| Duplicate / copy a conversion | Missing |
+
+#### 7.5a — Clear matching (UI + read-model, no new maths)
+
+- **Name conversions by what they are.** A conversion is "12 Mar 2025 ·
+  €2,770 → $3,000 · 1.0830", never "#12". The id stays internal.
+- **In order, everywhere.** The conversion list and the matching list both run
+  newest first, by date, then by entry order for the same day. Same order on
+  phone and desktop, and the order stays put after an edit.
+- **Every deposit declares how it was paid for**, with a label and an icon
+  (never colour alone):
+  - *Matched* — fully covered by conversions, listing each slice:
+    "$3,000 from 12 Mar (1.0830) + $1,000 from 2 Apr (1.0791)".
+  - *Partly matched* — the slices, then "rest $500 at ECB 1.0802 (4 Mar)".
+  - *ECB only* — no conversion dated on or before it, with an **"Add the
+    conversion"** button that opens the form prefilled (date = deposit date,
+    USD = the unmatched amount).
+- **Every conversion shows where its dollars went**: "used by 3 deposits ·
+  $420 left in the pool", each deposit linked.
+- **Transactions tab, deposit details.** Expanding a USD deposit shows its
+  matching ("Paid for by: 12 Mar conversion, €2,770 → $3,000 at 1.0830, fees
+  €4.10 · ECB that day 1.0855"), linked to the conversion. The conversions
+  page links back.
+- **Copy and backdate.**
+  - A *Duplicate* action opens the form prefilled from a conversion with the
+    date left empty, which covers regular monthly transfers.
+  - While you type, the form shows that date's ECB rate and your spread
+    against it, so a backdated entry can be sanity-checked before you save.
+  - Editing warns what moves: "changes how 3 deposits are matched".
+- **One rate definition.** Show two rates per conversion: the *rate* (USD
+  received / EUR sent) and the *all-in rate* (including fees). Matching keeps
+  the all-in rate, as now. Both are labelled.
+
+#### 7.5b — What converting costs you (new pure-domain maths)
+
+New `domain/fx_spread.py`: pure, property-tested, with golden values worked
+by hand. Per conversion, against **its own date's** ECB fixing:
+
+- `ecb_eur = usd_received / ecb_rate(date)`: what the dollars would have cost
+  at the reference rate.
+- `spread_eur = eur_sent − ecb_eur`, then `cost_eur = spread_eur + fees_eur`.
+  Positive means you paid more than the reference rate.
+- `off_pct = all_in_rate / ecb_rate − 1`, shown as a percentage.
+
+What the page shows:
+
+- **KPI strip:** total fees paid · total spread · total cost (fees + spread) ·
+  average distance from the ECB rate, weighted by EUR converted (not a plain
+  average of percentages) · best and worst conversion.
+- **Cost over time:** cumulative cost in EUR per conversion date, plus a
+  per-year table (converted, fees, spread, cost, cost as % of converted).
+- **Per row in the table:** ECB that day, off %, fees, cost.
+- **Wording:** "versus the ECB daily reference", never "mid-market". The
+  fixing is struck at about 14:15 CET, so a conversion done at another hour is
+  measured against a rate it never saw. Say so in the info tip, and treat a
+  small *negative* cost as normal intraday noise rather than a win.
+
+Currency rule: every figure is a EUR amount at a single instant (one
+conversion, one date). Sums of EUR across dates are fine; never annualise
+the cost, never feed it to an XIRR. No new columns: it is a read-time join
+of `fx_conversions` and `fx_history`.
+
+#### 7.5c — One rate everywhere (money maths, needs a decision)
+
+- **Transactions tab: wire it.** `ledger_query` takes the same
+  `eur_overrides` as the metrics, so a matched deposit's EUR column, the
+  month totals and the CSV export show what you actually paid. A small
+  "your rate" marker distinguishes it from an ECB-valued row. Cheap and
+  unambiguous.
+- **Invariant tests:** for every ledger, EUR invested on the Overview, the
+  Deposits page and the sum of the Transactions tab's deposits must be equal.
+  They can drift today.
+- **Holding level: your call (§9, item 8).** A dollar buy's EUR cost uses the
+  ECB rate of the buy date. Your real cost is what the dollars in the account
+  cost you to convert. Two honest options:
+  1. *Keep the buy-date rate* (today): simple, and stable for every past
+     figure. Holding EUR figures then don't add up exactly to the portfolio's
+     conversion-aware total, so label it.
+  2. *Pool rate:* treat the account's USD cash as a second FIFO layer
+     (deposits → buys), so each buy inherits the blended rate of the dollars
+     it spent. Correct to the cent, but new money maths in `ledger_walk`:
+     property tests, golden values and a v5 parity note. It moves every
+     per-holding EUR return.
+
+  Recommended: option 1 now, option 2 only if you want holding EUR returns to
+  reconcile exactly.
+
+#### Extras that make it work across the app
+
+Picked for value per line of code, cheapest first:
+
+- **Data Health:** "N deposits valued at the ECB rate (no conversion found)",
+  with the prefilled *Add the conversion* action. The fallback badge already
+  links to `/diagnostics`; give it a real check to land on.
+- **Idle dollars:** pool dollars converted but not yet deposited for more than
+  30 days ("$420 converted on 2 Apr, not yet invested"). They carry currency
+  exposure you may have forgotten.
+- **Overview's currency card uses your rate:** "Your real rate 1.0812 · ECB
+  average 1.0841", and the break-even rate built from it.
+- **Currency page (§5):** markers for your conversions on the EUR/USD chart.
+  Size shows the amount; above/below the ECB line, cost or saving, is shown
+  by marker shape plus blue/orange (CVD-safe). Plus a timing panel: your rate
+  against that month's average rate, "converted 0.6% better than the month
+  average". This replaces research panel #4 rather than duplicating it.
+- **Provider (optional field):** Wise / bank / broker on each conversion, then
+  cost per provider. Says plainly which one is cheaper.
+- **Paste a statement:** import conversions from a Wise or bank CSV through
+  the existing flexible importer (a new parser that emits conversions, not
+  transactions).
+- **Daily Brief line (once 7.5b ships, added to the 7.0 Brief):** "You converted €2,770 this month at 1.0830,
+  0.2% under the ECB reference."
+- **Exports:** conversions and their matching in the CSV export and the
+  phone export.
+
+**Activity log:** conversion edits already log to the `changes` subject
+(`fx_conversion_service` is listed there). The new write paths (statement
+import, the prefilled add) log there too. The cost report is read-only and
+needs no line.
+
 ---
 
 ## 6. Theme D — finishing the US-taxed-abroad story
@@ -513,7 +657,10 @@ this is the sequence I would pick, not a dependency graph.
 | **7.2** | **Assistant**: redacted tool surface, streaming, rate limiting | 7.1 |
 | **7.3** | **News tab**: news API ingestion, clustering, per-holding digests | 7.1 |
 | **7.4** | **Holding deep-dive**: route, tabs, 1D/1W, tranche history, per-holding dividends | — |
-| **7.5** | **Currency page** | — |
+| 7.5a | **Conversions, clear matching**: names, order, deposit declarations, Transactions details, duplicate/backdate (§5.1) | — |
+| 7.5b | **Conversion costs**: `domain/fx_spread.py`, fees / spread / off-rate KPIs, cost over time (§5.1) | 7.5a |
+| 7.5c | **One rate everywhere**: Transactions tab on conversion rates, invariant tests, holding level per §9 item 8 (§5.1) | 7.5a |
+| **7.5** | **Currency page**, with conversion markers and the timing panel from §5.1 | 7.5b |
 | **7.6** | **Instrument metadata** + sector/country/currency allocation, with AI-assisted fill | 7.1 for the fill |
 | **7.7** | **US tax pack**: realised gains by holding period, wash sales, sell planner | 7.4 |
 
@@ -545,6 +692,18 @@ roughly 90,000 lines of v5 code, which needs a parallel-run week first.
 6. **Onboarding — wire it in or delete it** (§7). It is finished code either
    way; leaving it orphaned is the only bad option.
 7. **Cutover timing** for the v5 deletion.
+8. **Holding-level EUR cost from your conversions** (§5.1, 7.5c): keep the
+   buy-date ECB rate (recommended for now, labelled) or the pool rate (exact,
+   new money maths, moves every per-holding EUR return).
+9. **Manual pinning** (§5.1): FIFO only (today), or also let a deposit be pinned
+   to a specific conversion. Pinning needs a small link table (a relation, not
+   a derived-currency column, so the currency rule allows it).
+10. **Matching window** (§5.1): today a conversion must be dated on or before
+    the deposit. Allow it up to N days *after* (bank and broker booking dates
+    can differ), or keep it strict?
+11. **Dollars back to euros** (§5.1): conversions are EUR→USD only, and USD
+    withdrawals are ignored by the pool. Add the reverse direction, so
+    repatriation has a real rate too, or leave it out of v7?
 
 ---
 

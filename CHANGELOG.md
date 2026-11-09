@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Docs
+- v7 plan: new §5.1 "Conversions, finished" (releases 7.5a–c): clearer
+  conversion↔deposit matching, conversion details on the Transactions tab,
+  fees / spread / cost against the ECB reference, the conversion rate used
+  everywhere, duplicate and backdate, plus four new owner decisions in §9.
+
 ## [6.13.0] — 2026-11-09
 
 ### Changed
