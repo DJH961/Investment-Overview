@@ -184,7 +184,11 @@ def _check_fx_live(session: Session, *, now: datetime | None = None) -> HealthIt
             title=title,
             severity="warning",
             count=1,
-            detail=detail + stand_in + " Run 'Refresh live FX rate now' to fetch it again.",
+            detail=detail
+            + stand_in
+            + " Run 'Refresh live FX rate now' to fetch it again; if the EUR 1D / 1W line"
+            " has holes, 'Reload 1D / 1W graphs (prices + EUR/USD)' re-downloads its"
+            " minute rates.",
         )
 
     if not market_hours.is_forex_market_open(now):

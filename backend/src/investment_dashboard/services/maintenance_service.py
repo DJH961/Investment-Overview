@@ -350,9 +350,12 @@ JOBS: tuple[JobSpec, ...] = (
     ),
     JobSpec(
         "graphs.reload",
-        "Reload 1D / 1W graphs",
+        "Reload 1D / 1W graphs (prices + EUR/USD)",
         "graphs",
-        "Rebuild the intraday graphs from the price provider.",
+        "Rebuild the intraday graphs: re-download the minute prices and the EUR/USD "
+        "minute rates for the last session and week (Yahoo Finance, Tiingo filling "
+        "gaps), so the EUR line uses the rate of each minute. Use it when the EUR "
+        "1D / 1W line has holes or sits on a flat daily rate.",
         _reload_graphs,
         heavy=True,
         params=(ParamSpec("which", "enum", "Which graph", default="all", choices=_WHICH),),

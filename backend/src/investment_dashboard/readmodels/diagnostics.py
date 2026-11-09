@@ -27,7 +27,10 @@ from investment_dashboard.services import (
 
 #: Failing check id -> repair jobs offered next to it (job id, label, params).
 _JOB_ACTIONS: dict[str, tuple[tuple[str, str, dict[str, Any]], ...]] = {
-    "fx_live": (("fx.refresh_live", "Refresh live FX rate now", {}),),
+    "fx_live": (
+        ("fx.refresh_live", "Refresh live FX rate now", {}),
+        ("graphs.reload", "Reload 1D / 1W graphs (prices + EUR/USD)", {"which": "all"}),
+    ),
     "fx_legs": (
         ("fx.refresh", "Re-download FX history", {}),
         ("fx.recalc_legs", "Recalculate missing FX legs", {"force": False}),
@@ -37,7 +40,9 @@ _JOB_ACTIONS: dict[str, tuple[tuple[str, str, dict[str, Any]], ...]] = {
     "prices_stale": (("prices.refresh", "Refresh prices", {"force": True}),),
     "prices_anomaly": (),
     "position_value": (("snapshots.rebuild", "Rebuild valuation history", {}),),
-    "intraday_graph": (("graphs.reload", "Reload 1D / 1W graphs", {"which": "all"}),),
+    "intraday_graph": (
+        ("graphs.reload", "Reload 1D / 1W graphs (prices + EUR/USD)", {"which": "all"}),
+    ),
 }
 #: Checks whose examples are instrument symbols (offer a per-instrument re-download).
 _PER_INSTRUMENT = frozenset({"prices_missing", "prices_stale", "prices_anomaly"})

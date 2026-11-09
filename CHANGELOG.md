@@ -36,8 +36,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Live FX health, simplified.** The weekend/restart backfill now tries the last
   15-minute bar from Yahoo, then Tiingo, then the rate stored with the intraday
   samples (the daily-close step and the loosely typed fetchers are gone). The
-  duplicate "Backfill intraday FX rates" repair job is removed; "Refresh live FX rate
-  now" fetches a fresh quote first. The Data Health check "Live EUR/USD rate" no
+  duplicate "Backfill intraday FX rates" repair job is removed (it only ran the live
+  refresh and the graph reload); "Refresh live FX rate now" fetches a fresh quote
+  first. The graph repair is now named for what it does, **"Reload 1D / 1W graphs
+  (prices + EUR/USD)"**: it re-downloads the minute prices and the EUR/USD minute
+  rates the EUR line uses, and it is offered next to the live-rate warning too. (The
+  auto-update already tops up missing 1D / 1W FX on every tick.) The Data Health check "Live EUR/USD rate" no
   longer warns just because the ECB rate is in use: it warns when currencies trade
   and the live rate is missing, not refreshed, or unchanged for longer than the new
   setting **Settings › Data refresh › "Live EUR/USD rate: warn when stale after"**

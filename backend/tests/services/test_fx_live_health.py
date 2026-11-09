@@ -93,3 +93,13 @@ def test_weekend_with_fridays_close_is_ok(session: Session) -> None:
 
 def test_weekend_without_a_closing_rate_warns(session: Session) -> None:
     assert _check(session, SHUT).severity == "warning"
+
+
+def test_warning_offers_the_live_refresh_and_the_graph_fx_reload() -> None:
+    """The EUR 1D / 1W line's minute rates are re-downloaded by the graph reload."""
+    from investment_dashboard.readmodels import diagnostics
+    from investment_dashboard.services import maintenance_service
+
+    jobs = [job for job, _label, _params in diagnostics._JOB_ACTIONS["fx_live"]]
+    assert jobs == ["fx.refresh_live", "graphs.reload"]
+    assert "EUR/USD" in maintenance_service.get_spec("graphs.reload").label
