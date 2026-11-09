@@ -11,7 +11,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   import / manual entry through `/overview` with real XIRR/TWR numbers.
 - Subsequent **minor** bumps add features; **patch** bumps are bugfixes only.
 - **Release fast:** every feature or bug fix ships as its own dated release in the
-  same PR. `## [Unreleased]
+  same PR. `## [Unreleased]` is only short-lived storage for changes that don't
+  affect the running app (docs, CI, tests) and is folded into the next release
+  (see `AGENTS.md` → Workflow).
+
+## [Unreleased]
+
+## [6.12.8] — 2026-11-09
+
+### Fixed
+- A fresh live EUR/USD rate now moves the "Updated …" time in the hero and top bar,
+  not only new prices: whenever the FX check or the price tick fetches a new rate
+  (including after the US market's close, while currencies still trade). Whether prices read as "Live" is still judged on
+  prices alone, so a currency update never makes stale prices look live.
+- Holdings: Total return (incl. dividends) is the headline figure, unrealised gain
+  (P/L) the quieter one. On phones the row's "P/L" chip became "Total return", the
+  gain moved into the row's expansion, and the group row shows it only in its (i).
+  Desktop keeps the (unemphasised) "Unrealised gain" column; the drawer lists total
+  return first.
+- Allocation treemap: small tiles (common on phones) now show their name in a
+  compact size instead of staying blank. The tooltip names both percentages: the
+  share of the total and today's move printed on the tile ("Today +1.2%"), and
+  shows the value as money rather than a raw number.
+- The changelog's versioning-policy paragraph had been split by the 6.12.6 entry;
+  restored.
 
 ## [6.12.7] — 2026-11-08
 
@@ -78,11 +101,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   splits.** `split` and other non-cash rows are excluded from `fx_incomplete` in
   both `ledger_query.py` and `ledgerAll.ts`, mobile filter chips hug their text
   instead of stretching full width, and `.transactions-page__fx-warn` wraps cleanly
-  within narrow phone viewports.` is only short-lived storage for changes that don't
-  affect the running app (docs, CI, tests) and is folded into the next release
-  (see `AGENTS.md` → Workflow).
-
-## [Unreleased]
+  within narrow phone viewports.
 
 ## [6.12.5] — 2026-11-07
 

@@ -174,15 +174,14 @@ describe("Holdings page", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Group by" }));
     fireEvent.click(screen.getByRole("option", { name: "By account" }));
     const sub = screen.getByLabelText("Subtotal A");
-    // One row in table order: value, weight, day, unrealised gain, total return; cost
-    // basis / dividends sit behind an (i). The gain cell is named for what it is —
-    // dividends stripped out — so a cash group reading 0 there is not read as "no profit".
+    // One row in table order: value, weight, day, unrealised gain (hidden on phones by
+    // CSS; the (i) carries it there too), total return; cost basis / dividends behind the (i).
     for (const key of ["Value", "Weight", "Day", "Unrealised gain", "Total return"])
       expect(within(sub).getByText(key)).toBeInTheDocument();
     expect(within(sub).queryByText("P/L")).toBeNull();
     expect(within(sub).queryByText("Cost basis")).toBeNull();
     expect(within(sub).queryByText("Dividends")).toBeNull();
-    expect(within(sub).getByRole("button", { name: "About cost basis, dividends and the return percentage" })).toBeInTheDocument();
+    expect(within(sub).getByRole("button", { name: "About cost basis, unrealised gain, dividends and the return percentage" })).toBeInTheDocument();
     expect(within(sub).getByText("+€10.00")).toBeInTheDocument();
     expect(within(sub).getByText("+€220.00")).toBeInTheDocument();
     expect(within(sub).getByText("+27.50%")).toBeInTheDocument(); // simple return on cost
@@ -402,9 +401,11 @@ describe("Holdings page", () => {
       fireEvent.click(screen.getByRole("button", { name: /FXAIX/ }));
       const detail = container.querySelector(".holdings-page__detail") as HTMLElement;
       const keys = [...detail.querySelectorAll("dt")].map((d) => d.textContent);
-      for (const dup of ["Price", "Shares", "Unrealised gain", "Growth", "XIRR", "Weight"]) expect(keys).not.toContain(dup);
-      for (const key of ["Avg price", "Cost basis", "Dividends", "MTD", "YTD", "Expense", "Account"]) expect(keys).toContain(key);
-      expect(keys.some((k) => k?.startsWith("Total return"))).toBe(true);
+      // Total return is a chip on the row; unrealised gain (P/L) waits in the expansion.
+      for (const dup of ["Price", "Shares", "Growth", "XIRR", "Weight"]) expect(keys).not.toContain(dup);
+      expect(keys.some((k) => k?.startsWith("Total return"))).toBe(false);
+      for (const key of ["Avg price", "Cost basis", "Unrealised gain", "Dividends", "MTD", "YTD", "Expense", "Account"])
+        expect(keys).toContain(key);
       expect(screen.getByLabelText("ETF twin of FXAIX")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Price chart" })).toBeInTheDocument();
     } finally {

@@ -9286,6 +9286,8 @@ export interface operations {
                     } | {
                         /** Fx Eur Usd */
                         fx_eur_usd?: string | null;
+                        /** Last Update At */
+                        last_update_at?: string | null;
                         /**
                          * Market State
                          * @enum {string}

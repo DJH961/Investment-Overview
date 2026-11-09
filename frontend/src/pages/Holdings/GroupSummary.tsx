@@ -11,8 +11,9 @@ const EST_HELP =
 
 /**
  * A group's server-computed subtotals as ONE calm row in the table's column order:
- * value | weight | day | P/L | total return. Cost basis and dividends sit behind a
- * small (i). Nothing is summed in the browser.
+ * value | weight | day | unrealised gain (desktop only) | total return. Cost
+ * basis, unrealised gain (P/L) and dividends also sit behind a small (i), which is
+ * where a phone finds the gain. Nothing is summed in the browser.
  */
 export function GroupSummary({ group, ccy }: { group: HoldingGroupDto; ccy: string }) {
   const estValue = toNum(group.est_value);
@@ -59,9 +60,10 @@ export function GroupSummary({ group, ccy }: { group: HoldingGroupDto; ccy: stri
           </span>
         )}
       </div>
+      {/* Desktop only (it mirrors the table's quiet column); on a phone it waits in the (i).
+          Named for what it is: dividends are stripped out of it, so a cash group reads 0
+          here while "Total return" beside it carries the income it earned. */}
       <div className="holdings-page__gcell holdings-page__gcell--gain">
-        {/* Named for what it is: dividends are stripped out of it, so a cash group
-            reads 0 here while "Total return" beside it carries the income it earned. */}
         <span className="holdings-page__gkey">Unrealised gain</span>
         <span className="holdings-page__gfig">
           <Money amount={toNum(group.capital_gain)} currency={ccy} signed colored />
@@ -77,10 +79,11 @@ export function GroupSummary({ group, ccy }: { group: HoldingGroupDto; ccy: stri
             </span>
           )}
           <InfoTip
-            label="cost basis, dividends and the return percentage"
+            label="cost basis, unrealised gain, dividends and the return percentage"
             content={
               <>
                 Cost basis <Money amount={toNum(group.cost_basis)} currency={ccy} />
+                {" · "}Unrealised gain <Money amount={toNum(group.capital_gain)} currency={ccy} signed />
                 {" · "}Dividends <Money amount={toNum(group.dividends)} currency={ccy} />
                 {". The percentage is a simple return on cost (total return / cost basis), not a compounded one."}
               </>

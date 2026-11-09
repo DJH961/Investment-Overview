@@ -200,3 +200,28 @@ def test_publish_failure_never_breaks_a_refresh(monkeypatch: pytest.MonkeyPatch)
     refresh_status.begin("x")
     refresh_status.finish("x", updated=True)
     assert refresh_status.snapshot().active is False
+
+
+def test_fx_only_update_moves_updated_stamp_but_not_price_stamp() -> None:
+    refresh_status.begin("Live price refresh")
+    refresh_status.finish("Live price refresh", updated=False, fx_updated=True)
+    snap = refresh_status.snapshot()
+    assert snap.last_update_at is not None
+    assert snap.last_price_update_at is None
+
+
+def test_price_update_moves_both_stamps() -> None:
+    refresh_status.begin("Live price refresh")
+    refresh_status.finish("Live price refresh", updated=True)
+    snap = refresh_status.snapshot()
+    assert snap.last_update_at is not None
+    assert snap.last_price_update_at == snap.last_update_at
+
+
+def test_mark_fx_updated_advances_updated_stamp_and_sequence() -> None:
+    before = refresh_status.snapshot().seq
+    refresh_status.mark_fx_updated()
+    snap = refresh_status.snapshot()
+    assert snap.last_update_at is not None
+    assert snap.last_price_update_at is None
+    assert snap.seq == before + 1

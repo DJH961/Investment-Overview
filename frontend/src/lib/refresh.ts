@@ -113,7 +113,9 @@ export function applyRefreshEvent(queryClient: QueryClient, ev: Record<string, u
       invalidateReports(queryClient);
       return true;
     }
-    case "tick": {
+    case "tick":
+    case "fx": {
+      // A fresh live FX rate moves the "Updated" stamp too (the server sends it on both).
       const last = str(ev.last_update_at);
       setRefreshState({
         ...(last ? { lastUpdateAt: last } : {}),

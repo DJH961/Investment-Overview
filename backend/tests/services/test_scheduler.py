@@ -268,6 +268,58 @@ def test_tick_freshness_payload(monkeypatch: pytest.MonkeyPatch) -> None:
         refresh_status.reset()
 
 
+def test_fx_only_update_is_not_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fresh FX rate moves "Updated" but never makes stale prices read as live."""
+    from investment_dashboard.services import refresh_status, scheduler
+
+    refresh_status.reset()
+    try:
+        refresh_status.mark_fx_updated()
+        last = refresh_status.snapshot().last_update_at
+        assert last is not None
+        payload = scheduler._price_freshness(last)
+        assert payload["last_update_at"] == last.isoformat()
+        assert payload["prices_live"] is False
+    finally:
+        refresh_status.reset()
+
+
+def test_fx_job_moves_the_updated_stamp(monkeypatch: pytest.MonkeyPatch) -> None:
+    from decimal import Decimal
+
+    from investment_dashboard.api.schemas.stream import FxEvent
+    from investment_dashboard.services import fx_service, refresh_status, scheduler
+
+    refresh_status.reset()
+    monkeypatch.setattr(fx_service, "refresh_live_spot", lambda *a, **k: Decimal("1.08"))
+    monkeypatch.setattr(scheduler, "_live_fx", lambda: Decimal("1.08"))
+    try:
+        out = scheduler.default_fx_job()
+        assert out is not None
+        last = refresh_status.snapshot().last_update_at
+        assert last is not None
+        assert out["last_update_at"] == last.isoformat()
+        FxEvent.model_validate({"ts": last.isoformat(), "market_state": "closed", **out})
+    finally:
+        refresh_status.reset()
+
+
+def test_fx_job_without_a_new_rate_leaves_the_stamp(monkeypatch: pytest.MonkeyPatch) -> None:
+    from investment_dashboard.services import fx_service, refresh_status, scheduler
+
+    refresh_status.reset()
+    monkeypatch.setattr(fx_service, "refresh_live_spot", lambda *a, **k: None)
+    monkeypatch.setattr(fx_service, "active_live_spot", lambda *a, **k: object())
+    monkeypatch.setattr(scheduler, "_live_fx", lambda: None)
+    try:
+        out = scheduler.default_fx_job()
+        assert out is not None
+        assert out["last_update_at"] is None
+        assert refresh_status.snapshot().last_update_at is None
+    finally:
+        refresh_status.reset()
+
+
 # -- control: pause, run now, heavy jobs, snapshot ---------------------------------
 
 

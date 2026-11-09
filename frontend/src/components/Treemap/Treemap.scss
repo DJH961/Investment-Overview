@@ -28,6 +28,10 @@
       background: var(--color-neg-soft);
     }
 
+    &--compact {
+      padding: var(--space-1);
+    }
+
     &:hover,
     &:focus-visible {
       filter: brightness(1.25);
@@ -51,6 +55,10 @@
     font-weight: var(--font-weight-semibold);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  &__cell--compact &__name {
+    font-size: var(--font-size-2xs);
   }
 
   &__detail {

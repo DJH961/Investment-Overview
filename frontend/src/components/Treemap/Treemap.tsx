@@ -86,6 +86,9 @@ export interface TreemapProps {
   height?: number;
   /** Formats the value shown in labels and tooltip. */
   valueFormat?: (v: number) => string;
+  /** Names an item's `detail` in the tooltip (e.g. "Today" for "+1.2%"), so the
+   * percentage printed on a tile and the one in the tooltip are never confused. */
+  detailLabel?: string;
   ariaLabel?: string;
   className?: string;
 }
@@ -94,6 +97,7 @@ export function Treemap({
   items,
   height = 280,
   valueFormat = (v) => String(v),
+  detailLabel,
   ariaLabel = "Treemap",
   className,
 }: TreemapProps) {
@@ -117,6 +121,7 @@ export function Treemap({
   const byId = new Map(items.map((i) => [i.id, i]));
   const total = items.reduce((a, i) => a + Math.max(i.value, 0), 0);
   const share = (v: number) => `${((v / total) * 100).toFixed(1)}%`;
+  const named = (detail: string) => (detailLabel ? `${detailLabel} ${detail}` : detail);
   const active = hover ? rects.find((r) => r.id === hover) : undefined;
   const activeItem = active ? byId.get(active.id) : undefined;
 
@@ -125,16 +130,29 @@ export function Treemap({
       {rects.map((r) => {
         const item = byId.get(r.id);
         if (!item) return null;
-        const fitsLabel = r.w > 56 && r.h > 28;
-        const fitsDetail = r.w > 90 && r.h > 48;
+        // Small tiles (common on a phone) still get their name, in a compact type
+        // size with an ellipsis; only a sliver too thin for any text stays blank
+        // (its name is in the tooltip on tap / hover and in its aria-label).
+        const compact = r.w < 90 || r.h < 48;
+        const fitsLabel = r.w > 28 && r.h > 18;
+        const fitsDetail = compact ? r.w > 48 && r.h > 34 : true;
         return (
           <button
             type="button"
             key={r.id}
-            className={clsx("treemap__cell", `treemap__cell--${item.tone ?? "neutral"}`)}
+            className={clsx(
+              "treemap__cell",
+              `treemap__cell--${item.tone ?? "neutral"}`,
+              compact && "treemap__cell--compact",
+            )}
             data-testid={`cell-${r.id}`}
             style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
-            aria-label={hide ? `${item.label}, ${share(item.value)}` : `${item.label}, ${valueFormat(item.value)}, ${share(item.value)}`}
+            aria-label={[
+              item.label,
+              ...(hide ? [] : [valueFormat(item.value)]),
+              `${share(item.value)} of total`,
+              ...(item.detail ? [named(item.detail)] : []),
+            ].join(", ")}
             onPointerEnter={() => setHover(r.id)}
             onPointerLeave={() => setHover(null)}
             onFocus={() => setHover(r.id)}
@@ -159,7 +177,8 @@ export function Treemap({
         >
           <strong>{activeItem.label}</strong>
           {!hide && <span>{valueFormat(activeItem.value)}</span>}
-          <span className="treemap__share">{share(activeItem.value)}</span>
+          <span className="treemap__share">{share(activeItem.value)} of total</span>
+          {activeItem.detail && <span className="treemap__share">{named(activeItem.detail)}</span>}
         </output>
       )}
     </figure>

@@ -252,14 +252,15 @@ def _price_freshness(now: datetime | None = None) -> dict[str, Any]:
     from investment_dashboard.services import feed_stall_service, refresh_status  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
-    last = refresh_status.snapshot().last_update_at
+    snap = refresh_status.snapshot()
+    last = snap.last_update_at
     market_at = feed_stall_service.newest_market_time()
     return {
         "last_update_at": last.isoformat() if last is not None else None,
         "price_market_at": market_at.isoformat() if market_at is not None else None,
         "prices_live": market_hours.is_live_now(
             market_open=market_hours.is_us_market_open(now),
-            last_update_at=last,
+            last_update_at=snap.last_price_update_at,
             now=now,
             price_market_at=market_at,
             feed_stalled=feed_stall_service.is_stalled(),
@@ -270,12 +271,19 @@ def _price_freshness(now: datetime | None = None) -> dict[str, Any]:
 
 
 def default_fx_job() -> dict[str, Any] | None:
-    from investment_dashboard.services import fx_service  # noqa: PLC0415
+    from investment_dashboard.services import fx_service, refresh_status  # noqa: PLC0415
 
     rate = fx_service.refresh_live_spot()
     if rate is None and fx_service.active_live_spot("USD") is None:
-        fx_service.backfill_live_spot()
-    return {"fx_eur_usd": _dec(_live_fx())}
+        rate = fx_service.backfill_live_spot()
+    if rate is not None:
+        # A fresh rate landed: the hero / top bar "Updated ..." stamp moves too.
+        refresh_status.mark_fx_updated()
+    last = refresh_status.snapshot().last_update_at
+    return {
+        "fx_eur_usd": _dec(_live_fx()),
+        "last_update_at": last.isoformat() if last is not None else None,
+    }
 
 
 def default_eod_job() -> dict[str, Any] | None:

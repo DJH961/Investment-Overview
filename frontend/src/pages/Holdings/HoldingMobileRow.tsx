@@ -26,8 +26,8 @@ interface Props {
  * Collapsed: the key figures without a tap, in a fixed 3 x 2 grid of label-over-
  * value cells (nothing is cut off at 360 px, and a currency switch never moves
  * the list); the price time only when it differs from the list's. Expanded:
- * only what the chips do not show (avg price, cost basis, dividends, total
- * return, MTD / YTD, fee, account, price stamps) + the twin block + the chart.
+ * only what the chips do not show (avg price, cost basis, unrealised gain,
+ * dividends, MTD / YTD, fee, account, price stamps) + the twin block + the chart.
  */
 export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMove = null, onOpenChart }: Props) {
   const [open, setOpen] = useState(false);
@@ -76,8 +76,8 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
             {formatQuantity(shares, shares !== null && Number.isInteger(shares) ? 0 : 4)}
           </span>
           <span className="holdings-page__chip">
-            <span className="holdings-page__chip-key">P/L</span>
-            <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored compact />
+            <span className="holdings-page__chip-key">Total return</span>
+            <Money amount={toNum(row.total_return)} currency={ccy} signed colored compact />
           </span>
           <span className="holdings-page__chip">
             <span className="holdings-page__chip-key">Weight</span>

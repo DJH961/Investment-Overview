@@ -106,6 +106,8 @@ class FxEvent(ApiModel):
     ts: str
     market_state: MarketState
     fx_eur_usd: DecStr | None = None
+    #: When the app last fetched new data (prices or this FX rate): the "Updated" stamp.
+    last_update_at: str | None = None
 
 
 class RefreshStartedEvent(ApiModel):

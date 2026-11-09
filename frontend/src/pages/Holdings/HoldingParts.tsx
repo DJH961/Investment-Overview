@@ -236,15 +236,15 @@ export function HoldingDetails({
           </dd>
         </div>
         <div>
-          <dt>Dividends</dt>
+          <dt>Unrealised gain</dt>
           <dd>
-            <Money amount={toNum(row.dividends)} currency={ccy} />
+            <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored />
           </dd>
         </div>
         <div>
-          <dt>Total return (incl. dividends)</dt>
+          <dt>Dividends</dt>
           <dd>
-            <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
+            <Money amount={toNum(row.dividends)} currency={ccy} />
           </dd>
         </div>
         <div>
@@ -291,6 +291,12 @@ export function HoldingDetails({
         </dd>
       </div>
       <div>
+        <dt>Total return (incl. dividends)</dt>
+        <dd>
+          <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
+        </dd>
+      </div>
+      <div>
         <dt>Unrealised gain</dt>
         <dd>
           <Money amount={toNum(row.capital_gain)} currency={ccy} signed colored />
@@ -300,12 +306,6 @@ export function HoldingDetails({
         <dt>Dividends</dt>
         <dd>
           <Money amount={toNum(row.dividends)} currency={ccy} />
-        </dd>
-      </div>
-      <div>
-        <dt>Total return (incl. dividends)</dt>
-        <dd>
-          <Money amount={toNum(row.total_return)} currency={ccy} signed colored />
         </dd>
       </div>
       <div>
