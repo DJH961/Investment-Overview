@@ -24,10 +24,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not only new prices: whenever the FX check or the price tick fetches a new rate
   (including after the US market's close, while currencies still trade). Whether prices read as "Live" is still judged on
   prices alone, so a currency update never makes stale prices look live.
-- Holdings: Total return (incl. dividends) is the headline figure. The table's
-  "Unrealised gain" column and the group row's gain cell are gone; unrealised gain
-  (P/L) now sits in a row's details (phone expansion, desktop drawer) and in the group
-  row's (i). On phones the row's "P/L" chip became "Total return".
+- Holdings: Total return (incl. dividends) is the headline figure, unrealised gain
+  (P/L) the quieter one. On phones the row's "P/L" chip became "Total return", the
+  gain moved into the row's expansion, and the group row shows it only in its (i).
+  Desktop keeps the (unemphasised) "Unrealised gain" column; the drawer lists total
+  return first.
 - Allocation treemap: small tiles (common on phones) now show their name in a
   compact size instead of staying blank. The tooltip names both percentages: the
   share of the total and today's move printed on the tile ("Today +1.2%"), and

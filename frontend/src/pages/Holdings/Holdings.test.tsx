@@ -174,12 +174,11 @@ describe("Holdings page", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Group by" }));
     fireEvent.click(screen.getByRole("option", { name: "By account" }));
     const sub = screen.getByLabelText("Subtotal A");
-    // One row in table order: value, weight, day, total return; cost basis, unrealised
-    // gain (P/L) and dividends sit behind an (i) — total return is the headline.
-    for (const key of ["Value", "Weight", "Day", "Total return"])
+    // One row in table order: value, weight, day, unrealised gain (hidden on phones by
+    // CSS; the (i) carries it there too), total return; cost basis / dividends behind the (i).
+    for (const key of ["Value", "Weight", "Day", "Unrealised gain", "Total return"])
       expect(within(sub).getByText(key)).toBeInTheDocument();
     expect(within(sub).queryByText("P/L")).toBeNull();
-    expect(within(sub).queryByText("Unrealised gain")).toBeNull();
     expect(within(sub).queryByText("Cost basis")).toBeNull();
     expect(within(sub).queryByText("Dividends")).toBeNull();
     expect(within(sub).getByRole("button", { name: "About cost basis, unrealised gain, dividends and the return percentage" })).toBeInTheDocument();
