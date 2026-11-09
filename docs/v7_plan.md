@@ -1,24 +1,46 @@
-# v7.0 — the plan
+# v7 — the plan
 
 > Written 2026-11-05 against v6.6.0. This is the readable version: what v7
 > builds, in what order, and why. The evidence behind it — file references,
 > competitor sources, verified API facts and everything that turned out to be
 > wrong — lives in [`v7_research.md`](v7_research.md).
 >
-> Nothing here is committed to code yet. Every decision is settled (section
-> 9, 2026-11-09); the first release can start without asking.
+> Reworked 2026-11-10 after the code audit: fix rounds first (§7a), the
+> Currency tab redesigned (§5), the work grouped into ten pushes with a
+> clear cut before the model features (§8), accepted additions in §9a.
+> The technical companion, with build notes per push, is
+> [`v7_implementation_notes.md`](v7_implementation_notes.md).
+>
+> Nothing here is committed to code yet. Every decision is settled (§9,
+> §9a). Push 1 can start without asking.
 
 ---
 
 ## 1. The short version
 
-v6 finished the job it set out to do: one server, one database, one website,
-every number computed in one place. The app is correct and it is complete in
-the sense that nothing is broken. What it is not yet is **articulate**. It
-shows you eighteen pages of accurate figures and leaves the interpretation
-entirely to you.
+**What v7 is for.** v6 made the app professional: one server, one database,
+one website, every number computed in one place. v7 makes it **the complete
+app for an investor who is taxed in dollars and lives in euros**. Scope
+(owner, 2026-11-10): investing accounts only. Not a net-worth tracker, not a
+tax app; but it should collect the tax-relevant facts it already knows, as
+information without guarantees.
 
-v7 is about closing that gap, in four themes:
+The test for every release: does it answer a question this investor actually
+has, in the right currency for that question?
+
+| The question | Truth | Answered by |
+|---|---|---|
+| What happened while I was away, and was it the market or the dollar? | EUR | Daily Brief (7.0), Currency tab (7.2) |
+| What is this holding doing, and what did I pay for it? | both | Deep-dive (7.1) |
+| What did converting cost me, and which euros paid for which dollars? | EUR | Conversions (7.3, 7.4) |
+| What would I owe if I sold, and what has this year produced for the IRS? | USD | Tranches (7.1), US tax pack (7.5) |
+| Can I trust the numbers? | — | Fix rounds (§7a) |
+| Explain it to me. | — | Written summary, assistant, news (7.7 to 7.9) |
+
+v7 is complete at release 7.6 (§8). The model features (written summary,
+news, perhaps an assistant) are a separate push after that cut.
+
+It is built in four themes:
 
 | | Theme | What it means |
 |---|---|---|
@@ -29,6 +51,11 @@ v7 is about closing that gap, in four themes:
 
 Underneath all four: a cleanup pass on the things the UI audit found, and the
 instrument metadata work that several features sit on top of.
+
+**Before any of it: fix first (added 2026-11-09).** A code audit of the whole
+app (backend and frontend, read-only) found that "nothing is broken" was too
+kind: 111 findings, none critical, six high. v7 starts with five fix rounds,
+§7a, because several v7 features would build on the faulty numbers.
 
 ---
 
@@ -116,12 +143,19 @@ existing single-day FX comparison already works. Longer absences get an honest
 built. Movers over a multi-day window need shares held *at the start* of the
 window, not now, or a position you opened mid-window shows a fake move.
 
+**Needs the fix rounds first (§7a).** The Brief narrates the day move, so the
+day move must exclude deposits and buys (B-007) and the MTD/YTD start value
+must be right (B-006). The trigger rule needs early closes, which the domain
+module does *not* have yet (B-018): on a half-day the close is 13:00 ET. And
+the card must not ride inside an ETag-cached payload, or a dismissed Brief
+can come back from a 304 (B-002).
+
 **Deliberately cut:** "moved on no volume versus real news" — no volume is
 stored anywhere in the app, so this is a provider field, a column and a
 migration, not a display decision. And milestones or new highs, which need a
 full-history scan the read path is explicitly built to avoid.
 
-### 3.2 The written summary (v7.1)
+### 3.2 The written summary (v7.7)
 
 The Daily Brief computes everything itself. The model's only job is to turn
 those figures into two or three sentences of English. **Numbers from the
@@ -215,7 +249,7 @@ own retention is opt-in, and the provider-training setting is governed
 separately from it — the docs are explicit that opting out of provider training
 "has no bearing on OpenRouter's own policies."
 
-### 4.2 The assistant (v7.2)
+### 4.2 The assistant (v7.9, maybe later, not committed)
 
 The v6 plan specified a tool-calling chat assistant. I previously said that
 design could not satisfy your privacy constraint and should be downgraded to a
@@ -241,7 +275,7 @@ in the market carries this disclaimer and every one of them means it. The
 system prompt forbids recommendation language, and the UI says so once, plainly,
 rather than nagging.
 
-### 4.3 The news tab (v7.3)
+### 4.3 The news tab (v7.8)
 
 **Source the articles from a news API; use the model for synthesis, not
 search.** The research is clear on this and it saves both money and
@@ -306,78 +340,234 @@ waste dressed as innovation.
 
 ---
 
-## 5. Theme C — the currency page (v7.5)
+## 5. Theme C — the Currency tab (v7.2)
 
-The Overview already carries the headline FX numbers. The **Currency tab**
-(`/currency`, its own sidebar entry) is the one place that shows off
-everything the app knows about currency: live, today, lifetime and what your
-own conversions did. Every panel below is either already computed or a
-read-time join. The only new money maths is realised versus unrealised, plus
-the §5.1 modules it reuses.
+> Redesigned 2026-11-10. The earlier version was a list of panels sorted by
+> where the data came from. This one is built around the questions a euro
+> earner with dollar investments actually asks, and it is meant to be
+> explored, not scrolled past.
 
-**Header:** live EUR/USD with its provenance stamp ("Live · 14:32",
-"Fri 23:00 close" or "EOD FX"), and a primary link **"Conversions →"**
-(`/conversions`) to add or edit. The conversions page links back with
-"Currency tab →", so editing stays where it is and analysis stays here.
+### What exists, and what others offer
 
-The page reads top to bottom from *now* to *lifetime* to *your conversions*:
+**In the app today:** two Overview cards. `CurrencyBox` shows the live rate
+and today's currency move, split into market hours and overnight.
+`CurrencyLifetime` shows the lifetime story: average buy rate, the euro's
+move since, the FX share of the return, FX gain in euros, the cash-out value
+and the break-even rate. Between "today" and "lifetime" there is nothing.
+The conversions page is editing plus matching, with no analysis.
 
-| Panel | State |
+**Elsewhere (see `v7_research.md` §5.5a):**
+
+| Product | What it gives on currency |
 |---|---|
-| **Now** | |
-| Rate now: live spot, as-of stamp, live vs end-of-day, the live-rate health status (6.13 check) | Already computed |
-| Today's currency effect on your money: the 6.13 `day_split` currency part, plus the market-hours / overnight legs `CurrencyBox` already has | Already computed |
-| 1D / 1W EUR/USD line from the stored per-minute rates, with the session boundaries | Already stored; needs a small read endpoint |
-| **Lifetime** | |
-| FX versus instruments split of lifetime return, both legs shown | Already computed |
-| Where today's rate sits in your own holding period, as a percentile | New pure-domain module |
-| FX impact per holding (EUR growth vs USD growth per holding, from the §5.1 pool rate) | Computed per card today; becomes exact with 7.5c |
-| FX on cash balances, and idle pool dollars (§5.1): EUR value now minus the EUR cost the pool gives those dollars (decided) | Computable once 7.5c's pool exists |
-| Realised versus unrealised FX effect | **The only genuinely new maths** |
-| **Your conversions** (§5.1) | |
-| Your real rate vs the ECB average, total fees, spread, total cost, average distance from the ECB rate (EUR-weighted), best and worst | 7.5b `domain/fx_spread.py` |
-| EUR/USD history with **your own conversions marked on it** (marker size = amount, shape plus blue/orange = above or below the ECB rate) | Needs a history endpoint, no new storage |
-| Cost over time (cumulative) and per year | 7.5b |
-| Timing: your rate vs that month's average rate | 7.5b, read-time |
-| Cost by provider (if the optional field is used) | 7.5b |
-| Conversion pool state, deposits still on the ECB fallback (with "Add the conversion") | Already computed, reuse `GET /fx-conversions/pool` |
+| Fidelity, Schwab, Robinhood, Empower, IBKR | Nothing. Currency is never shown as a cause of return. |
+| Sharesight | Return split three ways per holding and per period: capital gain, dividends, currency gain. |
+| Capitally | A currency-return figure beside the asset return; base currency switchable. |
+| Parqet, Getquin | Currency as an allocation breakdown. No effect figure. |
+| Portseido | FX gain on cash balances. No effect figure or chart. |
 
-Release order inside the tab: Now and Lifetime first (mostly already
-computed, so 7.5 can ship them on day one), then the conversions panels as
-7.5a–c land. The tab never shows a panel whose data isn't there yet: no
-empty "coming soon" boxes.
+So the bar to clear is Sharesight's three-way split per period. Nobody
+offers the effect *over time*, the split by time of day, a what-if on the
+rate, or the cost of your own conversions. Those are where this tab goes
+further.
 
-Ship the cheap panels first and leave realised-versus-unrealised for last. It
-is the easiest place in the whole app to break the currency rule: it must be
-built from the euro cashflow stream with each leg at its own date's rate, never
-from a dollar realised gain multiplied by a rate delta.
+### The idea that carries the page: the constant-currency line
 
-Four more hazards worth writing down before anyone starts, because each one
-produces a plausible-looking wrong number:
+Companies report sales "at constant currency". The same picture works here
+and needs no explanation: the portfolio's euro value as it was, and a second
+line showing what it would have been **with every rate move since the start
+of the chosen range taken out**. The gap between the two lines *is* the
+currency effect, in euros, at every point. Above the line the dollar helped;
+below it the dollar cost you. The second line is dashed and the gap is
+hatched, so it reads without colour.
+
+It works for a day, a week, a year or everything, with the range picker the
+graphs already use.
+
+### Five sub-tabs (the shared segmented control), one question each
+
+**1. Today: "what is the dollar doing to me right now?"**
+
+- Live rate with its provenance stamp and the live-rate health status.
+- Today's currency effect in euros and pp, split into market hours and
+  overnight (the existing `CurrencyBox` content, moved here in full; the
+  Overview keeps its compact card and links here).
+- The 1D and 1W constant-currency chart from the stored intraday samples
+  (native USD value plus the per-instant rate, both already stored).
+- "€1,000 converted now buys $X; yesterday $Y" (the buying-power split in
+  `domain/session_fx.py` already exists).
+
+**2. Effect: "over this period, how much was the market and how much the
+currency?"** The heart of the tab. One range picker (1W, 1M, 3M, YTD, 1Y,
+3Y, All, any calendar year, custom dates) drives everything below it:
+
+- **Headline:** EUR return, USD return, the currency effect between them in
+  pp, and the currency effect in euros.
+- **The constant-currency chart** for the range.
+- **The bridge:** start value, plus deposits, plus market, plus currency,
+  equals end value, in euros, as a waterfall. It always adds up.
+- **Inside versus outside market hours** for the range: two labelled bars.
+- **Month and year bars** of the currency effect, and a month-by-year grid
+  (the Periods layout), so good and bad currency years are visible at a
+  glance. The Periods page gains the same "currency" column.
+- **Per holding, three ways** (the Sharesight split, for the chosen range):
+  price gain, dividends, currency effect, in euros, sortable.
+- **Records, as plain facts:** best and worst currency day, month and year;
+  the lifetime effect expressed in months of your average contribution
+  ("the dollar has added the equivalent of 3.2 monthly deposits").
+
+**3. Rate: "where does the rate stand, compared with my own history?"**
+
+- EUR/USD history, long range (the ECB series back to 1999 is free; today
+  only the dates the ledger needs are stored).
+- Your lines on it: average buy rate, break-even rate, and today.
+- Your conversions as markers (size = amount, shape and blue/orange = above
+  or below that day's ECB rate), once 7.3 ships.
+- Percentile of today's rate within your holding period, 5 years, 10 years
+  and since 1999. "The euro is stronger than on 71 % of the days you have
+  been invested."
+
+**4. What if: "what would a different rate do to me?"**
+
+- **Sensitivity:** "one cent of EUR/USD is worth €X to you today."
+- **The rate slider:** drag the rate from 0.90 to 1.60 and watch the euro
+  value, the euro gain and the distance to break-even move. Preset marks for
+  your average rate, break-even, and the historic low and high. The server
+  sends the scenario rows; the browser only picks one (no return is computed
+  in the browser).
+- **Does the dollar cushion or amplify your swings?** EUR volatility beside
+  USD volatility, the deepest fall in each currency, and how often the
+  dollar rose on days your holdings fell. Computed by the existing risk
+  module on the two series. For a euro investor the dollar has often risen
+  in a crisis, and this shows whether that held for you.
+- **Projection:** the Projection page shows its euro result as a band over a
+  range of rates, not only at today's rate, with a link from here.
+- **Exposure:** share of the portfolio by trading currency (also added as an
+  allocation dimension). The page says plainly that a world fund priced in
+  dollars is not purely dollar exposure; the look-through version waits for
+  fund country data (7.6).
+
+**5. Conversions: "what did converting cost me, and was my timing any
+good?"** Arrives with 7.3 and 7.4, specified in §5.1:
+
+- Cost: fees, spread against the ECB reference, total, per year, per
+  provider.
+- Timing: your rate against that month's average, and two honest
+  comparisons: "everything converted on day one" and "the same amount every
+  month". They show what spreading conversions out did for you, not what you
+  should have done.
+- The pool: which conversion paid for which deposit, idle dollars, deposits
+  still on the ECB fallback.
+- After 7.4: realised versus unrealised currency effect, the currency effect
+  on cash, and "your rate" per holding.
+- A link to the Conversions page for editing. Analysis lives here, editing
+  lives there.
+
+The tab never shows a panel whose data is not there yet. The Conversions
+sub-tab simply does not exist until 7.3.
+
+### The stats (owner, 2026-11-10: good figures as well as panels)
+
+Every sub-tab opens with a strip of KPI tiles (the shared tile component),
+then its panels. Above the sub-tabs sits one strip that is always visible.
+
+**Always visible, the six that sum it up:**
+
+| Tile | Example |
+|---|---|
+| EUR/USD now, with today's change | 1.0832 · −0.3 % |
+| Currency effect today | −€212 |
+| Currency effect this year | +€1,480 · +1.9 pp |
+| Currency effect lifetime | +€3,950 · +4.1 pp |
+| Your average rate against now | 1.0812 · tailwind 0.2 % |
+| One cent of EUR/USD | ±€640 |
+
+**Per sub-tab:**
+
+| Sub-tab | Stats |
+|---|---|
+| Today | Effect inside market hours · effect outside · the rate's range today (low to high) · what €1,000 buys now against yesterday |
+| Effect (for the chosen range) | EUR return · USD return · currency effect in pp and in euros · currency's share of the change ("currency explains 38 % of this period") · best and worst month · share of months with a tailwind · longest tailwind and headwind run · a typical day's currency swing (median, ±€) · largest single-day effect, with its date · the effect in months of your average contribution |
+| Rate | Percentile of today's rate (holding period, 5 y, 10 y, since 1999) · 52-week high and low, with distance from each · lowest and highest rate since you started, with dates · average rate over your holding period · share of days the rate was above your average rate · how much the rate itself moves in a year (volatility) |
+| What if | One cent in euros · break-even rate and distance to it · euro value at the historic low and high rate · EUR volatility beside USD volatility · deepest fall in EUR beside USD · share of your down days on which the dollar rose |
+| Conversions | Number of conversions and total converted · your average rate against the ECB average for the same dates · total cost in euros and as a share of what you converted · fees and spread separately · best and worst conversion · your rate against the month averages · months since the last conversion · idle dollars |
+
+Rules for the tiles: each has an info tip saying in one sentence what it
+measures; tailwind and headwind carry a word and an arrow, not only blue
+and orange; every figure is computed on the server; a tile whose data is
+missing is left out, not shown empty.
+
+### How the numbers are built (one definition, used everywhere)
+
+A new pure module, `domain/fx_attribution.py`, splits each day's change in
+euro value into three parts: flows, market, currency. It must use the same
+convention as the existing `day_split`, so the tab's "today" equals the
+Overview's. Read that code first; do not invent a second convention.
+
+- **Euro amounts** for a period are the daily parts added up. Sums of euro
+  amounts at their own dates are allowed by the currency rule. Never
+  annualised, never fed to an XIRR.
+- **Percentage points** for a period are the EUR return minus the USD return
+  of the same period, each computed on its own (the EUR one from the euro
+  cashflow stream). Never `usd_return × fx_change`.
+- **The constant-currency line** is the actual euro value minus the
+  currency effect accumulated since the start of the range. It is *not*
+  "today's dollars at the starting rate": that would credit a deposit made
+  last week with a rate move from last year. Each rate move counts only for
+  the dollars that were there when it happened.
+- **Inside versus outside:** each day's currency part splits at the session
+  open and close. Outside includes weekends and holidays.
+- **Generic by construction:** the effect is defined for holdings whose
+  native currency differs from the reporting currency. In the EUR view that
+  is the dollar holdings; in the USD view it is the euro holdings. No
+  currency is hard-coded.
+- **Everything is computed on the server**, including the percentile, the
+  scenario rows and the risk figures. The browser sums, sorts and picks.
+
+**Tests (property plus golden):** the three parts sum to the day's change;
+the daily parts sum to the period; inside plus outside equals the period's
+currency effect; the currency part is zero when the rate did not move; the
+lifetime figure equals the Overview card's; "today" equals `day_split`.
+
+**Storage:**
+
+- Daily history needs nothing new: the snapshots already hold native value
+  and rate per day.
+- The session-boundary rates do. Intraday rates are pruned after five
+  sessions, so 7.2 keeps the EUR/USD rate at each session's open and close
+  for good: one small row per session, raw market data, not a
+  derived-currency column. It must live where a cache reset does not wipe
+  it, because it cannot be refetched far back. How far hourly provider data
+  reaches for a backfill is not verified (about two years is typical) and
+  needs a real call. Older periods show the total effect and say "split not
+  available before <date>".
+- The long ECB series is a one-time backfill into the existing `fx_history`.
+
+**API:** `/api/currency/both` for Today and the headline figures, plus
+`/api/currency/effect`, `/rate-history` and `/scenarios`, all on the
+existing `/both` + ETag pattern. New endpoints go into the activity labels.
+
+### Hazards, each of which produces a plausible wrong number
 
 - The FX-versus-instruments split is **not** `eur_return = usd_return × fx_change`.
   The euro leg stays independently computed; the currency effect is a residual.
-- FX profit and loss is valid only as a single-instant comparison. Never
-  annualise it, never feed it to an XIRR.
+- FX profit and loss is valid only as a single-instant comparison or a sum
+  of them. Never annualise it, never feed it to an XIRR.
 - Conversion cost compares each conversion against **its own date's** fixing,
   never one back-dated rate across a batch. Label it "versus ECB daily
-  reference", not "versus mid-market" — the ECB publishes a daily fixing, not
-  an intraday mid.
-- Do not add derived-currency columns to store any of this. It is a read-time
-  join, by rule.
+  reference", not "versus mid-market".
+- A rate labelled ECB must be the settled fixing, not today's live spot
+  (audit B-011).
+- Realised versus unrealised is the easiest place to break the rule: it is
+  built from the euro cashflow stream with each leg at its own date's rate,
+  never from a dollar gain multiplied by a rate change.
+- Do not add derived-currency columns to store any of this.
 
-**A cheap companion, not gated on anything:** add currency as an allocation
-dimension. The field already exists on every instrument, so this is one of the
-few allocation breakdowns that needs no metadata work at all — and for a euro
-investor holding dollar assets it is the most relevant dimension there is.
+**Wording worth borrowing from Portseido:** time-weighted and money-weighted
+return side by side, as "the return your decisions produced" versus
+"includes the effect of your contribution timing".
 
-Worth borrowing from Portseido while building this: it shows time-weighted and
-money-weighted return side by side, framed as "the return your decisions
-produced" versus "includes the effect of your contribution timing." That
-wording is better than anything currently in the app and the numbers are
-already computed.
-
-### 5.1 Conversions, finished (v7.5a–c, before the page)
+### 5.1 Conversions, finished (v7.3 and 7.4)
 
 > Added 2026-11-09 against v6.13.0. Scoped from the code, not from memory:
 > `domain/fx_pool.py`, `services/fx_conversion_service.py`,
@@ -404,7 +594,7 @@ has cost you.
 | Spread against the ECB fixing | Not computed |
 | Duplicate / copy a conversion | Missing |
 
-#### 7.5a — Clear matching (UI + read-model, no new maths)
+#### 7.3, first half — Clear matching (UI + read-model, no new maths)
 
 - **Name conversions by what they are.** A conversion is "12 Mar 2025 ·
   €2,770 → $3,000 · 1.0830", never "#12". The id stays internal.
@@ -435,7 +625,7 @@ has cost you.
   received / EUR sent) and the *all-in rate* (including fees). Matching keeps
   the all-in rate, as now. Both are labelled.
 
-#### 7.5b — What converting costs you (new pure-domain maths)
+#### 7.3, second half — What converting costs you (new pure-domain maths)
 
 New `domain/fx_spread.py`: pure, property-tested, with golden values worked
 by hand. Per conversion, against **its own date's** ECB fixing:
@@ -464,7 +654,7 @@ conversion, one date). Sums of EUR across dates are fine; never annualise
 the cost, never feed it to an XIRR. No new columns: it is a read-time join
 of `fx_conversions` and `fx_history`.
 
-#### 7.5c — One rate everywhere (money maths)
+#### 7.4 — One rate everywhere (money maths)
 
 - **Transactions tab: wire it.** `ledger_query` takes the same
   `eur_overrides` as the metrics, so a matched deposit's EUR column, the
@@ -479,7 +669,7 @@ of `fx_conversions` and `fx_history`.
   the ECB rate of the day it was bought. Holding EUR figures then add up to
   the portfolio's conversion-aware total.
 
-  **How it works: a second FIFO layer**, new pure module `domain/usd_cash_pool.py`
+  **How it works: a second FIFO layer**, new pure module `domain/cash_pool.py`
   driven by `ledger_walk`. Each USD account keeps a queue of dollar lots, each
   with its EUR cost:
   - a **deposit** adds a lot at its matched EUR cost (the existing
@@ -534,7 +724,7 @@ Currency tab gets the full story.
 | **Overview › "Currency effect (lifetime)" card** (6 rows today) | **One new row, "Your rate":** your real average conversion rate next to the ECB average over the same dates, e.g. "1.0812 · ECB 1.0841", with "conversions cost €X so far" as its sub-line. Break-even and "Euro since buying" switch to your real rate, with a label saying so. The card title links "More on the Currency tab →". | No cost chart, no per-conversion list, no new card |
 | **Holdings › KPI strip** (13 tiles today) | No new tile. The existing **"FX EUR/USD"** tile gets the hint "your rate 1.0812". | No cost or fee figures |
 | **Holdings › a holding's details** (phone expansion, desktop drawer; where P/L already lives since 6.12.8) | **"Your rate"** (the blended rate of the dollars that bought it, from the pool rate) and **"FX effect"** (its EUR growth minus its USD growth, in pp, the currency effect as a residual) | Nothing new in the table columns or the row chips |
-| **Transactions tab** | A deposit's details: which conversion(s) paid for it (7.5a) | — |
+| **Transactions tab** | A deposit's details: which conversion(s) paid for it (7.3) | — |
 | **Currency tab** | Everything: live rate, day and lifetime effects, costs, timing, pool, idle dollars, per-holding FX table (§5) | — |
 | **Conversions page** | Editing, matching, duplicate/backdate, statement import, and a link back to the Currency tab | Analytics (they live on the Currency tab) |
 
@@ -555,13 +745,13 @@ Currency tab gets the full story.
   or before a deposit. A *pin* may reach a conversion dated **up to 7 days
   after** the deposit, for bank-vs-broker booking dates. The exception lives
   exactly where you made it and cannot shift other deposits' matching.
-- **Dollars back to euros: release 7.5d,** after the pool. A conversion gets a
+- **Dollars back to euros: release 7.4,** after the pool. A conversion gets a
   direction (`eur_to_usd`, the default for every existing row, or
-  `usd_to_eur`). A USD→EUR conversion takes dollars out of the 7.5c pool at
+  `usd_to_eur`). A USD→EUR conversion takes dollars out of the 7.4 pool at
   their EUR cost; the euros received minus that cost is your **realised FX
   gain or loss**. That is the Currency tab's realised-versus-unrealised panel
   (§5), built from real cashflows at their own dates, never a USD gain times a
-  rate change. Fees and the spread against the ECB rate (7.5b) work the same
+  rate change. Fees and the spread against the ECB rate (7.3) work the same
   in both directions.
 
 #### Extras that make it work across the app
@@ -587,14 +777,15 @@ first:
 - **Paste a statement:** import conversions from a Wise or bank CSV through
   the existing flexible importer (a new parser that emits conversions, not
   transactions).
-- **Daily Brief line (once 7.5b ships, added to the 7.0 Brief):** "You converted €2,770 this month at 1.0830,
+- **Daily Brief line (once 7.3 ships, added to the 7.0 Brief):** "You converted €2,770 this month at 1.0830,
   0.2% under the ECB reference."
 - **Exports:** conversions and their matching in the CSV export and the
   phone export.
 
-**Activity log:** conversion edits already log to the `changes` subject
-(`fx_conversion_service` is listed there). The new write paths (statement
-import, the prefilled add) log there too. The cost report is read-only and
+**Activity log:** conversion edits reach the `changes` subject only as the
+generic request line today: `fx_conversion_service` is routed there but logs
+nothing itself (audit B-021, fixed in fix round 5). The new write paths
+(statement import, the prefilled add) log a proper domain line there too. The cost report is read-only and
 needs no line.
 
 ---
@@ -618,7 +809,7 @@ Teilfreistellung, Freistellungsauftrag, Sparer-Pauschbetrag and the
 Abgeltungsteuer estimator are all out. The earlier draft had a whole section on
 them; it is gone.
 
-### 6.1 Tax lots (v7.4, with the deep-dive)
+### 6.1 Tax lots (v7.1, with the deep-dive)
 
 No lot table exists and lots are not needed to *display* a purchase history:
 the ledger already has one row per buy, sell, reinvestment and split with date,
@@ -636,9 +827,10 @@ cost, and never let a lot number feed an aggregate.
 **Decided 2026-11-09: a tranche view inside the holding's details.** It is a
 "Tranches" tab of the deep-dive (§7). On a phone it is reachable from the
 row's expansion, so it is never more than one tap from where P/L already
-lives. Per purchase: date, shares left, cost (USD, and EUR from the 7.5c
-pool rate), age with a short-term / long-term marker at one year, and gain
-against today's price. The tab says plainly, once: "FIFO view per purchase;
+lives. Per purchase: date, shares left, cost in USD, age with a short-term /
+long-term marker at one year, and gain against today's price. The tab ships
+in 7.1 with USD only; the EUR cost column arrives with 7.4, because it
+needs the pool rate and must not ship on the buy-date rate first. The tab says plainly, once: "FIFO view per purchase;
 the holding's totals use average cost." Real FIFO cost basis stays out of
 v7.
 
@@ -656,7 +848,7 @@ the price feed is back-adjusted, which the positions service compensates for
 with a cumulative split factor. Each lot's historical price needs the same
 treatment or every per-lot gain across a split is wrong by the split ratio.
 
-### 6.2 The US tax pack (v7.7)
+### 6.2 The US tax pack (v7.5)
 
 Three features that follow once tranches exist:
 
@@ -725,7 +917,7 @@ The problems are specific rather than systemic.
   columns on desktop, a six-chip summary on the phone, with the detail panel
   rendering twice when you expand a row. The deep-dive rework fixes this.
 
-### The deep-dive rework (v7.4)
+### The deep-dive rework (v7.1, split in §8)
 
 Today the "deep dive" is a bottom sheet containing a price chart and an
 eleven-row definition list. No route, no tabs, no transactions, no dividends,
@@ -793,35 +985,199 @@ linked from the holding detail. That is a cheap connection nobody has made.
 
 ---
 
-## 8. The order of work
+## 7a. Fix first: the pre-v7 audit (added 2026-11-09)
 
-Each line ships as its own release, per the release-fast rule. Reorderable —
-this is the sequence I would pick, not a dependency graph.
+> Two read-only code audits against v6.13. Full findings, each with file and
+> line, confidence and a fix direction:
+> [`v7_audit_backend.md`](v7_audit_backend.md) (B-001 to B-022) and
+> [`v7_audit_frontend.md`](v7_audit_frontend.md) (F-001 to F-089). Nothing
+> was fixed. Nothing was run in a browser or reproduced at runtime, so
+> "confirmed" means traced in the code.
 
-| Release | What | Depends on |
+**The verdict.** No critical finding. Lifetime XIRR and the portfolio
+cashflow stream follow the currency rule. The faults sit at the edges: period
+start values, the day move, the live tick patch, stale tabs, and text that
+does not fit its box. 111 findings: 6 high, 23 medium, 58 low, 24 nits.
+
+Each round is one or more patch releases. Every fix ships with a test that
+fails before it. Rounds 1 and 2 are what you would notice; do them in order.
+
+### Round 1: numbers you can trust (money maths, backend first)
+
+| ID | What | Size |
 |---|---|---|
-| patches | The five cleanup items in §7 | — |
-| cutover | **v5 removed**, demo kept, `v5-archive` tag (§8 below) | — |
-| **7.0** | **Daily Brief**, deterministic: trigger rule, last-seen marker, window return, the card | — |
-| **7.1** | **AI foundation**: adapter, settings, kill switch, redaction layer, cost ledger, activity logging — plus the Brief's written summary as its first consumer | 7.0 |
-| **7.2** | **Assistant**: redacted tool surface, streaming, rate limiting | 7.1 |
-| **7.3** | **News tab**: news API ingestion, clustering, per-holding digests | 7.1 |
-| **7.4** | **Holding deep-dive**: route, tabs, per-holding 1D/1W from `intraday_symbol_prices`, ETF-twin view for NAV funds, tranche tab, per-holding dividends | — |
-| 7.5a | **Conversions, clear matching**: names, order, deposit declarations, pinning, Transactions details, duplicate/backdate (§5.1) | — |
-| 7.5b | **Conversion costs**: `domain/fx_spread.py`, fees / spread / off-rate KPIs, cost over time (§5.1) | 7.5a |
-| 7.5c | **One rate everywhere**: Transactions tab on conversion rates; holding EUR cost from the pool rate (`domain/usd_cash_pool.py`); invariant tests; the Overview "Your rate" row and the holding-details rows (§5.1) | 7.5a |
-| 7.5d | **Dollars back to euros**: conversion direction, realised FX gain from the pool (§5.1) | 7.5c |
-| **7.5** | **Currency tab** (§5): Now + Lifetime panels, header link to Conversions; the conversion panels join as 7.5a–d land | — (conversion panels: 7.5b; realised FX: 7.5d) |
-| **7.6** | **Instrument metadata** + sector/country/currency allocation, with AI-assisted fill | 7.1 for the fill |
-| **7.7** | **US tax pack**: realised gains by holding period, wash sales, sell planner | 7.4 |
+| B-018 | Half-day sessions treated as open until 16:00. **Dated: before Fri 27 Nov 2026** (then 24 Dec). | S |
+| B-006 | Overview MTD/YTD count a flow dated on the 1st twice; disagrees with Periods. Start value becomes the previous day's close. | S |
+| B-007 | "Today's move" counts deposits and same-day buys as gain. Subtract the session's external flows. | M |
+| F-081 | The tick patch writes a browser-computed, FX-free day % into the EUR side (breaks "the client never computes a return"). The server sends the figure in the tick, or the client leaves it alone. | M |
+| F-029 | Treemap computes each category's day % in the browser. Same rule, same fix. | S |
+| B-017 | Uninvested brokerage cash outside a money-market fund is missing from the total. **First step is a Data Health check** that reports whether any account is affected; the valuation change follows only if one is. Must be settled before 7.4, whose dollar pool models exactly this cash. | M |
+| B-010 | Native and dual-currency average cost drift after a reinvest with no price. | S |
 
-Running alongside, not blocking: backfill tests for the repositories layer (the
-thinnest non-trivial package, and the layer where bugs go silent), smoke tests
-for the nine untested UI primitives and the transaction form, and a coverage
-tool, which is currently not installed at all.
+Gate: golden tests (deposit on the 1st, deposit day, half-day), plus a parity
+note where a figure deliberately moves away from v5.
+
+### Round 2: everything fits (visual)
+
+The top bar on phones (F-002) and between 1024 and 1280 px (F-001), the
+Overview holdings pills (F-027), the hero value at 360 px (F-028), the graph
+range picker (F-019), the Holdings summary strip (F-038), the drift table on
+tablets (F-051), then F-016, F-022, F-024, F-037, F-049, F-064, F-012. One
+root cause covers most: `nowrap` or `flex-shrink: 0` with nothing allowed to
+give way, and `text-overflow` set on flex containers where it does nothing.
+Also here: the grey small-text contrast on dark (F-087) and the undefined
+`--color-text` token (F-055).
+
+**This round builds the tool that was missing.** The audit could not render
+the app: there is no way to run the frontend without a sign-in and real data.
+Add a fixture mode (seeded fake ledger, worst-case values: seven-figure
+totals, long instrument names, every status pill) and a Playwright screenshot
+run at 360, 390, 768, 1024, 1280 and 1440 px in both themes. It proves this
+round, catches the clipping the code read missed, and every v7 page reuses
+it. No real tickers or amounts in the fixtures (public repo).
+
+### Round 3: saved means saved, fresh means fresh (front/back interplay)
+
+| ID | What | Size |
+|---|---|---|
+| B-001 | Writes commit after the response is sent; cache bumps and live events fire before the commit. Commit first, publish after. | S–M |
+| B-002 | `/both` ETags never expire, so a long-open tab shows Friday's "live" wording on Saturday. | S |
+| B-012 | A returning tab only catches up on ticks; it misses end-of-day refreshes and other devices' edits, and loses 1D points after a restart. | S |
+| F-082 | Account renames and imports that create an account are not refreshed on Holdings, Transactions, Activity. | S |
+| F-004 | The live stream is not reopened after sign-in (up to 30 s without ticks). | S |
+| B-003 | Calculator, allocation-plan and reconcile requests flush the whole read cache on every device. | S |
+| B-016, B-015 | Stale default graph range; the idle timeout never fires for an open tab. | S |
+
+### Round 4: input and lost work, plus the five §7 patches
+
+- Decimal comma: "12,5" is rejected in the transaction form and silently
+  becomes 0 % in allocation targets (F-043, F-053). One shared parser.
+- Lost work: the hide-numbers toggle remounts the page; Settings drafts and
+  an import preview vanish on navigation, and the import stays pending on the
+  server (F-003, F-071, F-063).
+- Advanced settings are hidden by default, against the owner's rule (F-070).
+- The five "ship as patches" items in §7 (404 page, onboarding card, nav
+  label, empty states, hand-rolled tabs).
+- The remaining low and nit frontend items, grouped per page.
+
+### Round 5: speed and housekeeping
+
+- Overview and graphs build the whole read model twice, once per currency,
+  on every FX tick (B-013).
+- The browser writes the whole query cache to localStorage about once a
+  second in market hours (F-083).
+- Scheduler: full end-of-day re-run after every deploy (B-004), a failure
+  flag that is always green (B-005), database work on the event loop (B-019),
+  the backup "dirty" flag lost on restart (B-020).
+- Ledger and conversion edits get a real line in `changes.log` (B-021).
+
+### Moved elsewhere, on purpose
+
+- **Into the cutover release:** unused single-currency routes (B-014) and v5
+  settings in `config.py` / `.env.example` drift (B-022).
+- **Before the cutover, not after:** the frozen `net_eur` / `net_usd` legs
+  still feed holding-level EUR figures, holding XIRR flows and dividend
+  income (B-008). The cutover stops writing those legs, so these reads must
+  move to the derived path first or new transactions get no EUR figures.
+- **Into 7.3/7.4:** today's live spot leaking into values labelled "ECB"
+  (B-011) must be fixed before the spread maths compares against the ECB
+  fixing; the instrument-vs-account currency mismatch (B-009) before the pool.
+
+### Not audited yet (second pass, during rounds 2 to 5)
+
+The importer parsers and staging, most of `intraday_snapshots_service`, auth
+and passkeys, migrations and their downgrades, the Tiingo fallback, the
+benchmark and diagnostics services, the read models for deposits,
+allocations, projection, analytics and the phone export; on the frontend the
+Diagnostics sub-tabs and several Import and Settings parts. Importers and
+migrations matter most: the cutover and 7.4 both lean on them.
+
+---
+
+## 8. The order of work: ten pushes, then a clear cut
+
+Reworked 2026-11-10 (owner): fewer versions, each one a **push**: a block of
+work sized for one or two full Claude sessions that ends in one release.
+v7 is everything up to the cut. The model features are a separate push
+afterwards, planned in detail when v7 is done.
+
+| Push | Release | What goes in | Sessions | Done when |
+|---|---|---|---|---|
+| 1 | 6.x "Trust" | Backend fixes: fix rounds 1 and 3 of §7a (half-days, MTD/YTD, day move, commit order, ETags, tab catch-up, cache flushes), and the server half of F-081 (the tick carries the day % so the browser stops computing it). **Before 27 Nov 2026.** | 1 | Golden tests for a deposit on the 1st, a deposit day and a half-day pass |
+| 2 | 6.x "Fit" | Frontend fixes: fix rounds 2 and 4 (every clipping finding, decimal comma, lost work, visible advanced settings, the five §7 patches), the fixture mode and the screenshot run. | 1–2 | Screenshot run green at six widths in both themes |
+| 3 | 6.x "Ready" | Fix round 5 (speed, scheduler, activity lines), the frozen-leg reads moved to the derived path (B-008), the second audit pass and its fixes, **ledger completeness checks (P7)**. | 1–2 | No high or medium finding open; Data Health reports a missing dividend in a test ledger |
+| 4 | **7.0** | **The cutover** (v5 removed, B-014, B-022) and the **Daily Brief** (§3.1). | 2 | No v5 code on `main`; the Brief's trigger passes its table of cases; a dismissed card stays gone |
+| 5 | **7.1** | **Holding deep-dive** (§7): route and tabs, one shared holding row, per-holding 1D/1W, ETF-twin view, tranches in USD with the long-term countdown (P3), per-holding dividends and transactions. | 2 | A holding has a URL; holdings' 1D lines sum to the portfolio line; tranche shares sum to the position |
+| 6 | **7.2** | **Currency tab** (§5): Today, Effect, Rate, What if; currency as an allocation dimension; the Projection rate band (P5). | 2 | Daily parts sum to every period; "today" equals the Overview card; lifetime equals the lifetime card |
+| 7 | **7.3** | **Conversions** (§5.1): clear matching, pinning, costs and timing, currency-generic naming (C1), the Conversions sub-tab, the "Invest this month" flow (P6). | 2 | Every USD deposit declares how it was paid for; cost golden values match the hand calculation |
+| 8 | **7.4** | **One rate everywhere** (§5.1): the cash pool, holding EUR cost from the pool rate, the tranche EUR column, dollars back to euros, realised versus unrealised, currency effect on cash and idle dollars. | 2 | Holdings plus pool equal EUR invested on the real ledger; realised plus unrealised equals the lifetime effect |
+| 9 | **7.5** | **Tax information** (§6.2, P1–P3): realised gains by holding period, wash sales, sell planner, the loss list, the tax year page, the 1099 check, the withholding column. | 2 | Short/long-term totals match a hand-worked ledger, including a reinvested-dividend wash sale |
+| 10 | **7.6** | **The finish:** month and year recaps with the real euro return (P8, P10), one channel for facts (P9), instrument metadata from the price provider with sector and country allocation, the hand-written risk explanations (§4.5). | 1–2 | A recap's figures equal the Periods page; an alert fires in a test and is off by default |
+| | | **— the cut: v7 is complete here —** | | |
+| 11 | 7.7 | AI foundation and the Brief's written summary (§3.2, §4.1); AI-assisted metadata fill (§4.4). | later | planned when v7 is done |
+| 12 | 7.8 | News, as its own page (§4.3). Licences read first. | later | |
+| — | 7.9 | Assistant (§4.2). Maybe later; not committed. | — | |
+
+**Count:** ten pushes to a complete v7, about 15 to 18 full sessions. The
+first three are fixes on v6; 7.0 arrives with push 4.
+
+### What can be combined, and what has to stay apart
+
+**Runs side by side (two sessions at once, separate worktrees):**
+
+- Push 1 and push 2. One touches only `backend/`, the other only
+  `frontend/`. Push 2 rebases once at the end to pick up the regenerated
+  API types.
+- Inside push 4: the cutover (mostly deletions, good work for cheap
+  subagents) and the Daily Brief (new files only).
+- Inside any feature push: a backend lane and a frontend lane, **once the
+  API contract is written down first**. The session starts by agreeing the
+  endpoint shapes, then the lanes run in parallel and meet at the end.
+- Push 5 and push 6 touch different areas and could overlap if you want to
+  go faster, with one condition: only one of them may add a migration at a
+  time.
+
+**Must be one at a time:**
+
+- **Money maths.** One change to a return, cost basis or currency figure
+  per session, with its golden values checked by you before the next one
+  starts. Pushes 7, 8 and 9 are strictly in order: 8 builds on 7's
+  matching, 9's EUR figures on 8's pool.
+- **Migrations.** One Alembic chain. Two branches that both add a migration
+  collide; the second one is rebased and re-pointed.
+- **The shared files:** `CHANGELOG.md`, the three version files and their
+  lockfiles, `openapi.json`, `api-types.ts`, `tokens.scss`, the activity
+  labels. Parallel lanes do not touch them. The session's orchestrator
+  writes them once, at the end, in the release commit.
+- **The cutover before push 8**, so the pool maths never needs a v5-parity
+  exception.
+
+**Yours, not Claude's (accounts and secrets):** the Cloudflare and GitHub
+clean-up after the cutover (push 4), the mail or push account for alerts
+(push 10), and later the OpenRouter and news keys.
+
+### How to run a push
+
+1. Start the session with "push N of the v7 plan". The orchestrator reads
+   §8, the sections it points to, and the audit files.
+2. It writes the API contract and the file ownership per lane, then hands
+   lanes to subagents (Opus for money maths and design, cheaper models for
+   mechanical work).
+3. During a sprint set `DEPLOY_MODE=scheduled`, so half-finished pushes do
+   not deploy one commit at a time. Critical fixes still go `Deploy: now`.
+4. Changes collect under `[Unreleased]` during the push and are folded into
+   one dated release at the end. Bug fixes from pushes 1 to 3 are the
+   exception: they release as they land.
+5. Every push ends with the screenshot run, the targeted tests, a green CI
+   and a short "what to check by hand" list for you.
+
+**Tests have an owner.** The fixture mode and screenshot run are built in
+push 2 and extended by every push that adds a page. Repository-layer tests
+come with pushes 1 and 4, smoke tests for the untested UI primitives and
+the transaction form with push 2, and a coverage tool with push 3.
 
 **The v5 cutover: approved 2026-11-09 ("v6 has delivered, v5 can die").** It
-ships as one clean-up release before 7.5c, so the pool-rate maths never needs
+ships as one clean-up release before 7.4, so the pool-rate maths never needs
 a v5-parity exception.
 
 - **Kept:** the **demo website**. `web/` builds only the offline demo
@@ -866,11 +1222,11 @@ a v5-parity exception.
 
 ---
 
-## 9. Decisions (all settled 2026-11-09)
+## 9. Decisions (settled 2026-11-09 and 2026-11-10)
 
-Nothing in v7 is waiting on a decision. New questions that come up while
-building go here, with a recommendation, and get settled before the release
-that needs them.
+Everything in this table is settled. Open proposals are in §9a. New
+questions that come up while building go there, with a recommendation, and
+get settled before the release that needs them.
 
 | # | Question | Decided |
 |---|---|---|
@@ -884,15 +1240,86 @@ that needs them.
 | 8 | Holding EUR cost (§5.1) | The pool rate, `fx.holding_cost_basis` as the rollback switch |
 | 9 | Manual pinning (§5.1) | Yes, pins first, FIFO fills the rest |
 | 10 | Matching window (§5.1) | Strict FIFO; only a pin may reach up to 7 days after a deposit |
-| 11 | Dollars back to euros (§5.1) | Yes, release 7.5d, with realised FX gain from the pool |
+| 11 | Dollars back to euros (§5.1) | Yes, release 7.4, with realised FX gain from the pool |
 | 12 | Per-holding 1D/1W (§7) | Store the per-symbol bars the 1D line already fetches; ETF-twin view for NAV funds |
 | 13 | FX on cash (§5) | EUR value now minus the pool's EUR cost of those dollars |
+| 14 | Fix first (§7a) | Yes: five fix rounds before any v7 feature |
+| 15 | Release order (§8) | Renumbered in shipping order; 7.0 is the cutover; deep-dive, currency and tax before AI |
+| 17 | Currency tab (§5) | It extends the currency-effect cards: effect per period and over time, and inside versus outside market hours for any period; not only rate charts |
+| 18 | Size of v7 (§8) | Ten pushes, releases 7.0 to 7.6; the model features are a separate push after the cut; the assistant is "maybe later" |
+| 19 | News (§4.3) | Its own page when it ships, not folded into the deep-dive |
+| 20 | Additions (§9a) | P1–P3 and P5–P10 accepted, P4 dropped; C1 and C4 yes, C2 no, C3 as a middle ground: tax figures calculated in USD; USD view shows dollars only, EUR view shows their euro worth where it makes sense |
+| 21 | Currency tab stats (§5) | A KPI strip that is always visible, plus a strip per sub-tab, as well as the panels |
+| 16 | Scope (§1) | Investing accounts only. No other account types, no net worth, no FBAR. Tax-relevant information is welcome, without guarantees; it is not a tax app |
+
+---
+
+## 9a. Additions accepted 2026-11-10
+
+Accepted by the owner, inside the scope of decision 16. Each is built in
+the push named; the detail is settled at the start of that push.
+
+| # | Addition | Push |
+|---|---|---|
+| P1 | **Tax year page (USD).** Per calendar year, collected from the ledger: dividends, money-market and interest income, capital-gain distributions, realised short- and long-term gains, wash-sale adjustments, withholding paid, fees. Year to date for the running year. EUR-native instruments translated at each transaction's own date. CSV export. Headed "information from your ledger, not tax advice; your broker's 1099 is what counts". | 9 (7.5) |
+| P2 | **1099 check.** You type in the totals from the broker's 1099; the page shows where the ledger differs. | 9 (7.5) |
+| P3 | **Holding-period countdown and loss list.** In the tranche tab: "long-term in 23 days". In the tax pages: tranches with an unrealised loss, short or long, with the wash-sale window marked. | 5 (7.1) and 9 (7.5) |
+| P5 | **FX outlook.** Sensitivity, the rate slider and the Projection rate band. Now part of the Currency tab design (§5, "What if"). | 6 (7.2) |
+| P6 | **"Invest this month" flow.** One guided path: euros to invest, the conversion (real rate, spread shown), the deposit, the buys from the target allocation, then "check against the import" once the broker file is in. Reuses the calculator, the conversion form and the allocation plan. | 7 (7.3) |
+| P7 | **Ledger completeness checks.** Data Health reports a dividend or split the price provider shows that the ledger does not have, the days since the last import, and optionally a share-count check against numbers you type from a statement. | 3 |
+| P8 | **Month and year recaps.** The Brief's deterministic maths over a month or a year: contributed, market effect, currency effect, dividends, conversion cost. A card on the first visit of a new month or year, and always available on Periods. | 10 (7.6) |
+| P9 | **One channel for facts.** Email or web push, off by default, only for facts: backup failed, price feed stalled, ledger gap found, a tranche turned long-term. | 10 (7.6) |
+| P10 | **Real euro return.** Periods and the recaps show the EUR return after euro-area inflation, from the public HICP series. | 10 (7.6) |
+
+P4 (a flag on non-US funds) was dropped: the owner holds none.
+
+**Changes:**
+
+| # | Change | Decided |
+|---|---|---|
+| C1 | Currency-pair-generic naming: `domain/cash_pool.py` keyed by account currency; a conversion has `from_ccy` / `to_ccy`. | Yes |
+| C2 | News folded into the deep-dive instead of its own page. | No: news gets its own page when it ships. The model features stay limited in general. |
+| C3 | Tax pages always in USD, ignoring the EUR/USD toggle. | Middle ground (owner, 2026-11-10): always calculated in USD. USD selected shows dollars only; EUR selected shows the euro worth wherever that makes sense, with the dollar figure beside it. Details below. |
+| C4 | The assistant stays last and optional. | Yes: maybe later, not committed |
+
+**C3 as decided: dollars are calculated, euros are shown beside them.** On
+the tax pages (tranches, sell planner, tax year, 1099 check):
+
+- Every tax figure is **calculated in USD**, whatever the EUR/USD switch
+  says. The switch decides what you see:
+  - **USD selected: dollars only.** No euro figures anywhere on the page.
+  - **EUR selected: euros wherever a euro figure makes sense.** The main
+    figure is what the dollar amount is worth in euros ("≈ €460"), with
+    the dollar figure the IRS counts beside it, smaller ("taxable:
+    $500"). Lines that only mean something in dollars stay in dollars even
+    then: the 1099 check, and anything that mirrors a form line.
+  One line per page says which is which: "Calculated in USD, as the IRS
+  counts; euro figures show what those dollars are worth."
+- The euro worth is the dollar figure converted at a single instant,
+  which the currency rule allows:
+  - something that already happened (a sale's gain, a dividend, tax
+    withheld) uses **its own date's rate**; a year's total is the sum of
+    those;
+  - something that has not happened (an unrealised gain, a planned sale)
+    uses **today's rate**, and says so.
+- It is never called "your gain in euros". That is a different number: the
+  euro gain includes what the exchange rate did, and can be a loss while
+  the taxable dollar gain is positive. In the EUR view, where both matter
+  (a tranche, a planned sale) they sit side by side with plain labels:
+  **"Taxable gain"** (its euro worth, dollars beside it) and **"Your gain
+  in euros"**. Seeing the two together is the point: it shows when you
+  would owe tax on a sale that made you nothing in euros.
 
 ---
 
 ## 10. What v7 deliberately does not build
 
 - **Anything German-tax.** Out of scope, per the above.
+- **Other kinds of account, or net worth.** Investing accounts only
+  (decision 16). No bank accounts, pensions, property or liabilities.
+- **A tax app.** No FBAR or foreign-account reporting, no forms, no filing
+  figures. The app collects tax-relevant facts from the ledger and labels
+  them as information without guarantees.
 - **Price alerts and daily-move notifications.** Engagement mechanics that
   exist to make you trade. Narrow alerts that report a fact — a dividend cut, a
   failed price pull, allocation drift past a threshold — are a different thing

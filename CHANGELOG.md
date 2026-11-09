@@ -18,6 +18,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Docs
+- Pre-v7 code audit (read-only, nothing fixed): `docs/v7_audit_backend.md`
+  (22 findings) and `docs/v7_audit_frontend.md` (89 findings).
+- v7 plan reworked: fix rounds first (§7a), the Currency tab redesigned
+  around five questions with stats per sub-tab (§5), the work grouped into
+  ten pushes ending at 7.6 with the model features after a clear cut (§8),
+  accepted additions and the tax-page currency rule (§9a), scope limited to
+  investing accounts. New `docs/v7_implementation_notes.md` with build notes
+  per push.
 - v7 plan: new §5.1 "Conversions, finished" (releases 7.5a–c): clearer
   conversion↔deposit matching, conversion details on the Transactions tab,
   fees / spread / cost against the ECB reference, the conversion rate used
