@@ -141,32 +141,87 @@ def _active_instruments(session: Session) -> list[Instrument]:
     ]
 
 
-def _check_fx_live(session: Session) -> HealthItem:
-    """Whether today's EUR/USD rate is backed by the live/closing forex feed vs EOD fallback."""
-    info = fx_service.eur_quote_as_of(session)
-    if info is None or info.source == "live":
+#: Default for setting ``fx.stale_after_seconds`` (Settings > Data refresh).
+FX_STALE_AFTER_SECONDS = 900
+
+
+def _fx_stale_after_seconds() -> float:
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    try:
+        return float(settings_service.get_or("fx.stale_after_seconds", FX_STALE_AFTER_SECONDS))
+    except Exception:  # pragma: no cover - settings unreadable: keep the default
+        return float(FX_STALE_AFTER_SECONDS)
+
+
+def _hhmm(at: datetime) -> str:
+    return at.astimezone(UTC).strftime("%H:%M UTC")
+
+
+def _check_fx_live(session: Session, *, now: datetime | None = None) -> HealthItem:
+    """Whether "now" is marked with a working live EUR/USD rate.
+
+    The ECB fixing is each date's official rate, never a fault in itself: this only
+    warns when a live rate *should* exist and does not, or has stopped moving. While
+    currencies trade (Sunday 17:00 to Friday 17:00 ET) that is: no live rate at all,
+    no refresh for longer than ``fx.stale_after_seconds``, or the same rate re-served
+    for that long (a frozen feed). Over the weekend Friday's closing rate is expected;
+    only its absence (a restart the backfill could not recover from) warns.
+    """
+    now = (now or datetime.now(UTC)).astimezone(UTC)
+    title = "Live EUR/USD rate"
+    spot = fx_service.active_live_spot("USD", now=now)
+
+    def _warn(detail: str) -> HealthItem:
+        info = fx_service.eur_quote_as_of(session, now=now)
+        stand_in = (
+            f" The ECB rate of {info.as_of.isoformat()} stands in for now."
+            if info is not None and info.source == "eod"
+            else ""
+        )
         return HealthItem(
             key="fx_live",
-            title="Current & live FX rate",
+            title=title,
+            severity="warning",
+            count=1,
+            detail=detail
+            + stand_in
+            + " Run 'Refresh live FX rate now' to fetch it again; if the EUR 1D / 1W line"
+            " has holes, 'Reload 1D / 1W graphs (prices + EUR/USD)' re-downloads its"
+            " minute rates.",
+        )
+
+    if not market_hours.is_forex_market_open(now):
+        if spot is None:
+            return _warn("The currency market is closed and its last closing rate is missing.")
+        return HealthItem(
+            key="fx_live",
+            title=title,
             severity="ok",
             count=0,
-            detail=(
-                f"Current EUR/USD rate is backed by the live forex feed (as of {info.as_of.isoformat()})."
-                if info is not None
-                else "Every current FX rate is up to date."
-            ),
+            detail=f"Currency market closed: showing its last close ({spot.rate}).",
+        )
+    if spot is None or spot.observed_at is None:
+        return _warn("The currency market is open but there is no live EUR/USD rate.")
+    limit = _fx_stale_after_seconds()
+    minutes = round(limit / 60)
+    if (now - spot.observed_at).total_seconds() > limit:
+        return _warn(
+            f"The live EUR/USD rate was last refreshed at {_hhmm(spot.observed_at)}, "
+            f"more than {minutes} min ago."
+        )
+    changed = fx_service.live_spot_changed_at("USD")
+    if changed is not None and (now - changed).total_seconds() > limit:
+        return _warn(
+            f"The live EUR/USD rate has not moved since {_hhmm(changed)} (over {minutes} min) "
+            "while currencies trade: the feed may be frozen."
         )
     return HealthItem(
         key="fx_live",
-        title="Current & live FX rate",
-        severity="warning",
-        count=1,
-        detail=(
-            "Today's EUR/USD rate is currently using the settled ECB end-of-day reference "
-            f"rate ({info.as_of.isoformat()}) instead of the live/closing forex market feed. "
-            "Run 'Refresh live FX rate now' to fetch or backfill the latest EUR/USD market rate."
-        ),
-        examples=(info.as_of.isoformat(),),
+        title=title,
+        severity="ok",
+        count=0,
+        detail=f"Live EUR/USD {spot.rate}, refreshed at {_hhmm(spot.observed_at)}.",
     )
 
 

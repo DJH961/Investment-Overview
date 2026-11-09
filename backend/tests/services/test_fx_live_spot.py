@@ -54,6 +54,21 @@ def test_get_rates_overlays_live_spot_for_today_only(session: Session) -> None:
     assert rates[yesterday] == Decimal("1.10")
 
 
+def test_weekend_close_marks_now_but_keeps_fridays_ecb_rate(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Saturday: Friday's frozen forex close marks today; Friday keeps its ECB fixing."""
+    friday, saturday = date(2024, 6, 7), date(2024, 6, 8)
+    fx_repo.upsert_rates(session, {friday: Decimal("1.08")}, base="EUR", quote="USD")
+    session.flush()
+    frozen = fx_service.LiveSpot(observed_on=friday, rate=Decimal("1.0950"))
+    monkeypatch.setattr(fx_service, "active_live_spot", lambda *a, **k: frozen)
+    monkeypatch.setattr(fx_service, "exchange_today", lambda *a, **k: saturday)
+    rates = fx_service.get_rates(session, base="EUR", quote="USD")
+    assert rates[saturday] == Decimal("1.0950")
+    assert rates[friday] == Decimal("1.08")
+
+
 def test_live_spot_does_not_alter_historical_lookups(session: Session) -> None:
     past = date(2024, 1, 5)
     fx_repo.upsert_rates(
@@ -405,15 +420,19 @@ class TestEurQuoteAsOf:
         # Frozen at Friday's 17:00 EDT (21:00 UTC) forex close.
         assert info.observed_at == datetime(2024, 6, 7, 21, 0, tzinfo=UTC)
 
-    def test_weekend_backfill_falls_back_to_daily_spot_close(self, session: Session) -> None:
+    def test_weekend_backfill_falls_back_to_tiingo_bars(self, session: Session) -> None:
         friday = date(2024, 6, 7)
         rate = fx_service.backfill_live_spot(
             session,
             now=FOREX_CLOSED,
             intraday_fetcher=lambda _d: {},
-            spot_fetcher=lambda: PriceRecord(
-                symbol="EURUSD=X", date=friday, close=Decimal("1.0875")
-            ),
+            tiingo_intraday_fetcher=lambda: {
+                datetime(2024, 6, 7, 20, 30): Decimal("1.0875"),
+                # After Friday's 17:00 EDT (21:00 UTC) close: never used.
+                datetime(2024, 6, 7, 21, 30): Decimal("1.0999"),
+            },
+            tiingo_token="tok",
+            charge_budget=lambda: True,
         )
         assert rate == Decimal("1.0875")
         spot = fx_service.active_live_spot("USD", now=FOREX_CLOSED)

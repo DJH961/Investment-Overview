@@ -590,6 +590,9 @@ def build_overview(
     split = metrics_service.last_session_split(session, now=now, fx_now=ctx.fx_rate_eur_usd)
     if split is not None:
         metrics = metrics_service.with_last_session_split(metrics, split)
+    day_split = metrics_service.day_move_split(
+        session, metrics, split=split, now=now, fx_now=ctx.fx_rate_eur_usd
+    )
     usd = ccy == "USD"
     pick = holdings.pick
 
@@ -692,6 +695,22 @@ def build_overview(
             "missing_fx": ["EUR/USD"] if ctx.fx_rate_eur_usd is None else [],
         },
         "last_session": _last_session(split, ccy),
+        "day_split": _day_split(day_split, ccy),
+    }
+
+
+def _day_split(split: metrics_service.DayMoveSplit | None, ccy: str) -> dict[str, Any] | None:
+    """``day_split``: the headline day move as price + currency, in ``ccy`` and the other one."""
+    if split is None:
+        return None
+    usd = ccy == "USD"
+    return {
+        "price_move": dec(split.price_usd if usd else split.price_eur),
+        "currency_move": dec(split.currency_usd if usd else split.currency_eur),
+        "price_move_secondary": dec(split.price_eur if usd else split.price_usd),
+        "currency_move_secondary": dec(split.currency_eur if usd else split.currency_usd),
+        "overnight": split.overnight,
+        "estimated": split.estimated,
     }
 
 

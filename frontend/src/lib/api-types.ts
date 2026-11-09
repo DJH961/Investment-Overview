@@ -2404,6 +2404,34 @@ export interface components {
             /** Updated Text */
             updated_text?: string | null;
         };
+        /**
+         * DaySplit
+         * @description The headline day move (since the previous close) as price + currency.
+         *
+         *     ``price_move + currency_move`` is the headline move exactly (the estimated
+         *     book's when ``estimated``). ``overnight``: the market is shut, so ``price_move``
+         *     is the last session's move and ``currency_move`` the exchange-rate change since
+         *     its close; otherwise ``price_move`` is today's move at the previous close's rate
+         *     and ``currency_move`` the rate change since that close. ``*_secondary`` are the
+         *     same figures computed in ``secondary_ccy`` (never converted).
+         */
+        DaySplit: {
+            /** Currency Move */
+            currency_move: string;
+            /** Currency Move Secondary */
+            currency_move_secondary: string;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            /** Overnight */
+            overnight: boolean;
+            /** Price Move */
+            price_move: string;
+            /** Price Move Secondary */
+            price_move_secondary: string;
+        };
         /** DepositMatchOut */
         DepositMatchOut: {
             /** Date */
@@ -4386,6 +4414,7 @@ export interface components {
             ccy: "EUR" | "USD";
             currency: components["schemas"]["CurrencyBlock"];
             daily_caption: components["schemas"]["DailyCaption"];
+            day_split?: components["schemas"]["DaySplit"] | null;
             /**
              * Default Range
              * @enum {string}

@@ -14,7 +14,7 @@ sequence and tests don't need to loop quote-by-quote at the call site.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -94,11 +94,27 @@ def set_live_spot(
     when omitted it defaults to *now* (UTC) so a freshly-fetched spot always
     carries an honest live time.
     """
-    _LIVE_SPOT[quote.upper()] = LiveSpot(
+    key = quote.upper()
+    before = _LIVE_SPOT.get(key)
+    spot = LiveSpot(
         observed_on=observed_on,
         rate=rate,
         observed_at=observed_at or datetime.now(UTC),
     )
+    _LIVE_SPOT[key] = spot
+    if before is None or before.rate != rate or key not in _LIVE_CHANGED_AT:
+        _LIVE_CHANGED_AT[key] = spot.observed_at or datetime.now(UTC)
+
+
+#: When each live spot's *rate* last changed (a frozen feed keeps re-serving the
+#: same number with a fresh capture time). Read by the Data Health "Live EUR/USD
+#: rate" check.
+_LIVE_CHANGED_AT: dict[str, datetime] = {}
+
+
+def live_spot_changed_at(quote: str = "USD") -> datetime | None:
+    """When the live ``quote`` rate last moved (``None`` without a live spot)."""
+    return _LIVE_CHANGED_AT.get(quote.upper())
 
 
 def get_live_spot(quote: str = "USD") -> LiveSpot | None:
@@ -148,8 +164,10 @@ def clear_live_spot(quote: str | None = None) -> None:
     """Drop the live spot for ``quote`` (or all of them). Used by tests."""
     if quote is None:
         _LIVE_SPOT.clear()
+        _LIVE_CHANGED_AT.clear()
     else:
         _LIVE_SPOT.pop(quote.upper(), None)
+        _LIVE_CHANGED_AT.pop(quote.upper(), None)
 
 
 def refresh_live_spot(
@@ -386,124 +404,76 @@ def backfill_live_spot(
     *,
     quote: str = "USD",
     now: datetime | None = None,
-    intraday_fetcher: object = None,
-    spot_fetcher: object = None,
-    tiingo_intraday_fetcher: object = None,
+    intraday_fetcher: Callable[[date], Mapping[datetime, Decimal]] | None = None,
+    tiingo_intraday_fetcher: Callable[[], Mapping[datetime, Decimal]] | None = None,
     tiingo_token: str | None = None,
-    charge_budget: object = None,
+    charge_budget: Callable[[], bool] | None = None,
 ) -> Decimal | None:
-    """Warm or backfill the live/closing EUR→``quote`` spot rate.
+    """Recover the last traded EUR→``quote`` rate when no live spot is active.
 
-    While the forex market is open, delegates to :func:`refresh_live_spot` first.
-    When the forex market is closed for the weekend (Friday 17:00 → Sunday 17:00 ET)
-    — or when the live top-of-book quote is unavailable — reconstructs the most
-    recent traded rate up to the cutoff (Friday's 17:00 ET close when frozen, or
-    ``now`` when open) from:
-
-    1. yfinance 15-minute ``EURUSD=X`` intraday bars on the session date;
-    2. yfinance ``EURUSD=X`` daily/spot close if dated on or after the session date;
-    3. Tiingo settled 15-minute FX bars (budget- and token-gated);
-    4. the latest cached ``intraday_value`` sample in SQLite (:func:`seed_live_spot_from_cache`).
-
-    This prevents a weekend deploy or server restart from falling back to Friday's
-    16:00 CET ECB reference rate (``EOD FX``) when Friday's 17:00 ET (23:00 CET)
-    forex close has already settled.
+    For a restart or a missed quote, never as a routine: callers only reach for
+    it when :func:`active_live_spot` is empty. While the forex market is open the
+    cutoff is ``now``; over the weekend (Friday 17:00 → Sunday 17:00 ET) it is
+    Friday's 17:00 ET close. The rate is the last 15-minute bar up to the cutoff
+    from Yahoo (``EURUSD=X``), else from Tiingo (token- and budget-gated), else
+    the newest rate stored beside the intraday samples
+    (:func:`seed_live_spot_from_cache`). The ECB fixing is never used here: it is
+    each date's official rate, not "now".
     """
     if quote.upper() != "USD":
         return None
     now_utc = (now or datetime.now(UTC)).astimezone(UTC)
-    forex_open = market_hours.is_forex_market_open(now_utc)
-    if forex_open:
-        live_rate = refresh_live_spot(
-            quote=quote,
-            today=exchange_today(now_utc),
-            now=now_utc,
-            fetcher=spot_fetcher,
-            tiingo_token=tiingo_token,
-            charge_budget=charge_budget,
-        )
-        if live_rate is not None:
-            return live_rate
+    if market_hours.is_forex_market_open(now_utc):
         cutoff_utc = now_utc
         session_day = exchange_today(now_utc)
+        frozen = False
     else:
         cutoff_utc = market_hours.last_forex_close(now_utc).astimezone(UTC)
         session_day = cutoff_utc.date()
-
+        frozen = True
     cutoff_naive = cutoff_utc.replace(tzinfo=None)
 
-    # 1. Primary: yfinance 15m intraday EURUSD=X bars on session_day.
+    def _latest(bars: Mapping[datetime, Decimal]) -> tuple[datetime, Decimal] | None:
+        valid = {t: r for t, r in bars.items() if r is not None and r > 0 and t <= cutoff_naive}
+        if not valid:
+            return None
+        at = max(valid)
+        return at, valid[at]
+
     if intraday_fetcher is None:
         from investment_dashboard.adapters.yfinance_client import (  # noqa: PLC0415
             fetch_eur_usd_intraday,
         )
 
-        def _yf_intraday(day: date) -> dict[datetime, Decimal]:
+        def intraday_fetcher(day: date) -> Mapping[datetime, Decimal]:
             return fetch_eur_usd_intraday(day, interval="15m")
 
-        intraday_fetcher = _yf_intraday
     try:
-        bars: dict[datetime, Decimal] = intraday_fetcher(session_day)  # type: ignore[operator]
+        found = _latest(intraday_fetcher(session_day) or {})
     except Exception as exc:  # pragma: no cover - network churn
-        log.warning("intraday EUR/USD backfill fetch failed (%s)", exc)
-        bars = {}
-    valid = {t: r for t, r in (bars or {}).items() if r is not None and r > 0 and t <= cutoff_naive}
-    if valid:
-        latest_t = max(valid)
-        rate = valid[latest_t]
-        obs_at = cutoff_utc if not forex_open else latest_t.replace(tzinfo=UTC)
-        set_live_spot(quote, rate, observed_on=session_day, observed_at=obs_at)
-        log.info("Live EUR/USD spot backfilled from intraday bars (%s on %s)", rate, session_day)
-        return rate
-
-    # 2. Secondary keyless: yfinance daily/spot close dated on or after session_day.
-    if spot_fetcher is None:
-        from investment_dashboard.adapters.yfinance_client import (  # noqa: PLC0415
-            fetch_eur_usd_spot,
+        log.warning("EUR/USD backfill: Yahoo bars failed (%s)", exc)
+        found = None
+    source = "Yahoo bars"
+    if found is None:
+        found = _latest(
+            intraday_fx_bars_via_tiingo(
+                session_day,
+                session_day,
+                interval="15m",
+                quote=quote,
+                fetcher=tiingo_intraday_fetcher,
+                token=tiingo_token,
+                charge_budget=charge_budget,
+            )
         )
-
-        spot_fetcher = fetch_eur_usd_spot
-    try:
-        record = spot_fetcher()  # type: ignore[operator]
-    except Exception:  # pragma: no cover - network churn
-        record = None
-    if (
-        record is not None
-        and record.close is not None
-        and record.close > 0
-        and record.date >= session_day
-    ):
-        set_live_spot(quote, record.close, observed_on=session_day, observed_at=cutoff_utc)
-        log.info(
-            "Live EUR/USD spot backfilled from session close (%s on %s)",
-            record.close,
-            session_day,
-        )
-        return record.close
-
-    # 3. Backup: Tiingo settled 15m FX bars for session_day (budget-gated).
-    tiingo_bars = intraday_fx_bars_via_tiingo(
-        session_day,
-        session_day,
-        interval="15m",
-        quote=quote,
-        fetcher=tiingo_intraday_fetcher,
-        token=tiingo_token,
-        charge_budget=charge_budget,
-    )
-    valid_tiingo = {
-        t: r for t, r in tiingo_bars.items() if r is not None and r > 0 and t <= cutoff_naive
-    }
-    if valid_tiingo:
-        latest_t = max(valid_tiingo)
-        rate = valid_tiingo[latest_t]
-        obs_at = cutoff_utc if not forex_open else latest_t.replace(tzinfo=UTC)
-        set_live_spot(quote, rate, observed_on=session_day, observed_at=obs_at)
-        log.info("Live EUR/USD spot backfilled from Tiingo bars (%s on %s)", rate, session_day)
-        return rate
-
-    # 4. Offline cache fallback: latest captured intraday sample in SQLite.
-    return seed_live_spot_from_cache(session, quote=quote, now=now_utc)
+        source = "Tiingo bars"
+    if found is None:
+        return seed_live_spot_from_cache(session, quote=quote, now=now_utc)
+    at, rate = found
+    observed_at = cutoff_utc if frozen else at.replace(tzinfo=UTC)
+    set_live_spot(quote, rate, observed_on=session_day, observed_at=observed_at)
+    log.info("Live EUR/USD spot backfilled from %s (%s on %s)", source, rate, session_day)
+    return rate
 
 
 def intraday_fx_bars_via_tiingo(
@@ -894,11 +864,15 @@ def get_rates(
     # is refreshed each price tick. Past-date lookups forward-fill from the
     # stored history exactly as before — adding a key dated today cannot change
     # any value forward-filled to an earlier date.
+    #
+    # Only *today's* key is overlaid. Over the weekend the active spot is Friday's
+    # frozen forex close, and it marks "now" (Saturday / Sunday) — it never replaces
+    # Friday's own ECB fixing, which stays that date's official rate for cashflows,
+    # backdating and the daily history.
     if base == "EUR":
-        today_et = exchange_today()
         live = active_live_spot(quote.upper())
         if live is not None:
-            rates = {**rates, live.observed_on: live.rate, today_et: live.rate}
+            rates = {**rates, exchange_today(): live.rate}
     return rates
 
 

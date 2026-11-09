@@ -49,6 +49,29 @@ describe("KpiGrid", () => {
     expect(screen.getByRole("button", { name: "About XIRR" })).toBeInTheDocument();
   });
 
+  it("Price move shows the server's price part, with the FX part under it", () => {
+    const split = (overnight: boolean) =>
+      ({
+        ...data({ beating: true }),
+        kpis: { ...kpis, daily_move: "300" },
+        day_split: {
+          price_move: "420",
+          currency_move: "-120",
+          price_move_secondary: "500",
+          currency_move_secondary: "0",
+          overnight,
+          estimated: false,
+        },
+      }) as unknown as OverviewDto;
+    const { rerender } = render(<KpiGrid data={split(true)} currency="EUR" loading={false} />);
+    expect(screen.getByText("+€420.00")).toBeInTheDocument();
+    expect(screen.getByText("+US$500.00")).toBeInTheDocument();
+    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("Overnight FX");
+    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("-€120.00");
+    rerender(<KpiGrid data={split(false)} currency="EUR" loading={false} />);
+    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("FX since close");
+  });
+
   it("Vs market: trailing and missing benchmark history", () => {
     const { rerender } = render(<KpiGrid data={data({ beating: false })} currency="EUR" loading={false} />);
     expect(screen.getByText("Trailing")).toBeInTheDocument();

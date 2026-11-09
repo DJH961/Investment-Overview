@@ -939,15 +939,120 @@ def last_session_split(
 
 
 def with_last_session_split(metrics: PortfolioMetrics, split: LastSessionSplit) -> PortfolioMetrics:
-    """``metrics`` with the hero day move set to the split's last-session move."""
+    """``metrics`` with the hero day move set to the change since the previous close.
+
+    Market shut: the headline is the WHOLE change in value since the previous
+    session's close (the last session's move plus the overnight currency move), so
+    the value and its day move agree at every instant: the value keeps re-marking at
+    the live rate overnight and the move now moves with it. The two causes stay
+    separate in :func:`day_move_split`. Per currency, never converted.
+    """
+    move_eur = split.move_eur + split.overnight_eur
+    move_usd = split.move_usd + split.overnight_usd
+    prev_eur = split.value_now_eur - move_eur
+    prev_usd = split.value_now_usd - move_usd
     return replace(
         metrics,
-        daily_growth_pct=split.pct_eur,
-        daily_growth_pct_usd=split.pct_usd,
-        daily_growth_money_eur=split.move_eur,
-        daily_growth_money_usd=split.move_usd,
+        daily_growth_pct=move_eur / prev_eur if prev_eur > ZERO else None,
+        daily_growth_pct_usd=move_usd / prev_usd if prev_usd > ZERO else None,
+        daily_growth_money_eur=move_eur,
+        daily_growth_money_usd=move_usd,
         daily_growth_as_of=split.session_date,
         daily_growth_prev_as_of=split.prev_date,
+    )
+
+
+@dataclass(frozen=True)
+class DayMoveSplit:
+    """The day move (since the previous close) split into its two causes, per currency.
+
+    ``price_* + currency_* ==`` the headline day move exactly (the estimated book's
+    when ``estimated``, else the official one). ``overnight`` says which split it is:
+
+    * market shut (``True``): ``price`` is the last session's move (each close at its
+      own 16:00 rate) and ``currency`` the same book revalued from that close rate
+      to the rate now;
+    * market open (``False``): ``price`` is the move with today's book held at the
+      previous close's rate, and ``currency`` the current book revalued from that
+      rate to the rate now.
+    """
+
+    price_eur: Decimal
+    price_usd: Decimal
+    currency_eur: Decimal
+    currency_usd: Decimal
+    overnight: bool
+    estimated: bool = False
+
+
+def day_move_split(
+    session: Session,
+    metrics: PortfolioMetrics,
+    *,
+    split: LastSessionSplit | None,
+    now: datetime,
+    fx_now: Decimal | None,
+) -> DayMoveSplit | None:
+    """Split the headline day move into price and currency (``None`` when not computable).
+
+    FX-aware: every figure is a book valued at one rate, per currency, and the price
+    part is the remainder of the move, so the two always add up to the headline.
+    """
+    from investment_dashboard.domain.late_data import value_at_rate  # noqa: PLC0415
+
+    if split is not None:
+        if split.move_est_eur is not None and split.move_est_usd is not None:
+            return DayMoveSplit(
+                price_eur=split.move_est_eur,
+                price_usd=split.move_est_usd,
+                currency_eur=split.overnight_est_eur or ZERO,
+                currency_usd=split.overnight_est_usd or ZERO,
+                overnight=True,
+                estimated=True,
+            )
+        return DayMoveSplit(
+            price_eur=split.move_eur,
+            price_usd=split.move_usd,
+            currency_eur=split.overnight_eur,
+            currency_usd=split.overnight_usd,
+            overnight=True,
+        )
+    fx_prev = metrics.daily_growth_fx_eur_usd_prev
+    move_eur, move_usd = metrics.daily_growth_money_eur, metrics.daily_growth_money_usd
+    on = metrics.daily_growth_as_of
+    if (
+        fx_now is None
+        or fx_prev is None
+        or fx_now <= ZERO
+        or fx_prev <= ZERO
+        or move_eur is None
+        or move_usd is None
+        or on is None
+    ):
+        return None
+    book = _book_holdings(session, on)
+    now_eur, now_usd = value_at_rate(book, fx_now)
+    then_eur, then_usd = value_at_rate(book, fx_prev)
+    cur_eur, cur_usd = now_eur - then_eur, now_usd - then_usd
+    estimated = False
+    estimates = intraday_snapshots_service.twin_estimates(session, now)
+    if estimates:
+        a_eur, a_usd = intraday_snapshots_service.estimate_adjustment(estimates.values(), fx_now)
+        b_eur, b_usd = intraday_snapshots_service.estimate_adjustment(estimates.values(), fx_prev)
+        if a_eur is not None and a_usd is not None and b_eur is not None and b_usd is not None:
+            # Same total as ``kpis.estimate.daily_move`` (official move + adjustment now).
+            move_eur += a_eur
+            move_usd += a_usd
+            cur_eur += a_eur - b_eur
+            cur_usd += a_usd - b_usd
+            estimated = True
+    return DayMoveSplit(
+        price_eur=move_eur - cur_eur,
+        price_usd=move_usd - cur_usd,
+        currency_eur=cur_eur,
+        currency_usd=cur_usd,
+        overnight=False,
+        estimated=estimated,
     )
 
 

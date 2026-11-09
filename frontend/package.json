@@ -1,6 +1,6 @@
 {
   "name": "investment-overview-frontend",
-  "version": "6.12.8",
+  "version": "6.13.0",
   "private": true,
   "type": "module",
   "scripts": {

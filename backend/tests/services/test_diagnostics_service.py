@@ -35,6 +35,20 @@ def _reset_provider_status() -> None:
     provider_status.reset()
 
 
+@pytest.fixture(autouse=True)
+def _live_fx_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The live EUR/USD check depends on the wall clock (currencies trading or not)
+    and on process-wide live state; it has its own tests (``test_fx_live_health``),
+    so the all-green aggregation cases here see it as ok."""
+    monkeypatch.setattr(
+        diagnostics_service,
+        "_check_fx_live",
+        lambda _session, **_kw: diagnostics_service.HealthItem(
+            key="fx_live", title="Live EUR/USD rate", severity="ok", count=0, detail="ok"
+        ),
+    )
+
+
 def _account(session: Session, native: str = "USD") -> int:
     return accounts_repo.create_account(
         session,
