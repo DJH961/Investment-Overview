@@ -39,12 +39,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   would fit; short toggles (Category/Fund, EUR/USD and the like) were squeezed
   too. Now only a crowded picker (five or more buttons) splits a full row evenly,
   and on the Risk page it gets its own row instead of squeezing beside the dates.
-- **Fixture CI checked only the login page.** `frontend/.env.fixtures` (the
-  `VITE_FIXTURES=1` switch) was caught by the `.env.*` ignore rule, so CI built the
-  real app without a backend: every route showed the login screen and the log
-  filled with ~1000 proxy errors from the live stream retrying. The file is now
-  committed, the overflow test fails if a page is not on fixtures, its cases run in
-  parallel and the Chromium download is cached.
+- **Fixture CI checked only the login page.** Fixture mode was switched on by a
+  local `frontend/.env.fixtures`, which is never committed (`.env.*`), so CI built
+  the real app without a backend: every route showed the login screen and the log
+  filled with ~1000 proxy errors from the live stream retrying. `--mode fixtures`
+  now switches it on in `vite.config.ts`, the overflow test fails if a page is not
+  on fixtures, its cases run in parallel and the Chromium download is cached.
+- **Overview Today box at 1024 px:** a seven-figure "Prev close" no longer spills
+  out of its cell (the figure may shrink one step further).
 - **Settings → Accounts on phones:** the account name and its details no longer
   overlap; the name sits over the details and both wrap.
 - **Risk attribution shows tickers**, not long fund names.

@@ -99,7 +99,7 @@
   &__facts {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-3);
+    gap: var(--space-2);
     margin: 0;
   }
 
@@ -122,7 +122,8 @@
   &__fact-value {
     // A money figure is never cut: it scales down with its cell instead.
     margin: 0;
-    font-size: clamp(var(--font-size-xs), 11cqi, var(--font-size-sm));
+    // Floor 2xs: a 7-figure euro amount needs ~89 px at xs, and the cells are 87 px at 1024.
+    font-size: clamp(var(--font-size-2xs), 11cqi, var(--font-size-sm));
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }

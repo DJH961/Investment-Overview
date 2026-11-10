@@ -11,9 +11,15 @@ const APP_VERSION = (JSON.parse(readFileSync(new URL("./package.json", import.me
 // Dev proxy: the FastAPI backend serves /api (including the /api/stream SSE
 // endpoint). SSE needs an unbuffered, long-lived connection, so no timeouts.
 // VITE_API_PROXY points it at another backend (e.g. a second checkout's).
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    // Fixture mode (fake data, no backend) is switched on by `--mode fixtures`
+    // itself, not by an env file: `.env.*` files are never committed (public repo),
+    // so CI would build the real app without it.
+    ...(mode === "fixtures" ? { "import.meta.env.VITE_FIXTURES": JSON.stringify("1") } : {}),
+  },
   server: {
     port: 5173,
     proxy: {
@@ -32,4 +38,4 @@ export default defineConfig({
     css: false,
     include: ["src/**/*.test.{ts,tsx}"],
   },
-});
+}));
