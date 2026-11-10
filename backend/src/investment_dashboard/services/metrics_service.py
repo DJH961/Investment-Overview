@@ -23,10 +23,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends, periods
-from investment_dashboard.domain.currency import (
-    dual_currency_amounts,
-    lookup_rate_with_forward_fill,
-)
+from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.market_hours import exchange_today
@@ -189,7 +186,6 @@ def build_instrument_cashflows(
     as_of = as_of or exchange_today()
     txns = list(transactions_repo.list_transactions(session, end=as_of))
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-    today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
     eur_flows: dict[int, list[Cashflow]] = {}
     usd_flows: dict[int, list[Cashflow]] = {}
     for t in txns:
@@ -203,16 +199,10 @@ def build_instrument_cashflows(
             TransactionKind.DIVIDEND_CASH.value,
         }:
             continue
-        native = t.account.native_currency if t.account else "EUR"
-        eur, usd = dual_currency_amounts(
-            native_currency=native,
-            net_native=t.net_native,
-            net_eur=t.net_eur,
-            net_usd=t.net_usd,
-            on=t.date,
-            eur_to_usd=eur_to_usd,
-            fallback_rate=today_rate,
-        )
+        # Derived from net_native + the row's own-date rate (B-008); no frozen
+        # legs, no spot fallback.
+        eur = cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd)
+        usd = cashflows.txn_usd_amount(t, eur_to_usd=eur_to_usd)
         # A leg that cannot be derived is omitted, never faked as 0.
         if eur is not None:
             eur_flows.setdefault(iid, []).append(Cashflow(date=t.date, amount=eur))

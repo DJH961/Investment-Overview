@@ -853,8 +853,15 @@ def build_graph(
     ccy: str,
     compare: bool = True,
     now: datetime | None = None,
+    memo: dict[Any, Any] | None = None,
 ) -> dict[str, Any]:
     """The ``GET /api/graphs/{range}`` payload.
+
+    ``memo`` (B-013): pass the same dict, and the same ``now``, to the EUR and the
+    USD build of ``/graphs/{range}/both`` and each currency's series (and the
+    portfolio metrics behind the growth figures) are computed once instead of
+    once as the primary line and once more as the other line's secondary.
+
 
     Each currency line is built independently (USD intraday is FX-free; EUR uses
     the per-instant stored rate) - one is never rescaled from the other. With
@@ -865,22 +872,27 @@ def build_graph(
     """
     now = now or datetime.now(UTC)
     today = market_hours.exchange_today(now)
-    points, reference, intraday = _graph_points(session, range_key=range_key, ccy=ccy, now=now)
+    memo = memo if memo is not None else {}
+
+    def series(c: str) -> tuple[list[ValueSeriesPoint], Decimal | None, bool]:
+        key = ("points", range_key, c)
+        if key not in memo:
+            memo[key] = _graph_points(session, range_key=range_key, ccy=c, now=now)
+        return memo[key]  # type: ignore[no-any-return]
+
+    points, reference, intraday = series(ccy)
     flows = _FlowSource(session, today)
-    metrics_cache: dict[str, metrics_service.PortfolioMetrics] = {}
 
     def total(c: str) -> Decimal | None:
-        if "m" not in metrics_cache:
-            metrics_cache["m"] = metrics_service.compute_portfolio_metrics(session, as_of=today)
-        m = metrics_cache["m"]
+        if "metrics" not in memo:
+            memo["metrics"] = metrics_service.compute_portfolio_metrics(session, as_of=today)
+        m = memo["metrics"]
         return m.total_growth_compounded_usd if c == "USD" else m.total_growth_compounded_eur
 
     secondary: dict[str, Any] | None = None
     if compare:
         other = _other_ccy(ccy)
-        other_points, other_ref, _intra = _graph_points(
-            session, range_key=range_key, ccy=other, now=now
-        )
+        other_points, other_ref, _intra = series(other)
         aligned, scale, anchor = _align_secondary(points, other_points)
         if aligned:
             secondary = {

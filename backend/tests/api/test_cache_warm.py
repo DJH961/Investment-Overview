@@ -89,21 +89,21 @@ def test_tick_then_warm_makes_overview_both_a_cache_hit(
     api_client: TestClient, seeded: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = {"n": 0}
-    real = overview_rm.build_overview
+    real = overview_rm.build_overview_both
 
     def counting(*args: object, **kwargs: object) -> object:
         calls["n"] += 1
         return real(*args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(overview_rm, "build_overview", counting)
+    monkeypatch.setattr(overview_rm, "build_overview_both", counting)
     assert api_client.get("/api/overview/both").status_code == 200
     first = calls["n"]
-    assert first == 2  # EUR + USD
+    assert first == 1  # one pass for EUR + USD (B-013)
 
     LiveBus().publish({"type": "tick"})  # drops prices + fx dependent entries
     read_cache.warm()
     after_warm = calls["n"]
-    assert after_warm == first + 2
+    assert after_warm == first + 1
 
     assert api_client.get("/api/overview/both").status_code == 200
     assert calls["n"] == after_warm  # served from the warmed cache

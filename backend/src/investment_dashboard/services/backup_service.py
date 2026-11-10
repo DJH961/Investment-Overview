@@ -387,6 +387,7 @@ def is_due(now: datetime) -> bool:
     """True when a dirty database has waited out the debounce, or nightly."""
     if not is_configured():
         return False
+    db_module.restore_dirty()  # a restart inside the debounce window keeps the marker
     since = db_module.dirty_since()
     if since is not None and now.timestamp() - since >= debounce_seconds():
         return True

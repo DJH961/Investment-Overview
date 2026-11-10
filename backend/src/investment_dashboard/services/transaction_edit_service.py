@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.activity_log import activity
 from investment_dashboard.domain.kinds import TransactionKind, TransactionSource
 from investment_dashboard.domain.money_market import (
     MANUAL_SETTLEMENT_DESCRIPTION_PREFIX,
@@ -144,6 +145,18 @@ def _prepare(session: Session, data: TransactionInput) -> _Prepared:
     return _Prepared(fields, net_native, native_ccy, warnings)
 
 
+def _note_change(action: str, txn_id: int, on: date, kind: str, account_id: int) -> None:
+    """One ``changes.log`` line per ledger edit (B-021): ids and kind, never amounts."""
+    activity("changes").info(
+        "transaction %s: id=%s date=%s kind=%s account_id=%s",
+        action,
+        txn_id,
+        on.isoformat(),
+        kind,
+        account_id,
+    )
+
+
 def _after_write(session: Session, affected: set[date]) -> None:
     snapshots_service.invalidate_for_trade_dates(session, affected)
     intraday_snapshots_service.clear_week_samples(session)
@@ -169,6 +182,7 @@ def create(session: Session, data: TransactionInput) -> TransactionEditResult:
         if not wrote:
             warnings.append(NO_MONEY_MARKET_WARNING)
     _after_write(session, {data.date})
+    _note_change("created", inserted.id, data.date, data.kind, data.account_id)
     return TransactionEditResult(inserted, warnings)
 
 
@@ -199,6 +213,7 @@ def update(session: Session, txn_id: int, data: TransactionInput) -> Transaction
         native_ccy=prep.native_ccy,
     )
     _after_write(session, {data.date, old_date})
+    _note_change("updated", txn_id, data.date, data.kind, data.account_id)
     return TransactionEditResult(updated, list(prep.warnings))
 
 
@@ -208,6 +223,8 @@ def delete(session: Session, txn_id: int) -> bool:
     if parent is None:
         return False
     parent_date = parent.date
+    parent_kind = parent.kind
+    parent_account_id = parent.account_id
     leg = find_existing_settlement_leg(
         session,
         account_id=parent.account_id,
@@ -220,6 +237,7 @@ def delete(session: Session, txn_id: int) -> bool:
         session.flush()
     transactions_repo.delete_transaction(session, txn_id)
     _after_write(session, {parent_date})
+    _note_change("deleted", txn_id, parent_date, parent_kind, parent_account_id)
     return True
 
 

@@ -32,6 +32,7 @@ from investment_dashboard.domain.session_fx import graph_anchor_fx
 from investment_dashboard.readmodels.money_format import currency_symbol, fmt_shares
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
+    cashflows,
     chart_prefs_service,
     fx_service,
     intraday_snapshots_service,
@@ -810,15 +811,11 @@ def compute_instrument_metrics(  # noqa: PLR0915
     }
 
     def _legs(t: Transaction) -> tuple[Decimal, Decimal]:
-        eur, usd = dual_currency_amounts(
-            native_currency=t.account.native_currency if t.account else "EUR",
-            net_native=t.net_native,
-            net_eur=t.net_eur,
-            net_usd=t.net_usd,
-            on=t.date,
-            eur_to_usd=eur_to_usd,
-            fallback_rate=today_rate,
-        )
+        # B-008: derived from net_native + the row's own-date rate; no frozen
+        # legs, no spot fallback. A leg that cannot be derived is 0 for the
+        # walk (the boot refresh backfills FX to the earliest trade date).
+        eur = cashflows.txn_eur_amount(t, eur_to_usd=eur_to_usd)
+        usd = cashflows.txn_usd_amount(t, eur_to_usd=eur_to_usd)
         return (eur or ZERO), (usd or ZERO)
 
     # The single ledger walk: one lot per (account, instrument), average cost
@@ -829,9 +826,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
         money_market_ids=mm_iids,
         resolver=ledger_walk.LegResolver(
             legs=_legs,
-            convert_native=lambda v, native, on: _convert_native(
-                v, native, on, eur_to_usd, today_rate
-            ),
+            convert_native=lambda v, native, on: _convert_native(v, native, on, eur_to_usd, None),
             year_start=year_start,
             month_start=month_start,
         ),

@@ -8,6 +8,7 @@ are identical to what the NiceGUI overview page renders.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, tzinfo
 from decimal import Decimal
 from typing import Any
@@ -569,6 +570,24 @@ def _total_value_complete(cards: list[HoldingCard], *, fx_rate: Decimal | None) 
     return True
 
 
+@dataclass(frozen=True)
+class _Shared:
+    """Everything in the overview that does not depend on the reporting currency.
+
+    Built once by :func:`_prepare`; :func:`_project` turns it into the payload for
+    one currency, so ``/overview/both`` pays the metric stack once (B-013).
+    """
+
+    now: datetime
+    ctx: ReadModelContext
+    metrics: PortfolioMetrics
+    split: Any
+    day_split: Any
+    cards: list[HoldingCard]
+    freshness: dict[int, HoldingFreshness]
+    estimates: Any
+
+
 def build_overview(
     session: Session,
     *,
@@ -577,6 +596,27 @@ def build_overview(
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """The ``GET /api/overview`` payload for reporting currency ``ccy``."""
+    return _project(session, _prepare(session, as_of=as_of, now=now), ccy)
+
+
+def build_overview_both(
+    session: Session,
+    *,
+    as_of: date | None = None,
+    now: datetime | None = None,
+) -> dict[str, dict[str, Any]]:
+    """EUR and USD overview payloads from one currency-independent pass (B-013)."""
+    shared = _prepare(session, as_of=as_of, now=now)
+    return {c: _project(session, shared, c) for c in ("EUR", "USD")}
+
+
+def _prepare(
+    session: Session,
+    *,
+    as_of: date | None = None,
+    now: datetime | None = None,
+) -> _Shared:
+    """The currency-independent half of the overview (metrics, positions, cards)."""
     now = now or datetime.now(UTC)
     ctx = build_context(session, as_of=as_of)
     metrics = compute_portfolio_metrics(session, as_of=ctx.as_of, now=now)
@@ -593,8 +633,6 @@ def build_overview(
     day_split = metrics_service.day_move_split(
         session, metrics, split=split, now=now, fx_now=ctx.fx_rate_eur_usd
     )
-    usd = ccy == "USD"
-    pick = holdings.pick
 
     positions = holdings.merge_positions_by_instrument(compute_positions(session, as_of=ctx.as_of))
     instrument_metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of)
@@ -612,6 +650,29 @@ def build_overview(
     # holdings, the tick and the 1D line): the hero's estimated total, and the
     # estimated day move that lets a late fund compete on the movers board.
     estimates = intraday_snapshots_service.twin_estimates(session, now)
+    return _Shared(
+        now=now,
+        ctx=ctx,
+        metrics=metrics,
+        split=split,
+        day_split=day_split,
+        cards=cards,
+        freshness=freshness,
+        estimates=estimates,
+    )
+
+
+def _project(session: Session, shared: _Shared, ccy: str) -> dict[str, Any]:
+    """The payload for reporting currency ``ccy`` from the shared half."""
+    now, ctx, metrics, split = shared.now, shared.ctx, shared.metrics, shared.split
+    day_split, cards, freshness, estimates = (
+        shared.day_split,
+        shared.cards,
+        shared.freshness,
+        shared.estimates,
+    )
+    usd = ccy == "USD"
+    pick = holdings.pick
     movers = build_movers(
         cards, ccy, _mover_estimates(session, estimates, now=now, fx_now=ctx.fx_rate_eur_usd)
     )

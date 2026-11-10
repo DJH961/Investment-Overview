@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy.orm import Session
 
 from investment_dashboard.models import Transaction
@@ -172,6 +173,22 @@ def test_late_nav_rebuilds_the_stored_daily_point_while_the_market_is_shut(
     assert prices_service.rebuild_settled_snapshots(session, MON, today=MON, now=AFTER) == 1
     session.flush()
     assert _stored(session) == D("2050")
+
+
+def test_rebuild_publishes_its_refresh_only_after_the_commit(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from investment_dashboard.services import refresh_status
+
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(refresh_status, "_publish", events.append)
+    _seed(session, twin="TWN", official_nav=None)
+    snapshots_service.warm_range(session, MON, MON, force=True)
+    session.flush()
+    assert prices_service.rebuild_settled_snapshots(session, MON, today=MON, now=AFTER) == 1
+    assert events == []  # not before the commit: a client would read the old points
+    session.commit()
+    assert events == [{"type": "refresh", "reason": "late close"}]
 
 
 def test_no_rebuild_while_the_session_runs(session: Session) -> None:

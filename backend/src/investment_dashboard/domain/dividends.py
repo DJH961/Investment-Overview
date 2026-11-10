@@ -102,10 +102,13 @@ def income_dual(
 ) -> tuple[Decimal | None, Decimal | None]:
     """``(eur, usd)`` dividend income recognised for one row.
 
-    Returns ``(None, None)`` when the row carries no recognised income. The
-    cash path trusts the frozen ``net_eur`` / ``net_usd`` legs persisted at
-    write time; the reinvest path derives both legs from the trade-date FX rate
-    because the reinvest row's cash legs are unreliable.
+    Returns ``(None, None)`` when the row carries no recognised income. Both
+    paths derive the legs from the native amount and the row's own trade-date
+    FX rate (forward-filled), exactly like ``cashflows.derived_eur`` /
+    ``derived_usd``; the frozen ``net_eur`` / ``net_usd`` legs and today's spot
+    are never read (B-008). This lives in ``domain`` so it cannot import the
+    ``services.cashflows`` helpers; it mirrors their derivation. A leg that
+    cannot be derived (no native amount or no rate) is ``None``.
     """
     if t.kind == _DIVIDEND_CASH:
         if (t.account_id, t.instrument_id, t.date) in keys:
@@ -113,10 +116,10 @@ def income_dual(
         return dual_currency_amounts(
             native_currency=_native_currency(t),
             net_native=t.net_native,
-            net_eur=t.net_eur,
+            net_eur=None,
             on=t.date,
             eur_to_usd=eur_to_usd,
-            net_usd=t.net_usd,
+            net_usd=None,
         )
     if t.kind == _DIVIDEND_REINVEST:
         if not include_reinvested:

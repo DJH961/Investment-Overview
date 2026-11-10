@@ -98,6 +98,18 @@ def _fresh_read_cache() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_scheduler_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The scheduler's persisted ``last_eod_session`` must not leak between tests.
+
+    Tests that exercise the persistence override this fixture by name.
+    """
+    from investment_dashboard.services.scheduler import Scheduler
+
+    monkeypatch.setattr(Scheduler, "_load_eod_session", lambda self: None)
+    monkeypatch.setattr(Scheduler, "_save_eod_session", lambda self, session_date: None)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_feed_stall() -> Iterator[None]:
     """The frozen-feed detector is process-wide: start every test with a clean one."""
     from investment_dashboard.services import feed_stall_service
