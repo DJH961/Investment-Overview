@@ -17,6 +17,66 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.14.0] — 2026-11-10
+
+> "Fit": the frontend fixes from the pre-v7 audit (push 2 of `docs/v7_plan.md`),
+> plus the fixture mode and overflow test that prove them.
+
+### Fixed
+- **Text no longer gets cut off or leaves its box** at 360, 390, 768, 1024,
+  1280 and 1440 px in both themes: the top bar (title, freshness chip, phone
+  value and day %), the "Transactions" tab label, the Overview hero value,
+  holdings pills, KPI labels, the graph range picker, the Holdings summary
+  (now wrapping tiles, not a sideways scroller), the allocation drift table
+  and switches, the Periods summary, Risk labels. Fixed wording wraps or
+  scales; only long instrument names end in an ellipsis.
+- **Day % and day move on live ticks come from the server**, FX-aware per
+  currency; the browser no longer computes them (F-081). The Overview
+  category tiles use the server's day % too (F-029).
+- **A returning tab catches up** after a server restart or a change made on
+  another device (B-012), and automatic background refetches no longer keep
+  an idle session alive (B-015).
+- **Decimal commas work** in the transaction form, allocation targets,
+  conversion amounts, the manual price, instrument expense ratio, Projection
+  inputs and decimal settings. Unreadable input shows an error and is never
+  treated as 0 (F-043, F-053).
+- **No more lost work:** the hide-numbers toggle no longer resets the page;
+  unsaved Settings and a pending import preview ask before you leave, and
+  leaving a pending import cancels it on the server (F-003, F-071, F-063).
+- Account renames and account-creating imports refresh Holdings, Transactions
+  and Activity (F-082); live ticks start right after sign-in (F-004).
+- The app no longer rewrites its whole saved cache on every tick (F-083).
+- Grey small text is easier to read in both themes (F-087); a value that
+  rounds to zero is no longer coloured as a gain or loss; the freshness chip
+  does not flash "Reconnecting…" on a one-second blip; the ECB fixing time is
+  right in summer; the twin accuracy note only shows if you saw the estimate.
+- The open holding sheet follows live data; its price chart is not masked by
+  Hide numbers; the plan error's Retry recomputes; a failed refresh or graph
+  reload shows a toast; the new-transaction date uses your time zone;
+  "30d / 12m / This year" filters no longer go stale.
+- Help matches the real settings precedence and the real tour; statuses read
+  OK / Warning / Problem; the phone tour points at the More tab.
+
+### Changed
+- All settings are visible, advanced ones carry a badge (F-070).
+- Toasts have an icon and a close button, errors stay 15 s; sheets have a
+  Close button; phone touch targets are 44 px; the allocation bar has labels
+  and hatching; Health & Repair uses the shared section selector; the
+  ECB-fallback badge opens the add-conversion dialog pre-filled.
+- Holdings column "Fee" is now "Expense"; nav label "Projection"; the 404
+  page says "Nothing here" with a button to the Overview.
+
+### Added
+- A dismissible setup-guide card on the Overview ("Restart setup guide" in
+  Settings and the account menu); empty Overview, Holdings, Allocations and
+  Activity offer an Import button; data warnings link to Health & Repair.
+- **Fixture mode** (`npm run dev:fixtures`): the real frontend on a synthetic
+  ledger, no backend and no login, generated from the real read models
+  (`tools/make_fixtures.py`).
+- **Overflow test** (`npm run test:overflow`): Playwright walks every route at
+  six widths in both themes and fails on clipped or overflowing text. Runs in
+  CI with screenshots as artifacts.
+
 ## [6.13.1] — 2026-11-10
 
 > "Trust": the backend fixes from the pre-v7 audit (push 1 of `docs/v7_plan.md`).
