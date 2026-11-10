@@ -115,7 +115,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
-    border: 1px solid var(--color-border-strong);
+    border: var(--border-width) solid var(--color-border-strong);
     border-radius: var(--radius-md);
     color: var(--color-fg);
     font-size: var(--font-size-sm);
@@ -171,6 +171,10 @@
     }
   }
 
+  &__sr {
+    @include m.visually-hidden;
+  }
+
   &__dot {
     width: var(--space-2);
     height: var(--space-2);
@@ -178,18 +182,6 @@
     background: var(--color-warn);
   }
 
-  &__advanced {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-  }
-
-  &__advanced-label {
-    color: var(--color-muted);
-    font-size: var(--font-size-sm);
-  }
 }
 
 // Phone: every section on one page, each foldable.
@@ -263,7 +255,7 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
 
@@ -306,7 +298,7 @@
     }
 
     &--env {
-      background: var(--color-pos-soft);
+      background: var(--color-surface-2);
       color: var(--color-fg);
     }
 
@@ -339,7 +331,7 @@
   &__textarea {
     width: 100%;
     padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--color-border-strong);
+    border: var(--border-width) solid var(--color-border-strong);
     border-radius: var(--radius-sm);
     background: var(--color-surface);
     color: var(--color-fg);
@@ -395,14 +387,14 @@
 .unsaved-bar {
   position: sticky;
   top: calc(var(--topbar-height) + var(--safe-top) + var(--space-2));
-  z-index: 5;
+  z-index: var(--z-sidebar);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-warn);
+  border: var(--border-width) solid var(--color-warn);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow-2);
@@ -445,7 +437,7 @@
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: var(--border-width) solid var(--color-border);
   }
 
   &__main {
@@ -481,7 +473,7 @@
     flex-direction: column;
     gap: var(--space-1);
     padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: var(--border-width) solid var(--color-border);
   }
 
   &__key {

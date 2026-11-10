@@ -13,7 +13,7 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
-import { formatAxisDate, formatDate, formatMoney, formatNumber, formatPercent } from "../../lib/format";
+import { chartMoneyFormat, formatAxisDate, formatDate, formatNumber, formatPercent } from "../../lib/format";
 import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
 import { glossaryText } from "../../lib/glossary";
 import { usePrefs } from "../../lib/prefs";
@@ -319,10 +319,8 @@ export function Risk() {
           >
             <Chart
               height={desktop ? 540 : 300}
-              series={series}
-              valueFormat={(v) =>
-                hide ? formatPercent(v, { digits: 0 }) : formatMoney(v, d.currency, { compact: true })
-              }
+              series={hide ? series : series.map((s) => ({ ...s, valueFormat: chartMoneyFormat(d.currency, "tooltip") }))}
+              valueFormat={(v) => (hide ? formatPercent(v, { digits: 0 }) : chartMoneyFormat(d.currency, "axis")(v))}
               timeFormat={(t) => formatAxisDate(t, Infinity)}
               tooltipTimeFormat={(t) => formatDate(new Date(t))}
               ariaLabel={hide ? "Equity curve, as a share of net invested" : "Equity curve"}
@@ -352,8 +350,8 @@ export function Risk() {
             />
             {d.attribution.length > 0 ? (
               <dl className="risk-page__total" aria-label="Attribution total">
-                <dt>Total</dt>
-                <dd>
+                <dt className="risk-page__total-label">Total</dt>
+                <dd className="risk-page__total-values">
                   <span>Start {money(d.attribution_total.start_value)}</span>
                   <span>End {money(d.attribution_total.end_value)}</span>
                   <span>Net added {money(d.attribution_total.net_contribution)}</span>

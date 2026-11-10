@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { describeFreshness, type FreshnessView } from "../Freshness";
+import { describeFreshness, useLiveGrace, type FreshnessView } from "../Freshness";
 import { useLiveStatus } from "../../lib/live";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { overviewQuery } from "../../lib/queries/portfolio";
@@ -19,7 +19,7 @@ import { useTimeZone } from "../../lib/timezone";
  */
 export function useGlobalFreshness(currency: ReportingCurrency, delayMs = 1200): FreshnessView | undefined {
   const timeZone = useTimeZone();
-  const live = useLiveStatus();
+  const live = useLiveGrace(useLiveStatus());
   const refresh = useRefreshState();
   const [armed, setArmed] = useState(delayMs <= 0);
   useEffect(() => {

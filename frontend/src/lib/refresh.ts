@@ -1,5 +1,6 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useToast } from "../components/Toast";
 import { ApiError, api } from "./api";
 import type { components } from "./api-types";
 import { markStaleAndRefetch } from "./queries/invalidation";
@@ -140,6 +141,7 @@ const POLL_MS = 2000;
 export function useServerRefresh(): { start: () => void; state: RefreshState } {
   const queryClient = useQueryClient();
   const current = useRefreshState();
+  const { toast } = useToast();
 
   const start = useCallback(() => {
     if (getRefreshState().running) return;
@@ -151,8 +153,13 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 409) return; // already running: keep "Updating…"
         setRefreshState({ running: false });
+        toast({
+          title: "Couldn't start a refresh",
+          description: err instanceof Error ? err.message : undefined,
+          tone: "error",
+        });
       });
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     if (!current.running) return;

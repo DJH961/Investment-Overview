@@ -10,6 +10,11 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
 
+  // Same inset as the Card on phones, so the figure gets the width the cards give theirs.
+  @include m.phone {
+    padding: var(--space-4);
+  }
+
   &__main {
     display: flex;
     flex-direction: column;
@@ -97,12 +102,12 @@
   }
 
   &__value {
-    font-size: var(--font-size-3xl);
+    font-size: calc(var(--font-size-3xl) * var(--kpi-tile-fit, 1));
 
     // Desktop has the room, and the v5 app led with a figure this size: the
     // headline should read as the page's subject, not as one stat among many.
     @include m.desktop {
-      font-size: var(--font-size-4xl);
+      font-size: calc(var(--font-size-4xl) * var(--kpi-tile-fit, 1));
     }
 
     font-weight: var(--font-weight-semibold);

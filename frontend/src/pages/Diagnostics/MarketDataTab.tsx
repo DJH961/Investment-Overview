@@ -26,6 +26,7 @@ import {
 import { errorMessage } from "../../lib/queries/settings";
 import { usePersistentState, writePersisted } from "../../lib/usePersistentState";
 import { RunJob } from "./RunJob";
+import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
 
 const KIND_LABEL: Record<FixKind, string> = { price: "Close price", fx: "FX rate (EUR→)", split: "Split ratio" };
 const VALUE_LABEL: Record<FixKind, string> = { price: "Close (native currency)", fx: "Rate (1 EUR = …)", split: "Ratio (new shares per old)" };
@@ -36,7 +37,8 @@ function daysAgo(n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-const isNumber = (s: string) => /^\d+(\.\d+)?$/.test(s.trim()) && Number(s) > 0;
+/** A positive number typed with a decimal comma or dot. */
+const isNumber = (s: string) => (parseDecimal(s) ?? 0) > 0;
 
 function FixEditor({ initialInstrument }: { initialInstrument: number | null }) {
   const instruments = useInstrumentList();
@@ -140,7 +142,7 @@ function FixEditor({ initialInstrument }: { initialInstrument: number | null }) 
             e.preventDefault();
             if (!isNumber(value) || !date) return;
             save.mutate(
-              { kind, subject, date, value: value.trim() },
+              { kind, subject, date, value: toApiDecimal(value) ?? value.trim() },
               {
                 onSuccess: () => {
                   setValue("");
@@ -153,7 +155,7 @@ function FixEditor({ initialInstrument }: { initialInstrument: number | null }) 
         >
           <Field label="Date">{(c) => <Input {...c} type="date" value={date} onChange={(e) => setDate(e.target.value)} />}</Field>
           <Field label={VALUE_LABEL[kind]} error={value && !isNumber(value) ? "Enter a positive number" : undefined}>
-            {(c) => <Input {...c} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value.replace(",", "."))} />}
+            {(c) => <Input {...c} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} />}
           </Field>
           <Button type="submit" variant="primary" loading={save.isPending} disabled={!isNumber(value) || !date}>
             Save manual value

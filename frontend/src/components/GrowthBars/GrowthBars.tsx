@@ -40,7 +40,8 @@ export function GrowthBars({ bars, ariaLabel, className }: GrowthBarsProps) {
         <div className="growth-bars__plot" style={{ gridTemplateRows: `${up}fr ${1 - up}fr` }}>
           {bars.map((b, i) => {
             const v = b.value ?? 0;
-            const pos = v >= 0;
+            const pos = v > 0;
+            const zero = b.value === 0;
             const h = pos ? (maxPos ? v / maxPos : 0) : maxNeg ? -v / maxNeg : 0;
             return (
               <div
@@ -50,10 +51,11 @@ export function GrowthBars({ bars, ariaLabel, className }: GrowthBarsProps) {
                 title={`${b.label}: ${b.value === null ? "–" : formatPercent(b.value, { signed: true })}`}
               >
                 <span className="growth-bars__half growth-bars__half--up">
+                  {zero && <span className="growth-bars__bar growth-bars__bar--zero" />}
                   {pos && <span className="growth-bars__bar growth-bars__bar--pos" style={{ height: `${h * 100}%` }} />}
                 </span>
                 <span className="growth-bars__half growth-bars__half--down">
-                  {!pos && <span className="growth-bars__bar growth-bars__bar--neg" style={{ height: `${h * 100}%` }} />}
+                  {v < 0 && <span className="growth-bars__bar growth-bars__bar--neg" style={{ height: `${h * 100}%` }} />}
                 </span>
               </div>
             );

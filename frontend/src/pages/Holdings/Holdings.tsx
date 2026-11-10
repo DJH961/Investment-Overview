@@ -1,6 +1,8 @@
 import clsx from "clsx";
 import { Inbox, Search } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router";
+import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Chart } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
@@ -41,7 +43,7 @@ type SortKey = "value" | "today" | "growth" | "weight" | "symbol";
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "value", label: "Value" },
-  { value: "today", label: "Today" },
+  { value: "today", label: "Day" },
   { value: "growth", label: "Growth" },
   { value: "weight", label: "Weight" },
   { value: "symbol", label: "Symbol" },
@@ -91,7 +93,8 @@ function HoldingDrawerChart({ row }: { row: HoldingRowDto }) {
       ranges={HISTORY_RANGES}
       onRangeChange={(r) => setRange(r as HistoryRange)}
       loading={history.isPending}
-      valueFormat={(v) => formatMoney(v, ccy)}
+      // Prices are public market data: unmasked, like the price in the table row.
+      valueFormat={(v) => formatMoney(v, ccy, { unmasked: true })}
       timeFormat={(t) => formatAxisDate(t, range === "1m" || range === "3m" || range === "6m" ? 0 : Infinity)}
       tooltipTimeFormat={(t) => formatDate(new Date(t).toISOString().slice(0, 10))}
       height={200}
@@ -115,6 +118,16 @@ function HoldingDrawer({ row, ccy, onClose }: { row: HoldingRowDto | null; ccy: 
         </div>
       )}
     </Sheet>
+  );
+}
+
+/** Empty-state way out: the Import page. */
+function ImportButton() {
+  const navigate = useNavigate();
+  return (
+    <Button variant="primary" onClick={() => navigate("/import")}>
+      Import a broker file
+    </Button>
   );
 }
 
@@ -147,9 +160,12 @@ export function Holdings() {
   const [search, setSearch] = useState("");
   const [categoryPref, setCategory] = usePersistentState<string>("holdings.category", ALL);
   const [sortKey, setSortKey] = usePersistentState<SortKey>("holdings.sort", "value", oneOf(SORT_OPTIONS));
-  const [selected, setSelected] = useState<HoldingRowDto | null>(null);
+  // Keep the id, not the row object, so the open sheet follows ticks and currency switches.
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const data = query.data;
+  const selected =
+    selectedId === null ? null : ((data?.holdings ?? []).find((h) => h.instrument_id === selectedId) ?? null);
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
   const timeZone = useTimeZone();
   // The price time is said once (page header + top bar); a row says its own only when it differs.
@@ -220,7 +236,7 @@ export function Holdings() {
                 type="button"
                 className="holdings-page__open"
                 aria-label={`Details for ${r.symbol}`}
-                onClick={() => setSelected(r)}
+                onClick={() => setSelectedId(r.instrument_id)}
               >
                 {r.symbol}
               </button>
@@ -285,7 +301,7 @@ export function Holdings() {
       },
       {
         key: "expense",
-        header: "Fee",
+        header: "Expense",
         group: "Position",
         align: "right",
         sortValue: (r) => toNum(r.expense_ratio),
@@ -429,7 +445,8 @@ export function Holdings() {
         <EmptyState
           icon={<Inbox aria-hidden />}
           title="No positions yet"
-          description="Import a broker file from Transactions to see your holdings here."
+          description="Import a broker file to see your holdings here."
+          action={<ImportButton />}
         />
       </div>
     );
@@ -458,7 +475,7 @@ export function Holdings() {
           stamp={stamps.rowPrice(r)}
           tick={marks.tick(r)}
           staleMove={marks.staleMove(r)}
-          onOpenChart={setSelected}
+          onOpenChart={(row) => setSelectedId(row.instrument_id)}
         />
       ))}
     </ul>
@@ -547,7 +564,7 @@ export function Holdings() {
       ) : (
         table(rows, "All holdings")
       )}
-      <HoldingDrawer row={selected} ccy={currency} onClose={() => setSelected(null)} />
+      <HoldingDrawer row={selected} ccy={currency} onClose={() => setSelectedId(null)} />
     </div>
   );
 }

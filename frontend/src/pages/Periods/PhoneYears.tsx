@@ -2,6 +2,7 @@ import { ChevronDown } from "lucide-react";
 import { FOLD_KEY_PREFIX } from "../../components/Card";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
+import { formatMonth } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { type PeriodRowOut, toNum } from "../../lib/queries/reports";
 import { usePersistentState } from "../../lib/usePersistentState";
@@ -12,12 +13,7 @@ const otherCcy = (c: ReportingCurrency): ReportingCurrency => (c === "EUR" ? "US
 
 /** "2026-10" -> "October"; the year is the group's heading. */
 function monthName(label: string): string {
-  const m = /^(\d{4})-(\d{2})$/.exec(label);
-  if (!m) return label;
-  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)).toLocaleDateString("en-GB", {
-    month: "long",
-    timeZone: "UTC",
-  });
+  return formatMonth(label, "month-only");
 }
 
 /** Net flow only adds something when money also went out (it equals "In" otherwise). */

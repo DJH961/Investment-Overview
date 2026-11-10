@@ -1,15 +1,18 @@
 @use "../../styles/mixins" as m;
 
+// The scale column, the plot and the axis share one grid, so the first and last
+// axis labels sit under their bars whatever width the "+12.3%" ticks need.
 .growth-bars {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
   margin: 0;
 
   &__frame {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: var(--space-2);
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     height: calc(var(--space-8) * 2.5);
 
     @include m.phone {
@@ -75,12 +78,17 @@
       border-radius: 0 0 2px 2px;
       background: var(--color-neg);
     }
+
+    // A flat period is neither gain nor loss: a neutral hairline on the zero line.
+    &--zero {
+      background: var(--color-fg);
+    }
   }
 
   &__axis {
     display: flex;
+    grid-column: 2;
     justify-content: space-between;
-    padding-left: var(--space-7);
     color: var(--color-muted);
     font-size: var(--font-size-2xs);
   }

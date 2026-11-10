@@ -72,8 +72,10 @@
 
   &__tooltip {
     position: absolute;
-    z-index: 1;
+    z-index: var(--z-raised);
     display: flex;
+    max-width: calc(100% - var(--space-2));
+    overflow-wrap: anywhere;
     flex-direction: column;
     gap: 2px;
     padding: var(--space-2) var(--space-3);

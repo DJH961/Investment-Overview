@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { chartMoneyFormat, formatDate, formatMoney, formatNumber, formatPercent, formatQuantity, setHideAmounts, signOf } from "./format";
+import { chartMoneyFormat, formatDate, formatMonth, formatMoney, formatNumber, formatPercent, formatQuantity, setHideAmounts, signOf } from "./format";
 
 describe("format", () => {
   it("formats money in the given currency", () => {
@@ -45,5 +45,20 @@ describe("hide mode", () => {
     expect(formatPercent(0.05)).toContain("5");
     setHideAmounts(false);
     expect(formatMoney(1234.5, "EUR")).toContain("1,234.50");
+  });
+});
+
+describe("signOf with display digits", () => {
+  it("treats a value that rounds to zero as flat", () => {
+    expect(signOf(-0.003, 2)).toBe("flat");
+    expect(signOf(-0.006, 2)).toBe("neg");
+    expect(signOf(-0.003)).toBe("neg");
+  });
+});
+
+describe("formatMonth", () => {
+  it("follows the regional locale and passes other labels through", () => {
+    expect(formatMonth("2026-10", "short")).toMatch(/Oct/);
+    expect(formatMonth("2026", "short")).toBe("2026");
   });
 });

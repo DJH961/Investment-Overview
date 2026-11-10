@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { Link, RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components/Toast";
 import { Settings } from "./Settings";
@@ -107,15 +107,29 @@ afterEach(() => {
 });
 
 function renderPage() {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/",
+        element: (
+          <>
+            <Link to="/elsewhere">leave</Link>
+            <Settings />
+          </>
+        ),
+      },
+      { path: "/elsewhere", element: <p>elsewhere page</p> },
+    ],
+    { initialEntries: ["/"] },
+  );
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <ToastProvider>
-        <MemoryRouter>
-          <Settings />
-        </MemoryRouter>
+        <RouterProvider router={router} />
       </ToastProvider>
     </QueryClientProvider>,
   );
+  return router;
 }
 
 describe("Settings (schema form)", () => {
@@ -126,10 +140,28 @@ describe("Settings (schema form)", () => {
     expect(screen.getByLabelText("Live refresh interval")).toHaveValue("60");
     expect(screen.getByText("How often prices refresh.")).toBeInTheDocument();
     expect(screen.getByTitle(/Set in the app/)).toHaveTextContent("App");
-    // Advanced fields stay hidden until asked for.
-    expect(screen.queryByText("Boot backfill")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Show 1 advanced/ }));
+    // Advanced fields are visible by default, labelled, with no hide toggle.
     expect(screen.getByText("Boot backfill")).toBeInTheDocument();
+    expect(screen.getByText("Advanced")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /advanced setting/ })).not.toBeInTheDocument();
+  });
+
+  it("asks before in-app navigation while changes are unsaved, and Stay keeps the draft", async () => {
+    const router = renderPage();
+    const input = await screen.findByLabelText("Live refresh interval");
+    fireEvent.change(input, { target: { value: "20" } });
+    fireEvent.click(screen.getByText("leave"));
+    expect(await screen.findByText("Leave without saving?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Stay here" }));
+    expect(router.state.location.pathname).toBe("/");
+    expect(screen.getByLabelText("Live refresh interval")).toHaveValue("20");
+  });
+
+  it("navigates freely when nothing is unsaved", async () => {
+    const router = renderPage();
+    await screen.findByLabelText("Live refresh interval");
+    fireEvent.click(screen.getByText("leave"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/elsewhere"));
   });
 
   it("blocks out-of-range input and shows server 422 errors per field", async () => {

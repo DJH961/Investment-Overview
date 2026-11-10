@@ -1,5 +1,6 @@
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
+import type { PersistedClient, Persister } from "@tanstack/react-query-persist-client";
 import { ApiError, addAuthLostListener, api } from "./api";
 import { forgetPasskeyDevice } from "./passkeyHint";
 
@@ -48,10 +49,51 @@ function setSignedInHint(on: boolean): void {
   }
 }
 
-export const persister = createSyncStoragePersister({
+const storagePersister = createSyncStoragePersister({
   storage: typeof window === "undefined" ? undefined : window.localStorage,
   key: QUERY_CACHE_KEY,
+  throttleTime: 0,
 });
+
+/** Idle save: if the tab stays open and visible, still write the cache now and then. */
+export const PERSIST_IDLE_MS = 60_000;
+
+/**
+ * Writing the whole cache to localStorage stringifies megabytes. Live ticks change the cache
+ * about once a second, so the save is deferred: it happens when the tab is hidden or closed,
+ * or after a quiet minute, never per tick (F-083).
+ */
+let pendingClient: PersistedClient | null = null;
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+export function flushPersist(): void {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = undefined;
+  const client = pendingClient;
+  pendingClient = null;
+  if (client) void storagePersister.persistClient(client);
+}
+
+export const persister: Persister = {
+  persistClient: (client) => {
+    pendingClient = client;
+    idleTimer ??= setTimeout(flushPersist, PERSIST_IDLE_MS);
+  },
+  restoreClient: () => storagePersister.restoreClient(),
+  removeClient: () => {
+    pendingClient = null;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = undefined;
+    return storagePersister.removeClient();
+  },
+};
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPersist();
+  });
+  window.addEventListener("pagehide", flushPersist);
+}
 
 /**
  * Forget every cached server answer: the in-memory query cache, the persisted
@@ -89,23 +131,13 @@ export const persistOptions = {
   maxAge: DAY,
   dehydrateOptions: {
     shouldDehydrateQuery: (query: { queryKey: readonly unknown[]; state: { status: string } }) =>
-      query.state.status === "success" && query.queryKey[0] !== "auth",
+      // Graph series are the biggest entries and refetch quickly: they stay out of the saved copy.
+      query.state.status === "success" && query.queryKey[0] !== "auth" && query.queryKey[0] !== "graphs",
   },
 };
 
-/*
- * Pattern for endpoint hooks (one per endpoint; keys include `ccy` for anything
- * currency dependent so EUR and USD caches never mix):
- *
- *   export function useOverview(ccy: ReportingCurrency) {
- *     return useQuery({
- *       queryKey: ["overview", ccy],
- *       queryFn: ({ signal }) => api<OverviewDto>(`/api/overview?ccy=${ccy}`, { signal }),
- *     });
- *   }
- *
- * TODO(later workers): use DTO types generated into api-types.ts.
- */
+// Endpoint hooks live in lib/queries/*. Reports fetch one `/both` entry per report and pick the
+// currency with `select`, so EUR and USD never have separate cache entries.
 
 export interface AuthMe {
   authenticated: boolean;

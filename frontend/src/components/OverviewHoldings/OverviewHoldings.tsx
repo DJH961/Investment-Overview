@@ -23,7 +23,7 @@ export const OVERVIEW_HOLDINGS_LIMIT = 8;
 export const TWIN_OFF_TTL_MS = 12 * 60 * 60 * 1000;
 
 export interface TwinWatchState {
-  /** Session key (`symbol:date`) for which the user saw the twin while it was pending. */
+  /** Symbol -> epoch ms (as text) of the last time the user saw the twin while it was pending. */
   seenPending: Record<string, string>;
   /** Session key (`symbol:date`) dismissed by the user via the × button. */
   dismissed: Record<string, boolean>;
@@ -82,7 +82,25 @@ export function hasTwinLine(row: HoldingRowDto, watch?: TwinWatchState, nowMs = 
   if (!watch) return true;
   const key = twinSessionKey(row);
   if (watch.dismissed[key]) return false;
-  return Boolean(watch.seenPending[row.symbol]);
+  return seenThisSession(row, watch, nowMs);
+}
+
+/** How long before the NAV posted the user's last look at the estimate still counts as "watched". */
+export const TWIN_SEEN_BEFORE_NAV_MS = 18 * 60 * 60 * 1000;
+/** Seen-stamps older than this are dropped from storage. */
+export const TWIN_SEEN_PRUNE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * True only when the user looked at the pending estimate shortly before (or after) this
+ * NAV posted, so an old sighting of the same fund never triggers today's accuracy note.
+ * `seenPending[symbol]` holds the epoch milliseconds of the last sighting.
+ */
+function seenThisSession(row: HoldingRowDto, watch: TwinWatchState, nowMs: number): boolean {
+  const seenMs = Number(watch.seenPending[row.symbol]);
+  if (!Number.isFinite(seenMs) || seenMs <= 0) return false;
+  const droppedMs = Date.parse(row.updated_at ?? row.price_market_at ?? "");
+  const navMs = Number.isFinite(droppedMs) ? droppedMs : nowMs;
+  return navMs - seenMs <= TWIN_SEEN_BEFORE_NAV_MS;
 }
 
 /**
@@ -234,16 +252,17 @@ function Row({
       <span className="overview-holdings__who">
         <span className="overview-holdings__symbol">
           {row.symbol}
-          {live && <span className="overview-holdings__pill overview-holdings__pill--live">live</span>}
-          {row.is_money_market && <span className="overview-holdings__pill">CASH</span>}
-          {!row.is_money_market && isNavRow(row) && <span className="overview-holdings__pill">NAV</span>}
-          <PriceTick title={tick} />
+          {/* Warnings first: when the cell is narrow they wrap to a second line, never clip. */}
           {row.value_warning && (
             <span className="overview-holdings__pill overview-holdings__pill--warn">stale value</span>
           )}
           {row.price_data_warning && (
             <span className="overview-holdings__pill overview-holdings__pill--warn">bad history</span>
           )}
+          {live && <span className="overview-holdings__pill overview-holdings__pill--live">live</span>}
+          {row.is_money_market && <span className="overview-holdings__pill">CASH</span>}
+          {!row.is_money_market && isNavRow(row) && <span className="overview-holdings__pill">NAV</span>}
+          <PriceTick title={tick} />
           {badge && (
             <span className={clsx("overview-holdings__pill", `overview-holdings__pill--${badge}`)}>
               {badge === "winner" ? "top winner" : "top loser"}
@@ -333,11 +352,21 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
     if (pendingRows.length === 0) return;
     setWatch((prev) => {
       let changed = false;
+      const now = Date.now();
       const nextSeen = { ...prev.seenPending };
+      // Prune old sightings so the stored map does not grow for ever.
+      for (const [sym, ms] of Object.entries(nextSeen)) {
+        const n = Number(ms);
+        if (!Number.isFinite(n) || now - n > TWIN_SEEN_PRUNE_MS) {
+          delete nextSeen[sym];
+          changed = true;
+        }
+      }
       for (const r of pendingRows) {
-        const stamp = r.twin?.at ?? r.price_as_of ?? "pending";
-        if (nextSeen[r.symbol] !== stamp) {
-          nextSeen[r.symbol] = stamp;
+        // Refresh at most once a minute (every tick would rewrite storage).
+        const last = Number(nextSeen[r.symbol]);
+        if (!Number.isFinite(last) || now - last > 60_000) {
+          nextSeen[r.symbol] = String(now);
           changed = true;
         }
       }

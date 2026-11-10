@@ -26,8 +26,9 @@ const toneOf = (t: number | null): TreemapItem["tone"] =>
 
 /** Overview treemap: categories (the default) or holdings by value, tinted by today's move. */
 export function AllocationCard({ currency, height }: AllocationCardProps) {
-  const holdings = useHoldings(currency);
   const [view, setView] = usePersistentState<AllocationView>("overview.allocView", "category", isView);
+  // Category view reads the server's per-group day %, which live ticks keep current.
+  const holdings = useHoldings(currency, view === "category" ? "category" : "none");
   const items = useMemo(() => {
     const held = (holdings.data?.holdings ?? [])
       .map((h) => ({ h, value: toNum(h.value) ?? 0 }))
@@ -44,29 +45,21 @@ export function AllocationCard({ currency, height }: AllocationCardProps) {
         };
       });
     }
-    // A category's move today: its members' moves over their value before the move.
-    const cats = new Map<string, { value: number; move: number; base: number; priced: boolean }>();
-    for (const { h, value } of held) {
-      const c = cats.get(h.category) ?? { value: 0, move: 0, base: 0, priced: false };
-      const move = toNum(h.today_move);
-      c.value += value;
-      if (move !== null) {
-        c.move += move;
-        c.base += value - move;
-        c.priced = true;
-      }
-      cats.set(h.category, c);
-    }
-    return [...cats].map(([name, c]) => {
-      const t = c.priced && c.base > 0 ? c.move / c.base : null;
-      return {
-        id: name,
-        label: name,
-        value: c.value,
-        tone: toneOf(t),
-        detail: t === null ? undefined : formatPercent(t, { signed: true }),
-      };
-    });
+    // A category's day % is the server's (REST group or live tick), never computed here.
+    const groups = holdings.data?.groups ?? [];
+    return groups
+      .map((g) => ({ g, value: toNum(g.value) ?? 0 }))
+      .filter((x) => x.value > 0)
+      .map(({ g, value }) => {
+        const t = toNum(g.today_pct);
+        return {
+          id: g.key,
+          label: g.key,
+          value,
+          tone: toneOf(t),
+          detail: t === null ? undefined : formatPercent(t, { signed: true }),
+        };
+      });
   }, [holdings.data, view]);
 
   return (

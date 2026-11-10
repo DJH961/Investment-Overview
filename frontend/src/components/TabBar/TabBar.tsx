@@ -35,6 +35,7 @@ export function TabBar() {
           type="button"
           className={clsx("tab-bar__tab", moreActive && "tab-bar__tab--active")}
           aria-haspopup="dialog"
+          data-tour="more"
           aria-expanded={moreOpen}
           onClick={() => setMoreOpen(true)}
         >

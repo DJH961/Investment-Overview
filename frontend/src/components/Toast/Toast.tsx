@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { CircleCheck, Info, TriangleAlert, X } from "lucide-react";
 import { Toast as RadixToast } from "radix-ui";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import "./Toast.scss";
@@ -21,6 +22,11 @@ const ToastContext = createContext<ToastApi | null>(null);
 
 let nextId = 1;
 
+/** Errors stay long enough to read; they can be closed with the x. */
+export const ERROR_TOAST_MS = 15000;
+
+const TONE_ICON = { neutral: Info, success: CircleCheck, error: TriangleAlert } as const;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const toast = useCallback((options: ToastOptions) => {
@@ -35,14 +41,24 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <RadixToast.Root
             key={item.id}
             className={clsx("toast", `toast--${item.tone ?? "neutral"}`)}
+            duration={item.tone === "error" ? ERROR_TOAST_MS : undefined}
             onOpenChange={(open) => {
               if (!open) setItems((prev) => prev.filter((t) => t.id !== item.id));
             }}
           >
-            <RadixToast.Title className="toast__title">{item.title}</RadixToast.Title>
-            {item.description && (
-              <RadixToast.Description className="toast__description">{item.description}</RadixToast.Description>
-            )}
+            {(() => {
+              const Icon = TONE_ICON[item.tone ?? "neutral"];
+              return <Icon className="toast__icon" aria-hidden />;
+            })()}
+            <div className="toast__text">
+              <RadixToast.Title className="toast__title">{item.title}</RadixToast.Title>
+              {item.description && (
+                <RadixToast.Description className="toast__description">{item.description}</RadixToast.Description>
+              )}
+            </div>
+            <RadixToast.Close className="toast__close" aria-label="Dismiss notification">
+              <X aria-hidden className="toast__close-icon" />
+            </RadixToast.Close>
           </RadixToast.Root>
         ))}
         <RadixToast.Viewport className="toast__viewport" />

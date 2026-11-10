@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { Card } from "../../components/Card";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
-import { formatNumber, formatQuantity } from "../../lib/format";
+import { formatPercent, formatQuantity } from "../../lib/format";
 import type { BuilderPlan, BuilderPlanRow, PlanCategory } from "../../lib/queries/allocations";
 import { orderTrades, tradeTotals } from "./builderState";
 
@@ -28,7 +28,7 @@ export function ShiftBar({ before, after, target, label }: { before: number; aft
 }
 
 function shiftLabel(name: string, r: { current_pct: string; after_pct: string; target_pct: string }) {
-  const p = (s: string) => `${formatNumber(Number(s) * 100, 1)} %`;
+  const p = (s: string) => formatPercent(Number(s), { digits: 1 });
   return `${name}: now ${p(r.current_pct)}, after ${p(r.after_pct)}, target ${p(r.target_pct)}`;
 }
 

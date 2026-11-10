@@ -86,7 +86,7 @@ export function HoldingsKpis({ data, currency }: Props) {
       ),
     },
     {
-      label: "Weighted fee",
+      label: "Weighted expense",
       value: <Percent ratio={toNum(data?.weighted_expense_ratio)} digits={2} />,
       hint: (
         <>

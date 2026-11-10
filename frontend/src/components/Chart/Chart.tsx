@@ -3,8 +3,8 @@
 import clsx from "clsx";
 import {
   useCallback,
-  useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -240,23 +240,36 @@ export function Chart({
   ariaLabel = "Value chart",
   className,
 }: ChartProps) {
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  // The plot box mounts only once there is data, so it is tracked through a callback ref:
+  // a chart that first renders empty still follows its width when data arrives.
+  const [wrapEl, setWrapEl] = useState<HTMLDivElement | null>(null);
+  const attachWrap = useCallback((el: HTMLDivElement | null) => {
+    wrapRef.current = el;
+    setWrapEl(el);
+  }, []);
   const [width, setWidth] = useState(600);
   // The scrub position belongs to the data it was taken on: a new range or
   // series set drops it (no tooltip left hanging over a different chart).
   const [cursorState, setCursorState] = useState<{ i: number; key: string } | null>(null);
   const gradId = useId();
 
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+  // Measured before the first paint, so a phone never flashes a 600 px layout.
+  useLayoutEffect(() => {
+    const el = wrapEl;
+    if (!el) return;
+    const w0 = el.getBoundingClientRect().width;
+    // Measured here, before paint, on purpose: a phone must not flash a 600 px layout.
+    // oxlint-disable-next-line react/set-state-in-effect
+    if (w0 > 0) setWidth(w0);
+    if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width;
       if (w && w > 0) setWidth(w);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [loading, series.length]);
+  }, [wrapEl]);
 
   const model = useMemo(() => {
     const all = series.map((s, i) => {
@@ -452,7 +465,7 @@ export function Chart({
   return (
     <div className={clsx("chart", trend && `chart--${trend}`, busy && "chart--busy", className)} aria-busy={busy || undefined}>
       {header}
-      <div className="chart__wrap" ref={wrapRef} style={{ height }}>
+      <div className="chart__wrap" ref={attachWrap} style={{ height }}>
         <svg
           className="chart__svg"
           width={width}
@@ -643,6 +656,7 @@ export function Chart({
           {tipRows.map((r) => (
             <span key={r.id} className="chart__readout-item">
               <span className={clsx("chart__swatch", `chart__swatch--${r.tone}`)} aria-hidden />
+              <span className="chart__readout-label">{r.label}</span>
               <span className="chart__readout-value">{r.value}</span>
             </span>
           ))}

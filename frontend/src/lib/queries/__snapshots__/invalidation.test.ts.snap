@@ -1,5 +1,24 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`write -> invalidated keys > accountWrite 1`] = `
+[
+  "accounts",
+  "allocations/both",
+  "analytics/both",
+  "calculator/inputs",
+  "deposits/both",
+  "deposits/dividends",
+  "graphs/1d",
+  "holdings/both",
+  "holdings/history",
+  "import-batches/50",
+  "overview/both",
+  "periods/monthly",
+  "transaction/1",
+  "transactions/[object Object]",
+]
+`;
+
 exports[`write -> invalidated keys > fxConversionWrite 1`] = `
 [
   "analytics/both",
@@ -17,6 +36,7 @@ exports[`write -> invalidated keys > fxConversionWrite 1`] = `
 
 exports[`write -> invalidated keys > importWrite 1`] = `
 [
+  "accounts",
   "allocations/both",
   "analytics/both",
   "calculator/inputs",

@@ -1,4 +1,6 @@
 import { Inbox } from "lucide-react";
+import { useNavigate } from "react-router";
+import { Button } from "../../components/Button";
 import { useEffect, useRef, useState } from "react";
 import { AllocationCard } from "../../components/AllocationCard";
 import { AssetClassCard } from "../../components/AssetClassCard";
@@ -13,8 +15,9 @@ import { OverviewHero } from "../../components/OverviewHero";
 import { OverviewHoldings } from "../../components/OverviewHoldings";
 import { OverviewWarnings } from "../../components/OverviewWarnings";
 import { PageHeader } from "../../components/PageHeader";
+import { Skeleton } from "../../components/Skeleton";
 import { ValueChartCard } from "../../components/ValueChartCard";
-import { describeFreshness, type FreshnessView } from "../../components/Freshness";
+import { describeFreshness, useLiveGrace, type FreshnessView } from "../../components/Freshness";
 import { formatDate } from "../../lib/format";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { useLiveStatus } from "../../lib/live";
@@ -24,7 +27,22 @@ import { usePrefs } from "../../lib/prefs";
 import { useOverview } from "../../lib/queries/portfolio";
 import { useShellStatus } from "../../lib/shell";
 import { useIsDesktop } from "../../lib/useMediaQuery";
+import { OnboardingCard } from "./OnboardingCard";
 import "./Overview.scss";
+
+function EmptyActions() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <Button variant="primary" onClick={() => navigate("/import")}>
+        Import a broker file
+      </Button>{" "}
+      <Button variant="secondary" onClick={() => navigate("/transactions")}>
+        Add a transaction
+      </Button>
+    </>
+  );
+}
 
 /** The treemap's own default height. */
 const MIN_TREEMAP = 280;
@@ -71,7 +89,7 @@ export function Overview() {
   const overview = useOverview(currency);
   const { overviewRange } = useDisplayPrefs();
 
-  const live = useLiveStatus();
+  const live = useLiveGrace(useLiveStatus());
   const refresh = useRefreshState();
   const timeZone = useTimeZone();
 
@@ -95,10 +113,12 @@ export function Overview() {
     return (
       <div className="overview-page">
         <PageHeader title="Overview" />
+        <OnboardingCard />
         <EmptyState
           icon={<Inbox aria-hidden />}
           title="No positions yet"
-          description="Import a broker file from Transactions to see your portfolio here."
+          description="Import a broker file to see your portfolio here, or add a transaction by hand."
+          action={<EmptyActions />}
         />
       </div>
     );
@@ -112,6 +132,7 @@ export function Overview() {
         title="Overview"
         subtitle={data ? `As of ${formatDate(data.as_of)} · ${data.position_count} positions` : undefined}
       />
+      <OnboardingCard />
       {data && <OverviewWarnings warnings={data.warnings} />}
 
       <OverviewHero
@@ -123,7 +144,7 @@ export function Overview() {
 
       <KpiGrid data={data} currency={currency} loading={loading} />
 
-      {data && <CurrencyBox data={data} />}
+      {data ? <CurrencyBox data={data} /> : <Skeleton height="12rem" />}
 
       {/* Full width, top to bottom: chart, movers, holdings. */}
       <ValueChartCard
@@ -143,7 +164,7 @@ export function Overview() {
         </div>
         <div ref={treemapSide} className="overview-page__side">
           <AssetClassCard currency={currency} />
-          {data && <CurrencyLifetime data={data} />}
+          {data ? <CurrencyLifetime data={data} /> : <Skeleton height="9rem" />}
         </div>
       </div>
     </div>

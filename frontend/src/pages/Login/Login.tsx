@@ -164,9 +164,7 @@ export function Login() {
     <div className="login-page">
       <main className="login-page__card">
         <div className="login-page__brand">
-          <span className="login-page__mark" aria-hidden>
-            <BrandMark tile={false} />
-          </span>
+          <BrandMark size={56} className="login-page__mark" />
           <h1 className="login-page__title">Investment Overview</h1>
           <p className="login-page__subtitle">Sign in to see your portfolio.</p>
         </div>

@@ -146,7 +146,7 @@ export function ImportHistory({ highlight }: { highlight?: number | null }) {
 
   const columns: Column<ImportBatch>[] = [
     { key: "created", header: "Imported", cell: (b) => formatDateTime(b.created_at), nowrap: true },
-    { key: "file", header: "File", primary: true, cell: (b) => b.filename },
+    { key: "file", header: "File", primary: true, cell: (b) => <span className="import-page__file-name">{b.filename}</span> },
     { key: "account", header: "Account", cell: (b) => b.account_label ?? `#${b.account_id}`, phone: "hide" },
     { key: "broker", header: "Broker", cell: (b) => b.broker, phone: "hide" },
     {

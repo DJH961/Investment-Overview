@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, screen } from "@testing-library/react";
+import { ToastProvider } from "../components/Toast";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getRefreshState, resetRefreshState, useServerRefresh } from "./refresh";
@@ -20,7 +21,9 @@ const status = (running: boolean) => ({
 describe("useServerRefresh", () => {
   let qc: QueryClient;
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    <QueryClientProvider client={qc}>
+      <ToastProvider>{children}</ToastProvider>
+    </QueryClientProvider>
   );
   beforeEach(() => {
     vi.useFakeTimers();
@@ -64,5 +67,6 @@ describe("useServerRefresh", () => {
     const { result } = renderHook(() => useServerRefresh(), { wrapper });
     await act(async () => result.current.start());
     expect(result.current.state.running).toBe(false);
+    expect(screen.getByText("Couldn't start a refresh")).toBeInTheDocument();
   });
 });

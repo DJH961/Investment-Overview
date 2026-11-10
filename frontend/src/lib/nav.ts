@@ -37,7 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/periods", label: "Periods", icon: CalendarRange, group: "Portfolio", tab: true, shortcut: "p" },
   { to: "/activity", label: "Activity", icon: Banknote, group: "Portfolio", shortcut: "a" },
   { to: "/risk", label: "Risk & analytics", icon: ShieldAlert, group: "Portfolio", shortcut: "r" },
-  { to: "/projection", label: "Projection & calculator", short: "Projection", icon: Calculator, group: "Portfolio", shortcut: "c" },
+  { to: "/projection", label: "Projection", icon: Calculator, group: "Portfolio", shortcut: "c" },
   { to: "/transactions", label: "Transactions", icon: Receipt, group: "Manage", tab: true, shortcut: "t" },
   { to: "/import", label: "Import", icon: Upload, group: "Manage", shortcut: "i" },
   { to: "/instruments", label: "Instruments", icon: Tags, group: "Manage" },

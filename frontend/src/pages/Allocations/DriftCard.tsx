@@ -7,7 +7,7 @@ import { Card } from "../../components/Card";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
-import { assetClassLabel, formatNumber } from "../../lib/format";
+import { assetClassLabel, formatPercent, formatPp } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 import type { AllocationsData } from "../../lib/queries/allocations";
 import { usePersistentState } from "../../lib/usePersistentState";
@@ -34,7 +34,8 @@ export function NowTargetBar({ now, target, scale }: { now: number; target: numb
   );
 }
 
-const pp = (v: string) => `${Number(v) > 0 ? "+" : Number(v) < 0 ? "−" : ""}${formatNumber(Math.abs(Number(v)), 1)} pp`;
+/** Drift arrives in percentage points ("-1.2"); the shared formatter takes a ratio. */
+const pp = (v: string) => formatPp(Number(v) / 100, 1);
 
 interface LineProps {
   id: string;
@@ -134,7 +135,7 @@ export function DriftCard({ data, ccy }: DriftCardProps) {
     <Card
       collapsibleId="allocations.drift"
       title={`Targets & drift${active ? ` · ${active.name}` : ""}`}
-      subtitle={`${formatNumber(offBy, 1)} % of the portfolio is off target. Bar: today's share. Line: target.`}
+      subtitle={`${formatPercent(offBy / 100, { digits: 1 })} of the portfolio is off target. Bar: today's share. Line: target.`}
       actions={
         <SegmentedControl
           ariaLabel="Drift view"

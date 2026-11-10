@@ -86,7 +86,7 @@ describe("Periods", () => {
     );
     wrap(<Periods />);
     expect((await screen.findAllByText("Oct 2026")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("–").length).toBeGreaterThan(0);
   });
 
   it("shows an error state on failure", async () => {

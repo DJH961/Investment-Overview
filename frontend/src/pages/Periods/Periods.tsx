@@ -13,7 +13,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
-import { formatDate } from "../../lib/format";
+import { formatDate, formatMonth } from "../../lib/format";
 import { type ReportingCurrency, usePrefs } from "../../lib/prefs";
 import { type PeriodRowOut, toNum, usePeriods } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
@@ -37,13 +37,7 @@ const isView: Validator<View> = (v): v is View => v === "year" || v === "monthly
 
 /** "2026-10" -> "Oct 2026"; years and other labels pass through. */
 export function periodLabel(label: string): string {
-  const m = /^(\d{4})-(\d{2})$/.exec(label);
-  if (!m) return label;
-  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)).toLocaleDateString("en-GB", {
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  return formatMonth(label, "short");
 }
 
 const otherCcy = (c: ReportingCurrency): ReportingCurrency => (c === "EUR" ? "USD" : "EUR");
@@ -296,7 +290,7 @@ function YearSummary({
   const o = toNum(other?.closing_value);
   const money = (v: string | null) => (
     <Maybe present={toNum(v) !== null} ccy={currency}>
-      <Money amount={toNum(v)} currency={currency} />
+      <Money amount={toNum(v)} currency={currency} digits={0} />
     </Maybe>
   );
   const pct = (v: string | null) => (

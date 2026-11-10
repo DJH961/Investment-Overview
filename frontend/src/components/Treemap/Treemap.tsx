@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useHideAmounts } from "../../lib/hideAmounts";
 import "./Treemap.scss";
 
@@ -91,6 +91,9 @@ export interface TreemapProps {
   detailLabel?: string;
   ariaLabel?: string;
   className?: string;
+  /** Makes the tiles real buttons (for example open the holding). Without it they are
+   * not tab stops: their name and figures are already in each tile's aria-label. */
+  onSelect?: (id: string) => void;
 }
 
 export function Treemap({
@@ -100,14 +103,20 @@ export function Treemap({
   detailLabel,
   ariaLabel = "Treemap",
   className,
+  onSelect,
 }: TreemapProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(600);
+  const tipRef = useRef<HTMLOutputElement>(null);
+  // Measured before the first paint (no fake-600 px first frame, then a jump).
+  const [width, setWidth] = useState(0);
   const [hover, setHover] = useState<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!el) return;
+    const w0 = el.getBoundingClientRect().width;
+    setWidth(w0 > 0 ? w0 : 600);
+    if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width;
       if (w && w > 0) setWidth(w);
@@ -116,8 +125,35 @@ export function Treemap({
     return () => ro.disconnect();
   }, []);
 
+  // A tap keeps the tooltip open (touch fires pointerleave at once); the next tap elsewhere closes it.
+  useEffect(() => {
+    if (!hover) return;
+    const close = (e: globalThis.PointerEvent) => {
+      const cell = (e.target as Element | null)?.closest?.("[data-treemap-id]");
+      if (!cell || cell.getAttribute("data-treemap-id") !== hover || !ref.current?.contains(cell)) setHover(null);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [hover]);
+
+  const rectsRef = useRef<ReturnType<typeof squarify>>([]);
+  // Keep the tooltip inside the treemap box: measured, then clamped on both axes.
+  useLayoutEffect(() => {
+    const tip = tipRef.current;
+    if (!tip || !hover) return;
+    const r = rectsRef.current.find((x) => x.id === hover);
+    if (!r) return;
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    tip.style.left = `${Math.min(Math.max(r.x + r.w / 2, tw / 2), Math.max(tw / 2, width - tw / 2))}px`;
+    tip.style.top = `${Math.min(Math.max(r.y + r.h / 2, th / 2), Math.max(th / 2, height - th / 2))}px`;
+  });
+
   const { hide } = useHideAmounts();
-  const rects = squarify(items, width, height);
+  const rects = width > 0 ? squarify(items, width, height) : [];
+  useEffect(() => {
+    rectsRef.current = rects;
+  });
   const byId = new Map(items.map((i) => [i.id, i]));
   const total = items.reduce((a, i) => a + Math.max(i.value, 0), 0);
   const share = (v: number) => `${((v / total) * 100).toFixed(1)}%`;
@@ -153,8 +189,15 @@ export function Treemap({
               `${share(item.value)} of total`,
               ...(item.detail ? [named(item.detail)] : []),
             ].join(", ")}
+            data-treemap-id={r.id}
+            role={onSelect ? undefined : "img"}
+            tabIndex={onSelect ? undefined : -1}
+            onClick={onSelect ? () => onSelect(r.id) : undefined}
             onPointerEnter={() => setHover(r.id)}
-            onPointerLeave={() => setHover(null)}
+            onPointerDown={() => setHover(r.id)}
+            onPointerLeave={(e) => {
+              if (e.pointerType !== "touch") setHover(null);
+            }}
             onFocus={() => setHover(r.id)}
             onBlur={() => setHover(null)}
           >
@@ -169,6 +212,7 @@ export function Treemap({
       })}
       {active && activeItem && (
         <output
+          ref={tipRef}
           className="treemap__tooltip"
           style={{
             left: Math.min(Math.max(active.x + active.w / 2, 70), width - 70),

@@ -1,5 +1,7 @@
 import { Inbox } from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { useNavigate } from "react-router";
+import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { type Column, DataTable } from "../../components/DataTable";
 import { EmptyState } from "../../components/EmptyState";
@@ -48,6 +50,16 @@ const KIND_LABEL: Record<string, string> = {
   reinvest: "Reinvested",
   interest: "Interest",
 };
+
+/** Empty-state way out: the Import page. */
+function ImportButton() {
+  const navigate = useNavigate();
+  return (
+    <Button variant="primary" onClick={() => navigate("/import")}>
+      Import a broker file
+    </Button>
+  );
+}
 
 export function Activity() {
   const { currency } = usePrefs();
@@ -166,9 +178,9 @@ export function Activity() {
     return (
       <div className="activity-page__stack">
         <div className="activity-page__kpis">
-          <KpiTile label="Total" value={money(s.total_contrib)} hint={otherHint(so.total_contrib)} />
-          <KpiTile label="This year" value={money(s.ytd_contrib)} hint={otherHint(so.ytd_contrib)} />
-          <KpiTile label="This month" value={money(s.mtd_contrib)} hint={otherHint(so.mtd_contrib)} />
+          <KpiTile label="Total" value={money(s.total_contrib)} secondary={otherHint(so.total_contrib)} />
+          <KpiTile label="This year" value={money(s.ytd_contrib)} secondary={otherHint(so.ytd_contrib)} />
+          <KpiTile label="This month" value={money(s.mtd_contrib)} secondary={otherHint(so.mtd_contrib)} />
         </div>
         <div className="activity-page__filters">
           <Select
@@ -187,7 +199,10 @@ export function Activity() {
           <EmptyState
             icon={<Inbox aria-hidden />}
             title={data.years.length === 0 ? "No contributions yet" : "No contributions match"}
-            description={data.years.length === 0 ? undefined : "Try different filters."}
+            description={
+              data.years.length === 0 ? "Import a broker file to see your deposits here." : "Try different filters."
+            }
+            action={data.years.length === 0 ? <ImportButton /> : undefined}
           />
         ) : (
           data.by_year.map((y, i) => (
@@ -287,8 +302,8 @@ export function Activity() {
     return (
       <div className="activity-page__stack">
         <div className="activity-page__kpis">
-          <KpiTile label="Lifetime dividends" value={money(d.lifetime_total)} hint={hint(d.lifetime_total_other)} />
-          <KpiTile label="Last 12 months" value={money(d.ttm_total)} hint={hint(d.ttm_total_other)} />
+          <KpiTile label="Lifetime dividends" value={money(d.lifetime_total)} secondary={hint(d.lifetime_total_other)} />
+          <KpiTile label="Last 12 months" value={money(d.ttm_total)} secondary={hint(d.ttm_total_other)} />
           <KpiTile
             label="Yield (TTM)"
             value={<Percent ratio={toNum(d.yield_ttm)} />}

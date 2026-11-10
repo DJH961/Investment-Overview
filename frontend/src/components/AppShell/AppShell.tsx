@@ -8,7 +8,7 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 import { useHideAmounts } from "../../lib/hideAmounts";
 import { getConnectivity } from "../../lib/network";
 import { reauthLoginPath, setReauthHandler } from "../../lib/api";
-import { logout as signOut } from "../../lib/auth";
+import { useSignOut } from "../../lib/useSignOut";
 import { NAV_ITEMS, titleFor } from "../../lib/nav";
 import { prefetchKeyData } from "../../lib/prefetch";
 import { usePrefs } from "../../lib/prefs";
@@ -126,13 +126,14 @@ export function AppShell() {
     });
   };
 
+  const signOut = useSignOut();
   const logout = useCallback(async () => {
     try {
       await signOut();
     } finally {
-      navigate("/login");
+      navigate("/login"); // also when the request failed: the client data is wiped either way
     }
-  }, [navigate]);
+  }, [navigate, signOut]);
 
   // A sensitive action on an old session: sign in again, then come back here.
   useEffect(() => {
@@ -180,7 +181,7 @@ export function AppShell() {
           }
         />
         <OfflineBanner />
-        <main className="app-shell__content" id="main" key={hide ? "hidden" : "shown"}>
+        <main className="app-shell__content" id="main">
           <Outlet />
         </main>
       </div>

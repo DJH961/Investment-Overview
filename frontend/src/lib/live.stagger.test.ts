@@ -108,7 +108,7 @@ describe("tick handling", () => {
       seq: 3,
       fx_eur_usd: "2",
       point: { t: "2026-11-03T10:01:00Z", EUR: "50", USD: "100" },
-      prices: { "5": { px: "110", ccy: "USD", prev_close: "100" } },
+      prices: { "5": { px: "110", ccy: "USD", prev_close: "100", day_pct_usd: "0.1" } },
     };
     handleLiveEvent(qc, JSON.stringify(tick));
     handleLiveEvent(qc, JSON.stringify(tick)); // same t: replaced, not duplicated

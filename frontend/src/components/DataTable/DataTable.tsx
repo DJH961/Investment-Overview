@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { isValidElement, useMemo, useState, type ReactNode } from "react";
 import { Skeleton } from "../Skeleton";
 import "./DataTable.scss";
 
@@ -68,9 +68,16 @@ export interface DataTableProps<Row> {
 type Direction = "asc" | "desc";
 
 /** Nothing worth a phone line: blank, or the "no value" dash. */
-function isEmptyCell(content: ReactNode): boolean {
+export function isEmptyCell(content: ReactNode): boolean {
   if (content === null || content === undefined || content === false) return true;
   if (typeof content === "string") return /^\s*[–—-]?\s*$/.test(content);
+  // <Money amount={null}/>, <Percent ratio={null}/>, <DeltaBadge value={null}/> render the dash.
+  if (isValidElement(content)) {
+    const props = content.props as Record<string, unknown>;
+    for (const key of ["amount", "ratio", "value"]) {
+      if (key in props && (props[key] === null || props[key] === undefined)) return true;
+    }
+  }
   return false;
 }
 
@@ -114,7 +121,7 @@ export function DataTable<Row>({
   const groupStart = (i: number) => grouped && i > 0 && (columns[i].group ?? "") !== (columns[i - 1].group ?? "");
 
   return (
-    <div className={clsx("data-table", grouped && "data-table--grouped", className)}>
+    <div className={clsx("data-table", grouped && "data-table--grouped", className)} data-scrollable>
       <table className="data-table__table">
         <caption className="u-sr-only">{caption}</caption>
         <thead className="data-table__head">

@@ -1,7 +1,7 @@
-import clsx from "clsx";
 import { Download } from "lucide-react";
 import { useSearchParams } from "react-router";
 import { PageHeader } from "../../components/PageHeader";
+import { SegmentedControl } from "../../components/SegmentedControl";
 import { useJobEvents } from "../../lib/queries/maintenance";
 import { SUPPORT_BUNDLE_URL } from "../../lib/queries/manage";
 import { usePersistentState } from "../../lib/usePersistentState";
@@ -52,25 +52,20 @@ export function Diagnostics() {
           </a>
         }
       />
-      <div className="diagnostics__tabs" role="tablist" aria-label="Health & Repair sections">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            id={`diag-tab-${t.id}`}
-            aria-selected={t.id === tab}
-            aria-controls="diag-panel"
-            className={clsx("diagnostics__tab-button", t.id === tab && "diagnostics__tab-button--active")}
-            onClick={() => select(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* The shared segmented control: arrow keys and the finger-sized phone targets come with it.
+          On a very narrow phone the six sections may scroll sideways rather than squash. */}
+      <div className="diagnostics__tabs" data-scrollable>
+        <SegmentedControl
+          className="diagnostics__segmented"
+          ariaLabel="Health & Repair sections"
+          options={TABS.map((t) => ({ value: t.id, label: t.label }))}
+          value={tab}
+          onChange={select}
+        />
       </div>
-      <div role="tabpanel" id="diag-panel" aria-labelledby={`diag-tab-${tab}`}>
+      <section aria-label={TABS.find((t) => t.id === tab)?.label}>
         {TABS.find((t) => t.id === tab)?.render()}
-      </div>
+      </section>
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import clsx from "clsx";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
+import { useFitWidth } from "../KpiTile/useFitWidth";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
@@ -87,6 +88,9 @@ export function heroPriceTime(data: OverviewDto): PriceTime {
  */
 export function OverviewHero({ data, currency, loading, now, aside }: OverviewHeroProps) {
   const timeZone = useTimeZone();
+  // The big figure shrinks to fit the card (seven-figure USD / de-DE values at 360 px).
+  const valuesRef = useRef<HTMLDivElement>(null);
+  useFitWidth(valuesRef, loading || !data);
   const side = aside ? <div className="overview-hero__aside">{aside}</div> : null;
   const cls = clsx("overview-hero", side && "overview-hero--split");
   if (loading || !data) {
@@ -161,7 +165,7 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
           other figure on this page already lives. The card reads the same in every
           market state, so nothing shifts under you as the day goes on.
         */}
-        <div className="overview-hero__values">
+        <div className="overview-hero__values" ref={valuesRef}>
           <span className="overview-hero__headline">
             <span className="overview-hero__value">
               <Money amount={toNum(headTotal)} currency={currency} />

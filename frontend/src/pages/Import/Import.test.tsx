@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { Link, RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components/Toast";
 import { Import } from "./Import";
@@ -106,15 +106,29 @@ function stubUpload(body: object) {
 }
 
 function renderPage() {
-  return render(
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/",
+        element: (
+          <>
+            <Link to="/elsewhere">leave</Link>
+            <Import />
+          </>
+        ),
+      },
+      { path: "/elsewhere", element: <p>elsewhere page</p> },
+    ],
+    { initialEntries: ["/"] },
+  );
+  render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <ToastProvider>
-        <MemoryRouter>
-          <Import />
-        </MemoryRouter>
+        <RouterProvider router={router} />
       </ToastProvider>
     </QueryClientProvider>,
   );
+  return router;
 }
 
 async function uploadFile() {
@@ -134,8 +148,8 @@ describe("Import", () => {
     renderPage();
     await uploadFile();
     expect(await screen.findByText("Duplicate")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Import 1 transactions" }));
-    expect((await screen.findAllByText(/Imported 1 transactions/)).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "Import 1 transaction" }));
+    expect((await screen.findAllByText(/Imported 1 transaction/)).length).toBeGreaterThan(0);
     expect(screen.getByText(/Saved as import #10/)).toBeInTheDocument();
   });
 
@@ -168,6 +182,21 @@ describe("Import", () => {
     expect(screen.getByText("Price recalculated from the amount")).toBeInTheDocument();
     const call = fetchMock.mock.calls.find(([u]) => String(u).includes("/resolve"));
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ rows: [{ index: 1, action: "fix_price" }] });
+  });
+
+  it("asks before leaving a pending preview and cancels the import on the server", async () => {
+    stubUpload(preview);
+    const fetchMock = stubFetch();
+    const router = renderPage();
+    await uploadFile();
+    await screen.findByText("Duplicate");
+    await userEvent.click(screen.getByText("leave"));
+    await userEvent.click(await screen.findByRole("button", { name: "Stay here" }));
+    expect(router.state.location.pathname).toBe("/");
+    await userEvent.click(screen.getByText("leave"));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel import and leave" }));
+    expect(router.state.location.pathname).toBe("/elsewhere");
+    expect(fetchMock.mock.calls.some(([u, i]) => String(u).endsWith("/api/imports/imp1") && i?.method === "DELETE")).toBe(true);
   });
 
   it("undoes a batch only after typing UNDO", async () => {
@@ -307,7 +336,7 @@ describe("Import", () => {
       renderPage();
       await uploadFile();
       expect(await screen.findByText("Answer the questions above first")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Import 1 transactions" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Import 1 transaction" })).toBeDisabled();
     });
 
     it("shows the three date orders for a date_order question", async () => {

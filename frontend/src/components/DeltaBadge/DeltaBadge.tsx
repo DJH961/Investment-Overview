@@ -12,7 +12,7 @@ export interface DeltaBadgeProps {
 }
 
 export function DeltaBadge({ value, format = "percent", currency = "EUR", className }: DeltaBadgeProps) {
-  const tone = signOf(value);
+  const tone = signOf(value, format === "percent" ? 4 : 2);
   const Icon = tone === "pos" ? ArrowUpRight : tone === "neg" ? ArrowDownRight : Minus;
   const text =
     format === "percent" ? formatPercent(value, { signed: true }) : formatMoney(value, currency, { signed: true });

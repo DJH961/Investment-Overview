@@ -56,6 +56,7 @@
   &--rail &__group-title {
     height: var(--border-width);
     margin: var(--space-3) var(--space-2);
+    padding: 0;
     background: var(--color-border);
     font-size: 0;
   }
@@ -71,6 +72,13 @@
 
     &::-webkit-scrollbar {
       display: none;
+    }
+
+    // A window short enough to scroll the list fades the last rows, so it
+    // reads as "more below" rather than cut off.
+    @include m.short {
+      padding-bottom: var(--space-4);
+      mask-image: linear-gradient(to bottom, black calc(100% - var(--space-4)), transparent);
     }
   }
 

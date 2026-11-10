@@ -36,6 +36,7 @@
     flex-direction: column;
     gap: var(--space-1);
     min-width: 0;
+    container-type: inline-size;
     padding: var(--space-3) var(--space-4);
     border-right: var(--border-width) solid var(--color-border);
     scroll-snap-align: start;
@@ -70,10 +71,14 @@
     align-items: baseline;
     gap: var(--space-2);
     margin: 0;
-    font-size: var(--font-size-lg);
+    min-width: 0;
+    // The figure scales down with its cell (container query) so a seven-figure
+    // total never runs into the next stat; the clip is only a last resort.
+    font-size: clamp(var(--font-size-sm), 12cqi, var(--font-size-lg));
     font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    overflow: hidden;
   }
 
   &__stat-delta {

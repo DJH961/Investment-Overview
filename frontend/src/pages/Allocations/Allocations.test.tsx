@@ -207,6 +207,52 @@ describe("Allocations page", () => {
     expect(window.localStorage.getItem("iv.calc.amount")).toBe('"1500"');
   });
 
+  it("reads a decimal comma in a target box and sends a dot", async () => {
+    const calls = stub();
+    wrap();
+    const box = await screen.findByLabelText("Target % for AAA");
+    fireEvent.change(box, { target: { value: "12,5" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByTestId("weight-total")).toHaveTextContent("39.7");
+    fireEvent.click(screen.getByRole("button", { name: "Compute plan" }));
+    await screen.findByText("Plan summary");
+    const post = calls.find((c) => c.url.includes("/api/allocations/plan"));
+    const sent = (post!.body as { fund_weights: { instrument_id: number; weight: string }[] }).fund_weights;
+    expect(sent.find((w) => w.instrument_id === 1)?.weight).toBe("12.5");
+  });
+
+  it("flags an unreadable target instead of treating it as 0 and blocks Compute", async () => {
+    stub();
+    wrap();
+    const box = await screen.findByLabelText("Target % for AAA");
+    fireEvent.change(box, { target: { value: "12x" } });
+    expect(box).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(/not numbers/);
+    expect(screen.getByRole("button", { name: "Compute plan" })).toBeDisabled();
+  });
+
+  it("Retry on a failed plan computes it again", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        if (url.includes("/api/allocations/plan")) return new Response(JSON.stringify({ detail: "boom" }), { status: 500 });
+        const json = url.includes("/api/allocations")
+          ? { EUR: allocations, USD: allocations }
+          : url.includes("/api/calculator")
+            ? { EUR: inputs, USD: inputs }
+            : {};
+        return new Response(JSON.stringify(json), { status: 200 });
+      }),
+    );
+    wrap();
+    fireEvent.click(await screen.findByRole("button", { name: "Compute plan" }));
+    const retry = await screen.findByRole("button", { name: /retry/i });
+    fireEvent.click(retry);
+    await waitFor(() => expect(calls.filter((u) => u.includes("/api/allocations/plan"))).toHaveLength(2));
+  });
+
   it("switches to category mode with member funds", async () => {
     const calls = stub();
     wrap();

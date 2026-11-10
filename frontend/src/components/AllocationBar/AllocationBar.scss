@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .allocation-bar {
   display: flex;
   flex-direction: column;
@@ -14,9 +16,19 @@
   }
 
   &__segment {
+    display: grid;
+    place-items: center;
     height: 100%;
-    border-right: 2px solid var(--color-surface);
-    transition: width var(--duration-base) var(--ease-standard);
+    min-width: 0;
+    overflow: hidden;
+    border-right: var(--border-width) solid var(--color-surface);
+    transition:
+      width var(--duration-base) var(--ease-standard),
+      opacity var(--duration-fast) var(--ease-standard);
+
+    &--dim {
+      opacity: 0.45;
+    }
 
     &:last-of-type {
       border-right: 0;
@@ -39,9 +51,32 @@
     }
   }
 
+  // Every second segment (and its legend swatch) is hatched: a shape cue beside the colour.
+  &__segment--hatched,
+  &__swatch--hatched {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      transparent 0 3px,
+      color-mix(in srgb, var(--color-surface) 55%, transparent) 3px 5px
+    );
+  }
+
+  // The share, on a small solid chip so it reads on any segment colour.
+  &__segment-label {
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    white-space: nowrap;
+  }
+
   &__legend {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
     gap: var(--space-2) var(--space-4);
     margin: 0;
     padding: 0;
@@ -54,6 +89,11 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-2);
+    border-radius: var(--radius-sm);
+
+    &--active {
+      background: var(--color-surface-2);
+    }
   }
 
   &__swatch {
@@ -64,7 +104,9 @@
   }
 
   &__name {
+    @include m.shrinkable;
     font-weight: var(--font-weight-medium);
+    overflow-wrap: anywhere;
   }
 
   &__actual {

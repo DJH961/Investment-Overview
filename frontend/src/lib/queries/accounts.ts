@@ -1,6 +1,7 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { components } from "../api-types";
+import { invalidateFor } from "./invalidation";
 import { applyOptimistic, byRoot, rollback, type OptimisticContext } from "./optimistic";
 
 type S = components["schemas"];
@@ -47,7 +48,7 @@ export function useSaveAccount() {
         );
       }),
     onError: (_e, _v, ctx) => rollback(qc, ctx),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
+    onSettled: () => invalidateFor(qc, "accountWrite"),
   });
 }
 
@@ -60,6 +61,6 @@ export function useDeleteAccount() {
         Array.isArray(old) ? (old as Account[]).filter((a) => a.id !== id) : undefined,
       ),
     onError: (_e, _v, ctx) => rollback(qc, ctx),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
+    onSettled: () => invalidateFor(qc, "accountWrite"),
   });
 }

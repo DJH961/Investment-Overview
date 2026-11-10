@@ -1,6 +1,9 @@
 @use "../../styles/mixins" as m;
 
 .toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
@@ -44,6 +47,56 @@
       bottom: calc(var(--tabbar-height) + var(--safe-bottom));
       padding-bottom: var(--space-4);
     }
+  }
+
+  // The tone icon is the non-colour cue (the left border only reinforces it).
+  &__icon {
+    flex-shrink: 0;
+    width: var(--icon-md);
+    height: var(--icon-md);
+    color: var(--color-muted);
+  }
+
+  &--success &__icon {
+    color: var(--color-pos);
+  }
+
+  &--error &__icon {
+    color: var(--color-neg);
+  }
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__close {
+    display: inline-grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    margin: calc(-1 * var(--space-1));
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--color-surface-2);
+      color: var(--color-fg);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__close-icon {
+    width: var(--icon-sm);
+    height: var(--icon-sm);
   }
 
   &__title {

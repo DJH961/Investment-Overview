@@ -45,7 +45,16 @@ const tick = {
   last_update_at: "2026-11-04T14:02:00Z",
   prices_live: true,
   point: { t: "2026-11-04T14:02:00Z", EUR: "9600", USD: "12000" },
-  prices: { "1": { px: "120", prev_close: "110" } },
+  prices: {
+    "1": {
+      px: "120",
+      prev_close: "110",
+      day_move_eur: "77.77",
+      day_move_usd: "100.5",
+      day_pct_eur: "0.0555",
+      day_pct_usd: "0.0909",
+    },
+  },
 };
 
 describe("applyTick golden", () => {
@@ -68,13 +77,44 @@ describe("applyTick golden", () => {
     const usd = h.USD.holdings[0];
     expect(usd.price_native).toBe("120");
     expect(Number(usd.value)).toBeCloseTo(1200, 9);
-    expect(Number(usd.today_move)).toBeCloseTo(100, 9);
-    expect(Number(usd.today_pct)).toBeCloseTo(120 / 110 - 1, 12);
+    // Day figures are the server's, per side: copied, not derived from px / prev.
+    expect(usd.today_move).toBe("100.5");
+    expect(usd.today_pct).toBe("0.0909");
     const eur = h.EUR.holdings[0];
     expect(Number(eur.value)).toBeCloseTo(960, 9); // 1200 / 1.25
-    expect(Number(eur.today_move)).toBeCloseTo(80, 9);
+    expect(eur.today_move).toBe("77.77");
+    expect(eur.today_pct).toBe("0.0555");
     expect(h.EUR.holdings[1].value).toBe("0"); // instrument 2 not in the tick
     expect(h.USD.holdings[1].price_native).toBe("100");
+  });
+
+  it("a tick without day figures leaves the row's day figures alone", () => {
+    const qc = seed();
+    const h0 = qc.getQueryData<any>(["holdings", "both"]);
+    h0.USD.holdings[0].today_pct = "0.01";
+    h0.USD.holdings[0].today_move = "7";
+    applyTick(qc, { ...tick, prices: { "1": { px: "120", prev_close: "110", day_move_usd: null } } });
+    const usd = qc.getQueryData<any>(["holdings", "both"]).USD.holdings[0];
+    expect(usd.today_pct).toBe("0.01");
+    expect(usd.today_move).toBe("7");
+    expect(Number(usd.value)).toBeCloseTo(1200, 9);
+  });
+
+  it("category groups take the tick's day % for their side", () => {
+    const qc = seed();
+    const h = qc.getQueryData<any>(["holdings", "both"]);
+    h.EUR = { ...h.EUR, groups: [{ key: "Stocks", today_pct: "0.001" }, { key: "Bonds", today_pct: "0.002" }] };
+    h.USD = { ...h.USD, groups: [{ key: "Stocks", today_pct: "0.001" }] };
+    qc.setQueryData(["holdings", "both"], h);
+    applyTick(qc, {
+      ...tick,
+      categories: { Stocks: { day_move_eur: "5", day_pct_eur: "0.0123", day_pct_usd: "0.0222", day_move_usd: null } },
+    });
+    const next = qc.getQueryData<any>(["holdings", "both"]);
+    expect(next.EUR.groups[0]).toMatchObject({ today_pct: "0.0123", today_move: "5" });
+    expect(next.EUR.groups[1].today_pct).toBe("0.002"); // category not in the tick
+    expect(next.USD.groups[0].today_pct).toBe("0.0222");
+    expect(next.USD.groups[0].today_move).toBeUndefined();
   });
 
   it("intraday: appends a newer point, replaces the same t", () => {

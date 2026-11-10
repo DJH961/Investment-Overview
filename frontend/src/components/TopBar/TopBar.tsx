@@ -1,7 +1,8 @@
 import clsx from "clsx";
-import { CircleHelp, HeartPulse, LogOut, Monitor, Moon, RefreshCw, Settings, Sun, TriangleAlert, UserRound } from "lucide-react";
+import { CircleHelp, HeartPulse, ListChecks, LogOut, Monitor, Moon, RefreshCw, Settings, Sun, TriangleAlert, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
+import { restartSetupGuide } from "../../lib/setupGuide";
 import { usePrefs, type ReportingCurrency } from "../../lib/prefs";
 import type { ShellSummary } from "../../lib/shell";
 import { DeltaBadge } from "../DeltaBadge";
@@ -112,6 +113,14 @@ export function TopBar({
     ...(compact ? [{ label: `Theme: ${theme}`, icon: <ThemeIcon aria-hidden />, onSelect: cycleTheme }] : []),
     { label: "Settings", icon: <Settings aria-hidden />, onSelect: () => navigate("/settings") },
     { label: "Help", icon: <CircleHelp aria-hidden />, onSelect: () => navigate("/help") },
+    {
+      label: "Restart setup guide",
+      icon: <ListChecks aria-hidden />,
+      onSelect: () => {
+        restartSetupGuide();
+        navigate("/overview");
+      },
+    },
     { label: "Sign out", icon: <LogOut aria-hidden />, onSelect: onLogout, danger: true, separatorBefore: true },
   ];
 
@@ -124,8 +133,8 @@ export function TopBar({
           {compact && summary && (
             <span className="top-bar__mini" aria-label={summaryLabel(summary.estimated)}>
               {summary.estimated && <EstMark />}
-              <Money amount={summary.value} currency={summary.currency} compact />
-              <Percent ratio={summary.pct} signed colored />
+              <Money amount={summary.value} currency={summary.currency} compact className="top-bar__mini-value" />
+              <Percent ratio={summary.pct} signed colored className="top-bar__mini-pct" />
             </span>
           )}
         </div>

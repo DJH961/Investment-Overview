@@ -18,7 +18,7 @@ export interface MoneyProps {
 
 export function Money({ amount, currency, signed = false, colored = false, compact, digits, className }: MoneyProps) {
   const { hide } = useHideAmounts(); // re-render on toggle
-  const tone = colored ? signOf(amount) : null;
+  const tone = colored ? signOf(amount, compact ? undefined : (digits ?? 2)) : null;
   return (
     <span
       className={clsx("money", tone && `money--${tone}`, className)}

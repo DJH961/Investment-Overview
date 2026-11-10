@@ -2,6 +2,7 @@
 /* oxlint-disable jsx-a11y/no-noninteractive-tabindex */
 import type { ReactNode } from "react";
 import { Tooltip } from "../../components/Tooltip";
+import { MISSING } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 
 export function missingReason(ccy: ReportingCurrency): string {
@@ -16,7 +17,7 @@ export function Maybe({ present, ccy, children }: { present: boolean; ccy: Repor
   return (
     <Tooltip content={missingReason(ccy)}>
       <span tabIndex={0}>
-        —
+        {MISSING}
       </span>
     </Tooltip>
   );

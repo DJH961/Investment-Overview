@@ -66,6 +66,20 @@ export function legRows(
 }
 
 /**
+ * The ECB reference rates are fixed at 16:00 Central European Time: 15:00 UTC in winter,
+ * 14:00 UTC while Berlin is on summer time (late March to late October).
+ */
+export function ecbFixingInstant(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const noon = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12));
+  const part = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Berlin", timeZoneName: "shortOffset" })
+    .formatToParts(noon)
+    .find((p) => p.type === "timeZoneName")?.value;
+  const offset = Number(/GMT([+-]\d+)/.exec(part ?? "")?.[1] ?? 1);
+  return `${date}T${String(16 - offset).padStart(2, "0")}:00:00Z`;
+}
+
+/**
  * Resolve an ISO timestamp for ``asOf``: live observation instant first, else
  * ``spot_observed_at``, else the ECB 16:00 CET reference-fixing time on ``asOf.as_of``
  * so even an EOD fallback always carries a timestamp from when its rate was fixed.
@@ -73,7 +87,7 @@ export function legRows(
 function resolveIsoStamp(asOf: Today["as_of"], observedAt?: string | null): string | null {
   if (asOf?.observed_at) return asOf.observed_at;
   if (observedAt) return observedAt;
-  if (asOf?.as_of) return `${asOf.as_of}T15:00:00Z`;
+  if (asOf?.as_of) return ecbFixingInstant(asOf.as_of);
   return null;
 }
 

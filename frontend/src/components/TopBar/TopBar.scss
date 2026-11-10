@@ -21,22 +21,27 @@
     min-width: 0;
   }
 
+  // The title gives way first (ellipsis) so it never paints over the summary pill.
   &__title-line {
+    @include m.shrinkable;
     display: flex;
-    flex-shrink: 0;
     align-items: baseline;
     gap: var(--space-3);
-    min-width: 0;
   }
 
   &__title {
     @include m.truncate;
-    flex-shrink: 0;
-    min-width: 0;
+    @include m.shrinkable;
     margin: 0;
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;
+  }
+
+  // The freshness chip keeps a readable minimum instead of shrinking to its dot.
+  &__freshness {
+    flex-shrink: 0;
+    min-width: 6.5rem;
   }
 
   // When the app last fetched prices (the chip says when they are from).
@@ -81,10 +86,18 @@
     @include m.tablet-only {
       min-width: 0;
 
-      .top-bar__summary-move,
       .top-bar__summary-day {
         display: none;
       }
+    }
+  }
+
+  // The money move only where the pill has room beside the title (wide desktop).
+  &__summary-move {
+    display: none;
+
+    @include m.wide {
+      display: inline;
     }
   }
 
@@ -212,8 +225,8 @@
       overflow: hidden;
     }
 
-    // The page title always shows in full; the portfolio figures beside it
-    // give way (truncate) when space runs out.
+    // The title keeps its room first; the compact value gives way (ellipsis)
+    // before the day %, which is the figure that changes and never gets cut.
     .top-bar__title {
       flex-shrink: 0;
       font-size: var(--font-size-md);
@@ -222,6 +235,15 @@
     .top-bar__mini {
       flex-shrink: 1;
       overflow: hidden;
+    }
+
+    .top-bar__mini-value {
+      @include m.truncate;
+      @include m.shrinkable;
+    }
+
+    .top-bar__mini-pct {
+      flex-shrink: 0;
     }
 
     .top-bar__freshness {

@@ -6,6 +6,7 @@
  * results are pure compounding over their own inputs, so they never appear here.
  */
 import type { QueryClient } from "@tanstack/react-query";
+import { runAsBackgroundRefetch } from "../api";
 
 /** Everything that is computed from prices, FX or the ledger. */
 export const REPORT_ROOTS = [
@@ -23,7 +24,9 @@ export const INVALIDATION = {
   /** Create / edit / delete one transaction. */
   transactionWrite: [...REPORT_ROOTS, "transactions", "transaction", "diagnostics"],
   /** Confirm or undo an import: also new instruments, accounts and the batch list. */
-  importWrite: [...REPORT_ROOTS, "transactions", "transaction", "import-batches", "instruments", "diagnostics"],
+  importWrite: [...REPORT_ROOTS, "transactions", "transaction", "import-batches", "instruments", "accounts", "diagnostics"],
+  /** Rename / create / delete an account: its name shows in holdings, ledger rows, filters and Activity. */
+  accountWrite: ["accounts", ...REPORT_ROOTS, "transactions", "transaction", "import-batches"],
   /** Names, classes and TERs show up in holdings, allocations, risk and the ledger rows. */
   // "graphs": a changed ETF twin redraws the 1D line.
   instrumentEdit: ["instruments", "overview", "holdings", "allocations", "analytics", "calculator", "deposits", "transactions", "graphs"],
@@ -93,9 +96,10 @@ export function scheduleRefetch(queryClient: QueryClient, kind: InvalidationKind
   const timer = setTimeout(() => {
     pending.delete(queryClient);
     const roots = new Set<string>([...kinds].flatMap((k) => INVALIDATION[k]));
-    void queryClient
-      .refetchQueries({ type: "active", predicate: (q) => matchesRoots(q.queryKey, [...roots]) })
-      .catch(() => undefined);
+    // Started by a tick, not the user: the server must not count it as activity.
+    void runAsBackgroundRefetch(() =>
+      queryClient.refetchQueries({ type: "active", predicate: (q) => matchesRoots(q.queryKey, [...roots]) }),
+    ).catch(() => undefined);
   }, Math.random() * STAGGER_MS);
   pending.set(queryClient, { timer, kinds });
 }

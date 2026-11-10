@@ -134,11 +134,11 @@
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 
-  dt {
+  &-label {
     font-weight: var(--font-weight-semibold);
   }
 
-  dd {
+  &-values {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
