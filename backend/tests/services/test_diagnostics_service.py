@@ -248,6 +248,72 @@ class TestBrokerageCash:
         assert diagnostics_service._check_brokerage_cash(session).severity == "ok"
 
 
+class TestLedgerCompleteness:
+    """v7 P7: provider dividends with no ledger row, and days since the last import."""
+
+    def test_deliberately_missing_dividend_is_reported(self, session: Session) -> None:
+        from investment_dashboard.services import app_config_service, dividend_history_service
+
+        account_id = _account(session)
+        instr = instruments_repo.get_or_create(session, symbol="FAKE1", asset_class="etf")
+        session.flush()
+        for d, kind, qty, net in (
+            (date(2025, 1, 6), "buy", "10", "-1000"),
+            (date(2025, 4, 20), "dividend_cash", None, "5"),  # pays the April ex-date
+        ):
+            transactions_repo.insert_transaction(
+                session,
+                Transaction(
+                    account_id=account_id,
+                    instrument_id=instr.id,
+                    date=d,
+                    kind=kind,
+                    quantity=Decimal(qty) if qty else None,
+                    net_native=Decimal(net),
+                    source="manual",
+                ),
+            )
+        app_config_service.set_value(
+            session,
+            dividend_history_service.CONFIG_KEY,
+            f'{{"{instr.id}": ["2025-04-10", "2025-07-10"]}}',  # July one has no row
+        )
+        session.commit()
+
+        item = diagnostics_service._check_missing_dividends(session, today=date(2026, 1, 1))
+
+        assert item.severity == "warning"
+        assert item.count == 1
+        assert item.examples == (
+            "possible missing dividend: FAKE1, ex-date 2025-07-10, 10 shares held",
+        )
+
+    def test_no_cached_history_is_ok(self, session: Session) -> None:
+        assert diagnostics_service._check_missing_dividends(session).severity == "ok"
+
+    def test_import_age_per_account(self, session: Session) -> None:
+        from datetime import datetime
+
+        from investment_dashboard.repositories import import_batches_repo
+
+        account_id = _account(session)
+        import_batches_repo.create(
+            session,
+            created_at=datetime(2026, 1, 1, 12, 0),
+            account_id=account_id,
+            broker="fidelity",
+            filename="x.csv",
+            actor=None,
+        )
+        session.commit()
+
+        item = diagnostics_service._check_import_age(session, today=date(2026, 3, 1))
+
+        assert item.severity == "warning"
+        assert item.count == 1
+        assert "59 day(s) since the last import" in item.examples[0]
+
+
 class TestProviderProbe:
     def test_failing_provider_is_error(self, session: Session) -> None:
         provider_status.reset()

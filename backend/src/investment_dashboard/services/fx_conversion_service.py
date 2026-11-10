@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.activity_log import activity
 from investment_dashboard.domain import fx_pool
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.market_hours import exchange_today
@@ -44,6 +45,13 @@ def _validate(
         raise ValueError("date must not be in the future")
 
 
+def _note_change(action: str, conversion_id: int, on: date) -> None:
+    """One ``changes.log`` line per conversion edit (B-021): id and date, never amounts."""
+    activity("changes").info(
+        "conversion %s: id=%s date=%s kind=fx_conversion", action, conversion_id, on.isoformat()
+    )
+
+
 def list_conversions(session: Session) -> Sequence[FxConversion]:
     return repo.list_all(session)
 
@@ -62,9 +70,11 @@ def create_conversion(
     note: str | None = None,
 ) -> FxConversion:
     _validate(on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur)
-    return repo.add(
+    row = repo.add(
         session, on=on, eur_sent=eur_sent, usd_received=usd_received, fees_eur=fees_eur, note=note
     )
+    _note_change("created", row.id, on)
+    return row
 
 
 def update_conversion(
@@ -82,7 +92,7 @@ def update_conversion(
     row = repo.get(session, conversion_id)
     if row is None:
         return None
-    return repo.update(
+    updated = repo.update(
         session,
         row,
         on=on,
@@ -91,13 +101,17 @@ def update_conversion(
         fees_eur=fees_eur,
         note=note,
     )
+    _note_change("updated", conversion_id, on)
+    return updated
 
 
 def delete_conversion(session: Session, conversion_id: int) -> bool:
     row = repo.get(session, conversion_id)
     if row is None:
         return False
+    on = row.date
     repo.delete(session, row)
+    _note_change("deleted", conversion_id, on)
     return True
 
 

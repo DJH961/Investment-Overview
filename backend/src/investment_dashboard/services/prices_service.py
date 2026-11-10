@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters.yfinance_client import (
@@ -1039,7 +1040,14 @@ def rebuild_settled_snapshots(
         log.warning("snapshot rebuild after a late close failed", exc_info=True)
         return 0
     log.info("late close: rebuilt %d daily point(s) from %s", rebuilt, start)
-    refresh_status._publish({"type": "refresh", "reason": "late close"})
+    # Publish only once the rebuilt points are committed: a client that refetches on
+    # the event must read them, not the previous values.
+    event.listen(
+        session,
+        "after_commit",
+        lambda _s: refresh_status._publish({"type": "refresh", "reason": "late close"}),
+        once=True,
+    )
     return rebuilt
 
 

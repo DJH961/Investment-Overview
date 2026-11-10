@@ -54,6 +54,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Rows from the workbook import would violate the narrower allow-list when the
+    # table is rebuilt (the copy fails), so relabel them as the CSV import first.
+    op.execute(
+        "UPDATE transactions SET source = 'import_vanguard_csv' "
+        "WHERE source = 'import_vanguard_xlsx'"
+    )
     with op.batch_alter_table("transactions", schema=None) as batch_op:
         batch_op.drop_constraint("ck_transactions_source", type_="check")
         batch_op.create_check_constraint(

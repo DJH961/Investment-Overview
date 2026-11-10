@@ -13,7 +13,7 @@ import logging
 import threading
 import time
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
@@ -83,10 +83,16 @@ def get_graph_both(
 def _graph_both(
     session: Session, range_key: GraphRange, compare: bool = True
 ) -> ByCurrency[GraphResponse]:
+    # One instant and one memo for both currencies: each series is built once,
+    # not once as the primary line and again as the other currency's secondary.
+    now = datetime.now(UTC)
+    memo: dict[Any, Any] = {}
     return ByCurrency[GraphResponse].model_validate(
         {
             c: GraphResponse.model_validate(
-                live_graphs.build_graph(session, range_key=range_key, ccy=c, compare=compare)
+                live_graphs.build_graph(
+                    session, range_key=range_key, ccy=c, compare=compare, now=now, memo=memo
+                )
             )
             for c in ("EUR", "USD")
         }

@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
 from investment_dashboard.readmodels.queries.period_query import aggregate, to_table_rows
-from investment_dashboard.repositories import accounts_repo
+from investment_dashboard.repositories import accounts_repo, fx_repo
 
 
 def _seed(session: Session) -> None:
+    # USD account; EUR legs are derived from net_native at 1.20 USD per EUR (B-008).
+    fx_repo.upsert_rates(session, {date(2024, 1, 1): Decimal("1.2")})
     acct = accounts_repo.create_account(
         session,
         broker="fidelity",
@@ -27,28 +29,28 @@ def _seed(session: Session) -> None:
                 account_id=acct.id,
                 date=date(2024, 1, 15),
                 kind="deposit",
-                net_eur=Decimal("500"),
+                net_native=Decimal("600"),
                 source=TransactionSource.MANUAL,
             ),
             Transaction(
                 account_id=acct.id,
                 date=date(2024, 1, 20),
                 kind="dividend_cash",
-                net_eur=Decimal("12"),
+                net_native=Decimal("14.4"),
                 source=TransactionSource.MANUAL,
             ),
             Transaction(
                 account_id=acct.id,
                 date=date(2024, 2, 1),
                 kind="deposit",
-                net_eur=Decimal("300"),
+                net_native=Decimal("360"),
                 source=TransactionSource.MANUAL,
             ),
             Transaction(
                 account_id=acct.id,
                 date=date(2025, 3, 1),
                 kind="interest",
-                net_eur=Decimal("8"),
+                net_native=Decimal("9.6"),
                 source=TransactionSource.MANUAL,
             ),
         ]

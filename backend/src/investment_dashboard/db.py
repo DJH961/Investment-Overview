@@ -19,6 +19,7 @@ ledger-tier session.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Hashable, Iterator
 from contextlib import contextmanager
@@ -399,10 +400,50 @@ _CACHE_TABLES = frozenset(
 _dirty_state: dict[str, float | None] = {"since": None}
 
 
+#: Set ``session.info[SKIP_DIRTY_INFO] = True`` for bookkeeping writes that must
+#: not count as durable data changes (the backup marker, scheduler state).
+SKIP_DIRTY_INFO = "skip_backup_dirty"
+#: ``app_config`` key holding the "dirty since" epoch seconds (B-020), so a restart
+#: inside the backup debounce window still seals the change.
+DIRTY_SINCE_KEY = "backup.dirty_since"
+_dirty_restored = {"done": False}
+
+
+def _persist_dirty(since: float | None) -> None:
+    """Best-effort copy of the marker in ``app_config`` (never raises)."""
+    try:
+        from investment_dashboard.repositories import app_config_repo  # noqa: PLC0415
+
+        with config_session_scope() as cfg:
+            # Bookkeeping, not durable data: must not re-mark the database dirty.
+            cfg.info[SKIP_DIRTY_INFO] = True
+            app_config_repo.set_value(cfg, DIRTY_SINCE_KEY, None if since is None else repr(since))
+    except Exception:
+        logging.getLogger(__name__).debug("could not persist the backup marker", exc_info=True)
+
+
+def restore_dirty() -> None:
+    """Once per process: re-arm the marker a previous process left in ``app_config``."""
+    if _dirty_restored["done"]:
+        return
+    _dirty_restored["done"] = True
+    try:
+        from investment_dashboard.repositories import app_config_repo  # noqa: PLC0415
+
+        with config_session_scope() as cfg:
+            raw = app_config_repo.get(cfg, DIRTY_SINCE_KEY)
+        if raw and _dirty_state["since"] is None:
+            _dirty_state["since"] = float(raw)
+    except Exception:
+        logging.getLogger(__name__).debug("could not restore the backup marker", exc_info=True)
+
+
 def mark_dirty() -> None:
     """Record that durable data changed (keeps the earliest unflushed time)."""
     if _dirty_state["since"] is None:
-        _dirty_state["since"] = time.time()
+        since = time.time()
+        _dirty_state["since"] = since
+        _persist_dirty(since)
 
 
 def dirty_since() -> float | None:
@@ -411,11 +452,16 @@ def dirty_since() -> float | None:
 
 
 def clear_dirty() -> None:
+    had = _dirty_state["since"] is not None
     _dirty_state["since"] = None
+    if had:
+        _persist_dirty(None)
 
 
 @event.listens_for(Session, "after_flush")
 def _track_durable_writes(session: Session, _ctx: Any) -> None:
+    if session.info.get(SKIP_DIRTY_INFO):
+        return
     for obj in (*session.new, *session.dirty, *session.deleted):
         table = getattr(obj, "__table__", None)
         if table is not None and table.name not in _CACHE_TABLES:

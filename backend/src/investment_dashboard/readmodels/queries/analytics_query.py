@@ -229,6 +229,7 @@ def build_curve(
     end: date,
     currency: str,
     benchmark_closes: dict[date, Decimal],
+    benchmark_values: dict[date, Decimal] | None = None,
     recompute_tail_days: int | None = None,
 ) -> list[EquityCurvePoint]:
     """Public wrapper for analytics curve construction.
@@ -244,6 +245,7 @@ def build_curve(
         end=end,
         currency=currency,
         benchmark_closes=benchmark_closes,
+        benchmark_values=benchmark_values,
         recompute_tail_days=recompute_tail_days,
     )
 

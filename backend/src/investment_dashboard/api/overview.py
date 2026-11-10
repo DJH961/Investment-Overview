@@ -29,8 +29,8 @@ def _overview_both(session: Session) -> ByCurrency[OverviewResponse]:
     """EUR and USD overview built in one session (loads are reused)."""
     return ByCurrency[OverviewResponse].model_validate(
         {
-            c: OverviewResponse.model_validate(overview_readmodel.build_overview(session, ccy=c))
-            for c in ("EUR", "USD")
+            c: OverviewResponse.model_validate(payload)
+            for c, payload in overview_readmodel.build_overview_both(session).items()
         }
     )
 

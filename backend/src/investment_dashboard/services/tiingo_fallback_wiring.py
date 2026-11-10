@@ -232,6 +232,13 @@ def _save_state_best_effort(state: state_repo.TiingoDesktopState) -> None:
         )
 
 
+def _note_failure(state: state_repo.TiingoDesktopState, exc: Exception, now_utc: datetime) -> None:
+    """Persist the state after a failed fallback call (a 429 also exhausts the hour)."""
+    if isinstance(exc, RateLimitedError):
+        state_repo.exhaust_hour(state, now_utc)
+    _save_state_best_effort(state)
+
+
 def apply_desktop_fallback(
     session: Session,
     cache: Session,
@@ -305,13 +312,14 @@ def apply_desktop_fallback(
             fetch_closes=_fetch,
             manual=manual,
         )
-    except RateLimitedError:
+    except Exception as exc:
         # Tiingo answered HTTP 429: the account's hourly allowance is spent (no
-        # matter what our own counter said). Pin the hourly bucket to its cap and
-        # persist before re-raising, so no further call fires until the next :00
-        # reset and Settings can show the budget as maxed/rate-limited.
-        state_repo.exhaust_hour(state, now_utc)
-        _save_state_best_effort(state)
+        # matter what our own counter said). Pin the hourly bucket to its cap so no
+        # further call fires until the next :00 reset and Settings can show the budget
+        # as maxed/rate-limited. Any other failure (timeout, 5xx) still counts as an
+        # attempt: the runner stamped the cooldown before calling out, but only a
+        # saved state keeps it (otherwise an outage was retried on every cycle).
+        _note_failure(state, exc, now_utc)
         raise
 
     write_cutoff = expected - timedelta(days=int(write_days))

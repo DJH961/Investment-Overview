@@ -87,14 +87,15 @@ def test_realized_cash_excludes_reinvested_but_keeps_unpaired_cash() -> None:
     )
 
 
-def test_income_dual_unpaired_cash_uses_frozen_legs() -> None:
+def test_income_dual_unpaired_cash_derives_from_native_and_own_date_rate() -> None:
+    # B-008: 100 USD at 1.25 USD/EUR is EUR 80; the frozen (wrong) legs are ignored.
     cash = _txn(
         kind="dividend_cash",
         net_native=Decimal("100"),
-        net_eur=Decimal("80"),
-        net_usd=Decimal("100"),
+        net_eur=Decimal("70"),
+        net_usd=Decimal("99"),
     )
     keys = dividends.reinvest_keys([cash])
-    eur, usd = dividends.income_dual(cash, keys, eur_to_usd={})
+    eur, usd = dividends.income_dual(cash, keys, eur_to_usd={date(2024, 1, 5): Decimal("1.25")})
     assert eur == Decimal("80")
     assert usd == Decimal("100")

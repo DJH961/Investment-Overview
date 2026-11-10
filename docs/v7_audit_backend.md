@@ -239,5 +239,87 @@ None of the findings shows a wrong lifetime XIRR / TWR or a currency-rule break 
 - Read models for deposits, allocations / rebalance, projection / calculator, analytics, mobile export, `live_graphs` internals.
 - Auth / passkeys (`auth_service`, `api/auth.py`) beyond the session-slide path, `api/limits.py`, storage encryption, the restore / upload / split tools, Alembic migrations and their downgrades.
 - Repositories other than `fx_repo` (no N+1 sweep was done across them).
+
+## Second pass (2026-11-10)
+
+Covered: importer parsers (Fidelity, Vanguard CSV and workbook, generic), `importer_service`, `import_staging`, the Vanguard settlement legs, `auth_service` and `api/auth.py`, Alembic downgrades 0002-0023, `benchmark_service`, the Tiingo runner and wiring, the deposits, allocations, projection and analytics read models, the phone export (FX parts only), and the early-close split between `intraday_snapshots_service` and `domain/market_hours`. Read and found sound: auth and passkeys (rate limits, challenge store, fresh-session guard, proxy trust), allocation save and drift, import undo. Not read this pass: `rebalance.py` internals, the rest of `intraday_snapshots_service` (only the early-close helper), `tiingo_client`, `risk_free_service`, storage encryption. "Fixed" means the fix and its test are in the same change set.
+
+**B-023, Identical rows in one broker file lose all but the first on import**
+- Severity: High
+- Category: bug (data loss)
+- Confidence: confirmed
+- Where: `adapters/fidelity/parser.py` (`_parse_row`, `external_id`), `adapters/vanguard/parser.py`, `adapters/vanguard/xlsx_parser.py`. The generic reader numbers repeats; the three strict parsers did not. Dedupe in `importer_service.import_csv` and `transactions_repo.insert_transaction` (UNIQUE `(account_id, external_id)`).
+- What happens: the id hashes date, action, symbol, quantity, price and amount. Two genuine identical rows in one file (two equal small buys, two equal dividends on one day) get the same id. `mark_duplicates` only compares with the ledger, so both show as new in the preview, the second insert hits the UNIQUE rule, is counted as a "duplicate" and is never written. The cash and share balance is short by that row. A fix chosen on one of the two rows in the preview also applied to both.
+- Fix direction: number repeats within a file (the first keeps its id, so rows already imported still match), as the generic reader does.
+- Status: **fixed** (`importer_types.number_repeated_ids`, used by the three strict parsers; test `tests/adapters/test_repeated_rows.py`). Rows an earlier import already dropped are recovered by re-importing the same file.
+
+**B-024, A benchmark symbol that is also a holding overwrites its raw price history**
+- Severity: Medium
+- Category: bug (wrong money maths)
+- Confidence: confirmed (mechanism); only when the benchmark symbol (default VT) is held
+- Where: `services/benchmark_service.py` `refresh_history` -> `prices_service.store_closes`; the benchmark is a normal `Instrument` sharing `price_history`.
+- What happens: the refresh downloads dividend-adjusted (total-return) closes and upserts them over the instrument's rows. If the user holds that symbol, its historical closes are replaced by lower adjusted ones, so every historical valuation of the holding (snapshots, curves, period starts) is understated, and the normal refresh only rewrites recent days, leaving a jump in the series.
+- Fix direction: never write adjusted closes for a symbol with transactions, or give the benchmark its own series.
+- Status: **fixed** (the refresh skips and logs when the instrument has transactions; the benchmark line then compares on price alone; test in `tests/services/test_benchmark_service.py`). Closes already overwritten need a price-history reload for that symbol.
+
+**B-025, Analytics "full history" curve drops the funded benchmark line**
+- Severity: Medium
+- Category: bug
+- Confidence: confirmed
+- Where: `readmodels/analytics.py` `build_for_ccy` (`full_curve=True`) calling `analytics_query.build_curve` without `benchmark_values`.
+- What happens: the windowed curve carries the funded "same contributions into the index" value; the full-history rebuild passes only raw index closes, so `benchmark_value` becomes a share price (about 100, in USD even on the EUR curve) next to a portfolio value in the tens of thousands, while the payload still says `benchmark_is_funded`. Selecting "All" flattens the benchmark line to the floor.
+- Fix direction: build the funded series from inception and pass it.
+- Status: **fixed** (`build_curve` takes `benchmark_values`; test `tests/readmodels/test_analytics_full_curve_benchmark.py`). The v5 phone export path (`analytics.build(full_history_curve=True)`) still rebases raw closes in the web companion; left as is.
+
+**B-026, A failed Tiingo call (timeout, 5xx) loses the cooldown, so an outage is retried every cycle**
+- Severity: Medium
+- Category: bug / inefficiency
+- Confidence: confirmed
+- Where: `services/tiingo_fallback_wiring.py` `apply_desktop_fallback` (state saved only on `RateLimitedError`), `services/tiingo_fallback_runner.py` (`record_market_attempt` is stamped before the call, spend after it).
+- What happens: the runner stamps the per-symbol attempt before calling out so a failure starts the cooldown, but the state was only persisted for HTTP 429. Any other exception skipped the save, so the next cycle (every minute while yfinance is failing) called Tiingo again, each time waiting on the failing endpoint.
+- Fix direction: persist the state on every failure.
+- Status: **fixed** (test `test_failed_tiingo_call_still_persists_the_attempt_cooldown`). Open, Low: the NAV paths record the canary and spend only after a successful call, so a failing NAV probe is still retried; needs a decision on whether a failed probe costs budget.
+
+**B-027, Half-day rule in `intraday_snapshots_service` duplicated the explicit table**
+- Severity: Low
+- Category: inconsistency
+- Confidence: confirmed
+- Where: `services/intraday_snapshots_service.py` `_is_early_close_day` vs `domain/market_hours.EARLY_CLOSE_DAYS`.
+- What happens: two sources for half days; a correction to the table would not reach the twin-close logic.
+- Status: **fixed** (the table is authoritative for the years it lists, 2026-2029; the derived rule answers only for other years; test in `tests/services/test_twin_estimates.py`).
+
+**B-028, Downgrade of migration 0003 fails when workbook-imported rows exist**
+- Severity: Low
+- Category: broken downgrade
+- Confidence: confirmed (the rebuilt table gets the narrower CHECK without `import_vanguard_xlsx`, and the copy violates it)
+- Where: `migrations/versions/0003_v1_4_vanguard_xlsx_source.py` `downgrade` (0021 relabels `import_generic` first; 0003 did not).
+- Fix direction: relabel to `import_vanguard_csv` first.
+- Status: **fixed** (not reachable by `inv-dashboard-export-v5`, which stops at 0014; no test, the migration suite has no ledger with that source).
+
+**B-029, `total_contrib_native` in the deposits summary sums different native currencies**
+- Severity: Low
+- Category: currency-rule breach
+- Confidence: confirmed
+- Where: `readmodels/queries/deposits_query.py` `compute_summary` (`total_native`), exposed as `summary.total_contrib_native`.
+- What happens: a EUR savings deposit and a USD brokerage deposit are added as bare numbers. No frontend page reads the field (only fixtures and one test), so nothing wrong is shown today.
+- Fix direction: drop the field in the next API clean-up, or return it per currency.
+- Status: **open** (an API contract change).
+
+**B-030, Projection `projected_growth` mixes real and nominal values when `real=true`**
+- Severity: Low
+- Category: bug
+- Confidence: confirmed
+- Where: `readmodels/projection.py` `project` (`expected_final` is inflation-deflated, `starting_value` and `total_contributed` are nominal).
+- Fix direction: deflate the two subtracted terms too, or hide the figure in real mode; needs a product decision.
+- Status: **open**.
+
+**B-031, Tiingo recovery rows are stored with source `yfinance`**
+- Severity: Nit
+- Category: hygiene
+- Where: `services/tiingo_fallback_wiring.py` (`prices_repo.upsert_closes` default source).
+- Status: **open** (nothing reads the label).
+
+**B-032, New check (not a defect): ledger completeness (P7)**
+- Added Data Health items `missing_dividends` (provider ex-dates with shares held and no dividend or reinvestment row within 60 days; money-market funds judged per month) and `import_age` (days since the last import per brokerage account; warns after 45 days). Hints only. Provider ex-dates were not stored anywhere (only splits are cached), so a new `dividend_history_service` keeps them as one JSON value in `app_config` (`dividends.ex_dates`), refreshed with the stock-split step of the history refresh. No schema change. Until the first history refresh after deploy the check reports "no history cached" (ok).
 - Nothing was reproduced at runtime. "Confirmed" means traced in code, not executed.
 

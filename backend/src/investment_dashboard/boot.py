@@ -790,8 +790,12 @@ def _backfill_transaction_legs() -> None:
         log.warning("Transaction-legs backfill failed; continuing", exc_info=True)
 
 
-def _run_cache_janitor() -> None:
-    """Drop cache rows whose instrument is gone from the ledger."""
+def _run_cache_janitor() -> bool:
+    """Drop cache rows whose instrument is gone from the ledger.
+
+    Like the other EOD steps it returns ``True`` on success and ``False`` when
+    it caught a failure (B-005), so the scheduler can flag the job as failed.
+    """
     try:
         from investment_dashboard.db import (  # noqa: PLC0415
             cache_session_scope,
@@ -806,9 +810,11 @@ def _run_cache_janitor() -> None:
         log.info("cache-orphan janitor: %s", deleted)
     except Exception:
         log.warning("cache-orphan janitor failed; continuing", exc_info=True)
+        return False
+    return True
 
 
-def _refresh_fx() -> None:
+def _refresh_fx() -> bool:
     try:
         from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
         from investment_dashboard.services.fx_service import (  # noqa: PLC0415
@@ -825,9 +831,11 @@ def _refresh_fx() -> None:
         log.info("FX rates refreshed (floor=%s)", earliest)
     except Exception:
         log.warning("FX refresh failed; continuing with cached rates", exc_info=True)
+        return False
+    return True
 
 
-def _refresh_prices() -> None:
+def _refresh_prices() -> bool:
     try:
         from investment_dashboard.db import (  # noqa: PLC0415
             cache_session_scope,
@@ -846,9 +854,11 @@ def _refresh_prices() -> None:
         log.info("Prices refreshed (floor=%s)", earliest)
     except Exception:
         log.warning("Price refresh failed; continuing with cached prices", exc_info=True)
+        return False
+    return True
 
 
-def _refresh_live_fx() -> None:
+def _refresh_live_fx() -> bool:
     """Warm the live EUR/USD spot so the FX-aware "today" figures start live.
 
     Best-effort and keyless (yfinance ``EURUSD=X``): a failure just leaves the
@@ -872,9 +882,11 @@ def _refresh_live_fx() -> None:
             log.info("Live EUR/USD spot refreshed (%s)", rate)
     except Exception:
         log.warning("Live EUR/USD refresh failed; using ECB daily rate", exc_info=True)
+        return False
+    return True
 
 
-def _refresh_splits() -> None:
+def _refresh_splits() -> bool:
     try:
         from investment_dashboard.db import (  # noqa: PLC0415
             cache_session_scope,
@@ -888,9 +900,25 @@ def _refresh_splits() -> None:
         log.info("Stock splits refreshed (floor=%s)", earliest)
     except Exception:
         log.warning("Split refresh failed; continuing with cached splits", exc_info=True)
+        return False
+    _refresh_dividend_history(earliest)
+    return True
 
 
-def _refresh_benchmark() -> None:
+def _refresh_dividend_history(earliest: date) -> None:
+    """Cache provider ex-dividend dates for the Data Health ledger check (v7 P7)."""
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import dividend_history_service  # noqa: PLC0415
+
+        with ledger_session_scope() as ledger:
+            n = dividend_history_service.refresh(ledger, earliest_needed=earliest)
+        log.info("Dividend history refreshed (%d instruments)", n)
+    except Exception:
+        log.warning("Dividend history refresh failed; keeping cached dates", exc_info=True)
+
+
+def _refresh_benchmark() -> bool:
     """Backfill the comparison-benchmark close history over the portfolio
     lifetime so the analytics overlay and the "vs market" verdict have a full
     curve to compare against (not just the trailing few days)."""
@@ -904,9 +932,11 @@ def _refresh_benchmark() -> None:
         log.info("Benchmark history refreshed (floor=%s, rows=%d)", start, rows)
     except Exception:
         log.warning("Benchmark refresh failed; continuing with cached benchmark", exc_info=True)
+        return False
+    return True
 
 
-def _refresh_intraday_day() -> None:
+def _refresh_intraday_day() -> bool:
     """Re-pull the most recent session's intraday "1 Day" curve.
 
     The Overview "1 Day" graph reconstructs the last trading session from
@@ -931,6 +961,8 @@ def _refresh_intraday_day() -> None:
         log.info("Intraday 1 Day curve reconstructed (%d point(s), force=%s)", written, force)
     except Exception:
         log.warning("Intraday 1 Day refresh failed; continuing", exc_info=True)
+        return False
+    return True
 
 
 def _refresh_intraday_week() -> None:
@@ -980,7 +1012,7 @@ def _invalidate_snapshots() -> None:
     return
 
 
-def _warm_snapshots() -> None:
+def _warm_snapshots() -> bool:
     """Rebuild the daily snapshot cache so the first heavy render reads it warm.
 
     Once the deferred FX/price backfill lands, historical closing values that
@@ -1034,6 +1066,8 @@ def _warm_snapshots() -> None:
         log.info("Warmed %d daily snapshot(s) (floor=%s, full_history=%s)", warmed, start, large)
     except Exception:
         log.warning("Snapshot warming failed; continuing", exc_info=True)
+        return False
+    return True
 
 
 def _apply_persisted_log_level() -> None:
@@ -1146,7 +1180,7 @@ def run_deferred_network_refresh(*, show_progress: bool = True) -> None:
 
     # Ordered stages of the full historic re-download. The labels are what the
     # progress bar shows as each one runs; keep them short and user-legible.
-    steps: tuple[tuple[str, Callable[[], None]], ...] = (
+    steps: tuple[tuple[str, Callable[[], object]], ...] = (
         ("Exchange rates", _refresh_fx),
         ("Transaction history", _backfill_transaction_legs),
         ("Prices", _refresh_prices),

@@ -32,6 +32,7 @@ from investment_dashboard.adapters.importer_types import (
     ParseReport,
     RowIssue,
     UnknownActionError,
+    number_repeated_ids,
 )
 from investment_dashboard.adapters.locale_parsing import (
     LocaleError,
@@ -180,7 +181,7 @@ def parse_vanguard_csv(
             warnings.append(RowIssue(message=warn, line=line, raw=txn_type))
 
     return VanguardParseResult(
-        rows=rows,
+        rows=number_repeated_ids(rows),
         sweeps_dropped=sweeps_dropped,
         unknown_actions=unknown_actions,
         errors=errors,

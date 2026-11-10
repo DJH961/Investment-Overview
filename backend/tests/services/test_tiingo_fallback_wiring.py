@@ -204,6 +204,52 @@ def test_rate_limit_exhausts_the_hourly_budget(
     assert after.rate_limited_at == _NOW
 
 
+def test_failed_tiingo_call_still_persists_the_attempt_cooldown(
+    session: Session,
+) -> None:
+    """Second-pass audit: a non-429 failure (timeout, 5xx) used to skip the state save,
+    so the cooldown stamped before the call was lost and an outage was retried on
+    every refresh cycle."""
+    import contextlib
+
+    from investment_dashboard.repositories import tiingo_state_repo as state_repo
+
+    _due_etf(session)
+    state = state_repo.load(session, _NOW)
+    state.stale_since["VTI"] = _NOW - timedelta(hours=2)
+    state_repo.save(session, state)
+
+    @contextlib.contextmanager
+    def _fake_ledger_scope():
+        yield session
+
+    import investment_dashboard.db as db_module
+
+    original = db_module.ledger_session_scope
+    db_module.ledger_session_scope = _fake_ledger_scope  # type: ignore[assignment]
+    try:
+
+        def _down(symbols, start, end, *, token):
+            raise TimeoutError("tiingo down")
+
+        with pytest.raises(TimeoutError):
+            wiring.apply_desktop_fallback(
+                session,
+                session,
+                due=instruments_repo.list_instruments(session),
+                now_utc=_NOW,
+                today=_TODAY,
+                primary_closes={},
+                token="tok",
+                fetch_closes_impl=_down,
+            )
+    finally:
+        db_module.ledger_session_scope = original
+
+    after = state_repo.load(session, _NOW)
+    assert after.last_market_attempt_at.get("VTI") == _NOW
+
+
 def test_state_save_lock_does_not_poison_ledger_session_or_abort_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

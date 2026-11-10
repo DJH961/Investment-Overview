@@ -74,6 +74,12 @@ _CHANGE_KEYS = (
 )
 JOB_NAMES: tuple[str, ...] = ("tick", "fx", "eod", "backup")
 PAUSE_KEY = "scheduler.pause"
+#: ``app_config`` key: the settled session date the last fully successful EOD
+#: covered (B-004), so a restart while the market is closed does not re-run it.
+EOD_SESSION_KEY = "scheduler.last_eod_session"
+#: Key of the private payload a job returns to say which steps failed (B-005);
+#: ``_run_job`` pops it before the event is published.
+EOD_FAILED_STEPS = "_failed_steps"
 #: Longest pause accepted (a pause always expires).
 MAX_PAUSE = timedelta(days=7)
 #: Minimum gap between backup attempts (also the retry delay after a failure).
@@ -431,6 +437,7 @@ def default_fx_job() -> dict[str, Any] | None:
 def default_eod_job() -> dict[str, Any] | None:
     from investment_dashboard import boot  # noqa: PLC0415
 
+    failed: list[str] = []
     for step in (
         # Live spot first: this job also stamps ``last_fx``, so the live EUR/USD
         # must really be fetched here (a restart otherwise sat on the ECB
@@ -444,8 +451,11 @@ def default_eod_job() -> dict[str, Any] | None:
         boot._warm_snapshots,
         boot._run_cache_janitor,
     ):
-        step()  # each step catches and logs its own failure
-    return None
+        # Each step catches and logs its own failure and returns ok/failed (B-005);
+        # a step that returns nothing counts as ok.
+        if step() is False:
+            failed.append(step.__name__)
+    return {EOD_FAILED_STEPS: failed} if failed else None
 
 
 def default_backup_job() -> dict[str, Any] | None:
@@ -593,6 +603,8 @@ class State:
     #: Last "is anything missing?" check while the US market was closed.
     last_due_check: datetime | None = None
     last_eod_session: date | None = None
+    #: Whether ``last_eod_session`` was read from ``app_config`` yet (B-004).
+    eod_session_loaded: bool = False
     last_backup: datetime | None = None
     running: set[str] = field(default_factory=set)
     requested: set[str] = field(default_factory=set)
@@ -674,6 +686,37 @@ class Scheduler:
                 log.warning("backup due-check failed", exc_info=True)
         return names
 
+    def _load_eod_session(self) -> None:
+        """Read the persisted ``last_eod_session`` once (B-004); never raises."""
+        st = self.state
+        if st.eod_session_loaded:
+            return
+        st.eod_session_loaded = True
+        if st.last_eod_session is not None:
+            return
+        try:
+            from investment_dashboard.db import config_session_scope  # noqa: PLC0415
+            from investment_dashboard.services import app_config_service  # noqa: PLC0415
+
+            with config_session_scope() as cfg:
+                raw = app_config_service.get(cfg, EOD_SESSION_KEY)
+            if raw:
+                st.last_eod_session = date.fromisoformat(raw)
+        except Exception:
+            log.debug("could not load last_eod_session", exc_info=True)
+
+    def _save_eod_session(self, session_date: date) -> None:
+        """Persist the settled session the EOD covered (blocking; call off-loop)."""
+        try:
+            from investment_dashboard.db import config_session_scope  # noqa: PLC0415
+            from investment_dashboard.services import app_config_service  # noqa: PLC0415
+
+            with config_session_scope() as cfg:
+                cfg.info["skip_backup_dirty"] = True  # bookkeeping, not durable data
+                app_config_service.set_value(cfg, EOD_SESSION_KEY, session_date.isoformat())
+        except Exception:
+            log.warning("could not persist last_eod_session", exc_info=True)
+
     def _due_market(self, now: datetime, interval_seconds: int) -> list[str]:
         stocks = self._due_stocks(now, interval_seconds)
         if stocks == ["eod"]:
@@ -686,6 +729,7 @@ class Scheduler:
         if market_hours.is_us_market_open(now):
             every = timedelta(seconds=interval_seconds)
             return ["tick"] if st.last_tick is None or now - st.last_tick >= every else []
+        self._load_eod_session()
         if st.last_eod_session != market_hours.latest_settled_session_date(now):
             return ["eod"]
         # Closed and the day's eod is done: pull only what is still missing.
@@ -752,6 +796,7 @@ class Scheduler:
         st.running.add(name)
         try:
             failed = False
+            failed_steps = False
             extra: dict[str, Any] | None = None
             started = time.perf_counter()
             subject = activity("backups" if name == "backup" else "market_data")
@@ -764,12 +809,25 @@ class Scheduler:
                 subject.warning("job %s FAILED after %.1fs", name, time.perf_counter() - started)
                 failed = True
             else:
-                subject.info("job %s done in %.1fs", name, time.perf_counter() - started)
+                steps_failed: list[str] = (extra or {}).pop(EOD_FAILED_STEPS, None) or []
+                if steps_failed:
+                    subject.warning(
+                        "job %s finished with failed step(s): %s", name, ", ".join(steps_failed)
+                    )
+                    failed_steps = True
+                else:
+                    subject.info("job %s done in %.1fs", name, time.perf_counter() - started)
             # Mark done even on failure so a broken job retries at its normal
             # cadence instead of spinning every poll.
             st.last_runs[name] = now
-            st.last_failed[name] = failed
+            st.last_failed[name] = failed or failed_steps
             self._stamp(name, now, failed=failed)
+            if name == "eod" and not (failed or failed_steps):
+                # A fully successful EOD survives a restart (B-004); a failed one
+                # is retried by the next boot.
+                await asyncio.to_thread(
+                    self._save_eod_session, market_hours.latest_settled_session_date(now)
+                )
             if failed or name == "backup":
                 return
             etype = {"tick": "tick", "fx": "fx", "eod": "refresh"}[name]
@@ -804,8 +862,10 @@ class Scheduler:
                 interval = await asyncio.to_thread(self.jobs.interval_seconds)
             except Exception:
                 log.warning("could not read refresh interval; using 60 s", exc_info=True)
-        due = self.due(now, interval)
-        pauses = paused(now)
+        # The "anything missing?" check and the pause load open database
+        # sessions: keep them off the event loop (B-019).
+        due = await asyncio.to_thread(self.due, now, interval)
+        pauses = await asyncio.to_thread(paused, now)
         due = [n for n in due if n not in pauses]
         heavy = self.jobs.heavy_busy()
         if heavy is not None:
