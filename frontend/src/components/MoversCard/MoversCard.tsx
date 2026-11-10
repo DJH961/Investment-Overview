@@ -55,7 +55,7 @@ function MoverRow({ m, ccy, tone }: { m: Mover; ccy: string; tone: "pos" | "neg"
           <span className="movers-card__tag">{moverTag(m.reason)}</span>
         </span>
         {m.name && (
-          <span className="movers-card__name" title={m.name}>
+          <span className="movers-card__name" title={m.name} data-truncate-ok>
             {m.name}
           </span>
         )}

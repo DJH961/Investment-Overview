@@ -78,6 +78,8 @@ function detect(): Array<Pick<Finding, "kind" | "selector" | "detail">> {
     if (out.length > 60) break;
     if (el.closest("[data-scrollable]") || el.closest("svg") || !visible(el)) continue;
     const box = el as HTMLElement;
+    // Free-length user data may be cut with an ellipsis, but only when it says so.
+    if (box.hasAttribute("data-truncate-ok") && getComputedStyle(box).textOverflow === "ellipsis") continue;
     if (box.clientWidth <= 1) continue;
     if (box.scrollWidth > box.clientWidth + 1) {
       out.push({
@@ -97,6 +99,7 @@ function detect(): Array<Pick<Finding, "kind" | "selector" | "detail">> {
     if (!parent || !text.trim() || seen.has(parent)) continue;
     if (parent.closest("[data-scrollable]") || parent.closest("svg") || parent.closest("script,style,noscript")) continue;
     if (!visible(parent)) continue;
+    if (parent.hasAttribute("data-truncate-ok") && getComputedStyle(parent).textOverflow === "ellipsis") continue;
     // Visually hidden text (the 1px "sr-only" pattern) is not meant to be seen.
     const own = parent.getBoundingClientRect();
     if (own.width <= 2 || own.height <= 2) continue;

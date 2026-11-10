@@ -372,7 +372,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
                           <span className="allocations__row-who">
                             <span className="allocations__row-label">{i.symbol}</span>
                             {i.name && i.name !== i.symbol && (
-                              <span className="allocations__row-name" title={i.name}>
+                              <span className="allocations__row-name" title={i.name} data-truncate-ok>
                                 {i.name}
                               </span>
                             )}
@@ -439,7 +439,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
                     <div className="allocations__cat-head">
                       <span className="allocations__row-who">
                         <span className="allocations__row-label">{c.name}</span>
-                        <span className="allocations__row-name">
+                        <span className="allocations__row-name allocations__row-name--wrap">
                           {eff.ids.length} of {c.members.length} {c.members.length === 1 ? "fund" : "funds"} get new money
                         </span>
                       </span>

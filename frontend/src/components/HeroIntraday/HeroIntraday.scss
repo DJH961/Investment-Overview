@@ -108,6 +108,7 @@
     flex-direction: column;
     gap: var(--space-1);
     min-width: 0;
+    container-type: inline-size;
   }
 
   &__fact-label {
@@ -119,10 +120,10 @@
   }
 
   &__fact-value {
-    @include m.truncate;
-
+    // A money figure is never cut: it scales down with its cell instead.
     margin: 0;
-    font-size: var(--font-size-sm);
+    font-size: clamp(var(--font-size-xs), 11cqi, var(--font-size-sm));
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
 

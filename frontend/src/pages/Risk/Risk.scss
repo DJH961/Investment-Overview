@@ -99,6 +99,7 @@
 
 .risk-page__row-label {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;

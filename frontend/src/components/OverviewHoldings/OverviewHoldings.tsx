@@ -269,7 +269,7 @@ function Row({
             </span>
           )}
         </span>
-        <span className="overview-holdings__name" title={row.name}>
+        <span className="overview-holdings__name" title={row.name} data-truncate-ok>
           {row.name}
         </span>
         {stamp && (

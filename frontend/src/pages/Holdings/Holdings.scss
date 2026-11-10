@@ -5,29 +5,17 @@
   flex-direction: column;
   gap: var(--space-4);
 
-  // Summary strip: at most two lines (7 columns x 2 rows, filled column by
-  // column so related stats pair up); narrower screens scroll it sideways.
+  // Summary tiles: as many columns as fit, wrapping onto more rows on narrower
+  // screens (never a sideways strip whose edge cuts figures off). Neighbouring
+  // tile borders overlap into single hairlines.
   &__stats {
     display: grid;
-    grid-auto-columns: minmax(8.5rem, 1fr);
-    grid-auto-flow: column;
-    grid-template-rows: repeat(2, auto);
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
     margin: 0;
-    overflow-x: auto;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
-    box-shadow: var(--shadow-1);
-    scroll-snap-type: x proximity;
-    scrollbar-width: thin;
+    padding: 0 var(--border-width) var(--border-width) 0;
 
-    // Phone: every stat in full, two per row (each pair stays side by side),
-    // instead of a sideways strip whose edge cuts the figures off.
     @include m.phone {
-      grid-auto-flow: row;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-rows: none;
-      overflow-x: visible;
     }
   }
 
@@ -37,33 +25,19 @@
     gap: var(--space-1);
     min-width: 0;
     container-type: inline-size;
+    margin: 0 calc(-1 * var(--border-width)) calc(-1 * var(--border-width)) 0;
     padding: var(--space-3) var(--space-4);
-    border-right: var(--border-width) solid var(--color-border);
-    scroll-snap-align: start;
-
-    // Top row of the two: a divider under it.
-    &:nth-child(odd) {
-      border-bottom: var(--border-width) solid var(--color-border);
-    }
+    border: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
 
     @include m.phone {
       padding: var(--space-3);
-      border-right: 0;
-      border-bottom: var(--border-width) solid var(--color-border);
-
-      &:nth-child(odd) {
-        border-right: var(--border-width) solid var(--color-border);
-      }
-
-      &:nth-last-child(-n + 2) {
-        border-bottom: 0;
-      }
     }
   }
 
   &__stat-label {
     @include m.eyebrow;
-    @include m.truncate;
+    overflow-wrap: anywhere;
   }
 
   &__stat-value {
@@ -87,7 +61,8 @@
   }
 
   &__stat-hint {
-    @include m.truncate;
+    min-width: 0;
+    overflow-wrap: anywhere;
     min-height: calc(var(--font-size-xs) * var(--line-height-base));
     margin: 0;
     color: var(--color-muted);

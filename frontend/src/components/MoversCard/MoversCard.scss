@@ -98,12 +98,8 @@
 
   &__tag {
     @include m.eyebrow;
-    @include m.truncate;
-
-    @include m.phone {
-      overflow: visible;
-      white-space: normal;
-    }
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   &__name {
