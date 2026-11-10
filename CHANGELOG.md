@@ -17,6 +17,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.15.0] — 2026-11-10
+
+> "Ready": the last fix round before the v5 cutover (push 3 of
+> `docs/v7_plan.md`), including a second audit pass (B-023 to B-032 in
+> `docs/v7_audit_backend.md`).
+
+### Fixed
+- **Imports no longer drop a transaction when a file contains two identical
+  rows** (for example two equal buys on one day; B-023). Re-import the file to
+  add the rows that were dropped; balances and returns move accordingly.
+- **Holding-level EUR cost, return and dividend income use each transaction's
+  own-date rate** and no longer read the frozen import-time legs or fall back
+  to today's spot (B-008). Figures move slightly (cents on dividends). This
+  is the prerequisite for the cutover.
+- Choosing a benchmark you also hold no longer overwrites that holding's
+  price history (B-024). History already overwritten needs one price-history
+  reload for that symbol.
+- The Analytics "All" range shows the same funded benchmark comparison as the
+  shorter ranges (B-025).
+- A restart no longer re-runs the whole end-of-day job or forgets a pending
+  backup (B-004, B-020); a failed end-of-day step shows as failed (B-005);
+  the scheduler's database work no longer blocks the event loop (B-019).
+- A Tiingo outage is no longer retried every cycle (B-026); half-day closes
+  use one calendar everywhere (B-027); the late-NAV refresh arrives after the
+  data is saved; migration 0003's downgrade works with xlsx rows (B-028).
+
+### Changed
+- The two-currency Overview and graph reads build their shared part once
+  (B-013).
+- Transaction and conversion create, update and delete leave a line in
+  `changes.log`: id, date, kind, account; never amounts (B-021).
+
+### Added
+- Data Health hints (never auto-fixes): **possibly missing dividends**
+  (provider ex-dates on which you held shares, with no dividend in the ledger
+  within 60 days) and **days since the last import** per account. The
+  ex-dates are fetched with the split refresh; until the first refresh the
+  check reads "no history cached".
+
 ## [6.14.0] — 2026-11-10
 
 > "Fit": the frontend fixes from the pre-v7 audit (push 2 of `docs/v7_plan.md`),
