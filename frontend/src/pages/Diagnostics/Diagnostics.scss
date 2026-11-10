@@ -44,6 +44,11 @@
   &__sev {
     @extend %chip-badge;
 
+    &--info {
+      background: var(--color-surface-2);
+      color: var(--color-muted);
+    }
+
     &--warning {
       background: var(--color-warn-soft);
       color: var(--color-warn);

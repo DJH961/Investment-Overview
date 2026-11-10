@@ -17,6 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.15.1] — 2026-11-10
+
+### Fixed
+- **Muted the ECB fallback diagnostic for deposits.** Uncovered USD deposits
+  now report as an informational notice (`info`) rather than an urgent warning,
+  keeping the action link to record conversions without escalating the dashboard
+  health status.
+
 ## [6.15.0] — 2026-11-10
 
 > "Ready": the last fix round before the v5 cutover (push 3 of
