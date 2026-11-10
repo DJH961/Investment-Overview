@@ -165,8 +165,13 @@ def create_session(session: Session, settings: Settings, user_agent: str | None)
     return token
 
 
-def validate_session(session: Session, settings: Settings, token: str) -> str | None:
-    """Return the hashed session id if valid (sliding idle + absolute), else ``None``."""
+def validate_session(
+    session: Session, settings: Settings, token: str, *, slide: bool = True
+) -> str | None:
+    """Return the hashed session id if valid (sliding idle + absolute), else ``None``.
+
+    ``slide=False`` (background refetches) validates without extending the idle timeout.
+    """
     if not token or len(token) > 256:
         return None
     sid = _hash_token(token)
@@ -178,7 +183,7 @@ def validate_session(session: Session, settings: Settings, token: str) -> str | 
     if t >= row.expires_at or t >= row.last_seen_at + idle:
         auth_repo.delete_row(session, row)
         return None
-    if t - row.last_seen_at >= _TOUCH_INTERVAL:
+    if slide and t - row.last_seen_at >= _TOUCH_INTERVAL:
         row.last_seen_at = t
     return sid
 

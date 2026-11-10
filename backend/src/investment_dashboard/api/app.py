@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from investment_dashboard import __version__
+from investment_dashboard.activity_log import READ_ONLY_POSTS
 from investment_dashboard.api.activity import log_request_activity
 from investment_dashboard.api.deps import require_auth
 from investment_dashboard.api.limits import RequestGuard
@@ -133,7 +134,9 @@ def _mount_frontend(app: FastAPI, dist: Path, *, docs: bool = True) -> None:
 #: Writes that change no report data (a UI preference), so they keep the read cache.
 #: ``/api/settings/values`` goes through ``settings_service``, whose ``settings``
 #: event bumps the cache unless only presentation settings (currency, theme) changed.
-_CACHE_NEUTRAL_WRITES = frozenset({"/api/graphs/range", "/api/settings/values"})
+#: ``/api/graphs/range`` is deliberately NOT here: the remembered range is part of the
+#: cached overview payload (``default_range``), so changing it must drop the cache.
+_CACHE_NEUTRAL_WRITES = frozenset({"/api/settings/values"}) | READ_ONLY_POSTS
 #: Sign-in, sign-out and passkey ceremonies touch no report data.
 _CACHE_NEUTRAL_PREFIXES = ("/api/auth/",)
 
@@ -175,14 +178,24 @@ def create_app(*, lifespan: bool = True) -> FastAPI:
     ) -> Response:
         # A successful write (transaction, import, setting, repair...) can change
         # any report: forget cached reads so the next request recomputes.
-        response = await call_next(request)
-        if (
-            request.method not in ("GET", "HEAD", "OPTIONS")
-            and response.status_code < 400
-            and request.url.path not in _CACHE_NEUTRAL_WRITES
-            and not request.url.path.startswith(_CACHE_NEUTRAL_PREFIXES)
-        ):
-            read_cache.invalidate()
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return await call_next(request)
+        # Live events published by the route wait for the session commit (B-001); the
+        # session dependency ends before the response is sent, so a failed commit
+        # is a 5xx here and nothing below fires.
+        effects, token = read_cache.begin_deferral()
+        try:
+            response = await call_next(request)
+        finally:
+            read_cache.end_deferral(token)
+        if response.status_code < 400:
+            read_cache.fire(effects)  # routes that never committed a session
+            if request.url.path not in _CACHE_NEUTRAL_WRITES and not request.url.path.startswith(
+                _CACHE_NEUTRAL_PREFIXES
+            ):
+                read_cache.invalidate()
+        else:
+            read_cache.discard(effects)
         return response
 
     @app.middleware("http")

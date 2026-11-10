@@ -4157,6 +4157,15 @@ export interface components {
         };
         /** LiveResponse */
         LiveResponse: {
+            /**
+             * Boot Id
+             * @default
+             */
+            boot_id: string;
+            /** Generations */
+            generations?: {
+                [key: string]: number;
+            };
             /** Missed Points */
             missed_points?: components["schemas"]["TickPoint"][];
             /** Seq */
@@ -5574,6 +5583,20 @@ export interface components {
             name: string;
         };
         /**
+         * TickCategory
+         * @description One allocation category's day move (the holdings rows' ``category``).
+         */
+        TickCategory: {
+            /** Day Move Eur */
+            day_move_eur?: string | null;
+            /** Day Move Usd */
+            day_move_usd?: string | null;
+            /** Day Pct Eur */
+            day_pct_eur?: string | null;
+            /** Day Pct Usd */
+            day_pct_usd?: string | null;
+        };
+        /**
          * TickEstimate
          * @description One pending mutual fund valued from its ETF twin (native price per share).
          */
@@ -5601,6 +5624,10 @@ export interface components {
          * @description A market-hours poll finished: prices, FX and the intraday sample are fresh.
          */
         TickEvent: {
+            /** Categories */
+            categories?: {
+                [key: string]: components["schemas"]["TickCategory"];
+            } | null;
             /** Estimates */
             estimates?: {
                 [key: string]: components["schemas"]["TickEstimate"];
@@ -5661,6 +5688,14 @@ export interface components {
         TickPrice: {
             /** Ccy */
             ccy: string;
+            /** Day Move Eur */
+            day_move_eur?: string | null;
+            /** Day Move Usd */
+            day_move_usd?: string | null;
+            /** Day Pct Eur */
+            day_pct_eur?: string | null;
+            /** Day Pct Usd */
+            day_pct_usd?: string | null;
             /** Prev Close */
             prev_close?: string | null;
             /** Px */
@@ -9222,6 +9257,19 @@ export interface operations {
                          */
                         type: "hello";
                     } | {
+                        /** Categories */
+                        categories?: {
+                            [key: string]: {
+                                /** Day Move Eur */
+                                day_move_eur?: string | null;
+                                /** Day Move Usd */
+                                day_move_usd?: string | null;
+                                /** Day Pct Eur */
+                                day_pct_eur?: string | null;
+                                /** Day Pct Usd */
+                                day_pct_usd?: string | null;
+                            };
+                        } | null;
                         /** Estimates */
                         estimates?: {
                             [key: string]: {
@@ -9267,6 +9315,14 @@ export interface operations {
                             [key: string]: {
                                 /** Ccy */
                                 ccy: string;
+                                /** Day Move Eur */
+                                day_move_eur?: string | null;
+                                /** Day Move Usd */
+                                day_move_usd?: string | null;
+                                /** Day Pct Eur */
+                                day_pct_eur?: string | null;
+                                /** Day Pct Usd */
+                                day_pct_usd?: string | null;
                                 /** Prev Close */
                                 prev_close?: string | null;
                                 /** Px */

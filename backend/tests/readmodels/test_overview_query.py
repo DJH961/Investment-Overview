@@ -893,13 +893,15 @@ def test_instrument_mtd_growth_per_currency(session: Session) -> None:
         account_type="brokerage",
     )
     acme = instruments_repo.get_or_create(session, symbol="ACME", asset_class="etf")
-    # Bought before this month; priced $200 at month start, $250 today.
+    # Bought before this month; $200 at the close before the 1st (the MTD opening,
+    # B-006), $250 today.
+    opening = month_start - timedelta(days=1)
     prices_repo.upsert_closes(
-        session, acme.id, {month_start: Decimal("200.00"), today: Decimal("250.00")}
+        session, acme.id, {opening: Decimal("200.00"), today: Decimal("250.00")}
     )
     fx_repo.upsert_rates(
         session,
-        {month_start: Decimal("1.25"), today: Decimal("1.25")},
+        {opening: Decimal("1.25"), today: Decimal("1.25")},
     )
     session.add(
         Transaction(

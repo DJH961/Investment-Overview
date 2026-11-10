@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import dividends
+from investment_dashboard.domain import day_move, dividends, periods
 from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
@@ -791,8 +791,9 @@ def compute_instrument_metrics(  # noqa: PLR0915
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     today_rate = lookup_rate_with_forward_fill(eur_to_usd, as_of)
 
-    year_start = date(as_of.year, 1, 1)
-    month_start = date(as_of.year, as_of.month, 1)
+    # Flows dated from these starts on belong to YTD / MTD (domain.periods).
+    year_start = periods.year_to_date(as_of).start
+    month_start = periods.month_to_date(as_of).start
     eur_flows, usd_flows = build_instrument_cashflows(session, as_of=as_of)
     # Cash-dividend legs that were immediately reinvested must not be counted
     # as income (already captured as cost basis + shares via the reinvest
@@ -862,18 +863,21 @@ def compute_instrument_metrics(  # noqa: PLR0915
         ):
             acc[lot_iid] = acc.get(lot_iid, ZERO) + value
 
-    # Start-of-year value per instrument in EUR (best-effort, for YTD growth);
-    # USD parallel uses the FX rate on the first of the year. Reuse the ledger
-    # already loaded above (``txns`` spans through ``as_of`` ⊇ year-start) so the
-    # year-start roll-up does not issue a second full ledger query.
-    fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, year_start) or today_rate
+    # Opening value per instrument in EUR (for YTD growth): the close of the day
+    # before the period starts, while the buys/sells dated from the start on are
+    # the period's flows (B-006, :mod:`domain.periods`). USD parallel uses that
+    # day's FX rate. Reuse the ledger already loaded above (``txns`` spans
+    # through ``as_of``) so the roll-up does not issue a second ledger query.
+    ytd_open = periods.year_to_date(as_of).opening_date
+    mtd_open = periods.month_to_date(as_of).opening_date
+    fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, ytd_open) or today_rate
     start_value_eur = _value_by_instrument(
-        compute_positions(session, as_of=year_start, transactions=txns)
+        compute_positions(session, as_of=ytd_open, transactions=txns)
     )
-    # Start-of-month value per instrument (for MTD growth), same approach.
-    fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, month_start) or today_rate
+    # Month opening value per instrument (for MTD growth), same approach.
+    fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, mtd_open) or today_rate
     month_start_value_eur = _value_by_instrument(
-        compute_positions(session, as_of=month_start, transactions=txns)
+        compute_positions(session, as_of=mtd_open, transactions=txns)
     )
 
     out: dict[int, InstrumentMetrics] = {}
@@ -1073,7 +1077,7 @@ def _round_cent(value: Decimal) -> Decimal:
     return value.quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
-def _instrument_daily_growth(  # noqa: PLR0911
+def _instrument_daily_growth(
     *,
     session: Session,
     instrument_id: int,
@@ -1130,11 +1134,15 @@ def _instrument_daily_growth(  # noqa: PLR0911
     """
     if is_money_market:
         return None, None, None, None, None
-    pairs = recent_closes.get(instrument_id, [])
-    if not pairs:
-        return None, None, None, None, None
-    last_date, close_last = pairs[0]
-    if close_last is None:
+    # Which two marks to diff: the one shared rule (``domain.day_move``), also used by
+    # the live tick. A holding on an older print than the book (an outdated NAV)
+    # keeps its own last *published* move (greyed downstream), never a fake 0 %.
+    legs = day_move.select_day_legs(
+        recent_closes.get(instrument_id, []),
+        latest_price_date=latest_price_date,
+        previous_price_date=previous_price_date,
+    )
+    if legs is None:
         return None, None, None, None, None
 
     def _leg_rate(on: date) -> Decimal | None:
@@ -1149,53 +1157,14 @@ def _instrument_daily_growth(  # noqa: PLR0911
         overrides = {on: rate} if rate is not None else {}
         return _convert_native(value_native, native_currency, on, overrides, today_rate)
 
-    if (
-        latest_price_date is not None
-        and previous_price_date is not None
-        and last_date < latest_price_date
-    ):
-        # This holding sits on an older print than the freshest peer (an outdated
-        # NAV that hasn't refreshed yet). Mirror the web companion: keep showing
-        # its own latest *published* move (its two most recent prints) rather than
-        # forward-filling the price onto the freshest book date, which would erase
-        # the move down to FX alone and read a misleading 0 %. The staleness flag
-        # downstream greys it, so it reads as "last session's move" — never zero —
-        # even though it is excluded from today's total growth.
-        if len(pairs) >= 2 and pairs[1][1] is not None:
-            prev_date, close_prev = pairs[1]
-            e_last, u_last = _convert(shares * close_last, last_date)
-            e_prev, u_prev = _convert(shares * close_prev, prev_date)
-            growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
-            growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
-            move_eur = _round_cent(e_last - e_prev)
-            move_usd = _round_cent(u_last - u_prev)
-            return growth_eur, growth_usd, move_eur, move_usd, last_date
-        # No prior print of its own to diff against — fall back to a flat
-        # (FX-only) forward-fill so the row still carries a date for the
-        # staleness gate without inventing a price move.
-        current_native = shares * close_last
-        e_last, u_last = _convert(current_native, latest_price_date)
-        e_prev, u_prev = _convert(current_native, previous_price_date)
-        growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
-        growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
-        move_eur = _round_cent(e_last - e_prev)
-        move_usd = _round_cent(u_last - u_prev)
-        return growth_eur, growth_usd, move_eur, move_usd, last_date
-
-    if len(pairs) < 2:
-        return None, None, None, None, None
-    prev_date, close_prev = pairs[1]
-    if close_prev is None:
-        return None, None, None, None, None
-    current_book_date = latest_price_date or last_date
-    previous_book_date = previous_price_date or prev_date
-    e_last, u_last = _convert(shares * close_last, current_book_date)
-    e_prev, u_prev = _convert(shares * close_prev, previous_book_date)
+    # Both marks use today's share count, so a buy today is not this row's gain (B-007).
+    e_last, u_last = _convert(shares * legs.close_last, legs.rate_date_last)
+    e_prev, u_prev = _convert(shares * legs.close_prev, legs.rate_date_prev)
     growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
     growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
     move_eur = _round_cent(e_last - e_prev)
     move_usd = _round_cent(u_last - u_prev)
-    return growth_eur, growth_usd, move_eur, move_usd, last_date
+    return growth_eur, growth_usd, move_eur, move_usd, legs.as_of
 
 
 def _instrument_ytd_growth(
@@ -1204,14 +1173,15 @@ def _instrument_ytd_growth(
     current_value: Decimal,
     net_invested: Decimal,
 ) -> Decimal | None:
-    """Simple YTD growth net of this year's purchases, in native currency.
+    """Simple period growth net of the period's purchases (YTD or MTD).
 
-    ``(V_now - V_jan1 - net_invested_ytd) / V_jan1``. ``None`` when there
-    was no start-of-year mark to grow from.
+    ``(V_now - V_open - net_invested) / (V_open + net_invested)``, the shared
+    :func:`domain.periods.growth_after_flows`; ``V_open`` is the close before
+    the period starts. ``None`` when there was no opening mark to grow from.
     """
     if start_value <= ZERO:
         return None
-    return (current_value - start_value - net_invested) / start_value
+    return periods.growth_after_flows(start_value, current_value, net_invested)
 
 
 @dataclass(frozen=True)

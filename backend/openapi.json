@@ -7028,6 +7028,18 @@
       },
       "LiveResponse": {
         "properties": {
+          "boot_id": {
+            "default": "",
+            "title": "Boot Id",
+            "type": "string"
+          },
+          "generations": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Generations",
+            "type": "object"
+          },
           "missed_points": {
             "items": {
               "$ref": "#/components/schemas/TickPoint"
@@ -11505,6 +11517,61 @@
         "title": "TargetOut",
         "type": "object"
       },
+      "TickCategory": {
+        "description": "One allocation category's day move (the holdings rows' ``category``).",
+        "properties": {
+          "day_move_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Move Eur"
+          },
+          "day_move_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Move Usd"
+          },
+          "day_pct_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Pct Eur"
+          },
+          "day_pct_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Pct Usd"
+          }
+        },
+        "title": "TickCategory",
+        "type": "object"
+      },
       "TickEstimate": {
         "description": "One pending mutual fund valued from its ETF twin (native price per share).",
         "properties": {
@@ -11569,6 +11636,20 @@
       "TickEvent": {
         "description": "A market-hours poll finished: prices, FX and the intraday sample are fresh.",
         "properties": {
+          "categories": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/TickCategory"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories"
+          },
           "estimates": {
             "anyOf": [
               {
@@ -11782,6 +11863,54 @@
           "ccy": {
             "title": "Ccy",
             "type": "string"
+          },
+          "day_move_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Move Eur"
+          },
+          "day_move_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Move Usd"
+          },
+          "day_pct_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Pct Eur"
+          },
+          "day_pct_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Pct Usd"
           },
           "prev_close": {
             "anyOf": [
@@ -17491,6 +17620,72 @@
                     {
                       "description": "A market-hours poll finished: prices, FX and the intraday sample are fresh.",
                       "properties": {
+                        "categories": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": {
+                                "description": "One allocation category's day move (the holdings rows' ``category``).",
+                                "properties": {
+                                  "day_move_eur": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Move Eur"
+                                  },
+                                  "day_move_usd": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Move Usd"
+                                  },
+                                  "day_pct_eur": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Pct Eur"
+                                  },
+                                  "day_pct_usd": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Pct Usd"
+                                  }
+                                },
+                                "title": "TickCategory",
+                                "type": "object"
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Categories"
+                        },
                         "estimates": {
                           "anyOf": [
                             {
@@ -17657,6 +17852,54 @@
                                   "ccy": {
                                     "title": "Ccy",
                                     "type": "string"
+                                  },
+                                  "day_move_eur": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Move Eur"
+                                  },
+                                  "day_move_usd": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Move Usd"
+                                  },
+                                  "day_pct_eur": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Pct Eur"
+                                  },
+                                  "day_pct_usd": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Pct Usd"
                                   },
                                   "prev_close": {
                                     "anyOf": [

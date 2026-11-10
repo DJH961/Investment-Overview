@@ -161,10 +161,10 @@ def test_guard_principal_is_reused(
     calls = 0
     real = security._session_lookup
 
-    def counting(token: str, settings: Settings) -> str | None:
+    def counting(token: str, settings: Settings, slide: bool = True) -> str | None:
         nonlocal calls
         calls += 1
-        return real(token, settings)
+        return real(token, settings, slide)
 
     monkeypatch.setattr(security, "_session_lookup", counting)
     assert anon_client.get("/api/refresh/status").status_code == 200

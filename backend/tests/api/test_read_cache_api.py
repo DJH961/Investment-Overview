@@ -18,8 +18,10 @@ async def _allow() -> None:
 def test_overview_is_cached_and_a_write_invalidates(api_client: TestClient) -> None:
     assert api_client.get("/api/overview?ccy=EUR").status_code == 200
     assert read_cache.size() >= 1
-    # Remembering the chart range is a UI preference: the cache stays.
+    # The remembered chart range is part of the cached overview (B-016): it drops the cache.
     api_client.put("/api/graphs/range", json={"range": "1m"})
+    assert read_cache.size() == 0
+    assert api_client.get("/api/overview?ccy=EUR").status_code == 200
     assert read_cache.size() >= 1
     # A real data write drops it.
     assert api_client.post("/api/diagnostics/problems/dismiss-all").status_code < 400

@@ -47,16 +47,14 @@ class Lot:
     div_eur: Decimal = ZERO
     div_usd: Decimal = ZERO
     #: Reinvested dividend income (qty x price at the reinvest date's rate), any
-    #: instrument. Joins ``cost_*`` except for money-market funds.
+    #: instrument. Joins ``cost_eur`` / ``cost_usd`` for every instrument,
+    #: money-market funds included (their native ``cost_native`` leaves it out).
     reinv_eur: Decimal = ZERO
     reinv_usd: Decimal = ZERO
     ytd_invested_eur: Decimal = ZERO
     ytd_invested_usd: Decimal = ZERO
     mtd_invested_eur: Decimal = ZERO
     mtd_invested_usd: Decimal = ZERO
-    #: Share count the dual-currency sell fraction uses (a priceless reinvest
-    #: does not enter it), kept apart so the native walk stays untouched.
-    shares_dual: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -105,38 +103,34 @@ def walk(  # noqa: PLR0912, PLR0915
             if resolver is not None:
                 lot.cost_eur -= eur
                 lot.cost_usd -= usd
-                lot.shares_dual += qty
         elif kind == TransactionKind.SELL.value:
             # Average-cost method: a partial sale releases a proportional slice of
             # the cost basis (spec 6.5). ``qty`` is already negative for sells.
+            # One share count drives the native and the EUR / USD fraction alike
+            # (B-010), so a priceless reinvest cannot make them drift apart.
             shares_before = lot.shares
             if shares_before > ZERO:
+                sold = min(-qty, shares_before)
+                frac = sold / shares_before
                 avg_cost = lot.cost_native / shares_before
                 lot.cost_native += avg_cost * qty
                 lot.cost_native = max(lot.cost_native, ZERO)
-            lot.shares += qty
-            if resolver is not None:
-                dual_before = lot.shares_dual
-                if dual_before > ZERO:
-                    sold = min(-qty, dual_before)
-                    frac = sold / dual_before
+                if resolver is not None:
                     lot.cost_eur = lot.cost_eur * (1 - frac)
                     lot.cost_usd = lot.cost_usd * (1 - frac)
-                lot.shares_dual = dual_before + qty
+            lot.shares += qty
         elif kind == TransactionKind.DIVIDEND_REINVEST.value:
             lot.shares += qty
             if t.price_native is not None and iid not in money_market_ids:
                 lot.cost_native += qty * t.price_native
-            if resolver is not None and t.price_native is not None:
-                lot.shares_dual += qty
-                if iid is not None:
-                    native = t.account.native_currency if t.account else "EUR"
-                    e, u = resolver.convert_native(qty * t.price_native, native, t.date)
-                    # Reinvested income at its own date's rate (every instrument).
-                    lot.reinv_eur += e
-                    lot.reinv_usd += u
-                    lot.cost_eur += e
-                    lot.cost_usd += u
+            if resolver is not None and t.price_native is not None and iid is not None:
+                native = t.account.native_currency if t.account else "EUR"
+                e, u = resolver.convert_native(qty * t.price_native, native, t.date)
+                # Reinvested income at its own date's rate (every instrument).
+                lot.reinv_eur += e
+                lot.reinv_usd += u
+                lot.cost_eur += e
+                lot.cost_usd += u
         elif kind == TransactionKind.DIVIDEND_CASH.value:
             if (t.account_id, iid, t.date) not in reinvest_keys:
                 lot.dividends_cash_native += net
@@ -145,8 +139,6 @@ def walk(  # noqa: PLR0912, PLR0915
                     lot.div_usd += usd
         elif kind == TransactionKind.SPLIT.value:
             lot.shares += qty
-            if resolver is not None:
-                lot.shares_dual += qty
 
         if (
             resolver is not None

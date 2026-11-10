@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import dividends, kinds
+from investment_dashboard.domain import dividends, kinds, periods
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import (
@@ -441,23 +441,27 @@ def aggregate(  # noqa: PLR0912, PLR0915
         # services elsewhere.
         from investment_dashboard.services import snapshots_service  # noqa: PLC0415
 
-        # Resolve each period's [open, end] boundary once.
-        bounds = {
-            label: (
-                _period_start(label, monthly=monthly),
-                _period_end(label, monthly=monthly, today=today),
+        # Resolve each period's [open, end] boundary once. The opening value is
+        # the close of ``window.opening_date`` (the day before the period starts)
+        # and the flows those dated from the start on: the one rule in
+        # :mod:`domain.periods`, shared with the Overview MTD / YTD (B-006).
+        windows = {
+            label: periods.PeriodWindow(
+                start=_period_start(label, monthly=monthly),
+                end=_period_end(label, monthly=monthly, today=today),
             )
             for label in buckets
         }
+        bounds = {label: (w.start, w.end) for label, w in windows.items()}
         # Batch every boundary snapshot read in one shot: each period needs its
         # closing (period_end) and — once it has started — its opening
         # (previous day's close). A single bulk read replaces the previous
         # ``get_or_compute`` per period (2N cache round-trips).
         boundary_dates: set[date] = set()
-        for period_open, period_end in bounds.values():
-            boundary_dates.add(period_end)
-            if period_open <= today:
-                boundary_dates.add(period_open - timedelta(days=1))
+        for w in windows.values():
+            boundary_dates.add(w.end)
+            if w.start <= today:
+                boundary_dates.add(w.opening_date)
         try:
             boundary_eur = snapshots_service.get_or_compute_many(session, boundary_dates)
         except Exception:  # pragma: no cover - defensive: keep page renderable
@@ -488,7 +492,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
 
         for label in buckets:
             period_open, period_end = bounds[label]
-            opening_prev = period_open - timedelta(days=1)
+            opening_prev = windows[label].opening_date
             started_period = period_open <= today
             closing_by_label[label] = boundary_eur.get(period_end, ZERO)
             # Opening = previous day's close (zero for not-yet-started periods).
@@ -661,21 +665,22 @@ def _attach_cumulative_growth(
             growth_usd = None
 
         # ---- Per-period (yearly) growth via XIRR, currency-dependent -------
-        period_start = _period_start(r.label, monthly=monthly)
+        window = periods.PeriodWindow(start=_period_start(r.label, monthly=monthly), end=period_end)
+        period_start = window.start
         # USD opening balance: prefer the per-period-end display leg when the
-        # page already aggregated in USD, else convert the EUR opening with the
-        # period-start FX rate.
+        # page already aggregated in USD, else convert the EUR opening (the
+        # close of ``window.opening_date``) with that day's FX rate.
         if r.display_currency == "USD" and r.opening_value_display is not None:
             opening_usd: Decimal | None = r.opening_value_display
         else:
-            fx_open = lookup_rate_with_forward_fill(eur_to_usd, period_start)
+            fx_open = lookup_rate_with_forward_fill(eur_to_usd, window.opening_date)
             opening_usd = (
                 r.opening_value_eur * fx_open if fx_open is not None and fx_open != 0 else None
             )
         yearly_eur = _period_xirr_growth(
             opening=r.opening_value_eur,
             closing=closing_eur,
-            window_flows=[cf for cf in flows_eur if period_start <= cf.date <= period_end],
+            window_flows=[cf for cf in flows_eur if window.counts_flow(cf.date)],
             period_start=period_start,
             period_end=period_end,
         )
@@ -683,7 +688,7 @@ def _attach_cumulative_growth(
             yearly_usd = _period_xirr_growth(
                 opening=opening_usd,
                 closing=closing_usd,
-                window_flows=[cf for cf in flows_usd if period_start <= cf.date <= period_end],
+                window_flows=[cf for cf in flows_usd if window.counts_flow(cf.date)],
                 period_start=period_start,
                 period_end=period_end,
             )

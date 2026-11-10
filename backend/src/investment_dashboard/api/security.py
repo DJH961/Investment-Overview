@@ -66,9 +66,14 @@ def _token_ok(presented: str, settings: Settings) -> bool:
     return secrets.compare_digest(presented.encode("utf-8"), configured.encode("utf-8"))
 
 
-def _session_lookup(token: str, settings: Settings) -> str | None:
+#: Sent by the client on refetches that no person asked for (live ticks): they must
+#: not keep an unattended tab signed in (B-015).
+BACKGROUND_HEADER = "x-background-refetch"
+
+
+def _session_lookup(token: str, settings: Settings, slide: bool = True) -> str | None:
     with config_session_scope() as db:
-        return auth_service.validate_session(db, settings, token)
+        return auth_service.validate_session(db, settings, token, slide=slide)
 
 
 def _session_peek(token: str, settings: Settings) -> bool:
@@ -101,7 +106,8 @@ async def resolve_principal(request: Request) -> Principal | None:
     settings = get_settings()
     token = request.cookies.get(cookie_name(settings))
     if token:
-        sid = await run_in_threadpool(_session_lookup, token, settings)
+        slide = not (request.method == "GET" and request.headers.get(BACKGROUND_HEADER) == "1")
+        sid = await run_in_threadpool(_session_lookup, token, settings, slide)
         if sid is not None:
             return Principal(kind="session", session_id=sid)
     presented = _presented_token(request)

@@ -12,10 +12,9 @@ This helper models the New York Stock Exchange's *regular* weekday session,
 stale carried-forward close on a holiday is never dressed up as a live,
 time-stamped figure). The holiday calendar is computed, not table-driven, so it
 keeps the module dependency-free while staying correct for any year — it mirrors
-the browser companion's ``web/src/market-hours.ts``. Half-day early closes (a
-1:00pm close on a few sessions) are deliberately **not** modelled: the worst
-case there is showing the live (rather than settled) wording for a couple of
-hours on numbers that are identical either way.
+the browser companion's ``web/src/market-hours.ts``. Half-day early closes
+(13:00 ET) come from the explicit table :data:`EARLY_CLOSE_DAYS`, and every
+"when does the session end" question goes through :func:`session_close`.
 """
 
 from __future__ import annotations
@@ -28,9 +27,35 @@ from zoneinfo import ZoneInfo
 #: relevant clock for intraday vs. settled wording.
 _MARKET_TZ = ZoneInfo("America/New_York")
 
-#: Regular cash session bounds (local exchange time). Half-days are ignored.
+#: Regular cash session bounds (local exchange time). Half days close at
+#: :data:`_EARLY_CLOSE` instead (see :data:`EARLY_CLOSE_DAYS`).
 _OPEN = time(9, 30)
 _CLOSE = time(16, 0)
+
+#: Clock time (ET) of an NYSE half-day ("early close") session.
+_EARLY_CLOSE = time(13, 0)
+
+#: NYSE early-close (13:00 ET) sessions, listed explicitly per year and never
+#: derived: the 3 July rule depends on where 4 July falls (no half day when 3 July
+#: is itself the observed holiday or a weekend), and the 24 December one on where
+#: Christmas falls. Checked against the NYSE holiday calendar; extend the table
+#: each year (a missing year simply means "no half days known", i.e. 16:00).
+EARLY_CLOSE_DAYS: frozenset[date] = frozenset(
+    {
+        # 2026: 3 Jul is the observed Independence Day (full holiday).
+        date(2026, 11, 27),  # day after Thanksgiving
+        date(2026, 12, 24),  # Christmas Eve (Thu)
+        # 2027: 3 Jul is a Saturday; 24 Dec is the observed Christmas (full holiday).
+        date(2027, 11, 26),  # day after Thanksgiving
+        # 2028: 24 Dec is a Sunday.
+        date(2028, 7, 3),  # Mon before Independence Day
+        date(2028, 11, 24),  # day after Thanksgiving
+        # 2029
+        date(2029, 7, 3),  # Tue before Independence Day
+        date(2029, 11, 23),  # day after Thanksgiving
+        date(2029, 12, 24),  # Christmas Eve (Mon)
+    }
+)
 
 #: ``datetime.weekday()`` returns 5/6 for Saturday/Sunday (Mon=0 … Sun=6).
 _SATURDAY = 5
@@ -207,6 +232,20 @@ def is_us_market_holiday(day: date) -> bool:
     return day in _holidays_for_year(day.year)
 
 
+def is_early_close_day(day: date) -> bool:
+    """Return ``True`` when ``day`` is an NYSE half-day session (13:00 ET close)."""
+    return day in EARLY_CLOSE_DAYS
+
+
+def session_close(day: date) -> time:
+    """The exchange-local clock time the regular session ends on ``day``.
+
+    13:00 ET on a half day (:data:`EARLY_CLOSE_DAYS`), else 16:00 ET. It does not
+    say whether ``day`` trades at all (see :func:`is_trading_day`).
+    """
+    return _EARLY_CLOSE if day in EARLY_CLOSE_DAYS else _CLOSE
+
+
 def is_trading_day(day: date) -> bool:
     """Return ``True`` when ``day`` is a regular NYSE trading session.
 
@@ -269,7 +308,8 @@ def is_us_market_open(now: datetime | None = None) -> bool:
     as already being in exchange time) or timezone-aware (converted to exchange
     time first). Weekends **and** full-day market holidays are always closed, so
     a randomly-closed session (a holiday) is never mistaken for an open one;
-    otherwise the regular 09:30–16:00 America/New_York window applies.
+    otherwise the regular 09:30–16:00 America/New_York window applies (13:00 on a
+    half day, :func:`session_close`).
     """
     if now is None:
         now = datetime.now(UTC)
@@ -278,14 +318,14 @@ def is_us_market_open(now: datetime | None = None) -> bool:
         return False
     if is_us_market_holiday(local.date()):
         return False
-    return _OPEN <= local.time() < _CLOSE
+    return _OPEN <= local.time() < session_close(local.date())
 
 
 def latest_settled_session_date(now: datetime | None = None) -> date:
-    """The exchange date of the most recent NYSE session whose 16:00 close has passed.
+    """The exchange date of the most recent NYSE session whose close has passed.
 
     Holiday-aware (unlike :func:`previous_trading_day`): today counts only once
-    its 16:00 America/New_York close is in the past, otherwise the date rolls
+    its close (16:00 America/New_York, 13:00 on a half day) is in the past, otherwise the date rolls
     back over weekends and full-day market holidays to the prior trading day.
     This is "the close we should already be holding" — the desktop mirror of the
     browser companion's ``latestSettledSessionDate`` — used to decide whether a
@@ -299,7 +339,9 @@ def latest_settled_session_date(now: datetime | None = None) -> date:
     local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now
     day = local.date()
     settled_today = (
-        local.weekday() < _SATURDAY and not is_us_market_holiday(day) and local.time() >= _CLOSE
+        local.weekday() < _SATURDAY
+        and not is_us_market_holiday(day)
+        and local.time() >= session_close(day)
     )
     if settled_today:
         return day
@@ -374,10 +416,10 @@ def regular_session_close(day: date, *, tz: tzinfo | None = None) -> datetime:
     ``tz`` is given the instant is converted to that display timezone (so a CET
     user reads the 22:00 local close); otherwise it stays in exchange time.
 
-    Like the rest of this module it ignores holidays and half-days (see the
-    module docstring): the close is always modelled as 16:00 exchange time.
+    Holidays are ignored; half days close at 13:00 exchange time
+    (:func:`session_close`), every other day at 16:00.
     """
-    close = datetime.combine(day, _CLOSE, tzinfo=_MARKET_TZ)
+    close = datetime.combine(day, session_close(day), tzinfo=_MARKET_TZ)
     return close.astimezone(tz) if tz is not None else close
 
 
