@@ -118,11 +118,11 @@ def _ecb_fallback_check(session: Session) -> dict[str, Any]:
     return {
         "id": "ecb_fallback_deposits",
         "title": "Deposits paid at the ECB rate",
-        "severity": "warning" if fallen else "ok",
+        "severity": "info" if fallen else "ok",
         "count": len(fallen),
         "detail": (
             "These USD deposits were not fully covered by recorded conversions; "
-            "the ECB rate was used for the rest. Add the missing conversion."
+            "the ECB rate was used for the rest."
             if fallen
             else "Every USD deposit is covered by a recorded conversion."
         ),
@@ -155,9 +155,7 @@ def build(session: Session, *, log_limit: int = 50) -> dict[str, Any]:
         )
     activity = refresh_status.snapshot()
     return {
-        "status": "warning"
-        if fallback_check["count"] and report.worst_severity == "ok"
-        else report.worst_severity,
+        "status": report.worst_severity,
         "count": report.problem_count + (1 if fallback_check["count"] else 0),
         "generated_at": report.generated_at.isoformat(),
         "checks": [

@@ -90,7 +90,8 @@ def test_deposit_rows_show_conversion_batches_and_ecb_fallback(
     diag = api_client.get("/api/diagnostics").json()
     check = next(c for c in diag["checks"] if c["id"] == "ecb_fallback_deposits")
     assert check["count"] == 1
-    assert check["severity"] == "warning"
+    assert check["severity"] == "info"
+    assert len(check["actions"]) == 1
 
 
 def test_deposit_rows_without_conversions_claim_no_source(

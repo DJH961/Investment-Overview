@@ -85,7 +85,7 @@ function FixButton({ action, jobs }: { action: CheckAction; jobs: Map<string, Jo
 }
 
 /** The API's severity words, as labels. */
-const SEVERITY_LABEL: Record<string, string> = { ok: "OK", warning: "Warning", error: "Problem" };
+const SEVERITY_LABEL: Record<string, string> = { ok: "OK", info: "Info", warning: "Warning", error: "Problem" };
 
 export function HealthTab() {
   const q = useDiagnostics();
