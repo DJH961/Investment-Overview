@@ -29188,10 +29188,10 @@
    },
    "daily_caption": {
     "as_of_text": "today",
-    "corner_text": "22:00",
+    "corner_text": "20:00",
     "live": false,
     "title": "Today",
-    "updated_text": "as of 22:00"
+    "updated_text": "as of 20:00"
    },
    "day_split": {
     "currency_move": "0.000000000000000000000",
@@ -29403,10 +29403,10 @@
    },
    "daily_caption": {
     "as_of_text": "today",
-    "corner_text": "22:00",
+    "corner_text": "20:00",
     "live": false,
     "title": "Today",
-    "updated_text": "as of 22:00"
+    "updated_text": "as of 20:00"
    },
    "day_split": {
     "currency_move": "0.000000000000000000000",
