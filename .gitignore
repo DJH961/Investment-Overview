@@ -154,6 +154,8 @@ activemq-data/
 .env
 .env.*
 !.env.example
+# Fixture mode switch (VITE_FIXTURES=1, no secrets): CI needs it to build fake-data mode.
+!/frontend/.env.fixtures
 .envrc
 .venv
 env/

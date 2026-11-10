@@ -36,14 +36,26 @@
     padding: 0 var(--space-2);
   }
 
-  // Phone: items share the row (an 8-button range picker must fit a 296 px card
-  // body) and reach the finger-sized tap target.
+  // Phone: finger-sized tap target, with the normal side padding kept. Only a
+  // crowded control (five or more items, e.g. a range picker in a 296 px card)
+  // takes the full row and splits it evenly; it never squeezes a short toggle.
   @include m.phone {
     &__item,
     &--sm &__item {
-      flex: 1 1 auto;
-      min-width: 0;
+      flex: 0 1 auto;
+      min-width: var(--tap-min);
       height: var(--tap-min);
+      padding: 0 var(--space-3);
+    }
+
+    &:has(> :nth-child(5)) {
+      display: flex;
+      width: 100%;
+    }
+
+    &:has(> :nth-child(5)) &__item {
+      flex: 1 1 0;
+      min-width: 0;
       padding: 0 var(--space-1);
     }
   }

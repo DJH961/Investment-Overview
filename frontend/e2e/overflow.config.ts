@@ -8,8 +8,10 @@ const PORT = process.env.E2E_FIXTURES_PORT ?? "4173";
 export default defineConfig({
   testDir: ".",
   testMatch: /overflow\.check\.ts/,
-  fullyParallel: false,
-  workers: 1,
+  // Every case is independent (own page, own report file): run them side by side.
+  // GitHub's Linux runners have 4 cores; the static preview server is cheap.
+  fullyParallel: true,
+  workers: process.env.CI ? 4 : 3,
   timeout: 15 * 60_000,
   retries: 0,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",

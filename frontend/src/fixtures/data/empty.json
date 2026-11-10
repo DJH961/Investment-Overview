@@ -1148,7 +1148,7 @@
     }
    ],
    "curve_start": "2025-06-30",
-   "cvar_95": null,
+   "cvar_95": "0.0",
    "kurtosis": null,
    "max_drawdown": "0",
    "net_invested_last": "0",
@@ -1157,12 +1157,12 @@
    "risk_free_symbol": "^IRX",
    "sharpe": null,
    "skew": null,
-   "sortino": null,
+   "sortino": "-15.83083651028537866880062928",
    "start": "2025-06-30",
    "twr": null,
-   "ulcer": null,
-   "var_95": null,
-   "volatility": null,
+   "ulcer": "0.0",
+   "var_95": "0.0",
+   "volatility": "0.0",
    "xirr": null
   },
   "USD": {
@@ -2287,7 +2287,7 @@
     }
    ],
    "curve_start": "2025-06-30",
-   "cvar_95": null,
+   "cvar_95": "0.0",
    "kurtosis": null,
    "max_drawdown": "0",
    "net_invested_last": "0",
@@ -2296,12 +2296,12 @@
    "risk_free_symbol": "^IRX",
    "sharpe": null,
    "skew": null,
-   "sortino": null,
+   "sortino": "-15.83083651028537866880062928",
    "start": "2025-06-30",
    "twr": null,
-   "ulcer": null,
-   "var_95": null,
-   "volatility": null,
+   "ulcer": "0.0",
+   "var_95": "0.0",
+   "volatility": "0.0",
    "xirr": null
   },
   "detail": null
@@ -2877,7 +2877,7 @@
     }
    ],
    "curve_start": "2026-04-01",
-   "cvar_95": null,
+   "cvar_95": "0.0",
    "kurtosis": null,
    "max_drawdown": "0",
    "net_invested_last": "0",
@@ -2886,12 +2886,12 @@
    "risk_free_symbol": "^IRX",
    "sharpe": null,
    "skew": null,
-   "sortino": null,
+   "sortino": "-15.78606980853689302257927154",
    "start": "2026-04-01",
    "twr": null,
-   "ulcer": null,
-   "var_95": null,
-   "volatility": null,
+   "ulcer": "0.0",
+   "var_95": "0.0",
+   "volatility": "0.0",
    "xirr": null
   },
   "USD": {
@@ -3464,7 +3464,7 @@
     }
    ],
    "curve_start": "2026-04-01",
-   "cvar_95": null,
+   "cvar_95": "0.0",
    "kurtosis": null,
    "max_drawdown": "0",
    "net_invested_last": "0",
@@ -3473,12 +3473,12 @@
    "risk_free_symbol": "^IRX",
    "sharpe": null,
    "skew": null,
-   "sortino": null,
+   "sortino": "-15.78606980853689302257927154",
    "start": "2026-04-01",
    "twr": null,
-   "ulcer": null,
-   "var_95": null,
-   "volatility": null,
+   "ulcer": "0.0",
+   "var_95": "0.0",
+   "volatility": "0.0",
    "xirr": null
   },
   "detail": null

@@ -33,7 +33,8 @@ from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.returns import (
     Cashflow,
     DailyValuation,
-    cagr,
+    annualize_return,
+    growth_index,
     twr,
 )
 from investment_dashboard.domain.risk import (
@@ -287,11 +288,13 @@ def _attribution_for_window(
     end_positions = positions_service.compute_positions(session, as_of=end)
     start_marks = _marks(start_positions, start)
     end_marks = _marks(end_positions, end)
+    # The short ticker, never the long fund name: the attribution table is a
+    # compact list and full names (often 60+ characters) made it unreadable.
     names: dict[int, str] = {}
     for p in end_positions:
         names.setdefault(
             p.instrument.id,
-            p.effective.name if p.effective and p.effective.name else p.instrument.symbol,
+            p.effective.symbol if p.effective and p.effective.symbol else p.instrument.symbol,
         )
     for p in start_positions:
         names.setdefault(p.instrument.id, p.instrument.symbol)
@@ -378,7 +381,16 @@ def build_bundle(
     )
 
     portfolio_values = [p.portfolio_value for p in curve]
-    daily_rets = _daily_returns(portfolio_values)
+    # Every risk figure runs on the flow-adjusted growth index, not on raw values:
+    # a deposit is not a gain and a withdrawal is not a drawdown. Over a long window
+    # (All, 5Y) the raw values are mostly new money, which made CAGR, volatility,
+    # VaR and beta meaningless there.
+    new_money = [
+        pt.cumulative_contributions - curve[i - 1].cumulative_contributions if i else ZERO
+        for i, pt in enumerate(curve)
+    ]
+    index = growth_index(portfolio_values, new_money)
+    daily_rets = _daily_returns(index)
     bench_rets = benchmark_series.daily_returns()
     # Align lengths for beta/alpha (last N pairs).
     n = min(len(daily_rets), len(bench_rets))
@@ -389,13 +401,15 @@ def build_bundle(
     rf_snapshot = risk_free_service.get_risk_free_rate(session)
     rf_rate = rf_snapshot.rate if rf_snapshot.rate is not None else None
 
-    # CAGR/TWR/MDD over the curve window.
-    start_value = portfolio_values[0] if portfolio_values else ZERO
-    end_value = portfolio_values[-1] if portfolio_values else ZERO
-    window_days = (as_of - start).days
+    # CAGR = the growth index annualised over the days actually invested in the
+    # window (from the first day with a value), so it is the annualised TWR and a
+    # window longer than the ledger is not diluted by empty days. Spans under a
+    # year are not annualised (GIPS): a 4 % month would otherwise read as 60 %/yr.
+    first_invested = next((p.date for p in curve if p.portfolio_value > 0), None)
+    invested_days = (curve[-1].date - first_invested).days if first_invested else 0
     cagr_val = (
-        cagr(start_value, end_value, window_days)
-        if start_value > 0 and end_value > 0 and window_days > 0
+        annualize_return(index[-1] - Decimal(1), max(invested_days, 365))
+        if index and invested_days > 0
         else None
     )
 
@@ -420,9 +434,9 @@ def build_bundle(
     vol = annualized_volatility(daily_rets)
     sharpe = sharpe_ratio(daily_rets, rf_rate) if rf_rate is not None else None
     sortino = sortino_ratio(daily_rets, rf_rate) if rf_rate is not None else None
-    mdd = max_drawdown(portfolio_values)
-    calmar = calmar_ratio(daily_rets, portfolio_values)
-    ulcer = ulcer_index(portfolio_values)
+    mdd = max_drawdown(index)
+    calmar = calmar_ratio(daily_rets, index)
+    ulcer = ulcer_index(index)
     if var_alpha is None:
         from investment_dashboard.services import settings_service  # noqa: PLC0415
 

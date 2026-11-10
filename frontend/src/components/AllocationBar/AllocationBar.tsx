@@ -9,7 +9,14 @@ export interface AllocationSlice {
   actual: number;
   /** Optional target weight as a fraction. */
   target?: number;
+  /** Fixed series colour 1-6 (`--chart-n`); default: by position. */
+  color?: number;
+  /** Hatch this slice; default: every second one. */
+  hatched?: boolean;
 }
+
+const colorOf = (s: AllocationSlice, i: number) => s.color ?? (i % 6) + 1;
+const hatchedOf = (s: AllocationSlice, i: number) => s.hatched ?? i % 2 === 1;
 
 export interface AllocationBarProps {
   slices: AllocationSlice[];
@@ -52,8 +59,8 @@ export function AllocationBar({ slices, ariaLabel = "Allocation", className }: A
             key={s.id}
             className={clsx(
               "allocation-bar__segment",
-              `allocation-bar__segment--c${(i % 6) + 1}`,
-              i % 2 === 1 && "allocation-bar__segment--hatched",
+              `allocation-bar__segment--c${colorOf(s, i)}`,
+              hatchedOf(s, i) && "allocation-bar__segment--hatched",
               dim(s.id) && "allocation-bar__segment--dim",
             )}
             data-testid={`segment-${s.id}`}
@@ -86,8 +93,8 @@ export function AllocationBar({ slices, ariaLabel = "Allocation", className }: A
               <span
                 className={clsx(
                   "allocation-bar__swatch",
-                  `allocation-bar__swatch--c${(i % 6) + 1}`,
-                  i % 2 === 1 && "allocation-bar__swatch--hatched",
+                  `allocation-bar__swatch--c${colorOf(s, i)}`,
+                  hatchedOf(s, i) && "allocation-bar__swatch--hatched",
                 )}
                 aria-hidden
               />

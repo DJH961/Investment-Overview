@@ -32,6 +32,11 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--chart-1", b: "--chart-3", why: "Risk/Projection primary vs benchmark" },
   { a: "--chart-1", b: "--color-muted", why: "Risk/Projection primary vs muted (net invested / pessimistic)" },
   { a: "--chart-3", b: "--color-muted", why: "Risk/Projection benchmark vs muted line" },
+  // Asset-class bar (Overview, AssetClassCard CLASS_LOOK): etf chart-1, mutual funds chart-2
+  // (hatched), cash chart-3 (solid), stocks chart-6 (solid; vs mutual funds it also differs by hatch).
+  { a: "--chart-2", b: "--chart-3", why: "asset-class bar: mutual funds vs cash" },
+  { a: "--chart-1", b: "--chart-6", why: "asset-class bar: ETFs vs stocks" },
+  { a: "--chart-3", b: "--chart-6", why: "asset-class bar: cash vs stocks" },
   { a: "--chart-3", b: "--color-pos", why: "benchmark next to a trend-coloured primary" },
   { a: "--chart-3", b: "--color-neg", why: "benchmark next to a trend-coloured primary" },
   // Overview hero 1D mini chart: the trend-coloured line next to the dashed

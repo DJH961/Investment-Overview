@@ -119,6 +119,12 @@ function PhoneYear({
           <span className="period-year__total">
             <span className="period-year__total-label">{s?.is_current || group.isCurrent ? "Now" : "Year end"}</span>
             <Money amount={total} currency={currency} digits={0} />
+            {/* The same total in the other currency: a quiet line under it, not a flow chip. */}
+            {toNum(other?.closing_value) !== null && (
+              <span className="period-year__total-other">
+                <Money amount={toNum(other?.closing_value)} currency={otherCcy(currency)} digits={0} />
+              </span>
+            )}
           </span>
         </span>
         {s && (
@@ -131,11 +137,6 @@ function PhoneYear({
               <Chip label="In" value={s.contributions} currency={currency} />
               {flowDiffers(s) && <Chip label="Net flow" value={s.net_flow} currency={currency} />}
               <Chip label="Div." value={s.dividends} currency={currency} />
-              {toNum(other?.closing_value) !== null && (
-                <span className="period-chip period-chip--muted">
-                  <Money amount={toNum(other?.closing_value)} currency={otherCcy(currency)} digits={0} />
-                </span>
-              )}
             </span>
           </>
         )}

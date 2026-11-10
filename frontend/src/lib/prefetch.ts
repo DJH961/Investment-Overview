@@ -67,7 +67,7 @@ function reportJobs(ccy: ReportingCurrency) {
     ...ranges.filter((r) => r !== first).map((r) => graphQuery(r, ccy)),
     allocationsQuery(ccy),
     calculatorInputsQuery(ccy),
-    analyticsQuery(ccy, Number.isFinite(lookback) && lookback > 0 ? lookback : DEFAULT_LOOKBACK_DAYS),
+    analyticsQuery(ccy, Number.isFinite(lookback) && lookback >= 0 ? lookback : DEFAULT_LOOKBACK_DAYS),
     depositsQuery(ccy),
     dividendsQuery(ccy),
   ];

@@ -13,6 +13,21 @@ export interface AssetClassCardProps {
   currency: ReportingCurrency;
 }
 
+/**
+ * One fixed look per asset class, so a class keeps its colour whatever else is held.
+ * Mutual funds and cash get the pair that stays furthest apart for a protan viewer
+ * (teal hatched vs solid gold): cash is often a thin sliver, where hatching hides
+ * the colour, so it is always solid. Pairs are in tokens.cvd.test.ts.
+ */
+const CLASS_LOOK: Record<string, { color: number; hatched: boolean }> = {
+  etf: { color: 1, hatched: false },
+  mutual_fund: { color: 2, hatched: true },
+  cash: { color: 3, hatched: false },
+  stock: { color: 6, hatched: false },
+  savings: { color: 5, hatched: true },
+  unknown: { color: 4, hatched: true },
+};
+
 /** Overview bar of the current split by asset class. */
 export function AssetClassCard({ currency }: AssetClassCardProps) {
   const allocations = useAllocations(currency);
@@ -22,6 +37,7 @@ export function AssetClassCard({ currency }: AssetClassCardProps) {
         id: b.label,
         label: assetClassLabel(b.label),
         actual: toNum(b.pct) ?? 0,
+        ...CLASS_LOOK[b.label],
       })),
     [allocations.data],
   );

@@ -127,11 +127,13 @@ export function AccountsCard() {
                 <AccountEditor account={a} onDone={() => setEditing(null)} />
               </li>
             ) : (
-              <li key={a.id} className="settings__passkey">
-                <span className="settings__passkey-name">{a.account_label}</span>
-                <span className="settings__muted">
-                  {a.broker.replace("_", " ")} · {a.native_currency} · {a.account_type ?? "no type"} · {a.transaction_count}{" "}
-                  transactions
+              <li key={a.id} className="settings__account">
+                <span className="settings__account-text">
+                  <span className="settings__account-name">{a.account_label}</span>
+                  <span className="settings__account-meta">
+                    {a.broker.replace("_", " ")} · {a.native_currency} · {a.account_type ?? "no type"} ·{" "}
+                    {a.transaction_count} transactions
+                  </span>
                 </span>
                 <IconButton
                   label={`Edit account ${a.account_label}`}

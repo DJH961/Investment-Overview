@@ -7,6 +7,7 @@ no risk-free rate) is serialized as ``null``.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -245,6 +246,24 @@ def _summary_fields(bundle: AnalyticsBundle) -> dict[str, Any]:
     }
 
 
+#: ``lookback_days`` value meaning "since the first transaction" (the Risk page's All).
+ALL_TIME = 0
+
+
+def resolve_lookback(session: Session, lookback_days: int, as_of: date) -> int:
+    """Turn :data:`ALL_TIME` into the days from the first transaction to ``as_of``.
+
+    With an empty ledger (or a first transaction on ``as_of``) it falls back to one
+    day, so the window is never empty or negative.
+    """
+    if lookback_days != ALL_TIME:
+        return lookback_days
+    inception = transactions_repo.earliest_transaction_date(session)
+    if inception is None:
+        return 1
+    return max((as_of - inception).days, 1)
+
+
 def build_for_ccy(
     session: Session,
     *,
@@ -262,6 +281,7 @@ def build_for_ccy(
     """
     ccy = ccy.upper()
     ctx = context or build_context(session)
+    lookback_days = resolve_lookback(session, lookback_days, ctx.as_of)
     bundle = build_bundle(session, currency=ccy, lookback_days=lookback_days, as_of=ctx.as_of)
     result = _bundle_dict(bundle)
     result["ccy"] = ccy

@@ -74,8 +74,12 @@
     position: absolute;
     z-index: var(--z-raised);
     display: flex;
-    max-width: calc(100% - var(--space-2));
-    overflow-wrap: anywhere;
+    // Its own width, not "what is left right of `left`": near the right edge the
+    // shrink-to-fit width collapsed and the tooltip became a tall thin column.
+    // The layout effect then centres and clamps it inside the box.
+    width: max-content;
+    max-width: min(18rem, calc(100% - var(--space-2)));
+    overflow-wrap: break-word;
     flex-direction: column;
     gap: 2px;
     padding: var(--space-2) var(--space-3);

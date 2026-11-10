@@ -32,7 +32,7 @@ def test_analytics_usd_attribution_is_in_usd(api_client: TestClient) -> None:
 
 
 def test_analytics_validates_params(api_client: TestClient) -> None:
-    assert api_client.get("/api/analytics?lookback_days=0").status_code == 422
+    assert api_client.get("/api/analytics?lookback_days=-1").status_code == 422
     assert api_client.get("/api/analytics?ccy=XXX").status_code == 422
 
 
@@ -78,3 +78,27 @@ def test_summary_fields_benchmark_gap_and_total_match_rows() -> None:
     total = out["attribution_total"]
     assert total["absolute_pnl"] == "2.5"
     assert total["start_value"] == "20"
+
+
+def test_all_time_lookback_starts_at_first_transaction() -> None:
+    from datetime import date
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from investment_dashboard.readmodels import analytics as rm
+
+    as_of = date(2026, 6, 30)
+    with patch.object(
+        rm.transactions_repo, "earliest_transaction_date", return_value=date(2021, 3, 1)
+    ):
+        assert (
+            rm.resolve_lookback(SimpleNamespace(), rm.ALL_TIME, as_of)
+            == (as_of - date(2021, 3, 1)).days
+        )
+        assert rm.resolve_lookback(SimpleNamespace(), 365, as_of) == 365
+    with patch.object(rm.transactions_repo, "earliest_transaction_date", return_value=None):
+        assert rm.resolve_lookback(SimpleNamespace(), rm.ALL_TIME, as_of) == 1
+
+
+def test_all_time_lookback_on_empty_ledger_is_ok(api_client: TestClient) -> None:
+    assert api_client.get("/api/analytics/both?lookback_days=0").status_code == 200
