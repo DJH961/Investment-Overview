@@ -245,6 +245,26 @@ def _clean_environment() -> Iterator[None]:
         os.environ.update(saved)
 
 
+@contextlib.contextmanager
+def _pinned_host() -> Iterator[None]:
+    """Hide what differs between machines: the memory probe and the local timezone.
+
+    * The memory probe reads ``/proc`` (Linux only) and changes on every run.
+    * The ``"Local"`` display timezone follows the host's zone; pin it to UTC.
+    """
+    from investment_dashboard.services import diagnostics_service, timezone_service
+
+    real_memory = diagnostics_service.memory_usage
+    real_local = timezone_service._local_tzinfo
+    diagnostics_service.memory_usage = lambda status_path=None: None  # type: ignore[assignment]
+    timezone_service._local_tzinfo = lambda: _dt.UTC  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        diagnostics_service.memory_usage = real_memory  # type: ignore[assignment]
+        timezone_service._local_tzinfo = real_local  # type: ignore[assignment]
+
+
 def _import_backend_modules() -> None:
     """Import every non-UI backend module now, so the clock freeze reaches all of them.
 
@@ -608,7 +628,7 @@ def _build(dataset: str, workdir: Path) -> dict[str, Any]:
     earlier build in the same process: calling this twice gives identical output.
     """
     NETWORK_ATTEMPTS.clear()
-    with _clean_environment(), _no_network():
+    with _clean_environment(), _pinned_host(), _no_network():
         out = _build_inner(dataset, workdir)
     if NETWORK_ATTEMPTS:
         raise RuntimeError(

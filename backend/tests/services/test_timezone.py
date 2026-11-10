@@ -51,3 +51,12 @@ def test_supported_timezones_lists_sentinels_first(session: Session) -> None:
     assert zones[0] == timezone_service.LOCAL
     assert zones[1] == "UTC"
     assert "Europe/Berlin" in zones
+
+
+def test_supported_timezones_drops_the_linux_localtime_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        timezone_service, "available_timezones", lambda: {"UTC", "Europe/Berlin", "localtime"}
+    )
+    assert timezone_service.supported_timezones() == ["Local", "UTC", "Europe/Berlin"]

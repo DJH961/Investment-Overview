@@ -16,20 +16,22 @@ test("login, import a broker file, see transactions", async ({ page }) => {
   await login(page);
   await expect(page.getByRole("heading", { name: "Overview" }).first()).toBeVisible();
 
+  // Unique per attempt: a retry must not also find the first attempt's account.
+  const label = `E2E Vanguard ${Date.now()}`;
   const created = await page.request.post("/api/accounts", {
     headers: { Origin: new URL(page.url()).origin },
-    data: { account_label: "E2E Vanguard", broker: "vanguard", native_currency: "USD", account_type: "brokerage" },
+    data: { account_label: label, broker: "vanguard", native_currency: "USD", account_type: "brokerage" },
   });
   expect(created.status()).toBe(201);
 
   await page.goto("/import");
   await page.getByLabel("Broker file").setInputFiles(FIXTURE);
   await page.getByRole("combobox", { name: "Account" }).click();
-  await page.getByRole("option", { name: /E2E Vanguard/ }).click();
+  await page.getByRole("option", { name: `${label} (USD)`, exact: true }).click();
   await page.getByRole("button", { name: "Import", exact: true }).click();
-  await expect(page.getByText(/Preview - vanguard_sample\.csv/)).toBeVisible();
-  await page.getByRole("button", { name: /^Import \d+ transactions$/ }).click();
-  await expect(page.getByText(/Imported \d+ transactions/).first()).toBeVisible();
+  await expect(page.getByText(/Preview: vanguard_sample\.csv/)).toBeVisible();
+  await page.getByRole("button", { name: /^Import \d+ transactions?$/ }).click();
+  await expect(page.getByText(/Imported \d+ transactions?/).first()).toBeVisible();
 
   await page.goto("/transactions");
   await expect(page.getByText("VTI").first()).toBeVisible();
