@@ -51,3 +51,37 @@ def test_full_set_is_nasty_but_fake(runs: tuple[Path, Path]) -> None:
 def test_empty_set_has_no_holdings(runs: tuple[Path, Path]) -> None:
     data = json.loads((runs[0] / "empty.json").read_text(encoding="utf-8"))
     assert data["GET /api/holdings/both"]["USD"]["holdings"] == []
+
+
+def test_provider_state_is_pinned(runs: tuple[Path, Path]) -> None:
+    data = json.loads((runs[0] / "full.json").read_text(encoding="utf-8"))
+    usage = data["GET /api/maintenance/tiingo"]
+    assert usage["configured"] is False
+    assert (usage["hour_used"], usage["day_used"]) == (3, 41)
+    assert usage["rate_limited_at"] is None
+    assert usage["last_status"] == "ok"
+    assert usage["last_at"].startswith("2026-06-30T20:30:00")
+
+
+def test_generator_opens_no_socket_and_is_repeatable_in_one_process(tmp_path: Path) -> None:
+    import socket
+
+    from investment_dashboard.tools import make_fixtures as mf
+
+    # The guard itself: a name lookup and a connection to a public host are refused and logged.
+    mf.NETWORK_ATTEMPTS.clear()
+    with mf._no_network():
+        with pytest.raises(OSError, match="hermetic"):
+            socket.create_connection(("example.invalid", 80), timeout=1)
+        with pytest.raises(OSError, match="hermetic"):
+            socket.getaddrinfo("example.invalid", 80)
+    assert len(mf.NETWORK_ATTEMPTS) == 2
+
+    # Two builds in this process, each with a fresh database: no network, identical bytes.
+    renders = []
+    for n in (1, 2):
+        work = tmp_path / f"run{n}"
+        work.mkdir()
+        renders.append(mf.render(mf._build("full", work)))
+        assert mf.NETWORK_ATTEMPTS == []
+    assert renders[0] == renders[1]

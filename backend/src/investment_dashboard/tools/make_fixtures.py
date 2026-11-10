@@ -24,14 +24,17 @@ Everything here is invented: symbols are ``FAKE*``, amounts are random draws.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
 import json
 import os
 import random
 import re
+import socket
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable, Iterator
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -100,7 +103,7 @@ POST_ENDPOINTS: tuple[tuple[str, dict[str, Any]], ...] = ()
 # -- frozen clock ----------------------------------------------------------------
 
 
-def _freeze_clock() -> None:
+def _freeze_clock() -> Callable[[], None]:
     """Make ``datetime.now()`` / ``date.today()`` return :data:`FROZEN_NOW`.
 
     Every ``investment_dashboard`` module that did ``from datetime import ...`` is
@@ -142,14 +145,173 @@ def _freeze_clock() -> None:
         def today(cls) -> _dt.datetime:  # type: ignore[override]
             return FROZEN_NOW.replace(tzinfo=None)
 
+    patched: list[tuple[Any, str, Any]] = []
     for name, module in list(sys.modules.items()):
         if not name.startswith("investment_dashboard") or module is None or name == __name__:
             continue
         for attr, value in list(vars(module).items()):
             if value is _REAL_DATETIME:
+                patched.append((module, attr, value))
                 setattr(module, attr, FrozenDatetime)
             elif value is _REAL_DATE:
+                patched.append((module, attr, value))
                 setattr(module, attr, FrozenDate)
+
+    def restore() -> None:
+        for module, attr, value in patched:
+            setattr(module, attr, value)
+
+    return restore
+
+
+# -- hermetic run ------------------------------------------------------------------
+
+#: Every non-loopback connection attempt seen during a build (must stay empty).
+NETWORK_ATTEMPTS: list[str] = []
+
+
+def _is_loopback(host: object) -> bool:
+    text = str(host)
+    return text in {"", "localhost", "::1"} or text.startswith("127.")
+
+
+@contextlib.contextmanager
+def _no_network() -> Iterator[None]:
+    """Refuse every non-loopback connection and name lookup, and record the attempt.
+
+    The TestClient talks to the app in-process; nothing here needs a real network.
+    Loopback stays open because asyncio's self-pipe on Windows is a local socket pair.
+    """
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+    real_getaddrinfo = socket.getaddrinfo
+    real_create = socket.create_connection
+
+    def _deny(what: str, target: object) -> None:
+        NETWORK_ATTEMPTS.append(f"{what} {target}")
+        raise OSError(f"make_fixtures is hermetic: {what} {target} blocked")
+
+    def connect(self: socket.socket, address: Any) -> None:
+        host = address[0] if isinstance(address, tuple) and address else address
+        if not _is_loopback(host):
+            _deny("connect", address)
+        return real_connect(self, address)
+
+    def connect_ex(self: socket.socket, address: Any) -> int:
+        host = address[0] if isinstance(address, tuple) and address else address
+        if not _is_loopback(host):
+            _deny("connect_ex", address)
+        return real_connect_ex(self, address)
+
+    def getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
+        if not _is_loopback(host):
+            _deny("lookup", host)
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def create_connection(address: Any, *args: Any, **kwargs: Any) -> socket.socket:
+        if not _is_loopback(address[0]):
+            _deny("connect", address)
+        return real_create(address, *args, **kwargs)
+
+    socket.socket.connect = connect  # type: ignore[method-assign,assignment]
+    socket.socket.connect_ex = connect_ex  # type: ignore[method-assign,assignment]
+    socket.getaddrinfo = getaddrinfo  # type: ignore[assignment]
+    socket.create_connection = create_connection  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        socket.socket.connect = real_connect  # type: ignore[method-assign]
+        socket.socket.connect_ex = real_connect_ex  # type: ignore[method-assign]
+        socket.getaddrinfo = real_getaddrinfo
+        socket.create_connection = real_create
+
+
+@contextlib.contextmanager
+def _clean_environment() -> Iterator[None]:
+    """No app settings, tokens or OS keyring from the machine the generator runs on."""
+    saved = dict(os.environ)
+    for key in list(os.environ):
+        if key.startswith("INV_DASHBOARD_") or "TIINGO" in key.upper():
+            del os.environ[key]
+    from investment_dashboard.storage import encryption
+
+    real_get = encryption._keyring_get
+    encryption._keyring_get = lambda _username: None  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        encryption._keyring_get = real_get  # type: ignore[assignment]
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def _import_backend_modules() -> None:
+    """Import every non-UI backend module now, so the clock freeze reaches all of them.
+
+    Some services are only imported lazily (inside a function) and would otherwise
+    keep the real clock, e.g. the provider budget that resets on the real hour.
+    """
+    import importlib
+    import pkgutil
+
+    for package in ("domain", "adapters", "repositories", "services", "readmodels", "api"):
+        pkg = importlib.import_module(f"investment_dashboard.{package}")
+        for info in pkgutil.walk_packages(pkg.__path__, f"investment_dashboard.{package}."):
+            importlib.import_module(info.name)
+
+
+def _reset_process_state() -> None:
+    """Forget everything earlier work in this process left in module-level state."""
+    from investment_dashboard.adapters import provider_status
+    from investment_dashboard.services import (
+        feed_stall_service,
+        fetch_report,
+        fx_service,
+        intraday_snapshots_service,
+        live_state,
+        read_cache,
+        refresh_status,
+        runtime_status,
+        settings_service,
+    )
+
+    provider_status.reset()
+    live_state.reset()
+    feed_stall_service.reset()
+    fetch_report.clear()
+    refresh_status.reset()
+    runtime_status.reset()
+    fx_service.clear_live_spot()
+    with read_cache._lock:
+        read_cache._entries.clear()
+        read_cache._inflight.clear()
+        for dep in read_cache._gens:
+            read_cache._gens[dep] = 0
+    settings_service._cache.update({"version": -1, "loaded_at": 0.0, "raw": {}})
+    intraday_snapshots_service._week_attempts.clear()
+    intraday_snapshots_service._year_attempts.clear()
+
+
+def _seed_provider_state(session: Any) -> None:
+    """Pin the provider budget and last-call status to fixed values (no real call ran)."""
+    from investment_dashboard.adapters import provider_status
+    from investment_dashboard.repositories import tiingo_state_repo
+
+    now = FROZEN_NOW.replace(tzinfo=None)
+    state = tiingo_state_repo.TiingoDesktopState(
+        hour_stamp=now, hour_used=3, day_stamp=now, day_used=41
+    )
+    tiingo_state_repo.save(session, state)
+    for provider, message in (
+        ("tiingo", "IEX FAKEL 390 intraday bar(s) 2026-06-30..2026-06-30"),
+        ("yfinance", "FAKEL 5 daily bar(s)"),
+        ("frankfurter", "EUR/USD 1 rate(s)"),
+    ):
+        event = provider_status.StatusEvent(
+            provider=provider, status="ok", message=message, at=FROZEN_NOW
+        )
+        provider_status._latest[provider] = event
+        provider_status._log.append(event)
 
 
 # -- the synthetic ledger ---------------------------------------------------------
@@ -439,16 +601,29 @@ def _normalise(value: Any, key: str = "") -> Any:
 
 
 def _build(dataset: str, workdir: Path) -> dict[str, Any]:
-    """Create the database, call every endpoint, return ``{"GET path": body}``."""
+    """Hermetically create the database, call every endpoint, return ``{"GET path": body}``.
+
+    No network (every non-loopback connection is refused and recorded), no
+    settings, tokens or keyring from the host, and no state left over from an
+    earlier build in the same process: calling this twice gives identical output.
+    """
+    NETWORK_ATTEMPTS.clear()
+    with _clean_environment(), _no_network():
+        out = _build_inner(dataset, workdir)
+    if NETWORK_ATTEMPTS:
+        raise RuntimeError(
+            "make_fixtures tried to reach the network: " + "; ".join(NETWORK_ATTEMPTS)
+        )
+    return out
+
+
+def _build_inner(dataset: str, workdir: Path) -> dict[str, Any]:
     global _WORKDIR  # noqa: PLW0603
     _WORKDIR = str(workdir)
     db = workdir / f"{dataset}.sqlite"
-    for tier in ("LEDGER", "CONFIG", "CACHE"):
-        os.environ.pop(f"INV_DASHBOARD_{tier}_PATH", None)
     os.environ["INV_DASHBOARD_DB_PATH"] = str(db)
     os.environ["INV_DASHBOARD_SERVER_MODE"] = "true"
     os.environ["INV_DASHBOARD_COOKIE_SECURE"] = "false"
-    os.environ.pop("INV_DASHBOARD_API_TOKEN", None)
 
     from fastapi.testclient import TestClient
 
@@ -477,12 +652,24 @@ def _build(dataset: str, workdir: Path) -> dict[str, Any]:
 
     app.dependency_overrides[require_auth] = _allow
     app.dependency_overrides[require_session] = _actor
-    _freeze_clock()
-    if dataset == "full":
-        with ledger_session_scope() as session:
+    _import_backend_modules()
+    _reset_process_state()
+    restore_clock = _freeze_clock()
+    try:
+        return _collect(app, dataset, ledger_session_scope, TestClient)
+    finally:
+        restore_clock()
+        dispose_engines()
+        get_settings.cache_clear()
+
+
+def _collect(app: Any, dataset: str, ledger_session_scope: Any, test_client: Any) -> dict[str, Any]:
+    with ledger_session_scope() as session:
+        _seed_provider_state(session)
+        if dataset == "full":
             seed_full(session)
     out: dict[str, Any] = {}
-    with TestClient(app) as client:
+    with test_client(app) as client:
         endpoints = list(GET_ENDPOINTS)
         if dataset == "full":
             ids = [row["id"] for row in client.get("/api/instruments").json()]
@@ -504,8 +691,6 @@ def _build(dataset: str, workdir: Path) -> dict[str, Any]:
         proj = client.get("/api/calculator/both")
         if proj.status_code == 200:
             out["POST /api/calculator"] = _projection(client, proj.json())
-    dispose_engines()
-    get_settings.cache_clear()
     return out
 
 

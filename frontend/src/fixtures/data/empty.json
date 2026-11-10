@@ -3741,7 +3741,7 @@
    {
     "actions": [],
     "count": 0,
-    "detail": "No provider calls have been made yet this session. Status appears here after the first price/FX refresh.",
+    "detail": "Every data provider's last call succeeded.",
     "examples": [],
     "id": "providers",
     "severity": "ok",
@@ -3760,8 +3760,52 @@
   "count": 1,
   "generated_at": "2026-06-30T20:30:00+00:00",
   "problems": [],
-  "provider_log": [],
-  "providers": [],
+  "provider_log": [
+   {
+    "at": "2026-06-30T20:30:00+00:00",
+    "message": "EUR/USD 1 rate(s)",
+    "provider": "frankfurter",
+    "status": "ok"
+   },
+   {
+    "at": "2026-06-30T20:30:00+00:00",
+    "message": "FAKEL 5 daily bar(s)",
+    "provider": "yfinance",
+    "status": "ok"
+   },
+   {
+    "at": "2026-06-30T20:30:00+00:00",
+    "message": "IEX FAKEL 390 intraday bar(s) 2026-06-30..2026-06-30",
+    "provider": "tiingo",
+    "status": "ok"
+   }
+  ],
+  "providers": [
+   {
+    "at": "2026-06-30T20:30:00+00:00",
+    "last_fetch_at": null,
+    "last_fetch_symbols": [],
+    "message": "EUR/USD 1 rate(s)",
+    "name": "frankfurter",
+    "status": "ok"
+   },
+   {
+    "at": "2026-06-30T20:30:00+00:00",
+    "last_fetch_at": null,
+    "last_fetch_symbols": [],
+    "message": "IEX FAKEL 390 intraday bar(s) 2026-06-30..2026-06-30",
+    "name": "tiingo",
+    "status": "ok"
+   },
+   {
+    "at": "2026-06-30T20:30:00+00:00",
+    "last_fetch_at": null,
+    "last_fetch_symbols": [],
+    "message": "FAKEL 5 daily bar(s)",
+    "name": "yfinance",
+    "status": "ok"
+   }
+  ],
   "refresh": {
    "active": false,
    "historical": false,
@@ -12492,19 +12536,19 @@
   "now": null
  },
  "GET /api/maintenance/tiingo": {
-  "configured": true,
+  "configured": false,
   "daily_cap": 200,
   "day_resets_at": "2026-06-30T20:30:00+00:00",
-  "day_used": 0,
+  "day_used": 41,
   "hour_resets_at": "2026-06-30T20:30:00+00:00",
-  "hour_used": 0,
+  "hour_used": 3,
   "hourly_cap": 10,
-  "last_at": null,
-  "last_message": null,
-  "last_status": null,
+  "last_at": "2026-06-30T20:30:00+00:00",
+  "last_message": "IEX FAKEL 390 intraday bar(s) 2026-06-30..2026-06-30",
+  "last_status": "ok",
   "nav_probes_today": 0,
   "rate_limited_at": null,
-  "remaining": 10,
+  "remaining": 7,
   "uses": [
    {
     "detail": "When yfinance fails, returns nothing, or serves frozen quotes for a stock or ETF during the session, the latest IEX price is fetched from Tiingo (automatic, after a short grace period).",
