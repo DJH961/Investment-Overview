@@ -403,6 +403,17 @@ def test_twin_session_closes_early_close_session() -> None:
     assert iss.twin_session_closes(rows) == {day: D("150")}
 
 
+def test_early_close_table_is_authoritative_for_its_years(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Within the years the explicit table covers, the table decides; the derived
+    rule only answers for other years."""
+    from investment_dashboard.domain import market_hours
+
+    monkeypatch.setattr(market_hours, "EARLY_CLOSE_DAYS", frozenset({date(2026, 11, 27)}))
+    assert iss._is_early_close_day(date(2026, 11, 27)) is True
+    assert iss._is_early_close_day(date(2026, 12, 24)) is False  # table year: not listed
+    assert iss._is_early_close_day(date(2031, 12, 24)) is True  # outside: derived rule
+
+
 def test_twin_session_closes_a_session_with_no_row_has_no_entry() -> None:
     rows = {datetime(2024, 6, 3, 15, 0): D("102")}  # a mid-session bar only, no close
     assert iss.twin_session_closes(rows) == {}

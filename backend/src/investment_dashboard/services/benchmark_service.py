@@ -118,6 +118,13 @@ def refresh_history(
     if end <= start:
         return 0
     instrument = _ensure_benchmark_instrument(session, symbol)
+    if transactions_repo.list_transactions(session, instrument_id=instrument.id):
+        # The benchmark symbol is also a holding: it shares its price history, and the
+        # total-return closes below would overwrite the raw closes that value the
+        # holding (and every historical valuation of it). Keep the raw closes; the
+        # benchmark line then compares on price alone.
+        log.warning("benchmark %s is also held; keeping its raw price history", symbol)
+        return 0
 
     # The benchmark is never held and its dividends are *not* in the ledger, so
     # we fetch dividend/split-adjusted (total-return) closes. That makes the

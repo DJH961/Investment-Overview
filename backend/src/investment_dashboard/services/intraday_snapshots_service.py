@@ -76,7 +76,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import feed_stall
+from investment_dashboard.domain import feed_stall, market_hours
 from investment_dashboard.domain.currency import usd_to_eur_at
 from investment_dashboard.domain.instruments import NAV_ASSET_CLASSES, SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.late_data import Divergence, Holding, value_at_rate
@@ -2614,7 +2614,13 @@ def _is_early_close_day(day: date) -> bool:
     they fall on a weekday and are not themselves a full holiday — July 3rd and
     December 24th. An ad hoc half day the NYSE occasionally adds outside these is
     not modelled.
+
+    The explicit table in ``domain/market_hours`` is authoritative for the years it
+    lists; the derived rule below only answers for other years.
     """
+    table_years = {d.year for d in market_hours.EARLY_CLOSE_DAYS}
+    if table_years and min(table_years) <= day.year <= max(table_years):
+        return market_hours.is_early_close_day(day)
     if day.weekday() >= _SATURDAY:
         return False
     thanksgiving = _nth_weekday_of_month(day.year, 11, 3, 4)  # 4th Thursday of November

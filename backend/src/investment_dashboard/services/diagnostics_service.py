@@ -27,9 +27,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm import Session
 
 from investment_dashboard.activity_log import activity
-from investment_dashboard.domain import market_hours
+from investment_dashboard.domain import ledger_completeness, market_hours
 from investment_dashboard.domain.instruments import SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import exchange_today
+from investment_dashboard.domain.money_market import is_money_market
 from investment_dashboard.repositories import (
     accounts_repo,
     instrument_overrides_repo,
@@ -351,6 +352,112 @@ def _check_brokerage_cash(session: Session) -> HealthItem:
             "be understated by it."
         ),
         examples=_examples(flagged),
+    )
+
+
+def _check_missing_dividends(session: Session, *, today: date | None = None) -> HealthItem:
+    """Provider ex-dividend dates with shares held but no dividend row (v7 P7, hints only).
+
+    Reads the ex-dates cached by the history refresh
+    (:mod:`~investment_dashboard.services.dividend_history_service`); makes no provider
+    call. Money-market funds are judged per month, everything else per ex-date.
+    """
+    from investment_dashboard.services import dividend_history_service  # noqa: PLC0415
+
+    today = today or exchange_today()
+    ex_dates = dividend_history_service.load(session)
+    title = "Possibly missing dividends"
+    if not ex_dates:
+        return HealthItem(
+            key="missing_dividends",
+            title=title,
+            severity="ok",
+            count=0,
+            detail="No provider dividend history cached yet: it is fetched with the history refresh.",
+        )
+    events: dict[int, list[ledger_completeness.LedgerEvent]] = {}
+    for t in transactions_repo.list_transactions(session):
+        if t.instrument_id is None:
+            continue
+        events.setdefault(t.instrument_id, []).append(
+            ledger_completeness.LedgerEvent(date=t.date, kind=t.kind, quantity=t.quantity)
+        )
+    hints: list[str] = []
+    for instr in instruments_repo.list_instruments(session):
+        dates = ex_dates.get(instr.id)
+        rows = events.get(instr.id)
+        if not dates or not rows:
+            continue
+        if is_money_market(instr.symbol, asset_class=instr.asset_class, name=instr.name):
+            missing = ledger_completeness.find_missing_money_market_distributions(
+                dates, rows, today=today
+            )
+        else:
+            missing = ledger_completeness.find_missing_dividends(dates, rows, today=today)
+        hints.extend(
+            f"possible missing dividend: {instr.symbol}, ex-date {m.ex_date.isoformat()}, "
+            f"{m.shares_held.normalize():f} shares held"
+            for m in missing
+        )
+    if not hints:
+        return HealthItem(
+            key="missing_dividends",
+            title=title,
+            severity="ok",
+            count=0,
+            detail="Every provider dividend on shares you held has a matching ledger row.",
+        )
+    return HealthItem(
+        key="missing_dividends",
+        title=title,
+        severity="warning",
+        count=len(hints),
+        detail=(
+            f"{len(hints)} dividend(s) the data provider reports on shares you held have no "
+            "dividend or reinvestment row in the ledger within 60 days (money-market funds: "
+            "no distribution in the month). Hints only: check the broker statement, nothing "
+            "is changed automatically."
+        ),
+        examples=_examples(hints),
+    )
+
+
+#: An account with no import for this many days is mentioned in the import-age hint.
+_IMPORT_STALE_DAYS = 45
+
+
+def _check_import_age(session: Session, *, today: date | None = None) -> HealthItem:
+    """Days since the last import per account (hint only)."""
+    from investment_dashboard.repositories import import_batches_repo  # noqa: PLC0415
+
+    today = today or exchange_today()
+    last = import_batches_repo.last_import_by_account(session)
+    lines: list[str] = []
+    stale = 0
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type != "brokerage":
+            continue
+        at = last.get(account.id)
+        days = ledger_completeness.days_since(at.date() if at else None, today)
+        name = f"{account.broker} {account.account_label}"
+        if days is None:
+            lines.append(f"{name}: never imported")
+            continue
+        lines.append(f"{name}: {days} day(s) since the last import")
+        if days > _IMPORT_STALE_DAYS:
+            stale += 1
+    return HealthItem(
+        key="import_age",
+        title="Days since the last import",
+        severity="warning" if stale else "ok",
+        count=stale,
+        detail=(
+            f"{stale} brokerage account(s) have not been imported for over "
+            f"{_IMPORT_STALE_DAYS} days: new dividends and trades may be missing."
+            if stale
+            else "Every imported brokerage account was imported recently."
+        ),
+        examples=_examples(lines),
     )
 
 
@@ -740,6 +847,8 @@ def check_health(session: Session) -> HealthReport:
         *_check_prices(session),
         _check_positions(session),
         _check_brokerage_cash(session),
+        _check_missing_dividends(session),
+        _check_import_age(session),
         _check_intraday_graph(session),
         _check_price_feed(session),
         _check_providers(),

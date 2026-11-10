@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 
@@ -40,6 +41,26 @@ class ParsedTransactionRow:
     asset_class: str | None = None
     native_currency: str | None = None
     expense_ratio: Decimal | None = None
+
+
+def number_repeated_ids(rows: list[ParsedTransactionRow]) -> list[ParsedTransactionRow]:
+    """Give identical rows of one file distinct ``external_id``s (2nd, 3rd ... get ``|n``).
+
+    Two genuine identical transactions (two small buys at the same price, two equal
+    dividends on one day) hash to the same id; without numbering the
+    ``UNIQUE(account_id, external_id)`` rule silently dropped all but the first.
+    The first occurrence keeps its id, so rows already imported still match.
+    """
+    seen: dict[str, int] = {}
+    out: list[ParsedTransactionRow] = []
+    for row in rows:
+        seen[row.external_id] = n = seen.get(row.external_id, 0) + 1
+        if n == 1:
+            out.append(row)
+            continue
+        digest = hashlib.sha256(f"{row.external_id}|{n}".encode()).hexdigest()[:32]
+        out.append(replace(row, external_id=digest))
+    return out
 
 
 #: Action-override value meaning "drop rows with this action".

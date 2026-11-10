@@ -51,6 +51,7 @@ SUBJECTS: dict[str, tuple[str, ...]] = {
         f"{_PKG}.services.prices_service",
         f"{_PKG}.services.fx_service",
         f"{_PKG}.services.benchmark_service",
+        f"{_PKG}.services.dividend_history_service",
         f"{_PKG}.services.auto_refresh",
         f"{_PKG}.services.tiingo_fallback",
         f"{_PKG}.services.tiingo_fallback_runner",

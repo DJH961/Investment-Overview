@@ -76,6 +76,47 @@ def test_refresh_history_requests_total_return_closes(session, monkeypatch) -> N
     assert captured["adjusted"] is True
 
 
+def test_refresh_never_overwrites_the_raw_closes_of_a_held_benchmark(session) -> None:
+    """Second-pass audit: a benchmark symbol that is also a holding shares its price
+    history; total-return closes must not replace the raw closes valuing the holding."""
+    from investment_dashboard.models import Transaction
+    from investment_dashboard.repositories import accounts_repo, transactions_repo
+    from investment_dashboard.services import prices_service
+
+    account = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="A",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    instr = instruments_repo.get_or_create(session, symbol="VT", asset_class="etf")
+    session.flush()
+    transactions_repo.insert_transaction(
+        session,
+        Transaction(
+            account_id=account.id,
+            instrument_id=instr.id,
+            date=date(2026, 1, 2),
+            kind="buy",
+            quantity=Decimal(1),
+            net_native=Decimal("-100"),
+            source="manual",
+        ),
+    )
+    prices_service.store_closes(
+        session, instr.id, {date(2026, 1, 2): Decimal("100")}, source="yfinance"
+    )
+
+    fetcher = _fake_fetcher({"VT": {date(2026, 1, 2): Decimal("90")}})
+    n = svc.refresh_history(session, start=date(2026, 1, 2), end=date(2026, 1, 7), fetcher=fetcher)
+
+    assert n == 0
+    assert prices_service.closes_for_instrument(session, instr.id)[date(2026, 1, 2)] == Decimal(
+        "100"
+    )
+
+
 def test_refresh_empty_returns_zero(session) -> None:
     n = svc.refresh_history(
         session,

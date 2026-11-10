@@ -273,8 +273,18 @@ def build_for_ccy(
         inception = transactions_repo.earliest_transaction_date(session)
         if inception is not None and inception < bundle.start:
             closes = benchmark_service.get_series(session, start=inception, end=ctx.as_of).closes
+            # The same funded "same contributions into the index" line as the windowed
+            # curve (raw index closes are not comparable to a portfolio value).
+            funded = benchmark_service.simulate_benchmark_value_series(
+                session, start=inception, end=ctx.as_of, currency=ccy
+            )
             curve = build_curve(
-                session, start=inception, end=ctx.as_of, currency=ccy, benchmark_closes=closes
+                session,
+                start=inception,
+                end=ctx.as_of,
+                currency=ccy,
+                benchmark_closes=closes,
+                benchmark_values=funded or None,
             )
             result["curve"] = [_curve_point(p) for p in curve]
             result["curve_start"] = inception.isoformat()

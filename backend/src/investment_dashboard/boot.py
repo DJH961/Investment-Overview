@@ -901,7 +901,21 @@ def _refresh_splits() -> bool:
     except Exception:
         log.warning("Split refresh failed; continuing with cached splits", exc_info=True)
         return False
+    _refresh_dividend_history(earliest)
     return True
+
+
+def _refresh_dividend_history(earliest: date) -> None:
+    """Cache provider ex-dividend dates for the Data Health ledger check (v7 P7)."""
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import dividend_history_service  # noqa: PLC0415
+
+        with ledger_session_scope() as ledger:
+            n = dividend_history_service.refresh(ledger, earliest_needed=earliest)
+        log.info("Dividend history refreshed (%d instruments)", n)
+    except Exception:
+        log.warning("Dividend history refresh failed; keeping cached dates", exc_info=True)
 
 
 def _refresh_benchmark() -> bool:

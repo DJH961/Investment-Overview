@@ -352,6 +352,64 @@ def fetch_splits(
     return result
 
 
+def fetch_ex_dividend_dates(
+    symbols: list[str],
+    start: date,
+    end: date,
+    *,
+    downloader: Any = None,
+) -> dict[str, list[date]]:
+    """Return ``{symbol: [ex_date, ...]}`` of dividends the feed saw in ``[start, end)``.
+
+    Only the dates are returned (the ledger holds the amounts). Used by the ledger
+    completeness check (v7 P7); never called from a request path.
+    """
+    if end <= start:
+        raise ValueError(f"end ({end}) must be strictly after start ({start})")
+    if not symbols:
+        return {}
+
+    download = downloader or yf.download
+    try:
+        frame = retry_call(
+            lambda: download(
+                tickers=symbols,
+                start=start.isoformat(),
+                end=end.isoformat(),
+                auto_adjust=False,
+                actions=True,
+                progress=False,
+                group_by="ticker",
+                threads=False,
+            ),
+            attempts=_DOWNLOAD_ATTEMPTS,
+            backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
+            jitter=_DOWNLOAD_JITTER,
+            description="yfinance.download (dividends)",
+        )
+    except Exception as exc:
+        raise YFinanceError(f"yfinance.download (dividends) failed: {exc}") from exc
+
+    result: dict[str, list[date]] = {s: [] for s in symbols}
+    if frame is None or getattr(frame, "empty", True):
+        return result
+
+    import pandas as pd  # noqa: PLC0415
+
+    columns = getattr(frame, "columns", None)
+    is_grouped = isinstance(columns, pd.MultiIndex)
+    for symbol in symbols:
+        try:
+            dividends = frame[symbol]["Dividends"] if is_grouped else frame["Dividends"]
+        except KeyError:
+            continue
+        for ts, value in dividends.dropna().items():
+            if float(value) <= 0:
+                continue  # 0.0 marks "no dividend that day"
+            result[symbol].append(ts.date() if hasattr(ts, "date") else ts)
+    return result
+
+
 def fetch_intraday_closes(
     symbols: list[str],
     day: date,

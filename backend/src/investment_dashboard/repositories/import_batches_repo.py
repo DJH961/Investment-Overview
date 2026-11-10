@@ -47,6 +47,16 @@ def list_recent(session: Session, *, limit: int = 100) -> Sequence[ImportBatch]:
     return session.scalars(stmt.limit(limit)).all()
 
 
+def last_import_by_account(session: Session) -> dict[int, datetime]:
+    """``{account_id: created_at of its newest active (not undone) import}``."""
+    stmt = (
+        select(ImportBatch.account_id, func.max(ImportBatch.created_at))
+        .where(ImportBatch.status == BATCH_ACTIVE)
+        .group_by(ImportBatch.account_id)
+    )
+    return {int(a): at for a, at in session.execute(stmt).all() if at is not None}
+
+
 def current_row_counts(session: Session, batch_ids: Sequence[int]) -> dict[int, int]:
     """``{batch_id: transactions still attached}`` (edited / deleted rows are gone)."""
     if not batch_ids:
