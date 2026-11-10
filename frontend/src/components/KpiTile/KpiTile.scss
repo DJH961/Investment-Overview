@@ -23,6 +23,7 @@
 
   &__head {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--space-2);
@@ -31,6 +32,7 @@
 
   &__label {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1);
     min-width: 0;
@@ -41,30 +43,6 @@
     }
   }
 
-  &__info {
-    display: inline-flex;
-    padding: 0;
-    background: none;
-    border: 0;
-    border-radius: var(--radius-full);
-    color: var(--color-faint);
-    cursor: help;
-
-    &:focus-visible {
-      outline: 2px solid var(--color-accent);
-    }
-  }
-
-  &__info-icon {
-    width: var(--icon-sm);
-    height: var(--icon-sm);
-
-    @include m.phone {
-      width: var(--font-size-sm);
-      height: var(--font-size-sm);
-    }
-  }
-
   &__corner {
     flex-shrink: 0;
     color: var(--color-muted);
@@ -72,16 +50,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // Wraps between parts (e.g. "≈ $1,234 · +2.1%") on narrow phone tiles; each
-  // Money / DeltaBadge atom stays on one line. Clipped rather than spilling.
+  // One line, cut with an ellipsis (a block, so text-overflow works) rather than
+  // hard-clipped at the pixel.
   &__secondary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    column-gap: var(--space-1);
-    min-width: 0;
+    @include m.truncate;
     max-width: 100%;
-    overflow: hidden;
     color: var(--color-muted);
     font-size: calc(var(--font-size-sm) * var(--kpi-tile-fit, 1));
 
@@ -89,11 +62,10 @@
       font-size: calc(var(--font-size-xs) * var(--kpi-tile-fit, 1));
     }
     font-variant-numeric: tabular-nums;
-    text-overflow: ellipsis;
   }
 
   &__value {
-    min-width: 0;
+    @include m.truncate;
     max-width: 100%;
     font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-2xl)) * var(--kpi-tile-fit, 1));
 

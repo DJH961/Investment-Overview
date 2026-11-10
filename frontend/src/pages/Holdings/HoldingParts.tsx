@@ -71,7 +71,7 @@ const TIER_LABEL: Record<string, string> = {
 };
 
 /** Percentage points, signed: 0.034 -> "+0.03 pp". */
-export function formatPp(value: string | null | undefined): string {
+export function formatPpValue(value: string | null | undefined): string {
   const n = toNum(value);
   if (n === null) return "–";
   const text = formatNumber(Math.abs(n), 2);
@@ -173,7 +173,7 @@ export function TwinBlock({ row, ccy }: { row: HoldingRowDto; ccy: string }) {
           <div>
             <dt>Last session{div.last_date ? ` (${formatDate(div.last_date)})` : ""}</dt>
             <dd className="holdings-page__twin-move">
-              <span>{formatPp(div.last_pp)}</span>
+              <span>{formatPpValue(div.last_pp)}</span>
               {div.last_money !== null && div.last_money !== undefined && lastPp !== null && (
                 <Money amount={toNum(div.last_money)} currency={ccy} signed />
               )}
@@ -182,7 +182,7 @@ export function TwinBlock({ row, ccy }: { row: HoldingRowDto; ccy: string }) {
           <div>
             <dt>Typical gap (median)</dt>
             <dd>
-              {formatPp(div.median_abs_pp).replace(/^\+/, "")}{" "}
+              {formatPpValue(div.median_abs_pp).replace(/^\+/, "")}{" "}
               <span className="holdings-page__muted">
                 over {div.sessions} of {div.window} sessions
               </span>
@@ -191,7 +191,7 @@ export function TwinBlock({ row, ccy }: { row: HoldingRowDto; ccy: string }) {
           <div>
             <dt>Bias</dt>
             <dd>
-              {formatPp(div.bias_pp)} <span className="holdings-page__muted">({biasText(bias)})</span>
+              {formatPpValue(div.bias_pp)} <span className="holdings-page__muted">({biasText(bias)})</span>
             </dd>
           </div>
         </dl>

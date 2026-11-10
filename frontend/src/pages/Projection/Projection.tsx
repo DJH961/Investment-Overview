@@ -12,7 +12,8 @@ import { PageHeader } from "../../components/PageHeader";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
-import { MASK, formatDate, formatMoney, formatNumber, formatPercent } from "../../lib/format";
+import { MASK, chartMoneyFormat, formatDate, formatNumber, formatPercent } from "../../lib/format";
+import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
 import { usePrefs } from "../../lib/prefs";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { type ProjectionOut, type ProjectionRequest, toNum, useCalculatorInputs, useProjection } from "../../lib/queries/reports";
@@ -66,6 +67,14 @@ function fmtInput(v: string | null | undefined, scale = 1): string {
   return n === null ? "" : String(parseFloat((n * scale).toFixed(2)));
 }
 
+/** The goal list reads like the chart legend, in a fixed order. */
+const GOAL_ORDER = ["pessimistic", "expected", "optimistic"] as const;
+const GOAL_LABEL: Record<(typeof GOAL_ORDER)[number], string> = {
+  pessimistic: "Pessimistic",
+  expected: "Expected",
+  optimistic: "Optimistic",
+};
+
 /** Monthly projections still report `years`; show them as months. */
 export function axisLabel(t: number, monthly: boolean): string {
   return monthly ? `Month ${Math.round(t * 12)}` : `Year ${Math.round(t)}`;
@@ -82,14 +91,15 @@ export function detailRows(out: ProjectionOut): ProjectionOut["points"] {
 
 /** Blank means "let the server seed it"; anything else is sent as typed. */
 function opt(v: string): string | null {
-  return v.trim() === "" ? null : v.trim();
+  // A decimal comma is accepted; text that is not a number goes through for the server to refuse.
+  return v.trim() === "" ? null : (toApiDecimal(v) ?? v.trim());
 }
 
 /** Form shows percent; the API takes fractions (7 -> "0.07"). */
 function frac(v: string | null): string | null {
   if (v === null) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? String(parseFloat((n / 100).toFixed(8))) : v;
+  const n = parseDecimal(v);
+  return n !== null ? String(parseFloat((n / 100).toFixed(8))) : v;
 }
 
 export function toRequest(f: Form): ProjectionRequest {
@@ -103,7 +113,7 @@ export function toRequest(f: Form): ProjectionRequest {
     step_up_pct: frac(opt(f.stepUp)) ?? "0",
     inflation_pct: frac(opt(f.inflation)) ?? "0.02",
     target: opt(f.target) ?? "0",
-    horizon: horizon === null ? null : Number(horizon),
+    horizon: horizon === null ? null : parseDecimal(horizon),
   };
 }
 
@@ -326,10 +336,8 @@ export function Projection() {
               <Card title={`Next ${out.inputs.horizon} ${out.monthly ? "months" : "years"}`}>
                 <Chart
                   busy={isFetching}
-                  series={series}
-                  valueFormat={(v) =>
-                    hide ? formatPercent(v, { digits: 0 }) : formatMoney(v, currency, { compact: true })
-                  }
+                  series={hide ? series : series.map((s) => ({ ...s, valueFormat: chartMoneyFormat(currency, "tooltip") }))}
+                  valueFormat={(v) => (hide ? formatPercent(v, { digits: 0 }) : chartMoneyFormat(currency, "axis")(v))}
                   timeFormat={(t) => axisLabel(t, out.monthly)}
                   ariaLabel="Projected value scenarios"
                 />
@@ -340,9 +348,9 @@ export function Projection() {
                       Reaching <Money amount={toNum(out.inputs.target)} currency={currency} />
                     </p>
                     <ul className="projection-page__goal">
-                      {Object.entries(out.hits).map(([name, hit]) => (
+                      {GOAL_ORDER.filter((name) => name in out.hits).map((name) => [name, out.hits[name]] as const).map(([name, hit]) => (
                         <li key={name}>
-                          {name}:{" "}
+                          {GOAL_LABEL[name]}:{" "}
                           {hit
                             ? `${hit.label}${toNum(hit.years) !== null ? ` (${formatNumber(toNum(hit.years), 1)} yr)` : ""}`
                             : "not within horizon"}

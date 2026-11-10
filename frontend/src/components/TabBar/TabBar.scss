@@ -32,10 +32,10 @@
     height: var(--icon-lg);
   }
 
+  // Fixed wording: smaller type on the narrowest phones so "Transactions" fits.
   &__label {
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: clamp(0.625rem, 2.9vw, var(--font-size-xs));
     white-space: nowrap;
   }
 

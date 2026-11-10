@@ -5,7 +5,10 @@ vi.mock("@simplewebauthn/browser", () => ({
   startRegistration: vi.fn(async () => ({ id: "newcred", response: {} })),
 }));
 
+vi.mock("./live", () => ({ reopenLiveStream: vi.fn() }));
+
 import { startAuthentication } from "@simplewebauthn/browser";
+import { reopenLiveStream } from "./live";
 import { ApiError } from "./api";
 import { QueryClient } from "@tanstack/react-query";
 import {
@@ -34,6 +37,22 @@ describe("auth", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/auth/login");
     expect(init.body).toBe(JSON.stringify({ password: "pw" }));
+  });
+
+  it("reopens the live stream after a successful sign-in, not after a failed one", async () => {
+    vi.mocked(reopenLiveStream).mockClear();
+    vi.stubGlobal("fetch", vi.fn(async () => respond(401, { detail: "bad" })));
+    await expect(login("x")).rejects.toBeInstanceOf(ApiError);
+    expect(reopenLiveStream).not.toHaveBeenCalled();
+    vi.stubGlobal("fetch", vi.fn(async () => respond(204)));
+    await login("pw");
+    expect(reopenLiveStream).toHaveBeenCalledOnce();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => (url.endsWith("options") ? respond(200, { challenge: "abc" }) : respond(204))),
+    );
+    await passkeyLogin();
+    expect(reopenLiveStream).toHaveBeenCalledTimes(2);
   });
 
   it("login surfaces 401 and 429 as ApiError", async () => {

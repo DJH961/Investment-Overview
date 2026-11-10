@@ -6,6 +6,9 @@ import type { GraphRange } from "../../lib/queries/portfolio";
 /** Give up waiting for the `graphs` SSE event after this long (the query still refetches on it). */
 const WAIT_MS = 120_000;
 
+/** Said (as an error toast) when the `graphs` event never came, so the spinner never just stops. */
+export const RELOAD_TIMEOUT_MESSAGE = "Reload still running or lost; check Health & Repair.";
+
 export interface GraphReloadResult {
   range: string;
   ok: boolean;
@@ -33,7 +36,10 @@ export function useGraphReload(onDone: (r: GraphReloadResult) => void, onError: 
       setBusy(null);
       doneRef.current({ range: busy, ok: ev.ok !== false, points: typeof ev.points === "number" ? ev.points : null });
     });
-    const timer = setTimeout(() => setBusy(null), WAIT_MS);
+    const timer = setTimeout(() => {
+      setBusy(null);
+      errorRef.current(RELOAD_TIMEOUT_MESSAGE);
+    }, WAIT_MS);
     return () => {
       off();
       clearTimeout(timer);

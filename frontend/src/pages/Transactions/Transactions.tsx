@@ -1,5 +1,5 @@
 import { ArrowDownUp, Pencil, Plus, Search, SlidersHorizontal, Tag, Upload } from "lucide-react";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -159,6 +159,12 @@ export function Transactions() {
     setF((prev) => ({ ...prev, ...next }));
     setPage(0);
   };
+  // A remembered "30d / 12m / This year" is re-derived every render, so it never goes stale.
+  const dates = f.range === "custom" ? { start: f.start, end: f.end } : rangeDates(f.range, todayIn(getFormatPrefs().timeZone));
+  // Free-text search is not remembered between visits (an old search would hide rows unexplained).
+  useEffect(() => {
+    setF((prev) => (prev.q ? { ...prev, q: "" } : prev));
+  }, [setF]);
   const pickRange = (range: RangeKey) => patch({ range, ...rangeDates(range, todayIn(getFormatPrefs().timeZone)) });
 
   // Typing updates the box at once; only the settled text goes to the server (G5).
@@ -171,8 +177,8 @@ export function Transactions() {
       account_id: f.account === ALL ? undefined : Number(f.account),
       kind: f.kind === ALL ? undefined : f.kind,
       symbol: debouncedSymbol.trim().toUpperCase() || undefined,
-      start: f.start || undefined,
-      end: f.end || undefined,
+      start: dates.start || undefined,
+      end: dates.end || undefined,
       q: debouncedQ.trim() || undefined,
       hide_sweeps: !f.sweeps,
       sort: f.sort,
@@ -183,7 +189,7 @@ export function Transactions() {
       summary: summarizeLedger(filteredRows),
       months: monthTotals(filteredRows),
     };
-  }, [list.data, f.account, f.kind, f.start, f.end, f.sweeps, f.sort, f.order, debouncedSymbol, debouncedQ]);
+  }, [list.data, f.account, f.kind, dates.start, dates.end, f.sweeps, f.sort, f.order, debouncedSymbol, debouncedQ]);
   const accountList = useAccounts();
   const accounts = useMemo<SelectOption[]>(
     () => (accountList.data ?? []).map((a) => ({ value: String(a.id), label: a.account_label })),
@@ -296,7 +302,7 @@ export function Transactions() {
   const total = view.sorted.length;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const pageRows = useMemo(() => view.sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [view.sorted, page]);
-  const activeFilters = [f.account !== ALL, f.kind !== ALL, Boolean(f.symbol), Boolean(f.start || f.end), f.sweeps].filter(
+  const activeFilters = [f.account !== ALL, f.kind !== ALL, Boolean(f.symbol), Boolean(dates.start || dates.end), f.sweeps].filter(
     Boolean,
   ).length;
   const filtered = activeFilters > 0 || Boolean(f.q);
@@ -350,8 +356,8 @@ export function Transactions() {
       />
       <Select ariaLabel="Kind" value={f.kind} onValueChange={(v) => patch({ kind: v })} options={[{ value: ALL, label: "All kinds" }, ...KIND_OPTIONS]} />
       <Input aria-label="Instrument" placeholder="Symbol" value={f.symbol} onChange={(e) => patch({ symbol: e.target.value })} />
-      <Input aria-label="From date" type="date" value={f.start} onChange={(e) => patch({ start: e.target.value, range: "custom" })} />
-      <Input aria-label="To date" type="date" value={f.end} onChange={(e) => patch({ end: e.target.value, range: "custom" })} />
+      <Input aria-label="From date" type="date" value={dates.start} onChange={(e) => patch({ start: e.target.value, range: "custom" })} />
+      <Input aria-label="To date" type="date" value={dates.end} onChange={(e) => patch({ end: e.target.value, range: "custom" })} />
       <label
         className="transactions-page__check"
         title="Auto-generated money-market legs are hidden by default; they still count toward balance."
@@ -417,6 +423,11 @@ export function Transactions() {
                 <span>
                   {t.count} {t.count === 1 ? "transaction" : "transactions"} · net <Money amount={net} currency={currency} signed colored />
                 </span>
+                {rows.length < t.count && (
+                  <span>
+                    {rows.length} shown here, the rest on another page
+                  </span>
+                )}
                 {t.fx_incomplete && <span className="transactions-page__fx-warn">some rows without a rate</span>}
               </span>
             )

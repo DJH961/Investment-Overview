@@ -159,6 +159,24 @@ export interface RequestOptions {
    * poll turns it off.
    */
   rideOut?: boolean;
+  /**
+   * Marks a refetch the app started by itself (a live tick), not the user: the server
+   * then does not slide the session idle timeout. Set automatically inside
+   * `runAsBackgroundRefetch`.
+   */
+  background?: boolean;
+}
+
+let backgroundDepth = 0;
+
+/** Requests started synchronously inside `fn` are background refetches (B-015). */
+export function runAsBackgroundRefetch<T>(fn: () => T): T {
+  backgroundDepth += 1;
+  try {
+    return fn();
+  } finally {
+    backgroundDepth -= 1;
+  }
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -184,7 +202,10 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  * (or the stream is lost) keeps retrying with backoff (1 s, 2 s … 5 s) rather than
  * surfacing an error, until it succeeds, the caller cancels or the outage ends.
  */
-export async function api<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function api<T = unknown>(path: string, inOptions: RequestOptions = {}): Promise<T> {
+  // Decided now (synchronously): a ride-out retry later must keep the same header.
+  const options: RequestOptions =
+    inOptions.background === undefined && backgroundDepth > 0 ? { ...inOptions, background: true } : inOptions;
   if ((options.method ?? "GET") !== "GET" || options.rideOut === false) return request<T>(path, options);
   for (let attempt = 0; ; attempt++) {
     try {
@@ -201,6 +222,7 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
   const timeoutMs = options.timeoutMs ?? (method === "GET" ? DEFAULT_GET_TIMEOUT_MS : 0);
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (options.background && method === "GET") headers["X-Background-Refetch"] = "1";
   const conditional = method === "GET" && isBothUrl(path);
   const remembered = conditional ? bothCache.get(path) : undefined;
   if (remembered) headers["If-None-Match"] = remembered.etag;

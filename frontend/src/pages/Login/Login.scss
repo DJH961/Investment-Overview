@@ -27,20 +27,9 @@
   }
 
   &__mark {
-    display: grid;
-    place-items: center;
-    width: 56px;
-    height: 56px;
     margin-bottom: var(--space-2);
-    color: var(--color-accent-fg);
-    background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-1);
-
-    svg {
-      width: var(--icon-lg);
-      height: var(--icon-lg);
-    }
   }
 
   &__title {

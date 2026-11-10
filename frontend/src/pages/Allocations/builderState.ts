@@ -2,6 +2,7 @@
  * Builder state helpers. Display-only arithmetic on typed weights (presets and
  * the live total); every plan figure comes from `POST /api/allocations/plan`.
  */
+import { parseDecimal } from "../../lib/parseDecimal";
 import type { TargetOut } from "../../lib/queries/allocations";
 
 export type Mode = "fund" | "category";
@@ -20,7 +21,19 @@ const pctText = (n: number, digits: number) => String(Number(n.toFixed(digits)))
 /** Live total of the typed weights (display only; the server normalises). */
 export function totalWeight(rows: { weight: string }[] | Weights): number {
   const list = Array.isArray(rows) ? rows.map((r) => r.weight) : Object.values(rows);
-  return list.reduce((a, w) => a + (Number(w) || 0), 0);
+  return list.reduce((a, w) => a + (parseDecimal(w) ?? 0), 0);
+}
+
+/** Typed but unreadable ('12x'): empty counts as 0, anything else must parse. */
+export function isInvalidWeight(w: string | undefined): boolean {
+  return w !== undefined && w.trim() !== "" && parseDecimal(w) === null;
+}
+
+/** The keys of every weight box holding unreadable text. */
+export function invalidWeightKeys(weights: Weights): string[] {
+  return Object.entries(weights)
+    .filter(([, w]) => isInvalidWeight(w))
+    .map(([k]) => k);
 }
 
 /** "Match current mix": each row's current share, in percent. */

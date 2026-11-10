@@ -35,8 +35,10 @@ export function getLiveStatus(): LiveStatus {
   return status;
 }
 
-const STREAM_URL = "/api/stream";
-const HEALTH_URL = "/api/health";
+// Same base as `lib/api.ts`, so a build with VITE_API_BASE streams from the right origin.
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+const STREAM_URL = `${API_BASE}/api/stream`;
+const HEALTH_URL = `${API_BASE}/api/health`;
 const HEALTH_POLL_MS = 2000;
 /** A dropped stream shows "connection lost" only after this long (no flash on brief blips). */
 export const LOST_AFTER_MS = 10_000;
@@ -82,11 +84,19 @@ export { patchOverviewFromEvent };
 
 /** Highest tick sequence number seen (the catch-up after a reconnect asks for newer ones). */
 let lastSeq: number | null = null;
+/** The server process id and read-cache generations from the last `/api/live` answer. */
+let lastBootId: string | null = null;
+let lastGenerations: Record<string, number> | null = null;
 
 /** Test helper. */
 export function resetLiveSeq(): void {
   lastSeq = null;
+  lastBootId = null;
+  lastGenerations = null;
 }
+
+const generationsDiffer = (before: Record<string, number> | null, now: Record<string, number>): boolean =>
+  before === null || Object.keys(now).some((k) => before[k] !== now[k]);
 
 function noteSeq(ev: Record<string, unknown>): void {
   if (typeof ev.seq === "number" && (lastSeq === null || ev.seq > lastSeq)) lastSeq = ev.seq;
@@ -99,9 +109,22 @@ function noteSeq(ev: Record<string, unknown>): void {
 export async function catchUpLive(queryClient: QueryClient): Promise<boolean> {
   if (lastSeq === null) return false;
   try {
-    const res = await api<components["schemas"]["LiveResponse"]>(`/api/live?since=${lastSeq}`, { rideOut: false });
+    const res = await api<components["schemas"]["LiveResponse"]>(`/api/live?since=${lastSeq}`, {
+      rideOut: false,
+      background: true,
+    });
+    const restarted = lastBootId !== null && typeof res.boot_id === "string" && res.boot_id !== lastBootId;
+    if (typeof res.boot_id === "string") lastBootId = res.boot_id;
+    if (restarted) lastSeq = 0; // a new server process counts ticks from 1 again
     for (const p of res.missed_points ?? []) patchGraphPoint(queryClient, p as TickPointDto);
     if (res.tick) applyTick(queryClient, res.tick as TickLike);
+    // The server's data moved while we were away (a restart, or its read cache changed):
+    // the ticks alone do not say what, so refetch what is on screen.
+    const gens = res.generations ?? null;
+    const moved = gens !== null && generationsDiffer(lastGenerations, gens);
+    if (gens !== null) lastGenerations = { ...gens };
+    if (restarted || moved) markStaleAndRefetch(queryClient, "refresh");
+    if (restarted) lastSeq = typeof res.seq === "number" ? res.seq : null;
     if (typeof res.seq === "number" && (lastSeq === null || res.seq > lastSeq)) lastSeq = res.seq;
     return true;
   } catch {
@@ -120,6 +143,11 @@ let lostTimer: ReturnType<typeof setTimeout> | undefined;
 function stopHealthPoll(): void {
   if (healthTimer) clearInterval(healthTimer);
   healthTimer = undefined;
+}
+
+/** Reopen the stream now (after sign-in the boot-time attempt has been backing off for up to 30 s). */
+export function reopenLiveStream(): void {
+  reconnectStream?.();
 }
 
 /** Test helper: forget timers and the stream hook between tests. */

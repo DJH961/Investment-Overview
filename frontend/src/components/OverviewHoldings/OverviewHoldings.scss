@@ -73,21 +73,15 @@
     min-width: 0;
   }
 
-  // One line, whatever the currency's figure widths (pills clip rather than wrap).
+  // Badges drop to a second line at every width instead of being clipped
+  // (the warnings come first in the markup, so they are never the ones lost).
   &__symbol {
     display: flex;
-    flex-wrap: nowrap;
-    overflow: hidden;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-1);
+    gap: 0 var(--space-1);
+    min-width: 0;
     font-weight: var(--font-weight-semibold);
-
-    // Phone: badges drop to a second line instead of being clipped.
-    @include m.phone {
-      flex-wrap: wrap;
-      overflow: visible;
-      row-gap: 0;
-    }
   }
 
   &__name {
@@ -283,6 +277,13 @@
     background: transparent;
     color: var(--color-muted);
     cursor: pointer;
+
+    // Phone: a finger-sized target.
+    @include m.phone {
+      min-width: var(--tap-min);
+      min-height: var(--tap-min);
+      margin: calc(var(--space-2) * -1) 0;
+    }
 
     &:hover,
     &:focus-visible {

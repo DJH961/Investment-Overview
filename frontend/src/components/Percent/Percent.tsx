@@ -12,7 +12,7 @@ export interface PercentProps {
 }
 
 export function Percent({ ratio, signed = false, colored = false, digits, className }: PercentProps) {
-  const tone = colored ? signOf(ratio) : null;
+  const tone = colored ? signOf(ratio, (digits ?? 2) + 2) : null;
   return (
     <span className={clsx("percent", tone && `percent--${tone}`, className)}>
       {formatPercent(ratio, { signed, digits })}

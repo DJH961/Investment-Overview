@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { api } from "./api";
+import { reopenLiveStream } from "./live";
 import { forgetPasskeyId, lastPasskeyId, markSignedOut, rememberPasskeyDevice, rememberPasskeyId } from "./passkeyHint";
 import { clearClientData } from "./queries";
 
@@ -19,8 +20,9 @@ export interface PasskeyInfo {
   last_used_at?: string | null;
 }
 
-export function login(password: string): Promise<void> {
-  return api<void>("/api/auth/login", { method: "POST", body: { password }, skipAuthRedirect: true });
+export async function login(password: string): Promise<void> {
+  await api<void>("/api/auth/login", { method: "POST", body: { password }, skipAuthRedirect: true });
+  reopenLiveStream();
 }
 
 /** Sign out and wipe cached portfolio data, even when the request fails. */
@@ -55,6 +57,7 @@ export async function passkeyLogin(autofill = false): Promise<void> {
   await api<void>("/api/auth/passkey/login/verify", { method: "POST", body: credential, skipAuthRedirect: true });
   rememberPasskeyId(credential.id);
   rememberPasskeyDevice();
+  reopenLiveStream();
 }
 
 export async function registerPasskey(name?: string): Promise<void> {

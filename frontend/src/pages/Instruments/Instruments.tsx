@@ -17,6 +17,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../lib/api";
 import { formatDate, formatPercent } from "../../lib/format";
+import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
 import {
   instrumentErrors,
   useInstruments,
@@ -61,7 +62,12 @@ export const PRICING_MODES: { value: PricingMode; label: string; help: string }[
 ];
 const MODE_LABEL: Record<string, string> = Object.fromEntries(PRICING_MODES.map((m) => [m.value, m.label]));
 
-const DECIMAL = /^\d+(\.\d+)?$/;
+/** The expense ratio as a dot-decimal string, or null when it is not a non-negative number. */
+function normaliseRatio(v: string): string | null {
+  const t = v.trim();
+  const n = parseDecimal(t);
+  return n === null || n < 0 || /^[-\u2212]/.test(t) ? null : toApiDecimal(t);
+}
 
 /** "0.03" (%) -> "0.0003" without float rounding; display-only unit change, no maths. */
 export function percentToFraction(pct: string): string {
@@ -147,12 +153,13 @@ function InstrumentForm({ instrument, onDone }: { instrument: Instrument; onDone
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (state.expense_ratio.trim() && !DECIMAL.test(state.expense_ratio.trim())) {
-      setLocalError("Enter the expense ratio as a percentage, e.g. 0.03");
+    const ratio = state.expense_ratio.trim() ? normaliseRatio(state.expense_ratio) : "";
+    if (ratio === null) {
+      setLocalError("Enter the expense ratio as a percentage, e.g. 0.03 or 0,03");
       return;
     }
     setLocalError(null);
-    const patch = buildPatch(instrument, state);
+    const patch = buildPatch(instrument, { ...state, expense_ratio: ratio });
     if (Object.keys(patch).length === 0) return onDone();
     update.mutate(
       { id: instrument.id, patch },
@@ -317,7 +324,8 @@ export function Instruments() {
   const isPhone = useIsPhone();
   const [params, setParams] = useSearchParams();
   const list = useInstruments();
-  const [q, setQ] = usePersistentState("instruments.q", "");
+  // Not remembered between visits: an old search would hide rows with no visible reason.
+  const [q, setQ] = useState("");
   const [showInactive, setShowInactive] = usePersistentState("instruments.inactive", true);
   const editId = Number(params.get("id")) || null;
   const editing = editId !== null ? list.data?.find((i) => i.id === editId) : undefined;
@@ -418,6 +426,7 @@ export function Instruments() {
       <search className="instruments-page__filters">
         <Input
           aria-label="Search instruments"
+          data-search
           placeholder="Search…"
           leftIcon={<Search aria-hidden />}
           value={q}

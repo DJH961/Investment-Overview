@@ -157,6 +157,23 @@ describe("Health & Repair: Health tab", () => {
     expect(calls.find((c) => c.method === "POST")?.body).toEqual({ params: { force: true } });
   });
 
+  it("uses the shared segmented control for its sections and switches on click", async () => {
+    renderPage();
+    await screen.findByText("Needs attention");
+    const group = screen.getByRole("radiogroup", { name: "Health & Repair sections" });
+    expect(within(group).getAllByRole("radio").length).toBeGreaterThanOrEqual(6);
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    fireEvent.click(within(group).getByRole("radio", { name: "Repair" }));
+    expect(await screen.findByRole("region", { name: "Repair" })).toBeInTheDocument();
+  });
+
+  it("spells out check statuses instead of printing the raw API word", async () => {
+    renderPage();
+    await screen.findByText("Needs attention");
+    expect(screen.getAllByText("Problem").length).toBeGreaterThan(0);
+    expect(screen.queryByText("error", { exact: true })).not.toBeInTheDocument();
+  });
+
   it("dismisses a recent problem", async () => {
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss problem: timeout" }));

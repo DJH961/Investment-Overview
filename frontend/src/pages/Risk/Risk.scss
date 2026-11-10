@@ -99,6 +99,7 @@
 
 .risk-page__row-label {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
@@ -134,11 +135,11 @@
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 
-  dt {
+  &-label {
     font-weight: var(--font-weight-semibold);
   }
 
-  dd {
+  &-values {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);

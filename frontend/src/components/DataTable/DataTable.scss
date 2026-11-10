@@ -1,6 +1,7 @@
 @use "../../styles/mixins" as m;
 
 .data-table {
+  position: relative;
   overflow-x: auto;
 
   &__table {
@@ -11,7 +12,7 @@
   &__head {
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: var(--z-raised);
     background: var(--color-surface);
   }
 
@@ -179,11 +180,15 @@
         overflow: hidden;
         padding: 2px var(--space-2);
         white-space: nowrap;
-        text-overflow: ellipsis;
         border: var(--border-width) solid var(--color-border);
         border-radius: var(--radius-full);
         background: var(--color-surface-2);
         font-size: var(--font-size-xs);
+
+        // The ellipsis sits on the value (a block inside the chip's flex box).
+        .data-table__value {
+          @include m.truncate;
+        }
       }
 
       // Trailing actions (edit icons) join the title line, left of the

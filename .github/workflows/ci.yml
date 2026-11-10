@@ -326,3 +326,61 @@ jobs:
           except sqlcipher3.DatabaseError:
               print("ok: encrypted, needs key")
           '
+
+  # Fixture mode: the real frontend on fake data. Fails when the committed fixtures no
+  # longer match what the read models produce, or when anything overflows its box.
+  fixtures:
+    needs: pr-gate
+    if: needs.pr-gate.outputs.tested != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --extra dev
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Fixtures drift guard (src/fixtures/data)
+        working-directory: frontend
+        run: |
+          npm run gen:fixtures
+          git diff --exit-code -- src/fixtures/data
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Overflow detector (every route, six widths, both themes)
+        working-directory: frontend
+        run: npm run test:overflow
+
+      - name: Upload overflow screenshots and report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: overflow-screenshots
+          path: |
+            frontend/e2e-screenshots
+            frontend/e2e-report
+          retention-days: 14

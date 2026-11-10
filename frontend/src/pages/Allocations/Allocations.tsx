@@ -1,4 +1,6 @@
 import { PieChart } from "lucide-react";
+import { useNavigate } from "react-router";
+import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { PageHeader } from "../../components/PageHeader";
@@ -11,6 +13,16 @@ import { DriftCard } from "./DriftCard";
 import "./Allocations.scss";
 
 export { totalWeight } from "./builderState";
+
+/** Empty-state way out: the Import page. */
+function ImportButton() {
+  const navigate = useNavigate();
+  return (
+    <Button variant="primary" onClick={() => navigate("/import")}>
+      Import a broker file
+    </Button>
+  );
+}
 
 export function Allocations() {
   const { currency } = usePrefs();
@@ -35,6 +47,7 @@ export function Allocations() {
           icon={<PieChart aria-hidden />}
           title="No funds yet"
           description="Import transactions first, then build a target mix here."
+          action={<ImportButton />}
         />
       ) : (
         <>

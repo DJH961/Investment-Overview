@@ -54,4 +54,14 @@ describe("write -> invalidated keys", () => {
     expect(hit).not.toContain("accounts");
     expect(hit).not.toContain("fx-conversions");
   });
+
+  it("an account rename or an import refreshes the lists that show account names", () => {
+    for (const kind of ["accountWrite", "importWrite"] as const) {
+      const hit = invalidatedBy(kind);
+      expect(hit).toContain("accounts");
+      expect(hit).toContain("holdings/both");
+      expect(hit).toContain("transactions/[object Object]");
+      expect(hit).toContain("deposits/both");
+    }
+  });
 });

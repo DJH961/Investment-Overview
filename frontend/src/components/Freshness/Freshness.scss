@@ -17,8 +17,10 @@
     background: var(--color-faint);
   }
 
+  // Fixed wording: it wraps rather than being cut.
   &__label {
-    @include m.truncate;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   &--live &__dot {

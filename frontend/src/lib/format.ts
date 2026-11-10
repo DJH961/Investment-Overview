@@ -273,8 +273,30 @@ export function formatDateTime(value: string | Date | null | undefined, missing 
   return `${formatDate(d)} ${formatTime(d)}`;
 }
 
-/** Sign class helper: gains / losses / flat. */
-export function signOf(value: number | null | undefined): "pos" | "neg" | "flat" {
+/** The one "missing value" mark used by every table and tile. */
+export const MISSING = "–";
+
+/**
+ * "2026-10" -> "Oct 2026" / "October" in the regional locale; other labels pass through.
+ */
+export function formatMonth(label: string, style: "short" | "long" | "month-only" = "short"): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(label);
+  if (!m) return label;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));
+  const opts: Intl.DateTimeFormatOptions =
+    style === "short" ? { month: "short", year: "numeric" } : style === "long" ? { month: "long", year: "numeric" } : { month: "long" };
+  return d.toLocaleDateString(LOCALE, { ...opts, timeZone: "UTC" });
+}
+
+/**
+ * Sign class helper: gains / losses / flat. Pass `digits` (the digits the text shows) so a
+ * value that rounds to zero is "flat" too, matching the "exceptZero" sign in the text.
+ */
+export function signOf(value: number | null | undefined, digits?: number): "pos" | "neg" | "flat" {
+  if (value && digits !== undefined) {
+    const f = 10 ** digits;
+    value = Math.round(value * f) / f;
+  }
   if (!value) return "flat";
   return value > 0 ? "pos" : "neg";
 }

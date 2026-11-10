@@ -159,6 +159,7 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
 vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: ccy.value }) }));
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined, useShellSummary: () => undefined }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
+vi.mock("./OnboardingCard", () => ({ OnboardingCard: () => null }));
 
 import { ToastProvider } from "../../components/Toast";
 import { Overview } from "./Overview";

@@ -11,7 +11,8 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Switch } from "../../components/Switch";
 import { ApiError } from "../../lib/api";
-import { formatNumber } from "../../lib/format";
+import { formatPercent } from "../../lib/format";
+import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useBuilderPlan, type AllocationsData, type PlanRequest } from "../../lib/queries/allocations";
 import type { CalculatorInputsOut } from "../../lib/queries/reports";
@@ -25,6 +26,8 @@ import {
   type SavedBuilder,
   cashIn,
   isEtfClass,
+  invalidWeightKeys,
+  isInvalidWeight,
   isOff,
   presetClear,
   presetCurrent,
@@ -57,7 +60,13 @@ function useCalcToggle(key: string, settingKey: string) {
 function PctInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <span className="allocations__pct">
-      <Input aria-label={label} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input
+        aria-label={label}
+        inputMode="decimal"
+        invalid={isInvalidWeight(value)}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
       <span className="allocations__pct-unit" aria-hidden>
         %
       </span>
@@ -78,8 +87,11 @@ function kindLabel(assetClass: string | null | undefined, isCash = false): strin
 /** A preset over some rows, with every other row (cash) at an explicit 0. */
 const zeroFilled = (all: Weighable[], preset: Weights): Weights => ({ ...presetClear(all), ...preset });
 
-/** A typed percent as a fraction (junk counts as 0). */
-const typed = (v: string | undefined) => (Number(v) || 0) / 100;
+/** A typed percent as a fraction (decimal comma or dot; unreadable text shows as 0 but blocks Compute). */
+const typed = (v: string | undefined) => (parseDecimal(v ?? "") ?? 0) / 100;
+
+/** A typed weight as the dot-decimal string the API expects ("12,5" -> "12.5"). */
+const apiWeight = (v: string | undefined) => toApiDecimal(v ?? "") ?? "0";
 
 export interface BuilderProps {
   inputs: CalculatorInputsOut;
@@ -183,11 +195,13 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   const setWeights = mode === "fund" ? setFundW : setCatW;
   const total = totalWeight(weights);
   const off = isOff(total);
+  const badWeights = invalidWeightKeys(weights).length > 0;
+  const badAmount = amount.trim() !== "" && parseDecimal(amount) === null;
   // Bars in the editor share one scale: the largest current or typed share.
   const scale = Math.max(...rows.map((r) => Math.max(Number(r.current_pct ?? 0), typed(weights[r.key]))), 0.0001);
 
   const request = (): PlanRequest => ({
-    amount: amount || "0",
+    amount: toApiDecimal(amount) ?? "0",
     ccy,
     use_held_cash: fromCash && heldCash > 0,
     fractional,
@@ -196,14 +210,14 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
     fund_weights:
       mode === "fund"
         ? funds
-            .filter((f) => Number(fundW[f.key]) > 0 || noBuy[f.key])
-            .map((f) => ({ instrument_id: Number(f.key), weight: fundW[f.key] || "0", no_buy: Boolean(noBuy[f.key]) }))
+            .filter((f) => typed(fundW[f.key]) > 0 || noBuy[f.key])
+            .map((f) => ({ instrument_id: Number(f.key), weight: apiWeight(fundW[f.key]), no_buy: Boolean(noBuy[f.key]) }))
         : [],
     category_weights:
       mode === "category"
         ? inputs.categories.map((c) => ({
             name: c.name,
-            weight: catW[c.name] || "0",
+            weight: apiWeight(catW[c.name]),
             split: split[c.name] ?? "value",
             selected: effectiveFor(c.name).ids,
           }))
@@ -227,8 +241,8 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   const saveItems: SaveItem[] | null =
     mode === "fund"
       ? funds
-          .filter((f) => Number(fundW[f.key]) > 0)
-          .map((f) => ({ instrument_id: Number(f.key), weight_pct: fundW[f.key], no_buy: Boolean(noBuy[f.key]) }))
+          .filter((f) => typed(fundW[f.key]) > 0)
+          .map((f) => ({ instrument_id: Number(f.key), weight_pct: apiWeight(fundW[f.key]), no_buy: Boolean(noBuy[f.key]) }))
       : result && planKey === currentKey
         ? result.rows
             .filter((r) => !r.held_unticked && Number(r.target_pct) > 0)
@@ -250,7 +264,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
       <Card title="1 · How much are you investing?" className="allocations__invest">
         <div className="allocations__step">
           <div className="allocations__amount">
-            <Field label={`Cash to invest (${ccy})`}>
+            <Field label={`Cash to invest (${ccy})`} error={badAmount ? "Enter a number such as 1000 or 1000,50." : undefined}>
               {(c) => <Input {...c} inputMode="decimal" value={amount} onChange={(e) => { setFromCash(false); setAmount(e.target.value); }} />}
             </Field>
             <SegmentedControl
@@ -346,7 +360,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
                     <h3 className="allocations__edit-title">{g.name}</h3>
                     <span className="allocations__edit-sum">
                       now <Percent ratio={g.current} digits={1} /> · target{" "}
-                      <span className="allocations__edit-sum-value">{formatNumber(sum * 100, 1)} %</span>
+                      <span className="allocations__edit-sum-value">{formatPercent(sum, { digits: 1 })}</span>
                     </span>
                   </header>
                   <ul className="allocations__rows">
@@ -358,7 +372,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
                           <span className="allocations__row-who">
                             <span className="allocations__row-label">{i.symbol}</span>
                             {i.name && i.name !== i.symbol && (
-                              <span className="allocations__row-name" title={i.name}>
+                              <span className="allocations__row-name" title={i.name} data-truncate-ok>
                                 {i.name}
                               </span>
                             )}
@@ -425,7 +439,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
                     <div className="allocations__cat-head">
                       <span className="allocations__row-who">
                         <span className="allocations__row-label">{c.name}</span>
-                        <span className="allocations__row-name">
+                        <span className="allocations__row-name allocations__row-name--wrap">
                           {eff.ids.length} of {c.members.length} {c.members.length === 1 ? "fund" : "funds"} get new money
                         </span>
                       </span>
@@ -495,9 +509,14 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
           <div className="allocations__sum">
             <p className="allocations__sum-line" aria-live="polite" data-testid="weight-total">
               <span className="allocations__sum-label">Total</span>
-              <span className="allocations__sum-value">{formatNumber(total, 1)} %</span>
+              <span className="allocations__sum-value">{formatPercent(total / 100, { digits: 1 })}</span>
               <span className="allocations__sum-note">{off ? "will be scaled to 100 %" : "sums to 100 %"}</span>
             </p>
+            {badWeights && (
+              <p className="allocations__sum-error" role="alert">
+                Some target boxes are not numbers. Use digits with a comma or a dot, like 12,5 or 12.5.
+              </p>
+            )}
             <div className="allocations__total-bar" aria-hidden>
               <span className="allocations__total-fill" style={{ width: `${Math.min(total, 100)}%` }} />
             </div>
@@ -511,7 +530,13 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
             >
               Save as target…
             </Button>
-            <Button className="allocations__compute" variant="primary" onClick={compute} loading={plan.isPending}>
+            <Button
+              className="allocations__compute"
+              variant="primary"
+              onClick={compute}
+              loading={plan.isPending}
+              disabled={badWeights || badAmount}
+            >
               Compute plan
             </Button>
           </div>
@@ -521,7 +546,7 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
       {plan.isError && (
         <ErrorState
           message={plan.error instanceof ApiError ? plan.error.message : "Could not compute a plan."}
-          onRetry={() => plan.reset()}
+          onRetry={compute}
         />
       )}
       {result && (

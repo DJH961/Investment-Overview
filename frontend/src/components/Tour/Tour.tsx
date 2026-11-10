@@ -1,6 +1,7 @@
 import { Dialog, Popover } from "radix-ui";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useLocation } from "react-router";
+import { useIsPhone } from "../../lib/useMediaQuery";
 import { Button } from "../Button";
 import { TOUR_STEPS, type TourStep } from "./steps";
 import "./Tour.scss";
@@ -31,9 +32,10 @@ function safeRemove(key: string) {
 }
 
 /** First visible element matching the selector, or null. */
-function findTarget(step: TourStep): HTMLElement | null {
-  if (!step.selector) return null;
-  const nodes = Array.from(document.querySelectorAll<HTMLElement>(step.selector));
+export function findTarget(step: TourStep, phone = false): HTMLElement | null {
+  const selector = (phone ? step.phone?.selector : undefined) ?? step.selector;
+  if (!selector) return null;
+  const nodes = Array.from(document.querySelectorAll<HTMLElement>(selector));
   return nodes.find((n) => n.getClientRects().length > 0) ?? null;
 }
 
@@ -45,6 +47,7 @@ function focusNext(e: Event) {
 /** Replayable guided tour; starts on first visit after login or when `iv.tour.replay=1`. */
 export function Tour() {
   const { pathname } = useLocation();
+  const phone = useIsPhone();
   const [active, setActive] = useState(false);
   const [index, setIndex] = useState(0);
   const [target, setTarget] = useState<HTMLElement | null>(null);
@@ -62,15 +65,21 @@ export function Tour() {
     }
   }
 
-  const step = TOUR_STEPS[index];
+  const raw = TOUR_STEPS[index];
+  const step = useMemo(() => ({ ...raw, body: (phone ? raw.phone?.body : undefined) ?? raw.body }), [raw, phone]);
 
   useEffect(() => {
     if (!active) return;
-    const update = () => setTarget(findTarget(step));
+    const update = () => setTarget(findTarget(raw, phone));
     update();
+    // The nav can render a moment after the route (lazy page, first paint): look again shortly.
+    const retry = setTimeout(update, 300);
     window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [active, step]);
+    return () => {
+      clearTimeout(retry);
+      window.removeEventListener("resize", update);
+    };
+  }, [active, raw, phone]);
 
   const close = useCallback(() => {
     safeSet(SEEN_KEY, "1");
@@ -128,7 +137,7 @@ export function Tour() {
         <Popover.Portal>
           <Popover.Content
             className="tour__card"
-            side="right"
+            side={phone ? "top" : "right"}
             align="start"
             sideOffset={12}
             collisionPadding={12}

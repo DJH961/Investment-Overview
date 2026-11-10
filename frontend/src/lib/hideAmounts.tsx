@@ -1,7 +1,8 @@
 /**
  * Per-device "Hide numbers" mode (localStorage `iv.privacy.hideAmounts`, never sent to the server).
- * The flag is pushed into `lib/format.ts` during render so every formatter masks; `AppShell` remounts
- * the page content on a flip so plain-function formatters re-run too.
+ * The flag is pushed into `lib/format.ts` during render so every formatter masks; `RerenderOnHide`
+ * (wrapped around each page in `App.tsx`) re-renders the page on a flip, without remounting it, so
+ * plain-function formatters re-run while drafts and scroll state survive.
  */
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { setHideAmounts } from "./format";

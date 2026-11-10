@@ -227,7 +227,7 @@
 
   &__tooltip {
     position: absolute;
-    z-index: 1;
+    z-index: var(--z-raised);
     min-width: 140px;
     padding: var(--space-2) var(--space-3);
     background: var(--color-surface);
@@ -346,17 +346,24 @@
 
   // Phone scrub readout: replaces the legend line while a finger is on the
   // chart (same height), so nothing covers the lines.
+  // Wraps to a second line (fixed two-line box) instead of cutting the last value.
   &__readout {
     display: flex;
+    flex-wrap: wrap;
+    align-content: center;
     align-items: center;
-    gap: var(--space-3);
-    min-height: var(--control-height-sm);
+    gap: 0 var(--space-3);
+    height: calc(var(--control-height-sm) * 1.4);
     margin: 0;
     overflow: hidden;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  }
+
+  &__readout-label {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-medium);
   }
 
   &__readout-time {
@@ -368,6 +375,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
+    white-space: nowrap;
   }
 
   &__readout-value {

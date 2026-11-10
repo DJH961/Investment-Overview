@@ -1,6 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Download, History, LogOut, Search, Upload } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -9,11 +8,9 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
 import { PageHeader } from "../../components/PageHeader";
-import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { useHideAmounts } from "../../lib/hideAmounts";
-import { invalidateAuth, logout } from "../../lib/auth";
 import { BACKUP_URL } from "../../lib/queries/manage";
 import {
   SETTINGS_EXPORT_URL,
@@ -28,8 +25,11 @@ import {
   type SettingField as FieldDef,
   type SettingJson,
 } from "../../lib/queries/settings";
+import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState } from "../../lib/usePersistentState";
+import { restartSetupGuide } from "../../lib/setupGuide";
+import { useSignOut } from "../../lib/useSignOut";
 import { AccountsCard } from "./AccountsCard";
 import { HistorySheet } from "./HistorySheet";
 import { ImportDialog } from "./ImportDialog";
@@ -47,19 +47,25 @@ const LOCAL_SECTIONS = [
 ] as const;
 
 function SecurityCards() {
-  const qc = useQueryClient();
+  const signOut = useSignOut();
   const navigate = useNavigate();
-  const signOut = async () => {
-    await logout();
-    await invalidateAuth(qc);
-    navigate("/login");
-  };
   return (
     <>
       <PasskeysCard />
+      <Card title="Setup guide" subtitle="This device only">
+        <Button
+          variant="secondary"
+          onClick={() => {
+            restartSetupGuide();
+            navigate("/overview");
+          }}
+        >
+          Restart setup guide
+        </Button>
+      </Card>
       <Card title="Session">
         <Button variant="danger" leftIcon={<LogOut aria-hidden />} onClick={() => void signOut()}>
-          Log out
+          Sign out
         </Button>
       </Card>
     </>
@@ -114,7 +120,6 @@ export function Settings() {
   const phone = useMediaQuery(PHONE_QUERY);
 
   const [section, setSection] = usePersistentState<string>("settings.section", "display");
-  const [advanced, setAdvanced] = usePersistentState<boolean>("settings.advanced", false);
   const [search, setSearch] = useState("");
   // Phone: which foldable sections are open (remembered per device).
   const [openSections, setOpenSections] = usePersistentState<string[]>("settings.open", ["display"], isStringList);
@@ -154,12 +159,14 @@ export function Settings() {
   const errors = { ...serverErrors, ...clientErrors };
   const dirtyCount = Object.keys(draft).length;
 
-  useEffect(() => {
-    if (dirtyCount === 0) return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirtyCount]);
+  // In-app navigation (sidebar, shortcuts, back) asks first; reloads get the browser prompt.
+  const leaveGuard = useLeaveGuard({
+    when: dirtyCount > 0,
+    title: "Leave without saving?",
+    description: `You have ${dirtyCount} unsaved setting change${dirtyCount === 1 ? "" : "s"}. Leaving discards ${dirtyCount === 1 ? "it" : "them"}.`,
+    leaveLabel: "Discard and leave",
+    onLeave: () => setDraft({}),
+  });
 
   const setFieldDraft = (key: string, d: DraftValue | undefined) => {
     setDraft((prev) => {
@@ -231,16 +238,15 @@ export function Settings() {
     });
 
   const q = search.trim().toLowerCase();
-  const advancedHidden = (f: FieldDef) => f.level === "advanced" && !advanced;
-  const visible = fields.filter((f) => !advancedHidden(f) && (q ? matches(f, q) : f.section === active));
-  const hiddenAdvanced = fields.filter((f) => advancedHidden(f) && (q ? matches(f, q) : f.section === active)).length;
+  // Every setting is visible; advanced ones just carry an "Advanced" badge (see SettingField).
+  const visible = fields.filter((f) => (q ? matches(f, q) : f.section === active));
   const grouped = q
     ? sections
         .map((s) => ({ section: s, fields: visible.filter((f) => f.section === s.id) }))
         .filter((g) => g.fields.length > 0)
     : [{ section: sections.find((s) => s.id === active) ?? { id: active, label: active }, fields: visible }];
 
-  const sectionBody = (s: { id: string; label: string }, list: FieldDef[], hidden: number) => (
+  const sectionBody = (s: { id: string; label: string }, list: FieldDef[]) => (
     <>
       {list.length > 0 &&
         (values.data ? (
@@ -251,12 +257,7 @@ export function Settings() {
         ))}
       {!q && EXTRA_CARDS[s.id]?.()}
       {!q && list.length === 0 && !EXTRA_CARDS[s.id] && (
-        <p className="settings__muted">Nothing here{hidden ? " unless advanced settings are shown" : ""}.</p>
-      )}
-      {!q && hidden > 0 && (
-        <button type="button" className="settings__more" onClick={() => setAdvanced(true)}>
-          Show {hidden} advanced setting(s)
-        </button>
+        <p className="settings__muted">Nothing here.</p>
       )}
       {!q && list.some((f) => values.data?.[f.key]?.source === "db") && (
         <div className="settings__section-foot">
@@ -301,6 +302,7 @@ export function Settings() {
           </div>
         }
       />
+      {leaveGuard}
       <UnsavedBar
         count={dirtyCount}
         invalid={Object.keys(clientErrors).length > 0}
@@ -330,6 +332,7 @@ export function Settings() {
               placeholder="Search settings"
               leftIcon={<Search aria-hidden size={14} />}
               value={search}
+              data-search
               onChange={(e) => setSearch(e.target.value)}
             />
             {!phone && (
@@ -348,34 +351,23 @@ export function Settings() {
                         }}
                       >
                         {s.label}
-                        {dirty && <span className="settings-nav__dot" aria-label="unsaved changes" />}
+                        {dirty && <>
+                            <span className="settings-nav__dot" aria-hidden />
+                            <span className="settings-nav__sr">unsaved changes</span>
+                          </>}
                       </button>
                     </li>
                   );
                 })}
               </ul>
             )}
-            <div className="settings-nav__advanced">
-              <span className="settings-nav__advanced-label">Advanced settings</span>
-              <SegmentedControl
-                size="sm"
-                ariaLabel="Show advanced settings"
-                options={[
-                  { value: "off", label: "Hide" },
-                  { value: "on", label: "Show" },
-                ]}
-                value={advanced ? "on" : "off"}
-                onChange={(v) => setAdvanced(v === "on")}
-              />
-            </div>
           </nav>
 
           <div className="settings__content">
             {phone && !q
               ? // Phone: one long page of foldable sections (no section picker).
                 sections.map((s) => {
-                  const list = fields.filter((f) => f.section === s.id && !advancedHidden(f));
-                  const hidden = fields.filter((f) => f.section === s.id && advancedHidden(f)).length;
+                  const list = fields.filter((f) => f.section === s.id);
                   const open = openSections.includes(s.id);
                   const dirty = fields.some((f) => f.section === s.id && f.key in draft);
                   const bodyId = `settings-body-${s.id}`;
@@ -395,13 +387,16 @@ export function Settings() {
                         >
                           <ChevronDown aria-hidden className="settings-fold__chevron" />
                           <span className="settings-fold__label">{s.label}</span>
-                          {dirty && <span className="settings-nav__dot" aria-label="unsaved changes" />}
+                          {dirty && <>
+                            <span className="settings-nav__dot" aria-hidden />
+                            <span className="settings-nav__sr">unsaved changes</span>
+                          </>}
                           {list.length > 0 && <span className="settings-fold__count">{list.length}</span>}
                         </button>
                       </h2>
                       {open && (
                         <div className="settings-fold__body" id={bodyId}>
-                          {sectionBody(s, list, hidden)}
+                          {sectionBody(s, list)}
                         </div>
                       )}
                     </section>
@@ -412,14 +407,14 @@ export function Settings() {
                     <h2 className="settings__section-title" id={`settings-${s.id}`}>
                       {s.label}
                     </h2>
-                    {sectionBody(s, list, hiddenAdvanced)}
+                    {sectionBody(s, list)}
                   </section>
                 ))}
             {q && grouped.length === 0 && (
               <EmptyState
                 icon={<Search aria-hidden />}
                 title="No setting matches"
-                description={hiddenAdvanced ? `${hiddenAdvanced} advanced setting(s) match; show advanced settings to see them.` : "Try another word."}
+                description="Try another word."
               />
             )}
           </div>

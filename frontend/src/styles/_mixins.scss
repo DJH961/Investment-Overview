@@ -75,10 +75,19 @@ $bp-xxl: 1920px;
   outline-offset: 2px;
 }
 
+// Block-level ellipsis. Put it on the text element, never on a flex container
+// (text-overflow does nothing there).
 @mixin truncate {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+// A flex child that gives way instead of pushing its siblings out.
+@mixin shrinkable {
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 @mixin visually-hidden {

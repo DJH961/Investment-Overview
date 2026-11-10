@@ -1,6 +1,5 @@
 import { Coins, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { DataTable, type Column } from "../../components/DataTable";
@@ -18,6 +17,7 @@ import { Skeleton } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../lib/api";
 import { formatDate, formatNumber } from "../../lib/format";
+import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
 import {
   useDeleteConversion,
   useFxConversions,
@@ -44,29 +44,38 @@ function fromConversion(c: FxConversion): FormState {
 
 /** Display-only readout of the typed numbers; the server stores the real rate. */
 function previewRate(eur: string, usd: string): string {
-  const e = Number(eur);
-  const u = Number(usd);
-  return e > 0 && u > 0 ? formatNumber(u / e, 4) : "–";
+  const e = parseDecimal(eur);
+  const u = parseDecimal(usd);
+  return e !== null && u !== null && e > 0 && u > 0 ? formatNumber(u / e, 4) : "–";
 }
 
 export interface ConversionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: FxConversion | null;
+  /** Starting values for a new conversion (for example the date and USD gap of a deposit). */
+  prefill?: Partial<FormState>;
 }
 
-export function ConversionDialog({ open, onOpenChange, editing }: ConversionDialogProps) {
+export function ConversionDialog({ open, onOpenChange, editing, prefill }: ConversionDialogProps) {
   const save = useSaveConversion();
   const { toast } = useToast();
-  const [form, setForm] = useState<FormState>(editing ? fromConversion(editing) : EMPTY);
+  const [form, setForm] = useState<FormState>(editing ? fromConversion(editing) : { ...EMPTY, ...prefill });
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.date || !(Number(form.eur) > 0) || !(Number(form.usd) > 0)) {
-      setError("Enter a date and positive EUR and USD amounts.");
+    const eur = toApiDecimal(form.eur);
+    const usd = toApiDecimal(form.usd);
+    const fees = form.fees.trim() === "" ? null : toApiDecimal(form.fees);
+    if (!form.date || eur === null || usd === null || !(Number(eur) > 0) || !(Number(usd) > 0)) {
+      setError("Enter a date and positive EUR and USD amounts, like 1000,50 or 1000.50.");
+      return;
+    }
+    if (form.fees.trim() !== "" && (fees === null || Number(fees) < 0)) {
+      setError("Fees must be a number, like 2,50 or 2.50.");
       return;
     }
     setError(null);
@@ -75,9 +84,9 @@ export function ConversionDialog({ open, onOpenChange, editing }: ConversionDial
         id: editing?.id,
         body: {
           date: form.date,
-          eur_sent: form.eur,
-          usd_received: form.usd,
-          fees_eur: form.fees || null,
+          eur_sent: eur,
+          usd_received: usd,
+          fees_eur: fees,
           note: form.note || null,
         },
       },
@@ -102,7 +111,7 @@ export function ConversionDialog({ open, onOpenChange, editing }: ConversionDial
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="submit" form="conversion-form" loading={save.isPending}>
+          <Button type="submit" variant="primary" form="conversion-form" loading={save.isPending}>
             Save
           </Button>
         </>
@@ -133,7 +142,7 @@ export function ConversionDialog({ open, onOpenChange, editing }: ConversionDial
   );
 }
 
-function MatchRow({ d }: { d: DepositMatch }) {
+function MatchRow({ d, onAdd }: { d: DepositMatch; onAdd: (d: DepositMatch) => void }) {
   return (
     <li className="conversions__match">
       <div className="conversions__match-head">
@@ -143,9 +152,14 @@ function MatchRow({ d }: { d: DepositMatch }) {
           {d.effective_rate ? `${formatNumber(Number(d.effective_rate), 4)} USD/EUR` : "no rate"}
         </span>
         {d.fallback_to_ecb && (
-          <Link className="conversions__badge" to="/diagnostics">
+          <button
+            type="button"
+            className="conversions__badge"
+            title="Add a conversion dated on or before this deposit"
+            onClick={() => onAdd(d)}
+          >
             ECB fallback: <Money amount={Number(d.fallback_usd)} currency="USD" />
-          </Link>
+          </button>
         )}
       </div>
       <ul className="conversions__slices">
@@ -165,7 +179,7 @@ export function CurrencyConversions() {
   const pool = useFxPool();
   const del = useDeleteConversion();
   const { toast } = useToast();
-  const [dialog, setDialog] = useState<{ editing: FxConversion | null } | null>(null);
+  const [dialog, setDialog] = useState<{ editing: FxConversion | null; prefill?: Partial<FormState> } | null>(null);
   const [confirm, setConfirm] = useState<FxConversion | null>(null);
 
   const remainingById = new Map((pool.data?.remaining ?? []).map((r) => [r.conversion_id, r]));
@@ -281,7 +295,13 @@ export function CurrencyConversions() {
             ) : (
               <ul className="conversions__matches">
                 {pool.data.deposits.map((d) => (
-                  <MatchRow key={d.transaction_id} d={d} />
+                  <MatchRow
+                    key={d.transaction_id}
+                    d={d}
+                    onAdd={(m) =>
+                      setDialog({ editing: null, prefill: { date: m.date, usd: m.fallback_usd ?? "" } })
+                    }
+                  />
                 ))}
               </ul>
             )}
@@ -291,16 +311,17 @@ export function CurrencyConversions() {
 
       {dialog && (
         <ConversionDialog
-          key={dialog.editing?.id ?? "new"}
+          key={dialog.editing?.id ?? `new-${dialog.prefill?.date ?? ""}`}
           open
           editing={dialog.editing}
+          prefill={dialog.prefill}
           onOpenChange={(o) => !o && setDialog(null)}
         />
       )}
       <Dialog
         open={confirm !== null}
         onOpenChange={(o) => !o && setConfirm(null)}
-        title="Delete conversion"
+        title="Delete this conversion?"
         description="EUR returns will be recomputed without this conversion."
         footer={
           <>

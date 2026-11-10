@@ -28,10 +28,14 @@ DEFAULT_TIMEZONE = LOCAL
 
 _CONFIG_KEY = "display_timezone"
 
+#: Entries some system zone folders hold that are not IANA zone names (on Linux,
+#: ``localtime`` links to the host's own zone).
+_NOT_ZONES = frozenset({"localtime"})
+
 
 def supported_timezones() -> list[str]:
     """Return the selectable timezone names: ``Local``, ``UTC``, then IANA zones."""
-    zones = sorted(available_timezones())
+    zones = sorted(available_timezones() - _NOT_ZONES)
     # Keep the two friendly sentinels first, then the full IANA list (with UTC
     # de-duplicated since it appears in ``available_timezones`` too).
     rest = [z for z in zones if z != "UTC"]

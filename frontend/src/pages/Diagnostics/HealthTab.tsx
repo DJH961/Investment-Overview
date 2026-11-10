@@ -84,6 +84,9 @@ function FixButton({ action, jobs }: { action: CheckAction; jobs: Map<string, Jo
   );
 }
 
+/** The API's severity words, as labels. */
+const SEVERITY_LABEL: Record<string, string> = { ok: "OK", warning: "Warning", error: "Problem" };
+
 export function HealthTab() {
   const q = useDiagnostics();
   const catalogue = useJobCatalogue();
@@ -100,7 +103,7 @@ export function HealthTab() {
     {
       key: "sev",
       header: "Status",
-      cell: (c) => <span className={`diagnostics__sev diagnostics__sev--${c.count ? c.severity : "ok"}`}>{c.count === 0 ? "OK" : c.severity}</span>,
+      cell: (c) => <span className={`diagnostics__sev diagnostics__sev--${c.count ? c.severity : "ok"}`}>{c.count === 0 ? "OK" : (SEVERITY_LABEL[c.severity] ?? c.severity)}</span>,
       sortValue: (c) => (c.count ? (RANK[c.severity] ?? 9) : 9),
     },
     { key: "title", header: "Check", primary: true, cell: (c) => c.title, sortValue: (c) => c.title },

@@ -1,12 +1,12 @@
 /**
  * Put a live tick straight into the cached "both currencies" queries (no request):
  * totals, the newest intraday point of the 1d / 1w graphs and the holdings rows'
- * price. The staggered refetch that follows corrects anything approximated here.
+ * price and the server's day figures. The staggered refetch that follows corrects anything approximated here.
  */
 import type { QueryClient } from "@tanstack/react-query";
 import type { components } from "./api-types";
 import type { GraphDto, OverviewDto } from "./queries/portfolio";
-import type { HoldingRowDto, HoldingsDto } from "./queries/holdings";
+import type { HoldingGroupDto, HoldingRowDto, HoldingsDto } from "./queries/holdings";
 
 type Ccy = "EUR" | "USD";
 const SIDES: Ccy[] = ["EUR", "USD"];
@@ -14,6 +14,7 @@ type Both<T> = Record<Ccy, T>;
 export type TickPointDto = components["schemas"]["TickPoint"];
 export type TickPriceDto = components["schemas"]["TickPrice"];
 export type TickEstimateDto = components["schemas"]["TickEstimate"];
+export type TickCategoryDto = components["schemas"]["TickCategory"];
 
 const decimal = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
 
@@ -29,6 +30,7 @@ export interface TickLike {
   prices_live?: unknown;
   point?: unknown;
   prices?: unknown;
+  categories?: unknown;
   seq?: unknown;
 }
 
@@ -156,13 +158,12 @@ function patchRow(row: HoldingRowDto, side: Ccy, fx: number | null, p: TickPrice
   const factor = nativeFactor(row.native_currency, side, fx);
   if (factor === null) return row;
   const next: HoldingRowDto = { ...row, price_native: p.px, value: String(shares * px * factor) };
-  // A NAV that has not posted: px is the last official NAV, so the server's day move stays.
-  if (p.stale_nav) return next;
-  const prev = p.prev_close === null || p.prev_close === undefined ? NaN : Number(p.prev_close);
-  if (Number.isFinite(prev) && prev !== 0) {
-    next.today_pct = String(px / prev - 1);
-    next.today_move = String(shares * (px - prev) * factor);
-  }
+  // The day move and day % are the server's (FX-aware, per side): copied, never computed here.
+  // A value the tick does not carry leaves the row's figure alone.
+  const move = decimal(side === "EUR" ? p.day_move_eur : p.day_move_usd);
+  const pct = decimal(side === "EUR" ? p.day_pct_eur : p.day_pct_usd);
+  if (move !== null) next.today_move = move;
+  if (pct !== null) next.today_pct = pct;
   return next;
 }
 
@@ -190,12 +191,21 @@ function patchTwin(row: HoldingRowDto, side: Ccy, fx: number | null, e: TickEsti
   };
 }
 
-/** Rows' price, value and day move from the tick's native prices (linear: shares x price x rate). */
+/** A category group's day move and % from the tick (server figures, copied). */
+function patchGroup(g: HoldingGroupDto, side: Ccy, c: TickCategoryDto | undefined): HoldingGroupDto {
+  if (!c) return g;
+  const move = decimal(side === "EUR" ? c.day_move_eur : c.day_move_usd);
+  const pct = decimal(side === "EUR" ? c.day_pct_eur : c.day_pct_usd);
+  return { ...g, ...(move !== null ? { today_move: move } : {}), ...(pct !== null ? { today_pct: pct } : {}) };
+}
+
+/** Rows' price, value and day figures from the tick's native prices (linear: shares x price x rate). */
 export function patchHoldingsPrices(
   queryClient: QueryClient,
   prices: Record<string, TickPriceDto> | null,
   tickFx: string | null,
   estimates: Record<string, TickEstimateDto> | null = null,
+  categories: Record<string, TickCategoryDto> | null = null,
 ): void {
   for (const [key, data] of queryClient.getQueriesData<Both<HoldingsDto>>({ queryKey: ["holdings", "both"] })) {
     if (!data || typeof data !== "object") continue;
@@ -216,6 +226,7 @@ export function patchHoldingsPrices(
           if (e) out = patchTwin(out, side, fxOk, e);
           return out;
         }),
+        groups: h.groups && categories ? h.groups.map((g) => patchGroup(g, side, categories[g.key])) : h.groups,
       };
     }
     queryClient.setQueryData<Both<HoldingsDto>>(key, next);
@@ -231,12 +242,15 @@ export function applyTick(queryClient: QueryClient, ev: TickLike): void {
   const estimates = ev.estimates as Record<string, TickEstimateDto> | null | undefined;
   const hasPrices = !!prices && typeof prices === "object";
   const hasEstimates = !!estimates && typeof estimates === "object";
-  if (hasPrices || hasEstimates) {
+  const categories = ev.categories as Record<string, TickCategoryDto> | null | undefined;
+  const hasCategories = !!categories && typeof categories === "object";
+  if (hasPrices || hasEstimates || hasCategories) {
     patchHoldingsPrices(
       queryClient,
       prices ?? null,
       decimal(ev.fx_eur_usd),
       estimates ?? null,
+      hasCategories ? categories : null,
     );
   }
 }

@@ -7,7 +7,7 @@ import { Select } from "../../components/Select";
 import { Switch } from "../../components/Switch";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../lib/api";
-import { formatNumber } from "../../lib/format";
+import { formatPercent } from "../../lib/format";
 import { useSaveTarget, type TargetOut } from "../../lib/queries/allocations";
 import { isOff, totalWeight, type SavedBuilder } from "./builderState";
 import "./SaveTargetDialog.scss";
@@ -122,7 +122,7 @@ export function SaveTargetDialog({
       onOpenChange={onOpenChange}
       title={existing ? "Update target" : "Save as target"}
       description={`${items.length} fund${items.length === 1 ? "" : "s"} · ${
-        sums ? "weights sum to 100 %" : `weights sum to ${formatNumber(total, 1)} %, saved scaled to 100 %`
+        sums ? "weights sum to 100 %" : `weights sum to ${formatPercent(total / 100, { digits: 1 })}, saved scaled to 100 %`
       }`}
       footer={
         <>
@@ -196,7 +196,7 @@ export function SaveTargetDialog({
                   {symbolOf(i.instrument_id)}
                   {i.no_buy && <span className="save-target__tag">no buy</span>}
                 </span>
-                <span className="save-target__weight">{formatNumber(Number(i.weight_pct), 1)} %</span>
+                <span className="save-target__weight">{formatPercent(Number(i.weight_pct) / 100, { digits: 1 })}</span>
               </li>
             ))}
           </ul>

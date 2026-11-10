@@ -44,6 +44,8 @@
 
   &__drop-text {
     margin: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 
   &__file {
@@ -60,8 +62,13 @@
     }
   }
 
+  &__file-name {
+    overflow-wrap: anywhere;
+  }
+
   &__progress {
     width: 100%;
+    accent-color: var(--color-accent);
   }
 
   &__actions {

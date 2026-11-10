@@ -2,44 +2,11 @@ import { PlayCircle } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
+import { TOUR_STEPS } from "../../components/Tour/steps";
 import { PageHeader } from "../../components/PageHeader";
 import { GLOSSARY } from "../../lib/glossary";
 import { NAV_ITEMS } from "../../lib/nav";
 import "./Help.scss";
-
-/** Ported from web/src/tour.ts DEMO_TOUR_STEPS (v6 adds Holdings, Import and Allocations). */
-export const TOUR_STEPS: { id: string; title: string; body: string }[] = [
-  {
-    id: "hero",
-    title: "Your portfolio at a glance",
-    body: "The headline value and today's move are the hero of the screen, designed mobile-first, like a modern neobroker.",
-  },
-  {
-    id: "currency",
-    title: "FX-aware currency box",
-    body: "For a euro investor holding dollars, part of today's move comes from the EUR/USD swing. This box splits that out. In USD view it is honest that the rate changes nothing about your dollar value.",
-  },
-  {
-    id: "chart",
-    title: "Live value over time",
-    body: "The curve runs right up to a live tip. Flip the currency toggle and the EUR and USD lines genuinely diverge by the FX move.",
-  },
-  {
-    id: "risk",
-    title: "Institutional-grade risk metrics",
-    body: "Sharpe, Sortino, max drawdown, VaR, beta/alpha and an equity curve versus a benchmark. Each metric has a plain-language definition on tap.",
-  },
-  {
-    id: "plan",
-    title: "Plan ahead",
-    body: "A what-if calculator projects future value from your current mix, contributions and an expected return band.",
-  },
-  {
-    id: "holdings",
-    title: "Holdings, Import and Allocations",
-    body: "Holdings lists every position, Import loads broker files, and Allocations compares your mix with a target and plans a rebalance.",
-  },
-];
 
 /** What each page is for, keyed by route (the list itself comes from NAV_ITEMS). */
 const PAGE_GUIDE: Record<string, string> = {
@@ -75,7 +42,7 @@ const SETTINGS_GUIDE: { id: string; title: string; body: string }[] = [
   {
     id: "sources",
     title: "Where a value comes from",
-    body: "Each setting shows its source: app (you changed it in Settings), env (set by the server's environment file and read-only here) or default (built-in). An env value wins over the app until it is removed on the server.",
+    body: "Each setting shows its source: app (you changed it in Settings), env (set by the server's environment file) or default (built-in). A value you set in the app wins over the server's environment file; the environment value is the fallback, and the built-in default comes last. Where the environment file sets limits, the app cannot go beyond them.",
   },
   {
     id: "repair",
@@ -185,7 +152,7 @@ export function Help() {
       <Card title="Tour" collapsibleId="help.tour">
         <ol className="help__tour">
           {TOUR_STEPS.map((s) => (
-            <li key={s.id} className="help__step">
+            <li key={s.title} className="help__step">
               <div>
                 <h3 className="help__heading">{s.title}</h3>
                 <p className="help__text">{s.body}</p>

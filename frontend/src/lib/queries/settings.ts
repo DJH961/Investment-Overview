@@ -121,7 +121,12 @@ export function useImportSettings() {
   return useMutation({
     mutationFn: ({ payload, dryRun }: { payload: unknown; dryRun: boolean }) =>
       api<SettingsImportResult>(`/api/settings/import?dry_run=${dryRun}`, { method: "POST", body: payload }),
-    onSuccess: (_data, vars) => (vars.dryRun ? undefined : qc.invalidateQueries({ queryKey: ["settings"] })),
+    onSuccess: (data, vars) => {
+      if (vars.dryRun) return undefined;
+      // Imported report inputs redraw the reports even if the settings event never arrives.
+      if (settingsAffectReports(data.diff.map((d) => d.key))) void invalidateFor(qc, "refresh");
+      return qc.invalidateQueries({ queryKey: ["settings"] });
+    },
   });
 }
 

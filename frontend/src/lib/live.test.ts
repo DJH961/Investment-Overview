@@ -128,6 +128,36 @@ describe("startLive", () => {
     stop();
   });
 
+  it("refetches on changed generations or a new boot id, sends the background header, and resets the seq", async () => {
+    const answers = [
+      { seq: 9, boot_id: "a", generations: { ledger: 1, prices: 1, fx: 1 }, missed_points: [], tick: null },
+      { seq: 12, boot_id: "a", generations: { ledger: 1, prices: 1, fx: 1 }, missed_points: [], tick: null },
+      { seq: 3, boot_id: "b", generations: { ledger: 0, prices: 0, fx: 0 }, missed_points: [], tick: null },
+    ];
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify(answers.shift()), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const stop = startLive(qc);
+    FakeEventSource.instances[0]!.onopen?.();
+    FakeEventSource.instances[0]!.emit({ type: "tick", seq: 7 });
+    const reconnect = async (n: number) => {
+      qc.setQueryData(["overview", "EUR"], 1); // clear the stale mark
+      FakeEventSource.instances[n - 1]!.onerror?.();
+      vi.advanceTimersByTime(30_000);
+      FakeEventSource.instances[n]!.onopen?.();
+      await vi.advanceTimersByTimeAsync(0);
+    };
+    await reconnect(1);
+    expect((fetchMock.mock.calls[0]![1]!.headers as Record<string, string>)["X-Background-Refetch"]).toBe("1");
+    expect(stale(["overview", "EUR"])).toBe(true); // nothing remembered yet: refetch
+    await reconnect(2);
+    expect(String(fetchMock.mock.calls[1]![0])).toBe("/api/live?since=9");
+    expect(stale(["overview", "EUR"])).toBe(false); // same generations
+    await reconnect(3);
+    expect(String(fetchMock.mock.calls[2]![0])).toBe("/api/live?since=12");
+    expect(stale(["overview", "EUR"])).toBe(true); // new boot id
+    stop();
+  });
+
   it("refetches live keys when the stream reopens after a drop and there is no seq to catch up from", async () => {
     const stop = startLive(qc);
     expect(getLiveStatus()).toBe("connecting");

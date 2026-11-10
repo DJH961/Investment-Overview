@@ -139,3 +139,13 @@ describe("CurrencyBox", () => {
     expect(sincePhrase(null)).toBe("since yesterday");
   });
 });
+
+describe("ecbFixingInstant", () => {
+  it("is 16:00 Berlin time: 15:00 UTC in winter, 14:00 UTC in summer", async () => {
+    const { ecbFixingInstant } = await import("./CurrencyBox");
+    expect(ecbFixingInstant("2026-01-15")).toBe("2026-01-15T15:00:00Z");
+    expect(ecbFixingInstant("2026-07-05")).toBe("2026-07-05T14:00:00Z");
+    expect(ecbFixingInstant("2026-03-27")).toBe("2026-03-27T15:00:00Z");
+    expect(ecbFixingInstant("2026-10-23")).toBe("2026-10-23T14:00:00Z");
+  });
+});

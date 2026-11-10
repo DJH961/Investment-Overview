@@ -1,3 +1,4 @@
+import { toApiDecimal } from "../../lib/parseDecimal";
 import clsx from "clsx";
 import { History, KeyRound, RotateCcw, Undo2 } from "lucide-react";
 import { useId, useState } from "react";
@@ -78,7 +79,7 @@ export function parseText(f: FieldDef, text: string): { value: SettingJson } | {
     }
     case "decimal":
     case "percent": {
-      const n = t.replace(",", ".");
+      const n = toApiDecimal(t) ?? t;
       if (!DEC_RE.test(n)) return { error: f.type === "percent" ? "Enter a fraction, e.g. 0.04" : "Enter a number" };
       const err = checkBounds(f, Number(n));
       return err ? { error: err } : { value: n };

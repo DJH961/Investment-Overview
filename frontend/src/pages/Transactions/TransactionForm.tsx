@@ -3,6 +3,9 @@ import { Button } from "../../components/Button";
 import { Field } from "../../components/Field";
 import { Input } from "../../components/Input";
 import { Select, type SelectOption } from "../../components/Select";
+import { Switch } from "../../components/Switch";
+import { getFormatPrefs, todayIn } from "../../lib/format";
+import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
 import { fieldErrors, type TransactionOut, type TransactionWrite } from "../../lib/queries/ledger";
 import { reconcileTrade } from "../../lib/queries/transactions-extra";
 
@@ -28,7 +31,13 @@ const RECONCILE_KINDS = new Set(["buy", "sell", "dividend_reinvest"]);
 export const MONEY_MARKET_HINT =
   "Also books the matching buy or sell of the account's money-market (settlement) fund, so cash you move in or out " +
   "does not sit uninvested. Leave it on unless you enter the fund's legs yourself, otherwise the cash is counted twice.";
-const DECIMAL = /^\d+(\.\d+)?$/;
+/** A typed non-negative number, with a decimal comma or dot. */
+const isDecimal = (v: string) => {
+  const n = parseDecimal(v);
+  return n !== null && n >= 0 && !/^\s*[-\u2212]/.test(v);
+};
+/** The dot-decimal string the API expects, or null for empty / invalid input. */
+const apiValue = (v: string) => (v.trim() && isDecimal(v) ? toApiDecimal(v) : null);
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 interface FormState {
@@ -51,7 +60,7 @@ function initial(row: TransactionOut | null, accounts: SelectOption[]): FormStat
   return {
     account: row?.account_id != null ? String(row.account_id) : (accounts[0]?.value ?? ""),
     kind: row?.kind ?? "buy",
-    date: row?.date ?? new Date().toISOString().slice(0, 10),
+    date: row?.date ?? todayIn(getFormatPrefs().timeZone),
     symbol: row?.symbol ?? "",
     quantity: magnitude(row?.quantity),
     price: magnitude(row?.price_native),
@@ -87,14 +96,14 @@ export function TransactionForm({ row, accounts, busy, serverError, onSubmit, on
   const reconcile = async (next: FormState = state) => {
     if (!RECONCILE_KINDS.has(next.kind)) return setCheck(null);
     const figures = { quantity: next.quantity, price: next.price, total: next.total };
-    const given = Object.values(figures).filter((v) => v && DECIMAL.test(v)).length;
-    if (given < 2 || Object.values(figures).some((v) => v && !DECIMAL.test(v))) return setCheck(null);
+    const given = Object.values(figures).filter((v) => v && isDecimal(v)).length;
+    if (given < 2 || Object.values(figures).some((v) => v && !isDecimal(v))) return setCheck(null);
     const seq = ++checkSeq.current;
     try {
       const res = await reconcileTrade({
-        quantity: figures.quantity || null,
-        price: figures.price || null,
-        total: figures.total || null,
+        quantity: apiValue(figures.quantity),
+        price: apiValue(figures.price),
+        total: apiValue(figures.total),
       });
       if (seq !== checkSeq.current) return;
       if (res.error) return setCheck({ ok: false, text: res.error });
@@ -116,7 +125,7 @@ export function TransactionForm({ row, accounts, busy, serverError, onSubmit, on
     if (!/^\d+$/.test(state.account)) next.account_id = "Pick an account";
     if (!DATE.test(state.date)) next.date = "Bad date - use YYYY-MM-DD";
     for (const key of ["quantity", "price", "total", "fees"] as const) {
-      if (state[key] && !DECIMAL.test(state[key])) next[key] = "Enter a non-negative decimal";
+      if (state[key].trim() && !isDecimal(state[key])) next[key] = "Enter a non-negative number, like 12.5 or 12,5";
     }
     setErrors(next);
     if (Object.keys(next).length > 0) return;
@@ -125,10 +134,10 @@ export function TransactionForm({ row, accounts, busy, serverError, onSubmit, on
       date: state.date,
       kind: state.kind as TransactionWrite["kind"],
       symbol: state.symbol.trim().toUpperCase() || null,
-      quantity: state.quantity || null,
-      price: state.price || null,
-      total: state.total || null,
-      fees: state.fees || null,
+      quantity: apiValue(state.quantity),
+      price: apiValue(state.price),
+      total: apiValue(state.total),
+      fees: apiValue(state.fees),
       description: state.description.trim() || null,
       route_money_market: canRoute ? state.route : false,
     };
@@ -223,10 +232,11 @@ export function TransactionForm({ row, accounts, busy, serverError, onSubmit, on
         {text("description")}
       </Field>
       {canRoute && (
-        <label className="transaction-form__check" title={MONEY_MARKET_HINT}>
-          <input type="checkbox" checked={state.route} onChange={(e) => set("route", e.target.checked)} />
-          <span>Auto-fill the money-market fund</span>
-        </label>
+        <Switch
+          checked={state.route}
+          onCheckedChange={(v) => set("route", v)}
+          label="Auto-fill the money-market fund"
+        />
       )}
       {canRoute && <p className="transaction-form__hint">{MONEY_MARKET_HINT}</p>}
       <div className="transaction-form__actions">

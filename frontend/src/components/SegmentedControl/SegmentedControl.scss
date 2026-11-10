@@ -1,6 +1,9 @@
+@use "../../styles/mixins" as m;
+
 .segmented {
   display: inline-flex;
   gap: 2px;
+  max-width: 100%;
   padding: 2px;
   background: var(--color-surface-2);
   border-radius: var(--radius-sm);
@@ -31,5 +34,17 @@
   &--sm &__item {
     height: calc(var(--control-height-sm) - 4px);
     padding: 0 var(--space-2);
+  }
+
+  // Phone: items share the row (an 8-button range picker must fit a 296 px card
+  // body) and reach the finger-sized tap target.
+  @include m.phone {
+    &__item,
+    &--sm &__item {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: var(--tap-min);
+      padding: 0 var(--space-1);
+    }
   }
 }

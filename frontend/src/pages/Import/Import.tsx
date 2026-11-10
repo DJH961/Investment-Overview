@@ -19,6 +19,7 @@ import {
 } from "../../lib/queries/ledger";
 import { useAccounts, useImportBrokers } from "../../lib/queries/accounts";
 import { formatDate } from "../../lib/format";
+import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { useResolveImport, type RowFix } from "../../lib/queries/imports";
 import { useShellStatus } from "../../lib/shell";
 import { formatPrice, formatQuantity, num } from "../Transactions/numbers";
@@ -33,6 +34,7 @@ type PreviewRow = ImportPreview["rows"][number];
 
 const AUTO = "auto";
 const NEW_ACCOUNT = "__new__";
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const dash = (v: string | null | undefined) => (v === null || v === undefined || v === "" ? "—" : v);
 
 function previewColumns(busy: boolean, onResolve: (row: PreviewRow, fix: RowFix | null) => void): Column<PreviewRow>[] {
@@ -84,6 +86,7 @@ export function Import() {
   const [broker, setBroker] = useState(AUTO);
   const [account, setAccount] = useState(AUTO);
   const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const [progress, setProgress] = useState(0);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [result, setResult] = useState<ImportConfirmResult | null>(null);
@@ -116,6 +119,7 @@ export function Import() {
   };
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
+    dragDepth.current = 0;
     setDragging(false);
     pick(e.dataTransfer.files[0]);
   };
@@ -158,7 +162,7 @@ export function Import() {
       onSuccess: (r) => {
         setResult(r);
         setPreview(null);
-        toast({ title: `Imported ${r.inserted} transactions`, tone: "success" });
+        toast({ title: `Imported ${plural(r.inserted, "transaction", "transactions")}`, tone: "success" });
       },
     });
   };
@@ -183,8 +187,20 @@ export function Import() {
 
   const step = result ? 3 : preview ? 2 : 1;
 
+  // A staged preview lives on the server: leaving asks first and cancels it there.
+  const leaveGuard = useLeaveGuard({
+    when: preview !== null && result === null && !confirm.isPending,
+    title: "Leave this import?",
+    description: "The preview and the choices you made are not saved. Leaving cancels this import; nothing is written.",
+    leaveLabel: "Cancel import and leave",
+    onLeave: () => {
+      if (preview) discard.mutate(preview.import_id);
+    },
+  });
+
   return (
     <div className="import-page">
+      {leaveGuard}
       <PageHeader title="Import" subtitle="Upload a broker export, preview, then confirm." />
       <ol className="import-page__steps" aria-label="Progress">
         {["Upload", "Preview", "Done"].map((label, i) => (
@@ -195,7 +211,7 @@ export function Import() {
       </ol>
 
       {step === 1 && (
-        <Card title="Upload" subtitle="Drop your file first, then pick the broker and account - the import only runs when you press Import.">
+        <Card title="Upload" subtitle="Drop your file first, then pick the broker and account. The import only runs when you press Import.">
           <div className="import-page__upload">
             <div
               className={`import-page__drop${dragging ? " import-page__drop--active" : ""}`}
@@ -203,7 +219,14 @@ export function Import() {
                 e.preventDefault();
                 setDragging(true);
               }}
-              onDragLeave={() => setDragging(false)}
+              onDragEnter={() => {
+                dragDepth.current += 1;
+                setDragging(true);
+              }}
+              onDragLeave={() => {
+                dragDepth.current = Math.max(0, dragDepth.current - 1);
+                if (dragDepth.current === 0) setDragging(false);
+              }}
               onDrop={onDrop}
             >
               <FileUp aria-hidden />
@@ -247,14 +270,18 @@ export function Import() {
       )}
 
       {step === 2 && preview && (
-        <Card title={`Preview - ${preview.filename}`} subtitle={`Broker: ${preview.broker}. Nothing is written until you confirm.`}>
+        <Card title={`Preview: ${preview.filename}`} subtitle={`Broker: ${preview.broker}. Nothing is written until you confirm.`}>
           <div className="import-page__chips">
             <span className="import-page__chip">New {preview.counts.new}</span>
             <span className="import-page__chip">Duplicate {preview.counts.duplicates}</span>
             <span className="import-page__chip">Sweeps dropped {preview.counts.sweeps_dropped}</span>
-            <span className="import-page__chip import-page__chip--warn">Warnings {preview.counts.warnings}</span>
+            <span className={`import-page__chip${preview.counts.warnings > 0 ? " import-page__chip--warn" : ""}`}>
+              Warnings {preview.counts.warnings}
+            </span>
             {(preview.counts.skipped ?? 0) > 0 && <span className="import-page__chip">Skipped {preview.counts.skipped}</span>}
-            <span className="import-page__chip import-page__chip--error">Errors {preview.counts.errors}</span>
+            <span className={`import-page__chip${preview.counts.errors > 0 ? " import-page__chip--error" : ""}`}>
+              Errors {preview.counts.errors}
+            </span>
             {preview.parser === "flexible" && <span className="import-page__chip">Read with the flexible importer</span>}
           </div>
           {preview.layout && (
@@ -366,7 +393,7 @@ export function Import() {
               disabled={preview.counts.new === 0 || !preview.can_confirm}
               onClick={confirmImport}
             >
-              {`Import ${preview.counts.new} transactions`}
+              {`Import ${plural(preview.counts.new, "transaction", "transactions")}`}
             </Button>
           </div>
         </Card>
@@ -375,18 +402,28 @@ export function Import() {
       {step === 3 && result && (
         <Card title="Import complete">
           <p className="import-page__done">
-            <CheckCircle2 aria-hidden /> Imported {result.inserted} transactions ({result.duplicates} duplicates skipped).
+            <CheckCircle2 aria-hidden /> Imported {plural(result.inserted, "transaction", "transactions")} ({result.duplicates} duplicates skipped).
           </p>
           {result.import_batch_id != null && (
             <p className="import-page__note">
-              Saved as import #{result.import_batch_id} - it is highlighted in Import history below, where you can undo it.
+              Saved as import #{result.import_batch_id}. It is highlighted in Import history below, where you can undo it.
             </p>
           )}
           <ul className="import-page__summary">
             {result.sweeps_dropped > 0 && <li>{result.sweeps_dropped} settlement sweeps dropped</li>}
-            {result.unresolved_symbols.length > 0 && <li>Unresolved symbols: {result.unresolved_symbols.join(", ")}</li>}
+            {result.unresolved_symbols.length > 0 && <li>
+                Unresolved symbols: {result.unresolved_symbols.join(", ")}.{" "}
+                <Link to="/instruments" className="import-page__link">
+                  Map them in Instruments
+                </Link>
+              </li>}
             {result.unknown_actions.length > 0 && <li>Unknown actions: {result.unknown_actions.join(", ")}</li>}
-            {result.fx_missing_dates.length > 0 && <li>FX missing on: {result.fx_missing_dates.join(", ")}</li>}
+            {result.fx_missing_dates.length > 0 && <li>
+                FX missing on: {result.fx_missing_dates.join(", ")}.{" "}
+                <Link to="/diagnostics?tab=repair" className="import-page__link">
+                  Back-fill in Health &amp; Repair
+                </Link>
+              </li>}
             {result.errors.map((e, n) => (
               <li key={`e${n}`}>{e.message}</li>
             ))}

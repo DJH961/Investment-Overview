@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 .overview-warnings {
   display: flex;
   gap: var(--space-2);
@@ -8,9 +10,40 @@
   color: var(--color-fg);
   font-size: var(--font-size-sm);
 
+  &__icon {
+    flex-shrink: 0;
+    width: var(--icon-md);
+    height: var(--icon-md);
+    color: var(--color-warn);
+  }
+
   &__list {
+    @include m.shrinkable;
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-3);
+  }
+
+  &__text {
+    @include m.shrinkable;
+    overflow-wrap: anywhere;
+  }
+
+  &__fix {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-medium);
+    text-decoration: underline;
+    white-space: nowrap;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
   }
 }

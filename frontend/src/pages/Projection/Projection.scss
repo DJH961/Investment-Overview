@@ -8,7 +8,7 @@
     gap: var(--space-4);
     grid-template-columns: 1fr;
 
-    @media (min-width: 64rem) {
+    @include m.desktop {
       grid-template-columns: 20rem 1fr;
       align-items: start;
     }

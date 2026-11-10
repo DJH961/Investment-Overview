@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HoldingsDto } from "../../lib/queries/holdings";
 
@@ -189,12 +190,41 @@ describe("Holdings page", () => {
     expect(localStorage.getItem("iv.holdings.group")).toBe('"account"');
   });
 
+  it("keeps the open detail sheet in step with fresh data instead of a frozen copy", () => {
+    const saved = holdings.holdings;
+    try {
+      const { rerender } = render(<Holdings />);
+      fireEvent.click(screen.getByRole("button", { name: "Details for VWCE" }));
+      expect(screen.getByRole("dialog")).toHaveTextContent("World ETF");
+      holdings.holdings = [{ ...saved[0], name: "Renamed ETF" }] as typeof saved;
+      rerender(<Holdings />);
+      expect(screen.getByRole("dialog")).toHaveTextContent("Renamed ETF");
+    } finally {
+      holdings.holdings = saved;
+    }
+  });
+
+  it("an empty portfolio offers an Import button, not just text", () => {
+    const saved = holdings.holdings;
+    holdings.holdings = [] as typeof saved;
+    try {
+      render(
+        <MemoryRouter>
+          <Holdings />
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole("button", { name: "Import a broker file" })).toBeInTheDocument();
+    } finally {
+      holdings.holdings = saved;
+    }
+  });
+
   it("shows the summary as one strip, income, fee and FX included", () => {
     const { container } = render(<Holdings />);
     expect(container.querySelectorAll(".holdings-page__stats .holdings-page__stat")).toHaveLength(14);
     expect(screen.getByText("Dividend return")).toBeInTheDocument();
     expect(screen.getByText("Yield (TTM)")).toBeInTheDocument();
-    expect(screen.getByText("Weighted fee")).toBeInTheDocument();
+    expect(screen.getByText("Weighted expense")).toBeInTheDocument();
     expect(screen.getByText("FX USD/EUR")).toBeInTheDocument();
     expect(screen.getByText(/EOD · /)).toBeInTheDocument();
   });

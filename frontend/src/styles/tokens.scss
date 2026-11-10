@@ -13,7 +13,7 @@
 @mixin dark-tokens {
   --color-fg: #eef2f8;
   --color-muted: #9aa6b8;
-  --color-faint: #6f7c91;
+  --color-faint: #8190a6;
   --color-accent: #8b85ff;
   --color-accent-2: #3ad7ee;
   --color-accent-fg: #0b0e14;
@@ -52,7 +52,7 @@
   // Colour (light)
   --color-fg: #0f1623;
   --color-muted: #5b6678;
-  --color-faint: #6b7588;
+  --color-faint: #5f6a7d;
   --color-accent: #4f46e5;
   --color-accent-2: #06b6d4;
   // Brand mark (same in both themes; matches public/favicon.svg)
@@ -146,6 +146,7 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   // Stacking
+  --z-raised: 1;
   --z-sidebar: 20;
   --z-topbar: 30;
   --z-tabbar: 30;
