@@ -112,6 +112,11 @@ def default_tick_job() -> dict[str, Any] | None:
     with ledger_session_scope() as session:
         total_eur = positions_service.total_portfolio_value(session, as_of=today)
         prices = _tick_prices(session, today)
+        symbols, categories = _tick_day_moves(session, today, rate)
+        if prices is not None:
+            for key, day in symbols.items():
+                if key in prices:
+                    prices[key].update(day)
         point = _tick_point(session, total_eur, rate) if session_open else None
         estimated = _tick_estimates(session, total_eur, rate)
     return {
@@ -120,10 +125,147 @@ def default_tick_job() -> dict[str, Any] | None:
         "total_value_usd": _dec(total_eur * rate) if rate is not None else None,
         "fx_eur_usd": _dec(rate),
         "prices": prices,
+        "categories": categories or None,
         "point": point,
         **estimated,
         **_price_freshness(),
     }
+
+
+_CENT = Decimal("0.01")
+
+
+def _cent(value: Decimal | None) -> str | None:
+    from decimal import ROUND_HALF_UP  # noqa: PLC0415
+
+    return None if value is None else format(value.quantize(_CENT, rounding=ROUND_HALF_UP), "f")
+
+
+_NO_DAY: dict[str, Any] = {
+    "day_move_eur": None,
+    "day_move_usd": None,
+    "day_pct_eur": None,
+    "day_pct_usd": None,
+}
+
+
+def _tick_day_moves(
+    session: Any, today: date, rate: Decimal | None, now: datetime | None = None
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Server day move per held instrument and per allocation category (F-081, F-029).
+
+    The holdings rows' own definition (:mod:`domain.day_move`): today's share count
+    at the two marks, so a buy is never that holding's gain (B-007); each mark at
+    its own rate. The current mark uses the tick's rate ``rate`` while the session
+    trades, and that session's close rate once it has shut (exactly as the
+    holdings rows do), so a tick and the refetch after it agree. A category's %
+    is its summed move over its summed previous value. Money is rounded to the
+    cent like the rows; % are fractions. Best effort: ``({}, {})`` on failure.
+    """
+    try:
+        from investment_dashboard.domain import day_move  # noqa: PLC0415
+        from investment_dashboard.domain.currency import (  # noqa: PLC0415
+            lookup_rate_with_forward_fill,
+        )
+        from investment_dashboard.domain.money_market import is_money_market  # noqa: PLC0415
+        from investment_dashboard.services import (  # noqa: PLC0415
+            fx_service,
+            intraday_snapshots_service,
+            positions_service,
+            prices_service,
+            settings_service,
+        )
+
+        now = now or datetime.now(UTC)
+        mm_extra = tuple(settings_service.get_or("portfolio.money_market_symbols", ()))
+        shares: dict[int, Decimal] = {}
+        native: dict[int, str] = {}
+        category: dict[int, str] = {}
+        money_market: set[int] = set()
+        for pos in positions_service.compute_positions(session, as_of=today):
+            if pos.current_price_native is None or pos.shares == 0:
+                continue
+            iid = pos.instrument.id
+            shares[iid] = shares.get(iid, Decimal(0)) + pos.shares
+            native.setdefault(iid, pos.account.native_currency)
+            category.setdefault(iid, pos.category or "")
+            eff = pos.effective
+            if is_money_market(
+                pos.instrument.symbol,
+                asset_class=eff.asset_class if eff is not None else pos.instrument.asset_class,
+                name=eff.name if eff is not None else pos.instrument.name,
+                extra_symbols=mm_extra,
+            ):
+                money_market.add(iid)
+        if not shares:
+            return {}, {}
+        recent = prices_service.recent_closes_by_instrument(
+            session, list(shares), on_or_before=today, limit=2
+        )
+        baseline_last = intraday_snapshots_service.previous_trading_session(
+            today + timedelta(days=1)
+        )
+        baseline_prev = intraday_snapshots_service.previous_trading_session(baseline_last)
+        eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
+        rates: dict[date, Decimal | None] = {}
+
+        def _rate(on: date) -> Decimal | None:
+            if on not in rates:
+                live = rate if on == today and rate is not None else None
+                live = live or lookup_rate_with_forward_fill(eur_to_usd, on) or rate
+                resolved = intraday_snapshots_service.daily_growth_leg_fx(
+                    session, on, now=now, live_rate=live
+                )
+                rates[on] = resolved if resolved is not None else rate
+            return rates[on]
+
+        symbols: dict[str, dict[str, Any]] = {}
+        members: dict[str, list[day_move.HoldingDayMove]] = {}
+        for iid, qty in shares.items():
+            legs = (
+                None
+                if iid in money_market
+                else day_move.select_day_legs(
+                    sorted(recent.get(iid, []), reverse=True),
+                    latest_price_date=baseline_last,
+                    previous_price_date=baseline_prev,
+                )
+            )
+            if legs is None:
+                symbols[str(iid)] = dict(_NO_DAY)
+                continue
+            move = day_move.holding_day_move(
+                shares=qty,
+                native_currency=native[iid],
+                legs=legs,
+                rate_last=_rate(legs.rate_date_last),
+                rate_prev=_rate(legs.rate_date_prev),
+            )
+            symbols[str(iid)] = {
+                "day_move_eur": _cent(move.move_eur),
+                "day_move_usd": _cent(move.move_usd),
+                "day_pct_eur": _dec(move.pct_eur),
+                "day_pct_usd": _dec(move.pct_usd),
+            }
+            members.setdefault(category[iid], []).append(move)
+        categories: dict[str, dict[str, Any]] = {}
+        for name, group in members.items():
+            moves_eur = [m.move_eur for m in group if m.move_eur is not None]
+            moves_usd = [m.move_usd for m in group if m.move_usd is not None]
+            categories[name] = {
+                "day_move_eur": _cent(sum(moves_eur, start=Decimal(0))) if moves_eur else None,
+                "day_move_usd": _cent(sum(moves_usd, start=Decimal(0))) if moves_usd else None,
+                "day_pct_eur": _dec(
+                    day_move.group_day_pct((m.move_eur, m.prev_eur) for m in group)
+                ),
+                "day_pct_usd": _dec(
+                    day_move.group_day_pct((m.move_usd, m.prev_usd) for m in group)
+                ),
+            }
+        return symbols, categories
+    except Exception:
+        log.warning("tick day moves unavailable", exc_info=True)
+        return {}, {}
 
 
 def _tick_prices(session: Any, today: date, now: datetime | None = None) -> dict[str, Any] | None:

@@ -15,3 +15,8 @@ class LiveResponse(ApiModel):
     tick: TickEvent | None = None
     #: Intraday samples with a sequence number above ``since`` (oldest first).
     missed_points: list[TickPoint] = Field(default_factory=list)
+    #: Random id of this server process; a new value means a restart (``seq`` began at 0).
+    boot_id: str = ""
+    #: Read-cache generation counters (``ledger`` / ``prices`` / ``fx``). A counter that
+    #: moved since the client last saw it means reports changed while it was away.
+    generations: dict[str, int] = Field(default_factory=dict)

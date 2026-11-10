@@ -27,6 +27,18 @@ from pathlib import Path
 from investment_dashboard.redaction import SecretRedactingFilter
 
 RETENTION_DAYS = 90
+
+#: POSTs that only compute an answer and change nothing. The ONE list shared by the
+#: activity middleware (no log line) and the read-cache middleware (no cache flush).
+READ_ONLY_POSTS = frozenset(
+    {
+        "/api/calculator",
+        "/api/allocations/plan",
+        "/api/transactions/reconcile",
+        "/api/maintenance/probe",
+        "/api/auth/passkey/login/options",
+    }
+)
 _FORMAT = "%(asctime)s %(levelname)-7s %(name)s — %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
 _PKG = "investment_dashboard"

@@ -31,6 +31,7 @@ from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.instruments import SYNTHETIC_ASSET_CLASSES
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import (
+    accounts_repo,
     instrument_overrides_repo,
     instruments_repo,
     transactions_repo,
@@ -305,6 +306,51 @@ def _check_frozen_legs(session: Session) -> HealthItem:
             f"than {(tol * 100).normalize():f} %. Reports use the derived leg."
         ),
         examples=_examples(bad),
+    )
+
+
+#: Ledger cash below this (native units) counts as zero: rounding dust, not cash.
+_CASH_DUST = Decimal("0.005")
+
+
+def _check_brokerage_cash(session: Session) -> HealthItem:
+    """Brokerage accounts whose ledger cash balance is not zero (B-017, check only).
+
+    Cash that sits in a brokerage account is valued only when it is booked as a
+    money-market fund position (those legs net the cash move to zero). A non-zero
+    ledger cash balance is therefore cash the portfolio total does not count. This
+    only reports it; the valuation is unchanged.
+    """
+    flagged: list[str] = []
+    for account in accounts_repo.list_accounts(session):
+        if account.account_type != "brokerage":
+            continue
+        balance = positions_service.compute_cash_balance(session, account.id)
+        if abs(balance) >= _CASH_DUST:
+            flagged.append(
+                f"{account.broker} {account.account_label}: "
+                f"{balance:+,.2f} {account.native_currency.upper()}"
+            )
+    if not flagged:
+        return HealthItem(
+            key="brokerage_cash",
+            title="Uninvested brokerage cash",
+            severity="ok",
+            count=0,
+            detail="Every brokerage account's cash is booked in a money-market fund or is zero.",
+        )
+    return HealthItem(
+        key="brokerage_cash",
+        title="Uninvested brokerage cash",
+        severity="warning",
+        count=len(flagged),
+        detail=(
+            f"{len(flagged)} brokerage account(s) have a non-zero ledger cash balance "
+            "that is not booked as a money-market fund position. That cash is not "
+            "part of the portfolio total, so total value, capital gain and XIRR can "
+            "be understated by it."
+        ),
+        examples=_examples(flagged),
     )
 
 
@@ -693,6 +739,7 @@ def check_health(session: Session) -> HealthReport:
         _check_frozen_legs(session),
         *_check_prices(session),
         _check_positions(session),
+        _check_brokerage_cash(session),
         _check_intraday_graph(session),
         _check_price_feed(session),
         _check_providers(),

@@ -95,6 +95,9 @@ class LiveBus:
         Only the read-cache dependencies the event changed are bumped (tick:
         prices + FX; fx: FX; graphs: prices; refresh and unknown types: all).
         """
+        # Inside a write request the event (and its cache bump) waits for the commit.
+        if read_cache.defer(lambda: self.publish(event)):
+            return
         status = event.get("status")
         keys = event.get("keys")
         read_cache.invalidate_for_event(

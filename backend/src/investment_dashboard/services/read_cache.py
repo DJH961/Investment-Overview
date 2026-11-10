@@ -19,6 +19,7 @@ such as the DB session are ignored.
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import hashlib
 import logging
@@ -27,9 +28,13 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any
+
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 log = logging.getLogger(__name__)
 
@@ -207,10 +212,102 @@ def warm() -> None:
 _BOOT_NONCE = secrets.token_hex(4)
 
 
+def boot_id() -> str:
+    """This process's boot id (``GET /api/live``; a new value means a restart)."""
+    return _BOOT_NONCE
+
+
 def generations(deps: tuple[str, ...] = ALL_DEPS) -> tuple[tuple[str, int], ...]:
     """Current generation counters of ``deps``."""
     with _lock:
         return tuple((d, _gens[d]) for d in deps)
+
+
+def time_component(now: float | None = None) -> str:
+    """Coarse clock part of an ETag: exchange date, market state, TTL bucket.
+
+    The payloads carry time-dependent wording ("live", "today", ``as_of``), so a
+    ``304`` must never outlive the server-side TTL even when no generation moved.
+    """
+    from investment_dashboard.domain import market_hours  # noqa: PLC0415
+    from investment_dashboard.services import live_bus  # noqa: PLC0415
+
+    wall = datetime.now(UTC) if now is None else datetime.fromtimestamp(now, UTC)
+    bucket = int(wall.timestamp() // TTL_SECONDS)
+    return f"{market_hours.exchange_today(wall).isoformat()}/{live_bus.market_state(wall)}/{bucket}"
+
+
+# --- Side effects that must wait for the commit (B-001) -----------------------
+
+
+class DeferredEffects(list[Callable[[], None]]):
+    """Live-event publishes (and their cache bumps) held back until the commit."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.open = True
+
+
+_deferral: contextvars.ContextVar[DeferredEffects | None] = contextvars.ContextVar(
+    "read_cache_deferral", default=None
+)
+
+
+def begin_deferral() -> tuple[DeferredEffects, contextvars.Token[DeferredEffects | None]]:
+    """Start collecting effects for this request (the write middleware calls this)."""
+    effects = DeferredEffects()
+    return effects, _deferral.set(effects)
+
+
+def end_deferral(token: contextvars.Token[DeferredEffects | None]) -> None:
+    _deferral.reset(token)
+
+
+def current_deferral() -> DeferredEffects | None:
+    """The request's collector, or ``None`` outside a write request."""
+    return _deferral.get()
+
+
+def defer(fn: Callable[[], None]) -> bool:
+    """Hold ``fn`` until the request's commit; ``False`` means: run it now."""
+    effects = _deferral.get()
+    if effects is None or not effects.open:
+        return False
+    effects.append(fn)
+    return True
+
+
+def fire(effects: DeferredEffects) -> None:
+    """Run the collected effects once (after a successful commit)."""
+    pending = list(effects)
+    effects.clear()
+    effects.open = False  # anything published later in this request goes out at once
+    for fn in pending:
+        try:
+            fn()
+        except Exception:
+            log.warning("deferred live effect failed", exc_info=True)
+
+
+def discard(effects: DeferredEffects) -> None:
+    """Drop the collected effects (the write did not commit)."""
+    effects.clear()
+
+
+def _on_after_commit(session: Session) -> None:
+    effects = session.info.get("after_commit")
+    if isinstance(effects, DeferredEffects):
+        fire(effects)
+
+
+def _on_after_rollback(session: Session) -> None:
+    effects = session.info.get("after_commit")
+    if isinstance(effects, DeferredEffects):
+        discard(effects)
+
+
+event.listen(Session, "after_commit", _on_after_commit)
+event.listen(Session, "after_rollback", _on_after_rollback)
 
 
 def conditional_both[**P, R](route: str, *, deps: tuple[str, ...] = ALL_DEPS) -> Any:
@@ -232,7 +329,8 @@ def conditional_both[**P, R](route: str, *, deps: tuple[str, ...] = ALL_DEPS) ->
             plain = sorted((k, str(v)) for k, v in kwargs.items() if isinstance(v, _KEYABLE))
             gens = ",".join(f"{d}={g}" for d, g in generations(deps))
             digest = hashlib.sha1(
-                f"{_BOOT_NONCE}|{route}|{plain}|{gens}".encode(), usedforsecurity=False
+                f"{_BOOT_NONCE}|{route}|{plain}|{gens}|{time_component()}".encode(),
+                usedforsecurity=False,
             ).hexdigest()[:20]
             etag = f'W/"{digest}"'
             sent = request.headers.get("if-none-match", "")  # type: ignore[attr-defined]

@@ -9,6 +9,12 @@
 * :data:`ReportCcy` — the ``?ccy=EUR|USD`` reporting-currency query parameter.
 * :func:`require_auth` — the guard on every non-public router; the logic lives in
   :mod:`investment_dashboard.api.security`.
+
+Both session dependencies use ``scope="function"``: FastAPI ends them right after
+the route function returns, **before** the response is sent. The commit therefore
+happens before the client hears "200", a failing commit becomes a 5xx, and the
+live events / cache bumps collected on ``session.info["after_commit"]`` (see
+:mod:`investment_dashboard.services.read_cache`) fire only after it succeeded.
 """
 
 from __future__ import annotations
@@ -20,23 +26,32 @@ from fastapi import Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from investment_dashboard.db import config_session_scope, ledger_session_scope
+from investment_dashboard.services import read_cache
 
 #: Reporting currencies the API supports today. Extend here (and only here).
 Ccy = Literal["EUR", "USD"]
 
 
+def _attach_effects(session: Session) -> None:
+    effects = read_cache.current_deferral()
+    if effects is not None:
+        session.info["after_commit"] = effects
+
+
 def get_session() -> Iterator[Session]:
     with ledger_session_scope() as session:
+        _attach_effects(session)
         yield session
 
 
 def get_config_session() -> Iterator[Session]:
     with config_session_scope() as session:
+        _attach_effects(session)
         yield session
 
 
-SessionDep = Annotated[Session, Depends(get_session)]
-ConfigSessionDep = Annotated[Session, Depends(get_config_session)]
+SessionDep = Annotated[Session, Depends(get_session, scope="function")]
+ConfigSessionDep = Annotated[Session, Depends(get_config_session, scope="function")]
 ReportCcy = Annotated[Ccy, Query(description="Reporting currency.")]
 
 

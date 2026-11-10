@@ -13,7 +13,7 @@ from fastapi import APIRouter, Query
 
 from investment_dashboard.api.schemas.live import LiveResponse
 from investment_dashboard.api.schemas.stream import TickEvent, TickPoint
-from investment_dashboard.services import live_state
+from investment_dashboard.services import live_state, read_cache
 
 router = APIRouter(tags=["live"])
 
@@ -27,4 +27,6 @@ def get_live(
         seq=seq,
         tick=TickEvent.model_validate(latest) if latest is not None else None,
         missed_points=[TickPoint.model_validate(p) for p in points],
+        boot_id=read_cache.boot_id(),
+        generations=dict(read_cache.generations()),
     )

@@ -14,18 +14,11 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 
-from investment_dashboard.activity_log import activity
+from investment_dashboard.activity_log import READ_ONLY_POSTS, activity
 
 _WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-#: Writes that change nothing (they only compute a result).
-_READ_ONLY_WRITES = frozenset(
-    {
-        "/api/calculator",
-        "/api/allocations/plan",
-        "/api/auth/passkey/login/options",
-        "/api/maintenance/probe",
-    }
-)
+#: Writes that change nothing (they only compute a result); shared with the cache middleware.
+_READ_ONLY_WRITES = READ_ONLY_POSTS
 #: Reads worth recording because they take data off the server.
 _DOWNLOADS = {
     "/api/backup": "backups",

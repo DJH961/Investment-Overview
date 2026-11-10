@@ -31,6 +31,28 @@ class TickPrice(ApiModel):
     #: null). Clients keep the server's day move for this row; its estimate (if it
     #: has a twin) arrives in ``estimates``.
     stale_nav: bool = False
+    #: The server's day move of this holding (all accounts), money in each reporting
+    #: currency, rounded to the cent: the same figure as the holdings row's
+    #: ``today_move`` (today's share count, each mark at its own rate; the current
+    #: mark at this tick's rate while the session trades). Null: not computable
+    #: (money-market fund, no previous close, missing rate).
+    day_move_eur: DecStr | None = None
+    day_move_usd: DecStr | None = None
+    #: The matching day % as a fraction (``0.0123`` = +1.23 %), FX-aware per
+    #: currency (the EUR % is never the USD % reused). Null as above.
+    day_pct_eur: DecStr | None = None
+    day_pct_usd: DecStr | None = None
+
+
+class TickCategory(ApiModel):
+    """One allocation category's day move (the holdings rows' ``category``)."""
+
+    #: Sum of the members' ``day_move_*`` (null when no member has one).
+    day_move_eur: DecStr | None = None
+    day_move_usd: DecStr | None = None
+    #: Summed move over the members' summed previous value, a fraction (null: none priced).
+    day_pct_eur: DecStr | None = None
+    day_pct_usd: DecStr | None = None
 
 
 class TickEstimatePct(ApiModel):
@@ -68,6 +90,9 @@ class TickEvent(ApiModel):
     seq: int | None = None
     #: Latest price per instrument id (as a string key).
     prices: dict[str, TickPrice] | None = None
+    #: Day move per allocation category, keyed by the holdings rows' ``category``
+    #: (``""`` for uncategorised); null when nothing is priced.
+    categories: dict[str, TickCategory] | None = None
     #: The intraday sample this tick added (1D/1W graphs append it).
     point: TickPoint | None = None
     total_value_eur: DecStr | None = None

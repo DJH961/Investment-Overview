@@ -195,6 +195,59 @@ class TestHealthReportAggregation:
         assert "2024-01-05" in legs.examples
 
 
+class TestBrokerageCash:
+    """B-017 (check only): ledger cash on a brokerage account is not in the total."""
+
+    @staticmethod
+    def _txn(account_id: int, kind: str, net: str) -> Transaction:
+        return Transaction(
+            account_id=account_id,
+            date=date(2024, 1, 5),
+            kind=kind,
+            net_native=Decimal(net),
+            source="manual",
+        )
+
+    def test_unrouted_cash_is_flagged(self, session: Session) -> None:
+        account_id = _account(session, native="USD")
+        transactions_repo.insert_transaction(session, self._txn(account_id, "deposit", "500"))
+        session.commit()
+
+        item = diagnostics_service._check_brokerage_cash(session)
+
+        assert item.key == "brokerage_cash"
+        assert item.severity == "warning"
+        assert item.count == 1
+        assert "+500.00 USD" in item.examples[0]
+        # Listed in the full sweep too.
+        report = diagnostics_service.check_health(session)
+        assert any(i.key == "brokerage_cash" and not i.ok for i in report.items)
+
+    def test_cash_booked_in_a_money_market_leg_nets_to_zero(self, session: Session) -> None:
+        account_id = _account(session, native="USD")
+        transactions_repo.insert_transaction(session, self._txn(account_id, "deposit", "500"))
+        transactions_repo.insert_transaction(session, self._txn(account_id, "buy", "-500"))
+        session.commit()
+
+        item = diagnostics_service._check_brokerage_cash(session)
+
+        assert item.severity == "ok"
+        assert item.count == 0
+
+    def test_savings_accounts_are_not_checked(self, session: Session) -> None:
+        savings = accounts_repo.create_account(
+            session,
+            broker="savings_bank",
+            account_label="Savings",
+            native_currency="EUR",
+            account_type="savings",
+        ).id
+        transactions_repo.insert_transaction(session, self._txn(savings, "deposit", "900"))
+        session.commit()
+
+        assert diagnostics_service._check_brokerage_cash(session).severity == "ok"
+
+
 class TestProviderProbe:
     def test_failing_provider_is_error(self, session: Session) -> None:
         provider_status.reset()

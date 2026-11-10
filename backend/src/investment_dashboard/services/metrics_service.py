@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import dividends
+from investment_dashboard.domain import dividends, periods
 from investment_dashboard.domain.currency import (
     dual_currency_amounts,
     lookup_rate_with_forward_fill,
@@ -419,34 +419,37 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     total_growth_eur = total_growth_pct_compounded(portfolio_xirr_eur, years_lifetime)
     total_growth_usd = total_growth_pct_compounded(portfolio_xirr_usd, years_lifetime)
 
-    # YTD: value at start of year + cashflows from Jan 1 onward.
-    year_start = date(as_of.year, 1, 1)
-    ytd_txns = [t for t in txns if t.date >= year_start]
+    # YTD (B-006, :mod:`domain.periods`): opening = the close of 31 Dec, flows
+    # dated from 1 Jan onward, so a flow on 1 Jan is counted once.
+    ytd_window = periods.year_to_date(as_of)
+    ytd_open_date = ytd_window.opening_date
+    ytd_start_value_eur = cache.total_value(ytd_open_date)
+    if ytd_start_value_eur <= ZERO:
+        # Nothing valued at 31 Dec (a first-year book, or no price history yet):
+        # open at the first valued close instead and count only the flows after
+        # it, so nothing inside that opening value is counted twice.
+        found = _best_effort_ytd_start_value(session, ytd_window.start, as_of, cache=cache)
+        if found is not None:
+            ytd_open_date, ytd_start_value_eur = found
+    ytd_txns = [t for t in txns if t.date > ytd_open_date]
     ytd_cashflows_eur, ytd_cashflows_usd = build_portfolio_cashflows_dual(
         ytd_txns,
         retained_cash_account_ids=retained_cash_account_ids,
         eur_to_usd=eur_to_usd,
         eur_overrides=ov,
     )
-    # Best-effort Jan-1 valuation: requires price + FX history for that
-    # date. For brand-new portfolios with no Jan-1 history we fall back
-    # to the earliest available snapshot in the YTD window (and
-    # ultimately to ``Decimal(0)``), so the page renders instead of
-    # raising. This mirrors spec §6.4's "ytd_start_value best-effort"
-    # note (v1.2 closure of the v1.0 caveat).
-    ytd_start_value_eur = cache.total_value(year_start)
-    if ytd_start_value_eur <= ZERO:
-        ytd_start_value_eur = _best_effort_ytd_start_value(session, year_start, as_of, cache=cache)
-    fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, year_start) or fx_today
+    fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, ytd_open_date) or fx_today
     # ``None`` (not EUR-as-USD) when there is no EUR→USD spot to convert with.
     ytd_start_value_usd: Decimal | None = (
         ytd_start_value_eur * fx_year_start if fx_year_start != 0 else None
     )
-    # Treat the start-of-year value as a synthetic "contribution" (negative).
-    ytd_cashflows_eur.insert(0, Cashflow(date=year_start, amount=-ytd_start_value_eur))
+    # Treat the opening value as a synthetic "contribution" (negative) on the
+    # first day of the window (as the Periods table's per-period XIRR does).
+    ytd_first_day = ytd_open_date + timedelta(days=1)
+    ytd_cashflows_eur.insert(0, Cashflow(date=ytd_first_day, amount=-ytd_start_value_eur))
     ytd_xirr_eur = xirr(ytd_cashflows_eur, as_of=as_of, terminal_value=total_value_eur)
     if total_value_usd is not None and ytd_start_value_usd is not None:
-        ytd_cashflows_usd.insert(0, Cashflow(date=year_start, amount=-ytd_start_value_usd))
+        ytd_cashflows_usd.insert(0, Cashflow(date=ytd_first_day, amount=-ytd_start_value_usd))
         ytd_xirr_usd = xirr(ytd_cashflows_usd, as_of=as_of, terminal_value=total_value_usd)
     else:
         ytd_xirr_usd = None
@@ -467,22 +470,14 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     )
     ytd_net_contrib_usd = ytd_contributions_usd + ytd_withdrawals_usd
 
-    if ytd_start_value_eur + ytd_net_contrib_eur > 0:
-        ytd_growth_eur = (total_value_eur - ytd_start_value_eur - ytd_net_contrib_eur) / (
-            ytd_start_value_eur + ytd_net_contrib_eur
-        )
-    else:
-        ytd_growth_eur = None
-    if (
-        total_value_usd is not None
-        and ytd_start_value_usd is not None
-        and ytd_start_value_usd + ytd_net_contrib_usd > 0
-    ):
-        ytd_growth_usd = (total_value_usd - ytd_start_value_usd - ytd_net_contrib_usd) / (
-            ytd_start_value_usd + ytd_net_contrib_usd
-        )
-    else:
-        ytd_growth_usd = None
+    ytd_growth_eur = periods.growth_after_flows(
+        ytd_start_value_eur, total_value_eur, ytd_net_contrib_eur
+    )
+    ytd_growth_usd = (
+        periods.growth_after_flows(ytd_start_value_usd, total_value_usd, ytd_net_contrib_usd)
+        if total_value_usd is not None and ytd_start_value_usd is not None
+        else None
+    )
 
     # MTD: same shape as YTD but bounded to the first of the current month.
     mtd_growth, mtd_growth_usd = _compute_mtd_growth(
@@ -602,6 +597,39 @@ def _value_in_both(
     return eur, usd
 
 
+def session_external_flows(
+    session: Session,
+    prev_date: date,
+    last_date: date,
+    *,
+    eur_to_usd: dict[date, Decimal],
+) -> tuple[Decimal, Decimal]:
+    """Net money *into* the book, ``(eur, usd)``, from ``prev_date``'s close to ``last_date``'s.
+
+    The flows dated in ``(prev_date, last_date]`` (:func:`domain.periods.session_window`),
+    taken from the same legs portfolio XIRR uses (:func:`cashflows.build_portfolio_cashflows_dual`:
+    deposits / withdrawals / transfers, plus income paid out of the book), each at
+    its own date's rate, FX-pool overrides included. Deposits are positive. ``(0, 0)``
+    when the session has none.
+    """
+    window = periods.session_window(prev_date, last_date)
+    txns = list(transactions_repo.list_transactions(session, end=window.end))
+    in_window = [t for t in txns if window.counts_flow(t.date)]
+    if not any(t.kind in EXTERNAL_FLOW_KINDS or t.kind in _DISTRIBUTION_KINDS for t in in_window):
+        return ZERO, ZERO
+    flows_eur, flows_usd = build_portfolio_cashflows_dual(
+        in_window,
+        retained_cash_account_ids=build_retained_cash_account_ids(session, txns),
+        eur_to_usd=eur_to_usd,
+        eur_overrides=cashflows.eur_overrides_for(session),
+    )
+    # XIRR sign convention: money into the book is negative.
+    return (
+        -sum((cf.amount for cf in flows_eur), start=ZERO),
+        -sum((cf.amount for cf in flows_usd), start=ZERO),
+    )
+
+
 @dataclass(frozen=True)
 class _DailyGrowth:
     """Single-day growth plus the FX context needed to caption it.
@@ -687,12 +715,19 @@ def _compute_daily_growth(
     fx_prev = _leg_fx(prev_date)
     last_eur, last_usd = _value_in_both(session, last_date, fx=fx_last, cache=cache)
     prev_eur, prev_usd = _value_in_both(session, prev_date, fx=fx_prev, cache=cache)
-    growth_eur = (last_eur - prev_eur) / prev_eur if prev_eur > ZERO else None
+    # B-007: the session's external flows (deposits, withdrawals, paid-out
+    # income: the XIRR legs, each at its own date's rate) are not a gain.
+    flow_eur, flow_usd = session_external_flows(
+        session, prev_date, last_date, eur_to_usd=eur_to_usd
+    )
+    growth_eur = (
+        periods.growth_after_flows(prev_eur, last_eur, flow_eur) if prev_eur > ZERO else None
+    )
     # USD growth is only meaningful when both marks could be valued in USD;
     # a missing EUR→USD rate on either date degrades the USD leg to ``None``
     # rather than producing a spurious number from a relabelled EUR value.
     if last_usd is not None and prev_usd is not None and prev_usd > ZERO:
-        growth_usd = (last_usd - prev_usd) / prev_usd
+        growth_usd = periods.growth_after_flows(prev_usd, last_usd, flow_usd)
     else:
         growth_usd = None
     # Not enough priced history yet (no settled prior mark to grow from): report a
@@ -722,9 +757,11 @@ def _compute_daily_growth(
     # Absolute money move (display-currency headline figure for the Today square),
     # carried only when the matching growth leg is computable so the sign and
     # magnitude always agree with the percentage shown beside it.
-    move_eur = last_eur - prev_eur if growth_eur is not None else None
+    move_eur = (
+        periods.move_after_flows(prev_eur, last_eur, flow_eur) if growth_eur is not None else None
+    )
     move_usd = (
-        last_usd - prev_usd
+        periods.move_after_flows(prev_usd, last_usd, flow_usd)
         if (growth_usd is not None and last_usd is not None and prev_usd is not None)
         else None
     )
@@ -783,7 +820,8 @@ class LastSessionSplit:
     each book valued at its own session's 16:00 EUR/USD rate. ``overnight_*`` is
     the same holdings at the same official prices revalued from that close rate to
     the rate now: the only thing that moves overnight is the currency. Per
-    currency, ``move + overnight == value_now - prev_close_value`` exactly. A fund
+    currency, ``move + overnight == value_now - prev_close_value - flows`` exactly,
+    where ``flows`` is the session's net external money in (B-007). A fund
     whose NAV for the session has not posted counts at its previous NAV (official
     prices only, never an estimate).
     """
@@ -853,6 +891,22 @@ def _estimated_split(
     }
 
 
+def _net_of_flows(split: DaySplit, prev_value: Decimal, flows: Decimal) -> DaySplit:
+    """``split`` with the session's net external ``flows`` taken off its move.
+
+    The overnight (currency) part is untouched; the move becomes
+    ``last - prev - flows`` and its % uses ``prev + flows`` as the base.
+    """
+    if flows == ZERO:
+        return split
+    move = split.move - flows
+    return replace(
+        split,
+        move=move,
+        pct=periods.growth_after_flows(prev_value, prev_value + split.move, flows),
+    )
+
+
 def _book_holdings(session: Session, on: date) -> list[Any]:
     """The whole book on ``on`` (official closes, forward-filled) as native holdings."""
     from investment_dashboard.domain.late_data import Holding  # noqa: PLC0415
@@ -909,15 +963,23 @@ def last_session_split(
     now_eur, now_usd = value_at_rate(last_book, fx_now)
     if prev_eur <= 0:
         return None
-    eur = split_day_change(prev_eur, last_eur, now_eur)
-    usd = split_day_change(prev_usd, last_usd, now_usd)
+    # B-007: the session's external flows come off the price (session) part;
+    # the growth base is the money at work, ``prev + flows``.
+    flow_eur, flow_usd = session_external_flows(
+        session,
+        prev_date,
+        session_date,
+        eur_to_usd=fx_service.get_rates(session, base="EUR", quote="USD"),
+    )
+    eur = _net_of_flows(split_day_change(prev_eur, last_eur, now_eur), prev_eur, flow_eur)
+    usd = _net_of_flows(split_day_change(prev_usd, last_usd, now_usd), prev_usd, flow_usd)
     return LastSessionSplit(
         **_estimated_split(
             session,
             now=now,
             eur=eur,
             usd=usd,
-            prev=(prev_eur, prev_usd),
+            prev=(prev_eur + flow_eur, prev_usd + flow_usd),
             value_now=(now_eur, now_usd),
             fx_close=fx_close,
             fx_now=fx_now,
@@ -942,7 +1004,8 @@ def with_last_session_split(metrics: PortfolioMetrics, split: LastSessionSplit) 
     """``metrics`` with the hero day move set to the change since the previous close.
 
     Market shut: the headline is the WHOLE change in value since the previous
-    session's close (the last session's move plus the overnight currency move), so
+    session's close, net of the session's external flows (the last session's
+    move plus the overnight currency move; the % base is ``prev + flows``), so
     the value and its day move agree at every instant: the value keeps re-marking at
     the live rate overnight and the move now moves with it. The two causes stay
     separate in :func:`day_move_split`. Per currency, never converted.
@@ -1069,29 +1132,32 @@ def _compute_mtd_growth(
 ) -> tuple[Decimal | None, Decimal | None]:
     """Month-to-date simple growth in EUR and USD, net of this month's flows.
 
-    ``(V_today - V_month_start - net_contributions_mtd) /
-    (V_month_start + net_contributions_mtd)`` computed independently for
-    each currency. The USD leg values the start-of-month portfolio with
-    the FX rate in effect on the first of the month and this month's
-    contributions at their per-trade-date rate, mirroring the dual-wallet
-    treatment used for XIRR/YTD. Returns ``(None, None)`` for a currency
-    whose denominator is non-positive (e.g. a brand-new portfolio) or, for
-    USD, when no EUR→USD spot is available to value the terminal mark.
+    ``(V_today - V_open - net_contributions_mtd) /
+    (V_open + net_contributions_mtd)`` computed independently for each
+    currency, where ``V_open`` is the close of the last day of the previous
+    month and the flows are those dated from the 1st (B-006, the one rule in
+    :mod:`domain.periods`, shared with the Periods table). The USD leg values
+    the opening with that day's FX rate and this month's contributions at their
+    per-trade-date rate, mirroring the dual-wallet treatment used for XIRR/YTD.
+    Returns ``(None, None)`` when there is no opening value (e.g. a brand-new
+    portfolio) or, for a currency whose denominator is non-positive; for USD
+    also when no EUR→USD spot is available to value the terminal mark.
     """
-    month_start = date(as_of.year, as_of.month, 1)
+    window = periods.month_to_date(as_of)
+    open_date = window.opening_date
     month_start_value_eur = (
-        cache.total_value(month_start)
+        cache.total_value(open_date)
         if cache is not None
-        else positions_service.total_portfolio_value(session, as_of=month_start)
+        else positions_service.total_portfolio_value(session, as_of=open_date)
     )
     if month_start_value_eur <= ZERO:
         return None, None
-    fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, month_start) or ZERO
+    fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, open_date) or ZERO
     month_start_value_usd: Decimal | None = (
         month_start_value_eur * fx_month_start if fx_month_start != 0 else None
     )
 
-    mtd_txns = [t for t in txns if t.date >= month_start]
+    mtd_txns = [t for t in txns if window.counts_flow(t.date)]
     mtd_contrib_eur = cashflows.sum_amounts(
         mtd_txns, _CONTRIBUTION_KINDS, "EUR", eur_to_usd=eur_to_usd, eur_overrides=ov
     )
@@ -1107,19 +1173,15 @@ def _compute_mtd_growth(
     )
     mtd_net_usd = mtd_contrib_usd + mtd_withdraw_usd
 
-    def _growth(value_now: Decimal, value_start: Decimal, net: Decimal) -> Decimal | None:
-        denom = value_start + net
-        if denom <= ZERO:
-            return None
-        return (value_now - value_start - net) / denom
+    _growth = periods.growth_after_flows
 
     usd_growth = (
-        _growth(total_value_usd, month_start_value_usd, mtd_net_usd)
+        _growth(month_start_value_usd, total_value_usd, mtd_net_usd)
         if (total_value_usd is not None and month_start_value_usd is not None)
         else None
     )
     return (
-        _growth(total_value_eur, month_start_value_eur, mtd_net_eur),
+        _growth(month_start_value_eur, total_value_eur, mtd_net_eur),
         usd_growth,
     )
 
@@ -1156,15 +1218,20 @@ def _best_effort_ytd_start_value(
     as_of: date,
     *,
     cache: _ValuationCache | None = None,
-) -> Decimal:
-    """Fallback when Jan-1 has no price/FX tick (new portfolio / sparse history).
+) -> tuple[date, Decimal] | None:
+    """Fallback opening when the 31-Dec close cannot be valued (sparse history).
+
+    Returns ``(day, value)``: the first close in January with a positive value.
+    The caller then opens YTD at that close and counts only the flows dated
+    *after* ``day`` (B-006: the flows already inside the opening value are never
+    counted twice). ``None`` when nothing in the window can be valued.
 
     Prefers a stored daily snapshot (B3): persisted snapshots already hold the
     EUR total-portfolio value for a date, so the earliest positive snapshot in
-    the bounded window is the Jan-1-start proxy without re-rolling the ledger.
-    When no snapshots cover the window we fall back to the original bounded
-    day-by-day live valuation so brand-new portfolios (which have no snapshots
-    yet) keep rendering.
+    the bounded window is the proxy without re-rolling the ledger. When no
+    snapshots cover the window we fall back to the bounded day-by-day live
+    valuation so brand-new portfolios (which have no snapshots yet) keep
+    rendering.
     """
     from datetime import timedelta as _td  # noqa: PLC0415
 
@@ -1173,7 +1240,7 @@ def _best_effort_ytd_start_value(
     stored = snapshots_service.stored_snapshots_in_range(session, year_start, horizon)
     for day in sorted(stored):
         if stored[day] > ZERO:
-            return stored[day]
+            return day, stored[day]
 
     cursor = year_start
     while cursor <= horizon:
@@ -1183,6 +1250,6 @@ def _best_effort_ytd_start_value(
             else positions_service.total_portfolio_value(session, as_of=cursor)
         )
         if value > ZERO:
-            return value
+            return cursor, value
         cursor += _td(days=1)
-    return ZERO
+    return None
