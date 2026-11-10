@@ -17,6 +17,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.13.1] — 2026-11-10
+
+> "Trust": the backend fixes from the pre-v7 audit (push 1 of `docs/v7_plan.md`).
+> Some displayed figures move on purpose; each is listed under Fixed.
+
+### Fixed
+- **MTD and YTD no longer count a deposit made on the 1st twice** (B-006). A
+  period now opens at the previous day's close and counts flows dated on or
+  after its first day; the Overview and the Periods page share one function.
+  First-year YTD no longer reads far too low. Holding-level MTD/YTD use the
+  same rule, and their % is now over the opening value plus purchases.
+- **"Today's move" no longer counts deposits or withdrawals as gains** (B-007).
+  The session's external flows are subtracted (each at its own date's rate),
+  and the % is over yesterday's value plus those flows. Known limit: cash in a
+  brokerage account that is not in a money-market fund is not valued, so a
+  deposit there shows as a loss until it is invested; the new Data Health
+  check below reports whether any account is affected.
+- **Half-day sessions close at 13:00 New York time** (B-018): 27 Nov and
+  24 Dec 2026, from an explicit table for 2026–2029. No false "feed stalled"
+  warning and the end-of-day run starts on time.
+- Holding cost in EUR/USD stays in step with the native cost after a
+  reinvestment that has no price (B-010).
+- **A save is committed before the app answers** (B-001). A failed save now
+  returns an error; cache refreshes and live events fire only after the
+  commit succeeded.
+- A long-open tab no longer keeps yesterday's "live" wording: cached answers
+  expire with the server's own cache time (B-002).
+- Calculator, allocation-plan and reconcile requests no longer clear every
+  device's cache, and reconcile no longer writes a "changes" log line (B-003).
+- The remembered chart range reaches your other devices (B-016).
+
+### Added
+- Data Health: a warning when a brokerage account holds cash that is not in a
+  money-market fund (B-017, check only; valuations are unchanged).
+- The live tick carries the server's day move and day % per holding and per
+  category in both currencies, so the browser can stop computing them
+  (F-081, F-029; the browser half follows in the next release).
+- `/api/live` returns a boot id and cache generations so a returning tab can
+  catch up (B-012), and background refetches can opt out of keeping the
+  session alive with `X-Background-Refetch: 1` (B-015). Browser halves follow.
+
 ### Docs
 - Pre-v7 code audit (read-only, nothing fixed): `docs/v7_audit_backend.md`
   (22 findings) and `docs/v7_audit_frontend.md` (89 findings).
