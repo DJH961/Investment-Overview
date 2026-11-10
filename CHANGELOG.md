@@ -17,6 +17,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.16.0] — 2026-11-10
+
+### Added
+- **Risk: an "All" range.** The lookback picker gains **All**, which measures
+  every risk and return figure from the first transaction (the whole investment
+  timeframe). The API takes `lookback_days=0` for it.
+
+### Fixed
+- **Risk figures no longer count deposits as growth.** CAGR was end value over
+  start value, and volatility, Sharpe, Sortino, drawdown, Ulcer, VaR, skew and
+  beta ran on raw daily values, so every deposit read as a gain (and a
+  withdrawal as a loss). Over a long window, where most of the value is new
+  money, that made the figures meaningless. They now run on a flow-adjusted
+  growth index (`domain.returns.growth_index`, the series TWR chains), and CAGR
+  is the annualised TWR over the days actually invested. Under a year invested,
+  CAGR is the plain growth, not annualised (GIPS). With no flows in the window
+  nothing changes. Expect your 1Y figures to move slightly.
+- **Range and toggle buttons are roomy again on phones.** 6.14.0 gave every
+  segmented control 4 px side padding on phones so the 6-button range pickers
+  would fit; short toggles (Category/Fund, EUR/USD and the like) were squeezed
+  too. Now only a crowded picker (five or more buttons) splits a full row evenly,
+  and on the Risk page it gets its own row instead of squeezing beside the dates.
+- **Fixture CI checked only the login page.** Fixture mode was switched on by a
+  local `frontend/.env.fixtures`, which is never committed (`.env.*`), so CI built
+  the real app without a backend: every route showed the login screen and the log
+  filled with ~1000 proxy errors from the live stream retrying. `--mode fixtures`
+  now switches it on in `vite.config.ts`, the overflow test fails if a page is not
+  on fixtures, its cases run in parallel and the Chromium download is cached.
+- **Overview Today box at 1024 px:** a seven-figure "Prev close" no longer spills
+  out of its cell (the figure may shrink one step further).
+- **Settings → Accounts on phones:** the account name and its details no longer
+  overlap; the name sits over the details and both wrap.
+- **Risk attribution shows tickers**, not long fund names.
+- **Periods (phone):** the other-currency year total is a quiet line under the
+  total, not an unlabelled chip among the flows.
+- **Treemap tooltip** keeps its natural width near the right edge instead of
+  collapsing into a tall, thin column on small tiles.
+- **Asset classes:** each class has a fixed look; mutual funds (teal, hatched) and
+  cash (gold, solid) are now the pair furthest apart for protan vision, and cash
+  is never hatched, so a thin sliver still shows its colour.
+
 ## [6.15.1] — 2026-11-10
 
 ### Fixed

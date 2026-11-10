@@ -212,6 +212,33 @@ def twr(
     return growth - Decimal(1)
 
 
+def growth_index(values: Sequence[Decimal], new_money: Sequence[Decimal]) -> list[Decimal]:
+    """Daily growth index with deposits and withdrawals taken out (starts at 1).
+
+    ``values[i]`` is the portfolio value at the close of day ``i``; ``new_money[i]``
+    is the net money that came in on day ``i`` (positive in, negative out). Each
+    day's return is the one :func:`twr` chains::
+
+        r_i = (V_i - (V_{i-1} + new_money_i)) / (V_{i-1} + new_money_i)
+
+    so a deposit is not a gain and a withdrawal is not a loss, and
+    ``index[-1] - 1`` equals :func:`twr` over the same days. A day whose start
+    value is not positive (nothing invested yet) carries the index unchanged.
+    Risk figures (volatility, drawdown, VaR, beta ...) are computed on this index,
+    never on raw values, which jump with every deposit.
+    """
+    if len(values) != len(new_money):
+        raise ValueError("values and new_money must have the same length")
+    if not values:
+        return []
+    index = [Decimal(1)]
+    for i in range(1, len(values)):
+        start = values[i - 1] + new_money[i]
+        r = (values[i] - start) / start if start > 0 else Decimal(0)
+        index.append(index[-1] * (Decimal(1) + r))
+    return index
+
+
 def annualize_return(total_return: Decimal, days: int) -> Decimal | None:
     """Annualise a cumulative return over ``days`` calendar days.
 

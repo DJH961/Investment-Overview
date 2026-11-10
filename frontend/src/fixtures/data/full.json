@@ -158,7 +158,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.1909676440900592435315874553",
      "start_value": "787235.7065435239967380274156",
-     "symbol": "Fakeland Total World All-Capitalisation Diversified Index Exchange Traded Fund Accumulating Class USD Hedged (Synthetic Fixture Holding With An Absurdly Long Name)"
+     "symbol": "FAKEL"
     },
     {
      "absolute_pnl": "26441.68091485434744869719300",
@@ -167,7 +167,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.02523281047865836222793980183",
      "start_value": "91546.30191776367830237576840",
-     "symbol": "Fake Institutional NAV Index Fund"
+     "symbol": "FAKENX"
     },
     {
      "absolute_pnl": "13535.73725049448938287458435",
@@ -176,7 +176,7 @@
      "net_contribution": "-12833.17414400852958614762404",
      "pct_of_total_return": "0.01291690546567224774145994268",
      "start_value": "52988.42401797755951657776072",
-     "symbol": "Fake Growth Corp"
+     "symbol": "FAKEG"
     },
     {
      "absolute_pnl": "-12072.26528250995412453883433",
@@ -185,7 +185,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.01152034104422361346332758298",
      "start_value": "92029.34682757433180694226781",
-     "symbol": "Fake Aggregate Bond ETF"
+     "symbol": "FAKEB"
     },
     {
      "absolute_pnl": "790.90750000000000",
@@ -194,7 +194,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.0007547485017277472758075189958",
      "start_value": "24108.89250000000000",
-     "symbol": "Fake Europa Dividend Aktie"
+     "symbol": "FAKEU.DE"
     },
     {
      "absolute_pnl": "-0.000002645149413462887814324977461",
@@ -203,7 +203,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.000000000002524217505406313730422857773",
      "start_value": "0.000008312960572261171076127552568",
-     "symbol": "Fake Micro Cap Dust"
+     "symbol": "FAKET"
     }
    ],
    "attribution_currency": "EUR",
@@ -219,8 +219,8 @@
    "benchmark_last_value": null,
    "benchmark_symbol": "VT",
    "beta": null,
-   "cagr": "0.202850026693558",
-   "calmar": "9.484395331700172895152266672",
+   "cagr": "0.2139528745312",
+   "calmar": "9.967589013763491745524546712",
    "ccy": "EUR",
    "currency": "EUR",
    "curve": [
@@ -1361,20 +1361,20 @@
    ],
    "curve_start": "2025-06-30",
    "cvar_95": "-0.006133892708241812",
-   "kurtosis": "18.455356254982796",
-   "max_drawdown": "-0.02638710420711626543360277485",
+   "kurtosis": "17.942305215806677",
+   "max_drawdown": "-0.02638710420711626543360277412",
    "net_invested_last": "1102513.263314228814430480920",
    "portfolio_last_value": "1260317.639490646351931330472",
    "risk_free_rate": "0.037320001125335693",
    "risk_free_symbol": "^IRX",
-   "sharpe": "2.850231550293761954569656112",
-   "skew": "3.3100309401380326",
-   "sortino": "7.350115061128035434484096337",
+   "sharpe": "2.889895220288779908976059751",
+   "skew": "3.405542276253236",
+   "sortino": "7.790201704012688589455083697",
    "start": "2025-06-30",
    "twr": "0.213952874531200140403345545",
-   "ulcer": "0.010985242956805481",
+   "ulcer": "0.010985242956805403",
    "var_95": "-0.004900892766261135",
-   "volatility": "0.07471172888103647",
+   "volatility": "0.07809826712402244",
    "xirr": "0.04546202615742324"
   },
   "USD": {
@@ -1388,7 +1388,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.2082036181159201419067061152",
      "start_value": "900670.86120650000000",
-     "symbol": "Fakeland Total World All-Capitalisation Diversified Index Exchange Traded Fund Accumulating Class USD Hedged (Synthetic Fixture Holding With An Absurdly Long Name)"
+     "symbol": "FAKEL"
     },
     {
      "absolute_pnl": "32718.51680000000000",
@@ -1397,7 +1397,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.02729033364048723909809836794",
      "start_value": "104737.48320000000000",
-     "symbol": "Fake Institutional NAV Index Fund"
+     "symbol": "FAKENX"
     },
     {
      "absolute_pnl": "16947.72500000000000",
@@ -1406,7 +1406,7 @@
      "net_contribution": "-15021.410000",
      "pct_of_total_return": "0.01413600355188553639582522771",
      "start_value": "60623.68500000000000",
-     "symbol": "Fake Growth Corp"
+     "symbol": "FAKEG"
     },
     {
      "absolute_pnl": "-12140.13150000000000",
@@ -1415,7 +1415,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.01012601644199191837213279750",
      "start_value": "105290.13150000000000",
-     "symbol": "Fake Aggregate Bond ETF"
+     "symbol": "FAKEB"
     },
     {
      "absolute_pnl": "1428.3925309975000000000000",
@@ -1424,7 +1424,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.001191414298477667719168543330",
      "start_value": "27582.8151470025000000000000",
-     "symbol": "Fake Europa Dividend Aktie"
+     "symbol": "FAKEU.DE"
     },
     {
      "absolute_pnl": "-0.00000290780000",
@@ -1433,7 +1433,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.000000000002425379874182095988209662190",
      "start_value": "0.00000951080000",
-     "symbol": "Fake Micro Cap Dust"
+     "symbol": "FAKET"
     }
    ],
    "attribution_currency": "USD",
@@ -1449,8 +1449,8 @@
    "benchmark_last_value": null,
    "benchmark_symbol": "VT",
    "beta": null,
-   "cagr": "0.22484593672354",
-   "calmar": "18.70402024603544307470705203",
+   "cagr": "0.2361507506538245",
+   "calmar": "19.57528521481166250033360595",
    "ccy": "USD",
    "currency": "USD",
    "curve": [
@@ -2591,20 +2591,20 @@
    ],
    "curve_start": "2025-06-30",
    "cvar_95": "-0.004335966794792492",
-   "kurtosis": "36.433167806754994",
-   "max_drawdown": "-0.01471163017775775746947120850",
+   "kurtosis": "33.47151804497041",
+   "max_drawdown": "-0.01471163017775775746947120864",
    "net_invested_last": "1185335.44000000000000",
    "portfolio_last_value": "1468270.050006603000000000000",
    "risk_free_rate": "0.037320001125335693",
    "risk_free_symbol": "^IRX",
-   "sharpe": "2.871648394664050681049288287",
-   "skew": "5.2981773245531105",
-   "sortino": "11.07560149847805911924009829",
+   "sharpe": "2.897378914114842826573755271",
+   "skew": "5.1918085038933",
+   "sortino": "11.67247373070628201889138624",
    "start": "2025-06-30",
    "twr": "0.236150750653824620962074470",
-   "ulcer": "0.005544453429919039",
+   "ulcer": "0.005544453429919021",
    "var_95": "-0.0032724681336359757",
-   "volatility": "0.08282581809583157",
+   "volatility": "0.08651417816218955",
    "xirr": "0.07180385754424208"
   },
   "detail": null
@@ -2621,7 +2621,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.04245164234305165471662983019",
      "start_value": "934827.9079559189837749628139",
-     "symbol": "Fakeland Total World All-Capitalisation Diversified Index Exchange Traded Fund Accumulating Class USD Hedged (Synthetic Fixture Holding With An Absurdly Long Name)"
+     "symbol": "FAKEL"
     },
     {
      "absolute_pnl": "13258.5962486602789271985316",
@@ -2630,7 +2630,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.01104540577565902162434589912",
      "start_value": "104729.3865839577468238744298",
-     "symbol": "Fake Institutional NAV Index Fund"
+     "symbol": "FAKENX"
     },
     {
      "absolute_pnl": "-1655.19050206415041862614202",
@@ -2639,7 +2639,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.001378897915619284461010060078",
      "start_value": "55346.17762652766973193086305",
-     "symbol": "Fake Growth Corp"
+     "symbol": "FAKEG"
     },
     {
      "absolute_pnl": "-1433.05293294959465166559705",
@@ -2648,7 +2648,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.001193840648403933930433707472",
      "start_value": "81390.13447801397233406903053",
-     "symbol": "Fake Aggregate Bond ETF"
+     "symbol": "FAKEB"
     },
     {
      "absolute_pnl": "608.96800000000000",
@@ -2657,7 +2657,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.0005073160490177219991878173635",
      "start_value": "24078.43200000000000",
-     "symbol": "Fake Europa Dividend Aktie"
+     "symbol": "FAKEU.DE"
     },
     {
      "absolute_pnl": "-0.000001360081985196493372589706070",
@@ -2666,7 +2666,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.000000000001133050372219993297306117669",
      "start_value": "0.000007027893143994776634392281177",
-     "symbol": "Fake Micro Cap Dust"
+     "symbol": "FAKET"
     }
    ],
    "attribution_currency": "EUR",
@@ -2682,8 +2682,8 @@
    "benchmark_last_value": null,
    "benchmark_symbol": "VT",
    "beta": null,
-   "cagr": "0.2186841199848528",
-   "calmar": "10.38636936593966649047565423",
+   "cagr": "0.0499391846101584",
+   "calmar": "10.38636936593966649047565375",
    "ccy": "EUR",
    "currency": "EUR",
    "curve": [
@@ -3237,7 +3237,7 @@
    "curve_start": "2026-04-01",
    "cvar_95": "-0.0059113235533100675",
    "kurtosis": "0.3601741639125846",
-   "max_drawdown": "-0.01324529051861322999878160486",
+   "max_drawdown": "-0.01324529051861322999878160547",
    "net_invested_last": "1102513.263314228814430480920",
    "portfolio_last_value": "1260317.639490646351931330472",
    "risk_free_rate": "0.037320001125335693",
@@ -3247,7 +3247,7 @@
    "sortino": "3.518094131028807045914616575",
    "start": "2026-04-01",
    "twr": "0.049939184610158529913048453",
-   "ulcer": "0.005048447839950599",
+   "ulcer": "0.005048447839950598",
    "var_95": "-0.005078798165690294",
    "volatility": "0.04682629356861058",
    "xirr": "0.04546202615742324"
@@ -3263,7 +3263,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.02933636913847810109741144819",
      "start_value": "1106753.04333600000000",
-     "symbol": "Fakeland Total World All-Capitalisation Diversified Index Exchange Traded Fund Accumulating Class USD Hedged (Synthetic Fixture Holding With An Absurdly Long Name)"
+     "symbol": "FAKEL"
     },
     {
      "absolute_pnl": "13465.72720000000000",
@@ -3272,7 +3272,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.009475341815366815103089231845",
      "start_value": "123990.27280000000000",
-     "symbol": "Fake Institutional NAV Index Fund"
+     "symbol": "FAKENX"
     },
     {
      "absolute_pnl": "-3208.67550000000000",
@@ -3281,7 +3281,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.002257828090939865701000714802",
      "start_value": "96358.67550000000000",
-     "symbol": "Fake Aggregate Bond ETF"
+     "symbol": "FAKEB"
     },
     {
      "absolute_pnl": "-2974.94850000000000",
@@ -3290,7 +3290,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.002093362913264185505013992534",
      "start_value": "65524.94850000000000",
-     "symbol": "Fake Growth Corp"
+     "symbol": "FAKEG"
     },
     {
      "absolute_pnl": "254.5896496480000000000000",
@@ -3299,7 +3299,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "0.0001791454644253658844136603731",
      "start_value": "28506.7205075520000000000000",
-     "symbol": "Fake Europa Dividend Aktie"
+     "symbol": "FAKEU.DE"
     },
     {
      "absolute_pnl": "-0.00000171740000",
@@ -3308,7 +3308,7 @@
      "net_contribution": "0",
      "pct_of_total_return": "-0.000000000001208471833122459829577228237",
      "start_value": "0.00000832040000",
-     "symbol": "Fake Micro Cap Dust"
+     "symbol": "FAKET"
     }
    ],
    "attribution_currency": "USD",
@@ -3324,8 +3324,8 @@
    "benchmark_last_value": null,
    "benchmark_symbol": "VT",
    "beta": null,
-   "cagr": "0.1415914254280488",
-   "calmar": "6.263882015434501131622494499",
+   "cagr": "0.033168160504324",
+   "calmar": "6.263882015434501131622494111",
    "ccy": "USD",
    "currency": "USD",
    "curve": [
@@ -3879,7 +3879,7 @@
    "curve_start": "2026-04-01",
    "cvar_95": "-0.004258318312858575",
    "kurtosis": "1.6098416361221304",
-   "max_drawdown": "-0.01471163017775775746947120850",
+   "max_drawdown": "-0.01471163017775775746947120941",
    "net_invested_last": "1185335.44000000000000",
    "portfolio_last_value": "1468270.050006603000000000000",
    "risk_free_rate": "0.037320001125335693",
@@ -3889,7 +3889,7 @@
    "sortino": "2.455461878181110990185743351",
    "start": "2026-04-01",
    "twr": "0.033168160504323962991053758",
-   "ulcer": "0.00589940641202927",
+   "ulcer": "0.005899406412029299",
    "var_95": "-0.003527738296283492",
    "volatility": "0.03953566513438142",
    "xirr": "0.07180385754424208"

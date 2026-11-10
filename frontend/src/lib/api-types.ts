@@ -6494,6 +6494,7 @@ export interface operations {
             query?: {
                 /** @description Reporting currency. */
                 ccy?: "EUR" | "USD";
+                /** @description Window in days; 0 = since the first transaction. */
                 lookback_days?: number;
                 /** @description Draw the curve from inception. */
                 full_curve?: boolean;
@@ -6527,6 +6528,7 @@ export interface operations {
     get_analytics_both_api_analytics_both_get: {
         parameters: {
             query?: {
+                /** @description Window in days; 0 = since the first transaction. */
                 lookback_days?: number;
                 /** @description Draw the curve from inception. */
                 full_curve?: boolean;

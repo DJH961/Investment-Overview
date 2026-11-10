@@ -20,7 +20,9 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 def get_analytics(
     session: SessionDep,
     ccy: ReportCcy = "EUR",
-    lookback_days: int = Query(365, ge=1, le=36500),
+    lookback_days: int = Query(
+        365, ge=0, le=36500, description="Window in days; 0 = since the first transaction."
+    ),
     full_curve: bool = Query(False, description="Draw the curve from inception."),
 ) -> dict[str, Any]:
     return analytics_rm.build_for_ccy(
@@ -35,7 +37,9 @@ def get_analytics_both(
     request: Request,
     response: Response,
     session: SessionDep,
-    lookback_days: int = Query(365, ge=1, le=36500),
+    lookback_days: int = Query(
+        365, ge=0, le=36500, description="Window in days; 0 = since the first transaction."
+    ),
     full_curve: bool = Query(False, description="Draw the curve from inception."),
 ) -> ByCurrency[AnalyticsOut]:
     return ByCurrency[AnalyticsOut].model_validate(

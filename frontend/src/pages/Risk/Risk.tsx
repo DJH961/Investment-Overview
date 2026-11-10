@@ -31,6 +31,8 @@ const LOOKBACKS = [
   { value: "365", label: "1Y" },
   { value: "1095", label: "3Y" },
   { value: "1825", label: "5Y" },
+  // 0 = since the first transaction (the whole investment timeframe).
+  { value: "0", label: "All" },
 ] as const;
 
 type AttrRow = AnalyticsOut["attribution"][number];
@@ -275,7 +277,7 @@ export function Risk() {
           <Card
             className="risk-page__metrics-card"
             title="All metrics"
-            subtitle={`${LOOKBACKS.find((l) => l.value === lookback)?.label ?? ""} lookback`}
+            subtitle={lookback === "0" ? "Since the first transaction" : `${LOOKBACKS.find((l) => l.value === lookback)?.label ?? ""} lookback`}
             collapsibleId="risk.metrics"
           >
             <div className="risk-page__groups">

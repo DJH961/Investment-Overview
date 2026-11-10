@@ -195,6 +195,12 @@ for (const { dataset, width, theme } of cases) {
     for (const route of ROUTES) {
       await page.goto(`${route}?fixtures=${dataset}`);
       await settle(page);
+      // Fail loudly if the build is not in fixture mode (e.g. the env file is missing):
+      // the real app would show only the login screen and every check would pass vacuously.
+      expect(
+        await page.evaluate(() => document.documentElement.dataset.fixtures),
+        `${route}: the page is not running on fixtures (built without VITE_FIXTURES=1?)`,
+      ).toBe(dataset);
       const raw = await page.evaluate(detect);
       for (const f of raw) findings.push({ dataset, route, width, theme, ...f });
       const name = route.replace(/\//g, "") || "root";

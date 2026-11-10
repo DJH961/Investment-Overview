@@ -84,6 +84,12 @@
     @include m.eyebrow;
   }
 
+  &__total-other {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+
   // The figures that matter most: big, side by side.
   &__growths {
     display: flex;

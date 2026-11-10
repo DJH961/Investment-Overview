@@ -6,7 +6,7 @@ export interface GlossaryEntry {
 }
 
 export const GLOSSARY: GlossaryEntry[] = [
-  { key: "cagr", term: "CAGR", definition: "Compound annual growth rate: the steady yearly rate that would take the starting value to the ending value." },
+  { key: "cagr", term: "CAGR", definition: "Compound annual growth rate: the steady yearly rate of the time-weighted return, so deposits and withdrawals do not count as growth. Under a year invested it is the plain growth, not annualised." },
   { key: "twr", term: "TWR", definition: "Time-weighted return. Chains the return of each sub-period so the size and timing of your deposits do not matter. Use it to judge the investments themselves." },
   { key: "xirr", term: "XIRR", definition: "Money-weighted annualised return. Takes the size and date of every deposit and withdrawal into account, so it reflects your own timing." },
   { key: "volatility", term: "Volatility", definition: "Annualised standard deviation of daily returns. Higher means a bumpier ride." },

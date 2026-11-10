@@ -1245,7 +1245,7 @@ wheels = [
 
 [[package]]
 name = "investment-dashboard"
-version = "6.15.1"
+version = "6.16.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
