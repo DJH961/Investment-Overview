@@ -3,6 +3,7 @@ import { Card } from "../Card";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { formatNumber, formatPp, signOf } from "../../lib/format";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import "./CurrencyLifetime.scss";
 
@@ -16,7 +17,12 @@ export interface CurrencyLifetimeProps {
  * what cashing out now would bring home. Amounts are in EUR (the home currency).
  */
 export function CurrencyLifetime({ data }: CurrencyLifetimeProps) {
+  const { hide } = useHideAmounts();
   const life = data.currency.lifetime ?? {};
+  // Hide mode: the FX gain/loss as a share of what cashing out now would bring home.
+  const fxPnl = toNum(life.fx_pnl_eur);
+  const repat = toNum(life.repatriation_value_eur);
+  const fxShare = fxPnl !== null && repat ? fxPnl / repat : null;
   const split = data.currency.return_split;
   const change = toNum(life.rate_change_pct);
   // A stronger euro (EUR/USD up) is a headwind for a euro investor holding dollars.
@@ -52,7 +58,11 @@ export function CurrencyLifetime({ data }: CurrencyLifetimeProps) {
         <div className="currency-lifetime__stat">
           <dt className="currency-lifetime__label">FX gain/loss</dt>
           <dd className="currency-lifetime__value">
-            <Money amount={toNum(life.fx_pnl_eur)} currency="EUR" signed colored digits={0} />
+            {hide && fxShare !== null ? (
+              <Percent ratio={fxShare} signed colored />
+            ) : (
+              <Money amount={fxPnl} currency="EUR" signed colored digits={0} />
+            )}
           </dd>
         </div>
         <div className="currency-lifetime__stat">

@@ -15,12 +15,22 @@ import {
   formatDate,
   formatDayLabel,
   formatDayTime,
+  formatMoney,
+  formatPercent,
   formatShortDay,
   formatTime,
   todayIn,
 } from "../../lib/format";
 import { useInstruments } from "../../lib/queries/instruments";
-import { GRAPH_RANGES, rememberGraphRange, toNum, useGraph, type GraphRange } from "../../lib/queries/portfolio";
+import {
+  GRAPH_RANGES,
+  rememberGraphRange,
+  toNum,
+  useGraph,
+  type GraphRange,
+  type OverviewDto,
+} from "../../lib/queries/portfolio";
+import { Money } from "../Money";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useHideAmounts } from "../../lib/hideAmounts";
 import { useTimeZone } from "../../lib/timezone";
@@ -99,6 +109,8 @@ export interface ValueChartCardProps {
   /** Settings → Display "Overview default range" (used when this device has no choice). */
   configuredRange?: GraphRange;
   marketOpen?: boolean;
+  /** `GET /api/overview` `last_session` (session move + overnight currency, after the close). */
+  lastSession?: OverviewDto["last_session"];
   className?: string;
 }
 
@@ -108,6 +120,7 @@ export function ValueChartCard({
   defaultRange,
   configuredRange,
   marketOpen = false,
+  lastSession,
   className,
 }: ValueChartCardProps) {
   const timeZone = useTimeZone();
@@ -175,6 +188,30 @@ export function ValueChartCard({
   const coverage = intraday && g?.coverage && !g.coverage.complete ? g.coverage : null;
   const other = g?.secondary?.ccy ?? (currency === "EUR" ? "USD" : "EUR");
 
+  // After the close the server sends a live "now" point (any intraday range): one
+  // dot, no line to it. Its label is server figures only; hide mode keeps the dot.
+  const now = intraday ? (g?.now_point ?? null) : null;
+  const nowT = now ? Date.parse(now.t) : NaN;
+  const nowV = now ? toNum(now.v) : null;
+  const overnight = now ? toNum(now.overnight_currency ?? lastSession?.overnight_currency) : null;
+  const overnightPct = now ? toNum(now.overnight_pct ?? lastSession?.overnight_pct) : null;
+  const nowMarker =
+    now && nowV !== null && Number.isFinite(nowT)
+      ? {
+          t: nowT,
+          v: nowV,
+          lines: [
+            ...(hide ? [] : [tipFormat(nowV)]),
+            ...(overnightPct !== null
+              ? [`overnight ${formatPercent(overnightPct, { signed: true })} · next day`]
+              : !hide && overnight !== null
+                ? [`overnight ${formatMoney(overnight, currency, { signed: true })} · next day`]
+                : []),
+          ],
+        }
+      : undefined;
+  const sessionPct = now && lastSession ? toNum(lastSession.move_pct) : null;
+
   return (
     <Card
       className={clsx("value-chart-card", className)}
@@ -205,7 +242,39 @@ export function ValueChartCard({
         <ErrorState message={graph.error.message} onRetry={() => void graph.refetch()} />
       ) : (
         <>
+          {now && (sessionPct !== null || overnightPct !== null || (!hide && overnight !== null)) && (
+            <p className="value-chart-card__split" data-testid="range-split">
+              {sessionPct !== null && (
+                <span>
+                  Session <Percent ratio={sessionPct} signed colored />
+                </span>
+              )}
+              {sessionPct !== null && (overnightPct !== null || (!hide && overnight !== null)) && " · "}
+              {(overnightPct !== null || (!hide && overnight !== null)) && (
+                <span>
+                  Overnight{" "}
+                  {overnightPct !== null ? (
+                    <Percent ratio={overnightPct} signed colored />
+                  ) : (
+                    <Money amount={overnight} currency={currency} signed colored />
+                  )}
+                  {overnightPct !== null && !hide && overnight !== null && (
+                    <>
+                      {" "}
+                      (<Money amount={overnight} currency={currency} signed />)
+                    </>
+                  )}{" "}
+                  · next day{" "}
+                  <InfoTip
+                    label="overnight change"
+                    content="Since the close; this currency-only change counts toward the next day, not today's session."
+                  />
+                </span>
+              )}
+            </p>
+          )}
           <Chart
+            nowMarker={nowMarker}
             series={series}
             range={range}
             ranges={GRAPH_RANGES}

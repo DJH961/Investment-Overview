@@ -77,5 +77,7 @@ def test_adding_money_never_changes_the_index(
     scale = D(1) + extra / values[day - 1]
     bumped = [v if i < day else v * scale for i, v in enumerate(values)]
     new_money = [extra if i == day else D(0) for i in range(len(values))]
+    # Relative tolerance: 28-digit Decimals carry ~1e-27 relative precision, so an
+    # index near 50 000 can differ by 1e-18 in absolute terms (a flaky example).
     for a, b in zip(growth_index(bumped, new_money), base, strict=True):
-        assert abs(a - b) < D("1e-18")
+        assert abs(a - b) <= abs(b) * D("1e-20") + D("1e-18")

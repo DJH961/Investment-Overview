@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Ellipsis } from "lucide-react";
+import { Ellipsis, LogOut } from "lucide-react";
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router";
 import { TAB_ITEMS, moreSections } from "../../lib/nav";
@@ -11,9 +11,14 @@ const MORE = SECTIONS.flatMap((s) => s.items);
 
 /**
  * Phone bottom navigation: four tabs plus a More sheet with the remaining pages
- * as a grouped two-column grid. Refresh, theme and sign out live in the top bar.
+ * as a grouped two-column grid. Refresh and theme live in the top bar; sign out is in the account menu and at the bottom of More.
  */
-export function TabBar() {
+export interface TabBarProps {
+  /** The shell's one sign-out callback; adds a "Sign out" entry at the bottom of More. */
+  onLogout?: () => void;
+}
+
+export function TabBar({ onLogout }: TabBarProps = {}) {
   const [moreOpen, setMoreOpen] = useState(false);
   const { pathname } = useLocation();
   const moreActive = MORE.some((i) => pathname === i.to || pathname.startsWith(`${i.to}/`));
@@ -65,6 +70,19 @@ export function TabBar() {
             </ul>
           </section>
         ))}
+        {onLogout && (
+          <button
+            type="button"
+            className="tab-bar__signout"
+            onClick={() => {
+              setMoreOpen(false);
+              onLogout();
+            }}
+          >
+            <LogOut className="tab-bar__tile-icon" aria-hidden />
+            <span className="tab-bar__tile-label">Sign out</span>
+          </button>
+        )}
       </Sheet>
     </>
   );

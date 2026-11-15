@@ -4,6 +4,7 @@ import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { formatPercent, formatPp } from "../../lib/format";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
@@ -63,6 +64,7 @@ function VsMarket({ verdict }: { verdict: Verdict | undefined }) {
  * computed in that currency, never converted). Today lives in the hero.
  */
 export function KpiGrid({ data, currency, loading }: KpiGridProps) {
+  const { hide } = useHideAmounts();
   const k: Kpis | undefined = data?.kpis;
   const k2: Kpis | undefined = data?.kpis_secondary;
   const ccy2 = data?.secondary_ccy ?? (currency === "EUR" ? "USD" : "EUR");
@@ -108,10 +110,19 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
   // constant zero, so it is left out rather than printed as a finding. It is marked
   // `data-ccy-specific` because that absence is correct, not a dropped section
   // (see Overview.currency.test.tsx).
+  // Hide mode: the effect as a share of the portfolio value it applies to (both
+  // server-supplied, same payload), so the tile still informs without amounts.
+  const totalValue = toNum(k?.total_value ?? null);
+  const fxShare = fxMove !== null && totalValue ? fxMove / totalValue : null;
   const overnightHint =
     fxMove !== null && Math.abs(fxMove) >= 0.005 ? (
       <span data-ccy-specific data-testid="overnight-currency">
-        {ds?.overnight ? "Overnight FX" : "FX since close"} <Money amount={fxMove} currency={currency} signed />
+        {ds?.overnight ? "Overnight FX" : "FX since close"}{" "}
+        {hide && fxShare !== null ? (
+          <Percent ratio={fxShare} signed colored />
+        ) : (
+          <Money amount={fxMove} currency={currency} signed />
+        )}
       </span>
     ) : undefined;
 

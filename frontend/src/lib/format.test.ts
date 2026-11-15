@@ -7,6 +7,13 @@ describe("format", () => {
     expect(formatMoney(1234.5, "EUR")).toContain("€");
     expect(formatMoney(10, "USD")).toContain("US$");
   });
+  it("compact keeps cents under 1,000 and one fixed decimal when abbreviated", () => {
+    expect(formatMoney(12.3, "USD", { compact: true })).toContain("12.30");
+    expect(formatMoney(5, "USD", { compact: true, signed: true })).toContain("5.00");
+    expect(formatMoney(12300, "USD", { compact: true })).toContain("12.3k");
+    expect(formatMoney(12000, "USD", { compact: true })).toContain("12.0k");
+    expect(formatMoney(-2_500_000, "USD", { compact: true })).toContain("2.5m");
+  });
   it("signs money when asked", () => {
     expect(formatMoney(5, "EUR", { signed: true })).toContain("+");
     expect(formatMoney(-5, "EUR", { signed: true })).toContain("-");

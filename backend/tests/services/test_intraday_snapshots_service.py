@@ -1054,11 +1054,12 @@ class TestAfterHoursFreeze:
             session, currency="EUR", now=_NOW, freeze_after_hours=True
         )
         live = build_intraday_value_series(session, currency="EUR", now=_NOW)
-        # The live (unfrozen) tip lands at today's spot 1.00 ⇒ €1,000; freezing it
-        # to the 1.25 session close re-marks it to €800 (1,000 × 1.00 / 1.25).
+        # The live (unfrozen) tip lands at today's spot 1.00 => 1,000 EUR; the session
+        # line ends at the close: close prices x the 1.25 close rate = 800 EUR
+        # (1,000 x 1.00 / 1.25). The live value is the payload's separate "now" point.
         assert live[-1].value == Decimal("1000.00")
         assert frozen[-1].value == Decimal("800.00")
-        # Only the synthetic tip moves — the historical samples are untouched.
+        # Only the synthetic tip moves; the historical samples are untouched.
         assert [p.value for p in frozen[:-1]] == [p.value for p in live[:-1]]
 
     def test_usd_line_is_never_frozen(self, session: Session) -> None:

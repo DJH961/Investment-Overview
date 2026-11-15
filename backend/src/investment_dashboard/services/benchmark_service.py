@@ -123,7 +123,7 @@ def refresh_history(
         # total-return closes below would overwrite the raw closes that value the
         # holding (and every historical valuation of it). Keep the raw closes; the
         # benchmark line then compares on price alone.
-        log.warning("benchmark %s is also held; keeping its raw price history", symbol)
+        log.info("benchmark %s is also held; keeping its raw price history", symbol)
         return 0
 
     # The benchmark is never held and its dividends are *not* in the ledger, so

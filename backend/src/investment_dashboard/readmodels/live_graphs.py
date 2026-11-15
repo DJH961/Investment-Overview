@@ -98,7 +98,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import market_hours
+from investment_dashboard.domain import market_hours, periods
 from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.money_market import MONEY_MARKET_NAV
 from investment_dashboard.domain.returns import Cashflow, GrowthMode, window_growth
@@ -128,6 +128,8 @@ from investment_dashboard.services import (
 )
 
 log = logging.getLogger(__name__)
+
+ZERO = Decimal(0)
 
 #: Cap on the 1D session's exported points (≈ a 5-min trading session's density).
 #: A dense live-captured session can hold far more rows; down-sampling keeps the
@@ -245,16 +247,14 @@ def _market_series(
     samples = intraday_snapshots_service.week_series_with_fx(session, now=now, interval=grid)
     if len(samples) < 2:
         return None
-    fallback_rate = fx_service.get_rate_eur_to_quote(
-        session, market_hours.exchange_today(now or datetime.now(UTC)), quote="USD"
-    )
     capped = _cap_backbone(samples, MAX_BACKBONE_CELLS)
     times: list[str] = []
     value_native: list[str | None] = []
     fx_eur_usd: list[str | None] = []
-    for at, market_eur, fx in capped:
+    usd_at = intraday_snapshots_service.week_usd_by_instant(session, now=now)
+    for at, _market_eur, fx in capped:
         times.append(_iso_utc(at))
-        value_native.append(dec(_native_usd(market_eur, fx, fallback_rate)))
+        value_native.append(dec(_native_usd(usd_at.get(at))))
         fx_eur_usd.append(dec(fx) if fx is not None else None)
     window = intraday_snapshots_service.recent_trading_sessions(now)
     return {
@@ -264,27 +264,22 @@ def _market_series(
             "value_native": value_native,
             "fx_eur_usd": fx_eur_usd,
         },
-        "daily_close_native": _daily_close_native(samples, fallback_rate),
+        "daily_close_native": _daily_close_native(samples, usd_at),
     }
 
 
-def _native_usd(
-    market_eur: Decimal, fx: Decimal | None, fallback_rate: Decimal | None
-) -> Decimal | None:
-    """FX-free booked (USD) sleeve value recovered from the EUR pivot.
+def _native_usd(market_value_usd: Decimal | None) -> Decimal | None:
+    """FX-free booked (USD) sleeve value: the sample's stored ``market_value_usd``.
 
-    Multiplies the EUR pivot by the rate it was struck at (``fx``), which cancels
-    the FX exactly back to the native USD price — the same recovery the desktop's
-    USD "1 Day"/"1 Week" line uses. Falls back to today's spot when the sample
-    carries no rate, and yields ``None`` only when no rate is available at all.
+    Written from native USD amounts at capture time, never recovered as
+    ``eur * fx``; ``None`` for a sample that has no stored USD value.
     """
-    rate = fx if fx is not None else fallback_rate
-    return market_eur * rate if rate is not None else None
+    return market_value_usd
 
 
 def _daily_close_native(
     samples: list[tuple[datetime, Decimal, Decimal | None]],
-    fallback_rate: Decimal | None,
+    usd_at: dict[datetime, Decimal],
 ) -> dict[str, str | None]:
     """The settled sleeve close (native USD) per session date.
 
@@ -300,8 +295,8 @@ def _daily_close_native(
         if current is None or sample[0] >= current[0]:
             last_per_day[day] = sample
     return {
-        day.isoformat(): dec(_native_usd(market_eur, fx, fallback_rate))
-        for day, (_at, market_eur, fx) in sorted(last_per_day.items())
+        day.isoformat(): dec(_native_usd(usd_at.get(at)))
+        for day, (at, _market_eur, _fx) in sorted(last_per_day.items())
     }
 
 
@@ -620,7 +615,7 @@ def _graph_points(
             session, currency=ccy, tz=UTC, now=now, freeze_after_hours=True
         )
         if points:
-            return points, None, True
+            return points, _week_baseline_value(session, currency=ccy, now=now), True
     if days is not None:
         return (
             build_value_series(
@@ -645,10 +640,31 @@ def _graph_points(
     )
 
 
+def _week_baseline(now: datetime) -> date:
+    """The close before the 1W window's first session (its baseline day)."""
+    first = intraday_snapshots_service.recent_trading_sessions(now)[0]
+    return intraday_snapshots_service.previous_trading_session(first)
+
+
+def _week_baseline_value(session: Session, *, currency: str, now: datetime) -> Decimal | None:
+    """The 1W baseline: the close before its first session x the day-baseline rate.
+
+    The same rule as the 1D reference (:func:`previous_session_close_value`) applied
+    to the week's first session; USD stays native dollars.
+    """
+    baseline_day = _week_baseline(now)
+    fx = intraday_snapshots_service.day_baseline_rate(session, baseline_day)
+    if fx is None or fx <= 0:
+        return None
+    eur, usd = metrics_service.book_value_at_rate(session, baseline_day, fx)
+    picked = usd if currency.upper() == "USD" else eur
+    return picked if picked != 0 else None
+
+
 #: Growth formula per range (see :data:`domain.returns.GrowthMode`).
 GROWTH_MODES: dict[str, GrowthMode] = {
     "1d": "reference",
-    "1w": "simple",
+    "1w": "reference",
     "1m": "xirr",
     "3m": "xirr",
     "6m": "xirr",
@@ -791,8 +807,16 @@ def _growth(
     reference: Decimal | None,
     flows: _FlowSource,
     total: Callable[[str], Decimal | None],
+    reference_flow: Decimal = ZERO,
+    now_value: Decimal | None = None,
 ) -> dict[str, Any] | None:
-    """The window growth for one currency line (``None`` when not computable)."""
+    """The window growth for one currency line (``None`` when not computable).
+
+    ``reference_flow`` is the net external money that came into the book since the
+    reference (previous session's close), per this line's currency. The 1D growth
+    nets it exactly like the hero (``(last - ref - flow) / (ref + flow)``), so a
+    deposit is never shown as a gain.
+    """
     mode = GROWTH_MODES[range_key]
     if mode == "total":
         pct = total(ccy)
@@ -800,6 +824,17 @@ def _growth(
     if not points:
         return None
     first, last = points[0], points[-1]
+    if (
+        mode == "reference"
+        and reference is not None
+        and reference > 0
+        and (reference_flow != ZERO or now_value is not None)
+    ):
+        # After the close the line ends at the close; the growth is measured to the
+        # live "now" value so it equals the hero.
+        closing = now_value if now_value is not None else last.value
+        net = periods.growth_after_flows(reference, closing, reference_flow)
+        return {"pct": dec(net), "mode": "reference"} if net is not None else None
     result = window_growth(
         mode=mode,
         opening_date=_point_day(first.date),
@@ -812,6 +847,56 @@ def _growth(
     if result is None:
         return None
     return {"pct": dec(result.pct), "mode": result.mode}
+
+
+def _now_values(
+    session: Session, *, ccy: str, now: datetime
+) -> tuple[Decimal, Decimal | None, Decimal | None] | None:
+    """``(live value, overnight currency, overnight %)`` in ``ccy`` once the market has shut, else ``None``.
+
+    ``overnight %`` is the overnight currency over the previous-close baseline value.
+
+    The value is the current portfolio at the live rate (USD native, never EUR x rate);
+    the overnight currency is the shared :func:`metrics_service.fx_revaluation` from the
+    session close rate to the live rate. Range-agnostic, so the 1W graph can reuse it.
+    """
+    if market_hours.is_us_market_open(now):
+        return None
+    today = market_hours.exchange_today(now)
+    value = (
+        positions_service.total_portfolio_value_usd(session)
+        if ccy == "USD"
+        else positions_service.total_portfolio_value(session)
+    )
+    live_fx = fx_service.get_rate_eur_to_quote(session, today, quote="USD")
+    session_day = intraday_snapshots_service.last_session_date(now)
+    close_fx = intraday_snapshots_service.session_close_rate(session, session_day)
+    overnight: Decimal | None = None
+    if live_fx and close_fx and live_fx > 0 and close_fx > 0:
+        eur, usd = metrics_service.fx_revaluation(
+            session, session_day, fx_from=close_fx, fx_to=live_fx
+        )
+        overnight = usd if ccy == "USD" else eur
+    overnight_pct: Decimal | None = None
+    if overnight is not None:
+        split = metrics_service.last_session_split(session, now=now, fx_now=live_fx)
+        if split is not None:
+            overnight_pct = split.overnight_pct_usd if ccy == "USD" else split.overnight_pct_eur
+    return value, overnight, overnight_pct
+
+
+def now_point(session: Session, *, ccy: str, now: datetime) -> dict[str, Any] | None:
+    """The payload's ``now_point``: the live value as a marker after the close."""
+    values = _now_values(session, ccy=ccy, now=now)
+    if values is None:
+        return None
+    value, overnight, overnight_pct = values
+    return {
+        "t": _utc_iso(now),
+        "v": dec(value),
+        "overnight_currency": dec(overnight),
+        "overnight_pct": dec(overnight_pct),
+    }
 
 
 def _align_secondary(
@@ -889,6 +974,39 @@ def build_graph(
         m = memo["metrics"]
         return m.total_growth_compounded_usd if c == "USD" else m.total_growth_compounded_eur
 
+    def reference_flow(c: str) -> Decimal:
+        """Net external flows since the baseline close (hero's session window), in ``c``."""
+        if range_key not in ("1d", "1w"):
+            return ZERO
+        if "ref_flows" not in memo:
+            session_day = intraday_snapshots_service.last_session_date(now)
+            prev_day = (
+                _week_baseline(now)
+                if range_key == "1w"
+                else intraday_snapshots_service.previous_trading_session(session_day)
+            )
+            memo["ref_flows"] = metrics_service.session_external_flows(
+                session,
+                prev_day,
+                session_day,
+                eur_to_usd=fx_service.get_rates(session, base="EUR", quote="USD"),
+            )
+        eur_flow, usd_flow = memo["ref_flows"]
+        return usd_flow if c == "USD" else eur_flow  # type: ignore[no-any-return]
+
+    def now_values(c: str) -> tuple[Decimal, Decimal | None, Decimal | None] | None:
+        """Live "now" value after the close (the 1D and 1W lines)."""
+        if range_key not in ("1d", "1w") or not intraday:
+            return None
+        key = ("now", c)
+        if key not in memo:
+            memo[key] = _now_values(session, ccy=c, now=now)
+        return memo[key]  # type: ignore[no-any-return]
+
+    def now_value(c: str) -> Decimal | None:
+        values = now_values(c)
+        return values[0] if values is not None else None
+
     secondary: dict[str, Any] | None = None
     if compare:
         other = _other_ccy(ccy)
@@ -907,6 +1025,8 @@ def build_graph(
                     reference=other_ref,
                     flows=flows,
                     total=total,
+                    reference_flow=reference_flow(other),
+                    now_value=now_value(other),
                 ),
             }
     days = _window_sessions(range_key, now) if intraday else []
@@ -938,5 +1058,10 @@ def build_graph(
             reference=reference,
             flows=flows,
             total=total,
+            reference_flow=reference_flow(ccy),
+            now_value=now_value(ccy),
+        ),
+        "now_point": (
+            now_point(session, ccy=ccy, now=now) if range_key in ("1d", "1w") and intraday else None
         ),
     }

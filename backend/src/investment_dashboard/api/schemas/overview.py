@@ -314,6 +314,9 @@ class LastSessionMove(ApiModel):
     move: DecStr
     move_pct: DecStr | None = None
     overnight_currency: DecStr
+    #: ``overnight_currency`` as a fraction of the previous-close baseline value (the
+    #: base ``day_move_pct`` uses). ``move_pct`` is the session % (net of flows).
+    overnight_pct: DecStr | None = None
     value_now: DecStr
     fx_close: DecStr
     fx_now: DecStr

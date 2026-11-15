@@ -91,7 +91,7 @@ function formatIntl(options: Intl.NumberFormatOptions, value: number): string {
 export interface MoneyOptions {
   signed?: boolean;
   compact?: boolean;
-  /** Override fraction digits (default 2, 1 when compact). */
+  /** Override fraction digits (default 2; compact: 2 under 1,000, else 1). */
   digits?: number;
   /** Public market data (a unit price): never masked in hide mode. */
   unmasked?: boolean;
@@ -119,7 +119,7 @@ function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): st
       currency,
       currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
       notation: opts.compact ? "compact" : "standard",
-      minimumFractionDigits: opts.compact ? 0 : digits,
+      minimumFractionDigits: digits,
       maximumFractionDigits: digits,
       // A real zero has no sign; the sample is never zero, so decide here.
       signDisplay: opts.signed && amount !== 0 ? "exceptZero" : "auto",
@@ -131,7 +131,9 @@ function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): st
 export function formatMoney(amount: number | null | undefined, currency: Currency, opts: MoneyOptions = {}): string {
   if (isMissing(amount)) return "–";
   if (HIDE_AMOUNTS && !opts.unmasked) return maskedMoney(amount, currency, opts);
-  const digits = opts.digits ?? (opts.compact ? 1 : 2);
+  // Compact: amounts under 1,000 are not abbreviated and keep cents (2 decimals);
+  // abbreviated ones (K / M) always show one decimal ("$1.0K", "$12.3K").
+  const digits = opts.digits ?? (opts.compact ? (Math.abs(amount) < 1000 ? 2 : 1) : 2);
   return formatIntl(
     {
       style: "currency",
@@ -140,7 +142,7 @@ export function formatMoney(amount: number | null | undefined, currency: Currenc
       notation: opts.compact ? "compact" : "standard",
       ...(opts.significant
         ? { maximumSignificantDigits: opts.significant }
-        : { minimumFractionDigits: opts.compact ? 0 : digits, maximumFractionDigits: digits }),
+        : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
       signDisplay: opts.signed ? "exceptZero" : "auto",
     },
     amount,

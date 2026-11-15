@@ -1,8 +1,8 @@
 """Allocations read-model: current mix, saved targets, drift, and saving a target.
 
 💱 CURRENCY (rule in ``AGENTS.md``): ratios are fractions (0.01 = 1 %) of same-instant
-values (currency-neutral). A USD *value* is the EUR value times the EUR->USD
-spot - a single-instant conversion; it is ``None`` when no spot exists.
+values (currency-neutral). A USD *value* is summed from native USD (USD accounts at
+their native amount); only genuinely non-USD holdings use the EUR->USD spot.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from investment_dashboard.domain.money_market import CASH_CATEGORY, is_cash_asse
 from investment_dashboard.errors import ConflictError, ValidationError
 from investment_dashboard.readmodels._context import build_context
 from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.readmodels._usd import position_value_usd
 from investment_dashboard.readmodels.rebalance import round_to_100, scale_to_100
 from investment_dashboard.repositories import allocations_repo, instruments_repo
 from investment_dashboard.services.positions_service import Position, compute_positions
@@ -38,10 +39,9 @@ class AllocationConflictError(ConflictError):
     """The submitted target clashes with an existing one (maps to HTTP 409)."""
 
 
-def _val(value_eur: Decimal, ccy: str, fx: Decimal | None) -> Decimal | None:
-    if ccy == "EUR":
-        return value_eur
-    return value_eur * fx if fx is not None and fx > ZERO else None
+def _val(value_eur: Decimal, value_usd: Decimal, ccy: str) -> Decimal:
+    """The EUR or native-USD value for ``ccy`` (USD is summed natively, never EUR x rate)."""
+    return value_eur if ccy == "EUR" else value_usd
 
 
 def serialize_targets(session: Session) -> list[dict[str, Any]]:
@@ -93,9 +93,11 @@ class _InstrumentAgg:
     asset_class: str
     value_eur: Decimal
     is_cash: bool = False
+    #: Native-USD value (USD accounts at native; others converted at the spot).
+    value_usd: Decimal = ZERO
 
 
-def _aggregate(positions: list[Position]) -> dict[int, _InstrumentAgg]:
+def _aggregate(positions: list[Position], fx: Decimal | None) -> dict[int, _InstrumentAgg]:
     from investment_dashboard.services import settings_service  # noqa: PLC0415
 
     mm_extra = tuple(settings_service.get_or("portfolio.money_market_symbols", ()))
@@ -117,26 +119,30 @@ def _aggregate(positions: list[Position]) -> dict[int, _InstrumentAgg]:
                 asset_class=CASH_CATEGORY if cash else asset_class or UNCATEGORIZED,
                 value_eur=p.current_value_eur,
                 is_cash=cash,
+                value_usd=position_value_usd(p, fx),
             )
         else:
             agg.value_eur += p.current_value_eur
+            agg.value_usd += position_value_usd(p, fx)
     return out
 
 
 def _buckets(
-    aggs: list[_InstrumentAgg], attr: str, total: Decimal, ccy: str, fx: Decimal | None
+    aggs: list[_InstrumentAgg], attr: str, total: Decimal, ccy: str
 ) -> list[dict[str, Any]]:
-    bucket: dict[str, Decimal] = {}
+    bucket: dict[str, list[Decimal]] = {}
     for a in aggs:
         key = getattr(a, attr)
-        bucket[key] = bucket.get(key, ZERO) + a.value_eur
-    rows = [(k, v) for k, v in bucket.items() if v > ZERO]
-    rows.sort(key=lambda kv: kv[1], reverse=True)
+        acc = bucket.setdefault(key, [ZERO, ZERO])
+        acc[0] += a.value_eur
+        acc[1] += a.value_usd
+    rows = [(k, v) for k, v in bucket.items() if v[0] > ZERO]
+    rows.sort(key=lambda kv: kv[1][0], reverse=True)
     return [
         {
             "label": k,
-            "value": dec(_val(v, ccy, fx)),
-            "pct": dec(v / total if total > ZERO else ZERO),
+            "value": dec(_val(v[0], v[1], ccy)),
+            "pct": dec(v[0] / total if total > ZERO else ZERO),
         }
         for k, v in rows
     ]
@@ -147,8 +153,9 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
     ctx = build_context(session, as_of=as_of)
     fx = ctx.fx_rate_eur_usd
     positions = compute_positions(session, as_of=ctx.as_of)
-    aggs = _aggregate(positions)
+    aggs = _aggregate(positions, fx)
     total = sum((a.value_eur for a in aggs.values()), start=ZERO)
+    total_usd = sum((a.value_usd for a in aggs.values()), start=ZERO)
     targets = serialize_targets(session)
 
     drift: list[dict[str, Any]] = []
@@ -163,6 +170,7 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
         }
         ids = set(aggs) | set(target_pct)
         values = {i: aggs[i].value_eur if i in aggs else ZERO for i in ids}
+        values_usd = {i: aggs[i].value_usd if i in aggs else ZERO for i in ids}
         current_pct = current_weights_pct(values)
         for iid in sorted(
             ids, key=lambda i: abs(current_pct[i] - target_pct.get(i, ZERO)), reverse=True
@@ -171,17 +179,20 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
             tgt = target_pct.get(iid, ZERO)
             cur = current_pct[iid]
             target_value_eur = total * tgt / HUNDRED
+            target_value_usd = total_usd * tgt / HUNDRED
             category = agg.category if agg else UNCATEGORIZED
             # Cash is only a rebalancing target when the user gave it one.
             idle_cash = agg is not None and agg.is_cash and tgt == ZERO
             if idle_cash:
                 cash_idle_cats.add(category)
-            acc = by_cat.setdefault(category, [0, ZERO, ZERO, ZERO, ZERO])
+            acc = by_cat.setdefault(category, [0, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO])
             acc[0] += 1
             acc[1] += cur
             acc[2] += tgt
             acc[3] += values[iid]
             acc[4] += target_value_eur
+            acc[5] += values_usd[iid]
+            acc[6] += target_value_usd
             drift.append(
                 {
                     "key": str(iid),
@@ -192,9 +203,13 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
                     "current_pct": dec(cur / HUNDRED),
                     "target_pct": dec(tgt / HUNDRED),
                     "drift_pp": dec(ZERO if idle_cash else cur - tgt),
-                    "current_value": dec(_val(values[iid], ccy, fx)),
+                    "current_value": dec(_val(values[iid], values_usd[iid], ccy)),
                     "delta_value": dec(
-                        _val(ZERO if idle_cash else target_value_eur - values[iid], ccy, fx)
+                        _val(
+                            ZERO if idle_cash else target_value_eur - values[iid],
+                            ZERO if idle_cash else target_value_usd - values_usd[iid],
+                            ccy,
+                        )
                     ),
                     "is_cash": bool(agg and agg.is_cash),
                 }
@@ -208,10 +223,16 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
             "current_pct": dec(cur / HUNDRED),
             "target_pct": dec(tgt / HUNDRED),
             "drift_pp": dec(ZERO if idle else cur - tgt),
-            "current_value": dec(_val(cur_eur, ccy, fx)),
-            "delta_value": dec(_val(ZERO if idle else tgt_eur - cur_eur, ccy, fx)),
+            "current_value": dec(_val(cur_eur, cur_usd, ccy)),
+            "delta_value": dec(
+                _val(
+                    ZERO if idle else tgt_eur - cur_eur,
+                    ZERO if idle else tgt_usd - cur_usd,
+                    ccy,
+                )
+            ),
         }
-        for name, (funds, cur, tgt, cur_eur, tgt_eur) in sorted(
+        for name, (funds, cur, tgt, cur_eur, tgt_eur, cur_usd, tgt_usd) in sorted(
             by_cat.items(), key=lambda kv: abs(kv[1][1] - kv[1][2]), reverse=True
         )
         for idle in [name in cash_idle_cats and tgt == ZERO]
@@ -221,13 +242,13 @@ def build(session: Session, *, ccy: str, as_of: date | None = None) -> dict[str,
     return {
         "ccy": ccy,
         "as_of": ctx.as_of.isoformat(),
-        "total_value": dec(_val(total, ccy, fx)),
+        "total_value": dec(_val(total, total_usd, ccy)),
         "targets": targets,
         "active_target_id": active["id"] if active else None,
         "drift": drift,
         "drift_by_category": drift_by_category,
-        "current_by_category": _buckets(agg_list, "category", total, ccy, fx),
-        "current_by_asset_class": _buckets(agg_list, "asset_class", total, ccy, fx),
+        "current_by_category": _buckets(agg_list, "category", total, ccy),
+        "current_by_asset_class": _buckets(agg_list, "asset_class", total, ccy),
     }
 
 

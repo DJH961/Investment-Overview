@@ -124,6 +124,36 @@ def test_yfinance_failure_recovers_via_tiingo(
     assert "Tiingo" in note.message
 
 
+def test_late_fund_nav_cover_is_routine_not_a_problem(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tiingo posting a mutual fund's late NAV must not land in Recent problems."""
+    instr = instruments_repo.get_or_create(session, symbol="FSKAX", asset_class="mutual_fund")
+    price_cache_repo.upsert_last_refreshed_at(session, instr.id, _NOW - timedelta(hours=2))
+    prices_repo.upsert_closes(session, instr.id, {date(2026, 6, 18): Decimal("100")})
+    session.flush()
+    from investment_dashboard.repositories import tiingo_state_repo as state_repo
+
+    state = state_repo.load(session, _NOW)
+    state.stale_since["FSKAX"] = _NOW - timedelta(hours=2)
+    state_repo.save(session, state)
+    monkeypatch.setattr(prices_service, "_resolve_tiingo_token", lambda: "tok")
+    monkeypatch.setattr(prices_service, "fetch_closes", lambda *a, **k: {"FSKAX": {}})
+    monkeypatch.setattr(
+        wiring.tiingo_client,
+        "fetch_closes",
+        lambda symbols, start, end, *, token: {s: {_TODAY: Decimal("150")} for s in symbols},
+    )
+
+    prices_service.refresh_due_prices(session, today=_TODAY, now=_NOW)
+
+    assert prices_repo.latest_price_dates(session, [instr.id]).get(instr.id) == _TODAY
+    assert provider_status.get_status("tiingo") is not None  # still visible in Settings
+    from investment_dashboard.services import runtime_status
+
+    assert runtime_status.latest() is None
+
+
 def test_tiingo_is_asked_for_the_provider_symbol(
     session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -251,7 +281,7 @@ def test_failed_tiingo_call_still_persists_the_attempt_cooldown(
 
 
 def test_state_save_lock_does_not_poison_ledger_session_or_abort_fallback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Regression test for the Nov 2026 "Scheduled live refresh: PendingRollbackError"
     production incident.
@@ -335,11 +365,11 @@ def test_state_save_lock_does_not_poison_ledger_session_or_abort_fallback(
         def _fake_tiingo(symbols, start, end, *, token):
             return {s: {_TODAY: Decimal("123.45")} for s in symbols}
 
-        # cache's recovered-close write lands (and stays uncommitted, since
-        # apply_desktop_fallback alone — unlike prices_service.refresh_due_prices
-        # — never commits it) right before the quota-state save's own fresh
-        # session tries to write — the real collision, now entirely contained
-        # to that throwaway session.
+        # cache's recovered-close write lands right before the quota-state save's
+        # own fresh session writes. Since 6.16.1 the fallback commits the recovered
+        # closes first, so the save no longer hits the file's writer lock at all
+        # (before, it failed with "database is locked" on every Tiingo cover).
+        caplog.set_level("WARNING")
         result, _outcome = wiring.apply_desktop_fallback(
             ledger,
             cache,
@@ -356,6 +386,10 @@ def test_state_save_lock_does_not_poison_ledger_session_or_abort_fallback(
         assert result.get("VTI", 0) >= 1
         cache.commit()
         assert prices_repo.latest_price_dates(cache, [instr_id]).get(instr_id) == _TODAY
+        # The quota save went through: no lock warning, and the spend is persisted.
+        assert "quota-state save failed" not in caplog.text
+        with _file_ledger_scope() as fresh:
+            assert state_repo.load(fresh, _NOW).hour_used >= 1
 
         # Neither the caller's `ledger` nor `cache` session was ever touched by
         # the failed save (it lives on its own connection) — this is the actual

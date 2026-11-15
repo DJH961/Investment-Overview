@@ -2164,9 +2164,19 @@ export interface components {
             instruments: components["schemas"]["CalcInstrumentOut"][];
             /**
              * Investable Cash
-             * @description Cash held (money-market funds + cash positions) in `ccy`, at the spot rate
+             * @description Cash held (money-market funds + cash positions) in `ccy` (native USD for USD)
              */
             investable_cash?: string | null;
+            /**
+             * Investable Cash Eur
+             * @description Cash held in EUR (the EUR mark)
+             */
+            investable_cash_eur?: string | null;
+            /**
+             * Investable Cash Usd
+             * @description Cash held in native USD (never the EUR mark times a rate)
+             */
+            investable_cash_usd?: string | null;
             projection_defaults: components["schemas"]["ProjectionDefaultsOut"];
             /** Total Value */
             total_value: string | null;
@@ -2977,6 +2987,32 @@ export interface components {
              */
             pct: string;
         };
+        /**
+         * GraphNowPoint
+         * @description The live "now" marker drawn after the close (the session line ends at the close).
+         */
+        GraphNowPoint: {
+            /**
+             * Overnight Currency
+             * @description Currency-only change since the session close (close prices x close rate -> live rate), in this line's currency; null when it cannot be computed
+             */
+            overnight_currency?: string | null;
+            /**
+             * Overnight Pct
+             * @description overnight_currency as a fraction of the previous-close baseline value (same base as the hero's day %); null when it cannot be computed
+             */
+            overnight_pct?: string | null;
+            /**
+             * T
+             * @description UTC ISO instant of the live value
+             */
+            t: string;
+            /**
+             * V
+             * @description Current value in this line's currency, at the live rate
+             */
+            v: string;
+        };
         /** GraphPoint */
         GraphPoint: {
             /** T */
@@ -3053,6 +3089,7 @@ export interface components {
              * @default false
              */
             market_open: boolean;
+            now_point?: components["schemas"]["GraphNowPoint"] | null;
             /** Points */
             points: components["schemas"]["GraphPoint"][];
             /**
@@ -4146,6 +4183,8 @@ export interface components {
             overnight_currency: string;
             /** Overnight Currency Est */
             overnight_currency_est?: string | null;
+            /** Overnight Pct */
+            overnight_pct?: string | null;
             /** Prev Date */
             prev_date: string;
             /** Session Date */

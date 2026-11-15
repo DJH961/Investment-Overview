@@ -104,3 +104,20 @@ def test_inactive_instrument_excluded(session: Session, seeded: None) -> None:
     session.flush()
     data = build_calculator_data(session)
     assert all(i.symbol != "VXUS" for i in data.instruments)
+
+
+def test_unheld_benchmark_is_not_a_fund_to_allocate(session: Session, seeded: None) -> None:
+    """The comparison benchmark's price stub is not part of the portfolio."""
+    from investment_dashboard.services import benchmark_service
+
+    benchmark_service.set_symbol(session, "VEU")  # unheld: only a comparison line
+    session.flush()
+    assert all(i.symbol != "VEU" for i in build_calculator_data(session).instruments)
+
+
+def test_held_benchmark_stays_listed(session: Session, seeded: None) -> None:
+    from investment_dashboard.services import benchmark_service
+
+    benchmark_service.set_symbol(session, "VTI")  # also genuinely held
+    session.flush()
+    assert any(i.symbol == "VTI" for i in build_calculator_data(session).instruments)

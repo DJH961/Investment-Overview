@@ -120,7 +120,9 @@ def test_overview_estimate_equals_tick_point_equals_graph_tip(session: Session) 
     # The tick: the point on the sample at 17:00 and the estimated total of the tick.
     adjustment = iss.live_point_adjustment_eur(session, at=MID, fx=FX, now=DURING)
     assert official + adjustment == D(estimate["total_value"])
-    tick = scheduler._tick_estimates(session, official, FX, now=DURING)
+    # An all-EUR book: its USD total is the EUR holdings at the one spot FX.
+    official_usd = official * FX
+    tick = scheduler._tick_estimates(session, official, FX, now=DURING, total_usd=official_usd)
     assert D(tick["total_value_est_eur"]) == D(estimate["total_value"])
     assert D(tick["total_value_est_usd"]) == D("2020") * FX
     row = tick["estimates"][str(fund_id)]

@@ -11,6 +11,13 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  &__split {
+    margin: 0 0 var(--space-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
   &__growth-label {
     color: var(--color-muted);
     font-size: var(--font-size-xs);

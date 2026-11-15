@@ -106,9 +106,18 @@ export interface ChartReferenceLine {
   label?: string;
 }
 
+/** One live marker (dot + label lines) at a value after the line ends; nothing joins them. */
+export interface ChartNowMarker {
+  t: number;
+  v: number;
+  /** Label lines, drawn to the left of the dot (first line = the value). */
+  lines?: string[];
+}
+
 export interface ChartProps {
   series: ChartSeries[];
   referenceLine?: ChartReferenceLine;
+  nowMarker?: ChartNowMarker;
   range?: string;
   onRangeChange?: (range: string) => void;
   ranges?: string[];
@@ -220,6 +229,7 @@ function toneClass(tone: ChartTone | undefined, index: number): string {
 export function Chart({
   series,
   referenceLine,
+  nowMarker,
   range,
   onRangeChange,
   ranges,
@@ -306,9 +316,13 @@ export function Chart({
   const rightScale = rightSeries?.scale && Number.isFinite(rightSeries.scale) ? rightSeries.scale : 1;
   const bounds = useMemo(() => {
     if (!values.length) return null;
+    const nowOk = nowMarker && Number.isFinite(nowMarker.t) && Number.isFinite(nowMarker.v);
     const tMin = times[0];
-    const tMax = times[times.length - 1];
-    const ref = referenceLine && Number.isFinite(referenceLine.value) ? [referenceLine.value] : [];
+    const tMax = nowOk ? Math.max(times[times.length - 1], nowMarker.t) : times[times.length - 1];
+    const ref = [
+      ...(referenceLine && Number.isFinite(referenceLine.value) ? [referenceLine.value] : []),
+      ...(nowOk ? [nowMarker.v] : []),
+    ];
     let lo = Math.min(...values, ...ref);
     let hi = Math.max(...values, ...ref);
     if (lo === hi) {
@@ -319,7 +333,7 @@ export function Chart({
     lo -= pad;
     hi += pad;
     return { lo, hi, tMin, tMax };
-  }, [values, times, referenceLine]);
+  }, [values, times, referenceLine, nowMarker]);
 
   // Margins fit the widest tick label, so labels are never clipped and the plot
   // gets every remaining pixel (narrow phones especially).
@@ -618,6 +632,22 @@ export function Chart({
                     : `M${scales.x(endPt.x) - 4},${scales.y(endPt.y)} a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0`
               }
             />
+          )}
+          {nowMarker && Number.isFinite(nowMarker.t) && Number.isFinite(nowMarker.v) && (
+            <g className="chart__now" data-now-marker>
+              <circle className="chart__now-dot" cx={scales.x(nowMarker.t)} cy={scales.y(nowMarker.v)} r={4} />
+              {(nowMarker.lines ?? []).map((line, k, all) => (
+                <text
+                  key={line}
+                  className={clsx("chart__now-label", k > 0 && "chart__now-label--sub")}
+                  x={scales.x(nowMarker.t) - 9}
+                  y={scales.y(nowMarker.v) + 4 + (k - (all.length - 1)) * 14}
+                  textAnchor="end"
+                >
+                  {line}
+                </text>
+              ))}
+            </g>
           )}
           {cursorX !== null && (
             <g className="chart__cursor" pointerEvents="none">

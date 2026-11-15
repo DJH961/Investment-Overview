@@ -1,5 +1,7 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { HideAmountsProvider } from "../../lib/hideAmounts";
+import { setHideAmounts } from "../../lib/format";
 import type { OverviewDto } from "../../lib/queries/portfolio";
 import { KpiGrid } from "./KpiGrid";
 
@@ -27,6 +29,8 @@ function data(verdict: Partial<OverviewDto["market_verdict"]>): OverviewDto {
     market_verdict: { benchmark_symbol: "VT", ...verdict },
   } as unknown as OverviewDto;
 }
+
+afterEach(() => setHideAmounts(false));
 
 describe("KpiGrid", () => {
   it("shows the NiceGUI tile set with both currencies", () => {
@@ -70,6 +74,31 @@ describe("KpiGrid", () => {
     expect(screen.getByTestId("overnight-currency")).toHaveTextContent("-€120.00");
     rerender(<KpiGrid data={split(false)} currency="EUR" loading={false} />);
     expect(screen.getByTestId("overnight-currency")).toHaveTextContent("FX since close");
+  });
+
+  it("hide mode shows the FX part as a share of the portfolio value", () => {
+    window.localStorage.setItem("iv.privacy.hideAmounts", "true");
+    const d = {
+      ...data({ beating: true }),
+      kpis: { ...kpis, daily_move: "300", total_value: "10000" },
+      day_split: {
+        price_move: "420",
+        currency_move: "-120",
+        price_move_secondary: "500",
+        currency_move_secondary: "0",
+        overnight: true,
+        estimated: false,
+      },
+    } as unknown as OverviewDto;
+    render(
+      <HideAmountsProvider>
+        <KpiGrid data={d} currency="EUR" loading={false} />
+      </HideAmountsProvider>,
+    );
+    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("-1.20%");
+    expect(screen.getByTestId("overnight-currency")).not.toHaveTextContent("€");
+    window.localStorage.removeItem("iv.privacy.hideAmounts");
+    setHideAmounts(false);
   });
 
   it("Vs market: trailing and missing benchmark history", () => {

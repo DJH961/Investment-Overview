@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -921,12 +921,37 @@ def refresh_due_prices(  # noqa: PLR0912, PLR0915 - one cohesive pull round, nar
             },
             result=result,
         )
+        # A NAV the Tiingo fallback recovered is a late close too: fold its dates in.
+        changed_from = _earliest_change(
+            before,
+            prices_repo.recent_closes_by_instrument(
+                cache, [i.id for i in due], on_or_before=today, limit=10
+            ),
+            changed_from,
+        )
         if changed_from is not None:
+            # The fallback may have written closes on ``cache``; the rebuild writes
+            # snapshots through its own cache session, so release the lock first.
+            cache.commit()
             rebuild_settled_snapshots(session, changed_from, today=today, now=now)
         return result
     finally:
         if owns_round:
             pull_log.end(round_)
+
+
+def _earliest_change(
+    before: Mapping[int, Sequence[tuple[date, Decimal]]],
+    after: Mapping[int, Sequence[tuple[date, Decimal]]],
+    changed_from: date | None,
+) -> date | None:
+    """Earliest date whose stored close is new or different after this pull."""
+    for instr_id, rows in after.items():
+        known = dict(before.get(instr_id, []))
+        for d, c in rows:
+            if known.get(d) != c and (changed_from is None or d < changed_from):
+                changed_from = d
+    return changed_from
 
 
 def _is_intraday_instrument(instr: Instrument) -> bool:

@@ -1,13 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TabBar } from "./TabBar";
 
-function renderTabs(path = "/overview") {
+function renderTabs(path = "/overview", onLogout?: () => void) {
   render(
     <MemoryRouter initialEntries={[path]}>
-      <TabBar />
+      <TabBar onLogout={onLogout} />
     </MemoryRouter>,
   );
 }
@@ -34,6 +34,16 @@ describe("TabBar", () => {
     expect(within(sheet).getByRole("link", { name: "Health & Repair" })).toBeInTheDocument();
     expect(within(sheet).queryByRole("link", { name: "Transactions" })).not.toBeInTheDocument();
     expect(within(sheet).queryByRole("button", { name: /Refresh|Sign out/ })).not.toBeInTheDocument();
+  });
+
+  it("ends the More sheet with a Sign out entry that calls the shell's logout", async () => {
+    const user = userEvent.setup();
+    const onLogout = vi.fn();
+    renderTabs("/overview", onLogout);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    const sheet = screen.getByRole("dialog", { name: "More" });
+    await user.click(within(sheet).getByRole("button", { name: "Sign out" }));
+    expect(onLogout).toHaveBeenCalledTimes(1);
   });
 
   it("marks More active on a page that lives in it", () => {

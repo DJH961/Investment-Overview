@@ -152,6 +152,7 @@ export function Overview() {
         defaultRange={data?.default_range}
         configuredRange={overviewRange}
         marketOpen={data?.freshness?.market_state === "open"}
+        lastSession={data?.last_session}
       />
       <MoversCard movers={data?.movers} currency={currency} loading={loading} />
 

@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { OverviewDto } from "../../lib/queries/portfolio";
+import { setHideAmounts } from "../../lib/format";
+import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { CurrencyLifetime } from "./CurrencyLifetime";
 
 const data = (rate_change_pct: string) =>
@@ -18,7 +20,10 @@ const data = (rate_change_pct: string) =>
     },
   }) as unknown as OverviewDto;
 
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  localStorage.clear();
+  setHideAmounts(false);
+});
 
 describe("CurrencyLifetime", () => {
   it("shows rate vs average, headwind colouring, FX effect and cash-out value", () => {
@@ -36,5 +41,15 @@ describe("CurrencyLifetime", () => {
   it("a weaker euro is a tailwind", () => {
     render(<CurrencyLifetime data={data("-0.02")} />);
     expect(screen.getByText("tailwind")).toBeInTheDocument();
+  });
+  it("hide mode shows the FX gain/loss as a share of the cash-out value", () => {
+    localStorage.setItem("iv.privacy.hideAmounts", "true");
+    render(
+      <HideAmountsProvider>
+        <CurrencyLifetime data={data("0.0545")} />
+      </HideAmountsProvider>,
+    );
+    expect(screen.getByText("-1.39%")).toBeInTheDocument(); // -2500 / 180000
+    expect(screen.queryByText("-€2,500")).not.toBeInTheDocument();
   });
 });

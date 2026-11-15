@@ -195,7 +195,7 @@ def undo(
     deleted, dates = import_batches_repo.delete_transactions_of(session, batch_id)
     if dates:
         snapshots_service.invalidate_for_trade_dates(session, dates)
-        intraday_snapshots_service.clear_week_samples(session)
+        intraday_snapshots_service.clear_week_samples(session, from_date=min(dates))
     moment = (now or datetime.now(UTC)).astimezone(UTC).replace(tzinfo=None)
     import_batches_repo.mark_undone(
         session, batch, at=moment, actor=actor, rows=deleted, backup=backup

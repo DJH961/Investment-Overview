@@ -159,7 +159,9 @@ def _note_change(action: str, txn_id: int, on: date, kind: str, account_id: int)
 
 def _after_write(session: Session, affected: set[date]) -> None:
     snapshots_service.invalidate_for_trade_dates(session, affected)
-    intraday_snapshots_service.clear_week_samples(session)
+    intraday_snapshots_service.clear_week_samples(
+        session, from_date=min(affected) if affected else None
+    )
 
 
 def create(session: Session, data: TransactionInput) -> TransactionEditResult:

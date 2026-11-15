@@ -198,6 +198,61 @@ WEEK_SESSIONS = 5
 #: desktop feed), so a full session yields ~78 genuine 5-minute marks.
 WEEK_INTERVAL = "5m"
 
+#: ``app_config`` key of the "Graph reload resolution" setting: the bar width a
+#: manual reload / repull asks yfinance for. ``auto`` follows the live price
+#: refresh cadence (1 minute at the default 60 s).
+RELOAD_INTERVAL_KEY = "graph_reload_interval"
+RELOAD_INTERVAL_AUTO = "auto"
+#: Bar widths a reload may use, finest first.
+RELOAD_INTERVAL_LADDER: tuple[str, ...] = ("1m", "2m", "5m")
+#: yfinance's technical limits: 1-minute bars only for roughly the last 7 days
+#: (and at most ~7 calendar days per request), 2-minute bars for ~60 days.
+YF_1M_MAX_AGE_DAYS = 6
+YF_2M_MAX_AGE_DAYS = 59
+YF_1M_MAX_SPAN_DAYS = 6
+
+
+def interval_seconds(interval: str) -> int:
+    """Seconds in a yfinance bar width such as ``"1m"``/``"15m"``/``"1h"`` (60 if unknown)."""
+    try:
+        if interval.endswith("m"):
+            return int(interval[:-1]) * 60
+        if interval.endswith("h"):
+            return int(interval[:-1]) * 3600
+    except ValueError:
+        pass
+    return 60
+
+
+def desired_reload_interval(session: Session) -> str:
+    """The reload bar width wanted: the setting, or (``auto``) the live cadence's."""
+    raw = app_config_service.get(session, RELOAD_INTERVAL_KEY)
+    if raw in RELOAD_INTERVAL_LADDER:
+        return str(raw)
+    from investment_dashboard.services import auto_refresh  # noqa: PLC0415
+
+    live = auto_refresh.get_interval_seconds(session)
+    if live <= 90:
+        return "1m"
+    if live <= 180:
+        return "2m"
+    return "5m"
+
+
+def effective_interval(desired: str, day: date, today: date) -> str:
+    """Finest bar width yfinance serves for ``day`` that is not finer than ``desired``.
+
+    Intervals outside the 1m/2m/5m ladder (the export's 15m/30m grid) pass through.
+    """
+    if desired not in RELOAD_INTERVAL_LADDER:
+        return desired
+    age = (today - day).days
+    floor = "1m" if age <= YF_1M_MAX_AGE_DAYS else "2m" if age <= YF_2M_MAX_AGE_DAYS else "5m"
+    return RELOAD_INTERVAL_LADDER[
+        max(RELOAD_INTERVAL_LADDER.index(desired), RELOAD_INTERVAL_LADDER.index(floor))
+    ]
+
+
 #: Minimum number of intraday points a *completed* week session must carry to
 #: count as fully sourced. A finished session holding fewer than this is treated
 #: as missing data and re-pulled (see ``_is_covered`` in
@@ -249,9 +304,65 @@ def _is_usd_native(position: Position) -> bool:
     return position.account.native_currency.upper() == "USD"
 
 
-def _usd_of(eur: Decimal, fx_eur_usd: Decimal | None) -> Decimal | None:
-    """Native-USD value of a EUR-pivot sample at its stored rate (``eur * fx``)."""
-    return eur * fx_eur_usd if fx_eur_usd else None
+def _native_usd_of(position: Position, fx_eur_usd: Decimal | None) -> Decimal | None:
+    """One holding's USD value: USD-booked holdings at their native amount (no FX).
+
+    Only a genuinely non-USD holding is converted (EUR -> USD at ``fx_eur_usd``);
+    ``None`` when it needs a rate that is missing. USD is never ``eur * fx``.
+    """
+    if _is_usd_native(position):
+        return position.current_value_native
+    if fx_eur_usd:
+        return position.current_value_eur * fx_eur_usd
+    return None
+
+
+def market_value_usd(positions: list[Position], fx_eur_usd: Decimal | None) -> Decimal | None:
+    """Native-USD counterpart of :func:`market_value_eur` (the stored USD column)."""
+    total = Decimal(0)
+    for p in positions:
+        if p.shares > _MIN_SHARES and is_intraday_priced(p):
+            value = _native_usd_of(p, fx_eur_usd)
+            if value is None:
+                return None
+            total += value
+    return total
+
+
+def _market_component_usd(
+    priced: list[Position],
+    price_lookups: dict[str, Callable[[datetime], Decimal | None]],
+    at: datetime,
+    *,
+    fx_t: Decimal | None,
+) -> Decimal | None:
+    """Native-USD market component at ``at``: ``sum native_i * price_i(at)/close_i``.
+
+    The FX-free twin of :func:`_market_component_pivot_eur`: USD-booked holdings
+    never touch a rate; only EUR-booked ones convert, at this minute's ``fx_t``.
+    """
+    market = Decimal(0)
+    for p in priced:
+        lookup = price_lookups.get(p.instrument.symbol)
+        price_t = lookup(at) if lookup is not None else None
+        if price_t is None or price_t <= 0:
+            price_t = p.current_price_native
+        ratio = price_t / p.current_price_native  # type: ignore[operator]
+        value = _native_usd_of(p, fx_t)
+        if value is None:
+            return None
+        market += value * ratio
+    return market
+
+
+def _usd_by_instant(
+    priced: list[Position],
+    bars_by_symbol: dict[str, dict[datetime, Decimal]],
+    samples: list[tuple[datetime, Decimal, Decimal | None]],
+) -> dict[datetime, Decimal | None]:
+    """Native-USD market component for each reconstructed ``(t, eur, fx)`` sample."""
+    lookups = {sym: _make_forward_fill(bars) for sym, bars in bars_by_symbol.items()}
+    return {t: _market_component_usd(priced, lookups, t, fx_t=fx) for t, _eur, fx in samples}
 
 
 def _row_eur(row: IntradayValue) -> Decimal:
@@ -313,6 +424,32 @@ def nav_drift_value_eur(positions: list[Position]) -> Decimal:
         (p.current_value_eur for p in positions if p.shares > _MIN_SHARES and is_drifting_nav(p)),
         start=Decimal(0),
     )
+
+
+def nav_drift_value_usd(positions: list[Position], fx_eur_usd: Decimal | None) -> Decimal | None:
+    """Native-USD value of the day-drifting NAV funds (USD funds need no rate)."""
+    total = Decimal(0)
+    for p in positions:
+        if p.shares > _MIN_SHARES and is_drifting_nav(p):
+            value = _native_usd_of(p, fx_eur_usd)
+            if value is None:
+                return None
+            total += value
+    return total
+
+
+def window_usd_by_instant(
+    session: Session, *, now: datetime, multi_session: bool
+) -> dict[datetime, Decimal]:
+    """Stored native-USD market component per sample instant for the Day or Week window."""
+    if multi_session:
+        return week_usd_by_instant(session, now=now)
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    start, end = session_window_utc(now)
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, start, end)
+    return {r.captured_at: r.market_value_usd for r in rows if r.market_value_usd is not None}
 
 
 def session_date_of(at_utc: datetime) -> date:
@@ -657,6 +794,8 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:  # noqa: PLR0
             # The EUR value above is at today's spot; record that same spot so the
             # USD view of this point is the FX-free price-only figure.
             fx_eur_usd = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote="USD")
+            # Stored USD is the native sum (never ``value_eur * fx``).
+            value_usd = market_value_usd(positions, fx_eur_usd)
             with cache_write_session(session) as cache:
                 last = intraday_repo.latest(cache)
                 if (
@@ -664,9 +803,7 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:  # noqa: PLR0
                     and (captured_at - last.captured_at).total_seconds() < MIN_CAPTURE_GAP_SECONDS
                 ):
                     return False
-                intraday_repo.insert_sample(
-                    cache, captured_at, value_eur, fx_eur_usd, _usd_of(value_eur, fx_eur_usd)
-                )
+                intraday_repo.insert_sample(cache, captured_at, value_eur, fx_eur_usd, value_usd)
                 intraday_repo.delete_before(cache, week_window_start_utc(now))
     except Exception:  # pragma: no cover - defensive: capture is best-effort
         log.warning("intraday value capture failed", exc_info=True)
@@ -834,6 +971,7 @@ def reconstruct_last_session(
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
     fx_fallback_fetcher: object | None = None,
+    interval: str = RECONSTRUCT_INTERVAL,
 ) -> int:
     """Backfill the most recent session's intraday curve from the price feed.
 
@@ -889,6 +1027,7 @@ def reconstruct_last_session(
                 fetcher=fetcher,
                 fx_fetcher=fx_fetcher,
                 fx_fallback_fetcher=fx_fallback_fetcher,
+                interval=interval,
             )
         except Exception:  # pragma: no cover - defensive: best-effort backfill
             log.warning("intraday session reconstruction failed", exc_info=True)
@@ -946,6 +1085,7 @@ def _reconstruct_session(
     fx_fetcher: object | None = None,
     fx_fallback_fetcher: object | None = None,
     replace_disagreeing: bool = False,
+    interval: str = RECONSTRUCT_INTERVAL,
 ) -> int:
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
@@ -974,7 +1114,7 @@ def _reconstruct_session(
         session, fetcher or yfinance_client.fetch_intraday_closes
     )
     bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
-        symbols, session_date, interval=RECONSTRUCT_INTERVAL
+        symbols, session_date, interval=interval
     )
     bar_times = sorted({t for bars in bars_by_symbol.values() for t in bars})
     if not bar_times:
@@ -994,7 +1134,7 @@ def _reconstruct_session(
         fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday
         try:
             fx_bars = fx_fetch(  # type: ignore[operator]
-                session_date, interval=RECONSTRUCT_INTERVAL
+                session_date, interval=interval
             )
         except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
             log.warning("intraday EUR/USD reconstruction fetch failed", exc_info=True)
@@ -1006,7 +1146,7 @@ def _reconstruct_session(
             fx_bars = _intraday_fx_fallback(
                 session_date,
                 session_date,
-                interval=RECONSTRUCT_INTERVAL,
+                interval=interval,
                 injected=fx_fallback_fetcher,
                 allow_default=fx_fetcher is None,
             )
@@ -1057,11 +1197,12 @@ def _reconstruct_session(
         fx_lookup,
         base_fx=base_fx,
         fx_present=bool(fx_bars),
-        skip=lambda t: _covered_by_live(live_times, t),
+        skip=lambda t: _covered_by_live(live_times, t, _half_window(interval)),
     )
+    usd_at = _usd_by_instant(priced, bars_by_symbol, samples)
     with cache_write_session(session) as cache:
         for t, market, point_fx in samples:
-            intraday_repo.insert_sample(cache, t, market, point_fx, _usd_of(market, point_fx))
+            intraday_repo.insert_sample(cache, t, market, point_fx, usd_at.get(t))
             written += 1
         intraday_repo.delete_before(cache, _week_window_start_for(session_date))
     return written
@@ -1134,11 +1275,18 @@ def _disagreeing_live_points(
     return out
 
 
-def _covered_by_live(live_times: list[datetime], at: datetime) -> bool:
+def _covered_by_live(
+    live_times: list[datetime],
+    at: datetime,
+    half_window: float = RECONSTRUCT_COVERAGE_GAP_SECONDS,
+) -> bool:
     """Whether a live sample sits within the coverage half-window of ``at``."""
-    return any(
-        abs((t - at).total_seconds()) <= RECONSTRUCT_COVERAGE_GAP_SECONDS for t in live_times
-    )
+    return any(abs((t - at).total_seconds()) <= half_window for t in live_times)
+
+
+def _half_window(interval: str) -> float:
+    """Half a bar width (at least 30 s): a finer reload fills smaller gaps."""
+    return max(30.0, interval_seconds(interval) / 2)
 
 
 def _already_reconstructed(session: Session, session_date: date) -> bool:
@@ -1264,6 +1412,8 @@ def _week_day_is_covered(
     anchor: date,
     now: datetime,
     sample_times: list[datetime],
+    max_gap_seconds: float = WEEK_MAX_GAP_SECONDS,
+    check_tail: bool = False,
 ) -> bool:
     """Whether ``session_date``'s cached "1 Week" samples adequately cover it.
 
@@ -1302,7 +1452,33 @@ def _week_day_is_covered(
     # missing morning or a midday stall (which the span test cannot see) re-pulls
     # to fill it. A gap of 15 min or larger means several 5-minute bars are missing
     # (or the day is still at the legacy 15-min cadence and is densified to 5-min).
-    return _max_gap_seconds([open_utc, *sample_times]) < WEEK_MAX_GAP_SECONDS
+    edges = [open_utc, *sample_times]
+    if check_tail:
+        # A reload also demands the afternoon: a day whose captures stopped well
+        # before the close would otherwise pass on its 60 % span alone.
+        edges.append(_session_close_utc(session_date))
+    return _max_gap_seconds(edges) < max_gap_seconds
+
+
+def week_usd_by_instant(
+    session: Session, *, now: datetime | None = None
+) -> dict[datetime, Decimal]:
+    """``{captured_at_utc: stored native USD market component}`` over the week window.
+
+    The FX-free USD twin of :func:`week_series_with_fx` (call it first: it persists
+    freshly sourced days). Rows without a stored USD value are left out.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    sessions = recent_trading_sessions(now)
+    if not sessions:
+        return {}
+    start = _session_start_utc(sessions[0])
+    end = min(_to_naive_utc(now), _session_start_utc(sessions[-1] + timedelta(days=1)))
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, start, end)
+    return {r.captured_at: r.market_value_usd for r in rows if r.market_value_usd is not None}
 
 
 def week_series_with_fx(
@@ -1392,7 +1568,15 @@ def week_series_with_fx(
         start = _session_start_utc(session_date)
         end = _session_start_utc(session_date + timedelta(days=1))
         sample_times = sorted(at for at, _, _ in cached if start <= at < end)
-        return _week_day_is_covered(session_date, anchor, now, sample_times)
+        if not force:
+            return _week_day_is_covered(session_date, anchor, now, sample_times)
+        # A reload is stricter: a few-minute hole or a missing afternoon is filled
+        # too (gaps only; stored finer samples are kept by the fetch).
+        day_interval = effective_interval(interval, session_date, exchange_today(now))
+        tolerance = min(WEEK_MAX_GAP_SECONDS, max(3 * interval_seconds(day_interval), 180))
+        return _week_day_is_covered(
+            session_date, anchor, now, sample_times, max_gap_seconds=tolerance, check_tail=True
+        )
 
     # 2. Fetch only the gaps, and only days not already attempted this session
     #    (``force`` re-pulls every uncovered day regardless of the marker).
@@ -1482,6 +1666,35 @@ def _build_week_day_samples(
     )
 
 
+def _near(sorted_times: list[datetime], at: datetime, half_window: float) -> bool:
+    """Whether any of ``sorted_times`` lies within ``half_window`` seconds of ``at``."""
+    i = bisect_right(sorted_times, at)
+    return any(
+        0 <= k < len(sorted_times) and abs((sorted_times[k] - at).total_seconds()) <= half_window
+        for k in (i - 1, i)
+    )
+
+
+def _interval_runs(days: list[date], desired: str, today: date) -> list[tuple[str, list[date]]]:
+    """Group ``days`` into ``(bar width, consecutive-ish days)`` yfinance requests.
+
+    Each day gets :func:`effective_interval`; days sharing a width form one
+    request, split so a 1-minute request never spans more than
+    :data:`YF_1M_MAX_SPAN_DAYS` calendar days (yfinance rejects longer 1m spans).
+    """
+    runs: list[tuple[str, list[date]]] = []
+    for day in sorted(days):
+        width = effective_interval(desired, day, today)
+        if runs:
+            last_width, last_days = runs[-1]
+            span_ok = width != "1m" or (day - last_days[0]).days <= YF_1M_MAX_SPAN_DAYS
+            if last_width == width and span_ok:
+                last_days.append(day)
+                continue
+        runs.append((width, [day]))
+    return runs
+
+
 def _fetch_and_persist_week_days(
     session: Session,
     to_fetch: list[date],
@@ -1501,51 +1714,78 @@ def _fetch_and_persist_week_days(
     on. Best-effort: a network failure is logged and yields no samples.
     """
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
-    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
     from investment_dashboard.services import prices_service  # noqa: PLC0415
 
     positions_by_day = {d: _priced_intraday_positions(session, d) for d in to_fetch}
     symbols = sorted({p.instrument.symbol for priced in positions_by_day.values() for p in priced})
 
     fetched: list[tuple[datetime, Decimal, Decimal | None]] = []
+    usd_at: dict[datetime, Decimal | None] = {}
     if symbols:
         needs_fx = any(_is_usd_native(p) for priced in positions_by_day.values() for p in priced)
         fetch = prices_service.via_provider_symbols(
             session, fetcher or yfinance_client.fetch_intraday_closes_range
         )
-        try:
-            bars_by_symbol: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
-                symbols, to_fetch[0], to_fetch[-1], interval=interval
-            )
-        except Exception:  # pragma: no cover - defensive: best-effort network fetch
-            log.warning("week curve intraday fetch failed", exc_info=True)
-            bars_by_symbol = {}
-
+        # One request per (bar width, <= 6-day span) run of days: the finest width
+        # yfinance serves for the day's age (1m only for the last week, 2m for ~60
+        # days, 5m otherwise), never finer than the caller asked for.
+        today = exchange_today()
+        runs = _interval_runs(to_fetch, interval, today)
+        bars_by_symbol: dict[str, dict[datetime, Decimal]] = {}
         fx_bars: dict[datetime, Decimal] = {}
-        if needs_fx and bars_by_symbol:
-            fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday_range
+        for run_interval, run_days in runs:
             try:
-                fx_bars = fx_fetch(to_fetch[0], to_fetch[-1], interval=interval)  # type: ignore[operator]
+                run_bars: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
+                    symbols, run_days[0], run_days[-1], interval=run_interval
+                )
+            except Exception:  # pragma: no cover - defensive: best-effort network fetch
+                log.warning("week curve intraday fetch failed", exc_info=True)
+                continue
+            for sym, bars in run_bars.items():
+                bars_by_symbol.setdefault(sym, {}).update(bars)
+            if not (needs_fx and run_bars):
+                continue
+            fx_fetch = fx_fetcher or yfinance_client.fetch_eur_usd_intraday_range
+            run_fx: dict[datetime, Decimal] = {}
+            try:
+                run_fx = fx_fetch(run_days[0], run_days[-1], interval=run_interval)  # type: ignore[operator]
             except Exception:  # pragma: no cover - defensive: FX overlay is best-effort
                 log.warning("week curve EUR/USD fetch failed", exc_info=True)
-                fx_bars = {}
-            if not fx_bars:
+            if not run_fx:
                 # yfinance served no intraday FX over the window: let the budget-gated
                 # Tiingo secondary fill the *historical* per-minute rates (yfinance
                 # first; never a live weekend spot).
-                fx_bars = _intraday_fx_fallback(
-                    to_fetch[0],
-                    to_fetch[-1],
-                    interval=interval,
+                run_fx = _intraday_fx_fallback(
+                    run_days[0],
+                    run_days[-1],
+                    interval=run_interval,
                     injected=fx_fallback_fetcher,
                     allow_default=fx_fetcher is None,
                 )
+            fx_bars.update(run_fx)
 
-        for session_date in to_fetch:
-            fetched.extend(
-                _build_week_day_samples(
-                    session, session_date, positions_by_day[session_date], bars_by_symbol, fx_bars
+        # Fill gaps only: a bar that falls in the slot of a stored (live, finer)
+        # sample is not written, so a reload never replaces exact points.
+        with cache_read_session(session) as cache:
+            stored_times = sorted(
+                r.captured_at
+                for r in intraday_repo.list_in_range(
+                    cache,
+                    _session_start_utc(to_fetch[0]),
+                    _session_start_utc(to_fetch[-1] + timedelta(days=1)),
                 )
+            )
+        day_interval = {d: i for i, days in runs for d in days}
+        for session_date in to_fetch:
+            built = _build_week_day_samples(
+                session, session_date, positions_by_day[session_date], bars_by_symbol, fx_bars
+            )
+            usd_at.update(_usd_by_instant(positions_by_day[session_date], bars_by_symbol, built))
+            half = _half_window(day_interval.get(session_date, interval))
+            stored_set = set(stored_times)
+            fetched.extend(
+                s for s in built if s[0] in stored_set or not _near(stored_times, s[0], half)
             )
 
         # Persist what we sourced so the next render reads it from cache, and
@@ -1553,9 +1793,7 @@ def _fetch_and_persist_week_days(
         if fetched:
             with cache_write_session(session) as cache:
                 for t, market, point_fx in fetched:
-                    intraday_repo.insert_sample(
-                        cache, t, market, point_fx, _usd_of(market, point_fx)
-                    )
+                    intraday_repo.insert_sample(cache, t, market, point_fx, usd_at.get(t))
                 intraday_repo.delete_before(cache, week_start)
 
     for session_date in to_fetch:
@@ -1717,15 +1955,26 @@ def clear_week_samples(
     session: Session,
     *,
     now: datetime | None = None,
+    from_date: date | None = None,
 ) -> int:
     """Wipe cached 1W intraday samples and clear week & day done markers.
+
+    ``from_date`` (a ledger change dated then) wipes only the samples from that
+    day's start on: a trade changes share counts from its date forward, so earlier
+    sessions' stored values (and their exact live points) are still right and are
+    neither deleted nor re-downloaded. ``None`` wipes everything.
 
     Returns the number of samples deleted.
     """
     from investment_dashboard.db import cache_write_session  # noqa: PLC0415
 
     with cache_write_session(session) as cache:
-        deleted = intraday_repo.delete_all(cache)
+        if from_date is None:
+            deleted = intraday_repo.delete_all(cache)
+        else:
+            deleted = intraday_repo.delete_in_range(
+                cache, _session_start_utc(from_date), datetime.max
+            )
     app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
     app_config_service.delete_by_prefix(session, _WEEK_FETCHED_PREFIX)
     return deleted
@@ -1812,7 +2061,7 @@ class TiingoGapFillError(RuntimeError):
     """The Tiingo gap fill cannot run (no token, or not enough budget left)."""
 
 
-def fill_gaps_from_tiingo(
+def fill_gaps_from_tiingo(  # noqa: PLR0915
     session: Session,
     *,
     now: datetime | None = None,
@@ -1905,9 +2154,10 @@ def fill_gaps_from_tiingo(
         keep = [s for s in samples if in_gap(s[0])]
         if not keep:
             continue
+        usd_at = _usd_by_instant(priced, bars_by_symbol, keep)
         with cache_write_session(session) as cache:
             for t, market, point_fx in keep:
-                intraday_repo.insert_sample(cache, t, market, point_fx, _usd_of(market, point_fx))
+                intraday_repo.insert_sample(cache, t, market, point_fx, usd_at.get(t))
         written += len(keep)
     activity("market_data").info(
         "graph gap fill from Tiingo: %d gap(s), %d point(s) written, %d request(s)%s",
@@ -1956,7 +2206,13 @@ def reload_day_graph(
         fetcher=fetcher,
         fx_fetcher=fx_fetcher,
         fx_fallback_fetcher=fx_fallback_fetcher,
+        interval=_day_interval(desired_reload_interval(session), now),
     )
+
+
+def _day_interval(desired: str, now: datetime) -> str:
+    """Bar width for the latest session's reload (the finest yfinance serves for its age)."""
+    return effective_interval(desired, last_session_date(now), exchange_today(now))
 
 
 def reload_week_graph(
@@ -1966,16 +2222,18 @@ def reload_week_graph(
     fetcher: object | None = None,
     fx_fetcher: object | None = None,
     fx_fallback_fetcher: object | None = None,
-    interval: str = WEEK_INTERVAL,
+    interval: str | None = None,
 ) -> int:
     """Re-pull the 1W graph, keeping the stored live points.
 
     Drops frozen-feed runs across the week, clears the per-day "fetched" markers
-    and re-pulls every day that is not fully covered (the 1D session included).
-    Nothing the provider no longer serves is thrown away (it used to wipe the
-    whole week first). Returns the total number of samples in the week curve.
+    and re-pulls every day that is not fully covered (the 1D session included),
+    at the "Graph reload resolution" setting (``interval`` overrides it). Stored
+    finer samples are kept; only gaps are filled. Nothing the provider no longer
+    serves is thrown away. Returns the total number of samples in the week curve.
     """
     now = now or datetime.now(UTC)
+    interval = interval or desired_reload_interval(session)
     _prune_week(session, now=now)
     reconstruct_last_session(
         session,
@@ -1985,6 +2243,7 @@ def reload_week_graph(
         fetcher=fetcher,
         fx_fetcher=fx_fetcher,
         fx_fallback_fetcher=fx_fallback_fetcher,
+        interval=_day_interval(interval, now),
     )
     samples = week_series_with_fx(
         session,
@@ -2015,6 +2274,7 @@ def reload_graphs(
     from investment_dashboard.services import snapshots_service  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
+    interval = desired_reload_interval(session)
     _prune_week(session, now=now)
     day_pts = reconstruct_last_session(
         session,
@@ -2024,6 +2284,7 @@ def reload_graphs(
         fetcher=fetcher,
         fx_fetcher=fx_fetcher,
         fx_fallback_fetcher=fx_fallback_fetcher,
+        interval=_day_interval(interval, now),
     )
     samples = week_series_with_fx(
         session,
@@ -2032,6 +2293,7 @@ def reload_graphs(
         fetcher=fetcher,
         fx_fetcher=fx_fetcher,
         fx_fallback_fetcher=fx_fallback_fetcher,
+        interval=interval,
     )
     try:
         today = exchange_today()
@@ -2076,6 +2338,9 @@ class LateNavSleeve:
 
     components: dict[datetime, tuple[Decimal, Decimal | None]]
     estimated: tuple[str, ...] = ()
+    #: The same sleeve in native USD per instant (USD funds at their own amount, no
+    #: FX); an instant is absent when a non-USD fund needs a missing rate.
+    usd: dict[datetime, Decimal] = field(default_factory=dict)
 
 
 def _twin_of(position: Position) -> str | None:
@@ -2240,14 +2505,31 @@ def late_nav_sleeve(
     if strict and not plans.has_twin_data:
         return LateNavSleeve(components={})
     plan = plans.funds
+    if not strict and not estimates_enabled(session):
+        # Estimates off (``twin.estimates_enabled``): a fund whose NAV has not posted
+        # stays flat at its previous NAV, exactly like the headline (official only).
+        plan = [
+            replace(
+                f,
+                twin_prev_close=None,
+                twin_close=None,
+                twin_at=lambda _at: None,
+                session_rows={},
+            )
+            if f.pending
+            else f
+            for f in plan
+        ]
     estimated = {f.position.instrument.symbol for f in plan if f.pending}
     open_at = _session_open_utc(session_date)
     close_at = _session_close_utc(session_date)
     components: dict[datetime, tuple[Decimal, Decimal | None]] = {}
+    usd_components: dict[datetime, Decimal] = {}
     for at in times:
         fx_t = (sample_fx or {}).get(at) or rate
         fraction = session_fraction(at, open_at, close_at)
         nav_eur = Decimal(0)
+        nav_usd: Decimal | None = Decimal(0)
         for f in plan:
             price = fund_value_at(
                 prev_value=f.prev_nav,
@@ -2263,8 +2545,22 @@ def late_nav_sleeve(
             elif f.position.current_value_native:
                 # EUR (or another currency): scale the holding's own EUR value.
                 nav_eur += f.position.current_value_eur * native / f.position.current_value_native
+            # Native USD: a USD fund at its own amount, anything else through EUR.
+            if nav_usd is not None:
+                if _is_usd_native(f.position):
+                    nav_usd += native
+                elif f.position.current_value_native and fx_t:
+                    nav_usd += (
+                        f.position.current_value_eur * native / f.position.current_value_native
+                    ) * fx_t
+                elif f.position.current_value_native:
+                    nav_usd = None
         components[at] = (nav_eur, fx_t)
-    return LateNavSleeve(components=components, estimated=tuple(sorted(estimated)))
+        if nav_usd is not None:
+            usd_components[at] = nav_usd
+    return LateNavSleeve(
+        components=components, estimated=tuple(sorted(estimated)), usd=usd_components
+    )
 
 
 def estimated_funds(session: Session, *, now: datetime | None = None) -> tuple[str, ...]:
@@ -2487,7 +2783,19 @@ def previous_close_fx(session: Session, session_date: date) -> Decimal | None:
     disagree by the gap between the two marks whenever intraday samples existed — that
     is, always in production, and never in a fixture that has no intraday FX.
     """
-    return session_close_rate(session, previous_trading_session(session_date))
+    return day_baseline_rate(session, previous_trading_session(session_date))
+
+
+def day_baseline_rate(session: Session, prev_date: date) -> Decimal | None:
+    """The EUR/USD rate the day's baseline (``prev_date``'s closing book) is valued at.
+
+    THE ONE-LINE SWITCH for the open question "which rate does the new day's baseline
+    use at the 09:30 rollover?". Today: the previous session's 16:00 ET close rate
+    (``session_close_rate``). The alternative (previous close prices x the rate at the
+    09:30 open) would change only this return. Every baseline (hero, holdings, twins,
+    scheduler tick, graph reference, overnight/currency box) goes through here.
+    """
+    return session_close_rate(session, prev_date)
 
 
 def daily_growth_leg_fx(
@@ -2496,8 +2804,15 @@ def daily_growth_leg_fx(
     *,
     now: datetime,
     live_rate: Decimal | None,
+    now_leg: bool = False,
 ) -> Decimal | None:
-    """The EUR/USD anchor for one leg (``on``) of a single-day growth mark.
+    """The EUR/USD rate for one leg (``on``) of a single-day growth mark.
+
+    The day-move rule (see :func:`metrics_service.fx_revaluation`): the baseline
+    (previous) leg uses ``on``'s 16:00 ET session-close rate; the ``now_leg`` always
+    uses the LIVE rate (``live_rate``), so the EUR day figure keeps moving with FX
+    after the close. ``now_leg`` falls back to the close rate only without a live rate.
+    The older description below is kept for the baseline leg.
 
     Ported from the web companion's ``graphAnchorFx`` chain
     (``marketOpen ? liveFx : (sessionCloseFx ?? settledPrevFx ?? liveFx)``),
@@ -2525,9 +2840,12 @@ def daily_growth_leg_fx(
     not valuations, and never substitutes a different date's rate — it only
     changes which *source* supplies ``on``'s own rate).
     """
-    if on == exchange_today(now) and is_us_market_open(now):
+    if now_leg and live_rate is not None:
         return live_rate
-    resolved = session_close_rate(session, on)
+    if not now_leg and on == exchange_today(now) and is_us_market_open(now):
+        # Legacy callers (no ``now_leg``) marking today's open session.
+        return live_rate
+    resolved = day_baseline_rate(session, on)
     return resolved if resolved is not None else live_rate
 
 
@@ -2822,13 +3140,19 @@ def live_point_adjustment_eur(
     the point on the 1D line itself. While the session runs no fund's NAV has
     posted, so this equals the hero's estimate adjustment at the same instant.
     """
+    return live_point_adjustment(session, at=at, fx=fx, now=now)[0] or Decimal(0)
+
+
+def live_point_adjustment(
+    session: Session, *, at: datetime, fx: Decimal | None, now: datetime | None = None
+) -> tuple[Decimal | None, Decimal | None]:
+    """``(eur, usd)`` of :func:`live_point_adjustment_eur`; the USD one is FX-free."""
     now = now or datetime.now(UTC)
     aware_at = at if at.tzinfo is not None else at.replace(tzinfo=UTC)
     # The session comes from ``now``, the twin price from the sample instant ``at``.
     session_date = last_session_date(now)
     estimates = memo_twin_estimates_at(session, session_date, aware_at)
-    adjustment = estimate_adjustment(estimates.values(), fx)
-    return adjustment[0] or Decimal(0)
+    return estimate_adjustment(estimates.values(), fx)
 
 
 def memo_twin_estimates_at(

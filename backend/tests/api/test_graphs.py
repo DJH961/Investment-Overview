@@ -100,7 +100,7 @@ def test_one_week_is_intraday(api_client: TestClient, seeded: None, offline_intr
     body = api_client.get("/api/graphs/1w?ccy=EUR&compare=true").json()
     assert body["intraday"] is True
     assert body["points"]
-    assert body["reference"] is None
+    assert body["reference"] is not None  # the 1W baseline (close before its first session)
 
 
 def test_one_day_empty_ledger(api_client: TestClient, api_db: object) -> None:
@@ -175,7 +175,7 @@ def test_one_week_sessions_are_ordered_trading_days(
     assert dates == sorted(dates)
     assert dates[-1] == body["session_date"]
     assert body["coverage"]["total"] == len(dates)
-    assert body["growth"]["mode"] == "simple"
+    assert body["growth"]["mode"] == "reference"
 
 
 def test_secondary_alignment_drops_only_unmatched_points() -> None:

@@ -1012,6 +1012,31 @@ def _invalidate_snapshots() -> None:
     return
 
 
+#: Snapshots recomputed per batch / batches per warm for the native-USD backfill.
+_USD_BACKFILL_BATCH = 100
+_USD_BACKFILL_BATCHES = 10
+
+
+def _backfill_snapshot_usd(session: Any) -> int:
+    """Fill the native USD total of pre-0017 snapshots, in bounded batches.
+
+    Rows written before migration 0017 hold only the EUR value; their USD view
+    would otherwise have to be rebuilt from EUR x rate. This recomputes each from
+    the positions at its date (native amounts) and leaves the EUR value alone. A
+    bounded number of batches run per warm, so a long history converges over a few
+    boots / end-of-day runs without blocking one of them.
+    """
+    from investment_dashboard.services import snapshots_service  # noqa: PLC0415
+
+    total = 0
+    for _ in range(_USD_BACKFILL_BATCHES):
+        filled = snapshots_service.backfill_missing_usd(session, limit=_USD_BACKFILL_BATCH)
+        total += filled
+        if filled == 0:
+            break
+    return total
+
+
 def _warm_snapshots() -> bool:
     """Rebuild the daily snapshot cache so the first heavy render reads it warm.
 
@@ -1063,7 +1088,14 @@ def _warm_snapshots() -> bool:
                 recent_floor = max(start, today - timedelta(days=recent_days))
                 warmed = warm_range(session, start, recent_floor - timedelta(days=1), force=False)
                 warmed += warm_range(session, recent_floor, today, force=True)
-        log.info("Warmed %d daily snapshot(s) (floor=%s, full_history=%s)", warmed, start, large)
+            usd_filled = _backfill_snapshot_usd(session)
+        log.info(
+            "Warmed %d daily snapshot(s) (floor=%s, full_history=%s); native USD backfilled on %d",
+            warmed,
+            start,
+            large,
+            usd_filled,
+        )
     except Exception:
         log.warning("Snapshot warming failed; continuing", exc_info=True)
         return False

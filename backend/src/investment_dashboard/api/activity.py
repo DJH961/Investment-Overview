@@ -143,17 +143,26 @@ def subject_for(method: str, path: str) -> str | None:  # noqa: PLR0911 - flat r
     return _DOWNLOADS.get(path) if method == "GET" else None
 
 
+#: Refusals the app answers in the UI itself, so they are not server problems: 409 is
+#: "already running" (a second tap on Refresh or a repair job), 422/400/404/413 is a
+#: request the user is shown the reason for (an import file the parser can't read).
+_EXPECTED_REFUSALS = frozenset({400, 404, 409, 413, 422})
+
+
 def _level(status: int, path: str) -> int:
-    """INFO for success and for requests turned away for lack of a session.
+    """INFO for success, for expected refusals and for requests without a session.
 
     A 401/403 outside ``/api/auth/`` is the guard working: internet scanners
     probing ``/api/v1/execute`` or ``/api/settings/export`` with no cookie. It
-    stays in the activity file but must not land in Recent problems. Failed
-    logins (``/api/auth/*``) and every other refusal stay WARNING.
+    stays in the activity file but must not land in Recent problems; nor must
+    an expected refusal (``_EXPECTED_REFUSALS``) the user already saw answered.
+    Failed logins (``/api/auth/*``), rate limits and server errors stay WARNING.
     """
     if status < 400:
         return logging.INFO
     if status in (401, 403) and not path.startswith("/api/auth/"):
+        return logging.INFO
+    if status in _EXPECTED_REFUSALS and not path.startswith("/api/auth/"):
         return logging.INFO
     return logging.WARNING
 

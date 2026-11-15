@@ -3,6 +3,7 @@ import { DivergingBar, type DivergingBarRow } from "../DivergingBar";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { formatAxisDate, formatDayLabel, formatNumber, formatTime, formatWeekdayTime, todayIn } from "../../lib/format";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
 import "./CurrencyBox.scss";
@@ -166,6 +167,10 @@ function HeaderStamp({
 }
 
 function EffectPanel({ data }: { data: OverviewDto }) {
+  const { hide } = useHideAmounts();
+  // Hide mode: each figure as a share of the portfolio value (server-supplied).
+  const total = toNum(data.kpis?.total_value ?? null);
+  const share = (v: number) => <Percent ratio={total ? v / total : null} signed colored />;
   const today = data.currency.today;
   const phrase = sincePhrase(today.since_phrase);
   const ip = today.investing_power_usd;
@@ -188,7 +193,8 @@ function EffectPanel({ data }: { data: OverviewDto }) {
     const net = toNum(ip?.net);
     if (!ip || net === null) return null;
     const digits = Math.abs(net) < 100 ? 2 : 0;
-    const fmt = (v: number) => <Money amount={v} currency="USD" signed colored digits={digits} />;
+    const fmt = (v: number) =>
+      hide && total ? share(v) : <Money amount={v} currency="USD" signed colored digits={digits} />;
     const title = `Investing power ${phrase}`;
     return (
       <section className="currency-box__effect" aria-label={title}>
@@ -204,7 +210,8 @@ function EffectPanel({ data }: { data: OverviewDto }) {
   const legs = today.effect_eur;
   const net = toNum(legs?.net);
   if (!legs || net === null) return null;
-  const fmt = (v: number) => <Money amount={v} currency="EUR" signed colored digits={0} />;
+  const fmt = (v: number) =>
+    hide && total ? share(v) : <Money amount={v} currency="EUR" signed colored digits={0} />;
   const title = `Currency effect ${phrase}`;
   return (
     <section className="currency-box__effect" aria-label={title}>

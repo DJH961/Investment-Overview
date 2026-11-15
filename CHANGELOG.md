@@ -17,6 +17,70 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.17.0] — 2026-11-15
+
+### Added
+- **Graph reload interval (Settings › Data refresh).** Reloading a graph no
+  longer drops it to 5-minute points: each day is re-pulled at the finest bar
+  Yahoo serves for its age (1 min for the last week, 2 min up to 60 days, then
+  5 min). "Auto" follows the live refresh interval. A reload only fills gaps; it
+  never replaces finer live points with coarser bars.
+- **"Now" marker on the 1D and 1W graphs after the close.** The session line
+  ends at the close; one dot shows the current value with the overnight
+  currency move ("· next day"). The graph header shows exactly the hero's day
+  figure, with "Session · Overnight" underneath while the market is shut.
+- **Sign out from the More menu on phones.**
+- **USD figures are rate-independent, and a test guards it.** An all-dollar
+  ledger must give identical USD numbers under any EUR/USD history.
+
+### Fixed
+- **No USD figure is converted back from euros any more.** Holding values were
+  turned into euros (dollars ÷ rate) and many USD figures were then made by
+  multiplying back by a rate, often a different one (the ECB fix versus the live
+  or close rate). Hero total, day move, MTD/YTD, holdings, graphs, live ticks,
+  Periods, allocations, the rebalance plan, the calculator, projection and the
+  web export now build USD from native dollars; FX is used only for
+  genuinely EUR-native holdings and cash. Older stored daily points get their
+  native USD value filled in.
+- **One rule for "today", everywhere.** A day runs from the previous close
+  (close prices × the 16:00 New York close rate) to now. After the close the EUR
+  figure keeps moving with the live rate (the overnight part is shown on its
+  own and counts toward the next day). Hero, holdings, the 1D graph and the
+  overnight figure all roll over together at the 09:30 New York open; holdings
+  used to roll at midnight and freeze at the close rate, so they no longer
+  added up to the hero. The open-market total used the ECB rate as its
+  baseline instead of the close rate.
+- **1D graph and headline disagreed (also in USD).** The graph's USD reference
+  was rebuilt through the ECB rate, it counted today's deposits as growth, and
+  it estimated funds from their ETF twins even with estimates switched off.
+- **Yesterday is settled at its ECB rate at 06:00 your time** (midnight New
+  York), not a day later.
+- **"database is locked": "snapshot rebuild after a late close failed" and
+  "Tiingo quota-state save failed".** When Tiingo covered a late fund NAV, its
+  closes were written without a commit, so the quota save and the daily-point
+  rebuild that followed waited on the database's single writer lock and failed.
+  The closes are now committed first, and a Tiingo-recovered NAV now also
+  rebuilds the daily points.
+- **Recent problems shows only problems.** "Refresh/repair already running"
+  (409), an import file the app couldn't read (422) and similar refusals the
+  page already explains are logged as information. A late fund NAV covered by
+  Tiingo and "benchmark is also held" are routine notices now.
+- **Portfolio figures leaked into the browser tab title after signing out.**
+- **Risk: the benchmark line starts at the portfolio's value for every range**
+  (it carried the index's gains from before the window).
+- **Top movers dropped cents.** Amounts under 1,000 show two decimals; short
+  forms (12.3k) keep one.
+- **Hide mode shows percentages for the currency effect** (overnight FX, the
+  currency box, lifetime FX) instead of masked money.
+- **Allocations:** follows the top-bar EUR/USD switch (no separate currency
+  toggle); the comparison benchmark no longer appears as a fund unless you hold
+  it; the save-target summary lists categories in category mode.
+- **1W reload re-pulls partly captured days**, including the first session of
+  the week.
+- **An import no longer wipes the whole week's graph points**, only from the
+  trade date on, so no week of price history is re-downloaded.
+- A flaky growth-index property test (absolute tolerance on large values).
+
 ## [6.16.0] — 2026-11-10
 
 ### Added

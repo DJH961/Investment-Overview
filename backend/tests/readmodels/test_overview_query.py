@@ -229,10 +229,14 @@ def test_live_eur_usd_spot_does_not_shift_daily_growth_once_shut(
             # equity close.
             fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=exchange_today())
             live = compute_instrument_metrics(session, get_positions(session), now=shut_now)[vti.id]
-            # Neither leg moved: the session has shut, so growth is frozen —
-            # the live spot only ever moves the *valuation*, never this figure.
-            assert live.daily_growth_eur == base.daily_growth_eur
+            # Day-move rule: the market move froze at the close, but the EUR figure keeps
+            # moving with FX (now = close prices x LIVE rate); baseline = prev close x its
+            # close rate (1.25). Hand check: $2,300 / 1.32 - $2,200 / 1.25 = -17.58 EUR
+            # (was +80.00 EUR at the 1.25 spot), while USD stays native: +$100.
+            assert base.daily_move_eur == Decimal("80.00")
+            assert live.daily_move_eur == Decimal("-17.58")
             assert live.daily_growth_usd == base.daily_growth_usd
+            assert live.daily_move_usd == Decimal("100.00")
             # The YTD growth's start value is priced at the Jan FX (1.25), untouched
             # by the live spot — only the current mark revalues.
             assert live.ytd_growth_usd == base.ytd_growth_usd

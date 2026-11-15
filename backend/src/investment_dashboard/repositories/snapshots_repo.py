@@ -66,6 +66,34 @@ def upsert_snapshot(
     session.execute(stmt)
 
 
+def list_missing_usd(session: Session, limit: int) -> list[date]:
+    """Dates of stored snapshots without a native USD total (pre-0017 rows), oldest first."""
+    stmt = (
+        select(PositionSnapshot.snapshot_date)
+        .where(PositionSnapshot.total_value_usd.is_(None))
+        .order_by(PositionSnapshot.snapshot_date)
+        .limit(limit)
+    )
+    return list(session.scalars(stmt).all())
+
+
+def fill_usd(
+    session: Session, snapshot_date: date, total_value_usd: Decimal, fx_eur_usd: Decimal
+) -> bool:
+    """Set the native USD total (and the rate when absent) of an existing row.
+
+    Never touches ``total_value_eur``. Returns whether a row was updated.
+    """
+    row = session.get(PositionSnapshot, snapshot_date)
+    if row is None or row.total_value_usd is not None:
+        return False
+    row.total_value_usd = total_value_usd
+    if not row.fx_eur_usd:
+        row.fx_eur_usd = fx_eur_usd
+    session.flush()
+    return True
+
+
 def delete_from(session: Session, start: date) -> int:
     """Delete all snapshots on or after ``start``. Returns rows deleted.
 

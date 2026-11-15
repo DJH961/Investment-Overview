@@ -245,6 +245,21 @@ DEFS: tuple[SettingDef, ...] = (
         unit="s",
     ),
     SettingDef(
+        "graph_reload_interval",
+        SettingType.ENUM,
+        "auto",
+        "data_refresh",
+        "Graph reload resolution",
+        help=(
+            "Bar width a graph reload (repull) asks Yahoo for. 'auto' matches the price "
+            "refresh above (1 minute at 60 s). Yahoo serves 1-minute bars for about the "
+            "last 7 days and 2-minute bars for about 60 days, so older days fall back to "
+            "the finest available. A reload only fills gaps; it never replaces finer "
+            "points already stored."
+        ),
+        choices=("auto", "1m", "2m", "5m"),
+    ),
+    SettingDef(
         "live_graphs_grid",
         SettingType.ENUM,
         "30m",
