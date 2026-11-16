@@ -112,23 +112,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/analytics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Analytics */
-        get: operations["get_analytics_api_analytics_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/analytics/both": {
         parameters: {
             query?: never;
@@ -351,23 +334,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/deposits": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Deposits */
-        get: operations["get_deposits_api_deposits_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/deposits/both": {
         parameters: {
             query?: never;
@@ -377,23 +343,6 @@ export interface paths {
         };
         /** Get Deposits Both */
         get: operations["get_deposits_both_api_deposits_both_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/deposits/dividends": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Dividends */
-        get: operations["get_dividends_api_deposits_dividends_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -583,23 +532,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/graphs/{range_key}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Graph */
-        get: operations["get_graph_api_graphs__range_key__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/graphs/{range_key}/both": {
         parameters: {
             query?: never;
@@ -643,23 +575,6 @@ export interface paths {
         };
         /** Health */
         get: operations["health_api_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/holdings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Holdings */
-        get: operations["get_holdings_api_holdings_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -943,26 +858,6 @@ export interface paths {
         };
         /** List Instruments */
         get: operations["list_instruments_api_instruments_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/instruments/twin-suggestions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Twin Suggestions
-         * @description The built-in fund -> ETF twin list (identical-index pairs, then measured close twins).
-         */
-        get: operations["twin_suggestions_api_instruments_twin_suggestions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1338,23 +1233,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/overview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Overview */
-        get: operations["get_overview_api_overview_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/overview/both": {
         parameters: {
             query?: never;
@@ -1364,40 +1242,6 @@ export interface paths {
         };
         /** Get Overview Both */
         get: operations["get_overview_both_api_overview_both_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/periods/monthly": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Monthly */
-        get: operations["monthly_api_periods_monthly_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/periods/yearly": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Yearly */
-        get: operations["yearly_api_periods_yearly_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2512,8 +2356,6 @@ export interface components {
             mtd_contrib: string | null;
             /** Total Contrib */
             total_contrib: string | null;
-            /** Total Contrib Native */
-            total_contrib_native: string | null;
             /** Ytd Contrib */
             ytd_contrib: string | null;
         };
@@ -6575,42 +6417,6 @@ export interface operations {
             };
         };
     };
-    get_analytics_api_analytics_get: {
-        parameters: {
-            query?: {
-                /** @description Reporting currency. */
-                ccy?: "EUR" | "USD";
-                /** @description Window in days; 0 = since the first transaction. */
-                lookback_days?: number;
-                /** @description Draw the curve from inception. */
-                full_curve?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AnalyticsOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_analytics_both_api_analytics_both_get: {
         parameters: {
             query?: {
@@ -7015,43 +6821,6 @@ export interface operations {
             };
         };
     };
-    get_deposits_api_deposits_get: {
-        parameters: {
-            query?: {
-                /** @description Reporting currency. */
-                ccy?: "EUR" | "USD";
-                account_id?: number | null;
-                /** @description Row filter; transfer = in + out. */
-                kind?: ("deposit" | "withdrawal" | "transfer") | null;
-                /** @description Row filter. */
-                year?: number | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DepositsOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_deposits_both_api_deposits_both_get: {
         parameters: {
             query?: {
@@ -7074,38 +6843,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ByCurrency_DepositsOut_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_dividends_api_deposits_dividends_get: {
-        parameters: {
-            query?: {
-                /** @description Reporting currency. */
-                ccy?: "EUR" | "USD";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DividendsOut"];
                 };
             };
             /** @description Validation Error */
@@ -7420,42 +7157,6 @@ export interface operations {
             };
         };
     };
-    get_graph_api_graphs__range_key__get: {
-        parameters: {
-            query?: {
-                /** @description Reporting currency. */
-                ccy?: "EUR" | "USD";
-                /** @description Also return the other currency line (default on). */
-                compare?: boolean;
-            };
-            header?: never;
-            path: {
-                range_key: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GraphResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_graph_both_api_graphs__range_key__both_get: {
         parameters: {
             query?: {
@@ -7544,39 +7245,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
-                };
-            };
-        };
-    };
-    get_holdings_api_holdings_get: {
-        parameters: {
-            query?: {
-                /** @description Reporting currency. */
-                ccy?: "EUR" | "USD";
-                group_by?: "none" | "account" | "asset_class" | "currency" | "category";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HoldingsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8071,28 +7739,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstrumentOut"][];
-                };
-            };
-        };
-    };
-    twin_suggestions_api_instruments_twin_suggestions_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: components["schemas"]["TwinSuggestionDto"];
-                    };
                 };
             };
         };
@@ -8832,38 +8478,6 @@ export interface operations {
             };
         };
     };
-    get_overview_api_overview_get: {
-        parameters: {
-            query?: {
-                /** @description Reporting currency. */
-                ccy?: "EUR" | "USD";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OverviewResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_overview_both_api_overview_both_get: {
         parameters: {
             query?: never;
@@ -8880,72 +8494,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ByCurrency_OverviewResponse_"];
-                };
-            };
-        };
-    };
-    monthly_api_periods_monthly_get: {
-        parameters: {
-            query?: {
-                /** @description Reporting currency. */
-                ccy?: "EUR" | "USD";
-                /** @description Pad empty months so the history is contiguous. */
-                fill_gaps?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PeriodsOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    yearly_api_periods_yearly_get: {
-        parameters: {
-            query?: {
-                /** @description Reporting currency. */
-                ccy?: "EUR" | "USD";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PeriodsOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

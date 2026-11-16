@@ -5,28 +5,32 @@ This file is the **single source of truth** for project rules.
 covers dev setup. If another doc disagrees with this file, this file wins — fix the
 other doc.
 
-## Project status: v5 → v6
+## Project status: v7
 
-- **v6 (live since 6.0.0):** one hosted FastAPI backend (`backend/`) + React frontend
-  (`frontend/`). The plan is [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md).
-  Do not start a new phase or the clean-up release until the owner has approved it.
-- **v5 (leaving):** the NiceGUI desktop code and `web/` stay on `main` until the
-  clean-up release. `web/` builds only the offline demo for GitHub Pages
-  (`VITE_DEMO_ONLY=1`); never reconnect it to real data or price APIs.
-- **Legacy:** branch `legacy/v5` / tag `v5.3.1` is frozen. Never commit to it or
-  backport to it (the owner-requested known-bugs note there is the only exception);
-  see [`docs/legacy_v5.md`](docs/legacy_v5.md).
-- **Where v6 stands:** the plan's status line (top of `docs/v6_one_app_plan.md`) is
-  the source of truth; keep it current when a phase step finishes.
+- **v6/v7 (live since 6.0.0):** one hosted FastAPI backend (`backend/`) + React
+  frontend (`frontend/`). v7 is planned in [`docs/v7_plan.md`](docs/v7_plan.md)
+  (§8 is the order of work); do not start a new push until the owner has approved it.
+- **v5 is gone from `main` (cutover in 7.0).** `web/` stays only to build the offline
+  demo for GitHub Pages (`VITE_DEMO_ONLY=1`); never reconnect it to real data or price
+  APIs.
+- **"Like in v5":** when the owner asks for something "like in v5", read the archived
+  code at tag `v5-archive` (`git grep <pattern> v5-archive`,
+  `git show v5-archive:<path>`, or a read-only worktree); see "Comparing with v5" in
+  [`docs/legacy_v5.md`](docs/legacy_v5.md). Never restore v5 code into the tree.
+- **Legacy:** branch `legacy/v5` / tags `v5.3.1` and `v5-archive` are frozen. Never
+  commit to them, move them or backport to them (the owner-requested known-bugs note
+  on `legacy/v5` is the only exception).
+- **Where v7 stands:** the status line at the top of `docs/v7_plan.md` is the source
+  of truth; keep it current when a push finishes.
 
 ## Stack at a glance
 
-| | Now (v5, this code) | Target (v6, see plan §4 / §4a) |
-| --- | --- | --- |
-| Backend | Python 3.12, NiceGUI on FastAPI/uvicorn, SQLAlchemy 2 + Alembic, SQLite (ledger / config / cache tiers), pandas/numpy/scipy, yfinance + Frankfurter (+ Tiingo fallback), `uv` | Same Python core as a FastAPI API server in `backend/`, SQLCipher, server-side scheduler, SSE |
-| Frontend | `web/`: Vite + vanilla TypeScript PWA on GitHub Pages, reads an encrypted blob | `frontend/`: React 19 + TS + Vite, SCSS/BEM tokens, TanStack Query |
-| Hosting | Owner's laptop (LAN) + GitHub Pages + Cloudflare Worker | One Docker Compose stack (app + Caddy + rclone backup sidecar; sealed SQLCipher snapshots, no Litestream) on the Hetzner server |
-| Docs | [`docs/architecture.md`](docs/architecture.md) | [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md), [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) |
+| | |
+| --- | --- |
+| Backend | Python 3.12 FastAPI API server in `backend/`, SQLAlchemy 2 + Alembic, SQLCipher (ledger / config / cache tiers), pandas/numpy/scipy, yfinance + Frankfurter (+ Tiingo fallback), server-side scheduler, SSE, `uv` |
+| Frontend | `frontend/`: React 19 + TS + Vite, SCSS/BEM tokens, TanStack Query (`web/`: the offline demo only) |
+| Hosting | One Docker Compose stack (app + Caddy + rclone backup sidecar; sealed SQLCipher snapshots, no Litestream) on the Hetzner server; GitHub Pages for the demo |
+| Docs | [`docs/architecture.md`](docs/architecture.md), [`docs/v7_plan.md`](docs/v7_plan.md), [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) |
 
 ## Infrastructure and server access
 
@@ -73,17 +77,18 @@ What this means in practice:
   (EUR instruments exist in the ledger). Don't hard-code USD or EUR as "the base".
 - Market-sleeve / intraday series are FX-free native USD; the EUR line is derived
   with the **per-instant** rate stored next to each sample.
-- **Transition (until cutover):** cashflow legs are derived from `net_native` + that
-  date's FX (`services/cashflows.py`); the frozen `net_eur` / `net_usd` /
-  `fx_rate_to_eur` legs are still written on import for the v5 rollback but are only
-  a cross-check. `PositionSnapshot` / `IntradayValue` store native USD + per-instant
-  FX (the old EUR columns stay filled for one release). Do **not** add new
-  derived-currency columns, and don't read the frozen legs in new code.
+- **Frozen legs (on their way out):** cashflow legs are derived from `net_native` +
+  that date's FX (`services/cashflows.py`). The frozen `net_eur` / `net_usd` /
+  `fx_rate_to_eur` legs and the old EUR snapshot columns (`PositionSnapshot`,
+  `IntradayValue` store native USD + per-instant FX) are still written, because a few
+  fallbacks read them and the EUR snapshot columns are `NOT NULL`; they go with a
+  later migration. Do **not** add new derived-currency columns, and don't read the
+  frozen legs in new code.
 - `Decimal` end to end; round only for display.
 
 ## Architecture rules
 
-- Layering: `ui`/`api` → `services` / `readmodels` → `repositories` / `adapters` → `domain`.
+- Layering: `api` → `services` / `readmodels` → `repositories` / `adapters` → `domain`.
   - `domain/` is pure: no DB session, HTTP, `yfinance` or filesystem I/O. `mypy --strict`.
   - `adapters/` wrap every external system and return plain dataclasses, never ORM rows.
   - `repositories/` are the only layer that imports ORM models.
@@ -101,7 +106,7 @@ What this means in practice:
   client may only do **linear presentation maths** on server-supplied values (sums,
   `qty × price × fx_now`, shares of a total, filter/sort/page of lists it already
   holds) and never computes a return. It converts currency only at a single instant,
-  with the rate sent in the same tick. The v5 web companion still breaks this rule;
+  with the rate sent in the same tick. The archived v5 web companion broke this rule;
   don't copy it.
 - Secrets never go in the repo. Settings are documented in `.env.example` files
   (v6); real `.env` files are git-ignored.
@@ -110,9 +115,8 @@ What this means in practice:
 
 Adapted from the owner's starter-project convention (see plan §4a):
 
-- Top level: `backend/`, `frontend/`, `deploy/`, `docs/`. The Python project already
-  lives in `backend/` (run `uv` and `pytest` from there); `web/` moves to `frontend/`
-  at the start of v6 Phase 1.
+- Top level: `backend/`, `frontend/`, `deploy/`, `docs/` (plus `web/`, the demo). The
+  Python project lives in `backend/` (run `uv` and `pytest` from there).
 - Backend: one router module per resource in `api/`, mounted under `/api`;
   settings via pydantic-settings (`config.py`, cached `get_settings()`).
 - Frontend: TypeScript; `components/<Name>/` and `pages/<Name>/` each hold
@@ -162,15 +166,14 @@ Adapted from the owner's starter-project convention (see plan §4a):
   run takes about 2 hours on the owner's laptop (CI: about 2 minutes), so run the
   targeted tests for what you touched locally and let CI run the full suite. Known
   laptop-only failures (they read the real keyring and Dropbox/OneDrive folders):
-  `tests/storage/test_cloud_and_paths.py` cloud-detection tests and
-  `tests/services/test_publish_service.py::test_publish_now_requires_repo_passphrase_token`.
+  `tests/storage/test_cloud_and_paths.py` cloud-detection tests.
   - From `backend/`:
   - `uv run ruff format .`
   - `uv run ruff check . --fix`
   - `uv run mypy src/investment_dashboard/domain`
   - `uv run lint-imports` (layering contracts)
   - `uv run pytest`
-  - `npm run typecheck` and `npm run test` inside `web/`
+  - `npm run typecheck` and `npm run test` inside `frontend/` and `web/`
 - **Keep in step with every feature** (check each one when you add or change behaviour):
   - **Activity logs** (`activity_log.py`, `api/activity.py`, RUNBOOK "Activity logs"):
     every new server action (endpoint that writes or takes data off the server,
@@ -182,10 +185,8 @@ Adapted from the owner's starter-project convention (see plan §4a):
   - **API contract:** after changing an endpoint, regenerate `backend/openapi.json`
     and `frontend/src/lib/api-types.ts` (CI fails on drift).
   - **Schema:** every model change gets an Alembic migration **with a working
-    downgrade**; until cutover `inv-dashboard-export-v5` (downgrade to `0014`) must
-    still run, so add new v6-only data to its "dropped" note.
-  - **Money maths:** property/golden tests, and until cutover a parity run against v5
-    on a ledger copy (`tools/parity_check.py`).
+    downgrade** back to the previous revision (`tests/test_migration_roundtrip.py`).
+  - **Money maths:** property tests plus golden values worked by hand.
   - **Settings / env vars:** document in `backend/.env.example`; if the server needs
     it, also in the RUNBOOK `app.env` section, `first_install.sh` checks, or the
     Dockerfile `ENV` block.

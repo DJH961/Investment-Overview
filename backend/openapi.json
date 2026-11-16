@@ -2423,18 +2423,6 @@
             ],
             "title": "Total Contrib"
           },
-          "total_contrib_native": {
-            "anyOf": [
-              {
-                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Total Contrib Native"
-          },
           "ytd_contrib": {
             "anyOf": [
               {
@@ -2451,8 +2439,7 @@
         "required": [
           "total_contrib",
           "ytd_contrib",
-          "mtd_contrib",
-          "total_contrib_native"
+          "mtd_contrib"
         ],
         "title": "DepositSummaryOut",
         "type": "object"
@@ -13802,81 +13789,6 @@
         ]
       }
     },
-    "/api/analytics": {
-      "get": {
-        "operationId": "get_analytics_api_analytics_get",
-        "parameters": [
-          {
-            "description": "Reporting currency.",
-            "in": "query",
-            "name": "ccy",
-            "required": false,
-            "schema": {
-              "default": "EUR",
-              "description": "Reporting currency.",
-              "enum": [
-                "EUR",
-                "USD"
-              ],
-              "title": "Ccy",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Window in days; 0 = since the first transaction.",
-            "in": "query",
-            "name": "lookback_days",
-            "required": false,
-            "schema": {
-              "default": 365,
-              "description": "Window in days; 0 = since the first transaction.",
-              "maximum": 36500,
-              "minimum": 0,
-              "title": "Lookback Days",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Draw the curve from inception.",
-            "in": "query",
-            "name": "full_curve",
-            "required": false,
-            "schema": {
-              "default": false,
-              "description": "Draw the curve from inception.",
-              "title": "Full Curve",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AnalyticsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Analytics",
-        "tags": [
-          "analytics"
-        ]
-      }
-    },
     "/api/analytics/both": {
       "get": {
         "operationId": "get_analytics_both_api_analytics_both_get",
@@ -14414,115 +14326,6 @@
         ]
       }
     },
-    "/api/deposits": {
-      "get": {
-        "operationId": "get_deposits_api_deposits_get",
-        "parameters": [
-          {
-            "description": "Reporting currency.",
-            "in": "query",
-            "name": "ccy",
-            "required": false,
-            "schema": {
-              "default": "EUR",
-              "description": "Reporting currency.",
-              "enum": [
-                "EUR",
-                "USD"
-              ],
-              "title": "Ccy",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "account_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Account Id"
-            }
-          },
-          {
-            "description": "Row filter; transfer = in + out.",
-            "in": "query",
-            "name": "kind",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "deposit",
-                    "withdrawal",
-                    "transfer"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Row filter; transfer = in + out.",
-              "title": "Kind"
-            }
-          },
-          {
-            "description": "Row filter.",
-            "in": "query",
-            "name": "year",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maximum": 2200,
-                  "minimum": 1900,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Row filter.",
-              "title": "Year"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DepositsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Deposits",
-        "tags": [
-          "deposits"
-        ]
-      }
-    },
     "/api/deposits/both": {
       "get": {
         "operationId": "get_deposits_both_api_deposits_both_get",
@@ -14611,55 +14414,6 @@
           }
         },
         "summary": "Get Deposits Both",
-        "tags": [
-          "deposits"
-        ]
-      }
-    },
-    "/api/deposits/dividends": {
-      "get": {
-        "operationId": "get_dividends_api_deposits_dividends_get",
-        "parameters": [
-          {
-            "description": "Reporting currency.",
-            "in": "query",
-            "name": "ccy",
-            "required": false,
-            "schema": {
-              "default": "EUR",
-              "description": "Reporting currency.",
-              "enum": [
-                "EUR",
-                "USD"
-              ],
-              "title": "Ccy",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DividendsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Dividends",
         "tags": [
           "deposits"
         ]
@@ -15026,86 +14780,6 @@
         ]
       }
     },
-    "/api/graphs/{range_key}": {
-      "get": {
-        "operationId": "get_graph_api_graphs__range_key__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "range_key",
-            "required": true,
-            "schema": {
-              "enum": [
-                "1d",
-                "1w",
-                "1m",
-                "3m",
-                "6m",
-                "ytd",
-                "1y",
-                "all"
-              ],
-              "title": "Range Key",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Reporting currency.",
-            "in": "query",
-            "name": "ccy",
-            "required": false,
-            "schema": {
-              "default": "EUR",
-              "description": "Reporting currency.",
-              "enum": [
-                "EUR",
-                "USD"
-              ],
-              "title": "Ccy",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Also return the other currency line (default on).",
-            "in": "query",
-            "name": "compare",
-            "required": false,
-            "schema": {
-              "default": true,
-              "description": "Also return the other currency line (default on).",
-              "title": "Compare",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GraphResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Graph",
-        "tags": [
-          "graphs"
-        ]
-      }
-    },
     "/api/graphs/{range_key}/both": {
       "get": {
         "operationId": "get_graph_both_api_graphs__range_key__both_get",
@@ -15243,72 +14917,6 @@
         "summary": "Health",
         "tags": [
           "health"
-        ]
-      }
-    },
-    "/api/holdings": {
-      "get": {
-        "operationId": "get_holdings_api_holdings_get",
-        "parameters": [
-          {
-            "description": "Reporting currency.",
-            "in": "query",
-            "name": "ccy",
-            "required": false,
-            "schema": {
-              "default": "EUR",
-              "description": "Reporting currency.",
-              "enum": [
-                "EUR",
-                "USD"
-              ],
-              "title": "Ccy",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "group_by",
-            "required": false,
-            "schema": {
-              "default": "none",
-              "enum": [
-                "none",
-                "account",
-                "asset_class",
-                "currency",
-                "category"
-              ],
-              "title": "Group By",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HoldingsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Holdings",
-        "tags": [
-          "holdings"
         ]
       }
     },
@@ -16025,32 +15633,6 @@
           }
         },
         "summary": "List Instruments",
-        "tags": [
-          "instruments"
-        ]
-      }
-    },
-    "/api/instruments/twin-suggestions": {
-      "get": {
-        "description": "The built-in fund -> ETF twin list (identical-index pairs, then measured close twins).",
-        "operationId": "twin_suggestions_api_instruments_twin_suggestions_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "$ref": "#/components/schemas/TwinSuggestionDto"
-                  },
-                  "title": "Response Twin Suggestions Api Instruments Twin Suggestions Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Twin Suggestions",
         "tags": [
           "instruments"
         ]
@@ -17167,55 +16749,6 @@
         ]
       }
     },
-    "/api/overview": {
-      "get": {
-        "operationId": "get_overview_api_overview_get",
-        "parameters": [
-          {
-            "description": "Reporting currency.",
-            "in": "query",
-            "name": "ccy",
-            "required": false,
-            "schema": {
-              "default": "EUR",
-              "description": "Reporting currency.",
-              "enum": [
-                "EUR",
-                "USD"
-              ],
-              "title": "Ccy",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OverviewResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Overview",
-        "tags": [
-          "overview"
-        ]
-      }
-    },
     "/api/overview/both": {
       "get": {
         "operationId": "get_overview_both_api_overview_both_get",
@@ -17234,116 +16767,6 @@
         "summary": "Get Overview Both",
         "tags": [
           "overview"
-        ]
-      }
-    },
-    "/api/periods/monthly": {
-      "get": {
-        "operationId": "monthly_api_periods_monthly_get",
-        "parameters": [
-          {
-            "description": "Reporting currency.",
-            "in": "query",
-            "name": "ccy",
-            "required": false,
-            "schema": {
-              "default": "EUR",
-              "description": "Reporting currency.",
-              "enum": [
-                "EUR",
-                "USD"
-              ],
-              "title": "Ccy",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Pad empty months so the history is contiguous.",
-            "in": "query",
-            "name": "fill_gaps",
-            "required": false,
-            "schema": {
-              "default": false,
-              "description": "Pad empty months so the history is contiguous.",
-              "title": "Fill Gaps",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PeriodsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Monthly",
-        "tags": [
-          "periods"
-        ]
-      }
-    },
-    "/api/periods/yearly": {
-      "get": {
-        "operationId": "yearly_api_periods_yearly_get",
-        "parameters": [
-          {
-            "description": "Reporting currency.",
-            "in": "query",
-            "name": "ccy",
-            "required": false,
-            "schema": {
-              "default": "EUR",
-              "description": "Reporting currency.",
-              "enum": [
-                "EUR",
-                "USD"
-              ],
-              "title": "Ccy",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PeriodsOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Yearly",
-        "tags": [
-          "periods"
         ]
       }
     },
