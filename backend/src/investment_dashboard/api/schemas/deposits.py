@@ -13,7 +13,6 @@ class DepositSummaryOut(ApiModel):
     total_contrib: DecStr | None
     ytd_contrib: DecStr | None
     mtd_contrib: DecStr | None
-    total_contrib_native: DecStr | None
 
 
 class ConversionBatchOut(ApiModel):

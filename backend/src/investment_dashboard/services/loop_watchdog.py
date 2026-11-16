@@ -1,6 +1,6 @@
 """Event-loop stall watchdog — a heads-up when a calculation blocks the UI.
 
-NiceGUI/uvicorn serve the whole desktop app from a single asyncio event loop.
+uvicorn serves the whole app from a single asyncio event loop.
 Any long *synchronous* calculation (a heavy metrics build, an expensive query,
 an accidental O(n²) loop) runs **on** that loop, so while it churns the server
 cannot answer the websocket heartbeat. Every connected tab then looks
@@ -8,8 +8,7 @@ disconnected at once and a reconnect/reload storm follows — the "one too-long
 calculation and EVERYTHING breaks" symptom.
 
 The durable fix is to move heavy work off the loop (see
-:func:`investment_dashboard.ui.components.deferred.deferred`'s ``compute``
-hook). This module is the *safety net*: a lightweight background task measures
+a worker thread / executor). This module is the *safety net*: a lightweight background task measures
 how late the loop services a periodic wake-up and, when that lag crosses a
 threshold, records a single heads-up (surfaced in-app via the Data Health page /
 toast and written to the log). It cannot interrupt the blocking work — Python
@@ -19,7 +18,7 @@ which is exactly the feedback the app was missing.
 
 The watchdog is deliberately cheap (one ``asyncio.sleep`` per poll) and
 self-throttling so a sustained stall reports at most once per cooldown rather
-than spamming. :func:`install` wires it to NiceGUI's startup so it runs for the
+than spamming. :func:`install` wires it to the app's startup so it runs for the
 life of the process.
 """
 
@@ -175,7 +174,7 @@ def start(
 
 
 def install() -> None:
-    """Register the watchdog to start with the NiceGUI app (idempotent enough).
+    """Register the watchdog to start with the app (idempotent enough).
 
     Mirrors :func:`investment_dashboard.services.error_reporting.install_asyncio_handler`:
     the work needs a running loop, so it is scheduled from an ``app.on_startup``

@@ -329,7 +329,7 @@ def apply_desktop_fallback(
         if instr is None:
             continue
         filtered = {d: c for d, c in outcome.closes[symbol].items() if d >= write_cutoff}
-        result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
+        result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered, source="tiingo")
         price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now_utc)
 
     # Commit the recovered closes before anything else writes. On the server every

@@ -113,6 +113,17 @@ def test_yfinance_failure_recovers_via_tiingo(
     # The recovered close landed in the cache.
     latest = prices_repo.latest_price_dates(session, [instr_id]).get(instr_id)
     assert latest == _TODAY
+    # Stored with the real provider label, not the yfinance default.
+    from sqlalchemy import select
+
+    from investment_dashboard.models import PriceHistory
+
+    stored = session.execute(
+        select(PriceHistory.source).where(
+            PriceHistory.instrument_id == instr_id, PriceHistory.date == _TODAY
+        )
+    ).scalar_one()
+    assert stored == "tiingo"
     # And the switch was recorded for the popup.
     assert provider_status.get_status("tiingo") is not None
     # The loud desktop runtime warning fired.

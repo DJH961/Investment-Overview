@@ -702,7 +702,7 @@ def instruments_due_for_refresh(
 ) -> list[Instrument]:
     """Return the active, non-synthetic instruments worth pulling right now.
 
-    The background ``app.timer`` in :mod:`investment_dashboard.main` calls
+    The server-side scheduler's live price tick calls
     this every few minutes; whatever it returns is what we pull from
     yfinance — so the smaller this list, the cheaper the refresh.
 

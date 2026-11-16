@@ -11,7 +11,7 @@ circular import on :mod:`investment_dashboard.main`:
   cues (so the header chip + top bar animate) and the
   :mod:`investment_dashboard.services.runtime_status` error surface.
 
-The desktop app arms a single ``app.timer`` with the configured interval; a
+The server arms a single live timer with the configured interval; a
 page load and the header chip both ask :func:`run_in_background` to pull now, so
 "refresh the page" (or a click on the Live chip) also refreshes prices.
 """

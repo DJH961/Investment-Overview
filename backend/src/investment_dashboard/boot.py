@@ -1,4 +1,4 @@
-"""Boot sequence — runs once per app start before NiceGUI listens.
+"""Boot sequence — runs once per app start before the server listens.
 
 Steps (spec §13 + v2.0 plan phases 3-5):
 1. Resolve encryption (Phase 4): if the user enabled it, fetch the
@@ -179,7 +179,7 @@ def release_writer_lock() -> bool:
     only if a lock was actually released, so callers can give accurate
     feedback ("handed off" vs "nothing to release").
 
-    Safe to call from a NiceGUI ``app.on_shutdown`` hook or a UI button.
+    Safe to call from an app shutdown hook or an API handler.
     """
     lock = _boot_state["held_lock"]
     _boot_state["held_lock"] = None
@@ -430,7 +430,7 @@ def _run_migrations() -> None:
     ``migrations/`` tree sit next to the package, so we run
     ``alembic upgrade head`` for a faithful, incremental migration.
 
-    The packaged Windows installer and the portable bundle ship **only**
+    A packaged install (wheel only) ships **only**
     the ``investment_dashboard`` wheel — ``alembic.ini`` and the migration
     scripts are not part of the wheel. In that case there is nothing for
     Alembic to run, which historically left a freshly installed app with
@@ -502,7 +502,7 @@ def _run_alembic_upgrade() -> bool:
 
     Returns ``False`` (without raising) when Alembic is not importable or
     when ``alembic.ini`` cannot be located — the two situations that occur
-    in the packaged installer/portable bundle, where the caller falls back
+    in a wheel-only install, where the caller falls back
     to :func:`_ensure_schema_present`.
     """
     loaded = _load_alembic_config()
@@ -594,8 +594,8 @@ def _ensure_secondary_tier_schema() -> None:
 def _ensure_schema_present() -> None:
     """Create the current ORM schema directly, one storage tier at a time.
 
-    Used when Alembic migrations are unavailable (the packaged installer /
-    portable bundle). ``create_all`` is idempotent — it only emits
+    Used when Alembic migrations are unavailable (a wheel-only
+    install). ``create_all`` is idempotent — it only emits
     ``CREATE TABLE`` for tables that do not yet exist — so a partially
     populated database keeps its data while gaining any missing tables.
     """
@@ -1119,7 +1119,7 @@ def run_boot_sequence(*, skip_network: bool = False) -> None:
 
     Args:
         skip_network: if ``True``, skip FX/price refresh (useful for tests
-            and offline development). :func:`main.run` passes ``True`` and
+            and offline development). the server passes ``True`` and
             instead runs :func:`run_deferred_network_refresh` on a
             background thread so the UI opens immediately.
     """
@@ -1182,7 +1182,7 @@ def run_deferred_network_refresh(*, show_progress: bool = True) -> None:
 
     Pulling fresh FX rates and market prices is the slowest part of boot and
     needs the network, which previously blocked the browser from opening: the
-    user stared at the console while the refresh ran. ``main.run`` now runs the
+    user stared at the console while the refresh ran. the server now runs the
     fast, offline portion of the boot sequence synchronously, opens the UI
     immediately, and calls this helper on a background daemon thread. The page
     renders straight away from cached data and quietly updates once the refresh

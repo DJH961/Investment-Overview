@@ -32,12 +32,6 @@ log = logging.getLogger(__name__)
 _KEYRING_SERVICE = "investment-dashboard"
 _KEYRING_USERNAME = "synced-tiers"
 
-#: Keyring usernames for the v3.0 live-web companion secrets. They share the
-#: SQLCipher service so all app secrets live in one keychain entry group, but
-#: use distinct usernames so the mobile passphrase, publish token, and DB
-#: passphrase never collide.
-_KEYRING_MOBILE_PASSPHRASE_USERNAME = "mobile-passphrase"
-_KEYRING_PUBLISH_TOKEN_USERNAME = "publish-token"
 #: Keyring username for the Tiingo secondary-provider API token (desktop
 #: fallback behind yfinance). Stored like every other app secret — in the OS
 #: keychain, never plaintext or an env var — so the desktop user enters it once
@@ -93,26 +87,6 @@ def load_passphrase_from_keyring() -> str | None:
 def store_passphrase_in_keyring(passphrase: str) -> bool:
     """Persist the passphrase to the OS keychain. Returns ``True`` on success."""
     return _keyring_set(_KEYRING_USERNAME, passphrase)
-
-
-def load_mobile_passphrase_from_keyring() -> str | None:
-    """Look up the v3.0 live-web companion passphrase in the OS keychain."""
-    return _keyring_get(_KEYRING_MOBILE_PASSPHRASE_USERNAME)
-
-
-def store_mobile_passphrase_in_keyring(passphrase: str) -> bool:
-    """Persist the live-web companion passphrase to the OS keychain."""
-    return _keyring_set(_KEYRING_MOBILE_PASSPHRASE_USERNAME, passphrase)
-
-
-def load_publish_token_from_keyring() -> str | None:
-    """Look up the GitHub publish PAT in the OS keychain."""
-    return _keyring_get(_KEYRING_PUBLISH_TOKEN_USERNAME)
-
-
-def store_publish_token_in_keyring(token: str) -> bool:
-    """Persist the GitHub publish PAT to the OS keychain."""
-    return _keyring_set(_KEYRING_PUBLISH_TOKEN_USERNAME, token)
 
 
 def load_tiingo_token_from_keyring() -> str | None:

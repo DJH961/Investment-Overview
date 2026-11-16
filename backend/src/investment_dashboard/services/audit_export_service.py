@@ -14,13 +14,11 @@ another source, without exposing a new always-on surface.
 from __future__ import annotations
 
 import json
-import secrets
 from datetime import date
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.config import get_settings
 from investment_dashboard.readmodels import build_snapshot
 
 
@@ -37,21 +35,3 @@ def build_audit_export_json(session: Session, *, as_of: date | None = None, inde
 def audit_export_filename(today: date | None = None) -> str:
     """Filename for a downloaded audit export, dated for easy archival."""
     return f"audit-export-{(today or date.today()).isoformat()}.json"
-
-
-def dev_password_configured() -> bool:
-    """Whether a developer password gate is configured."""
-    return bool(get_settings().dev_password)
-
-
-def verify_dev_password(presented: str | None) -> bool:
-    """Constant-time check of a presented developer password.
-
-    Returns ``False`` when no password is configured, so callers must decide
-    explicitly how to treat an ungated panel rather than letting an empty
-    string through.
-    """
-    configured = get_settings().dev_password
-    if not configured or not presented:
-        return False
-    return secrets.compare_digest(presented, configured)

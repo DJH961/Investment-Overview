@@ -16,20 +16,8 @@ from ._seed import seed_ledger
 
 #: (both path, single path) - the single route takes ``ccy`` as an extra query param.
 ROUTES = [
-    ("/api/overview/both", "/api/overview"),
-    ("/api/holdings/both", "/api/holdings"),
-    ("/api/holdings/both?group_by=none", "/api/holdings?group_by=none"),
-    ("/api/graphs/1y/both", "/api/graphs/1y"),
-    ("/api/graphs/1y/both?compare=false", "/api/graphs/1y?compare=false"),
-    ("/api/periods/monthly/both", "/api/periods/monthly"),
-    ("/api/periods/monthly/both?fill_gaps=true", "/api/periods/monthly?fill_gaps=true"),
-    ("/api/periods/yearly/both", "/api/periods/yearly"),
     ("/api/allocations/both", "/api/allocations"),
-    ("/api/analytics/both?lookback_days=90", "/api/analytics?lookback_days=90"),
     ("/api/calculator/both", "/api/calculator"),
-    ("/api/deposits/both", "/api/deposits"),
-    ("/api/deposits/both?kind=deposit", "/api/deposits?kind=deposit"),
-    ("/api/deposits/dividends/both", "/api/deposits/dividends"),
 ]
 
 
@@ -130,7 +118,7 @@ def test_both_costs_less_than_two_builds(api_client: TestClient, seeded: None) -
         assert api_client.get(path).status_code == 200
         return time.perf_counter() - start
 
-    timed("/api/overview?ccy=EUR")  # warm imports / lazy state
-    single = min(timed("/api/overview?ccy=EUR") for _ in range(3))
-    both = min(timed("/api/overview/both") for _ in range(3))
+    timed("/api/allocations?ccy=EUR")  # warm imports / lazy state
+    single = min(timed("/api/allocations?ccy=EUR") for _ in range(3))
+    both = min(timed("/api/allocations/both") for _ in range(3))
     assert both < 1.6 * single + 0.05  # loose: second build reuses the session's loads

@@ -1,11 +1,11 @@
 [project]
 name = "investment-dashboard"
 version = "6.17.2"
-description = "Single-user, locally-hosted investment tracking dashboard unifying Vanguard, Fidelity, and Savings Bank with XIRR/TWR/CAGR analytics in USD and EUR."
+description = "Single-user, self-hosted investment tracking dashboard unifying Vanguard, Fidelity, and Savings Bank with XIRR/TWR/CAGR analytics in USD and EUR."
 requires-python = ">=3.12"
 authors = [{ name = "D. Henke" }]
 license = { text = "PolyForm-Noncommercial-1.0.0" }
-keywords = ["investing", "portfolio", "xirr", "twr", "nicegui"]
+keywords = ["investing", "portfolio", "xirr", "twr"]
 classifiers = [
     "Private :: Do Not Upload",
     "Programming Language :: Python :: 3 :: Only",
@@ -16,7 +16,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "nicegui>=3.12.0,<4",
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "sqlalchemy>=2.0.30",
@@ -29,7 +28,6 @@ dependencies = [
     "numpy>=1.26",
     "scipy>=1.13",
     "python-dateutil>=2.9",
-    "plotly>=5.22",
     "openpyxl>=3.1",
     "cryptography>=48.0.1",
     # OS keychain access for the live-web companion secrets (mobile passphrase
@@ -67,20 +65,16 @@ encrypted = [
 ]
 
 [project.scripts]
-investment-dashboard = "investment_dashboard.main:run"
-inv-dashboard-api = "investment_dashboard.api.legacy_v5:run_legacy"
 inv-dashboard-server = "investment_dashboard.api.app:run"
 inv-dashboard-set-password = "investment_dashboard.tools.set_password:main"
 inv-dashboard-check-config = "investment_dashboard.tools.check_config:main"
 inv-dashboard-upload-db = "investment_dashboard.tools.upload_db:main"
-inv-dashboard-export-v5 = "investment_dashboard.tools.export_v5_ledger:main"
 inv-dashboard-export-snapshot = "investment_dashboard.tools.export_snapshot:main"
 inv-dashboard-split-db = "investment_dashboard.tools.split_db:main"
 inv-dashboard-repair-sidecar = "investment_dashboard.tools.repair_sidecar:main"
 inv-dashboard-backup = "investment_dashboard.tools.backup:main"
 inv-dashboard-restore = "investment_dashboard.tools.restore_db:main"
 inv-dashboard-settings = "investment_dashboard.tools.settings_cli:main"
-inv-dashboard-publish-web = "investment_dashboard.tools.publish_web:main"
 
 [build-system]
 requires = ["hatchling>=1.24"]
@@ -177,7 +171,6 @@ filterwarnings = [
 [tool.coverage.run]
 source = ["src/investment_dashboard"]
 branch = true
-omit = ["src/investment_dashboard/main.py", "src/investment_dashboard/ui/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -194,10 +187,10 @@ include_external_packages = true
 exclude_type_checking_imports = true
 
 [[tool.importlinter.contracts]]
-name = "Layering: ui/api -> services/readmodels -> repositories/adapters -> domain"
+name = "Layering: api -> services/readmodels -> repositories/adapters -> domain"
 type = "layers"
 layers = [
-    "investment_dashboard.ui : investment_dashboard.api",
+    "investment_dashboard.api",
     "investment_dashboard.services : investment_dashboard.readmodels",
     "investment_dashboard.repositories : investment_dashboard.adapters",
     "investment_dashboard.domain",

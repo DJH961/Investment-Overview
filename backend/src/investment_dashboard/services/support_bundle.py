@@ -74,9 +74,6 @@ def _config_summary() -> str:
         f"ledger_path       : {settings.ledger_path}",
         f"config_path       : {settings.config_path}",
         f"cache_path        : {settings.cache_path}",
-        f"api_enabled       : {settings.api_enabled}",
-        f"publish_enabled   : {settings.publish_enabled}",
-        f"shutdown_on_close : {settings.shutdown_on_tab_close}",
     ]
     return redact_secrets("\n".join(lines))
 
