@@ -193,7 +193,10 @@ def upload_import(
             account_id=account_id,
         )
     except import_staging.ImportStagingError as exc:
-        raise HTTPException(422, str(exc)) from exc
+        # A choice the page must ask for carries a code (``detail.code``) so it is
+        # shown as a prompt at the field, not as a failure.
+        detail = {"code": exc.code, "message": str(exc)} if exc.code else str(exc)
+        raise HTTPException(422, detail) from exc
     return _preview(staged)
 
 

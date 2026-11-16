@@ -69,3 +69,14 @@ describe("formatMonth", () => {
     expect(formatMonth("2026", "short")).toBe("2026");
   });
 });
+
+describe("chartMoneyFormat axis with a tick step", () => {
+  const axis = chartMoneyFormat("EUR", "axis");
+  it("shows enough digits for neighbouring ticks to differ", () => {
+    expect([1_260_000, 1_265_000, 1_270_000].map((v) => axis(v, 5_000))).toEqual(["€1.260m", "€1.265m", "€1.270m"]);
+  });
+  it("keeps long ranges short", () => {
+    expect(axis(1_200_000, 100_000)).toBe("€1.2m");
+    expect(axis(125_000, 5_000)).toBe("€125k");
+  });
+});

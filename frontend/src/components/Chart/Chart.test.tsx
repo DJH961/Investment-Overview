@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { Chart, fitLabel, segments, sessionLayout, timeTicks, type ChartSeries } from "./Chart";
+import { Chart, fitLabel, freeLabelY, segments, sessionLayout, timeTicks, type ChartSeries } from "./Chart";
 
 const series: ChartSeries[] = [
   {
@@ -250,5 +250,16 @@ describe("fitLabel", () => {
   it("keeps a label that fits and falls back to its first word", () => {
     expect(fitLabel("Tue 27", 200)).toBe("Tue 27");
     expect(fitLabel("Tue 27", 30)).toBe("Tue");
+  });
+});
+
+describe("freeLabelY", () => {
+  it("keeps the first offset when no inset axis label is in the way", () => {
+    expect(freeLabelY(100, [4, 18], [300])).toBe(104);
+  });
+  it("moves a label off an inset axis label (drawn just above its tick)", () => {
+    // Tick at 110: its label band is ~94..108. Below (104, 118) both collide, so the
+    // label goes above it (baseline 90).
+    expect(freeLabelY(100, [4, 18, -10], [110])).toBe(90);
   });
 });

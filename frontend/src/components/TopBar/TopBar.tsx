@@ -1,3 +1,4 @@
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import clsx from "clsx";
 import { CircleHelp, HeartPulse, ListChecks, LogOut, Monitor, Moon, RefreshCw, Settings, Sun, TriangleAlert, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
@@ -92,6 +93,9 @@ function HealthBadge({ health }: { health?: HealthSummary }) {
   );
 }
 
+/** Mirrors $bp-wide in styles/_mixins.scss. */
+const WIDE_QUERY = "(min-width: 1280px)";
+
 export function TopBar({
   title,
   freshness,
@@ -108,6 +112,10 @@ export function TopBar({
   const navigate = useNavigate();
   const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
   const showHealth = !compact || (health !== undefined && health.severity !== "ok");
+  // Below a wide screen the chip uses its short form ("Closed", "Open · 15:42"); the
+  // full sentence is on hover. A long chip used to break over three lines at 1024 px.
+  const roomy = useMediaQuery(WIDE_QUERY);
+  const shortChip = (compact || !roomy) && Boolean(freshness.short);
 
   const accountItems: MenuItem[] = [
     ...(compact ? [{ label: `Theme: ${theme}`, icon: <ThemeIcon aria-hidden />, onSelect: cycleTheme }] : []),
@@ -142,8 +150,8 @@ export function TopBar({
           <Freshness
             className="top-bar__freshness"
             status={freshness.status}
-            label={compact && freshness.short ? freshness.short : freshness.label}
-            title={compact && freshness.short ? freshness.label : freshness.updated}
+            label={shortChip ? freshness.short! : freshness.label}
+            title={shortChip ? freshness.label : freshness.updated}
           />
         )}
         {!compact && freshness.updated && (

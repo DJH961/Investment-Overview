@@ -94,9 +94,59 @@ def test_rejects_bad_input(session: Session, account_id: int) -> None:
         import_staging.stage(session, filename="a.pdf", content=b"x", account_id=account_id)
     with pytest.raises(import_staging.ImportStagingError):
         import_staging.stage(session, filename="a.csv", content=b"", account_id=account_id)
-    with pytest.raises(import_staging.ImportStagingError):
+    accounts_repo.create_account(  # two accounts: "x" can't say which one it is for
+        session,
+        broker="vanguard",
+        account_label="V",
+        native_currency="USD",
+        account_type="brokerage",
+    )
+    with pytest.raises(import_staging.ImportNeedsInputError):
         import_staging.stage(session, filename="a.csv", content=b"x")
     with pytest.raises(import_staging.ImportStagingError):
         import_staging.stage(
             session, filename="a.csv", content=b"x", account_id=account_id, broker="nobroker"
         )
+
+
+VANGUARD = FIXTURE.with_name("vanguard_sample.csv")
+_UNKNOWN = b"Date,Amount\n2026-01-02,5\n"
+
+
+def _two_accounts(session: Session) -> tuple[int, int]:
+    fid = accounts_repo.create_account(
+        session,
+        broker="fidelity",
+        account_label="F",
+        native_currency="USD",
+        account_type="brokerage",
+    ).id
+    van = accounts_repo.create_account(
+        session,
+        broker="vanguard",
+        account_label="V",
+        native_currency="USD",
+        account_type="brokerage",
+    ).id
+    return fid, van
+
+
+def test_broker_is_recognised_from_the_file() -> None:
+    assert import_staging._detect_broker(FIXTURE.read_bytes()) == "fidelity"
+    assert import_staging._detect_broker(VANGUARD.read_bytes()) == "vanguard"
+    assert import_staging._detect_broker(_UNKNOWN) is None
+
+
+def test_detect_from_file_picks_the_matching_account(session: Session) -> None:
+    fid, van = _two_accounts(session)
+    staged = import_staging.stage(session, filename="f.csv", content=FIXTURE.read_bytes())
+    assert staged.account_id == fid
+    staged = import_staging.stage(session, filename="v.csv", content=VANGUARD.read_bytes())
+    assert staged.account_id == van
+
+
+def test_unrecognised_file_asks_for_the_account_instead_of_failing(session: Session) -> None:
+    _two_accounts(session)
+    with pytest.raises(import_staging.ImportNeedsInputError) as caught:
+        import_staging.stage(session, filename="x.csv", content=_UNKNOWN)
+    assert caught.value.code == "needs_account"

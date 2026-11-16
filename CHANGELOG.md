@@ -26,9 +26,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   5 min). "Auto" follows the live refresh interval. A reload only fills gaps; it
   never replaces finer live points with coarser bars.
 - **"Now" marker on the 1D and 1W graphs after the close.** The session line
-  ends at the close; one dot shows the current value with the overnight
-  currency move ("· next day"). The graph header shows exactly the hero's day
-  figure, with "Session · Overnight" underneath while the market is shut.
+  ends at the close and keeps the session's width (the axis is not stretched
+  over the night); one dot just after it shows the current value ("Now
+  €1,264,087", or the range % in hide mode). The header shows exactly the
+  hero's day figure; on 1D the split "Session +0.81 % · Overnight −0.45 % · next
+  day" sits beside the range buttons. Nothing is shown when the currency did
+  not move since the close (always so in USD).
+- **Import recognises the broker from the file** and picks its account (or
+  your only account). When it can't tell, the Account field asks for it
+  instead of showing "Could not read that file".
 - **Sign out from the More menu on phones.**
 - **USD figures are rate-independent, and a test guards it.** An all-dollar
   ledger must give identical USD numbers under any EUR/USD history.
@@ -79,6 +85,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the week.
 - **An import no longer wipes the whole week's graph points**, only from the
   trade date on, so no week of price history is re-downloaded.
+- **Top bar tidied.** The status chip no longer breaks over three lines: below
+  1280 px it shows its short form ("Closed", "Open · 15:42") with the full
+  sentence on hover; the portfolio pill is as wide as its figures (no dead
+  space).
+- **"A refresh is already running" is said on screen** when you press
+  refresh during one, instead of nothing.
+- **Graph axis labels never repeat** ("€1.27m, €1.27m" on a tight day): labels
+  show just enough decimals for neighbouring ticks to differ. On phones the
+  "Now" and "Prev close" labels move off the in-plot axis labels.
+- **The 1D trend triangle gives way to the "Now" dot after the close** (the
+  line ends at the close; the day can have turned since).
+- **Top movers: the "BIGGEST MOVE" tag drops below the symbol as a whole**
+  instead of breaking mid-word.
 - A flaky growth-index property test (absolute tolerance on large values).
 
 ## [6.16.0] — 2026-11-10

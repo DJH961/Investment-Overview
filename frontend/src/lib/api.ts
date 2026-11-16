@@ -37,7 +37,7 @@ export class ApiError extends Error {
 }
 
 /** `{detail: "text"}` or `{detail: {code, message}}` → message and code. */
-function readDetail(payload: unknown): { message?: string; code?: string } {
+export function readDetail(payload: unknown): { message?: string; code?: string } {
   if (!payload || typeof payload !== "object" || !("detail" in payload)) return {};
   const detail = (payload as { detail: unknown }).detail;
   if (detail && typeof detail === "object" && !Array.isArray(detail)) {

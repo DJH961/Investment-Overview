@@ -11,11 +11,27 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  // "Session +0.81 %   Overnight −0.45 % · next day": two parts that wrap as
+  // whole units on a phone instead of breaking mid-phrase.
   &__split {
-    margin: 0 0 var(--space-2);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    margin: 0;
     color: var(--color-muted);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
+  }
+
+  &__split-part {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    white-space: nowrap;
+  }
+
+  &__split-note {
+    font-size: var(--font-size-xs);
   }
 
   &__growth-label {

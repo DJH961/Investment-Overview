@@ -71,6 +71,12 @@
     accent-color: var(--color-accent);
   }
 
+  // A choice the server needs (which account): a prompt, not an error colour.
+  &__ask {
+    color: var(--color-accent);
+    font-weight: var(--font-weight-medium);
+  }
+
   &__actions {
     display: flex;
     justify-content: flex-end;

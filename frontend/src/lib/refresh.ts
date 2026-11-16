@@ -151,7 +151,11 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
     api<RefreshStatusDto>("/api/refresh?force=true", { method: "POST", timeoutMs: 30_000 })
       .then((s) => setRefreshState({ ...fromStatus(s), running: true }))
       .catch((err: unknown) => {
-        if (err instanceof ApiError && err.status === 409) return; // already running: keep "Updating…"
+        if (err instanceof ApiError && err.status === 409) {
+          // Already running (another device or the schedule): say so here, keep "Updating…".
+          toast({ title: "A refresh is already running", description: "The new prices appear when it finishes." });
+          return;
+        }
         setRefreshState({ running: false });
         toast({
           title: "Couldn't start a refresh",

@@ -367,12 +367,21 @@ export function formatShortDay(value: string | number | Date, timeZone?: string)
  * Keep every chart going through this; formatMoney masks in hide mode, and
  * value charts plot "% from range start" instead (see ValueChartCard).
  */
-export function chartMoneyFormat(currency: Currency, kind: "axis" | "tooltip" = "tooltip"): (v: number) => string {
+export function chartMoneyFormat(
+  currency: Currency,
+  kind: "axis" | "tooltip" = "tooltip",
+): (v: number, step?: number) => string {
   return kind === "axis"
-    ? (v) =>
-        Math.abs(v) >= 10_000
-          ? formatMoney(v, currency, { compact: true, narrow: true, significant: 3 })
-          : formatMoney(v, currency, { digits: 0, narrow: true })
+    ? (v, step) => {
+        const abs = Math.abs(v);
+        if (abs < 10_000) return formatMoney(v, currency, { digits: 0, narrow: true });
+        if (!step || !(step > 0)) return formatMoney(v, currency, { compact: true, narrow: true, significant: 3 });
+        // Just enough decimals for neighbouring ticks to differ: a tight 1D range on
+        // €1.26m reads €1.260m / €1.265m, never €1.27m twice.
+        const unit = abs >= 1_000_000 ? 1_000_000 : 1_000;
+        const digits = Math.min(3, Math.max(0, Math.ceil(-Math.log10(step / unit) - 1e-9)));
+        return formatMoney(v, currency, { compact: true, narrow: true, digits });
+      }
     : (v) => formatMoney(v, currency, { digits: 0, narrow: true });
 }
 
