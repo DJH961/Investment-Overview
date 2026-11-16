@@ -11,7 +11,7 @@
   &__stats {
     @include m.surface;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
     margin: 0;
     padding: 0;
     overflow: hidden;
@@ -28,7 +28,7 @@
     min-width: 0;
     container-type: inline-size;
     margin: 0 calc(-1 * var(--border-width)) calc(-1 * var(--border-width)) 0;
-    padding: var(--space-4) var(--card-pad-x);
+    padding: var(--space-4);
     border-right: var(--border-width) solid var(--color-border);
     border-bottom: var(--border-width) solid var(--color-border);
 

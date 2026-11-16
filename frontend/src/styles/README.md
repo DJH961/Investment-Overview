@@ -14,7 +14,7 @@ a serif**; everything around it stays quiet.
 
 | Role | Face | Where |
 | --- | --- | --- |
-| Display | Source Serif 4 Variable, optical sizing (`--font-display`, `m.display($size)`) | Page titles, the Overview headline value, the Brief's title. Nowhere else. |
+| Display | Source Serif 4 Variable, optical sizing (`--font-display`, `m.display($size)`) | Page titles, the Overview headline value, the Brief's title, the app name on the login card. Nowhere else. |
 | Interface and figures | Inter Variable, optical sizing (`--font-sans`) | Everything else, including every number in a table or tile. |
 
 - Both fonts are self-hosted through `@fontsource-variable/*` (CSP: no external requests).

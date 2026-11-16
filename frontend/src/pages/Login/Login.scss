@@ -38,10 +38,8 @@
 
   &__title {
     margin: 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-medium);
-    letter-spacing: var(--tracking-tight);
-    line-height: var(--line-height-tight);
+    // The app's name in the display serif: the login is the first page the owner sees.
+    @include m.display(var(--font-size-2xl));
     color: var(--color-fg);
   }
 

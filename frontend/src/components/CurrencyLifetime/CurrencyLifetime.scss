@@ -11,7 +11,9 @@
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
 
-    @include m.tablet-up {
+    // Three across only on a tablet, where the card spans the page; on a desktop it
+    // sits in the half-width side column and keeps two roomy columns.
+    @include m.tablet-only {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
@@ -21,7 +23,7 @@
     flex-direction: column;
     gap: var(--space-1);
     min-width: 0;
-    padding: var(--space-4) var(--space-5);
+    padding: var(--space-4);
     box-shadow:
       calc(-1 * var(--border-width)) 0 0 0 var(--color-border),
       0 calc(-1 * var(--border-width)) 0 0 var(--color-border);
