@@ -62,7 +62,7 @@ function moveTip(ccy: string, ccy2: string, closed: boolean, lastSession: boolea
       : closed
         ? ` US markets are closed now, so dollar prices stand still and only the exchange rate moves.`
         : "") +
-    ` Price move and FX below show the two parts.`
+    ` The Day move tile below shows its market-hours and overnight parts.`
   );
 }
 

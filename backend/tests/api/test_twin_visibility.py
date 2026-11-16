@@ -18,6 +18,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from investment_dashboard.db import cache_write_session, ledger_session_scope
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
@@ -150,7 +152,13 @@ def _fund_row(page: dict) -> dict:
     return next(r for r in page["holdings"] if r["symbol"] == "FUNDX")
 
 
-def test_market_open_the_fund_is_pending_on_the_twin_estimate(api_db: Path) -> None:
+def test_market_open_the_fund_is_pending_on_the_twin_estimate(
+    api_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No open rate at all (no sample, no fixing for the day): no split block.
+    monkeypatch.setattr(
+        "investment_dashboard.services.fx_service.get_settled_rate_on", lambda *_a, **_k: None
+    )
     _seed(official_nav=None)
     with ledger_session_scope() as s:
         usd = build_overview(s, ccy="USD", as_of=MON, now=DURING)

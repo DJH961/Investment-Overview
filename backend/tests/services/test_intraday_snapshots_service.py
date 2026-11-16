@@ -894,6 +894,32 @@ class TestSessionOpenFx:
         session.flush()
         assert iss.session_open_fx(session, now=_NOW) is None
 
+    def test_day_open_rate_falls_back_to_the_session_days_own_fixing(
+        self, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No sample carries a rate: the ECB fixing dated on the session day (struck
+        before the 09:30 ET open) stands in, so last night's move is not counted as 0."""
+        from investment_dashboard.services import fx_service
+
+        asked: list[date] = []
+
+        def fixing(_session: Session, target: date, **_k: object) -> Decimal | None:
+            asked.append(target)
+            return Decimal("1.07")
+
+        monkeypatch.setattr(fx_service, "get_settled_rate_on", fixing)
+        _seed_usd_holding(session)
+        assert iss.day_open_rate(session, now=_NOW) == Decimal("1.07")
+        assert asked == [iss.last_session_date(_NOW)]
+        # The currency box's own anchor is untouched by the fallback.
+        assert iss.session_open_fx(session, now=_NOW) is None
+        # A sample's own rate always wins over the fixing.
+        intraday_repo.insert_sample(
+            session, datetime(2024, 6, 3, 13, 30), Decimal("1000.00"), fx_eur_usd=Decimal("1.10")
+        )
+        session.flush()
+        assert iss.day_open_rate(session, now=_NOW) == Decimal("1.10")
+
 
 class TestSessionCloseRateCompletenessGate:
     """``session_close_rate`` must not mistake a mid-session sample for the settle."""

@@ -2159,7 +2159,7 @@
         "type": "object"
       },
       "DaySplit": {
-        "description": "The headline day move (since the previous close) as price + currency.\n\nMarket open: ``price_move + currency_move`` is the headline move exactly (the\nestimated book's when ``estimated``). ``overnight``: the market is shut, so\n``price_move`` IS the headline day total frozen at the close and ``currency_move``\nthe exchange-rate change since its close, shown beside it and not added; otherwise ``price_move`` is today's move at the previous close's rate\nand ``currency_move`` the rate change since that close. ``*_secondary`` are the\nsame figures computed in ``secondary_ccy`` (never converted).",
+        "description": "The headline day move (since the previous close) and its currency figure.\n\n``price_move`` is always the headline day Total (the estimated book's when\n``estimated``): live while the market is open, frozen at the close while it is\nshut. The name is historical; it is not a prices-only figure. ``overnight``: the\nmarket is shut and ``currency_move`` is the exchange-rate change since the close,\nshown beside the Total and not added; otherwise ``currency_move`` is the part of\nthe Total the rate caused since the previous close. ``*_secondary`` are the same\nfigures computed in ``secondary_ccy`` (never converted).",
         "properties": {
           "currency_move": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -13387,7 +13387,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.17.2"
+    "version": "6.17.3"
   },
   "openapi": "3.1.0",
   "paths": {

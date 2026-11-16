@@ -35,11 +35,11 @@ afterEach(() => setHideAmounts(false));
 describe("KpiGrid", () => {
   it("shows the NiceGUI tile set with both currencies", () => {
     render(<KpiGrid data={data({ beating: true, portfolio_return: "0.25", benchmark_return: "0.2" })} currency="EUR" loading={false} />);
-    // "Price move" leads: the day is what you look at first. "Dividend income" is
+    // "Day move" leads: the day is what you look at first. "Dividend income" is
     // gone — the stat strip right below already carries dividend return and yield.
     // Total growth and Vs market sit together because both carry two lines beneath
     // them; the plain period figures finish the grid.
-    for (const l of ["Price move", "Invested", "Total return", "XIRR", "Total growth", "Vs market", "YTD", "MTD"]) {
+    for (const l of ["Day move", "Invested", "Total return", "XIRR", "Total growth", "Vs market", "YTD", "MTD"]) {
       expect(screen.getByText(l)).toBeInTheDocument();
     }
     expect(screen.getByText("€100,000.00")).toBeInTheDocument();
@@ -53,7 +53,7 @@ describe("KpiGrid", () => {
     expect(screen.getByRole("button", { name: "About XIRR" })).toBeInTheDocument();
   });
 
-  it("Price move shows the server's price part, with the FX part under it", () => {
+  it("Day move shows the server's day Total, with the FX figure under it", () => {
     const split = (overnight: boolean) =>
       ({
         ...data({ beating: true }),
@@ -101,7 +101,7 @@ describe("KpiGrid", () => {
     setHideAmounts(false);
   });
 
-  describe("Price move tile: session / overnight split as its hint", () => {
+  describe("Day move tile: session / overnight split as its hint", () => {
     const shut = (ls: Record<string, string | null>) =>
       ({
         ...data({ beating: true }),
