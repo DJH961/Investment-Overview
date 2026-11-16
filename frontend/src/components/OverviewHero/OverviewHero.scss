@@ -17,6 +17,14 @@
     padding: var(--card-pad-y) var(--card-pad-x);
   }
 
+  // Inside the Overview stage: the stage is the surface; the hero keeps its padding.
+  &--embedded {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   &__main {
     display: flex;
     flex-direction: column;
@@ -109,9 +117,15 @@
   &__value {
     @include m.display(calc(var(--font-size-3xl) * var(--kpi-tile-fit, 1)));
 
-    // Desktop has the room: the headline reads as the page's subject, not one stat among many.
-    @include m.desktop {
+    // Tablet up: room for a confident figure. Desktop: the one oversized number in the
+    // app, the page's subject (useFitWidth shrinks it if a long value must fit).
+    @include m.tablet-up {
       font-size: calc(var(--font-size-display) * var(--kpi-tile-fit, 1));
+    }
+
+    @include m.wide {
+      font-size: calc(var(--font-size-hero) * var(--kpi-tile-fit, 1));
+      line-height: 1.05;
     }
   }
 

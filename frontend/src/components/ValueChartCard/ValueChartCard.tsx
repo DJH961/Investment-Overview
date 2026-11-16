@@ -110,6 +110,8 @@ export interface ValueChartCardProps {
   marketOpen?: boolean;
   /** `GET /api/overview` `last_session` (session move + overnight currency, after the close). */
   lastSession?: OverviewDto["last_session"];
+  /** Set inside the Overview stage: no surface of its own (see Card `variant="plain"`). */
+  embedded?: boolean;
   className?: string;
 }
 
@@ -120,6 +122,7 @@ export function ValueChartCard({
   configuredRange,
   marketOpen = false,
   lastSession,
+  embedded = false,
   className,
 }: ValueChartCardProps) {
   const timeZone = useTimeZone();
@@ -225,7 +228,8 @@ export function ValueChartCard({
 
   return (
     <Card
-      className={clsx("value-chart-card", className)}
+      className={clsx("value-chart-card", embedded && "value-chart-card--embedded", className)}
+      variant={embedded ? "plain" : "surface"}
       title="Graph"
       collapsibleId="overview.chart"
       // The range's growth sits beside the title rather than over the plot: it is

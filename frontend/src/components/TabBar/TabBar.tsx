@@ -25,7 +25,7 @@ export function TabBar({ onLogout }: TabBarProps = {}) {
 
   return (
     <>
-      <nav className="tab-bar" aria-label="Main tabs">
+      <nav className="tab-bar u-ink" aria-label="Main tabs">
         {TAB_ITEMS.map((item) => (
           <NavLink
             key={item.to}

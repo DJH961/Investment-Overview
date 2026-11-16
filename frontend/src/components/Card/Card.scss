@@ -4,6 +4,14 @@
   min-width: 0;
   @include m.surface;
 
+  // Set inside a composed surface: it borrows that surface instead of drawing its own.
+  &--plain {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   &__header {
     display: flex;
     // Wraps so a long meta note drops to its own line instead of being squeezed

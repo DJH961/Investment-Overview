@@ -83,9 +83,13 @@ function tokens(css: string): Record<string, string> {
   return out;
 }
 
+const dark = tokens(block("@mixin dark-tokens {"));
 const themes: Record<string, Record<string, string>> = {
   light: tokens(block(":root {")),
-  dark: tokens(block("@mixin dark-tokens {")),
+  dark,
+  // The navigation spine (.u-ink, both themes): the dark set on a navy canvas. The
+  // portfolio card in the sidebar shows pos/neg/warn figures and the market-state dot there.
+  ink: { ...dark, ...tokens(block(".u-ink {")) },
 };
 const min = (v: Vision) => (v === "protan" ? MIN_PROTAN : MIN_OTHER);
 

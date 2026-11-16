@@ -25,15 +25,24 @@
   --color-ink: #e9edf5;
   --color-ink-fg: #0b0f17;
   // Canvas and surfaces, lowest to highest.
-  --color-bg: #090c12;
-  --color-bg-glow: radial-gradient(1100px 520px at 85% -12%, rgba(160, 155, 255, 0.07), transparent 62%);
-  --color-surface: #10141c;
-  --color-surface-2: #171c27;
-  --color-surface-raised: #151a24;
-  --color-surface-glass: rgba(13, 17, 24, 0.78);
-  --color-border: #1f2531;
-  --color-border-strong: #2f3747;
-  --color-hairline: rgba(255, 255, 255, 0.045);
+  // Dark is its own theme, not an inverted light one: a deep blue-black canvas lit
+  // from above (two faint glows), surfaces that step up in blue-grey, light hairlines.
+  --color-bg: #070a10;
+  --color-bg-glow:
+    radial-gradient(1200px 560px at 70% -18%, rgba(160, 155, 255, 0.09), transparent 62%),
+    radial-gradient(800px 420px at 0% 0%, rgba(78, 176, 205, 0.05), transparent 60%);
+  --color-surface: #0f141d;
+  --color-surface-2: #161c28;
+  --color-surface-raised: #131925;
+  --color-surface-glass: rgba(10, 14, 21, 0.78);
+  --color-border: #1d2431;
+  --color-border-strong: #2d3647;
+  --color-hairline: rgba(255, 255, 255, 0.05);
+  // The Overview stage: lit from the top-left, a step above the cards.
+  --stage-bg:
+    radial-gradient(900px 380px at 8% -30%, rgba(160, 155, 255, 0.13), transparent 62%),
+    linear-gradient(180deg, #141b28, #0f141d 70%);
+  --stage-border: #252e3f;
   // Values
   --color-pos: #4eb0cd;
   --color-neg: #d0784e;
@@ -83,6 +92,12 @@
   --color-border: #e3e6ec;
   --color-border-strong: #cbd1db;
   --color-hairline: rgba(255, 255, 255, 0);
+  --stage-bg:
+    radial-gradient(900px 380px at 8% -30%, rgba(62, 60, 180, 0.06), transparent 62%),
+    linear-gradient(180deg, #ffffff, #fcfcfe);
+  --stage-border: #dde1e8;
+  // The navigation spine: deep ink in both themes (see .u-ink below).
+  --color-spine: #0d1524;
   --color-pos: #2a6181;
   --color-neg: #74210c;
   --color-pos-soft: rgba(42, 97, 129, 0.1);
@@ -139,6 +154,8 @@
   --font-size-3xl: 2.125rem;
   --font-size-4xl: 2.75rem;
   --font-size-display: 3.25rem;
+  // The Overview headline on a desktop: the one oversized figure in the app.
+  --font-size-hero: 4.5rem;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -154,7 +171,7 @@
   --sidebar-item-height: 38px;
   --sidebar-rail-width: 64px;
   --topbar-height: 56px;
-  --tabbar-height: 60px;
+  --tabbar-height: 64px; // the room the floating phone dock takes: 56px dock + 8px of air below it
   --content-max-width: 1440px;
   --tap-min: 44px;
   --control-height: 36px;
@@ -202,6 +219,22 @@
   :root:not([data-theme]) {
     @include dark-tokens;
   }
+}
+
+// The navigation spine (sidebar, rail, phone tab bar): deep ink in BOTH themes, the
+// app's signature. Children see the dark token set on a navy canvas, so a Money or
+// Percent inside reads correctly; values are checked in tokens.cvd.test.ts (ink).
+.u-ink {
+  @include dark-tokens;
+  --color-bg: #0d1524;
+  --color-surface: #16203a;
+  --color-surface-2: #1a2540;
+  --color-surface-glass: rgba(13, 21, 36, 0.86);
+  --color-border: #22304b;
+  --color-border-strong: #33446a;
+
+  color: var(--color-fg);
+  color-scheme: dark;
 }
 
 // Phones: tighter rhythm, the cards give their width to the content.

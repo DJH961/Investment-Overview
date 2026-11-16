@@ -28,6 +28,8 @@ export interface TopBarProps {
   freshness: { status: FreshnessStatus; label: string; short?: string; updated?: string };
   /** The portfolio's value and day move: the same place on every view (phone: under the title). */
   summary?: ShellSummary;
+  /** Show the desktop summary pill (default). Off while the expanded sidebar shows the same figures. */
+  showSummary?: boolean;
   /** Phone layout: title + freshness on the left, the essential actions on the right. */
   compact?: boolean;
   /** Server refresh; always available (disabled only while one runs). */
@@ -108,6 +110,7 @@ export function TopBar({
   privacyToggle,
   leading,
   summary,
+  showSummary = true,
   clock,
 }: TopBarProps) {
   const { currency, setCurrency, theme, cycleTheme } = usePrefs();
@@ -168,7 +171,7 @@ export function TopBar({
           </span>
         )}
       </div>
-      {!compact && (
+      {!compact && showSummary && (
         // Always rendered (a placeholder until the figures load), so the bar's
         // items never shift between views.
         <div

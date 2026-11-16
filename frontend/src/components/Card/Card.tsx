@@ -19,6 +19,11 @@ export interface CardProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   actions?: ReactNode;
   /** Remove body padding (tables that run edge to edge). */
   flush?: boolean;
+  /**
+   * "plain": no surface of its own (no background, border or shadow), for a card set
+   * inside a larger composed surface such as the Overview stage.
+   */
+  variant?: "surface" | "plain";
   /** Show a fold/unfold toggle in the header (needs a `title`). */
   collapsible?: boolean;
   /** Initial state for a collapsible card when nothing is remembered. Default: open. */
@@ -36,6 +41,7 @@ export function Card({
   meta,
   actions,
   flush = false,
+  variant = "surface",
   collapsible = false,
   defaultOpen = true,
   collapsibleId,
@@ -53,7 +59,7 @@ export function Card({
   const hasHeader = title || subtitle || meta || actions;
 
   return (
-    <section className={clsx("card", foldable && "card--collapsible", !open && "card--collapsed", className)} {...rest}>
+    <section className={clsx("card", variant === "plain" && "card--plain", foldable && "card--collapsible", !open && "card--collapsed", className)} {...rest}>
       {hasHeader && (
         <header className="card__header">
           <div className="card__heading">

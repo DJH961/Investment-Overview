@@ -1,47 +1,77 @@
 @use "../../styles/mixins" as m;
 
-// Page layout only; each section styles itself in its own component.
+// Page composition only; each section styles itself in its own component.
+//
+//   [ Brief (v7) ]
+//   [ STAGE: value · today's move · today panel ]
+//   [ STAGE: the chart                          ]
+//   [ KPI panel                                 ]
+//   [ Holdings (main)          ][ Currency    ]   wide screens; stacked below
+//   [                          ][ Top movers  ]
+//   [ Allocation               ][ Asset classes / Lifetime FX ]
 .overview-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--page-gap);
 
-  @include m.phone {
-    gap: var(--space-3);
+  // The stage: the portfolio's one composed statement, lit from above (--stage-bg),
+  // the largest radius in the app. The hero and the chart share it, split by a hairline.
+  &__stage {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border: var(--border-width) solid var(--stage-border);
+    border-radius: var(--radius-xl);
+    background: var(--stage-bg);
+    box-shadow: var(--shadow-hover);
+  }
+
+  &__stage-chart {
+    border-top: var(--border-width) solid var(--color-border);
   }
 
   &__row {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
 
-    @include m.phone {
-      gap: var(--space-3);
-    }
-
     @include m.desktop {
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-
       &--alloc {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+    }
+
+    // Holdings in the main column, the side column beside it; both end level.
+    @include m.wide {
+      &--main {
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+        align-items: stretch;
       }
     }
   }
 
   &__cell {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
   }
 
-  // Cards stacked in one grid cell (asset classes + lifetime FX).
+  // Cards stacked in one grid cell.
   &__side {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--page-gap);
     min-width: 0;
+  }
 
-    @include m.phone {
-      gap: var(--space-3);
+  // Wide: the main cell's card and the side's last card fill the row, so the two
+  // columns end on one line (no ragged bottoms).
+  @include m.wide {
+    &__row--main &__cell > :last-child,
+    &__side--fill > :last-child {
+      flex: 1 1 auto;
     }
   }
 }

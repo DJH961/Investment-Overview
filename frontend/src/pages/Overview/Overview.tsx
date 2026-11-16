@@ -135,28 +135,40 @@ export function Overview() {
       <OnboardingCard />
       {data && <OverviewWarnings warnings={data.warnings} />}
 
-      <OverviewHero
-        data={data}
-        currency={currency}
-        loading={loading}
-        aside={<HeroIntraday currency={currency} />}
-      />
+      {/*
+        v7: the Daily Brief (Callout) lands here, directly above the stage.
+        The stage: the portfolio value, today's move and the chart as one composed
+        statement on one lit surface, the centre of the app.
+      */}
+      <section className="overview-page__stage" aria-label="Portfolio value and chart">
+        <OverviewHero data={data} currency={currency} loading={loading} aside={<HeroIntraday currency={currency} />} embedded />
+        <ValueChartCard
+          embedded
+          className="overview-page__stage-chart"
+          currency={currency}
+          defaultRange={data?.default_range}
+          configuredRange={overviewRange}
+          marketOpen={data?.freshness?.market_state === "open"}
+          lastSession={data?.last_session}
+        />
+      </section>
 
       <KpiGrid data={data} currency={currency} loading={loading} />
 
-      {data ? <CurrencyBox data={data} /> : <Skeleton height="12rem" />}
-
-      {/* Full width, top to bottom: chart, movers, holdings. */}
-      <ValueChartCard
-        currency={currency}
-        defaultRange={data?.default_range}
-        configuredRange={overviewRange}
-        marketOpen={data?.freshness?.market_state === "open"}
-        lastSession={data?.last_session}
-      />
-      <MoversCard movers={data?.movers} currency={currency} loading={loading} lastSession={data?.last_session} />
-
-      <OverviewHoldings currency={currency} movers={data?.movers} />
+      {/*
+        Holdings, the key content, owns the main column; today's currency and the
+        movers sit beside it (wide screens). Both columns end level: the side's
+        last card takes up the slack. Narrower, everything stacks, Holdings first.
+      */}
+      <div className="overview-page__row overview-page__row--main">
+        <div className="overview-page__cell">
+          <OverviewHoldings currency={currency} movers={data?.movers} />
+        </div>
+        <div className="overview-page__side overview-page__side--fill">
+          {data ? <CurrencyBox data={data} /> : <Skeleton height="12rem" />}
+          <MoversCard movers={data?.movers} currency={currency} loading={loading} lastSession={data?.last_session} />
+        </div>
+      </div>
 
       {/* The secondary lifetime FX card sits under asset classes, beside the treemap. */}
       <div className="overview-page__row overview-page__row--alloc">

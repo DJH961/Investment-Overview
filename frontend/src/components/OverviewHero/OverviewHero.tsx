@@ -22,6 +22,8 @@ export interface OverviewHeroProps {
   now?: Date;
   /** Desktop right zone (the intraday mini chart); hidden below the desktop breakpoint. */
   aside?: ReactNode;
+  /** Set inside the Overview stage: no surface of its own, the stage draws it. */
+  embedded?: boolean;
 }
 
 
@@ -87,13 +89,13 @@ export function heroPriceTime(data: OverviewDto): PriceTime {
  * "Today" or "Last session · Tue", with when the prices are from and when the
  * app last fetched them, plus the investment-vs-currency return split.
  */
-export function OverviewHero({ data, currency, loading, now, aside }: OverviewHeroProps) {
+export function OverviewHero({ data, currency, loading, now, aside, embedded = false }: OverviewHeroProps) {
   const timeZone = useTimeZone();
   // The big figure shrinks to fit the card (seven-figure USD / de-DE values at 360 px).
   const valuesRef = useRef<HTMLDivElement>(null);
   useFitWidth(valuesRef, loading || !data);
   const side = aside ? <div className="overview-hero__aside">{aside}</div> : null;
-  const cls = clsx("overview-hero", side && "overview-hero--split");
+  const cls = clsx("overview-hero", side && "overview-hero--split", embedded && "overview-hero--embedded");
   if (loading || !data) {
     return (
       <section className={cls} aria-label="Portfolio value">
