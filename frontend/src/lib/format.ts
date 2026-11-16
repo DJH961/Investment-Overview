@@ -91,7 +91,7 @@ function formatIntl(options: Intl.NumberFormatOptions, value: number): string {
 export interface MoneyOptions {
   signed?: boolean;
   compact?: boolean;
-  /** Override fraction digits (default 2, 1 when compact). */
+  /** Override fraction digits (default 2; compact: 2 under 1,000, else 1). */
   digits?: number;
   /** Public market data (a unit price): never masked in hide mode. */
   unmasked?: boolean;
@@ -119,7 +119,7 @@ function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): st
       currency,
       currencyDisplay: opts.narrow ? "narrowSymbol" : "symbol",
       notation: opts.compact ? "compact" : "standard",
-      minimumFractionDigits: opts.compact ? 0 : digits,
+      minimumFractionDigits: digits,
       maximumFractionDigits: digits,
       // A real zero has no sign; the sample is never zero, so decide here.
       signDisplay: opts.signed && amount !== 0 ? "exceptZero" : "auto",
@@ -131,7 +131,9 @@ function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): st
 export function formatMoney(amount: number | null | undefined, currency: Currency, opts: MoneyOptions = {}): string {
   if (isMissing(amount)) return "–";
   if (HIDE_AMOUNTS && !opts.unmasked) return maskedMoney(amount, currency, opts);
-  const digits = opts.digits ?? (opts.compact ? 1 : 2);
+  // Compact: amounts under 1,000 are not abbreviated and keep cents (2 decimals);
+  // abbreviated ones (K / M) always show one decimal ("$1.0K", "$12.3K").
+  const digits = opts.digits ?? (opts.compact ? (Math.abs(amount) < 1000 ? 2 : 1) : 2);
   return formatIntl(
     {
       style: "currency",
@@ -140,7 +142,7 @@ export function formatMoney(amount: number | null | undefined, currency: Currenc
       notation: opts.compact ? "compact" : "standard",
       ...(opts.significant
         ? { maximumSignificantDigits: opts.significant }
-        : { minimumFractionDigits: opts.compact ? 0 : digits, maximumFractionDigits: digits }),
+        : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
       signDisplay: opts.signed ? "exceptZero" : "auto",
     },
     amount,
@@ -365,12 +367,21 @@ export function formatShortDay(value: string | number | Date, timeZone?: string)
  * Keep every chart going through this; formatMoney masks in hide mode, and
  * value charts plot "% from range start" instead (see ValueChartCard).
  */
-export function chartMoneyFormat(currency: Currency, kind: "axis" | "tooltip" = "tooltip"): (v: number) => string {
+export function chartMoneyFormat(
+  currency: Currency,
+  kind: "axis" | "tooltip" = "tooltip",
+): (v: number, step?: number) => string {
   return kind === "axis"
-    ? (v) =>
-        Math.abs(v) >= 10_000
-          ? formatMoney(v, currency, { compact: true, narrow: true, significant: 3 })
-          : formatMoney(v, currency, { digits: 0, narrow: true })
+    ? (v, step) => {
+        const abs = Math.abs(v);
+        if (abs < 10_000) return formatMoney(v, currency, { digits: 0, narrow: true });
+        if (!step || !(step > 0)) return formatMoney(v, currency, { compact: true, narrow: true, significant: 3 });
+        // Just enough decimals for neighbouring ticks to differ: a tight 1D range on
+        // €1.26m reads €1.260m / €1.265m, never €1.27m twice.
+        const unit = abs >= 1_000_000 ? 1_000_000 : 1_000;
+        const digits = Math.min(3, Math.max(0, Math.ceil(-Math.log10(step / unit) - 1e-9)));
+        return formatMoney(v, currency, { compact: true, narrow: true, digits });
+      }
     : (v) => formatMoney(v, currency, { digits: 0, narrow: true });
 }
 

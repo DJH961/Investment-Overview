@@ -41,12 +41,17 @@
     letter-spacing: -0.01em;
   }
 
-  // The freshness chip keeps a readable minimum instead of shrinking to its dot.
-  // The chip keeps a readable minimum, then wraps its words.
+  // Phone: the short form, with a readable minimum, wrapping if it must (some pages
+  // have no short form, e.g. "As of 16/11/2026", and 360 px must not overflow).
+  // Tablet and up: stacked, the state over its detail (two lines, never three).
   &__freshness {
     flex-shrink: 1;
     max-width: 100%;
     min-width: min(6.5rem, 100%);
+
+    @include m.tablet-up {
+      flex-shrink: 0;
+    }
   }
 
   // When the app last fetched prices (the chip says when they are from).
@@ -75,7 +80,6 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 15rem;
     min-height: var(--control-height-sm);
     gap: var(--space-2);
     flex-shrink: 0;
@@ -87,9 +91,13 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 
+    // As wide as its figures, no dead space; a placeholder width only while loading.
+    &[aria-busy] {
+      min-width: 10rem;
+    }
+
     // Tablet: value and day % only (the money move and its label need room).
     @include m.tablet-only {
-      min-width: 0;
 
       .top-bar__summary-day {
         display: none;

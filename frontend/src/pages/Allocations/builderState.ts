@@ -43,19 +43,21 @@ export function presetCurrent(items: Weighable[]): Weights {
 
 /**
  * The cash the portfolio holds (money-market funds + cash positions) in `ccy`.
- * The server sends it in the page currency with the spot rate of the same instant;
- * showing it in the other currency is a single-instant conversion with that rate.
+ * The server sends it in both currencies (USD summed natively, never the EUR
+ * figure times a rate), so the client never converts it.
  */
 export function cashIn(
-  inputs: { ccy: string; investable_cash?: string | null; fx_usd_per_eur?: string | null },
+  inputs: {
+    ccy: string;
+    investable_cash?: string | null;
+    investable_cash_eur?: string | null;
+    investable_cash_usd?: string | null;
+  },
   ccy: string,
 ): number {
-  const held = Number(inputs.investable_cash ?? 0);
-  if (!(held > 0)) return 0;
-  if (inputs.ccy === ccy) return held;
-  const fx = Number(inputs.fx_usd_per_eur ?? 0);
-  if (!(fx > 0)) return 0;
-  return ccy === "USD" ? held * fx : held / fx;
+  const sent = ccy === "USD" ? inputs.investable_cash_usd : inputs.investable_cash_eur;
+  const held = Number(sent ?? (inputs.ccy === ccy ? inputs.investable_cash : 0) ?? 0);
+  return held > 0 ? held : 0;
 }
 
 /** "Equal weight": 100 / n each. */

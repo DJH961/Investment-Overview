@@ -113,8 +113,9 @@ def test_discard(api_client: TestClient, account_id: int) -> None:
 
 
 def test_bad_uploads_are_rejected(api_client: TestClient, account_id: int) -> None:
+    # Account on "Detect from file": the Fidelity file finds the Fidelity account.
     no_account = _upload(api_client)
-    assert no_account.status_code == 422
+    assert no_account.status_code == 201
     wrong_ext = api_client.post(
         "/api/imports",
         files={"file": ("x.pdf", b"abc", "application/pdf")},
@@ -167,3 +168,17 @@ def test_vanguard_preview_includes_settlement_legs(api_client: TestClient) -> No
 
 def test_requires_auth(anon_client: TestClient) -> None:
     assert anon_client.post("/api/imports").status_code == 401
+
+
+def test_a_needed_choice_is_a_coded_prompt_not_a_failure(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from investment_dashboard.services import import_staging
+
+    def _ask(*_a: object, **_k: object) -> None:
+        raise import_staging.ImportNeedsInputError("Which account?", code="needs_account")
+
+    monkeypatch.setattr(import_staging, "stage", _ask)
+    res = _upload(api_client)
+    assert res.status_code == 422
+    assert res.json()["detail"] == {"code": "needs_account", "message": "Which account?"}

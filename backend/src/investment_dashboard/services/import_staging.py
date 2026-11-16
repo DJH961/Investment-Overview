@@ -65,6 +65,17 @@ def staging_ttl() -> timedelta:
 class ImportStagingError(ValidationError):
     """The upload can't be staged (bad file, unknown broker/account) -> 422."""
 
+    #: Machine-readable reason for the page (``detail.code``); ``None`` = a real fault.
+    code: str | None = None
+
+
+class ImportNeedsInputError(ImportStagingError):
+    """Not a fault: the page has to ask the user for a choice (e.g. the account)."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class StagedImportNotFoundError(NotFoundError):
     """Unknown or expired import id -> 404."""
@@ -166,14 +177,42 @@ def _resolve_broker(broker: str | None, account_broker: str) -> Broker:
         return Broker.GENERIC
 
 
-def _resolve_account(session: Session, account_id: int | None, broker: str | None) -> int:
+def _detect_broker(content: bytes) -> str | None:
+    """The broker whose own parser reads content (rows found), if exactly one does."""
+    hits: list[str] = []
+    for candidate in (Broker.FIDELITY, Broker.VANGUARD):
+        try:
+            report = importer_service._strict(candidate, content, {})
+        except Exception:
+            continue
+        if report.rows:
+            hits.append(candidate.value)
+    return hits[0] if len(hits) == 1 else None
+
+
+def _resolve_account(
+    session: Session, account_id: int | None, broker: str | None, content: bytes = b""
+) -> int:
+    """The account to stage into: the chosen one, else the one the file points to.
+
+    With the account on "Detect from file" the broker is taken from the choice or
+    recognised from the file itself; its single account wins, else the only account
+    there is. When that still leaves a choice, the page asks for it (not an error).
+    """
     if account_id is not None:
         return account_id
-    if broker:
-        matches = accounts_repo.find_by_broker(session, broker.strip().lower())
+    name = broker.strip().lower() if broker else _detect_broker(content)
+    if name:
+        matches = accounts_repo.find_by_broker(session, name)
         if len(matches) == 1:
             return matches[0].id
-    raise ImportStagingError("Pick an account for this import")
+    every = accounts_repo.list_accounts(session)
+    if len(every) == 1:
+        return every[0].id
+    raise ImportNeedsInputError(
+        "Which account is this file for? Pick it under Account, then press Import again.",
+        code="needs_account",
+    )
 
 
 def stage(
@@ -200,7 +239,7 @@ def stage(
     limit = max_upload_bytes()
     if len(content) > limit:
         raise ImportStagingError(f"File is larger than {limit // (1024 * 1024)} MB")
-    acct_id = _resolve_account(session, account_id, broker)
+    acct_id = _resolve_account(session, account_id, broker, content)
     account = accounts_repo.get_account(session, acct_id)
     if account is None:
         raise ImportStagingError(f"Unknown account_id={acct_id}")

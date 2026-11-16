@@ -11,6 +11,11 @@
 > marked **verify** was not checked in the code or against a provider. Where
 > a note and the code disagree, read the code, then fix the note. `AGENTS.md`
 > wins over everything here.
+>
+> Updated 2026-11-16 with the plan's 7.0 rework (plan §8, "Why 7.0 is a real
+> release"): push 4 now also carries the Currency page's first part, P12, a
+> light holding page and the push 3 leftovers; their notes moved here from
+> pushes 3, 5 and 6.
 
 ---
 
@@ -209,16 +214,33 @@ columns jitter.
   hints, never auto-fixes.
 - Coverage tools: `pytest-cov` and vitest coverage, reported, not gated.
 
+**Status after 6.15.0 (checked 2026-11-16).** Shipped: B-013, F-083, the
+scheduler items, B-021, B-008, the backend second pass (B-023 to B-032 in
+`v7_audit_backend.md`), `missing_dividends` and `import_age`
+(`domain/ledger_completeness.py`), `pytest-cov`. **Not done, moved to push
+4 (lane E):** the split half of P7, the share-count comparison, the
+frontend part of the second pass (Diagnostics sub-tabs, Import and Settings
+parts; nothing was appended to `v7_audit_frontend.md`), vitest coverage.
+Still open from the backend pass: B-026 (failed NAV probes), B-029, B-030,
+B-031.
+
 ---
 
-## Push 4 — 7.0: cutover and Daily Brief
+## Push 4 — 7.0: cutover, Daily Brief and the easy wins
 
-Two lanes that do not touch each other.
+Three sessions (plan §8). Session 1: lanes A and B, which do not touch
+each other. Session 2: write the Brief, Currency and P12 endpoint shapes
+first, then a backend and a frontend lane (lane C, P12, the Brief card).
+Session 3: lanes D and E, then the screenshot run and the release. No
+migration is planned; if one turns up, it follows lane A's order and no
+other lane adds one.
 
 **Lane A, cutover** (plan §8 lists what goes). Order: tag `v5-archive` on
 the last commit that has v5; delete; then AGENTS.md, CI and docs. Stop
 writing the frozen legs and the old EUR snapshot columns; drop the columns
-in a later migration. Remove B-014's unused routes and B-022's settings.
+in a later migration. Remove B-014's unused routes and B-022's settings. Same API clean-up:
+drop `summary.total_contrib_native` (B-029; nothing in the frontend reads
+it) and store Tiingo recovery rows with source `tiingo` (B-031).
 `api/legacy_v5.py` goes too (**verify** nothing in v6 calls it). Prepare
 the owner's click list for Cloudflare and the `live-data` release.
 
@@ -242,14 +264,72 @@ the owner's click list for Cloudflare and the `live-data` release.
   enough).
 - Longer windows: the "N sessions passed" strip, no numbers, until push 6's
   attribution exists; then the Brief can show any window.
+- Ledger events: `transactions.created_at` exists (checked 2026-11-16), so
+  "landed since the ack" needs no migration.
+
+**Market clock (P13), with lane B.** The server adds the next open and the
+next close (UTC instants, half-day aware, from `domain/market_hours.py`)
+to a payload the top bar already reads (**verify** which one carries the
+freshness chip). The browser only counts down, in the owner's time zone:
+"Opens in 2 h 14 min", "Open since 15:30 · closes in 3 h". When the
+countdown reaches zero it refetches; it never works out the next session
+itself. Server tests: a half-day (27 Nov) and a holiday Monday. On phones
+the clock must fit the short chip (overflow test).
+
+**Lane C, Currency page first part (moved from push 6).**
+
+- `GET /api/currency/both`, for now only the Today block and the strip:
+  the overview's `currency` block (moved; the Overview keeps a summary
+  that links here), today's rate low and high from the stored intraday
+  samples, `fx_buying_power_split` (`domain/session_fx.py`) for "€1,000
+  buys $X; yesterday $Y", the lifetime block from `CurrencyLifetime`'s
+  source, and one cent of EUR/USD (the dollar book valued at the rate and
+  at the rate plus 0.01, one instant, on the server). Use the `stats` shape
+  push 6 plans, so 7.2 adds tiles without changing the contract. Tiles
+  without data (effect this year, the Effect strip) are not sent.
+- `pages/Currency/` with the shared segmented control and one sub-tab,
+  Today. No constant-currency chart yet (it needs the attribution).
+  Sidebar entry; the endpoint goes into the activity labels.
+- Test: the page's "today" equals the Overview card, field by field.
+
+**P12, USD-view currency figure (moved from push 6).** In the USD view the
+return split shows the EUR-minus-USD gap (`lifetime.currency_effect_pp`,
+already computed from the two FX-aware returns in `readmodels/overview.py`)
+as "your holdings are worth X % more/less in euros than in dollars since
+you bought", plus the dollar's move against the euro over the same span
+(average buy rate against now, already in the lifetime block). Never
+`usd / fx`. `_currency_effect_for` keeps returning 0 for the split itself;
+the new figures are separate fields. Hide mode shows the percentages.
+
+**Lane D, light holding page (moved from push 5).**
+
+- Route `/holdings/:id/:tab?`, reusing the Holdings page chunk. Tabs:
+  Details (today's sheet content: price chart and definition list),
+  Transactions (the existing list filtered to the instrument), Dividends
+  (the Activity dividend data, filterable by instrument). Holdings rows and
+  the Overview link to it; whether the sheet stays on phones is decided
+  while building.
+- Push 5 adds the Performance and Tranches tabs, the twin panel and the
+  shared `HoldingRow` on top.
+
+**Lane E, push 3 leftovers.**
+
+- P7, the rest: missing splits (provider splits already cached in
+  `price_split`, against the ledger's split rows) and the optional
+  share-count check (numbers typed in Data Health, kept in `app_config`).
+  Hints only, never auto-fixes.
+- The frontend second audit pass (Diagnostics sub-tabs, Import and Settings
+  parts), appended to `v7_audit_frontend.md`; fix highs and mediums.
+- Vitest coverage, reported, not gated.
+- B-030 and the B-026 remainder: one question to the owner each, then fix.
 
 ---
 
 ## Push 5 — 7.1: holding deep-dive
 
-- **Route:** `/holdings/:id/:tab?`, tabs via the shared segmented control:
-  performance, transactions, dividends, tranches, and for NAV funds the
-  twin panel. Reuse the existing page chunk. One `HoldingRow` component
+- **Route:** `/holdings/:id/:tab?` ships in push 4 with Details,
+  Transactions and Dividends. This push adds the Performance and Tranches
+  tabs and, for NAV funds, the twin panel. One `HoldingRow` component
   replaces the three implementations.
 - **Per-holding intraday:** migration renames `intraday_twin_prices` to
   `intraday_symbol_prices` and adds `kind`. The reconstruction, week
@@ -317,7 +397,7 @@ Golden: a ten-day hand-worked ledger with one deposit and one rate jump.
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/currency/both` | Today block (moved from the overview's `currency`), lifetime block, headline per standard period |
+| `GET /api/currency/both` | Today block and lifetime block (shipped in push 4); this push adds the headline per standard period and the remaining strip tiles |
 | `GET /api/currency/effect/both?range=…` | daily series (value, constant-currency value), bridge (start, flows, market, currency, end), session legs, month and year bars, per-holding three-way split, records |
 | `GET /api/currency/rate-history?range=…` | rate series, the owner's average and break-even lines, conversion markers, percentiles |
 | `GET /api/currency/scenarios/both` | rows for rates 0.90…1.60 step 0.01: value, gain, distance to break-even; plus sensitivity per cent |
@@ -346,9 +426,11 @@ down days on which the dollar rose.
 
 **Frontend:** `pages/Currency/` with five sub-tabs; the constant-currency
 chart is the shared `Chart` with a dashed second series and a hatched band
-(add the colour pair to `tokens.cvd.test.ts`). The Overview's `CurrencyBox`
-shrinks to a summary that links here. Periods gains a currency column from
-the same endpoint.
+(add the colour pair to `tokens.cvd.test.ts`). The page, the Today
+sub-tab and the Overview's summary link exist since push 4; this push adds
+Effect, Rate and What if, and the constant-currency chart on Today. The
+currency trend (P11) is built from the same daily parts. Periods gains a
+currency column from the same endpoint.
 
 **Long ECB history:** one-time backfill of `fx_history` back to 1999
 through the existing Frankfurter adapter, via `fx_service` only.

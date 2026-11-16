@@ -422,11 +422,10 @@ def _currency_block(
 def _kpis(metrics: PortfolioMetrics, ccy: str, *, fx_rate: Decimal | None) -> dict[str, Any]:
     """The KPI block in ``ccy`` - every figure from that currency's own legs."""
     pick = holdings.pick
-    # Single-instant conversion of the annual fee estimate at the spot rate.
-    expense_cost: Decimal | None = metrics.annual_expense_cost_eur
-    if ccy == "USD":
-        rate = fx_rate
-        expense_cost = expense_cost * rate if rate is not None else None
+    # The annual fee estimate in USD is native values x TER, never EUR x rate.
+    expense_cost: Decimal | None = (
+        metrics.annual_expense_cost_usd if ccy == "USD" else metrics.annual_expense_cost_eur
+    )
 
     # Total return = value + realised cash dividends - net contributions; capital
     # gain = total return - all dividend income (see ``portfolio_return_split``).
@@ -794,6 +793,8 @@ def _last_session(
         "move": dec(split.move_usd if usd else split.move_eur),
         "move_pct": dec(split.pct_usd if usd else split.pct_eur),
         "overnight_currency": dec(split.overnight_usd if usd else split.overnight_eur),
+        # Fraction of the previous-close baseline (same base as ``day_move_pct``).
+        "overnight_pct": dec(split.overnight_pct_usd if usd else split.overnight_pct_eur),
         "value_now": dec(split.value_now_usd if usd else split.value_now_eur),
         "fx_close": dec(split.fx_close),
         "fx_now": dec(split.fx_now),

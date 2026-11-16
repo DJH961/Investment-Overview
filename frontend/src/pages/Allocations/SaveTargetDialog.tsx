@@ -8,6 +8,7 @@ import { Switch } from "../../components/Switch";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../lib/api";
 import { formatPercent } from "../../lib/format";
+import { parseDecimal } from "../../lib/parseDecimal";
 import { useSaveTarget, type TargetOut } from "../../lib/queries/allocations";
 import { isOff, totalWeight, type SavedBuilder } from "./builderState";
 import "./SaveTargetDialog.scss";
@@ -52,6 +53,36 @@ export function freeName(targets: TargetOut[]): string {
   return `Target ${n}`;
 }
 
+export interface SummaryRow {
+  key: string;
+  label: string;
+  /** Weight in percent. */
+  weight: number;
+  noBuy: boolean;
+}
+
+/**
+ * What the dialog lists: the categories with their target % when the mix is set
+ * per category, else the individual funds.
+ */
+export function summaryRows(
+  items: SaveItem[],
+  builder: SavedBuilder | undefined,
+  symbolOf: (id: number) => string,
+): { kind: "category" | "fund"; rows: SummaryRow[] } {
+  if (builder?.mode === "category") {
+    const rows = builder.categories
+      .map((c) => ({ key: c.name, label: c.name, weight: parseDecimal(c.weight) ?? 0, noBuy: false }))
+      .filter((r) => r.weight > 0)
+      .sort((a, b) => b.weight - a.weight);
+    return { kind: "category", rows };
+  }
+  const rows = items
+    .map((i) => ({ key: String(i.instrument_id), label: symbolOf(i.instrument_id), weight: Number(i.weight_pct), noBuy: i.no_buy }))
+    .sort((a, b) => b.weight - a.weight);
+  return { kind: "fund", rows };
+}
+
 /**
  * Saves the builder's mix as a new target or over an existing one. A real
  * form: Enter saves, the name is checked (required, unique), replacing a
@@ -88,7 +119,7 @@ export function SaveTargetDialog({
   const total = totalWeight(items.map((i) => ({ weight: i.weight_pct })));
   const sums = !isOff(total);
   const error = nameError(name, targets, targetKey);
-  const sorted = useMemo(() => [...items].sort((a, b) => Number(b.weight_pct) - Number(a.weight_pct)), [items]);
+  const summary = useMemo(() => summaryRows(items, builder, symbolOf), [items, builder, symbolOf]);
 
   const submit = () => {
     setTouched(true);
@@ -121,7 +152,9 @@ export function SaveTargetDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={existing ? "Update target" : "Save as target"}
-      description={`${items.length} fund${items.length === 1 ? "" : "s"} · ${
+      description={`${summary.rows.length} ${summary.kind === "category" ? "categor" : "fund"}${
+        summary.kind === "category" ? (summary.rows.length === 1 ? "y" : "ies") : summary.rows.length === 1 ? "" : "s"
+      } · ${
         sums ? "weights sum to 100 %" : `weights sum to ${formatPercent(total / 100, { digits: 1 })}, saved scaled to 100 %`
       }`}
       footer={
@@ -184,19 +217,19 @@ export function SaveTargetDialog({
           checked={activate}
           onCheckedChange={setActivate}
         />
-        <section className="save-target__items" aria-label="Funds to save">
+        <section className="save-target__items" aria-label={summary.kind === "category" ? "Categories to save" : "Funds to save"}>
           <header className="save-target__items-head">
-            <span>Fund</span>
+            <span>{summary.kind === "category" ? "Category" : "Fund"}</span>
             <span>Weight</span>
           </header>
           <ul className="save-target__list">
-            {sorted.map((i) => (
-              <li key={i.instrument_id} className="save-target__item">
+            {summary.rows.map((r) => (
+              <li key={r.key} className="save-target__item">
                 <span className="save-target__symbol">
-                  {symbolOf(i.instrument_id)}
-                  {i.no_buy && <span className="save-target__tag">no buy</span>}
+                  {r.label}
+                  {r.noBuy && <span className="save-target__tag">no buy</span>}
                 </span>
-                <span className="save-target__weight">{formatPercent(Number(i.weight_pct) / 100, { digits: 1 })}</span>
+                <span className="save-target__weight">{formatPercent(r.weight / 100, { digits: 1 })}</span>
               </li>
             ))}
           </ul>

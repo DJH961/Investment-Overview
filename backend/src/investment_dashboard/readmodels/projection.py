@@ -96,6 +96,29 @@ def _avg_contribution_usd(session: Session, *, monthly: bool, today: date) -> De
     return _mean_positive(usd)
 
 
+def _avg_contribution_usd_native(session: Session, *, monthly: bool) -> Decimal:
+    """Mean positive USD contribution from the USD legs, with or without FX history.
+
+    USD-native deposits read net_native verbatim; only EUR-native ones convert,
+    at their own trade date's rate. Never the EUR average times a rate.
+    """
+    from investment_dashboard.domain import kinds  # noqa: PLC0415
+    from investment_dashboard.repositories import transactions_repo  # noqa: PLC0415
+    from investment_dashboard.services import cashflows, fx_service  # noqa: PLC0415
+
+    rates = fx_service.get_rates(session, base="EUR", quote="USD")
+    buckets: dict[str, Decimal] = {}
+    for t in transactions_repo.list_all_with_account(session):
+        key = t.date.strftime("%Y-%m") if monthly else str(t.date.year)
+        buckets.setdefault(key, ZERO)
+        if t.kind not in kinds.EXTERNAL_FLOW_KINDS:
+            continue
+        amt = cashflows.txn_usd_amount(t, eur_to_usd=rates)
+        if amt is not None:
+            buckets[key] += amt
+    return _mean_positive([buckets[k] for k in sorted(buckets)])
+
+
 def build_seed(
     session: Session,
     *,
@@ -107,6 +130,7 @@ def build_seed(
     from investment_dashboard.services import (  # noqa: PLC0415
         display_currency_service,
         metrics_service,
+        positions_service,
     )
 
     today = today or market_hours.exchange_today()
@@ -126,11 +150,11 @@ def build_seed(
         rate = metrics.total_value_usd / metrics.total_value_eur
     usd_per_eur = rate if rate and rate > 0 else ONE
 
-    # USD average contribution from the USD legs (trade-date rates); only when
-    # that is unavailable fall back to a spot conversion of the EUR average.
+    # USD average contribution from the USD legs (trade-date rates); when the
+    # period table has no USD leg, re-derive it from the native USD legs.
     avg_usd = _avg_contribution_usd(session, monthly=monthly, today=today)
     if avg_usd is None:
-        avg_usd = avg_eur * usd_per_eur
+        avg_usd = _avg_contribution_usd_native(session, monthly=monthly)
 
     from investment_dashboard.readmodels.queries.projection_model import (  # noqa: PLC0415
         FALLBACK_EXPECTED_RATE,
@@ -145,7 +169,7 @@ def build_seed(
         starting_usd=(
             metrics.total_value_usd
             if metrics.total_value_usd is not None
-            else metrics.total_value_eur * usd_per_eur
+            else positions_service.total_portfolio_value_usd(session, as_of=today)
         ),
         avg_contribution_eur=avg_eur,
         avg_contribution_usd=avg_usd,

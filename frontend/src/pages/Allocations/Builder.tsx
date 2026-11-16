@@ -46,7 +46,6 @@ import { SaveTargetDialog, type SaveItem } from "./SaveTargetDialog";
 
 const isBoolOrNull = (v: unknown): v is boolean | null => v === null || typeof v === "boolean";
 const isMode = (v: unknown): v is Mode => v === "fund" || v === "category";
-const isCcy = (v: unknown): v is ReportingCurrency => v === "EUR" || v === "USD";
 
 /** A device choice wins; otherwise the server default from Settings; otherwise false. */
 function useCalcToggle(key: string, settingKey: string) {
@@ -102,7 +101,8 @@ export interface BuilderProps {
 export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   const plan = useBuilderPlan();
   const [amount, setAmount] = usePersistentState("calc.amount", "1000");
-  const [ccy, setCcy] = usePersistentState<ReportingCurrency>("calc.ccy", defaultCcy, isCcy);
+  // The global reporting currency (top-bar EUR/USD button); the builder has no toggle of its own.
+  const ccy = defaultCcy;
   const [fractional, setFractional] = useCalcToggle("calc.fractional", "chart_pref.calc.allow_fractional");
   const [allowSell, setAllowSell] = useCalcToggle("calc.rebalance", "chart_pref.calc.rebalance");
   const [mode, setMode] = usePersistentState<Mode>("calc.mode", "fund", isMode);
@@ -110,6 +110,12 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
   const [saveOpen, setSaveOpen] = useState(false);
   // True while the amount is the cash already held (the server then moves it out of the Cash group).
   const [fromCash, setFromCash] = useState(false);
+  // A currency flip makes a cash-filled amount stale: the server re-derives it.
+  const [seenCcy, setSeenCcy] = useState(ccy);
+  if (seenCcy !== ccy) {
+    setSeenCcy(ccy);
+    setFromCash(false);
+  }
   const heldCash = cashIn(inputs, ccy);
 
   const funds: Weighable[] = useMemo(
@@ -267,18 +273,6 @@ export function Builder({ inputs, allocations, defaultCcy }: BuilderProps) {
             <Field label={`Cash to invest (${ccy})`} error={badAmount ? "Enter a number such as 1000 or 1000,50." : undefined}>
               {(c) => <Input {...c} inputMode="decimal" value={amount} onChange={(e) => { setFromCash(false); setAmount(e.target.value); }} />}
             </Field>
-            <SegmentedControl
-              ariaLabel="Cash currency"
-              options={[
-                { value: "EUR", label: "EUR" },
-                { value: "USD", label: "USD" },
-              ]}
-              value={ccy}
-              onChange={(v) => {
-                setFromCash(false);
-                setCcy(v);
-              }}
-            />
             {heldCash > 0 && (
               <button
                 type="button"

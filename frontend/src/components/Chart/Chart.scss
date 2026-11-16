@@ -101,6 +101,27 @@
     font-size: var(--font-size-xs);
   }
 
+  &__now-dot {
+    fill: var(--color-surface);
+    stroke: var(--color-fg);
+    stroke-width: 2;
+  }
+
+  &__now-label {
+    fill: var(--color-fg);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    // A halo in the card colour keeps the label legible where it crosses the line.
+    paint-order: stroke;
+    stroke: var(--color-surface);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+
+    &--sub {
+      fill: var(--color-muted);
+    }
+  }
+
   &__axis-label {
     fill: var(--color-muted);
     font-size: var(--font-size-xs);

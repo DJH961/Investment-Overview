@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from investment_dashboard.readmodels import fx_effect
-from investment_dashboard.services import intraday_snapshots_service
+from investment_dashboard.services import intraday_snapshots_service, metrics_service
 
 D = Decimal
 USD = D("10000")
@@ -35,6 +35,13 @@ def _metrics(prev: Decimal | None = PREV, usd: Decimal | None = USD) -> SimpleNa
 def _anchors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(intraday_snapshots_service, "session_open_fx", lambda *_a, **_k: OPEN)
     monkeypatch.setattr(intraday_snapshots_service, "session_close_fx", lambda *_a, **_k: CLOSE)
+
+    # The shared helper values a book of USD 10000 at the two rates (the real helper
+    # is covered with a seeded ledger in tests/api/test_day_move_rule.py).
+    def _reval(_s: object, _on: object, *, fx_from: Decimal, fx_to: Decimal, book: object = None):
+        return USD / fx_to - USD / fx_from, USD - USD
+
+    monkeypatch.setattr(metrics_service, "fx_revaluation", _reval)
 
 
 def _eur(anchor: Decimal) -> Decimal:
@@ -76,7 +83,7 @@ def test_eur_effect_market_open(session: Session) -> None:
 
 
 @pytest.mark.parametrize("now", [AFTER_CLOSE, WEEKEND])
-def test_eur_effect_closed_session_view_reanchors_to_open(session: Session, now: datetime) -> None:
+def test_eur_effect_closed_anchors_at_previous_close(session: Session, now: datetime) -> None:
     effect = fx_effect.compute_eur_fx_effect(
         session,
         _metrics(),
@@ -85,7 +92,7 @@ def test_eur_effect_closed_session_view_reanchors_to_open(session: Session, now:
         now=now,  # type: ignore[arg-type]
     )
     assert effect is not None
-    assert effect.net_eur == _eur(OPEN)  # "since last open", agrees with the box headline
+    assert effect.net_eur == _eur(PREV)  # anchored at the previous close, like the hero
     assert effect.overnight_eur == _eur(CLOSE)  # live leg: close -> now
     assert effect.market_hours_eur == effect.net_eur - _eur(CLOSE)
 
@@ -116,7 +123,9 @@ def test_eur_effect_falls_back_to_session_close_without_previous_close(session: 
     assert effect.net_eur == _eur(CLOSE)  # prior_fx() fell back to the session close
 
 
-def test_eur_effect_absent_when_no_swing_or_no_usd_book(session: Session) -> None:
+def test_eur_effect_absent_when_no_swing_or_no_usd_book(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
     flat = fx_effect.compute_eur_fx_effect(
         session,
         _metrics(prev=LIVE),
@@ -125,6 +134,9 @@ def test_eur_effect_absent_when_no_swing_or_no_usd_book(session: Session) -> Non
         now=HOLIDAY,  # type: ignore[arg-type]
     )
     assert flat is None
+    monkeypatch.setattr(
+        metrics_service, "fx_revaluation", lambda *_a, **_k: (D(0), D(0))
+    )  # an empty book
     no_book = fx_effect.compute_eur_fx_effect(
         session,
         _metrics(usd=None),

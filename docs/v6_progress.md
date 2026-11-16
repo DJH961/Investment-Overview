@@ -102,7 +102,7 @@ SQLCipher DB stays encrypted; **no Litestream** (it can't replicate SQLCipher fi
 - [x] Set secrets on the server; GHCR + Actions secrets; enable the deploy workflow.
 - [x] Run `upload_db.py` with the real ledger; restore drill; first deploy.
 - [x] 6.0.0 released (2026-11-03); Pages companion is demo-only.
-- [ ] About a week of visual comparison, then the clean-up release (delete the §4 list) and the owner switches off Pages, the Worker, `live-data` and the Twelve Data key.
+- [ ] About a week of visual comparison, then the clean-up release (delete the §4 list) and the owner switches off the Worker, `live-data` and the Twelve Data key (Pages stays for the demo). The clean-up release is 7.0, push 4 of [`v7_plan.md`](v7_plan.md) §8 (reworked 2026-11-16).
 
 ## Log
 - 2026-10-31 branch created, tracker written; W0 started.

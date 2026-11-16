@@ -90,19 +90,15 @@ def build_inputs(
     ccy = ccy.upper()
     ctx = context or build_context(session)
     data = build_calculator_data(session)
-    factor: Decimal | None = Decimal(1)
-    if ccy == "USD":
-        factor = data.fx_rate_usd_per_eur if data.fx_rate_usd_per_eur else None
-
-    def _val(eur: Decimal) -> str | None:
-        return dec(eur * factor) if factor is not None else None
-
+    usd = ccy == "USD"
     return {
         "ccy": ccy,
         "as_of": ctx.as_of.isoformat(),
         "fx_usd_per_eur": dec(data.fx_rate_usd_per_eur),
-        "total_value": _val(data.total_value_eur),
-        "investable_cash": _val(data.cash_eur),
+        "total_value": dec(data.total_value(ccy)),
+        "investable_cash": dec(data.cash(ccy)),
+        "investable_cash_eur": dec(data.cash_eur),
+        "investable_cash_usd": dec(data.cash_usd),
         "instruments": [
             {
                 "instrument_id": i.instrument_id,
@@ -110,7 +106,7 @@ def build_inputs(
                 "name": i.name,
                 "category": i.category,
                 "asset_class": i.asset_class,
-                "current_value": _val(i.current_value_eur),
+                "current_value": dec(i.current_value_usd if usd else i.current_value_eur),
                 "current_pct": dec(i.current_pct / Decimal(100)),
                 "is_cash": i.is_cash,
             }
@@ -119,7 +115,7 @@ def build_inputs(
         "categories": [
             {
                 "name": c.name,
-                "current_value": _val(c.current_value_eur),
+                "current_value": dec(c.current_value_usd if usd else c.current_value_eur),
                 "current_pct": dec(c.current_pct / Decimal(100)),
                 "members": [m.instrument_id for m in c.members],
                 "is_cash": c.is_cash,

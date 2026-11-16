@@ -37,6 +37,10 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         metrics_service._ValuationCache, "total_value", lambda self, on: Decimal(2050)
     )
+    # ... and the native USD terminal value (the USD book is never EUR x rate).
+    monkeypatch.setattr(
+        metrics_service._ValuationCache, "total_value_usd", lambda self, on: Decimal(1640)
+    )
 
 
 @pytest.fixture
@@ -58,8 +62,14 @@ def seeded(session):  # type: ignore[no-untyped-def]
                 source="manual",
             )
         )
-    for day, val in ((D0, 800), (D1, 2050), (D2, 2050)):
-        snapshots_repo.upsert_snapshot(session, day, Decimal(val))
+    for day, val, usd, fx in (
+        (D0, 800, 1000, "1.25"),
+        (D1, 2050, 1640, "0.80"),
+        (D2, 2050, 1640, "0.80"),
+    ):
+        snapshots_repo.upsert_snapshot(
+            session, day, Decimal(val), total_value_usd=Decimal(usd), fx_eur_usd=Decimal(fx)
+        )
     fx_repo.upsert_rates(session, {D0: Decimal("1.25"), D1: Decimal("0.80"), D2: Decimal("0.80")})
     session.flush()
     return session

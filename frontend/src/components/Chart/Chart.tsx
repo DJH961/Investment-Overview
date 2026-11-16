@@ -26,6 +26,22 @@ export type ChartTone = "primary" | "benchmark" | "muted";
 export type ChartXMode = "date" | "time" | "session";
 
 /** One exchange session (UTC instants) for `xMode="session"`. */
+/** Share of the x-span added after the last point when a "now" marker is shown. */
+const NOW_GUTTER = 0.05;
+
+/**
+ * The first text baseline (`y + offset`) whose ~12 px label band misses every inset
+ * axis label (drawn just above its tick line). Falls back to the first offset.
+ */
+export function freeLabelY(y: number, offsets: number[], tickYs: number[]): number {
+  for (const off of offsets) {
+    const top = y + off - 12;
+    const bottom = y + off;
+    if (tickYs.every((t) => bottom < t - 16 || top > t - 2)) return y + off;
+  }
+  return y + offsets[0];
+}
+
 export interface ChartSession {
   date: string;
   open: string | number;
@@ -106,13 +122,27 @@ export interface ChartReferenceLine {
   label?: string;
 }
 
+/**
+ * One live marker (dot + label) at a value just after the line ends; nothing joins
+ * them. It sits a fixed small step to the right of the last point rather than at its
+ * wall-clock time, so the axis keeps the session and is not stretched over the night.
+ */
+export interface ChartNowMarker {
+  v: number;
+  /** Label lines, drawn to the left of the dot (first line = the value). */
+  lines?: string[];
+}
+
 export interface ChartProps {
   series: ChartSeries[];
   referenceLine?: ChartReferenceLine;
+  nowMarker?: ChartNowMarker;
   range?: string;
   onRangeChange?: (range: string) => void;
   ranges?: string[];
-  valueFormat: (v: number) => string;
+  /** Left-axis labels and the tooltip default. On the axis `step` is the tick spacing, so
+   *  a formatter can show just enough digits for neighbouring ticks to differ. */
+  valueFormat: (v: number, step?: number) => string;
   /** Axis tick labels. */
   timeFormat: (t: number) => string;
   /** Tooltip time label (default: `timeFormat`). */
@@ -127,7 +157,8 @@ export interface ChartProps {
   /** Keep the drawn curve but dim it while new data loads. */
   busy?: boolean;
   /** Right-axis tick labels for a scaled `axis: "right"` series (true values in its currency). */
-  rightAxisFormat?: (v: number) => string;
+  /** Right-axis labels; `step` is the tick spacing (in right-axis units). */
+  rightAxisFormat?: (v: number, step?: number) => string;
   /** Makes legend entries toggle buttons. */
   onToggleSeries?: (id: string) => void;
   /** Exchange sessions for `xMode="session"` (falls back to `date` when empty). */
@@ -220,6 +251,7 @@ function toneClass(tone: ChartTone | undefined, index: number): string {
 export function Chart({
   series,
   referenceLine,
+  nowMarker,
   range,
   onRangeChange,
   ranges,
@@ -306,9 +338,15 @@ export function Chart({
   const rightScale = rightSeries?.scale && Number.isFinite(rightSeries.scale) ? rightSeries.scale : 1;
   const bounds = useMemo(() => {
     if (!values.length) return null;
+    const nowOk = nowMarker && Number.isFinite(nowMarker.v);
     const tMin = times[0];
-    const tMax = times[times.length - 1];
-    const ref = referenceLine && Number.isFinite(referenceLine.value) ? [referenceLine.value] : [];
+    const tLast = times[times.length - 1];
+    // Room for the marker: a small gutter after the last point, never the night.
+    const tMax = nowOk ? tLast + Math.max(tLast - tMin, 1) * NOW_GUTTER : tLast;
+    const ref = [
+      ...(referenceLine && Number.isFinite(referenceLine.value) ? [referenceLine.value] : []),
+      ...(nowOk ? [nowMarker.v] : []),
+    ];
     let lo = Math.min(...values, ...ref);
     let hi = Math.max(...values, ...ref);
     if (lo === hi) {
@@ -319,14 +357,18 @@ export function Chart({
     lo -= pad;
     hi += pad;
     return { lo, hi, tMin, tMax };
-  }, [values, times, referenceLine]);
+  }, [values, times, referenceLine, nowMarker]);
+  const nowX = bounds && nowMarker ? bounds.tMin + (bounds.tMax - bounds.tMin) * (1 - NOW_GUTTER / 2.5) : null;
 
   // Margins fit the widest tick label, so labels are never clipped and the plot
   // gets every remaining pixel (narrow phones especially).
   const yTicks = bounds ? niceTicks(bounds.lo, bounds.hi, height < 200 ? 4 : 5) : [];
-  const leftW = Math.max(0, ...yTicks.map((v) => labelWidth(valueFormat(v))));
+  const yStep = yTicks.length > 1 ? Math.abs(yTicks[1] - yTicks[0]) : undefined;
+  const leftW = Math.max(0, ...yTicks.map((v) => labelWidth(valueFormat(v, yStep))));
   const rightW =
-    rightSeries && rightAxisFormat ? Math.max(0, ...yTicks.map((v) => labelWidth(rightAxisFormat(v * rightScale)))) : 0;
+    rightSeries && rightAxisFormat
+      ? Math.max(0, ...yTicks.map((v) => labelWidth(rightAxisFormat(v * rightScale, yStep && yStep * rightScale))))
+      : 0;
   const PAD = compact
     ? { top: 18, right: 2, bottom: 24, left: 2 }
     : {
@@ -398,6 +440,10 @@ export function Chart({
         onChange={onRangeChange}
       />
     ) : null;
+  // Phone charts draw the axis labels inside the plot; a marker or reference label
+  // that would land on one moves to a free spot instead of sitting on top of it.
+  const insetTickYs = compact && scales ? yTicks.map((v) => scales.y(v)) : [];
+
   const header =
     rangeControl || headerExtra ? (
       <div className="chart__header">
@@ -440,7 +486,9 @@ export function Chart({
   const tipTime = tooltipTimeFormat ?? timeFormat;
   // End marker: last drawn point of the primary series.
   const primaryPts = (prepared[0]?.pts ?? []).flatMap((p) => (p.y === null ? [] : [{ x: p.x, y: p.y }]));
-  const endPt = trend && primaryPts.length ? primaryPts[primaryPts.length - 1] : null;
+  // The trend triangle marks where the line ends. After the close the "now" dot is the
+  // end (the line stops at the close, and the day can have turned since), so no triangle.
+  const endPt = trend && !nowMarker && primaryPts.length ? primaryPts[primaryPts.length - 1] : null;
   const cursorT = cursor !== null ? (times[cursor] ?? null) : null;
   const cursorX = cursorT !== null ? scales.x(cursorT) : null;
   const tipRows =
@@ -500,7 +548,7 @@ export function Chart({
                 y={compact ? scales.y(v) - 4 : scales.y(v)}
                 dy={compact ? undefined : "0.32em"}
               >
-                {valueFormat(v)}
+                {valueFormat(v, yStep)}
               </text>
               {rightSeries && rightAxisFormat && (
                 <text
@@ -513,7 +561,7 @@ export function Chart({
                   y={compact ? scales.y(v) - 4 : scales.y(v)}
                   dy={compact ? undefined : "0.32em"}
                 >
-                  {rightAxisFormat(v * rightScale)}
+                  {rightAxisFormat(v * rightScale, yStep && yStep * rightScale)}
                 </text>
               )}
             </g>
@@ -559,7 +607,7 @@ export function Chart({
                 <text
                   className="chart__reference-label"
                   x={width - PAD.right - 4}
-                  y={scales.y(referenceLine.value) - 4}
+                  y={freeLabelY(scales.y(referenceLine.value), [-4, 13], insetTickYs)}
                   textAnchor="end"
                 >
                   {referenceLine.label}
@@ -618,6 +666,25 @@ export function Chart({
                     : `M${scales.x(endPt.x) - 4},${scales.y(endPt.y)} a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0`
               }
             />
+          )}
+          {nowMarker && nowX !== null && Number.isFinite(nowMarker.v) && (
+            <g className="chart__now" data-now-marker>
+              <circle className="chart__now-dot" cx={scales.x(nowX)} cy={scales.y(nowMarker.v)} r={4} />
+              {(nowMarker.lines ?? []).map((line, k, all) => (
+                <text
+                  key={line}
+                  className={clsx("chart__now-label", k > 0 && "chart__now-label--sub")}
+                  x={scales.x(nowX) - 9}
+                  y={
+                    freeLabelY(scales.y(nowMarker.v), [4, 18, -10], insetTickYs) +
+                    (k - (all.length - 1)) * 14
+                  }
+                  textAnchor="end"
+                >
+                  {line}
+                </text>
+              ))}
+            </g>
           )}
           {cursorX !== null && (
             <g className="chart__cursor" pointerEvents="none">

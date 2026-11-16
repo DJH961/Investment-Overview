@@ -14,7 +14,7 @@ risk-free rate) is returned as ``None`` and the page renders an
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from itertools import pairwise
@@ -35,6 +35,7 @@ from investment_dashboard.domain.returns import (
     DailyValuation,
     annualize_return,
     growth_index,
+    rebase_funded_series,
     twr,
 )
 from investment_dashboard.domain.risk import (
@@ -380,15 +381,26 @@ def build_bundle(
         benchmark_values=benchmark_values or None,
     )
 
+    new_money = [
+        pt.cumulative_contributions - curve[i - 1].cumulative_contributions if i else ZERO
+        for i, pt in enumerate(curve)
+    ]
+    if benchmark_is_funded and curve:
+        # Rebase the funded benchmark so it starts the window at the portfolio's own
+        # value (common base) instead of carrying all pre-window index gains.
+        rebased = rebase_funded_series(
+            curve[0].portfolio_value, [p.benchmark_value for p in curve], new_money
+        )
+        curve = [
+            replace(p, benchmark_value=b if p.benchmark_value is not None else None)
+            for p, b in zip(curve, rebased, strict=True)
+        ]
+
     portfolio_values = [p.portfolio_value for p in curve]
     # Every risk figure runs on the flow-adjusted growth index, not on raw values:
     # a deposit is not a gain and a withdrawal is not a drawdown. Over a long window
     # (All, 5Y) the raw values are mostly new money, which made CAGR, volatility,
     # VaR and beta meaningless there.
-    new_money = [
-        pt.cumulative_contributions - curve[i - 1].cumulative_contributions if i else ZERO
-        for i, pt in enumerate(curve)
-    ]
     index = growth_index(portfolio_values, new_money)
     daily_rets = _daily_returns(index)
     bench_rets = benchmark_series.daily_returns()

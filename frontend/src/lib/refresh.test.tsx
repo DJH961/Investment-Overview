@@ -60,6 +60,8 @@ describe("useServerRefresh", () => {
     const { result } = renderHook(() => useServerRefresh(), { wrapper });
     await act(async () => result.current.start());
     expect(result.current.state.running).toBe(true);
+    // Said on screen, not as an error.
+    expect(screen.getByText("A refresh is already running")).toBeInTheDocument();
   });
 
   it("clears the running state when the POST fails", async () => {

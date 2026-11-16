@@ -132,6 +132,8 @@ class PortfolioMetrics:
     #: Estimated annual fund-fee cost in EUR at the current marks
     #: (spreadsheet ``Total!E17`` = ``Σ price·expense·shares``).
     annual_expense_cost_eur: Decimal = Decimal(0)
+    #: The same in USD, from native values x TER (never ``annual_expense_cost_eur`` x rate).
+    annual_expense_cost_usd: Decimal | None = None
     #: Single-day portfolio growth on the most recent *completed* trading
     #: day — i.e. the latest date any held instrument repriced (skips
     #: weekends/holidays; tolerates the mutual-fund NAV lag vs ETFs).
@@ -256,6 +258,17 @@ class _ValuationCache:
         self._session = session
         self._positions: dict[date, list[positions_service.Position]] = {}
         self._values: dict[date, Decimal] = {}
+        self._values_usd: dict[date, Decimal] = {}
+
+    def total_value_usd(self, on: date) -> Decimal:
+        """Native-USD total on ``on`` (USD holdings at their own amount, never EUR x rate)."""
+        cached = self._values_usd.get(on)
+        if cached is None:
+            cached = positions_service.total_portfolio_value_usd(
+                self._session, as_of=on, positions=self.positions(on)
+            )
+            self._values_usd[on] = cached
+        return cached
 
     def positions(self, on: date) -> list[positions_service.Position]:
         cached = self._positions.get(on)
@@ -344,16 +357,15 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     net_contributions_usd = contributions_usd + withdrawals_usd
 
     total_value_eur = cache.total_value(as_of)
-    # Today's spot for the terminal mark-to-market USD value. We use spot
-    # for the *terminal* alone because positions_service already values
-    # everything in EUR using today's FX; per-trade-date USD is applied to
-    # the historical cashflow stream below.
-    fx_today = lookup_rate_with_forward_fill(eur_to_usd, as_of) or ZERO
-    # Degrade the terminal USD mark to ``None`` (blank) when there is no
-    # EUR→USD spot, rather than relabelling the EUR value as USD.
-    # The USD *wallet* cashflows are still real (per-trade-date legs); only
-    # the terminal mark-to-market is unknown.
-    total_value_usd: Decimal | None = total_value_eur * fx_today if fx_today != 0 else None
+    # Today's spot, only for genuinely EUR-native holdings inside the native USD
+    # total; USD holdings count at their own amount. The terminal USD mark is the
+    # native USD roll-up, never the EUR total converted back to dollars.
+    fx_today = lookup_rate_with_forward_fill(eur_to_usd, as_of)
+    # Blank (not a partial total) when a EUR-native holding needs a spot we lack.
+    needs_fx = any(p.account.native_currency.upper() != "USD" for p in cache.positions(as_of))
+    total_value_usd: Decimal | None = (
+        cache.total_value_usd(as_of) if (fx_today or not needs_fx) else None
+    )
 
     # Distributions swept into an in-portfolio money-market / settlement fund
     # (VMFXX, SPAXX, …) are already captured by the terminal mark-to-market of
@@ -428,11 +440,8 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         eur_to_usd=eur_to_usd,
         eur_overrides=ov,
     )
-    fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, ytd_open_date) or fx_today
-    # ``None`` (not EUR-as-USD) when there is no EUR→USD spot to convert with.
-    ytd_start_value_usd: Decimal | None = (
-        ytd_start_value_eur * fx_year_start if fx_year_start != 0 else None
-    )
+    # Native USD opening value (positions at ``ytd_open_date``), never EUR x rate.
+    ytd_start_value_usd: Decimal | None = cache.total_value_usd(ytd_open_date)
     # Treat the opening value as a synthetic "contribution" (negative) on the
     # first day of the window (as the Periods table's per-period XIRR does).
     ytd_first_day = ytd_open_date + timedelta(days=1)
@@ -488,6 +497,10 @@ def compute_portfolio_metrics(  # noqa: PLR0915
     weighted_expense_ratio, annual_expense_cost_eur = _compute_expense_figures(
         cache.positions(as_of)
     )
+    annual_expense_cost_usd = _compute_expense_cost_usd(
+        cache.positions(as_of),
+        lookup_rate_with_forward_fill(eur_to_usd, as_of),
+    )
 
     # Trailing dividend yield = total dividend income ÷ current closing balance
     # (matches the spreadsheet's Dividends ÷ Closing Balance).
@@ -522,6 +535,7 @@ def compute_portfolio_metrics(  # noqa: PLR0915
         mtd_growth_pct_usd=mtd_growth_usd,
         weighted_expense_ratio=weighted_expense_ratio,
         annual_expense_cost_eur=annual_expense_cost_eur,
+        annual_expense_cost_usd=annual_expense_cost_usd,
         daily_growth_pct=daily.growth_eur,
         daily_growth_pct_usd=daily.growth_usd,
         daily_growth_money_eur=daily.move_eur,
@@ -578,13 +592,17 @@ def _value_in_both(
     349/432/600, ``_overview_query``, ``_period_query``). Returning the EUR value in
     the USD slot silently reported the wrong daily-growth (USD) number.
     """
+    if fx is not None and fx > ZERO:
+        # The book is valued at ONE rate (see :func:`fx_revaluation`): USD holdings
+        # stay native dollars, EUR holdings stay native euros. USD is never ``eur * fx``.
+        book = _book_holdings(session, on, positions=cache.positions(on) if cache else None)
+        return book_value_at_rate_of(book, fx)
     eur = (
         cache.total_value(on)
         if cache is not None
         else positions_service.total_portfolio_value(session, as_of=on)
     )
-    usd: Decimal | None = eur * fx if fx is not None and fx > ZERO else None
-    return eur, usd
+    return eur, None
 
 
 def session_external_flows(
@@ -649,6 +667,7 @@ def _compute_daily_growth(
     eur_to_usd: dict[date, Decimal],
     cache: _ValuationCache | None = None,
     now: datetime | None = None,
+    live_fx: Decimal | None = None,
 ) -> _DailyGrowth:
     """Single-day growth on the last completed market session (global baseline).
 
@@ -697,12 +716,18 @@ def _compute_daily_growth(
     last_date = intraday_snapshots_service.previous_trading_session(as_of + timedelta(days=1))
     prev_date = intraday_snapshots_service.previous_trading_session(last_date)
 
-    def _leg_fx(on: date) -> Decimal | None:
-        live = lookup_rate_with_forward_fill(eur_to_usd, on)
-        return intraday_snapshots_service.daily_growth_leg_fx(session, on, now=now, live_rate=live)
+    # Day-move rule (:func:`fx_revaluation`): baseline = prev close x its close rate;
+    # now = current prices x the LIVE rate (``live_fx``, else the freshest known rate).
+    live_now = live_fx or lookup_rate_with_forward_fill(eur_to_usd, as_of)
 
-    fx_last = _leg_fx(last_date)
-    fx_prev = _leg_fx(prev_date)
+    def _leg_fx(on: date, *, now_leg: bool) -> Decimal | None:
+        live = live_now if now_leg else lookup_rate_with_forward_fill(eur_to_usd, on)
+        return intraday_snapshots_service.daily_growth_leg_fx(
+            session, on, now=now, live_rate=live, now_leg=now_leg
+        )
+
+    fx_last = _leg_fx(last_date, now_leg=True)
+    fx_prev = _leg_fx(prev_date, now_leg=False)
     last_eur, last_usd = _value_in_both(session, last_date, fx=fx_last, cache=cache)
     prev_eur, prev_usd = _value_in_both(session, prev_date, fx=fx_prev, cache=cache)
     # B-007: the session's external flows (deposits, withdrawals, paid-out
@@ -755,7 +780,7 @@ def _compute_daily_growth(
         if (growth_usd is not None and last_usd is not None and prev_usd is not None)
         else None
     )
-    fx_live = lookup_rate_with_forward_fill(eur_to_usd, as_of) or fx_last
+    fx_live = live_now or fx_last
     return _DailyGrowth(
         growth_eur, growth_usd, last_date, prev_date, fx_live, fx_prev, move_eur, move_usd
     )
@@ -786,7 +811,13 @@ def with_last_session_daily_growth(
     if metrics.daily_growth_as_of is None or metrics.daily_growth_as_of <= session_date:
         return metrics
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-    daily = _compute_daily_growth(session, as_of=session_date, eur_to_usd=eur_to_usd, now=now)
+    daily = _compute_daily_growth(
+        session,
+        as_of=session_date,
+        eur_to_usd=eur_to_usd,
+        now=now,
+        live_fx=metrics.daily_growth_fx_eur_usd,
+    )
     if daily.last_date is None:
         return metrics
     return replace(
@@ -843,6 +874,10 @@ class LastSessionSplit:
     overnight_est_usd: Decimal | None = None
     value_now_est_eur: Decimal | None = None
     value_now_est_usd: Decimal | None = None
+    #: ``overnight_*`` as a fraction of the previous-close baseline value
+    #: (``value_now - move - overnight``, the base the headline day % uses).
+    overnight_pct_eur: Decimal | None = None
+    overnight_pct_usd: Decimal | None = None
 
 
 def _estimated_split(
@@ -897,13 +932,63 @@ def _net_of_flows(split: DaySplit, prev_value: Decimal, flows: Decimal) -> DaySp
     )
 
 
-def _book_holdings(session: Session, on: date) -> list[Any]:
+def book_value_at_rate_of(book: list[Any], fx: Decimal) -> tuple[Decimal, Decimal]:
+    """``(eur, usd)`` of ``book`` (native holdings) at one rate; USD stays native."""
+    from investment_dashboard.domain.late_data import value_at_rate  # noqa: PLC0415
+
+    return value_at_rate(book, fx)
+
+
+def book_value_at_rate(session: Session, on: date, fx: Decimal) -> tuple[Decimal, Decimal]:
+    """``(eur, usd)`` of the whole book on ``on`` (closes) valued at one rate ``fx``."""
+    return book_value_at_rate_of(_book_holdings(session, on), fx)
+
+
+def fx_revaluation(
+    session: Session,
+    on: date,
+    *,
+    fx_from: Decimal,
+    fx_to: Decimal,
+    book: list[Any] | None = None,
+) -> tuple[Decimal, Decimal]:
+    """THE day-move rule, and the one helper for every currency-revaluation figure.
+
+    A day's move runs from the previous session's close (close prices x the 16:00 ET
+    session-close rate, ``session_close_rate``) to now (current prices x the LIVE
+    EUR/USD rate). Once the market shuts the market move freezes at close prices x
+    close rate, while the EUR figure keeps moving with FX: that remainder is the
+    "overnight currency", reported separately until the next session opens at 09:30
+    ET, when every view (hero, holdings, graph, overnight) rolls over together. In
+    USD everything is native dollars with no FX (only genuinely EUR-native
+    holdings/cash move with FX).
+
+    This returns the ``(eur, usd)`` change in value of the book on ``on`` when only
+    the rate moves from ``fx_from`` to ``fx_to``: the overnight currency
+    (``fx_from`` = session close rate) and the currency box net (``fx_from`` =
+    previous close rate) both come from here, so they cannot disagree.
+    """
+    if book is None:
+        book = _book_holdings(session, on)
+    eur_to, usd_to = book_value_at_rate_of(book, fx_to)
+    eur_from, usd_from = book_value_at_rate_of(book, fx_from)
+    return eur_to - eur_from, usd_to - usd_from
+
+
+def _book_holdings(
+    session: Session,
+    on: date,
+    *,
+    positions: list[positions_service.Position] | None = None,
+) -> list[Any]:
     """The whole book on ``on`` (official closes, forward-filled) as native holdings."""
     from investment_dashboard.domain.late_data import Holding  # noqa: PLC0415
 
+    if positions is None:
+        positions = positions_service.compute_positions(session, as_of=on)
     holdings = [
         Holding(p.account.native_currency, p.current_value_native, p.current_value_eur)
-        for p in positions_service.compute_positions(session, as_of=on)
+        for p in positions
         if p.current_value_native
     ]
     for account in accounts_repo.list_accounts(session):
@@ -944,7 +1029,7 @@ def last_session_split(
     session_date = intraday_snapshots_service.last_session_date(now)
     prev_date = intraday_snapshots_service.previous_trading_session(session_date)
     fx_close = intraday_snapshots_service.session_close_rate(session, session_date)
-    fx_prev = intraday_snapshots_service.session_close_rate(session, prev_date)
+    fx_prev = intraday_snapshots_service.day_baseline_rate(session, prev_date)
     if not fx_close or not fx_prev or fx_close <= 0 or fx_prev <= 0:
         return None
     last_book = _book_holdings(session, session_date)
@@ -963,6 +1048,15 @@ def last_session_split(
     )
     eur = _net_of_flows(split_day_change(prev_eur, last_eur, now_eur), prev_eur, flow_eur)
     usd = _net_of_flows(split_day_change(prev_usd, last_usd, now_usd), prev_usd, flow_usd)
+    # The overnight figure comes from the one shared helper (also used by the
+    # currency box), not from a second formula.
+    ov_eur, ov_usd = fx_revaluation(
+        session, session_date, fx_from=fx_close, fx_to=fx_now, book=last_book
+    )
+    eur = replace(eur, overnight=ov_eur)
+    usd = replace(usd, overnight=ov_usd)
+    base_eur = now_eur - (eur.move + ov_eur)
+    base_usd = now_usd - (usd.move + ov_usd)
     return LastSessionSplit(
         **_estimated_split(
             session,
@@ -987,6 +1081,8 @@ def last_session_split(
         overnight_usd=usd.overnight,
         value_now_eur=now_eur,
         value_now_usd=now_usd,
+        overnight_pct_eur=ov_eur / base_eur if base_eur > ZERO else None,
+        overnight_pct_usd=ov_usd / base_usd if base_usd > ZERO else None,
     )
 
 
@@ -1142,9 +1238,11 @@ def _compute_mtd_growth(
     )
     if month_start_value_eur <= ZERO:
         return None, None
-    fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, open_date) or ZERO
+    # Native USD opening value, never ``month_start_value_eur * rate``.
     month_start_value_usd: Decimal | None = (
-        month_start_value_eur * fx_month_start if fx_month_start != 0 else None
+        cache.total_value_usd(open_date)
+        if cache is not None
+        else positions_service.total_portfolio_value_usd(session, as_of=open_date)
     )
 
     mtd_txns = [t for t in txns if window.counts_flow(t.date)]
@@ -1200,6 +1298,29 @@ def _compute_expense_figures(
     if total_value <= ZERO:
         return None, ZERO
     return weighted_cost / total_value, weighted_cost
+
+
+def _compute_expense_cost_usd(
+    positions: list[positions_service.Position], fx_eur_usd: Decimal | None
+) -> Decimal | None:
+    """Annual fee cost in USD from native values x TER (USD holdings need no rate).
+
+    ``None`` when a non-USD holding with a TER needs a rate that is missing.
+    """
+    cost = ZERO
+    for p in positions:
+        if p.current_value_eur <= ZERO:
+            continue
+        ter = p.effective.expense_ratio if p.effective is not None else p.instrument.expense_ratio
+        if ter is None:
+            continue
+        if p.account.native_currency.upper() == "USD":
+            cost += p.current_value_native * ter
+        elif fx_eur_usd:
+            cost += p.current_value_eur * fx_eur_usd * ter
+        else:
+            return None
+    return cost
 
 
 def _best_effort_ytd_start_value(

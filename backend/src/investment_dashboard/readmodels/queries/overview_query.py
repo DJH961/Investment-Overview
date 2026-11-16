@@ -49,6 +49,7 @@ from investment_dashboard.services.positions_service import (
     Position,
     compute_positions,
     total_portfolio_value,
+    total_portfolio_value_usd,
 )
 
 if TYPE_CHECKING:
@@ -266,7 +267,7 @@ def build_value_series(
     return points
 
 
-def build_window_value_series(
+def build_window_value_series(  # noqa: PLR0912, PLR0915
     session: Session,
     *,
     currency: str,
@@ -324,10 +325,28 @@ def build_window_value_series(
     # cash + savings + money-market remainder.
     nav_now = intraday_snapshots_service.nav_drift_value_eur(positions)
     base = total_now - market_now - nav_now
+    # USD line: native amounts only (stored ``market_value_usd`` samples, a native
+    # cash + money-market base, native NAV legs), never the EUR figures x a rate.
+    spot = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote="USD")
+    market_now_usd = intraday_snapshots_service.market_value_usd(positions, spot)
+    nav_now_usd = intraday_snapshots_service.nav_drift_value_usd(positions, spot)
+    total_now_usd = total_portfolio_value_usd(session, positions=positions)
+    base_usd: Decimal | None = (
+        total_now_usd - market_now_usd - nav_now_usd
+        if market_now_usd is not None and nav_now_usd is not None
+        else None
+    )
     if multi_session:
         samples = intraday_snapshots_service.week_series_with_fx(session, now=now)
     else:
         samples = intraday_snapshots_service.day_series_with_fx(session, now=now)
+    usd_at = (
+        intraday_snapshots_service.window_usd_by_instant(
+            session, now=now, multi_session=multi_session
+        )
+        if currency == "USD"
+        else {}
+    )
 
     # Cap the curve with the live current value so the tip equals the headline
     # Total Value, pinned to the market close once the session is over (so it
@@ -341,11 +360,14 @@ def build_window_value_series(
     if seed_empty or (samples and samples[-1][0] < live_at):
         samples = [*samples, (live_at, market_now, rate)]
         appended_tip = True
+        if market_now_usd is not None:
+            usd_at[live_at] = market_now_usd
 
     if not samples:
         return []
 
     nav_components: dict[datetime, tuple[Decimal, Decimal | None]] = {}
+    nav_usd_at: dict[datetime, Decimal] = {}
     nav_fx_today = fx_service.get_rate_eur_to_quote(session, exchange_today(), quote="USD")
     if multi_session:
         # Per-session NAV-fund track, mapped onto each sample by its exchange date,
@@ -393,8 +415,11 @@ def build_window_value_series(
             )
             if sleeve.components:
                 nav_components.update(sleeve.components)
+                nav_usd_at.update(sleeve.usd)
             elif not multi_session:
                 base += nav_now  # no fund sleeve to draw: keep them flat in the base
+                if base_usd is not None and nav_now_usd is not None:
+                    base_usd += nav_now_usd
 
     points = _compose_currency_points(
         samples,
@@ -403,7 +428,13 @@ def build_window_value_series(
         rate=rate,
         tz=tz,
         nav_components=nav_components or None,
+        base_usd=base_usd,
+        usd_at=usd_at,
+        nav_usd_at=nav_usd_at,
     )
+    # After the close the session line ENDS at close prices x the close rate (no
+    # overnight tail); the live value is a separate "now" point in the payload
+    # (``live_graphs.now_point``), so the graph's end matches the hero.
     if freeze_after_hours and appended_tip:
         points = _freeze_eur_live_tip(session, points, currency=currency, now=now)
     return points
@@ -486,6 +517,9 @@ def _compose_currency_points(
     rate: Decimal | None,
     tz: tzinfo | None,
     nav_components: dict[datetime, tuple[Decimal, Decimal | None]] | None = None,
+    base_usd: Decimal | None = None,
+    usd_at: dict[datetime, Decimal] | None = None,
+    nav_usd_at: dict[datetime, Decimal] | None = None,
 ) -> list[ValueSeriesPoint]:
     """Turn ``(at_utc, market_eur, fx_eur_usd)`` samples into display-currency points.
 
@@ -525,11 +559,21 @@ def _compose_currency_points(
             # exchange rate is applied to USD. Only the constant cash + NAV base
             # is converted, at today's spot. A sample with no recorded rate falls
             # back to today's spot (FX still cancels for that point).
-            point_rate = sample_fx if (sample_fx and currency == "USD") else rate
-            # The NAV sleeve cancels with *its* session date's own settled rate
-            # (the rate its EUR pivot was struck at), recovering native USD.
-            nav_rate = nav_fx if (nav_fx and currency == "USD") else rate
-            value = base * rate + market_eur * point_rate + nav_eur * nav_rate
+            #
+            # The native pieces come first (``usd_at``: stored native samples;
+            # ``base_usd``: native cash + money-market; ``nav_usd_at``: native NAV
+            # legs). Only a piece with no native figure (a legacy sample, a week
+            # day valued from the dated-NAV track) falls back to cancelling its
+            # own EUR pivot against the rate it was struck at.
+            market_usd = usd_at.get(at_utc) if usd_at else None
+            if market_usd is None:
+                point_rate = sample_fx if (sample_fx and currency == "USD") else rate
+                market_usd = market_eur * point_rate
+            nav_usd = nav_usd_at.get(at_utc) if nav_usd_at else None
+            if nav_usd is None:
+                nav_rate = nav_fx if (nav_fx and currency == "USD") else rate
+                nav_usd = nav_eur * nav_rate
+            value = (base_usd if base_usd is not None else base * rate) + market_usd + nav_usd
         when: datetime = at_utc
         if tz is not None:
             when = at_utc.replace(tzinfo=UTC).astimezone(tz).replace(tzinfo=None)
@@ -655,10 +699,19 @@ def previous_session_close_value(
     before the session shown by the "Day" range, or ``None`` when no settled
     value can be computed (e.g. a brand-new portfolio).
     """
+    from investment_dashboard.services import metrics_service  # noqa: PLC0415
+
     now = now or datetime.now(UTC)
     session_date = intraday_snapshots_service.last_session_date(now)
     prev_date = intraday_snapshots_service.previous_trading_session(session_date)
     try:
+        # Baseline = previous close prices x the 16:00 ET close rate (the hero's and
+        # every holding row's baseline); USD stays native dollars.
+        close_fx = intraday_snapshots_service.day_baseline_rate(session, prev_date)
+        if close_fx is not None and close_fx > 0:
+            eur, usd = metrics_service.book_value_at_rate(session, prev_date, close_fx)
+            picked = usd if currency.upper() == "USD" else eur
+            return picked if picked != 0 else None
         value = snapshots_service.get_or_compute_in_currency(session, prev_date, currency)
     except Exception:  # pragma: no cover - defensive: keep the chart renderable
         return None
@@ -866,23 +919,29 @@ def compute_instrument_metrics(  # noqa: PLR0915
     ytd_open = periods.year_to_date(as_of).opening_date
     mtd_open = periods.month_to_date(as_of).opening_date
     fx_year_start = lookup_rate_with_forward_fill(eur_to_usd, ytd_open) or today_rate
-    start_value_eur = _value_by_instrument(
-        compute_positions(session, as_of=ytd_open, transactions=txns)
-    )
+    ytd_positions = compute_positions(session, as_of=ytd_open, transactions=txns)
+    start_value_eur = _value_by_instrument(ytd_positions)
+    start_value_usd = _usd_value_by_instrument(ytd_positions, fx_year_start)
     # Month opening value per instrument (for MTD growth), same approach.
     fx_month_start = lookup_rate_with_forward_fill(eur_to_usd, mtd_open) or today_rate
-    month_start_value_eur = _value_by_instrument(
-        compute_positions(session, as_of=mtd_open, transactions=txns)
-    )
+    mtd_positions = compute_positions(session, as_of=mtd_open, transactions=txns)
+    month_start_value_eur = _value_by_instrument(mtd_positions)
+    month_start_value_usd = _usd_value_by_instrument(mtd_positions, fx_month_start)
 
     out: dict[int, InstrumentMetrics] = {}
     # Batch the daily-growth price lookups once for every held instrument
     # instead of issuing recent_price_dates + two close_as_of per position
     # (an N+1 over the holdings table).
+    # Rolls over with the hero: a session becomes "today" at its 09:30 ET open, not at
+    # ET midnight, so before the open the rows still show the last session's move
+    # (prints of a session that has not started yet are not read).
+    _raw_baseline = intraday_snapshots_service.previous_trading_session(as_of + timedelta(days=1))
+    _started = intraday_snapshots_service.last_session_date(now)
+    _baseline_last = min(_raw_baseline, _started)
     recent_closes = prices_service.recent_closes_by_instrument(
         session,
         [p.instrument.id for p in positions],
-        on_or_before=as_of,
+        on_or_before=as_of if _started >= _raw_baseline else _started,
         limit=2,
     )
     book_price_dates = sorted(
@@ -896,7 +955,6 @@ def compute_instrument_metrics(  # noqa: PLR0915
     # baseline session forward-fills (price move 0, only the FX revaluation), so a
     # massively outdated fund reads 0% today instead of resurrecting an old move.
     # Fall back to the book's freshest dates only when there is no session at all.
-    _baseline_last = intraday_snapshots_service.previous_trading_session(as_of + timedelta(days=1))
     _baseline_prev = intraday_snapshots_service.previous_trading_session(_baseline_last)
     latest_price_date = _baseline_last if book_price_dates else None
     previous_price_date = _baseline_prev if book_price_dates else None
@@ -915,7 +973,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
         # ``None`` (blank) rather than relabelling the EUR amount as USD —
         # otherwise XIRR(USD) / growth(USD) would be computed against a
         # terminal value that is euros pretending to be dollars.
-        cv_usd = cv_eur * today_rate if today_rate not in (None, 0) else None
+        cv_usd = _usd_value_by_instrument(group, today_rate)[iid]
         d_eur = div_eur.get(iid, ZERO)
         d_usd = div_usd.get(iid, ZERO)
         gain_eur = _round_cent(cv_eur + d_eur - c_eur)
@@ -966,7 +1024,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
         if growth_usd is None:
             growth_usd = simple_growth_usd
         sv_eur = start_value_eur.get(iid, ZERO)
-        sv_usd = sv_eur * fx_year_start if fx_year_start not in (None, 0) else None
+        sv_usd = start_value_usd.get(iid, ZERO)
         ytd_eur = _instrument_ytd_growth(
             start_value=sv_eur,
             current_value=cv_eur,
@@ -982,7 +1040,7 @@ def compute_instrument_metrics(  # noqa: PLR0915
             else None
         )
         msv_eur = month_start_value_eur.get(iid, ZERO)
-        msv_usd = msv_eur * fx_month_start if fx_month_start not in (None, 0) else None
+        msv_usd = month_start_value_usd.get(iid, ZERO)
         mtd_eur = _instrument_ytd_growth(
             start_value=msv_eur,
             current_value=cv_eur,
@@ -1067,6 +1125,31 @@ def _value_by_instrument(positions: list[Position]) -> dict[int, Decimal]:
     return out
 
 
+def _position_usd(p: Position, rate: Decimal | None) -> Decimal | None:
+    """One position's USD value: native dollars for a USD holding (no FX at all).
+
+    Only a non-USD holding (EUR-native, say) is converted, at ``rate``; ``None``
+    when that needs a rate we do not have. USD is never ``current_value_eur * rate``.
+    """
+    if p.account.native_currency.upper() == "USD":
+        return p.current_value_native
+    if rate not in (None, 0):
+        return p.current_value_eur * rate  # type: ignore[operator]
+    return None
+
+
+def _usd_value_by_instrument(
+    positions: list[Position], rate: Decimal | None
+) -> dict[int, Decimal | None]:
+    """USD value per instrument (native amounts), ``None`` where a needed rate is missing."""
+    out: dict[int, Decimal | None] = {}
+    for p in positions:
+        value = _position_usd(p, rate)
+        prior = out.get(p.instrument.id, ZERO)
+        out[p.instrument.id] = None if value is None or prior is None else prior + value
+    return out
+
+
 def _round_cent(value: Decimal) -> Decimal:
     """Round a money amount to the nearest cent (half-up)."""
     return value.quantize(_CENT, rounding=ROUND_HALF_UP)
@@ -1140,21 +1223,29 @@ def _instrument_daily_growth(
     if legs is None:
         return None, None, None, None, None
 
-    def _leg_rate(on: date) -> Decimal | None:
-        live = lookup_rate_with_forward_fill(eur_to_usd, on)
+    def _leg_rate(on: date, now_leg: bool) -> Decimal | None:
+        # Baseline leg: ``on``'s session-close rate. Now leg: the LIVE rate (today_rate),
+        # so the EUR day figure keeps moving with FX after the close.
+        live = today_rate if now_leg and today_rate is not None else None
+        if live is None:
+            live = lookup_rate_with_forward_fill(eur_to_usd, on)
         resolved = intraday_snapshots_service.daily_growth_leg_fx(
-            session, on, now=now, live_rate=live if live is not None else today_rate
+            session,
+            on,
+            now=now,
+            live_rate=live if live is not None else today_rate,
+            now_leg=now_leg,
         )
         return resolved if resolved is not None else today_rate
 
-    def _convert(value_native: Decimal, on: date) -> tuple[Decimal, Decimal]:
-        rate = _leg_rate(on)
+    def _convert(value_native: Decimal, on: date, now_leg: bool) -> tuple[Decimal, Decimal]:
+        rate = _leg_rate(on, now_leg)
         overrides = {on: rate} if rate is not None else {}
         return _convert_native(value_native, native_currency, on, overrides, today_rate)
 
     # Both marks use today's share count, so a buy today is not this row's gain (B-007).
-    e_last, u_last = _convert(shares * legs.close_last, legs.rate_date_last)
-    e_prev, u_prev = _convert(shares * legs.close_prev, legs.rate_date_prev)
+    e_last, u_last = _convert(shares * legs.close_last, legs.rate_date_last, True)
+    e_prev, u_prev = _convert(shares * legs.close_prev, legs.rate_date_prev, False)
     growth_eur = (e_last - e_prev) / e_prev if e_prev > ZERO else None
     growth_usd = (u_last - u_prev) / u_prev if u_prev > ZERO else None
     move_eur = _round_cent(e_last - e_prev)
@@ -1309,7 +1400,7 @@ def position_rows(
         else:
             cb_eur, cb_usd = _today_dual(p.cost_basis_native, native, fx_rate)
             v_eur = p.current_value_eur
-            v_usd = p.current_value_eur * fx_rate if fx_rate not in (None, 0) else None
+            v_usd = _position_usd(p, fx_rate)
             g_eur = (v_eur - cb_eur) if (v_eur is not None and cb_eur is not None) else None
             g_usd = (v_usd - cb_usd) if (v_usd is not None and cb_usd is not None) else None
             tg_eur = (g_eur / cb_eur) if (g_eur is not None and cb_eur) else None

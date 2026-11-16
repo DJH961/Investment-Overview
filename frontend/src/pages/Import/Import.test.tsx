@@ -87,10 +87,10 @@ function stubFetch(extra: Handler = () => undefined) {
   return fetchMock;
 }
 
-function stubUpload(body: object) {
+function stubUpload(body: object, code = 201) {
   class FakeXhr {
-    status = 201;
-    statusText = "Created";
+    status = code;
+    statusText = code === 201 ? "Created" : "Unprocessable";
     responseText = JSON.stringify(body);
     upload: { onprogress: null | (() => void) } = { onprogress: null };
     withCredentials = false;
@@ -142,6 +142,15 @@ afterEach(() => {
 });
 
 describe("Import", () => {
+  it("asks for the account at the field when the file doesn't say, without an error box", async () => {
+    stubUpload({ detail: { code: "needs_account", message: "Which account is this file for?" } }, 422);
+    stubFetch();
+    renderPage();
+    await uploadFile();
+    expect(await screen.findByText("Which account is this file for?")).toBeInTheDocument();
+    expect(screen.queryByText("Could not read that file")).not.toBeInTheDocument();
+  });
+
   it("uploads, previews with duplicate flags, confirms and shows the batch", async () => {
     stubUpload(preview);
     stubFetch();

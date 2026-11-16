@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { formatTime, setFormatPrefs } from "../../lib/format";
 import { IDLE_REFRESH } from "../../lib/refresh";
+import { splitFreshness } from "./Freshness";
 import {
   closeOf,
   describeFreshness,
@@ -280,5 +281,23 @@ describe("PriceStamps", () => {
       />,
     );
     expect(container.querySelectorAll(".price-stamps__item")).toHaveLength(1);
+  });
+});
+
+describe("splitFreshness (the stacked top-bar chip)", () => {
+  it("puts the state on line one and a trimmed price time on line two", () => {
+    expect(splitFreshness("Closed · prices as of today 22:00 (close)")).toEqual(["Closed", "Prices 22:00 (close)"]);
+    expect(splitFreshness("Closed · prices as of Fri 22:00 (close)")).toEqual(["Closed", "Prices Fri 22:00 (close)"]);
+    expect(splitFreshness("Market open · prices as of 15:42")).toEqual(["Market open", "Prices 15:42"]);
+    expect(splitFreshness("Live · 15:42")).toEqual(["Live", "15:42"]);
+  });
+  it("keeps a label without a detail on one line", () => {
+    expect(splitFreshness("As of 16/11/2026")).toEqual(["As of 16/11/2026", null]);
+  });
+  it("renders both lines and keeps the full sentence on hover", () => {
+    render(<Freshness status="closed" label="Closed · prices as of today 22:00 (close)" stacked />);
+    expect(screen.getByText("Closed")).toBeInTheDocument();
+    expect(screen.getByText("Prices 22:00 (close)")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveAttribute("title", "Closed · prices as of today 22:00 (close)");
   });
 });

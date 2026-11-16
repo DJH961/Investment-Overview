@@ -17,7 +17,7 @@ import {
   cashIn,
   tradeTotals,
 } from "./builderState";
-import { freeName, nameError } from "./SaveTargetDialog";
+import { freeName, nameError, summaryRows } from "./SaveTargetDialog";
 
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 
@@ -170,6 +170,34 @@ describe("Save target dialog checks", () => {
   });
 });
 
+describe("Save target summary", () => {
+  const items = [
+    { instrument_id: 1, weight_pct: "30", no_buy: false },
+    { instrument_id: 2, weight_pct: "70", no_buy: true },
+  ];
+  const sym = (id: number) => `S${id}`;
+  it("lists categories with their target % when the mix is per category", () => {
+    const builder = {
+      mode: "category" as const,
+      etf_only: false,
+      categories: [
+        { name: "Bonds", weight: "30", split: "value" as const, selected: [] },
+        { name: "Stocks", weight: "70", split: "value" as const, selected: [] },
+        { name: "Cash", weight: "0", split: "value" as const, selected: [] },
+      ],
+    };
+    const out = summaryRows(items, builder, sym);
+    expect(out.kind).toBe("category");
+    expect(out.rows.map((r) => [r.label, r.weight])).toEqual([["Stocks", 70], ["Bonds", 30]]);
+  });
+  it("lists the funds in per-fund mode", () => {
+    const out = summaryRows(items, undefined, sym);
+    expect(out.kind).toBe("fund");
+    expect(out.rows.map((r) => r.label)).toEqual(["S2", "S1"]);
+    expect(out.rows[0].noBuy).toBe(true);
+  });
+});
+
 describe("Saved calculator selection", () => {
   it("round-trips the category mix, split and the deselected funds", () => {
     const ed = { weights: { Stocks: "70", Bonds: "30" }, split: { Stocks: "even" as const }, selected: { Stocks: [1], Bonds: [2] } };
@@ -205,6 +233,14 @@ describe("Allocations page", () => {
     const post = calls.find((c) => c.url.includes("/api/allocations/plan"));
     expect(post?.body).toMatchObject({ amount: "1500", mode: "fund", fractional: true });
     expect(window.localStorage.getItem("iv.calc.amount")).toBe('"1500"');
+  });
+
+  it("has no currency toggle of its own (follows the top-bar currency)", async () => {
+    stub();
+    wrap();
+    await screen.findByLabelText("Target % for AAA");
+    expect(screen.queryByRole("radiogroup", { name: "Cash currency" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Cash currency")).not.toBeInTheDocument();
   });
 
   it("reads a decimal comma in a target box and sends a dot", async () => {
@@ -344,13 +380,20 @@ describe("Allocations page", () => {
 });
 
 describe("Use my cash", () => {
-  it("restates the server's held cash in the other currency at the same-payload rate", () => {
-    const i = { ccy: "EUR", investable_cash: "800", fx_usd_per_eur: "1.25" };
+  it("reads the server's held cash per currency and never converts it", () => {
+    const i = {
+      ccy: "EUR",
+      investable_cash: "800",
+      investable_cash_eur: "800",
+      investable_cash_usd: "1010",
+    };
     expect(cashIn(i, "EUR")).toBe(800);
-    expect(cashIn(i, "USD")).toBe(1000);
-    expect(cashIn({ ...i, ccy: "USD", investable_cash: "1000" }, "EUR")).toBe(800);
-    expect(cashIn({ ...i, investable_cash: "0" }, "EUR")).toBe(0);
+    expect(cashIn(i, "USD")).toBe(1010);
+    expect(cashIn({ ...i, ccy: "USD", investable_cash: "1010" }, "EUR")).toBe(800);
+    expect(cashIn({ ...i, investable_cash_eur: "0", investable_cash: "0" }, "EUR")).toBe(0);
+    // No per-currency field: only the page currency's own figure is usable.
     expect(cashIn({ ccy: "EUR", investable_cash: "800" }, "USD")).toBe(0);
+    expect(cashIn({ ccy: "EUR", investable_cash: "800" }, "EUR")).toBe(800);
   });
 
   it("offers the chip, fills the amount and asks the server to move the cash", async () => {

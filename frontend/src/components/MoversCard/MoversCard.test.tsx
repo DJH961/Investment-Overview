@@ -58,7 +58,7 @@ describe("MoversCard", () => {
     expect(chip).toHaveAttribute("title", expect.stringContaining("has not published today's NAV yet"));
     // Both figures carry "≈": neither is a published move.
     const row = container.querySelector('[data-symbol="FXAIX"]');
-    expect(row?.querySelector(".movers-card__lead")?.textContent).toBe("≈+€900");
+    expect(row?.querySelector(".movers-card__lead")?.textContent).toBe("≈+€900.00");
     expect(row?.querySelector(".movers-card__trail")?.textContent).toBe("≈+2.00%");
   });
 

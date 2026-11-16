@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.market_hours import is_us_market_open
-from investment_dashboard.domain.session_fx import fx_buying_power_split, fx_effect_split
-from investment_dashboard.services import intraday_snapshots_service
+from investment_dashboard.domain.session_fx import fx_buying_power_split
+from investment_dashboard.services import intraday_snapshots_service, metrics_service
 from investment_dashboard.services.metrics_service import PortfolioMetrics
 
 
@@ -111,20 +111,17 @@ def compute_eur_fx_effect(
     """The EUR currency-effect numbers, or ``None`` when there is no swing to show."""
     regime = fx_box_regime(now)
     market_open = regime.market_open
-    usd = metrics.total_value_usd
+    on = intraday_snapshots_service.last_session_date(now)
 
-    net_eur = Decimal(0)
-    if prev_fx is not None and prev_fx > 0 and usd is not None and live_fx > 0:
-        net_eur = usd / live_fx - usd / prev_fx
-    if regime.session_view and not market_open:
-        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
-        reanchored = eur_effect_from_anchor(usd, live_fx, open_fx)
-        if reanchored is not None:
-            net_eur = reanchored
-    if net_eur == 0 and (prev_fx is None or prev_fx <= 0):
-        reanchored = eur_effect_from_anchor(usd, live_fx, prior_fx(session, metrics, now))
-        if reanchored is not None:
-            net_eur = reanchored
+    def _eur_move(anchor_fx: Decimal | None) -> Decimal | None:
+        """EUR change of the book when the rate moves ``anchor_fx`` -> live (shared helper)."""
+        if anchor_fx is None or anchor_fx <= 0 or live_fx <= 0:
+            return None
+        return metrics_service.fx_revaluation(session, on, fx_from=anchor_fx, fx_to=live_fx)[0]
+
+    # Net, market open or shut: anchored at the previous session's close, like the hero.
+    anchor = prev_fx if prev_fx is not None and prev_fx > 0 else prior_fx(session, metrics, now)
+    net_eur = _eur_move(anchor) or Decimal(0)
     if net_eur == 0:
         return None
 
@@ -132,25 +129,17 @@ def compute_eur_fx_effect(
         return EurFxEffect(net_eur, regime, None, None)
 
     if market_open:
-        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
-        split = fx_effect_split(
-            market_open=True,
-            total_value_usd=usd,
-            live_fx=live_fx,
-            session_close_fx=None,
-            session_open_fx=open_fx,
-            today_fx_move_eur=net_eur,
-        )
-    else:
-        close_fx = intraday_snapshots_service.session_close_fx(session, now=now)
-        split = fx_effect_split(
-            market_open=False,
-            total_value_usd=usd,
-            live_fx=live_fx,
-            session_close_fx=close_fx,
-            today_fx_move_eur=net_eur,
-        )
-    return EurFxEffect(net_eur, regime, split.market_hours_eur, split.overnight_eur)
+        # Live leg = market hours (session open -> now); frozen leg = last overnight.
+        leg = _eur_move(intraday_snapshots_service.session_open_fx(session, now=now))
+        if leg is None:
+            return EurFxEffect(net_eur, regime, net_eur, None)
+        return EurFxEffect(net_eur, regime, leg, net_eur - leg)
+    # Shut: live leg = overnight (session close -> now), the same helper the hero's
+    # ``last_session.overnight_currency`` uses; frozen leg = last market hours.
+    leg = _eur_move(intraday_snapshots_service.session_close_fx(session, now=now))
+    if leg is None:
+        return EurFxEffect(net_eur, regime, net_eur, None)
+    return EurFxEffect(net_eur, regime, net_eur - leg, leg)
 
 
 @dataclass(frozen=True)

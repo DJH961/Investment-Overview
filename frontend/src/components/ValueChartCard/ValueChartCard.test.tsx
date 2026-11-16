@@ -34,6 +34,7 @@ vi.mock("../../lib/queries/instruments", () => ({
 }));
 
 import { ToastProvider } from "../Toast";
+import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { handleLiveEvent } from "../../lib/live";
 import { initialRange, ValueChartCard } from "./ValueChartCard";
 
@@ -148,6 +149,70 @@ describe("ValueChartCard", () => {
     unmount();
     const again = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
     expect(again.container.querySelector('[data-series="secondary"]')).toBeNull();
+  });
+
+  describe("after the close: now_point", () => {
+    const closed: Partial<GraphDto> = {
+      ...day,
+      growth: { pct: "0.0035", mode: "reference" },
+      now_point: { t: "2026-11-02T22:00:00Z", v: "1010", overnight_currency: "-4.5", overnight_pct: "-0.0045" },
+    };
+    const ls = { move_pct: "0.008", overnight_currency: "-4.5", overnight_pct: "-0.0045" } as never;
+
+    it("draws one 'Now' dot and the session/overnight split beside the ranges", () => {
+      graphData = closed;
+      const { container } = render(<ValueChartCard currency="EUR" defaultRange="1d" lastSession={ls} />);
+      expect(container.querySelectorAll("[data-now-marker] circle")).toHaveLength(1);
+      const label = container.querySelector("[data-now-marker]")?.textContent ?? "";
+      expect(label).toBe("Now €1,010"); // the overnight figure lives in the split, not twice
+      expect(screen.getByTestId("range-growth")).toHaveTextContent("+0.35%");
+      expect(screen.getByTestId("range-split")).toHaveTextContent(/Session\s*\+0\.80%\s*Overnight\s*-0\.45%\s*·\s*next day/);
+    });
+
+    it("draws the same marker on 1W", () => {
+      graphData = closed;
+      const { container } = render(<ValueChartCard currency="EUR" defaultRange="1w" lastSession={ls} />);
+      expect(container.querySelector("[data-now-marker]")).not.toBeNull();
+    });
+
+    it("has no marker or split when the currency did not move overnight (e.g. USD)", () => {
+      graphData = { ...closed, now_point: { ...closed.now_point!, overnight_currency: "0", overnight_pct: "0" } };
+      const { container } = render(
+        <ValueChartCard currency="EUR" defaultRange="1d" lastSession={{ ...(ls as object), overnight_pct: "0" } as never} />,
+      );
+      expect(container.querySelector("[data-now-marker]")).toBeNull();
+      expect(screen.queryByTestId("range-split")).toBeNull();
+    });
+
+    it("shows the split on 1D only (1W's figure is the week)", () => {
+      graphData = closed;
+      render(<ValueChartCard currency="EUR" defaultRange="1w" lastSession={ls} />);
+      expect(screen.queryByTestId("range-split")).toBeNull();
+    });
+
+    it("has no marker or subline when now_point is null", () => {
+      graphData = { ...day, now_point: null };
+      const { container } = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen lastSession={ls} />);
+      expect(container.querySelector("[data-now-marker]")).toBeNull();
+      expect(screen.queryByTestId("range-split")).toBeNull();
+    });
+
+    it("hide mode labels the dot with the range percent and shows no money", () => {
+      localStorage.setItem("iv.privacy.hideAmounts", "true");
+      graphData = closed;
+      const { container } = render(
+        <HideAmountsProvider>
+          <ValueChartCard currency="EUR" defaultRange="1d" lastSession={ls} />
+        </HideAmountsProvider>,
+      );
+      expect(container.querySelectorAll("[data-now-marker] circle")).toHaveLength(1);
+      const label = container.querySelector("[data-now-marker]")?.textContent ?? "";
+      expect(label).toBe("Now +0.35%");
+      const split = screen.getByTestId("range-split");
+      expect(split).toHaveTextContent("Session");
+      expect(split).toHaveTextContent("-0.45%");
+      expect(split).not.toHaveTextContent("€");
+    });
   });
 
   it("reloads the shown graph and reports when the graphs event arrives", async () => {

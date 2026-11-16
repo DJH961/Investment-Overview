@@ -134,6 +134,36 @@ describe("applyTick golden", () => {
     expect(g.EUR.points.at(-1).v).toBe("9700");
   });
 
+  it("after the close: the tick moves now_point v/overnight only; no line tail, growth untouched; null clears", () => {
+    const qc = seed();
+    const g0 = qc.getQueryData<any>(["graphs", "1d", "both"]);
+    const np = (v: string) => ({ t: "2026-11-04T22:00:00Z", v, overnight_currency: "-1", overnight_pct: "-0.001" });
+    qc.setQueryData(["graphs", "1d", "both"], {
+      EUR: { ...g0.EUR, growth: { pct: "0.01" }, now_point: np("9500") },
+      USD: { ...g0.USD, growth: { pct: "0.01" }, now_point: np("11875") },
+    });
+    const now = {
+      EUR: { v: "9600", overnight_currency: "-4.5", overnight_pct: "-0.0045" },
+      USD: { v: "12000", overnight_currency: "-5.6", overnight_pct: "-0.0045" },
+    };
+    applyTick(qc, { ...tick, now_point: now });
+    let g = qc.getQueryData<any>(["graphs", "1d", "both"]);
+    expect(g.EUR.points).toHaveLength(2);
+    expect(g.EUR.growth.pct).toBe("0.01");
+    expect(g.EUR.now_point).toEqual({
+      t: "2026-11-04T22:00:00Z",
+      v: "9600",
+      overnight_currency: "-4.5",
+      overnight_pct: "-0.0045",
+    });
+    expect(g.USD.now_point.v).toBe("12000");
+    applyTick(qc, { ...tick, now_point: null });
+    g = qc.getQueryData<any>(["graphs", "1d", "both"]);
+    expect(g.EUR.now_point).toBeNull();
+    expect(g.EUR.points).toHaveLength(3);
+    expect(g.EUR.growth.pct).toBe("0.01");
+  });
+
   it("daily ranges: appends today when newer, replaces when same day, ignores older", () => {
     const qc = seed();
     applyTick(qc, tick);

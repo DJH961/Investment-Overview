@@ -332,6 +332,12 @@ def apply_desktop_fallback(
         result[symbol] = prices_repo.upsert_closes(cache, instr.id, filtered)
         price_cache_repo.upsert_last_refreshed_at(cache, instr.id, now_utc)
 
+    # Commit the recovered closes before anything else writes. On the server every
+    # tier is one SQLite file, so these uncommitted rows held its single writer lock
+    # and the quota save below (its own session) -- and the late-close snapshot
+    # rebuild after it -- waited out busy_timeout and failed with "database is
+    # locked" whenever Tiingo actually covered a symbol (Nov 2026 Recent problems).
+    cache.commit()
     _save_state_best_effort(state)
 
     round_ = pull_log.current()
@@ -351,7 +357,7 @@ def apply_desktop_fallback(
         # owns the result UX (it knows the user just clicked the button), so skip
         # the automatic "yfinance couldn't deliver" toast here.
         if not manual:
-            provider_status_runtime_warning(joined)
+            _announce_cover(outcome.used_symbols, by_symbol, joined)
         if round_ is not None:
             round_.fallback("tiingo", result, outcome.reasons)
             round_.budget(
@@ -369,6 +375,21 @@ def apply_desktop_fallback(
         round_.note("tiingo fallback: " + "; ".join(outcome.reasons))
 
     return result, outcome
+
+
+def _announce_cover(used: Sequence[str], by_symbol: Mapping[str, Instrument], joined: str) -> None:
+    """Pop the notice only when a stock/ETF needed rescuing.
+
+    A fund NAV that yfinance hasn't posted yet (it lags hours after the close) is
+    the fallback's routine job, not a feed failure, so it must not land in Recent
+    problems. Settings' provider status still lists every cover.
+    """
+    if all(
+        (i := by_symbol.get(s)) is not None and i.asset_class in _NAV_ASSET_CLASSES for s in used
+    ):
+        log.info("Tiingo covered late fund NAVs: %s", joined)
+    else:
+        provider_status_runtime_warning(joined)
 
 
 def provider_status_runtime_warning(symbols: str) -> None:

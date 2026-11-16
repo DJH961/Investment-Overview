@@ -110,6 +110,12 @@ def get_or_compute_in_currency(
     eur = get_or_compute(session, snapshot_date)
     if currency.upper() == "EUR":
         return eur
+    if currency.upper() == "USD":
+        # Stored native USD, never ``eur * rate``; today is recomputed (and stored) live.
+        stored_usd = stored_usd_in_range(session, snapshot_date, snapshot_date).get(snapshot_date)
+        if stored_usd is not None:
+            return stored_usd
+        return native_usd_on(session, snapshot_date)
     # Local import: fx_service → repositories → models; importing at
     # module load would pull the cache tier into every snapshot
     # consumer even when EUR-only.
@@ -119,6 +125,57 @@ def get_or_compute_in_currency(
     if rate is None or rate == 0:
         return eur
     return eur * rate
+
+
+def native_usd_on(session: Session, snapshot_date: date, *, persist: bool = True) -> Decimal:
+    """Native USD total on ``snapshot_date`` from the positions held then.
+
+    USD holdings count at their own amount; only EUR-native ones convert. When a
+    stored row for the day lacks its USD column (pre-0017) and a rate exists, the
+    value is written back (EUR value untouched) so the next read is a lookup.
+    """
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+    from investment_dashboard.services import fx_service, positions_service  # noqa: PLC0415
+
+    value = positions_service.total_portfolio_value_usd(session, as_of=snapshot_date)
+    if persist and snapshot_date < exchange_today():
+        fx = fx_service.get_rate_eur_to_quote(session, snapshot_date, quote="USD")
+        if fx:
+            with cache_write_session(session) as cache:
+                snapshots_repo.fill_usd(cache, snapshot_date, value, fx)
+    return value
+
+
+def backfill_missing_usd(session: Session, *, limit: int = 200) -> int:
+    """Fill the native USD total of up to ``limit`` snapshots that lack one (batch).
+
+    Rows written before migration 0017 carry only the EUR value. Each is
+    recomputed from the positions at its date (native, EUR column untouched).
+    Returns the number of rows filled; ``0`` once none are left.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        missing = snapshots_repo.list_missing_usd(cache, limit)
+    filled = 0
+    today = exchange_today()
+    for day in missing:
+        if day >= today:
+            continue  # today's row is always recomputed live
+        before = stored_usd_in_range(session, day, day).get(day)
+        if before is None:
+            native_usd_on(session, day)
+            if stored_usd_in_range(session, day, day).get(day) is not None:
+                filled += 1
+    return filled
+
+
+def missing_usd_count(session: Session) -> int:
+    """How many stored snapshots still lack a native USD total."""
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return len(snapshots_repo.list_missing_usd(cache, 1_000_000))
 
 
 def get_or_compute_many(
@@ -196,6 +253,8 @@ def series_in_currency(
 
     # One bulk read of the already-cached historical snapshots.
     stored = stored_snapshots_in_range(session, start, end)
+    # USD is read straight from the stored native-USD column (no FX round trip).
+    stored_usd = stored_usd_in_range(session, start, end) if currency == "USD" else {}
 
     tail_floor = (
         today - timedelta(days=recompute_tail_days) if recompute_tail_days is not None else None
@@ -226,7 +285,20 @@ def series_in_currency(
             continue
         else:
             eur = get_or_compute(session, day)
-        if currency == "EUR" or not rates:
+        usd_native: Decimal | None = None
+        if currency == "USD":
+            usd_native = stored_usd.get(day) if day < today else None
+            if usd_native is None:
+                # Just computed (today / a missing day): ``get_or_compute`` stored it.
+                usd_native = stored_usd_in_range(session, day, day).get(day)
+        if currency == "USD" and usd_native is None:
+            # A pre-0017 row (or one stored without a rate): compute the native
+            # USD total from the positions on that day and persist it. Never
+            # ``eur * rate``.
+            usd_native = native_usd_on(session, day)
+        if usd_native is not None:
+            value = usd_native
+        elif currency == "EUR" or not rates:
             value = eur
         else:
             rate = lookup_rate_with_forward_fill(rates, day)
@@ -332,6 +404,27 @@ def stored_snapshots_in_range(
     with cache_read_session(session) as cache:
         rows = snapshots_repo.list_in_range(cache, start, end)
     return {r.snapshot_date: snapshot_eur(r) for r in rows}
+
+
+def stored_usd_in_range(
+    session: Session,
+    start: date,
+    end: date,
+) -> dict[date, Decimal]:
+    """Return ``{date: native USD value}`` for stored snapshots that carry one.
+
+    The USD graph/series reads these directly (FX-free); rebuilding USD as
+    ``usd_stored x ECB / fx_stored`` would drift with rate revisions.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        rows = snapshots_repo.list_in_range(cache, start, end)
+    return {
+        r.snapshot_date: r.total_value_usd
+        for r in rows
+        if r.total_value_usd is not None and r.fx_eur_usd
+    }
 
 
 def invalidate_all(session: Session) -> int:

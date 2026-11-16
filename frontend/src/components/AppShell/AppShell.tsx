@@ -185,7 +185,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
-      {phone && <TabBar />}
+      {phone && <TabBar onLogout={logout} />}
       {phone && <PullToRefresh enabled={!refresh.running} onRefresh={onRefresh} />}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen} title="Keyboard shortcuts" description="Press g, then a letter.">
         <ul className="app-shell__shortcuts">

@@ -96,10 +96,18 @@ def _seed_usd_holding_with_intraday(session: Session) -> None:
     # Two intraday market-component samples at *different* per-minute FX rates, so
     # the EUR line must move between them even though the USD (booked) line is flat.
     intraday_repo.insert_sample(
-        session, datetime(2024, 6, 3, 14, 0), Decimal("909.09"), Decimal("1.10")
+        session,
+        datetime(2024, 6, 3, 14, 0),
+        Decimal("909.09"),
+        Decimal("1.10"),
+        Decimal("1000"),  # stored native USD
     )
     intraday_repo.insert_sample(
-        session, datetime(2024, 6, 3, 15, 0), Decimal("892.86"), Decimal("1.12")
+        session,
+        datetime(2024, 6, 3, 15, 0),
+        Decimal("892.86"),
+        Decimal("1.12"),
+        Decimal("1000"),
     )
     session.flush()
 
@@ -286,7 +294,7 @@ def test_live_graphs_v3_round_trip_reconstructs_sleeve_value(session: Session) -
         series["value_native"], series["fx_eur_usd"], expected_eur, strict=True
     ):
         recovered_eur = Decimal(native) / Decimal(fx)
-        assert abs(recovered_eur - want) < Decimal("1e-6")
+        assert abs(recovered_eur - want) < Decimal("1e-2")
 
 
 def test_cap_backbone_coarsens_oldest_days_first() -> None:

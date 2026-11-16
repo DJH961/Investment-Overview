@@ -1,5 +1,5 @@
 import { keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, api } from "../api";
+import { ApiError, api, readDetail } from "../api";
 import type { components } from "../api-types";
 import { invalidateFor, type InvalidationKind } from "./invalidation";
 import { applyOptimistic, byRoot, rollback, type OptimisticContext } from "./optimistic";
@@ -177,8 +177,9 @@ export function uploadImport({ file, accountId, broker, onProgress }: UploadArgs
         resolve(payload as ImportPreview);
         return;
       }
-      const detail = (payload as { detail?: unknown } | undefined)?.detail;
-      reject(new ApiError(xhr.status, typeof detail === "string" ? detail : xhr.statusText || `HTTP ${xhr.status}`, payload));
+      // Same reading as api(): {detail: "text"} or {detail: {code, message}}.
+      const { message, code } = readDetail(payload);
+      reject(new ApiError(xhr.status, message ?? (xhr.statusText || `HTTP ${xhr.status}`), payload, code));
     };
     xhr.send(form);
   });

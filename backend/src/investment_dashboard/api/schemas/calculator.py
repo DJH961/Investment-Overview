@@ -55,7 +55,13 @@ class CalculatorInputsOut(ApiModel):
     total_value: DecStr | None
     investable_cash: DecStr | None = Field(
         default=None,
-        description="Cash held (money-market funds + cash positions) in `ccy`, at the spot rate",
+        description="Cash held (money-market funds + cash positions) in `ccy` (native USD for USD)",
+    )
+    investable_cash_eur: DecStr | None = Field(
+        default=None, description="Cash held in EUR (the EUR mark)"
+    )
+    investable_cash_usd: DecStr | None = Field(
+        default=None, description="Cash held in native USD (never the EUR mark times a rate)"
     )
     instruments: list[CalcInstrumentOut]
     categories: list[CalcCategoryOut]

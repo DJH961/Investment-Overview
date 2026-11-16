@@ -24,7 +24,7 @@ omit ``display_currency`` keep their original behaviour.
 from __future__ import annotations
 
 import calendar
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import dividends, kinds, periods
-from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.domain.returns import (
     Cashflow,
@@ -153,19 +152,6 @@ class PeriodRow:
     #: Closing value translated to USD with the period-end FX rate
     #: (forward-filled). ``None`` when no FX history is on file.
     closing_value_usd: Decimal | None = None
-
-
-def _eur_to_usd_value(
-    value_eur: Decimal, eur_to_usd: Mapping[date, Decimal], on: date
-) -> Decimal | None:
-    """EUR valuation at one instant converted at that instant's (forward-filled) rate.
-
-    ``None`` when no rate is on file; a zero balance is zero in any currency.
-    """
-    if value_eur == 0:
-        return ZERO
-    rate = lookup_rate_with_forward_fill(eur_to_usd, on)
-    return None if rate is None or rate == 0 else value_eur * rate
 
 
 def _period_key(d: date, *, monthly: bool) -> str:
@@ -435,6 +421,8 @@ def aggregate(  # noqa: PLR0912, PLR0915
     closing_display: dict[str, Decimal | None] = {}
     opening_display: dict[str, Decimal | None] = {}
     growth_display: dict[str, Decimal | None] = {}
+    closing_usd_by_label: dict[str, Decimal | None] = {}
+    opening_usd_by_label: dict[str, Decimal | None] = {}
     if with_closing_value and buckets:
         # Local import to avoid a cycle: services -> repositories -> models,
         # while this module is imported by the UI layer which also imports
@@ -466,21 +454,16 @@ def aggregate(  # noqa: PLR0912, PLR0915
             boundary_eur = snapshots_service.get_or_compute_many(session, boundary_dates)
         except Exception:  # pragma: no cover - defensive: keep page renderable
             boundary_eur = {}
-        boundary_disp: dict[date, Decimal] = {}
-        if build_display:
-            # Derive the display-currency boundary values from the EUR ones we
-            # just read — converting at the forward-filled rate on each date —
-            # instead of issuing a second batched snapshot read.
-            boundary_disp = {
-                d: converted
-                for d, v in boundary_eur.items()
-                if (converted := _eur_to_usd_value(v, fx_rates, d)) is not None
-            }
+        # USD boundary values are native USD (stored ``total_value_usd``, else a
+        # fresh native roll-up), never the EUR snapshot times a rate.
+        boundary_usd = _native_usd_boundaries(session, boundary_eur.keys())
+        boundary_disp: dict[date, Decimal] = boundary_usd if build_display else {}
 
         # Batch the interior daily snapshots once across the full started span;
         # each period then slices the dates inside its own window in memory
         # (the chained TWR only consumes already-cached interior values).
         interior_all: dict[date, Decimal] = {}
+        interior_usd_all: dict[date, Decimal] = {}
         started = [(po, pe) for po, pe in bounds.values() if po <= today]
         if started:
             span_start = min(po for po, _ in started)
@@ -489,12 +472,24 @@ def aggregate(  # noqa: PLR0912, PLR0915
                 interior_all = snapshots_service.stored_snapshots_in_range(
                     session, span_start, span_end
                 )
+                if build_display:
+                    interior_usd_all = snapshots_service.stored_usd_in_range(
+                        session, span_start, span_end
+                    )
 
         for label in buckets:
             period_open, period_end = bounds[label]
             opening_prev = windows[label].opening_date
             started_period = period_open <= today
             closing_by_label[label] = boundary_eur.get(period_end, ZERO)
+            closing_usd_by_label[label] = (
+                boundary_usd.get(period_end) if period_end in boundary_eur else ZERO
+            )
+            opening_usd_by_label[label] = (
+                (boundary_usd.get(opening_prev) if opening_prev in boundary_eur else ZERO)
+                if started_period
+                else ZERO
+            )
             # Opening = previous day's close (zero for not-yet-started periods).
             opening_by_label[label] = (
                 boundary_eur.get(opening_prev, ZERO) if started_period else ZERO
@@ -542,9 +537,7 @@ def aggregate(  # noqa: PLR0912, PLR0915
                 # same forward-fill ``get_or_compute_in_currency`` applies).
                 # Points that can't be priced (no rate) are dropped, not faked.
                 interior_disp = [
-                    (d, conv)
-                    for d, v in interior_eur
-                    if (conv := _eur_to_usd_value(v, fx_rates, d)) is not None
+                    (d, interior_usd_all[d]) for d, _ in interior_eur if d in interior_usd_all
                 ]
                 opening_disp = opening_display[label]
                 closing_disp = closing_display[label]
@@ -600,8 +593,41 @@ def aggregate(  # noqa: PLR0912, PLR0915
         monthly=monthly,
         today=today,
         eur_overrides=ov,
+        closing_usd_by_label=closing_usd_by_label,
+        opening_usd_by_label=opening_usd_by_label,
     )
     return rows
+
+
+def _native_usd_boundaries(session: Session, dates: Iterable[date]) -> dict[date, Decimal]:
+    """Native USD portfolio value per boundary date (never ``EUR x rate``).
+
+    Reads the stored ``total_value_usd``; a date whose row carries no USD is
+    rolled up natively through ``positions_service`` instead. Dates that cannot
+    be valued are left out.
+    """
+    from investment_dashboard.services import (  # noqa: PLC0415
+        positions_service,
+        snapshots_service,
+    )
+
+    wanted = sorted(set(dates))
+    if not wanted:
+        return {}
+    try:
+        stored = snapshots_service.stored_usd_in_range(session, wanted[0], wanted[-1])
+    except Exception:  # pragma: no cover - defensive: keep page renderable
+        stored = {}
+    out: dict[date, Decimal] = {}
+    for d in wanted:
+        if d in stored:
+            out[d] = stored[d]
+            continue
+        try:
+            out[d] = positions_service.total_portfolio_value_usd(session, as_of=d)
+        except Exception:  # pragma: no cover - defensive
+            continue
+    return out
 
 
 def _attach_cumulative_growth(
@@ -612,6 +638,8 @@ def _attach_cumulative_growth(
     monthly: bool,
     today: date,
     eur_overrides: Mapping[int, Decimal] | None = None,
+    closing_usd_by_label: Mapping[str, Decimal | None] | None = None,
+    opening_usd_by_label: Mapping[str, Decimal | None] | None = None,
 ) -> list[PeriodRow]:
     """Populate ``total_growth_compounded_eur/usd`` (+ ``closing_value_usd``)
     on every :class:`PeriodRow` in place-equivalent (returns a new list).
@@ -639,13 +667,10 @@ def _attach_cumulative_growth(
     for r in rows:
         period_end = _period_end(r.label, monthly=monthly, today=today)
         closing_eur = r.closing_value_eur
-        # USD closing: prefer the display row when display_currency is
-        # already USD; otherwise convert EUR with the period-end FX.
-        if r.display_currency == "USD" and r.closing_value_display is not None:
-            closing_usd: Decimal | None = r.closing_value_display
-        else:
-            fx_eod = lookup_rate_with_forward_fill(eur_to_usd, period_end)
-            closing_usd = closing_eur * fx_eod if fx_eod is not None and fx_eod != 0 else None
+        # USD closing: native USD boundary value, never ``closing_eur x rate``.
+        closing_usd: Decimal | None = (closing_usd_by_label or {}).get(
+            r.label, ZERO if closing_eur == 0 else None
+        )
 
         flows_eur_to_date = [cf for cf in flows_eur if cf.date <= period_end]
         flows_usd_to_date = [cf for cf in flows_usd if cf.date <= period_end]
@@ -670,13 +695,9 @@ def _attach_cumulative_growth(
         # USD opening balance: prefer the per-period-end display leg when the
         # page already aggregated in USD, else convert the EUR opening (the
         # close of ``window.opening_date``) with that day's FX rate.
-        if r.display_currency == "USD" and r.opening_value_display is not None:
-            opening_usd: Decimal | None = r.opening_value_display
-        else:
-            fx_open = lookup_rate_with_forward_fill(eur_to_usd, window.opening_date)
-            opening_usd = (
-                r.opening_value_eur * fx_open if fx_open is not None and fx_open != 0 else None
-            )
+        opening_usd: Decimal | None = (opening_usd_by_label or {}).get(
+            r.label, ZERO if r.opening_value_eur == 0 else None
+        )
         yearly_eur = _period_xirr_growth(
             opening=r.opening_value_eur,
             closing=closing_eur,

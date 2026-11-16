@@ -488,7 +488,7 @@ def import_csv(
     # clears the cached intraday 1D/1W curves so stale samples are wiped.
     if inserted_dates:
         snapshots_service.invalidate_for_trade_dates(session, inserted_dates)
-        intraday_snapshots_service.clear_week_samples(session)
+        intraday_snapshots_service.clear_week_samples(session, from_date=min(inserted_dates))
 
     if fx_missing:
         log.info(

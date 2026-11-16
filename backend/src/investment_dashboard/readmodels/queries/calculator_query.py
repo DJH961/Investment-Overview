@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain.allocation import current_weights_pct
 from investment_dashboard.domain.instruments import is_money_market_effective
 from investment_dashboard.domain.money_market import CASH_CATEGORY, is_cash_asset_class
+from investment_dashboard.readmodels._usd import position_value_usd
 from investment_dashboard.repositories import instrument_overrides_repo, instruments_repo
 from investment_dashboard.services import display_currency_service
 from investment_dashboard.services.instrument_enrichment_service import effective_instrument
@@ -44,6 +45,10 @@ class CalcInstrument:
     asset_class: str = ""
     #: Money-market fund or cash / savings position: grouped as Cash, never a buy candidate.
     is_cash: bool = False
+    #: Native-USD value (USD accounts at their native amount, never EUR x rate).
+    current_value_usd: Decimal = ZERO
+    #: Native USD price (the close itself for USD instruments; EUR ones at the spot).
+    price_usd: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,7 @@ class CalcCategory:
     members: list[CalcInstrument] = field(default_factory=list)
     #: Every member is cash (the "Cash" group).
     is_cash: bool = False
+    current_value_usd: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -75,6 +81,21 @@ class CalcData:
     def cash_eur(self) -> Decimal:
         """Value of the cash held (money-market funds + cash / savings), EUR mark."""
         return sum((i.current_value_eur for i in self.instruments if i.is_cash), start=ZERO)
+
+    @property
+    def total_value_usd(self) -> Decimal:
+        return sum((i.current_value_usd for i in self.instruments), start=ZERO)
+
+    @property
+    def cash_usd(self) -> Decimal:
+        """Native-USD value of the cash held."""
+        return sum((i.current_value_usd for i in self.instruments if i.is_cash), start=ZERO)
+
+    def total_value(self, ccy: str) -> Decimal:
+        return self.total_value_eur if ccy == "EUR" else self.total_value_usd
+
+    def cash(self, ccy: str) -> Decimal:
+        return self.cash_eur if ccy == "EUR" else self.cash_usd
 
     def by_id(self) -> dict[int, CalcInstrument]:
         return {i.instrument_id: i for i in self.instruments}
@@ -102,6 +123,22 @@ def _price_to_eur(
     return None
 
 
+def _price_to_usd(
+    native_price: Decimal | None,
+    native_currency: str,
+    fx_rate_usd_per_eur: Decimal | None,
+) -> Decimal | None:
+    """Native USD close for share math: a USD close is used as is, never via EUR."""
+    if native_price is None or native_price <= ZERO:
+        return None
+    ccy = (native_currency or "EUR").upper()
+    if ccy == "USD":
+        return native_price
+    if ccy == "EUR" and fx_rate_usd_per_eur and fx_rate_usd_per_eur > ZERO:
+        return native_price * fx_rate_usd_per_eur
+    return None
+
+
 def build_calculator_data(session: Session) -> CalcData:
     """Assemble the calculator's per-instrument / per-category data set.
 
@@ -117,12 +154,25 @@ def build_calculator_data(session: Session) -> CalcData:
 
     positions = compute_positions(session)
     value_by_id: dict[int, Decimal] = {}
+    value_usd_by_id: dict[int, Decimal] = {}
     for p in positions:
         value_by_id[p.instrument.id] = value_by_id.get(p.instrument.id, ZERO) + p.current_value_eur
+        value_usd_by_id[p.instrument.id] = value_usd_by_id.get(
+            p.instrument.id, ZERO
+        ) + position_value_usd(p, fx_rate)
+
+    from investment_dashboard.services import benchmark_service  # noqa: PLC0415
 
     inactive = instrument_overrides_repo.inactive_ids(session)
     overrides = instrument_overrides_repo.get_override_map(session)
-    instruments = [i for i in instruments_repo.list_instruments(session) if i.id not in inactive]
+    # The comparison benchmark gets an instrument row of its own (a price-history
+    # stub); it is not part of the portfolio unless it is actually held.
+    benchmark = benchmark_service.get_symbol(session)
+    instruments = [
+        i
+        for i in instruments_repo.list_instruments(session)
+        if i.id not in inactive and not (i.symbol == benchmark and i.id not in value_by_id)
+    ]
     prices = latest_closes(session, [i.id for i in instruments])
 
     pct_by_id = current_weights_pct({i.id: value_by_id.get(i.id, ZERO) for i in instruments})
@@ -146,6 +196,8 @@ def build_calculator_data(session: Session) -> CalcData:
             price_eur=_price_to_eur(prices.get(instr.id), instr.native_currency, fx_rate),
             asset_class=eff.asset_class or "",
             is_cash=cash,
+            current_value_usd=value_usd_by_id.get(instr.id, ZERO),
+            price_usd=_price_to_usd(prices.get(instr.id), instr.native_currency, fx_rate),
         )
         calc_instruments.append(ci)
         if category not in by_category:
@@ -166,6 +218,7 @@ def build_calculator_data(session: Session) -> CalcData:
                 current_pct=cat_pct,
                 members=members,
                 is_cash=all(m.is_cash for m in members),
+                current_value_usd=sum((m.current_value_usd for m in members), start=ZERO),
             )
         )
     # Heaviest categories first so the builder leads with what matters.

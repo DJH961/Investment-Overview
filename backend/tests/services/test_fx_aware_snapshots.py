@@ -66,7 +66,13 @@ def test_get_or_compute_in_currency_uses_per_date_fx(session: Session) -> None:
     on that date.
     """
     snapshot_date = date(2024, 1, 15)
-    snapshots_repo.upsert_snapshot(session, snapshot_date, Decimal("1000"))
+    snapshots_repo.upsert_snapshot(
+        session,
+        snapshot_date,
+        Decimal("1000"),
+        total_value_usd=Decimal("1100"),
+        fx_eur_usd=Decimal("1.10"),
+    )
     fx_repo.upsert_rates(
         session,
         {
@@ -94,7 +100,13 @@ def test_get_or_compute_in_currency_eur_passthrough(session: Session) -> None:
 def test_get_or_compute_in_currency_usd_forward_fills(session: Session) -> None:
     """If the snapshot date has no USD rate, the prior business-day rate wins."""
     snapshot_date = date(2024, 3, 4)  # Monday
-    snapshots_repo.upsert_snapshot(session, snapshot_date, Decimal("500"))
+    snapshots_repo.upsert_snapshot(
+        session,
+        snapshot_date,
+        Decimal("500"),
+        total_value_usd=Decimal("542.500"),
+        fx_eur_usd=Decimal("1.085"),
+    )
     # Only a Friday rate exists; forward-fill must pick it up.
     fx_repo.upsert_rates(
         session,
@@ -108,11 +120,11 @@ def test_get_or_compute_in_currency_usd_forward_fills(session: Session) -> None:
     assert value == Decimal("542.500")  # 500 * 1.085
 
 
-def test_get_or_compute_in_currency_no_rate_returns_eur(session: Session) -> None:
+def test_get_or_compute_in_currency_without_stored_usd_is_native(session: Session) -> None:
     """With no FX history at all, fall through to the raw EUR value."""
     snapshot_date = date(2024, 7, 1)
     snapshots_repo.upsert_snapshot(session, snapshot_date, Decimal("123.45"))
     session.flush()
-    assert snapshots_service.get_or_compute_in_currency(session, snapshot_date, "USD") == Decimal(
-        "123.45"
-    )
+    # A row without a stored USD value is recomputed from the (here empty) native
+    # positions: never the EUR amount relabelled or converted as USD.
+    assert snapshots_service.get_or_compute_in_currency(session, snapshot_date, "USD") == Decimal(0)

@@ -24,15 +24,35 @@ from datetime import UTC, date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.late_data import Holding
 from investment_dashboard.repositories import intraday_repo
+from investment_dashboard.services import metrics_service
 from investment_dashboard.ui.pages.overview import _currency_box_html
 
 # 2024-06-03 is a Monday. 20:00 UTC = 16:00 ET (market just closed); 15:00 UTC =
 # 11:00 ET (market open). Two intraday FX samples bracket the session: the open
 # anchor (1.00) and the close anchor (1.25).
 _CLOSED = datetime(2024, 6, 3, 20, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _usd_book(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The book ``_metrics()`` describes: $130,000 of USD holdings.
+
+    Since 6.17.0 the currency effect revalues the actual holdings (the shared
+    ``metrics_service.fx_revaluation`` the hero uses), not ``total_value_usd`` x rate,
+    so EUR cash no longer moves with the dollar. These tests build no ledger.
+    """
+    monkeypatch.setattr(
+        metrics_service,
+        "_book_holdings",
+        lambda *_a, **_k: [Holding("USD", Decimal("130000"), Decimal("100000"))],
+    )
+
+
 _OPEN = datetime(2024, 6, 3, 15, 0, tzinfo=UTC)
 
 
@@ -154,36 +174,30 @@ class TestSplitOrdering:
         assert ">last<" in html
 
 
-class TestClosedWeekdayReanchorsToSessionOpen:
-    """On a regular weekday after the close the headline "Today" stat reads "since
-    last open", so the currency-effect panel total must be anchored to that same
-    session **open** — not the settled previous close — or the money figure and the
-    headline disagree in scale and even in sign (the disconnect this fixes). The
-    re-anchoring also makes the frozen "Market hours" leg the real last-session
-    open→close move rather than a near-zero prior-close→close residual.
+class TestClosedWeekdayAnchorsAtThePreviousClose:
+    """The day rule (6.17.0, owner decision): a day's currency effect runs from the
+    previous session's close, the same anchor as the hero, so the box total equals
+    the hero's currency part and its title "since yesterday". (Until 6.16 a closed
+    weekday re-anchored to the session open; that rule is gone.)
 
-    Seed: open anchor 1.00, close anchor 1.25; metrics live 1.30, prev settle 1.20,
-    USD book $130,000. Anchored to the open the net is 130000/1.30 − 130000/1.00 =
-    −€30,000, split into overnight (close→now) 130000/1.30 − 130000/1.25 = −€4,000
-    and market hours (open→close) the −€26,000 remainder. Anchored to the settled
-    prev close it would instead read −€8,333.33 with a tiny −€4,333.33 market-hours
-    residual — the buggy figures, which must be absent.
+    Seed: open 1.00, close 1.25; metrics live 1.30, previous close 1.20, USD book
+    $130,000. Net 130000/1.30 - 130000/1.20 = -EUR 8,333.33; overnight (close -> now)
+    130000/1.30 - 130000/1.25 = -EUR 4,000.00; market hours the -EUR 4,333.33 remainder.
     """
 
-    def test_eur_effect_total_is_session_open_anchored(self, session: Session) -> None:
+    def test_eur_effect_total_is_previous_close_anchored(self, session: Session) -> None:
         _seed_fx_samples(session)
         html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
         assert html is not None
-        assert "\u2212\u20ac30,000.00" in html  # session-open anchored net
-        assert "8,333" not in html  # not the settled-prev-close anchor
+        assert "\u2212\u20ac8,333.33" in html  # previous-close anchored net
+        assert "30,000" not in html  # not the old session-open anchor
 
-    def test_market_hours_leg_is_the_real_open_to_close_move(self, session: Session) -> None:
+    def test_legs_split_the_net_at_the_close(self, session: Session) -> None:
         _seed_fx_samples(session)
         html = _currency_box_html(session, _metrics(), display_ccy="EUR", now=_CLOSED)
         assert html is not None
-        assert "\u2212\u20ac26,000.00" in html  # genuine open→close market-hours move
-        assert "\u2212\u20ac4,000.00" in html  # live overnight (close→now) leg
-        assert "4,333" not in html  # not the near-zero prev-close→close residual
+        assert "\u2212\u20ac4,333.33" in html  # market hours: previous close -> close
+        assert "\u2212\u20ac4,000.00" in html  # live overnight: close -> now
 
     def test_investing_power_is_session_open_anchored(self, session: Session) -> None:
         _seed_fx_samples(session)

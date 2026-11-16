@@ -83,9 +83,8 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
     from investment_dashboard.services import intraday_snapshots_service
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-    latest_price_date = intraday_snapshots_service.previous_trading_session(
-        exchange_today() + timedelta(days=1)
-    )
+    # The session the holdings show: before 09:30 ET that is still the previous one.
+    latest_price_date = intraday_snapshots_service.last_session_date()
     previous_price_date = intraday_snapshots_service.previous_trading_session(latest_price_date)
 
     # Clear any seeded closes for VTI to prevent newer prints (like exchange_today() on weekends)
@@ -144,7 +143,7 @@ def test_instrument_daily_growth_prev_leg_matches_the_twin_estimate_anchor(
     from investment_dashboard.services import intraday_snapshots_service as iss
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-    latest_price_date = iss.previous_trading_session(exchange_today() + timedelta(days=1))
+    latest_price_date = iss.last_session_date()  # the session the holdings show
     previous_price_date = iss.previous_trading_session(latest_price_date)
 
     session.execute(delete(PriceHistory).where(PriceHistory.instrument_id == vti.id))
@@ -229,10 +228,14 @@ def test_live_eur_usd_spot_does_not_shift_daily_growth_once_shut(
             # equity close.
             fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=exchange_today())
             live = compute_instrument_metrics(session, get_positions(session), now=shut_now)[vti.id]
-            # Neither leg moved: the session has shut, so growth is frozen —
-            # the live spot only ever moves the *valuation*, never this figure.
-            assert live.daily_growth_eur == base.daily_growth_eur
+            # Day-move rule: the market move froze at the close, but the EUR figure keeps
+            # moving with FX (now = close prices x LIVE rate); baseline = prev close x its
+            # close rate (1.25). Hand check: $2,300 / 1.32 - $2,200 / 1.25 = -17.58 EUR
+            # (was +80.00 EUR at the 1.25 spot), while USD stays native: +$100.
+            assert base.daily_move_eur == Decimal("80.00")
+            assert live.daily_move_eur == Decimal("-17.58")
             assert live.daily_growth_usd == base.daily_growth_usd
+            assert live.daily_move_usd == Decimal("100.00")
             # The YTD growth's start value is priced at the Jan FX (1.25), untouched
             # by the live spot — only the current mark revalues.
             assert live.ytd_growth_usd == base.ytd_growth_usd
@@ -954,9 +957,13 @@ def test_build_holding_cards_flags_lagging_daily_move_as_stale(
         native_currency="USD",
         account_type="brokerage",
     )
-    today = exchange_today()
-    yesterday = today - timedelta(days=1)
-    two_days_ago = today - timedelta(days=2)
+    from investment_dashboard.services import intraday_snapshots_service as iss
+
+    # The session the holdings show (before 09:30 ET still the previous one) and the
+    # two trading sessions before it: the dates never depend on when CI runs.
+    today = iss.last_session_date()
+    yesterday = iss.previous_trading_session(today)
+    two_days_ago = iss.previous_trading_session(yesterday)
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
     fund = instruments_repo.get_or_create(session, symbol="VFIAX", asset_class="mutual_fund")

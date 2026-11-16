@@ -31,6 +31,7 @@ from investment_dashboard.domain.returns import Cashflow
 from investment_dashboard.readmodels import analytics, deposits, live_graphs, periods, transactions
 from investment_dashboard.readmodels._context import ReadModelContext, build_context
 from investment_dashboard.readmodels._serialize import dec, iso, now_utc_iso
+from investment_dashboard.readmodels._usd import position_value_usd
 from investment_dashboard.readmodels.queries.overview_query import compute_instrument_metrics
 from investment_dashboard.repositories import (
     accounts_repo,
@@ -314,11 +315,14 @@ def _portfolio_cashflows(
     return _paired_cashflows(eur_flows, usd_flows)
 
 
-def _position_values_by_symbol(positions: list[Position]) -> dict[str, Decimal]:
+def _position_values_by_symbol(
+    positions: list[Position], usd_per_eur: Decimal | None = None, *, usd: bool = False
+) -> dict[str, Decimal]:
     values: dict[str, Decimal] = {}
     for position in positions:
         symbol = position.instrument.symbol
-        values[symbol] = values.get(symbol, Decimal(0)) + position.current_value_eur
+        value = position_value_usd(position, usd_per_eur) if usd else position.current_value_eur
+        values[symbol] = values.get(symbol, Decimal(0)) + value
     return values
 
 
@@ -329,36 +333,29 @@ def _period_openings(session: Session, *, as_of: date) -> dict[str, Any]:
     year_positions = positions_service.compute_positions(session, as_of=year_start)
     month_by_symbol = _position_values_by_symbol(month_positions)
     year_by_symbol = _position_values_by_symbol(year_positions)
-    # Convert each boundary's EUR opening value at the EUR→USD rate in force on
-    # that boundary date (forward-filled), mirroring the desktop's
-    # ``sv_usd = sv_eur * fx_boundary``. This lets the web compute currency-
-    # correct MTD/YTD growth in USD instead of rescaling at today's spot. When
-    # no rate is available the USD figure is ``null`` and the web falls back to
-    # the always-present EUR opening.
+    # USD openings are summed from native USD (a USD account counts at its native
+    # value on that boundary date); only non-USD holdings convert, at the EUR->USD
+    # rate in force on that boundary (forward-filled). Never EUR value x rate for
+    # a USD holding.
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     month_rate = lookup_rate_with_forward_fill(eur_to_usd, month_start)
     year_rate = lookup_rate_with_forward_fill(eur_to_usd, year_start)
-
-    def _usd(value: Decimal, rate: Decimal | None) -> Decimal | None:
-        return value * rate if rate is not None else None
+    month_usd = _position_values_by_symbol(month_positions, month_rate, usd=True)
+    year_usd = _position_values_by_symbol(year_positions, year_rate, usd=True)
 
     month_total = sum(month_by_symbol.values(), start=Decimal(0))
     year_total = sum(year_by_symbol.values(), start=Decimal(0))
     return {
         "month_start_value_eur": dec(month_total),
         "year_start_value_eur": dec(year_total),
-        "month_start_value_usd": dec(_usd(month_total, month_rate)),
-        "year_start_value_usd": dec(_usd(year_total, year_rate)),
+        "month_start_value_usd": dec(sum(month_usd.values(), start=Decimal(0))),
+        "year_start_value_usd": dec(sum(year_usd.values(), start=Decimal(0))),
         "holdings": {
             symbol: {
                 "month_start_value_eur": dec(month_by_symbol.get(symbol, Decimal(0))),
                 "year_start_value_eur": dec(year_by_symbol.get(symbol, Decimal(0))),
-                "month_start_value_usd": dec(
-                    _usd(month_by_symbol.get(symbol, Decimal(0)), month_rate)
-                ),
-                "year_start_value_usd": dec(
-                    _usd(year_by_symbol.get(symbol, Decimal(0)), year_rate)
-                ),
+                "month_start_value_usd": dec(month_usd.get(symbol, Decimal(0))),
+                "year_start_value_usd": dec(year_usd.get(symbol, Decimal(0))),
             }
             for symbol in sorted(set(month_by_symbol) | set(year_by_symbol))
         },

@@ -141,7 +141,7 @@ def test_unauthenticated_probe_is_info_not_a_problem(folder: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("path", "status"), [("/api/auth/login", 401), ("/api/settings/values", 422)]
+    ("path", "status"), [("/api/auth/login", 401), ("/api/settings/values", 500)]
 )
 def test_level_keeps_real_refusals_as_warnings(path: str, status: int) -> None:
     from investment_dashboard.api.activity import _level

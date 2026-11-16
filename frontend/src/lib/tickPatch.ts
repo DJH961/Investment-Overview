@@ -16,6 +16,11 @@ export type TickPriceDto = components["schemas"]["TickPrice"];
 export type TickEstimateDto = components["schemas"]["TickEstimate"];
 export type TickCategoryDto = components["schemas"]["TickCategory"];
 
+/** The tick's live "now" marker figures per reporting currency (null: marker over; no `t`). */
+export type TickNowPoint = Partial<
+  Record<"EUR" | "USD", { v: string; overnight_currency?: string | null; overnight_pct?: string | null }>
+>;
+
 const decimal = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
 
 /** The shape of a tick as `handleLiveEvent` sees it (loosely typed SSE payload). */
@@ -29,6 +34,7 @@ export interface TickLike {
   last_update_at?: unknown;
   prices_live?: unknown;
   point?: unknown;
+  now_point?: unknown;
   prices?: unknown;
   categories?: unknown;
   seq?: unknown;
@@ -117,7 +123,11 @@ function withDailyPoint(points: GraphDto["points"], t: string, v: string): Graph
 }
 
 /** Append (or replace, same `t`) the live sample in every cached graph range, both sides. */
-export function patchGraphPoint(queryClient: QueryClient, point: TickPointDto): void {
+export function patchGraphPoint(
+  queryClient: QueryClient,
+  point: TickPointDto,
+  nowPoint?: TickNowPoint | null,
+): void {
   if (!point || typeof point.t !== "string" || point.t === "") return;
   const ranges: Array<[string, typeof withPoint]> = [
     ...INTRADAY_RANGES.map((r): [string, typeof withPoint] => [r, withPoint]),
@@ -132,6 +142,32 @@ export function patchGraphPoint(queryClient: QueryClient, point: TickPointDto): 
         if (!g || !Array.isArray(g.points)) continue;
         const own = decimal(point[side]);
         const sec = g.secondary ? decimal(point[g.secondary.ccy]) : null;
+        if (g.now_point && add === withPoint && nowPoint !== null) {
+          // After the close the line ends at the session close: a tick moves only the
+          // "now" marker (server values, `t` kept), never extends the line or touches growth.
+          const n = nowPoint?.[side];
+          if (n && decimal(n.v)) {
+            next[side] = {
+              ...g,
+              now_point: {
+                ...g.now_point,
+                v: n.v,
+                overnight_currency: n.overnight_currency ?? g.now_point.overnight_currency,
+                overnight_pct: n.overnight_pct ?? g.now_point.overnight_pct,
+              },
+            };
+          }
+          continue;
+        }
+        if (g.now_point && add === withPoint && nowPoint === null) {
+          // The server says the marker is over (market open again): clear it, resume the line.
+          next[side] = {
+            ...g,
+            now_point: null,
+            points: own ? add(g.points, point.t, own) : g.points,
+          };
+          continue;
+        }
         next[side] = {
           ...g,
           points: own ? add(g.points, point.t, own) : g.points,
@@ -237,7 +273,10 @@ export function patchHoldingsPrices(
 export function applyTick(queryClient: QueryClient, ev: TickLike): void {
   patchOverviewFromEvent(queryClient, ev);
   const point = ev.point as TickPointDto | null | undefined;
-  if (point && typeof point === "object") patchGraphPoint(queryClient, point);
+  if (point && typeof point === "object") {
+    const now = ev.now_point;
+    patchGraphPoint(queryClient, point, now === null ? null : now && typeof now === "object" ? (now as TickNowPoint) : undefined);
+  }
   const prices = ev.prices as Record<string, TickPriceDto> | null | undefined;
   const estimates = ev.estimates as Record<string, TickEstimateDto> | null | undefined;
   const hasPrices = !!prices && typeof prices === "object";

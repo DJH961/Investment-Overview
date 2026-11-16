@@ -108,6 +108,9 @@ export function TopBar({
   const navigate = useNavigate();
   const ThemeIcon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
   const showHealth = !compact || (health !== undefined && health.severity !== "ok");
+  // Phones use the chip's short form ("Closed", "Open · 15:42"); wider screens stack
+  // the state over its detail ("Closed" / "Prices 22:00 (close)"): two clean lines.
+  const shortChip = compact && Boolean(freshness.short);
 
   const accountItems: MenuItem[] = [
     ...(compact ? [{ label: `Theme: ${theme}`, icon: <ThemeIcon aria-hidden />, onSelect: cycleTheme }] : []),
@@ -142,8 +145,9 @@ export function TopBar({
           <Freshness
             className="top-bar__freshness"
             status={freshness.status}
-            label={compact && freshness.short ? freshness.short : freshness.label}
-            title={compact && freshness.short ? freshness.label : freshness.updated}
+            label={shortChip ? freshness.short! : freshness.label}
+            title={shortChip ? freshness.label : freshness.updated}
+            stacked={!shortChip}
           />
         )}
         {!compact && freshness.updated && (

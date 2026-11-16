@@ -71,6 +71,7 @@ _CHANGE_KEYS = (
     "prices",
     "point",
     "estimates",
+    "now_point",
 )
 JOB_NAMES: tuple[str, ...] = ("tick", "fx", "eod", "backup")
 PAUSE_KEY = "scheduler.pause"
@@ -116,19 +117,28 @@ def default_tick_job() -> dict[str, Any] | None:
     # Outside the session a tick only checks prices: no intraday sample.
     session_open = market_hours.is_us_market_open()
     with ledger_session_scope() as session:
-        total_eur = positions_service.total_portfolio_value(session, as_of=today)
+        positions = positions_service.compute_positions(session, as_of=today)
+        total_eur = positions_service.total_portfolio_value(
+            session, as_of=today, positions=positions
+        )
+        # Native USD total (USD holdings at their own amount), never ``total_eur * rate``.
+        total_usd = positions_service.total_portfolio_value_usd(
+            session, as_of=today, positions=positions
+        )
         prices = _tick_prices(session, today)
         symbols, categories = _tick_day_moves(session, today, rate)
         if prices is not None:
             for key, day in symbols.items():
                 if key in prices:
                     prices[key].update(day)
-        point = _tick_point(session, total_eur, rate) if session_open else None
-        estimated = _tick_estimates(session, total_eur, rate)
+        point = _tick_point(session, total_eur, rate, total_usd=total_usd) if session_open else None
+        estimated = _tick_estimates(session, total_eur, rate, total_usd=total_usd)
+        now_point = _tick_now_point(session, rate)
     return {
+        "now_point": now_point,
         "total_value_eur": _dec(total_eur),
-        # One instant (value now x spot now), so EUR -> USD is a valid conversion.
-        "total_value_usd": _dec(total_eur * rate) if rate is not None else None,
+        # Native USD (FX-free for USD holdings); not the EUR figure converted back.
+        "total_value_usd": _dec(total_usd),
         "fx_eur_usd": _dec(rate),
         "prices": prices,
         "categories": categories or None,
@@ -206,24 +216,35 @@ def _tick_day_moves(
         if not shares:
             return {}, {}
         recent = prices_service.recent_closes_by_instrument(
-            session, list(shares), on_or_before=today, limit=2
+            session,
+            list(shares),
+            on_or_before=(
+                today
+                if intraday_snapshots_service.last_session_date(now)
+                >= intraday_snapshots_service.previous_trading_session(today + timedelta(days=1))
+                else intraday_snapshots_service.last_session_date(now)
+            ),
+            limit=2,
         )
-        baseline_last = intraday_snapshots_service.previous_trading_session(
-            today + timedelta(days=1)
+        # Rolls over with the hero at the 09:30 ET open (not ET midnight).
+        baseline_last = min(
+            intraday_snapshots_service.previous_trading_session(today + timedelta(days=1)),
+            intraday_snapshots_service.last_session_date(now),
         )
         baseline_prev = intraday_snapshots_service.previous_trading_session(baseline_last)
         eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
-        rates: dict[date, Decimal | None] = {}
+        rates: dict[tuple[date, bool], Decimal | None] = {}
 
-        def _rate(on: date) -> Decimal | None:
-            if on not in rates:
-                live = rate if on == today and rate is not None else None
+        def _rate(on: date, now_leg: bool = False) -> Decimal | None:
+            # Baseline leg: that session's close rate. Now leg: the live rate.
+            if (on, now_leg) not in rates:
+                live = rate if now_leg and rate is not None else None
                 live = live or lookup_rate_with_forward_fill(eur_to_usd, on) or rate
                 resolved = intraday_snapshots_service.daily_growth_leg_fx(
-                    session, on, now=now, live_rate=live
+                    session, on, now=now, live_rate=live, now_leg=now_leg
                 )
-                rates[on] = resolved if resolved is not None else rate
-            return rates[on]
+                rates[(on, now_leg)] = resolved if resolved is not None else rate
+            return rates[(on, now_leg)]
 
         symbols: dict[str, dict[str, Any]] = {}
         members: dict[str, list[day_move.HoldingDayMove]] = {}
@@ -244,7 +265,7 @@ def _tick_day_moves(
                 shares=qty,
                 native_currency=native[iid],
                 legs=legs,
-                rate_last=_rate(legs.rate_date_last),
+                rate_last=_rate(legs.rate_date_last, True),
                 rate_prev=_rate(legs.rate_date_prev),
             )
             symbols[str(iid)] = {
@@ -316,7 +337,12 @@ def _tick_prices(session: Any, today: date, now: datetime | None = None) -> dict
 
 
 def _tick_estimates(
-    session: Any, total_eur: Decimal, rate: Decimal | None, now: datetime | None = None
+    session: Any,
+    total_eur: Decimal,
+    rate: Decimal | None,
+    now: datetime | None = None,
+    *,
+    total_usd: Decimal | None = None,
 ) -> dict[str, Any]:
     """The estimated total and per-fund estimates of this tick (all ``None`` when none).
 
@@ -350,9 +376,11 @@ def _tick_estimates(
         total_est = total_eur + adjustment[0] if adjustment[0] is not None else None
         return {
             "total_value_est_eur": _dec(total_est),
-            # One instant (estimated total x the spot now): EUR -> USD is valid.
+            # Native USD total plus the (FX-free) USD estimate adjustment.
             "total_value_est_usd": (
-                _dec(total_est * rate) if total_est is not None and rate is not None else None
+                _dec(total_usd + adjustment[1])
+                if total_usd is not None and adjustment[1] is not None
+                else None
             ),
             "estimates": per_fund,
         }
@@ -361,11 +389,17 @@ def _tick_estimates(
         return empty
 
 
-def _tick_point(session: Any, total_eur: Decimal, rate: Decimal | None) -> dict[str, Any] | None:
+def _tick_point(
+    session: Any,
+    total_eur: Decimal,
+    rate: Decimal | None,
+    *,
+    total_usd: Decimal | None = None,
+) -> dict[str, Any] | None:
     """The intraday sample this tick just stored, as a graph point (or ``None``).
 
-    ``USD`` is the total at the sample's own stored FX (single instant); ``EUR`` is
-    that USD value divided by the same rate, i.e. the total itself.
+    ``USD`` is the native USD total (plus the FX-free late-NAV adjustment); ``EUR`` is
+    that USD value divided by the sample's own stored FX (single instant).
     """
     try:
         from investment_dashboard.services import (  # noqa: PLC0415
@@ -383,15 +417,49 @@ def _tick_point(session: Any, total_eur: Decimal, rate: Decimal | None) -> dict[
         fx = fx or rate
         # The 1D line draws mutual funds on their late-NAV line (ETF estimate until
         # the NAV posts); the point must sit on that line, not on the official total.
-        total_eur = total_eur + intraday_snapshots_service.live_point_adjustment_eur(
-            session, at=at, fx=fx
-        )
-        if fx is None or fx == 0:
-            return {"t": t, "EUR": _dec(total_eur), "USD": None}
-        usd = total_eur * fx
+        adj_eur, adj_usd = intraday_snapshots_service.live_point_adjustment(session, at=at, fx=fx)
+        total_eur = total_eur + (adj_eur or Decimal(0))
+        usd = total_usd + adj_usd if total_usd is not None and adj_usd is not None else None
+        if fx is None or fx == 0 or usd is None:
+            return {"t": t, "EUR": _dec(total_eur), "USD": _dec(usd)}
         return {"t": t, "EUR": _dec(usd / fx), "USD": _dec(usd)}
     except Exception:
         log.warning("tick point unavailable", exc_info=True)
+        return None
+
+
+def _tick_now_point(
+    session: Any, rate: Decimal | None, now: datetime | None = None
+) -> dict[str, Any] | None:
+    """The graphs' ``now_point`` of this tick, per currency (``None`` while the market is open).
+
+    The live value after the close with its overnight currency effect and that effect as
+    a fraction of the previous-close baseline, both server-computed (the day-move rule,
+    :func:`metrics_service.last_session_split`), so the client only patches them in.
+    """
+    try:
+        from investment_dashboard.services import metrics_service  # noqa: PLC0415
+
+        now = now or datetime.now(UTC)
+        if market_hours.is_us_market_open(now):
+            return None
+        split = metrics_service.last_session_split(session, now=now, fx_now=rate)
+        if split is None:
+            return None
+        return {
+            "EUR": {
+                "v": _dec(split.value_now_eur),
+                "overnight_currency": _dec(split.overnight_eur),
+                "overnight_pct": _dec(split.overnight_pct_eur),
+            },
+            "USD": {
+                "v": _dec(split.value_now_usd),
+                "overnight_currency": _dec(split.overnight_usd),
+                "overnight_pct": _dec(split.overnight_pct_usd),
+            },
+        }
+    except Exception:
+        log.warning("tick now point unavailable", exc_info=True)
         return None
 
 
@@ -456,6 +524,42 @@ def default_eod_job() -> dict[str, Any] | None:
         if step() is False:
             failed.append(step.__name__)
     return {EOD_FAILED_STEPS: failed} if failed else None
+
+
+#: ``app_config`` key: the last New York date the "settle yesterday" step settled.
+SETTLE_KEY = "scheduler.last_settled_day"
+#: Gap before a failed settle step is tried again.
+SETTLE_RETRY = timedelta(minutes=5)
+
+
+def default_settle_job(today: date) -> bool:
+    """Settle the just-finished New York day (``today - 1``): ``True`` when it ran.
+
+    While a day is "today" its stored snapshot is valued at the live rate overlay.
+    The first run after the New York date rolls over force-recomputes ONLY that day,
+    so it is valued at its own ECB / settled rate (and its native USD total is stored
+    natively), whatever the weekday. The settled date is persisted in ``app_config``
+    so a restart neither repeats nor skips it; the evening 7-day pass stays as is.
+    ``False`` (no-op) when that day was already settled.
+    """
+    from investment_dashboard.db import (  # noqa: PLC0415
+        config_session_scope,
+        ledger_session_scope,
+    )
+    from investment_dashboard.services import app_config_service, snapshots_service  # noqa: PLC0415
+
+    day = today - timedelta(days=1)
+    with config_session_scope() as cfg:
+        if app_config_service.get(cfg, SETTLE_KEY) == day.isoformat():
+            return False
+    with ledger_session_scope() as session:
+        snapshots_service.warm_range(session, day, day, force=True)
+    # The recomputed row is committed above; only then is the day marked settled.
+    with config_session_scope() as cfg:
+        cfg.info["skip_backup_dirty"] = True  # bookkeeping, not durable data
+        app_config_service.set_value(cfg, SETTLE_KEY, day.isoformat())
+    activity("market_data").info("settled yesterday's snapshot (%s) at its own rate", day)
+    return True
 
 
 def default_backup_job() -> dict[str, Any] | None:
@@ -583,6 +687,8 @@ class Jobs:
     tick: Job = default_tick_job
     fx: Job = default_fx_job
     eod: Job = default_eod_job
+    #: Settle yesterday's stored snapshot after the New York date rolls over.
+    settle: Callable[[date], bool] = default_settle_job
     #: Sealed database snapshot (independent of market state, no live event).
     backup: Job = default_backup_job
     backup_due: Callable[[datetime], bool] = default_backup_due
@@ -606,6 +712,9 @@ class State:
     #: Whether ``last_eod_session`` was read from ``app_config`` yet (B-004).
     eod_session_loaded: bool = False
     last_backup: datetime | None = None
+    #: The New York date whose "settle yesterday" step is done / its last attempt.
+    settle_done_for: date | None = None
+    last_settle_try: datetime | None = None
     running: set[str] = field(default_factory=set)
     requested: set[str] = field(default_factory=set)
     last_runs: dict[str, datetime] = field(default_factory=dict)
@@ -878,6 +987,44 @@ class Scheduler:
             await self._run_job(name, now)
         return ran
 
+    async def settle_step(self) -> bool:
+        """After the New York date rolls over, settle yesterday's snapshot once.
+
+        Separate from :meth:`step` (not a market job): runs on the first pass of a
+        new New York date, whatever the weekday, then not again that date. A failure
+        is retried after :data:`SETTLE_RETRY`. Publishes a ``refresh`` event once the
+        recomputed day is committed. Returns whether it settled a day.
+        """
+        st = self.state
+        now = self.clock()
+        today = market_hours.exchange_today(now)
+        if st.settle_done_for == today:
+            return False
+        if st.last_settle_try is not None and now - st.last_settle_try < SETTLE_RETRY:
+            return False
+        if self.jobs.heavy_busy() is not None:
+            return False
+        st.last_settle_try = now
+        try:
+            settled = await asyncio.to_thread(self.jobs.settle, today)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.warning("settle yesterday failed", exc_info=True)
+            activity("market_data").warning("settle yesterday FAILED; retrying in 5 min")
+            return False
+        st.settle_done_for = today
+        if settled:
+            self.bus.publish(
+                {
+                    "type": "refresh",
+                    "ts": _event_ts(self.clock()),
+                    "market_state": live_bus.market_state(now),
+                    "reason": "settled yesterday",
+                }
+            )
+        return settled
+
     async def _pause_between_steps(self) -> None:
         if self.sleep is not asyncio.sleep:
             await self.sleep(self.poll_seconds)
@@ -894,6 +1041,7 @@ class Scheduler:
         while True:
             try:
                 await self.step()
+                await self.settle_step()
             except asyncio.CancelledError:
                 raise
             except Exception:

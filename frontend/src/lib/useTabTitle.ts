@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { formatMoney, formatPercent } from "./format";
 import { useHideAmounts } from "./hideAmounts";
 import type { ReportingCurrency } from "./prefs";
@@ -28,19 +28,25 @@ export function tabTitle(
   return `${head} ${arrow}${formatPercent(Math.abs(pct))}`;
 }
 
-/** Keeps `document.title` current from the cached overview; restores the original on unmount. */
+/** The neutral title (index.html). Never read back from `document.title`: that may hold figures. */
+export const BASE_TITLE = "Investment Overview";
+
+/**
+ * Keeps `document.title` current from the cached overview; back to the neutral title on
+ * unmount (sign-out). The neutral title is a constant on purpose: capturing `document.title`
+ * at mount captured the figures whenever the shell remounted, and sign-out then put them back.
+ */
 export function useTabTitle(currency: ReportingCurrency): void {
   const { hide } = useHideAmounts();
   // Reads the shared cache only (no request of its own); updates when a tick patches it.
   const kpis = useQuery({ ...overviewQuery(currency), enabled: false }).data?.kpis;
-  const original = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      document.title = BASE_TITLE;
+    },
+    [],
+  );
   useEffect(() => {
-    original.current = document.title;
-    return () => {
-      if (original.current !== null) document.title = original.current;
-    };
-  }, []);
-  useEffect(() => {
-    document.title = tabTitle(kpis, currency, hide, original.current ?? "Investment Overview");
+    document.title = tabTitle(kpis, currency, hide, BASE_TITLE);
   }, [kpis, currency, hide]);
 }

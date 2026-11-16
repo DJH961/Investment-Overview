@@ -17,6 +17,7 @@ import {
   type ImportConfirmResult,
   type ImportPreview,
 } from "../../lib/queries/ledger";
+import { ApiError } from "../../lib/api";
 import { useAccounts, useImportBrokers } from "../../lib/queries/accounts";
 import { formatDate } from "../../lib/format";
 import { useLeaveGuard } from "../../lib/useLeaveGuard";
@@ -179,6 +180,14 @@ export function Import() {
   };
   const columns = previewColumns(resolve.isPending, (row, fix) => resolveRows([{ index: row.index, action: fix }]));
 
+  // The server could not tell which account the file is for: a choice to make, not an
+  // error, so it is asked at the Account field instead of the red failure box.
+  const needsAccount = upload.error instanceof ApiError && upload.error.code === "needs_account";
+  const chooseAccount = (value: string) => {
+    setAccount(value);
+    if (needsAccount) upload.reset();
+  };
+
   const open = preview?.rows.filter(isOpen) ?? [];
   const unresolved = preview?.counts.unresolved ?? 0;
   const flaggedShown = preview?.rows.filter(isFlagged).length ?? 0;
@@ -247,8 +256,11 @@ export function Import() {
               <Field label="Broker" hint="Detected from the file when left on auto.">
                 {(c) => <Select id={c.id} options={brokers} value={broker} onValueChange={setBroker} />}
               </Field>
-              <Field label="Account">
-                {(c) => <Select id={c.id} options={accounts} value={account} onValueChange={setAccount} />}
+              <Field
+                label="Account"
+                hint={needsAccount ? <span className="import-page__ask">{upload.error?.message}</span> : undefined}
+              >
+                {(c) => <Select id={c.id} options={accounts} value={account} onValueChange={chooseAccount} />}
               </Field>
             </div>
             {account === NEW_ACCOUNT && (
@@ -257,7 +269,7 @@ export function Import() {
               />
             )}
             {upload.isPending && <progress className="import-page__progress" max={1} value={progress} aria-label="Upload progress" />}
-            {upload.isError && (
+            {upload.isError && !needsAccount && (
               <ErrorState title="Could not read that file" message={upload.error.message} onRetry={startUpload} />
             )}
             <div className="import-page__actions">

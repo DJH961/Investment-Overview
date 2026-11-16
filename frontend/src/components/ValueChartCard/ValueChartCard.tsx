@@ -15,12 +15,21 @@ import {
   formatDate,
   formatDayLabel,
   formatDayTime,
+  formatPercent,
   formatShortDay,
   formatTime,
   todayIn,
 } from "../../lib/format";
 import { useInstruments } from "../../lib/queries/instruments";
-import { GRAPH_RANGES, rememberGraphRange, toNum, useGraph, type GraphRange } from "../../lib/queries/portfolio";
+import {
+  GRAPH_RANGES,
+  rememberGraphRange,
+  toNum,
+  useGraph,
+  type GraphRange,
+  type OverviewDto,
+} from "../../lib/queries/portfolio";
+import { Money } from "../Money";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useHideAmounts } from "../../lib/hideAmounts";
 import { useTimeZone } from "../../lib/timezone";
@@ -99,6 +108,8 @@ export interface ValueChartCardProps {
   /** Settings → Display "Overview default range" (used when this device has no choice). */
   configuredRange?: GraphRange;
   marketOpen?: boolean;
+  /** `GET /api/overview` `last_session` (session move + overnight currency, after the close). */
+  lastSession?: OverviewDto["last_session"];
   className?: string;
 }
 
@@ -108,6 +119,7 @@ export function ValueChartCard({
   defaultRange,
   configuredRange,
   marketOpen = false,
+  lastSession,
   className,
 }: ValueChartCardProps) {
   const timeZone = useTimeZone();
@@ -175,6 +187,50 @@ export function ValueChartCard({
   const coverage = intraday && g?.coverage && !g.coverage.complete ? g.coverage : null;
   const other = g?.secondary?.ccy ?? (currency === "EUR" ? "USD" : "EUR");
 
+  // After the close the server sends a live "now" point (any intraday range): one
+  // dot just after the line's end, no line to it. Shown only when the currency moved
+  // since the close (never in USD, where nothing moves overnight), so a quiet evening
+  // is not decorated with "0.00 %". Labels are server figures only; in hide mode the
+  // dot says the range's percent instead of the value.
+  const now = intraday ? (g?.now_point ?? null) : null;
+  const nowV = now ? toNum(now.v) : null;
+  const overnight = now ? toNum(now.overnight_currency ?? lastSession?.overnight_currency) : null;
+  const overnightPct = now ? toNum(now.overnight_pct ?? lastSession?.overnight_pct) : null;
+  const moved =
+    overnightPct !== null ? Math.abs(overnightPct) >= 0.00005 : overnight !== null && Math.abs(overnight) >= 0.005;
+  const nowLabel = hide
+    ? growth !== null
+      ? `Now ${formatPercent(growth, { signed: true })}`
+      : null
+    : nowV !== null
+      ? `Now ${tipFormat(nowV)}`
+      : null;
+  const nowMarker = now && moved && nowV !== null ? { v: nowV, lines: nowLabel ? [nowLabel] : [] } : undefined;
+  // The split explains the 1D figure only; 1W's header is the week, not a session.
+  const sessionPct = now && moved && shown === "1d" && lastSession ? toNum(lastSession.move_pct) : null;
+  // Sits left of the range buttons (one row on desktop; wraps under them on a phone).
+  const split =
+    sessionPct !== null ? (
+      <p className="value-chart-card__split" data-testid="range-split">
+        <span className="value-chart-card__split-part">
+          Session <Percent ratio={sessionPct} signed colored />
+        </span>
+        <span className="value-chart-card__split-part">
+          Overnight{" "}
+          {overnightPct !== null ? (
+            <Percent ratio={overnightPct} signed colored />
+          ) : (
+            <Money amount={overnight} currency={currency} signed colored />
+          )}
+          <span className="value-chart-card__split-note"> · next day</span>
+          <InfoTip
+            label="overnight change"
+            content="The currency's move since the US close. It is already in today's figure above and counts toward the next day once the market opens."
+          />
+        </span>
+      </p>
+    ) : null;
+
   return (
     <Card
       className={clsx("value-chart-card", className)}
@@ -206,6 +262,8 @@ export function ValueChartCard({
       ) : (
         <>
           <Chart
+            headerExtra={split}
+            nowMarker={nowMarker}
             series={series}
             range={range}
             ranges={GRAPH_RANGES}

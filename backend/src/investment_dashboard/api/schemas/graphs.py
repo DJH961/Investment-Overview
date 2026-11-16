@@ -99,6 +99,29 @@ class GraphResponse(ApiModel):
     #: 1d/1w: stretches with no market data from the provider (holes of 15 min or
     #: more inside a session, or a frozen-quote stall), oldest first.
     data_gaps: list[GraphGap] = []  # noqa: RUF012 - pydantic copies defaults
+    #: 1d, market shut only: the live value as a separate marker (null while open).
+    now_point: GraphNowPoint | None = None
+
+
+class GraphNowPoint(ApiModel):
+    """The live "now" marker drawn after the close (the session line ends at the close)."""
+
+    t: str = Field(description="UTC ISO instant of the live value")
+    v: DecStr = Field(description="Current value in this line's currency, at the live rate")
+    overnight_currency: DecStr | None = Field(
+        default=None,
+        description=(
+            "Currency-only change since the session close (close prices x close rate -> "
+            "live rate), in this line's currency; null when it cannot be computed"
+        ),
+    )
+    overnight_pct: DecStr | None = Field(
+        default=None,
+        description=(
+            "overnight_currency as a fraction of the previous-close baseline value "
+            "(same base as the hero's day %); null when it cannot be computed"
+        ),
+    )
 
 
 class GraphRangePref(ApiModel):

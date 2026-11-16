@@ -239,6 +239,41 @@ def growth_index(values: Sequence[Decimal], new_money: Sequence[Decimal]) -> lis
     return index
 
 
+def rebase_funded_series(
+    base_value: Decimal,
+    raw: Sequence[Decimal | None],
+    new_money: Sequence[Decimal],
+) -> list[Decimal | None]:
+    """Re-start a funded benchmark value line from ``base_value`` on the first day.
+
+    ``raw[i]`` is a value line fed by the same ``new_money`` as the portfolio but
+    built from the whole ledger, so on the first window day it already holds
+    pre-window gains and does not meet the portfolio. Here the opening value is
+    set to ``base_value`` (the portfolio's value that day) and each later day
+    applies the raw line's own price return, then adds that day's new money::
+
+        out_i = out_{i-1} * (raw_i - new_money_i) / raw_{i-1} + new_money_i
+
+    A day with no usable previous raw value carries ``out`` forward unchanged
+    (plus the new money). Missing raw values yield ``None`` until the first one.
+    """
+    if len(raw) != len(new_money):
+        raise ValueError("raw and new_money must have the same length")
+    out: list[Decimal | None] = []
+    cur = base_value
+    for i, r in enumerate(raw):
+        if i == 0:
+            out.append(cur)
+            continue
+        prev = raw[i - 1]
+        if r is not None and prev is not None and prev > 0:
+            cur = cur * (r - new_money[i]) / prev + new_money[i]
+        else:
+            cur = cur + new_money[i]
+        out.append(cur)
+    return out
+
+
 def annualize_return(total_return: Decimal, days: int) -> Decimal | None:
     """Annualise a cumulative return over ``days`` calendar days.
 

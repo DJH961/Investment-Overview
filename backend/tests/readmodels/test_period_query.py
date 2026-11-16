@@ -273,7 +273,9 @@ def test_yearly_xirr_growth_is_currency_dependent(session: Session) -> None:
             source=TransactionSource.MANUAL,
         )
     )
-    snapshots_repo.upsert_snapshot(session, date(2023, 12, 31), Decimal("1200"))
+    snapshots_repo.upsert_snapshot(
+        session, date(2023, 12, 31), Decimal("1200"), Decimal("1500"), Decimal("1.25")
+    )
     # EUR→USD drifts across the year so the USD-denominated return diverges.
     fx_repo.upsert_rates(
         session,

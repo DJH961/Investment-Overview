@@ -32,7 +32,10 @@ from investment_dashboard.readmodels.queries.overview_query import (
 from investment_dashboard.repositories import instruments_repo
 from investment_dashboard.services import fx_service, intraday_snapshots_service, prices_service
 from investment_dashboard.services.daily_growth_view import fx_move_pct
-from investment_dashboard.services.metrics_service import compute_portfolio_metrics
+from investment_dashboard.services.metrics_service import (
+    compute_portfolio_metrics,
+    with_last_session_daily_growth,
+)
 from investment_dashboard.services.positions_service import Position, compute_positions
 
 ZERO = Decimal(0)
@@ -537,7 +540,11 @@ def build(
     """The ``GET /api/holdings`` payload."""
     now = now or datetime.now(UTC)
     ctx = build_context(session, as_of=as_of)
-    pm = compute_portfolio_metrics(session, as_of=ctx.as_of)
+    pm = compute_portfolio_metrics(session, as_of=ctx.as_of, now=now)
+    # Rolls over with the hero at the 09:30 ET open, not at ET midnight.
+    pm = with_last_session_daily_growth(
+        session, pm, session_date=intraday_snapshots_service.last_session_date(now), now=now
+    )
     raw_positions = compute_positions(session, as_of=ctx.as_of)
     positions = merge_positions_by_instrument(raw_positions)
     # Unmerged, per-account positions by instrument — the twin-divergence view
@@ -546,7 +553,7 @@ def build(
     by_instrument_unmerged: dict[int, list[Position]] = {}
     for p in raw_positions:
         by_instrument_unmerged.setdefault(p.instrument.id, []).append(p)
-    metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of)
+    metrics = compute_instrument_metrics(session, positions, as_of=ctx.as_of, now=now)
     freshness = holding_freshness(session, positions)
     anomalies = prices_service.instruments_with_price_anomalies(
         session, [p.instrument.id for p in positions]
@@ -622,7 +629,7 @@ def build(
         "dividend_yield_pct": dec(pm.dividend_yield_pct),
         "dividend_yield_ttm_pct": dec(pm.dividend_yield_ttm_pct),
         "weighted_expense_ratio": dec(pm.weighted_expense_ratio),
-        "annual_expense_cost": dec(_expense_cost(pm.annual_expense_cost_eur, ccy, ctx)),
+        "annual_expense_cost": dec(_expense_cost(pm, ccy)),
         "fx": _fx_block(
             session,
             ccy=ccy,
@@ -639,12 +646,11 @@ def build(
     }
 
 
-def _expense_cost(cost_eur: Decimal | None, ccy: str, ctx: Any) -> Decimal | None:
-    """Annual fee estimate: a single-instant value, so converted at the spot rate."""
-    if cost_eur is None or ccy != "USD":
-        return cost_eur
-    rate = ctx.fx_rate_eur_usd
-    return cost_eur * rate if rate is not None else None
+def _expense_cost(pm: Any, ccy: str) -> Decimal | None:
+    """Annual fee estimate in ``ccy``: the USD one is native values x TER (no EUR x rate)."""
+    if ccy == "USD":
+        return pm.annual_expense_cost_usd  # type: ignore[no-any-return]
+    return pm.annual_expense_cost_eur  # type: ignore[no-any-return]
 
 
 def _sum(values: list[Decimal | None]) -> Decimal | None:

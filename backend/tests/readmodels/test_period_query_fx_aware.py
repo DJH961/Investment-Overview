@@ -140,8 +140,12 @@ def test_growth_pct_computed_in_display_currency(session: Session) -> None:
         )
     )
     # EUR balances: dec-31-2023 €1000, jan-31-2024 €1500 (no return).
-    snapshots_repo.upsert_snapshot(session, date(2023, 12, 31), Decimal("1000"))
-    snapshots_repo.upsert_snapshot(session, date(2024, 1, 31), Decimal("1500"))
+    snapshots_repo.upsert_snapshot(
+        session, date(2023, 12, 31), Decimal("1000"), Decimal("1100"), Decimal("1.10")
+    )
+    snapshots_repo.upsert_snapshot(
+        session, date(2024, 1, 31), Decimal("1500"), Decimal("1800"), Decimal("1.20")
+    )
     fx_repo.upsert_rates(
         session,
         {
