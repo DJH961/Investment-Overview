@@ -1,15 +1,29 @@
 @use "../../styles/mixins" as m;
 
+// One statement panel: the eight figures share a surface, split by hairlines (each
+// tile draws its right and bottom rule; the panel clips the outer ones), with the
+// cost and income strip as its footer. Calmer than eight separate boxes.
 .kpi-grid {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  min-width: 0;
+  overflow: hidden;
+  @include m.surface;
 
   &__tiles {
+    --kpi-tile-bg: transparent;
+    --kpi-tile-border: 0;
+    --kpi-tile-radius: 0;
+    --kpi-tile-shadow: var(--border-width) 0 0 0 var(--color-border), 0 var(--border-width) 0 0 var(--color-border);
+
     display: grid;
-    gap: var(--space-3);
+    gap: 0;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     @include m.phone-tile-grid;
+
+    @include m.phone {
+      gap: 0;
+    }
 
     @include m.desktop {
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -36,12 +50,14 @@
     }
   }
 
+  // The footer: a sunken band under the figures.
   &__strip {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-3) var(--space-6);
+    gap: var(--space-2) var(--space-6);
     margin: 0;
-    padding: 0 var(--space-2);
+    padding: var(--space-3) var(--card-pad-x);
+    background: var(--color-surface-2);
   }
 
   &__stat {
