@@ -3,6 +3,7 @@ import { ChevronDown, Link2, X } from "lucide-react";
 import { Fragment, useEffect, useId, useMemo } from "react";
 import { Link } from "react-router";
 import { Card } from "../Card";
+import { hasSplit, HoldingDaySplit } from "../DaySplit";
 import { ErrorState } from "../ErrorState";
 import { foldStamps, formatStamp, holdingMarks, isNavRow, PriceStamps, PriceTick, sentenceCase } from "../Freshness";
 import { Money } from "../Money";
@@ -301,12 +302,30 @@ function Row({
         className={clsx("overview-holdings__cell", stale && "overview-holdings__today--stale")}
         title={staleMove ?? undefined}
       >
-        <span className="overview-holdings__main">
-          <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
-        </span>
-        <span className="overview-holdings__sub">
-          <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
-        </span>
+        {/* Two lines: the day in money and %, then its ☀ session / ☾ overnight split
+            (server figures; a row without a split keeps the plain two lines). */}
+        {hasSplit(row, ccy) && !stale ? (
+          <>
+            <span className="overview-holdings__day-line">
+              <span className="overview-holdings__sub">
+                <Money amount={toNum(row.today_move)} currency={ccy} signed colored />
+              </span>
+              <span className="overview-holdings__main">
+                <Percent ratio={toNum(row.today_pct)} signed colored />
+              </span>
+            </span>
+            <HoldingDaySplit row={row} currency={ccy} layout="stacked" data-testid="holding-day-split" />
+          </>
+        ) : (
+          <>
+            <span className="overview-holdings__main">
+              <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
+            </span>
+            <span className="overview-holdings__sub">
+              <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
+            </span>
+          </>
+        )}
         {staleMove && <span className="overview-holdings__sr">{staleMove}</span>}
       </span>
       <span className="overview-holdings__cell overview-holdings__total">

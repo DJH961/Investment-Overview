@@ -3267,6 +3267,26 @@ export interface components {
             /** Daily Is Stale */
             daily_is_stale: boolean;
             /**
+             * Day Overnight
+             * @description The currency's overnight move. After the US close: value now minus close price x close rate. While the market trades: last night's (previous close rate to the open rate). Null when nothing moved (a USD holding in USD).
+             */
+            day_overnight?: string | null;
+            /**
+             * Day Overnight Pct
+             * @description day_overnight over the previous-close value, today_pct's base (fraction, 0.01 = 1%)
+             */
+            day_overnight_pct?: string | null;
+            /**
+             * Day Session
+             * @description When the currency moved: the session part of today_move (after the close the last session; while the market trades everything since the open) (close price x close rate minus the previous-close baseline). day_session + day_overnight == today_move. Null otherwise.
+             */
+            day_session?: string | null;
+            /**
+             * Day Session Pct
+             * @description day_session over the previous-close value (fraction, 0.01 = 1%)
+             */
+            day_session_pct?: string | null;
+            /**
              * Dividends
              * @description Lifetime dividends of this holding (cash and reinvested)
              */
@@ -4156,6 +4176,13 @@ export interface components {
          *     holdings revalued from that close rate to the rate now. ``move +
          *     overnight_currency`` is the change in ``value_now`` since the previous close.
          *     Amounts in the response currency (each computed in it, never converted).
+         *
+         *     While the market is open (``market_open``) the same block carries the day split the
+         *     other way round: ``overnight_currency`` is LAST NIGHT's currency move only (the
+         *     previous-close book revalued from the previous close rate ``fx_close`` to the rate
+         *     at today's open ``fx_now``) and ``move`` the session (everything since the open, prices
+         *     and intraday FX); ``move + overnight_currency`` is the headline day move. No ``*_est``
+         *     fields then.
          */
         LastSessionMove: {
             /** Day Move */
@@ -4171,6 +4198,11 @@ export interface components {
             fx_close: string;
             /** Fx Now */
             fx_now: string;
+            /**
+             * Market Open
+             * @default false
+             */
+            market_open: boolean;
             /** Move */
             move: string;
             /** Move Est */
@@ -5731,10 +5763,26 @@ export interface components {
             day_move_eur?: string | null;
             /** Day Move Usd */
             day_move_usd?: string | null;
+            /** Day Overnight Eur */
+            day_overnight_eur?: string | null;
+            /** Day Overnight Pct Eur */
+            day_overnight_pct_eur?: string | null;
+            /** Day Overnight Pct Usd */
+            day_overnight_pct_usd?: string | null;
+            /** Day Overnight Usd */
+            day_overnight_usd?: string | null;
             /** Day Pct Eur */
             day_pct_eur?: string | null;
             /** Day Pct Usd */
             day_pct_usd?: string | null;
+            /** Day Session Eur */
+            day_session_eur?: string | null;
+            /** Day Session Pct Eur */
+            day_session_pct_eur?: string | null;
+            /** Day Session Pct Usd */
+            day_session_pct_usd?: string | null;
+            /** Day Session Usd */
+            day_session_usd?: string | null;
             /** Prev Close */
             prev_close?: string | null;
             /** Px */
@@ -9360,10 +9408,26 @@ export interface operations {
                                 day_move_eur?: string | null;
                                 /** Day Move Usd */
                                 day_move_usd?: string | null;
+                                /** Day Overnight Eur */
+                                day_overnight_eur?: string | null;
+                                /** Day Overnight Pct Eur */
+                                day_overnight_pct_eur?: string | null;
+                                /** Day Overnight Pct Usd */
+                                day_overnight_pct_usd?: string | null;
+                                /** Day Overnight Usd */
+                                day_overnight_usd?: string | null;
                                 /** Day Pct Eur */
                                 day_pct_eur?: string | null;
                                 /** Day Pct Usd */
                                 day_pct_usd?: string | null;
+                                /** Day Session Eur */
+                                day_session_eur?: string | null;
+                                /** Day Session Pct Eur */
+                                day_session_pct_eur?: string | null;
+                                /** Day Session Pct Usd */
+                                day_session_pct_usd?: string | null;
+                                /** Day Session Usd */
+                                day_session_usd?: string | null;
                                 /** Prev Close */
                                 prev_close?: string | null;
                                 /** Px */

@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Card } from "../Card";
+import { DaySplit } from "../DaySplit";
 import { Chart, type ChartSeries, type ChartXMode } from "../Chart";
 import { ErrorState } from "../ErrorState";
 import { formatStamp } from "../Freshness";
@@ -29,7 +30,6 @@ import {
   type GraphRange,
   type OverviewDto,
 } from "../../lib/queries/portfolio";
-import { Money } from "../Money";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useHideAmounts } from "../../lib/hideAmounts";
 import { useTimeZone } from "../../lib/timezone";
@@ -194,8 +194,10 @@ export function ValueChartCard({
   // dot says the range's percent instead of the value.
   const now = intraday ? (g?.now_point ?? null) : null;
   const nowV = now ? toNum(now.v) : null;
-  const overnight = now ? toNum(now.overnight_currency ?? lastSession?.overnight_currency) : null;
-  const overnightPct = now ? toNum(now.overnight_pct ?? lastSession?.overnight_pct) : null;
+  // The overnight part is always known on 1D (server `last_session`): last night's while the
+  // market trades, since the close after it. Only the "now" dot is an after-close thing.
+  const overnight = toNum(now?.overnight_currency ?? lastSession?.overnight_currency);
+  const overnightPct = toNum(now?.overnight_pct ?? lastSession?.overnight_pct);
   const moved =
     overnightPct !== null ? Math.abs(overnightPct) >= 0.00005 : overnight !== null && Math.abs(overnight) >= 0.005;
   const nowLabel = hide
@@ -207,28 +209,17 @@ export function ValueChartCard({
       : null;
   const nowMarker = now && moved && nowV !== null ? { v: nowV, lines: nowLabel ? [nowLabel] : [] } : undefined;
   // The split explains the 1D figure only; 1W's header is the week, not a session.
-  const sessionPct = now && moved && shown === "1d" && lastSession ? toNum(lastSession.move_pct) : null;
+  const sessionPct = moved && shown === "1d" && lastSession ? toNum(lastSession.move_pct) : null;
   // Sits left of the range buttons (one row on desktop; wraps under them on a phone).
   const split =
     sessionPct !== null ? (
-      <p className="value-chart-card__split" data-testid="range-split">
-        <span className="value-chart-card__split-part">
-          Session <Percent ratio={sessionPct} signed colored />
-        </span>
-        <span className="value-chart-card__split-part">
-          Overnight{" "}
-          {overnightPct !== null ? (
-            <Percent ratio={overnightPct} signed colored />
-          ) : (
-            <Money amount={overnight} currency={currency} signed colored />
-          )}
-          <span className="value-chart-card__split-note"> · next day</span>
-          <InfoTip
-            label="overnight change"
-            content="The currency's move since the US close. It is already in today's figure above and counts toward the next day once the market opens."
-          />
-        </span>
-      </p>
+      <DaySplit
+        sessionPct={sessionPct}
+        overnightPct={overnightPct}
+        overnight={overnight}
+        currency={currency}
+        data-testid="range-split"
+      />
     ) : null;
 
   return (

@@ -101,6 +101,53 @@ describe("KpiGrid", () => {
     setHideAmounts(false);
   });
 
+  describe("Price move tile: session / overnight split as its hint", () => {
+    const shut = (ls: Record<string, string | null>) =>
+      ({
+        ...data({ beating: true }),
+        kpis: { ...kpis, daily_move: "300", total_value: "10000" },
+        day_split: {
+          price_move: "420",
+          currency_move: "-120",
+          price_move_secondary: "500",
+          currency_move_secondary: "0",
+          overnight: true,
+          estimated: false,
+        },
+        last_session: { move: "420", overnight_currency: "-120", ...ls },
+      }) as unknown as OverviewDto;
+
+    it("after the close with an FX move: the graph's Session / Overnight line replaces the FX amount", () => {
+      render(
+        <KpiGrid data={shut({ move_pct: "0.0081", overnight_pct: "-0.0045" })} currency="EUR" loading={false} />,
+      );
+      expect(screen.getByTestId("kpi-day-split")).toHaveTextContent(
+        /Session\s*\+0\.81%\s*Overnight\s*-0\.45%/,
+      );
+      expect(screen.queryByTestId("overnight-currency")).toBeNull();
+    });
+
+    it("keeps the plain FX hint when the server sends no session %, and shows nothing extra in USD", () => {
+      const { rerender } = render(<KpiGrid data={shut({ move_pct: null })} currency="EUR" loading={false} />);
+      expect(screen.queryByTestId("kpi-day-split")).toBeNull();
+      expect(screen.getByTestId("overnight-currency")).toHaveTextContent("Overnight FX");
+      rerender(
+        <KpiGrid
+          data={shut({ move_pct: "0.0081", overnight_pct: "0", overnight_currency: "0" })}
+          currency="USD"
+          loading={false}
+        />,
+      );
+      expect(screen.queryByTestId("kpi-day-split")).toBeNull();
+    });
+
+    it("is absent while the market is open (no last_session)", () => {
+      const open = { ...shut({}), last_session: null } as unknown as OverviewDto;
+      render(<KpiGrid data={open} currency="EUR" loading={false} />);
+      expect(screen.queryByTestId("kpi-day-split")).toBeNull();
+    });
+  });
+
   it("Vs market: trailing and missing benchmark history", () => {
     const { rerender } = render(<KpiGrid data={data({ beating: false })} currency="EUR" loading={false} />);
     expect(screen.getByText("Trailing")).toBeInTheDocument();

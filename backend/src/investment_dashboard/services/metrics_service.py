@@ -1086,6 +1086,65 @@ def last_session_split(
     )
 
 
+def open_session_split(
+    session: Session,
+    metrics: PortfolioMetrics,
+    *,
+    now: datetime,
+) -> LastSessionSplit | None:
+    """The day move split while the US market trades: last night's overnight + the session.
+
+    ``overnight_*`` is last night's currency move only: the book at the previous
+    close's prices revalued from the previous close rate to the rate at today's open
+    (:func:`fx_revaluation`, ``session_open_fx``). ``move_*`` (the session) is
+    everything since the open, prices and intraday FX: the headline day move minus
+    that overnight part, so ``move + overnight`` is exactly ``metrics``' day move
+    (net of flows) in each currency. In :class:`LastSessionSplit` terms ``fx_close``
+    is the previous close rate and ``fx_now`` the open rate here. ``None`` when the
+    market is shut (:func:`last_session_split` applies), or without a day move, a
+    previous close rate or an open rate (no session sample yet).
+    """
+    from investment_dashboard.domain.market_hours import is_us_market_open  # noqa: PLC0415
+
+    if not is_us_market_open(now):
+        return None
+    money = (
+        metrics.daily_growth_money_eur,
+        metrics.daily_growth_money_usd,
+        metrics.total_value_eur,
+        metrics.total_value_usd,
+    )
+    if any(v is None for v in money) or metrics.daily_growth_as_of is None:
+        return None
+    day_eur, day_usd, now_eur, now_usd = money  # type: ignore[misc]
+    session_date = intraday_snapshots_service.last_session_date(now)
+    prev_date = intraday_snapshots_service.previous_trading_session(session_date)
+    fx_prev = intraday_snapshots_service.day_baseline_rate(session, prev_date)
+    fx_open = intraday_snapshots_service.session_open_fx(session, now=now)
+    if not fx_prev or not fx_open or fx_prev <= 0 or fx_open <= 0:
+        return None
+    ov_eur, ov_usd = fx_revaluation(session, prev_date, fx_from=fx_prev, fx_to=fx_open)
+    base_eur = now_eur - day_eur
+    base_usd = now_usd - day_usd
+    return LastSessionSplit(
+        session_date=session_date,
+        prev_date=prev_date,
+        fx_close=fx_prev,
+        fx_prev_close=fx_prev,
+        fx_now=fx_open,
+        move_eur=day_eur - ov_eur,
+        move_usd=day_usd - ov_usd,
+        pct_eur=(day_eur - ov_eur) / base_eur if base_eur > ZERO else None,
+        pct_usd=(day_usd - ov_usd) / base_usd if base_usd > ZERO else None,
+        overnight_eur=ov_eur,
+        overnight_usd=ov_usd,
+        value_now_eur=now_eur,
+        value_now_usd=now_usd,
+        overnight_pct_eur=ov_eur / base_eur if base_eur > ZERO else None,
+        overnight_pct_usd=ov_usd / base_usd if base_usd > ZERO else None,
+    )
+
+
 def with_last_session_split(metrics: PortfolioMetrics, split: LastSessionSplit) -> PortfolioMetrics:
     """``metrics`` with the hero day move set to the change since the previous close.
 

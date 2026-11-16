@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { Link2, TrendingDown, TrendingUp } from "lucide-react";
 import { Card } from "../Card";
+import { daySplitMoved } from "../DaySplit";
 import { lastSessionLabel } from "../Freshness";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
@@ -102,6 +103,8 @@ export interface MoversCardProps {
   className?: string;
   /** Injected clock (tests). */
   now?: Date;
+  /** Present after the US close: the move on each row then includes the overnight currency. */
+  lastSession?: OverviewDto["last_session"];
 }
 
 /**
@@ -113,9 +116,14 @@ export interface MoversCardProps {
  * server decides), and says so: an "≈ VOO" chip on the symbol line and "≈" on
  * both figures, so an estimate is never read as a published move.
  */
-export function MoversCard({ movers, currency, loading, className, now }: MoversCardProps) {
+export function MoversCard({ movers, currency, loading, className, now, lastSession }: MoversCardProps) {
   const timeZone = useTimeZone();
-  const basisLabel = moversBasisLabel(movers?.basis_date, { timeZone, now });
+  const basis = moversBasisLabel(movers?.basis_date, { timeZone, now });
+  // After the close, when the currency moved, every figure is the whole change since the
+  // previous close: session and overnight together (the Holdings page splits them).
+  const overnight =
+    currency === "EUR" && !!lastSession && daySplitMoved(toNum(lastSession.overnight_pct ?? null), toNum(lastSession.overnight_currency));
+  const basisLabel = overnight ? (basis ? `${basis} · incl. overnight` : "incl. overnight") : basis;
   return (
     <Card className={clsx("movers-card", className)} title="Top movers" collapsibleId="overview.movers" meta={basisLabel}>
       {loading ? (

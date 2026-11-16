@@ -6,6 +6,7 @@ import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { Chart } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
+import { hasSplit, HoldingDaySplit } from "../../components/DaySplit";
 import { EmptyState } from "../../components/EmptyState";
 import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick } from "../../components/Freshness";
 import { ErrorState } from "../../components/ErrorState";
@@ -401,10 +402,26 @@ export function Holdings() {
               className={clsx("holdings-page__stack", note && "holdings-page__today--stale")}
               title={note ?? undefined}
             >
-              <Percent ratio={toNum(r.today_pct)} signed colored={!note} />
-              <span className="holdings-page__stack-sub">
-                <Money amount={toNum(r.today_move)} currency={currency} signed />
-              </span>
+              {/* Two lines: the day in money and %, then its ☀ session / ☾ overnight split
+                  (server figures; a row without a split keeps the plain two lines). */}
+              {!note && hasSplit(r, currency) ? (
+                <>
+                  <span className="holdings-page__day-line">
+                    <span className="holdings-page__stack-sub">
+                      <Money amount={toNum(r.today_move)} currency={currency} signed />
+                    </span>
+                    <Percent ratio={toNum(r.today_pct)} signed colored />
+                  </span>
+                  <HoldingDaySplit row={r} currency={currency} layout="stacked" data-testid="holding-day-split" />
+                </>
+              ) : (
+                <>
+                  <Percent ratio={toNum(r.today_pct)} signed colored={!note} />
+                  <span className="holdings-page__stack-sub">
+                    <Money amount={toNum(r.today_move)} currency={currency} signed />
+                  </span>
+                </>
+              )}
               {note && <span className="holdings-page__sr">{note}</span>}
             </span>
           );

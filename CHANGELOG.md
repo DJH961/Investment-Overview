@@ -17,6 +17,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.17.1] — 2026-11-16
+
+### Fixed
+- **Risk: "vs market" over All forgot big deposits.** The funded benchmark only
+  had values on trading days, so a deposit made on a weekend or holiday was
+  bought into the index a day late and the next day's jump was read as index
+  growth (the deposit was swallowed and then multiplied). The benchmark now has a
+  value for every calendar day and each deposit buys in on its own date.
+- **Risk: TWR for All** now shows (the time-weighted return over the invested
+  period); empty days before the first buy no longer stop it.
+- **Risk: 5Y showed +900 %.** A window longer than the history started before
+  any money was invested. Every range now starts at the first invested day (5Y
+  equals All on a shorter history), and the card says so ("· from your first
+  investment").
+- **Investing power showed 0 % in hide mode.** It is now a share of what your
+  regular amount bought at the previous rate, not of the whole portfolio.
+- **The day's split is shown everywhere in the EUR view**, not only on the 1D
+  graph: ☀ the session (the market's move) and ☾ the overnight currency move,
+  under the hero's day figure, in the Price move tile and on every holding (Day
+  cell: money and % on one line, then "☀ +0.55 %  ☾ −0.45 %"). The overnight
+  part is always the most recent one: last night's move (previous close to this
+  morning's open) during market hours, the live move since the close at night.
+  Top movers and the top bar say "incl. overnight" after the close. The USD
+  view never shows a split. Hover a symbol (or the ⓘ) for what it means.
+
 ## [6.17.0] — 2026-11-15
 
 ### Added

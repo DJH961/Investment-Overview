@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrefsProvider } from "../../lib/prefs";
-import { Risk } from "./Risk";
+import { metricsSubtitle, Risk } from "./Risk";
 
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 
@@ -71,5 +71,16 @@ describe("Risk", () => {
     fireEvent.click(screen.getByRole("radio", { name: "5Y" }));
     expect(window.localStorage.getItem("iv.risk.lookback")).toBe('"1825"');
     await vi.waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("lookback_days=1825"))).toBe(true));
+  });
+});
+
+describe("metricsSubtitle", () => {
+  it("says when a range is longer than the history", () => {
+    // 5Y window on a history that starts in 2024: trimmed to the first investment.
+    expect(metricsSubtitle("1825", "2024-03-02", "2026-11-16")).toMatch(/from your first investment/);
+  });
+  it("keeps the plain label when the window is full, and All has its own wording", () => {
+    expect(metricsSubtitle("365", "2025-11-16", "2026-11-16")).not.toMatch(/first investment/);
+    expect(metricsSubtitle("0", "2024-03-02", "2026-11-16")).toBe("Since the first transaction");
   });
 });

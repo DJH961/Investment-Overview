@@ -57,6 +57,43 @@ describe("OverviewHero", () => {
     expect(screen.queryByTestId("last-session-est")).toBeNull();
   });
 
+  describe("session / overnight split under the day figure", () => {
+    const withSplit = (ls: Record<string, string | null>) =>
+      ({ ...base, last_session: { move: "1500", ...ls } }) as unknown as OverviewDto;
+
+    it("after the close, when the currency moved: the graph's wording under the move row", () => {
+      render(
+        <OverviewHero
+          data={withSplit({ move_pct: "0.0081", overnight_pct: "-0.0045", overnight_currency: "-900" })}
+          currency="EUR"
+          loading={false}
+          now={NOW}
+        />,
+      );
+      expect(screen.getByTestId("hero-day-split")).toHaveTextContent(
+        /Session\s*\+0\.81%\s*Overnight\s*-0\.45%/,
+      );
+      expect(screen.getByRole("button", { name: "About session and overnight" })).toBeInTheDocument();
+    });
+
+    it("is hidden while the market is open (no last_session)", () => {
+      render(<OverviewHero data={base} currency="EUR" loading={false} now={NOW} />);
+      expect(screen.queryByTestId("hero-day-split")).toBeNull();
+    });
+
+    it("is hidden when the currency did not move (e.g. the USD view)", () => {
+      render(
+        <OverviewHero
+          data={withSplit({ move_pct: "0.0081", overnight_pct: "0", overnight_currency: "0" })}
+          currency="USD"
+          loading={false}
+          now={NOW}
+        />,
+      );
+      expect(screen.queryByTestId("hero-day-split")).toBeNull();
+    });
+  });
+
   const estimate = {
     total_value: "201600",
     daily_move: "3100",

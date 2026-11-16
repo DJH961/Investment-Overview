@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { ChevronDown, LineChart } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../components/Button";
+import { daySplitMoved, HoldingDaySplit } from "../../components/DaySplit";
 import { PriceTick } from "../../components/Freshness";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
@@ -34,11 +35,18 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
   const detailId = `holding-detail-${row.instrument_id}`;
   const stale = staleMove !== null;
   const shares = toNum(row.shares);
+  // After the close, when the currency moved: the day figure's session / overnight cut gets
+  // its own line (a grid row only this row type adds, so quiet rows keep their height).
+  const hasSplit =
+    ccy === "EUR" &&
+    !stale &&
+    toNum(row.day_session_pct ?? null) !== null &&
+    daySplitMoved(toNum(row.day_overnight_pct ?? null), toNum(row.day_overnight ?? null));
   return (
     <li className={clsx("holdings-page__item", tintClass(row))} data-search-row>
       <button
         type="button"
-        className="holdings-page__item-head"
+        className={clsx("holdings-page__item-head", hasSplit && "holdings-page__item-head--split")}
         aria-expanded={open}
         aria-controls={detailId}
         onClick={() => setOpen((o) => !o)}
@@ -62,6 +70,15 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
             {staleMove && <span className="holdings-page__sr">{staleMove}</span>}
           </span>
         </span>
+        {/* After the close, when the currency moved: the day figure's session / overnight cut. */}
+        {hasSplit && (
+          <HoldingDaySplit
+            row={row}
+            currency={ccy}
+            className="holdings-page__item-split"
+            data-testid="holding-day-split"
+          />
+        )}
         <ChevronDown aria-hidden size={16} className="holdings-page__chevron" />
         <span className="holdings-page__chips">
           <span className="holdings-page__chip">

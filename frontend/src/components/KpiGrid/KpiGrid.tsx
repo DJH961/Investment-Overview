@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { DaySplit, daySplitMoved } from "../DaySplit";
 import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
@@ -114,8 +115,27 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
   // server-supplied, same payload), so the tile still informs without amounts.
   const totalValue = toNum(k?.total_value ?? null);
   const fxShare = fxMove !== null && totalValue ? fxMove / totalValue : null;
+  // Market shut and the currency moved since the close: the same "Session / Overnight ·
+  // overnight" line as the graph and the hero (`last_session`, server figures). The
+  // plain FX amount below stays for the in-session case, where there is no session part.
+  const ls = data?.last_session ?? null;
+  const splitHint = ls ? (
+    <DaySplit
+      sessionPct={toNum(ls.move_pct ?? null)}
+      overnightPct={toNum(ls.overnight_pct ?? null)}
+      overnight={toNum(ls.overnight_currency)}
+      currency={currency}
+      layout="list"
+      data-testid="kpi-day-split"
+    />
+  ) : null;
   const overnightHint =
-    fxMove !== null && Math.abs(fxMove) >= 0.005 ? (
+    currency === "EUR" &&
+    splitHint &&
+    toNum(ls?.move_pct ?? null) !== null &&
+    daySplitMoved(toNum(ls?.overnight_pct ?? null), toNum(ls?.overnight_currency ?? null)) ? (
+      <span data-ccy-specific>{splitHint}</span>
+    ) : fxMove !== null && Math.abs(fxMove) >= 0.005 ? (
       <span data-ccy-specific data-testid="overnight-currency">
         {ds?.overnight ? "Overnight FX" : "FX since close"}{" "}
         {hide && fxShare !== null ? (

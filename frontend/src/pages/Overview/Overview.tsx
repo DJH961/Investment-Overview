@@ -154,7 +154,7 @@ export function Overview() {
         marketOpen={data?.freshness?.market_state === "open"}
         lastSession={data?.last_session}
       />
-      <MoversCard movers={data?.movers} currency={currency} loading={loading} />
+      <MoversCard movers={data?.movers} currency={currency} loading={loading} lastSession={data?.last_session} />
 
       <OverviewHoldings currency={currency} movers={data?.movers} />
 

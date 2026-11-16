@@ -193,8 +193,16 @@ function EffectPanel({ data }: { data: OverviewDto }) {
     const net = toNum(ip?.net);
     if (!ip || net === null) return null;
     const digits = Math.abs(net) < 100 ? 2 : 0;
+    // Hide mode: as a share of what the regular amount bought at the previous rate
+    // (dollars today minus today's change), not of the whole portfolio, where a
+    // $10 move on a €1,000 investment rounded to "0.00 %".
+    const base = amountUsd !== null ? amountUsd - net : null;
     const fmt = (v: number) =>
-      hide && total ? share(v) : <Money amount={v} currency="USD" signed colored digits={digits} />;
+      hide ? (
+        <Percent ratio={base ? v / base : null} signed colored />
+      ) : (
+        <Money amount={v} currency="USD" signed colored digits={digits} />
+      );
     const title = `Investing power ${phrase}`;
     return (
       <section className="currency-box__effect" aria-label={title}>

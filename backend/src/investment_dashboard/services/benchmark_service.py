@@ -19,6 +19,7 @@ the new instrument; the old rows stay around for free.
 from __future__ import annotations
 
 import logging
+from bisect import bisect_right
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -167,13 +168,8 @@ def _close_as_of(closes: dict[date, Decimal], sorted_dates: list[date], d: date)
     the series), or ``None`` when the series is empty."""
     if not sorted_dates:
         return None
-    prev: date | None = None
-    for cd in sorted_dates:
-        if cd <= d:
-            prev = cd
-        else:
-            break
-    chosen = prev if prev is not None else sorted_dates[0]
+    pos = bisect_right(sorted_dates, d)
+    chosen = sorted_dates[pos - 1] if pos > 0 else sorted_dates[0]
     return closes[chosen]
 
 
@@ -325,12 +321,16 @@ def simulate_benchmark_value_series(
                 break
         return held
 
+    # One value per CALENDAR day (not only per trading close): a deposit on a
+    # weekend or holiday buys shares at the forward-filled close that day, so the
+    # line must step up on that very day, in step with the portfolio's own
+    # contributions. Emitting closes only made the step land on the next trading
+    # day, which a rebase then read as a huge one-day return.
     out: dict[date, Decimal] = {}
-    for d in sorted_dates:
-        if d < start or d > end:
-            continue
+    d = start
+    while d <= end:
         price = _price_in(currency, series.closes, sorted_dates, eur_to_usd, d)
-        if price is None:
-            continue
-        out[d] = _shares_through(d) * price
+        if price is not None:
+            out[d] = _shares_through(d) * price
+        d += timedelta(days=1)
     return out

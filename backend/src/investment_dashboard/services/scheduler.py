@@ -157,12 +157,80 @@ def _cent(value: Decimal | None) -> str | None:
     return None if value is None else format(value.quantize(_CENT, rounding=ROUND_HALF_UP), "f")
 
 
+_NO_SPLIT: dict[str, Any] = {
+    f"day_{part}{pct}_{side}": None
+    for part in ("session", "overnight")
+    for pct in ("", "_pct")
+    for side in ("eur", "usd")
+}
+
 _NO_DAY: dict[str, Any] = {
     "day_move_eur": None,
     "day_move_usd": None,
     "day_pct_eur": None,
     "day_pct_usd": None,
+    **_NO_SPLIT,
 }
+
+
+def _tick_day_split(
+    session: Any,
+    *,
+    now: datetime,
+    shares: Decimal,
+    native: str,
+    legs: Any,
+    rate_last: Decimal | None,
+    rate_prev: Decimal | None,
+) -> dict[str, Any]:
+    """A holding's session / overnight cut of its day move for the tick.
+
+    The same helper as the holdings rows (:func:`domain.day_move.holding_day_split`),
+    so a tick and the refetch agree. Null while the market is open, when the move is
+    not on the last session, and per currency when the currency did not move.
+    """
+    from investment_dashboard.domain import day_move  # noqa: PLC0415
+    from investment_dashboard.domain.market_hours import is_us_market_open  # noqa: PLC0415
+    from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
+
+    if legs.as_of != intraday_snapshots_service.last_session_date(now):
+        return dict(_NO_SPLIT)
+    if is_us_market_open(now):
+        # Last night's overnight (previous close -> the open rate) + the session.
+        rate_open = intraday_snapshots_service.session_open_fx(session, now=now)
+        if rate_open is None or rate_open <= 0:
+            return dict(_NO_SPLIT)
+        split = day_move.holding_open_day_split(
+            shares=shares,
+            native_currency=native,
+            legs=legs,
+            rate_open=rate_open,
+            rate_last=rate_last,
+            rate_prev=rate_prev,
+        )
+    else:
+        rate_close = intraday_snapshots_service.session_close_rate(session, legs.rate_date_last)
+        if rate_close is None or rate_close <= 0:
+            return dict(_NO_SPLIT)
+        split = day_move.holding_day_split(
+            shares=shares,
+            native_currency=native,
+            legs=legs,
+            rate_close=rate_close,
+            rate_last=rate_last,
+            rate_prev=rate_prev,
+        )
+    out = dict(_NO_SPLIT)
+    for side in ("eur", "usd"):
+        overnight = getattr(split, f"overnight_{side}")
+        session_part = getattr(split, f"session_{side}")
+        if overnight is None or session_part is None or overnight == 0:
+            continue
+        out[f"day_session_{side}"] = _cent(session_part)
+        out[f"day_overnight_{side}"] = _cent(overnight)
+        out[f"day_session_pct_{side}"] = _dec(getattr(split, f"session_pct_{side}"))
+        out[f"day_overnight_pct_{side}"] = _dec(getattr(split, f"overnight_pct_{side}"))
+    return out
 
 
 def _tick_day_moves(
@@ -273,6 +341,15 @@ def _tick_day_moves(
                 "day_move_usd": _cent(move.move_usd),
                 "day_pct_eur": _dec(move.pct_eur),
                 "day_pct_usd": _dec(move.pct_usd),
+                **_tick_day_split(
+                    session,
+                    now=now,
+                    shares=qty,
+                    native=native[iid],
+                    legs=legs,
+                    rate_last=_rate(legs.rate_date_last, True),
+                    rate_prev=_rate(legs.rate_date_prev),
+                ),
             }
             members.setdefault(category[iid], []).append(move)
         categories: dict[str, dict[str, Any]] = {}

@@ -100,6 +100,37 @@ describe("applyTick golden", () => {
     expect(Number(usd.value)).toBeCloseTo(1200, 9);
   });
 
+  it("copies the server's session / overnight split with the day figure, clearing it when absent", () => {
+    const qc = seed();
+    const split = {
+      day_session_eur: "90.91",
+      day_session_pct_eur: "0.1",
+      day_overnight_eur: "-83.33",
+      day_overnight_pct_eur: "-0.0917",
+      // A USD holding in USD: the currency did not move, the server sends nulls.
+      day_session_usd: null,
+      day_session_pct_usd: null,
+      day_overnight_usd: null,
+      day_overnight_pct_usd: null,
+    };
+    applyTick(qc, { ...tick, prices: { "1": { ...tick.prices["1"], ...split } } });
+    const h = qc.getQueryData<any>(["holdings", "both"]);
+    expect(h.EUR.holdings[0]).toMatchObject({
+      day_session: "90.91",
+      day_session_pct: "0.1",
+      day_overnight: "-83.33",
+      day_overnight_pct: "-0.0917",
+    });
+    expect(h.USD.holdings[0].day_overnight).toBeNull();
+    // The 09:30 rollover: the next tick carries nulls and the row's split goes with it.
+    applyTick(qc, { ...tick, prices: { "1": { ...tick.prices["1"], ...split, day_session_eur: null, day_overnight_eur: null } } });
+    expect(qc.getQueryData<any>(["holdings", "both"]).EUR.holdings[0].day_overnight).toBeNull();
+    // A tick that does not mention the split leaves it alone.
+    applyTick(qc, { ...tick, prices: { "1": { ...tick.prices["1"], day_session_eur: "1", day_overnight_eur: "2" } } });
+    applyTick(qc, tick);
+    expect(qc.getQueryData<any>(["holdings", "both"]).EUR.holdings[0].day_overnight).toBe("2");
+  });
+
   it("category groups take the tick's day % for their side", () => {
     const qc = seed();
     const h = qc.getQueryData<any>(["holdings", "both"]);

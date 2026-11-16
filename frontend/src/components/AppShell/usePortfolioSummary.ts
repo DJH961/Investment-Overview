@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { daySplitMoved } from "../DaySplit";
 import { lastSessionLabel } from "../Freshness";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { overviewQuery, toNum } from "../../lib/queries/portfolio";
@@ -24,15 +25,21 @@ export function usePortfolioSummary(currency: ReportingCurrency, delayMs = 1200)
     const t = setTimeout(() => setArmed(true), delayMs);
     return () => clearTimeout(t);
   }, [armed, delayMs]);
-  const kpis = useQuery({ ...overviewQuery(currency), enabled: armed }).data?.kpis;
+  const data = useQuery({ ...overviewQuery(currency), enabled: armed }).data;
+  const kpis = data?.kpis;
   if (!kpis) return undefined;
   const est = kpis.estimate ?? null;
+  // After the US close the figure includes what the currency did since (server's
+  // `last_session`); say so, the graph header and the hero explain the split.
+  const ls = data?.last_session ?? null;
+  const overnight = currency === "EUR" && ls !== null && daySplitMoved(toNum(ls.overnight_pct ?? null), toNum(ls.overnight_currency));
+  const day = lastSessionLabel(kpis.daily_growth_as_of, { timeZone }) ?? "today";
   return {
     value: toNum(est ? est.total_value : kpis.total_value),
     currency,
     pct: toNum(est ? est.daily_growth_pct : kpis.daily_growth_pct),
     move: toNum(est ? est.daily_move : kpis.daily_move),
     estimated: est !== null,
-    dayLabel: lastSessionLabel(kpis.daily_growth_as_of, { timeZone }) ?? "today",
+    dayLabel: overnight ? `${day} · incl. overnight` : day,
   };
 }

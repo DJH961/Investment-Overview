@@ -292,6 +292,67 @@ describe("Holdings page", () => {
     }
   });
 
+  describe("session / overnight split of the day figure", () => {
+    const withSplit = () => {
+      const saved = holdings.holdings;
+      holdings.holdings = [
+        { ...saved[0], day_session_pct: "0.0055", day_overnight_pct: "-0.0045", day_overnight: "-4.5" },
+      ] as typeof saved;
+      return () => {
+        holdings.holdings = saved;
+      };
+    };
+
+    it("table: both parts on one line under the Day figure, no note above the table", () => {
+      const restore = withSplit();
+      try {
+        render(<Holdings />);
+        expect(screen.getByTestId("holding-day-split")).toHaveTextContent(/Session\s*\+0\.55%\s*Overnight\s*-0\.45%/);
+      expect(screen.queryByTestId("overnight-note")).toBeNull(); // no note above the table
+      } finally {
+        restore();
+      }
+    });
+
+    it("phone: its own line under the figures, in the same words as the graph", () => {
+      phone.value = true;
+      const restore = withSplit();
+      try {
+        const { container } = render(<Holdings />);
+        expect(screen.getByTestId("holding-day-split")).toHaveTextContent(
+          /Session\s*\+0\.55%\s*Overnight\s*-0\.45%/,
+        );
+        expect(container.querySelector(".holdings-page__item-head--split")).not.toBeNull();
+      } finally {
+        restore();
+      }
+    });
+
+    it("hidden while the market is open, when nothing moved and on a stale move", () => {
+      // No split fields (market open / USD holding in USD).
+      const { unmount } = render(<Holdings />);
+      expect(screen.queryByTestId("holding-day-split")).toBeNull();
+      unmount();
+      phone.value = true;
+      const phoneRender = render(<Holdings />);
+      expect(screen.queryByTestId("holding-day-split")).toBeNull();
+      expect(phoneRender.container.querySelector(".holdings-page__item-head--split")).toBeNull();
+      phoneRender.unmount();
+      // A greyed (earlier session's) move gets no split even if the fields were present.
+      phone.value = false;
+      const saved = holdings.holdings;
+      holdings.holdings = [
+        { ...saved[0], daily_is_stale: true, daily_growth_as_of: "2026-10-28", day_session_pct: "0.01", day_overnight_pct: "-0.01" },
+      ] as typeof saved;
+      try {
+        render(<Holdings />);
+        expect(screen.queryByTestId("holding-day-split")).toBeNull();
+      } finally {
+        holdings.holdings = saved;
+      }
+    });
+  });
+
   it("on a phone shows today in money and the price chart button", () => {
     phone.value = true;
     const { container } = render(<Holdings />);

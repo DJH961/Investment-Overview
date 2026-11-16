@@ -4,6 +4,7 @@ import type { OverviewDto } from "../../lib/queries/portfolio";
 
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
+import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { CurrencyBox, sincePhrase } from "./CurrencyBox";
 
 const regime = {
@@ -131,6 +132,23 @@ describe("CurrencyBox", () => {
     expect(within(panel).getByText("€500")).toBeInTheDocument();
     expect(within(panel).getByText("US$540.00")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: /Currency effect/ })).toBeNull();
+  });
+
+  it("hide mode: investing power as a share of what the amount bought, not of the portfolio", () => {
+    localStorage.setItem("iv.privacy.hideAmounts", "true");
+    try {
+      render(
+        <HideAmountsProvider>
+          <CurrencyBox data={overview("USD", {})} />
+        </HideAmountsProvider>,
+      );
+      const panel = screen.getByRole("region", { name: "Investing power since yesterday" });
+      // $1.25 on the $538.75 the €500 bought at the previous rate = +0.23 %.
+      expect(within(panel).getAllByText("+0.23%").length).toBeGreaterThan(0);
+      expect(within(panel).queryByText("+0.00%")).toBeNull();
+    } finally {
+      localStorage.removeItem("iv.privacy.hideAmounts");
+    }
   });
 
   it("phrases", () => {
