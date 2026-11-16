@@ -2809,9 +2809,10 @@ def daily_growth_leg_fx(
     """The EUR/USD rate for one leg (``on``) of a single-day growth mark.
 
     The day-move rule (see :func:`metrics_service.fx_revaluation`): the baseline
-    (previous) leg uses ``on``'s 16:00 ET session-close rate; the ``now_leg`` always
-    uses the LIVE rate (``live_rate``), so the EUR day figure keeps moving with FX
-    after the close. ``now_leg`` falls back to the close rate only without a live rate.
+    (previous) leg uses ``on``'s 16:00 ET session-close rate; the ``now_leg`` uses the
+    LIVE rate (``live_rate``) only while the US market is open, and ``on``'s close rate
+    once it has shut (the day figure is FROZEN at the close, 2026-11-16). ``now_leg``
+    falls back to the live rate only when no close rate is known.
     The older description below is kept for the baseline leg.
 
     Ported from the web companion's ``graphAnchorFx`` chain
@@ -2840,13 +2841,27 @@ def daily_growth_leg_fx(
     not valuations, and never substitutes a different date's rate — it only
     changes which *source* supplies ``on``'s own rate).
     """
-    if now_leg and live_rate is not None:
+    if now_leg and live_rate is not None and is_us_market_open(now):
         return live_rate
     if not now_leg and on == exchange_today(now) and is_us_market_open(now):
         # Legacy callers (no ``now_leg``) marking today's open session.
         return live_rate
     resolved = day_baseline_rate(session, on)
     return resolved if resolved is not None else live_rate
+
+
+def day_figure_fx(session: Session, *, now: datetime, live_rate: Decimal | None) -> Decimal | None:
+    """The EUR/USD rate a DAY figure's "now" mark uses (day rule of 2026-11-16).
+
+    The live rate while the US market is open; once it has shut the day figure is frozen
+    at the session's 16:00 close rate (``session_close_rate`` of the last session), so
+    it stops moving with the evening's FX. Falls back to the live rate without a close
+    rate. Values (totals, holdings' current value) are NOT day figures and stay live.
+    """
+    if is_us_market_open(now):
+        return live_rate
+    close = session_close_rate(session, last_session_date(now))
+    return close if close is not None and close > 0 else live_rate
 
 
 def estimate_day_move(

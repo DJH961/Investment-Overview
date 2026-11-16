@@ -147,15 +147,13 @@ def holding_day_move(
 
 @dataclass(frozen=True)
 class HoldingDaySplit:
-    """A holding's day move cut into the session and the overnight currency, per currency.
+    """A holding's day move cut into the day (market hours) and the night (currency), per currency.
 
-    After the US close the day move (previous close at its close rate -> now) is
-    ``session`` (close price x the session-close rate, minus the baseline) plus
-    ``overnight`` (value now minus close price x the close rate: only the rate moved).
-    Money is rounded to the cent with ``overnight = rounded total - rounded session``,
-    so the two parts always add up to the row's ``today_move``. The % use the same
-    previous-mark base as the headline day %, so ``session_pct + overnight_pct`` is
-    the day %. In USD a USD-native holding has no overnight move at all.
+    Market open: ``session`` = B+C and ``overnight`` = A (last night), which add up
+    to the row's ``today_move``. Market shut (:func:`holding_day_split`): the row's
+    ``today_move`` is frozen A+B+C, ``session`` = B+C and ``overnight`` = D, the
+    currency since the close, which is NOT part of it. The % share the previous-mark
+    base. In USD a USD-native holding has no overnight move at all.
     """
 
     session_eur: Decimal | None
@@ -187,26 +185,60 @@ def _split_leg(
     return session, overnight, (at_close - prev) / prev, (now - at_close) / prev
 
 
+def _night_leg(
+    live: Decimal | None,
+    at_close: Decimal | None,
+    prev: Decimal | None,
+    at_open: Decimal | None,
+) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None]:
+    """``(day, night, day %, night %)`` of one currency leg once the market has shut.
+
+    ``day`` = B+C = (close - prev) - A, with A = ``at_open - prev`` (the previous
+    book revalued to the session's open rate; no open rate -> A = 0, so ``day`` is
+    the whole frozen total A+B+C). ``night`` = D = ``live - at_close`` (informational,
+    never part of the total). Cents like :func:`_split_leg`; the % share ``prev``.
+    """
+    if live is None or at_close is None or prev is None:
+        return None, None, None, None
+    lead = (at_open - prev) if at_open is not None else ZERO
+    day = _cents(at_close - prev) - _cents(lead)
+    night = _cents(live - at_close)
+    if prev <= ZERO:
+        return day, night, None, None
+    return day, night, ((at_close - prev) - lead) / prev, (live - at_close) / prev
+
+
 def holding_day_split(
     *,
     shares: Decimal,
     native_currency: str,
     legs: DayLegs,
     rate_close: Decimal | None,
-    rate_last: Decimal | None,
+    rate_live: Decimal | None,
     rate_prev: Decimal | None,
+    rate_open: Decimal | None = None,
 ) -> HoldingDaySplit:
-    """Split :func:`holding_day_move` (same inputs) at the session close.
+    """The day / night cut of a holding's day move once the market has shut.
 
-    ``rate_close`` is the session's 16:00 close rate (the ``last`` mark's close
-    value), ``rate_last`` the rate now (the one the day move's current mark uses).
+    The owner's day rule (2026-11-16): the day figure (``holding_day_move`` with its
+    now mark at ``rate_close``) is FROZEN at the close, A+B+C. ``session`` is its
+    market-hours part B+C (the total minus A, last night's currency move: the
+    previous close's holding revalued from ``rate_prev`` to the session's
+    ``rate_open``); ``overnight`` is D, the same close holding revalued from
+    ``rate_close`` to the live ``rate_live`` and NOT part of the total.
     """
     last_native = shares * legs.close_last
-    now_eur, now_usd = convert_native(last_native, native_currency, rate_last)
+    prev_native = shares * legs.close_prev
+    live_eur, live_usd = convert_native(last_native, native_currency, rate_live)
     close_eur, close_usd = convert_native(last_native, native_currency, rate_close)
-    prev_eur, prev_usd = convert_native(shares * legs.close_prev, native_currency, rate_prev)
-    s_eur, o_eur, sp_eur, op_eur = _split_leg(now_eur, close_eur, prev_eur)
-    s_usd, o_usd, sp_usd, op_usd = _split_leg(now_usd, close_usd, prev_usd)
+    prev_eur, prev_usd = convert_native(prev_native, native_currency, rate_prev)
+    open_eur, open_usd = (
+        convert_native(prev_native, native_currency, rate_open)
+        if rate_open is not None and rate_open > ZERO
+        else (None, None)
+    )
+    s_eur, o_eur, sp_eur, op_eur = _night_leg(live_eur, close_eur, prev_eur, open_eur)
+    s_usd, o_usd, sp_usd, op_usd = _night_leg(live_usd, close_usd, prev_usd, open_usd)
     return HoldingDaySplit(s_eur, s_usd, o_eur, o_usd, sp_eur, sp_usd, op_eur, op_usd)
 
 

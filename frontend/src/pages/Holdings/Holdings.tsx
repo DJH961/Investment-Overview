@@ -412,7 +412,7 @@ export function Holdings() {
                     </span>
                     <Percent ratio={toNum(r.today_pct)} signed colored />
                   </span>
-                  <HoldingDaySplit row={r} currency={currency} layout="stacked" data-testid="holding-day-split" />
+                  <HoldingDaySplit row={r} currency={currency} marketOpen={r.market_open} layout="stacked" data-testid="holding-day-split" />
                 </>
               ) : (
                 <>

@@ -218,6 +218,7 @@ export function ValueChartCard({
         overnightPct={overnightPct}
         overnight={overnight}
         currency={currency}
+        marketOpen={g?.market_open ?? lastSession?.market_open ?? false}
         data-testid="range-split"
       />
     ) : null;

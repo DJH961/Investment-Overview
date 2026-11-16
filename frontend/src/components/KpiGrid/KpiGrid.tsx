@@ -125,6 +125,7 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
       overnightPct={toNum(ls.overnight_pct ?? null)}
       overnight={toNum(ls.overnight_currency)}
       currency={currency}
+      marketOpen={ls.market_open}
       layout="list"
       data-testid="kpi-day-split"
     />

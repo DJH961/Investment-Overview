@@ -187,6 +187,8 @@ def _mover_estimates(
         return {}
     session_date = intraday_snapshots_service.last_session_date(now)
     fx_prev = intraday_snapshots_service.previous_close_fx(session, session_date)
+    # Day figures freeze at the close rate once the market has shut (day rule).
+    fx_now = intraday_snapshots_service.day_figure_fx(session, now=now, live_rate=fx_now)
     out: dict[int, MoverEstimate] = {}
     for iid, est in estimates.items():
         move_eur, pct_eur = intraday_snapshots_service.estimate_day_move(
@@ -474,9 +476,8 @@ def _estimate(
     Official total + ``sum(shares x (est_price - previous NAV))`` valued at the one
     rate now (a single instant), in ``ccy``'s own legs; ``None`` when no fund is
     estimating. The day move is the official one plus the same adjustment while the
-    market runs; while it is shut it is the total change since the previous close, the
-    last session's estimated move plus the overnight currency move
-    (``split.move_est + split.overnight_est``).
+    market runs; while it is shut it is the total frozen at the close, the last
+    session's estimated move plus last night's A (``split.move_est + split.lead``).
     """
     if not estimates:
         return None
@@ -492,14 +493,13 @@ def _estimate(
     est_pct: Decimal | None = None
     if split is not None and split.move_est_eur is not None:
         usd = ccy == "USD"
-        # Shut market: the TOTAL change of the estimated book since the previous close,
-        # last session's estimated move plus the overnight currency move, i.e.
-        # ``value_now_est - previous-close value`` (the split lines stay in ``last_session``).
+        # Shut market: the day total of the estimated book is FROZEN at the close, A+B+C:
+        # last session's estimated B+C plus last night's A. The currency since the close
+        # (D) stays in ``last_session`` and is not added (day rule of 2026-11-16).
         est_move = (split.move_est_usd if usd else split.move_est_eur) or ZERO
-        est_move += (split.overnight_est_usd if usd else split.overnight_est_eur) or ZERO
-        value_now_est = split.value_now_est_usd if usd else split.value_now_est_eur
-        prev_value = value_now_est - est_move if value_now_est is not None else None
-        est_pct = est_move / prev_value if prev_value is not None and prev_value > ZERO else None
+        est_move += split.lead_usd if usd else split.lead_eur
+        base = split.base_usd if usd else split.base_eur
+        est_pct = est_move / base if base is not None and base > ZERO else None
     elif move is not None:
         est_move = move + delta
         est_pct = holdings.move_pct(total + delta, est_move)
@@ -784,10 +784,12 @@ def _last_session(
         return None
     usd = ccy == "USD"
     move = split.move_usd if usd else split.move_eur
-    overnight = split.overnight_usd if usd else split.overnight_eur
     value_now = split.value_now_usd if usd else split.value_now_eur
-    day_move = move + overnight
-    prev_value = value_now - day_move
+    # The day TOTAL: session (B+C) + last night's A. Open: A is the night figure itself.
+    # Shut: the night figure is D (since the close), which is NOT part of the total.
+    day_move = move + (split.lead_usd if usd else split.lead_eur)
+    base = split.base_usd if usd else split.base_eur
+    prev_value = base if base is not None else value_now - day_move
     return {
         "market_open": market_open,
         "day_move": dec(day_move),

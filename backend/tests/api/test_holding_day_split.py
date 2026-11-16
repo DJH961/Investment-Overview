@@ -122,7 +122,9 @@ def test_usd_view_overnight_is_zero_for_usd_holdings(api_db: Path) -> None:
 
 
 def test_parts_add_up_per_holding_and_across_the_book(api_db: Path) -> None:
-    """session + overnight == today_move per row; the sums equal the hero's last_session."""
+    """Day rule 2026-11-16, market shut: today_move is the frozen total (day + A) and the
+    night D is NOT in it. No session open rate was captured here, so A = 0 and the day
+    part equals today_move; the sums equal the hero's last_session figures."""
     _seed()
     for ccy in ("EUR", "USD"):
         rows, last = _rows(ccy, _at(8))
@@ -133,13 +135,12 @@ def test_parts_add_up_per_holding_and_across_the_book(api_db: Path) -> None:
             if r["day_overnight"] is None:
                 session_sum += move  # no currency move: the whole day move is the session
                 continue
-            assert D(r["day_session"]) + D(r["day_overnight"]) == move
-            assert abs(D(r["day_session_pct"]) + D(r["day_overnight_pct"]) - D(r["today_pct"])) < D(
-                "1e-9"
-            )
+            assert D(r["day_session"]) == move
+            assert abs(D(r["day_session_pct"]) - D(r["today_pct"])) < D("1e-9")
             session_sum += D(r["day_session"])
             overnight_sum += D(r["day_overnight"])
         assert abs(session_sum - D(last["move"])) < D("0.03"), ccy
+        assert abs(session_sum - D(last["day_move"])) < D("0.03"), ccy
         assert abs(overnight_sum - D(last["overnight_currency"])) < D("0.03"), ccy
 
 

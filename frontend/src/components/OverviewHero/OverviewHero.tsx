@@ -241,6 +241,7 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
             overnightPct={toNum(ls.overnight_pct ?? null)}
             overnight={toNum(ls.overnight_currency)}
             currency={currency}
+            marketOpen={ls.market_open}
             data-testid="hero-day-split"
           />
         )}

@@ -1,9 +1,10 @@
 """Golden tests for THE day-move rule (see ``metrics_service.fx_revaluation``).
 
 A day's move runs from the previous session's close (close prices x the 16:00 ET
-close rate) to now (current prices x the LIVE rate); once the market shuts the market
-move freezes while the EUR figure keeps moving with FX ("overnight currency"); every
-view rolls over together at the 09:30 ET open; USD is native dollars.
+close rate) to now (current prices x the LIVE rate) while the market is open; once it
+shuts the whole day figure freezes at the close (the currency since then is shown beside
+it, not in it); every view rolls over together at the 09:30 ET open; USD is native
+dollars.
 
 Book: one USD account, VTI 10 sh bought Fri 23 Oct 2026 at 100. Closes Mon 100,
 Tue 110, Wed 121. ECB EUR/USD: 1.10 to Tue, 1.20 on Wed (the live rate). A captured
@@ -108,7 +109,11 @@ def _seed(*, deposit_today: bool = False) -> None:
                 ),
             ]
         s.add_all(rows)
-        # Wednesday's session closed at EUR/USD 1.15 (sample struck at 15:58 ET = 19:58 UTC).
+        # Wednesday's session opened at EUR/USD 1.12 (sample at 09:35 ET = 13:35 UTC) ...
+        intraday_repo.insert_sample(
+            s, datetime(2026, 10, 28, 13, 35), D("1000"), fx_eur_usd=D("1.12")
+        )
+        # ... and closed at 1.15 (sample struck at 15:58 ET = 19:58 UTC).
         intraday_repo.insert_sample(
             s, datetime(2026, 10, 28, 19, 58), D("1000"), fx_eur_usd=D("1.15")
         )
@@ -132,10 +137,11 @@ def test_eur_market_open_hero_equals_sum_of_holdings(api_db: Path) -> None:
 
 
 def test_eur_after_close_fx_move_hero_holdings_graph_and_split_agree(api_db: Path) -> None:
-    """Wed 18:00 ET, close rate 1.15, live 1.20, EUR.
+    """Wed 18:00 ET, open rate 1.12, close rate 1.15, live 1.20, EUR (day rule 2026-11-16).
 
-    Session = 1210/1.15 - 1100/1.10 = 52.17; overnight = 1210/1.20 - 1210/1.15 = -43.84;
-    hero = 1210/1.20 - 1000 = 8.33 = session + overnight = sum of holdings = graph tip change.
+    Total (frozen at the close) = 1210/1.15 - 1000 = 52.17 = sum of holdings = graph tip
+    change; A = 1100/1.12 - 1000 = -17.86; day = total - A = 70.03; night D =
+    1210/1.20 - 1210/1.15 = -43.84, beside the total and NOT in it.
     """
     _seed()
     now = _at(18)
@@ -145,17 +151,19 @@ def test_eur_after_close_fx_move_hero_holdings_graph_and_split_agree(api_db: Pat
         graph = live_graphs.build_graph(s, range_key="1d", ccy="EUR", now=now, compare=False)
     hero = D(eur["kpis"]["daily_move"])
     ls = eur["last_session"]
-    assert abs(hero - D("8.33")) < TOL
+    total = D("1210") / D("1.15") - D("1000")
+    lead = D("1100") / D("1.12") - D("1000")
+    assert abs(hero - total) < TOL
     assert abs(rows - hero) < TOL
-    assert abs(D(ls["move"]) - (D("1210") / D("1.15") - D("1000"))) < TOL
+    assert abs(D(ls["day_move"]) - total) < TOL
+    assert abs(D(ls["move"]) - (total - lead)) < TOL
     assert abs(D(ls["overnight_currency"]) - (D("1210") / D("1.20") - D("1210") / D("1.15"))) < TOL
-    assert abs(D(ls["move"]) + D(ls["overnight_currency"]) - hero) < TOL
     ref, tip = D(graph["reference"]), D(graph["points"][-1]["v"])
     # The session line ENDS at the close (close prices x close rate): no overnight tail.
-    assert abs((tip - ref) - D(ls["move"])) < TOL
-    # The live value is the separate "now" point; its change is the hero's.
+    assert abs((tip - ref) - total) < TOL
+    # The live value is the separate "now" marker (incl. D); the growth is the frozen total.
     now_pt = graph["now_point"]
-    assert abs((D(now_pt["v"]) - ref) - hero) < TOL
+    assert abs((D(now_pt["v"]) - ref) - (total + D(ls["overnight_currency"]))) < TOL
     assert abs(D(now_pt["overnight_currency"]) - D(ls["overnight_currency"])) < TOL
     assert abs(D(graph["growth"]["pct"]) - D(eur["kpis"]["daily_growth_pct"])) < D("1e-9")
 

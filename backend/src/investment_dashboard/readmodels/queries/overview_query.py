@@ -1241,8 +1241,8 @@ def _instrument_daily_growth(
         return None, None, None, None, None
 
     def _leg_rate(on: date, now_leg: bool) -> Decimal | None:
-        # Baseline leg: ``on``'s session-close rate. Now leg: the LIVE rate (today_rate),
-        # so the EUR day figure keeps moving with FX after the close.
+        # Baseline leg: ``on``'s session-close rate. Now leg: the LIVE rate (today_rate)
+        # while the market is open; frozen at the close rate once it has shut.
         live = today_rate if now_leg and today_rate is not None else None
         if live is None:
             live = lookup_rate_with_forward_fill(eur_to_usd, on)
@@ -1284,12 +1284,12 @@ def _instrument_day_split(
     previous_price_date: date | None,
     is_money_market: bool,
 ) -> day_move.HoldingDaySplit | None:
-    """The holding's day move as session + overnight currency.
+    """The holding's day move as day (B+C) + night.
 
-    Same legs and rates as :func:`_instrument_daily_growth` (the move is the sum of
-    the two parts). Market shut: the session part values the last close at that
-    session's close rate (``session_close_rate``), the overnight part is what the rate
-    moved since. Market open: the overnight part is LAST NIGHT's (the previous close
+    Same legs and rates as :func:`_instrument_daily_growth`. Market shut: that row move
+    is frozen at the close (A+B+C); the day part is B+C (minus last night's A), the night
+    part is D, what the rate moved since the close, shown beside and NOT in the total.
+    Market open: the overnight part is LAST NIGHT's (the previous close
     revalued from the previous close rate to the rate at the open, ``session_open_fx``)
     and the session the rest of the day move. ``None`` for a money-market fund, when
     the holding's move is not on the book's last session (an outdated NAV) or without
@@ -1337,13 +1337,18 @@ def _instrument_day_split(
     rate_close = intraday_snapshots_service.session_close_rate(session, legs.rate_date_last)
     if rate_close is None or rate_close <= ZERO:
         return None
+    # Market shut: the day figure is frozen at the close (A+B+C); day = B+C = that minus
+    # last night's A (previous close rate -> the session's open rate, when captured);
+    # night = D, the live rate against the close rate (beside the total, not in it).
+    rate_live = today_rate or lookup_rate_with_forward_fill(eur_to_usd, legs.rate_date_last)
     return day_move.holding_day_split(
         shares=shares,
         native_currency=native_currency,
         legs=legs,
         rate_close=rate_close,
-        rate_last=_leg_rate(legs.rate_date_last, True),
+        rate_live=rate_live,
         rate_prev=_leg_rate(legs.rate_date_prev, False),
+        rate_open=intraday_snapshots_service.session_open_fx(session, now=now),
     )
 
 

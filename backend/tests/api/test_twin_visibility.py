@@ -214,43 +214,28 @@ def test_after_close_before_nav_the_split_runs_on_the_estimated_book(api_db: Pat
         want_move = D("100") / D("1.10") if ccy == "EUR" else D("100")
         assert abs(D(ls["move_est"]) - want_move) < D("1e-9")
         assert abs(D(ls["move_pct_est"]) - want_move / prev) < D("1e-9")
-        # move_est + overnight identity on the estimated book.
-        assert abs(
-            D(ls["move_est"]) + D(ls["overnight_currency_est"]) - (D(ls["value_now_est"]) - prev)
-        ) < D("1e-9")
-        # Shut market: the hero's estimated day figure is the TOTAL change since the
-        # previous close, overnight currency included.
+        # Day rule 2026-11-16: the estimated day total is FROZEN at the close (A+B+C with
+        # no open rate captured here, so A = 0): the session's estimated move at the close
+        # rate. The currency since the close (night, D) is beside it, not in it.
         est = body["kpis"]["estimate"]
-        total_change = D(ls["move_est"]) + D(ls["overnight_currency_est"])
-        assert abs(D(est["daily_move"]) - total_change) < D("1e-9")
-        assert abs(D(est["daily_move"]) - (D(ls["value_now_est"]) - prev)) < D("1e-9")
-        assert abs(D(est["daily_growth_pct"]) - total_change / prev) < D("1e-9")
-        # issue #9: ``total_value`` comes from ``metrics.total_value`` (computed by
-        # ``compute_portfolio_metrics``), but ``daily_move``/``daily_growth_pct`` come
-        # from the independently-computed last-session split (``metrics_service._book_holdings``,
-        # valued ``as_of=session_date``). Nothing asserts the two books agree; this pins
-        # the relationship every consumer assumes: subtracting the move off the total
-        # must land back on the SAME previous-close value ``daily_growth_pct`` divides by.
-        assert abs(D(est["total_value"]) - D(est["daily_move"]) - prev) < D("1e-9")
-        # The official total change (overnight currency included) mirrors the estimate:
-        # their difference is exactly the twin adjustment, also when the rate moved.
-        assert abs(D(ls["day_move"]) - (D(ls["move"]) + D(ls["overnight_currency"]))) < D("1e-9")
-        assert abs(D(est["daily_move"]) - D(ls["day_move"]) - D(est["adjustment"])) < D("1e-9")
-        assert abs(D(ls["day_move"]) - (D(ls["value_now"]) - prev)) < D("1e-9")
-        assert abs(D(ls["day_move_pct"]) - D(ls["day_move"]) / prev) < D("1e-9")
-        # The official shut-market ``kpis.daily_move`` is the whole change since the
-        # previous close (overnight currency included), so it IS ``last_session.day_move``
-        # and differs from the estimated line by exactly the twin adjustment.
-        assert abs(D(body["kpis"]["daily_move"]) - D(ls["day_move"])) < D("1e-9")
+        assert abs(D(est["daily_move"]) - want_move) < D("1e-9")
+        assert abs(D(est["daily_growth_pct"]) - want_move / prev) < D("1e-9")
+        # The (live) estimated value is the frozen close book plus the night figure.
         assert abs(
-            (D(est["daily_move"]) - D(body["kpis"]["daily_move"])) - D(est["adjustment"])
+            D(est["total_value"]) - D(ls["overnight_currency_est"]) - D(est["daily_move"]) - prev
         ) < D("1e-9")
-        # day_split carries the estimated book's price + currency, adding up to its move.
+        # The official day total is frozen too: it IS ``last_session.day_move`` and differs
+        # from the estimated line by the twin adjustment at the CLOSE rate (the move).
+        assert abs(D(ls["day_move"]) - (D(ls["move"]) + D("0"))) < D("1e-9")
+        assert abs(D(ls["day_move_pct"]) - D(ls["day_move"]) / prev) < D("1e-9")
+        assert abs(D(body["kpis"]["daily_move"]) - D(ls["day_move"])) < D("1e-9")
+        assert abs((D(est["daily_move"]) - D(body["kpis"]["daily_move"])) - want_move) < D("1e-9")
+        # day_split carries the estimated book's frozen total and the night figure.
         ds = body["day_split"]
         assert ds["overnight"] is True
         assert ds["estimated"] is True
-        assert abs(D(ds["price_move"]) - D(ls["move_est"])) < D("1e-9")
-        assert abs(D(ds["price_move"]) + D(ds["currency_move"]) - D(est["daily_move"])) < D("1e-9")
+        assert abs(D(ds["price_move"]) - D(est["daily_move"])) < D("1e-9")
+        assert abs(D(ds["currency_move"]) - D(ls["overnight_currency_est"])) < D("1e-9")
     # EUR book now: (1,000 + 2,100 USD) at 1.20; overnight is only the currency.
     ls = eur["last_session"]
     assert abs(D(ls["value_now_est"]) - D("3100") / D("1.20")) < D("1e-9")
@@ -259,16 +244,18 @@ def test_after_close_before_nav_the_split_runs_on_the_estimated_book(api_db: Pat
     ) < D("1e-9")
     assert D(usd["last_session"]["overnight_currency_est"]) == D("0")
     # Golden, rate moved 1.10 -> 1.20 since the close: the unposted fund is flat at its
-    # previous NAV, so the official EUR day change is the currency alone.
+    # previous NAV and the day total is frozen at the close rate, so the official EUR day
+    # change is 0; the currency since the close is the night figure beside it.
     gold = D("3000") / D("1.20") - D("3000") / D("1.10")
-    assert abs(D(eur["last_session"]["day_move"]) - gold) < D("1e-9")
-    assert abs(D(eur["last_session"]["day_move_pct"]) - gold / (D("3000") / D("1.10"))) < D("1e-9")
+    assert D(eur["last_session"]["day_move"]) == D("0")
+    assert abs(D(eur["last_session"]["overnight_currency"]) - gold) < D("1e-9")
+    assert abs(D(eur["last_session"]["overnight_pct"]) - gold / (D("3000") / D("1.10"))) < D("1e-9")
     assert D(usd["last_session"]["day_move"]) == D("0")
-    # The estimate adds exactly the twin adjustment (100 USD at the rate now).
+    # The estimate adds exactly the twin adjustment (100 USD at the CLOSE rate: frozen).
     assert abs(
         D(eur["kpis"]["estimate"]["daily_move"])
         - D(eur["last_session"]["day_move"])
-        - D("100") / D("1.20")
+        - D("100") / D("1.10")
     ) < D("1e-9")
 
 

@@ -17,6 +17,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.17.2] — 2026-11-16
+
+### Fixed
+- **The day figure no longer counts two nights of currency.** After the US
+  close the day's Total (hero, top bar, tab title, tiles, holdings, movers, the
+  1D graph header) stays frozen at the close: last night's currency move plus the
+  session, valued at the 16:00 close rate. Tonight's currency move is shown
+  beside it as ☾ but is not added in, like a broker's "after hours"; it becomes
+  the next day's overnight part at the 09:30 open, so every move counts once.
+  ☀ is now always the market-hours move (prices and the currency then); during
+  market hours ☾ is last night's move and ☀ + ☾ = Total. The portfolio value
+  itself stays live. (Replaces the 6.17.0 rule that kept the day figure moving
+  with the currency overnight.)
+
 ## [6.17.1] — 2026-11-16
 
 ### Fixed
