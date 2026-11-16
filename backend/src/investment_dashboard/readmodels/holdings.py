@@ -120,9 +120,10 @@ def portfolio_return_split(
 def day_split_fields(split: HoldingDaySplit | None, ccy: str) -> dict[str, Any]:
     """``day_session`` / ``day_overnight`` (+ ``_pct``) in ``ccy``; all null with no overnight move.
 
-    After the close only: session + overnight == ``today_move`` (and the %s add up to
-    ``today_pct``). Null while the market is open and when the currency did not move
-    for this holding (every USD holding in the USD view): nothing to explain.
+    Market open: day (B+C) + night (last night's A) == ``today_move``. Market shut: day
+    (B+C) is ``today_move`` (frozen A+B+C) minus A, and night is D, the currency since the
+    close, which is NOT part of ``today_move``. Null when the currency did not move for
+    this holding (every USD holding in the USD view): nothing to explain.
     """
     usd = ccy == "USD"
     session = split.session_usd if split and usd else (split.session_eur if split else None)
@@ -434,7 +435,10 @@ def _twin_view(
         delta = _delta_in([est], fx, ccy)
         value = pick(card.value_eur, card.value_usd, ccy)
         est_value = value + delta if value is not None and delta is not None else None
-        est_move, est_pct = intraday_snapshots_service.estimate_day_move(est, fx, fx_prev, ccy)
+        # The day figure is frozen at the close rate once the market has shut (the value
+        # above stays at the live rate).
+        fx_day = intraday_snapshots_service.day_figure_fx(session, now=now, live_rate=fx)
+        est_move, est_pct = intraday_snapshots_service.estimate_day_move(est, fx_day, fx_prev, ccy)
         # The estimate moves only the value, so it moves the gain since buying by the
         # same delta: every other row on the page shows money AND percent there, and
         # leaving the twin's cell blank made the estimated row look half-reported.

@@ -27,7 +27,10 @@ describe("DaySplit", () => {
     // The words are visually hidden labels; the symbols say it on screen.
     expect(el).toHaveTextContent(/Session\s*\+0\.81%\s*Overnight\s*-0\.45%/);
     expect(container.querySelectorAll(".day-split__icon")).toHaveLength(2);
-    expect(container.querySelector(".day-split__part")).toHaveAttribute("title", expect.stringMatching(/^Session/));
+    expect(container.querySelector(".day-split__part")).toHaveAttribute("title", expect.stringMatching(/^Day: the move during US market hours/));
+    // Market shut (default): the night is the move since the close, not in today's total.
+    const parts = container.querySelectorAll(".day-split__part");
+    expect(parts[1]).toHaveAttribute("title", expect.stringMatching(/since the close.*next day/));
     expect(el).not.toHaveTextContent("next day");
     expect(screen.getByRole("button", { name: "About session and overnight" })).toBeInTheDocument();
   });

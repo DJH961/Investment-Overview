@@ -835,13 +835,16 @@ def with_last_session_daily_growth(
 
 @dataclass(frozen=True)
 class LastSessionSplit:
-    """The hero day move outside the session: last session's move + overnight currency.
+    """The hero day move split into day (``move_*``, B+C) and night (``overnight_*``).
 
-    ``move_*`` is the official closes/NAVs of ``session_date`` vs ``prev_date``,
-    each book valued at its own session's 16:00 EUR/USD rate. ``overnight_*`` is
-    the same holdings at the same official prices revalued from that close rate to
-    the rate now: the only thing that moves overnight is the currency. Per
-    currency, ``move + overnight == value_now - prev_close_value - flows`` exactly,
+    Day rule of 2026-11-16. ``move_*`` is the session's market-hours part B+C: the
+    official closes/NAVs of ``session_date`` vs ``prev_date``, each book valued at its
+    own session's 16:00 EUR/USD rate, minus A (``lead_*``, last night's currency move).
+    The day TOTAL is ``move + lead`` (A+B+C) and is frozen at the close.
+    ``overnight_*`` (market shut) is D: the same holdings at the same official prices
+    revalued from the close rate to the rate now; it is shown beside the total and
+    never added to it. Per currency ``move + lead + overnight == value_now -
+    prev_close_value - flows`` exactly,
     where ``flows`` is the session's net external money in (B-007). A fund
     whose NAV for the session has not posted counts at its previous NAV (official
     prices only, never an estimate).
@@ -878,6 +881,16 @@ class LastSessionSplit:
     #: (``value_now - move - overnight``, the base the headline day % uses).
     overnight_pct_eur: Decimal | None = None
     overnight_pct_usd: Decimal | None = None
+    #: A: last night's currency move (previous close -> the session's open rate on the
+    #: previous-close book), the part of today's total that is neither the session
+    #: ``move_*`` (B+C) nor the live ``overnight_*``. Market open: equals ``overnight_*``
+    #: (the night figure IS A). Market shut: ``overnight_*`` is D (since the close, NOT
+    #: in the total) and this is A, so the frozen total is ``move + lead`` (A+B+C).
+    lead_eur: Decimal = ZERO
+    lead_usd: Decimal = ZERO
+    #: The % base ``prev close value + session flows`` (every figure's % shares it).
+    base_eur: Decimal | None = None
+    base_usd: Decimal | None = None
 
 
 def _estimated_split(
@@ -954,14 +967,17 @@ def fx_revaluation(
 ) -> tuple[Decimal, Decimal]:
     """THE day-move rule, and the one helper for every currency-revaluation figure.
 
-    A day's move runs from the previous session's close (close prices x the 16:00 ET
-    session-close rate, ``session_close_rate``) to now (current prices x the LIVE
-    EUR/USD rate). Once the market shuts the market move freezes at close prices x
-    close rate, while the EUR figure keeps moving with FX: that remainder is the
-    "overnight currency", reported separately until the next session opens at 09:30
-    ET, when every view (hero, holdings, graph, overnight) rolls over together. In
-    USD everything is native dollars with no FX (only genuinely EUR-native
-    holdings/cash move with FX).
+    Day rule (owner, 2026-11-16; supersedes the "keep moving" rule). Baseline =
+    previous close prices x that session's 16:00 ET close rate (``day_baseline_rate``).
+    A = last night's currency move (previous close -> 09:30 open rate, previous
+    book), B = the session's price move, C = the currency's move during market hours,
+    D = the currency since the close (close book, close rate -> live rate).
+    Market open: Total = A+B+C (live), day = B+C, night = A. Market shut (until the
+    next 09:30 ET open): Total = A+B+C FROZEN at close prices x close rate minus the
+    baseline, day = B+C, night = D (live, beside the total, NOT added to it). The
+    value (total_value) stays live. At 09:30 D becomes the new day's A. In USD
+    everything is native dollars with no FX (only genuinely EUR-native holdings/cash
+    move with FX).
 
     This returns the ``(eur, usd)`` change in value of the book on ``on`` when only
     the rate moves from ``fx_from`` to ``fx_to``: the overnight currency
@@ -1048,15 +1064,33 @@ def last_session_split(
     )
     eur = _net_of_flows(split_day_change(prev_eur, last_eur, now_eur), prev_eur, flow_eur)
     usd = _net_of_flows(split_day_change(prev_usd, last_usd, now_usd), prev_usd, flow_usd)
-    # The overnight figure comes from the one shared helper (also used by the
-    # currency box), not from a second formula.
+    # The night figure D comes from the one shared helper (also used by the currency
+    # box), not from a second formula.
     ov_eur, ov_usd = fx_revaluation(
         session, session_date, fx_from=fx_close, fx_to=fx_now, book=last_book
     )
     eur = replace(eur, overnight=ov_eur)
     usd = replace(usd, overnight=ov_usd)
-    base_eur = now_eur - (eur.move + ov_eur)
-    base_usd = now_usd - (usd.move + ov_usd)
+    base_eur = prev_eur + flow_eur
+    base_usd = prev_usd + flow_usd
+    # Day rule (2026-11-16): the day total is frozen at the close, A+B+C. The session
+    # figure is its market-hours part B+C = total - A, where A = last night's currency
+    # move (previous book, previous close rate -> that session's open rate). Without a
+    # captured open rate A is unknown (0), so the session figure is the whole A+B+C.
+    lead_eur = lead_usd = ZERO
+    fx_open = intraday_snapshots_service.session_open_fx(session, now=now)
+    if fx_open is not None and fx_open > 0:
+        lead_eur, lead_usd = fx_revaluation(session, prev_date, fx_from=fx_prev, fx_to=fx_open)
+    eur = replace(
+        eur,
+        move=eur.move - lead_eur,
+        pct=(eur.move - lead_eur) / base_eur if base_eur > 0 else None,
+    )
+    usd = replace(
+        usd,
+        move=usd.move - lead_usd,
+        pct=(usd.move - lead_usd) / base_usd if base_usd > 0 else None,
+    )
     return LastSessionSplit(
         **_estimated_split(
             session,
@@ -1083,6 +1117,10 @@ def last_session_split(
         value_now_usd=now_usd,
         overnight_pct_eur=ov_eur / base_eur if base_eur > ZERO else None,
         overnight_pct_usd=ov_usd / base_usd if base_usd > ZERO else None,
+        lead_eur=lead_eur,
+        lead_usd=lead_usd,
+        base_eur=base_eur,
+        base_usd=base_usd,
     )
 
 
@@ -1142,23 +1180,28 @@ def open_session_split(
         value_now_usd=now_usd,
         overnight_pct_eur=ov_eur / base_eur if base_eur > ZERO else None,
         overnight_pct_usd=ov_usd / base_usd if base_usd > ZERO else None,
+        lead_eur=ov_eur,
+        lead_usd=ov_usd,
+        base_eur=base_eur,
+        base_usd=base_usd,
     )
 
 
 def with_last_session_split(metrics: PortfolioMetrics, split: LastSessionSplit) -> PortfolioMetrics:
-    """``metrics`` with the hero day move set to the change since the previous close.
+    """``metrics`` with the hero day move set to the frozen day total A+B+C.
 
-    Market shut: the headline is the WHOLE change in value since the previous
-    session's close, net of the session's external flows (the last session's
-    move plus the overnight currency move; the % base is ``prev + flows``), so
-    the value and its day move agree at every instant: the value keeps re-marking at
-    the live rate overnight and the move now moves with it. The two causes stay
-    separate in :func:`day_move_split`. Per currency, never converted.
+    Market shut (day rule of 2026-11-16): the headline is the change from the previous
+    session's close (at its close rate) to the session's close (at the close rate), net
+    of the session's external flows: ``move + lead`` (B+C plus last night's A); the %
+    base is ``prev + flows``. It does NOT move with the live rate afterwards: the
+    currency since the close (D, ``overnight``) is shown beside it and counts toward
+    the next day. The value keeps re-marking at the live rate. Per currency, never
+    converted.
     """
-    move_eur = split.move_eur + split.overnight_eur
-    move_usd = split.move_usd + split.overnight_usd
-    prev_eur = split.value_now_eur - move_eur
-    prev_usd = split.value_now_usd - move_usd
+    move_eur = split.move_eur + split.lead_eur
+    move_usd = split.move_usd + split.lead_usd
+    prev_eur = split.base_eur if split.base_eur is not None else split.value_now_eur - move_eur
+    prev_usd = split.base_usd if split.base_usd is not None else split.value_now_usd - move_usd
     return replace(
         metrics,
         daily_growth_pct=move_eur / prev_eur if prev_eur > ZERO else None,
@@ -1174,15 +1217,14 @@ def with_last_session_split(metrics: PortfolioMetrics, split: LastSessionSplit) 
 class DayMoveSplit:
     """The day move (since the previous close) split into its two causes, per currency.
 
-    ``price_* + currency_* ==`` the headline day move exactly (the estimated book's
-    when ``estimated``, else the official one). ``overnight`` says which split it is:
+    ``overnight`` says which split it is:
 
-    * market shut (``True``): ``price`` is the last session's move (each close at its
-      own 16:00 rate) and ``currency`` the same book revalued from that close rate
-      to the rate now;
-    * market open (``False``): ``price`` is the move with today's book held at the
-      previous close's rate, and ``currency`` the current book revalued from that
-      rate to the rate now.
+    * market shut (``True``): ``price`` IS the frozen headline day total A+B+C (the
+      estimated book's when ``estimated``) and ``currency`` is D, the book revalued
+      from the close rate to the rate now, shown beside it and NOT part of it;
+    * market open (``False``): ``price_* + currency_* ==`` the headline day move
+      exactly: ``price`` is the move with today's book held at the previous close's
+      rate, and ``currency`` the current book revalued from that rate to the rate now.
     """
 
     price_eur: Decimal
@@ -1211,16 +1253,16 @@ def day_move_split(
     if split is not None:
         if split.move_est_eur is not None and split.move_est_usd is not None:
             return DayMoveSplit(
-                price_eur=split.move_est_eur,
-                price_usd=split.move_est_usd,
+                price_eur=split.move_est_eur + split.lead_eur,
+                price_usd=split.move_est_usd + split.lead_usd,
                 currency_eur=split.overnight_est_eur or ZERO,
                 currency_usd=split.overnight_est_usd or ZERO,
                 overnight=True,
                 estimated=True,
             )
         return DayMoveSplit(
-            price_eur=split.move_eur,
-            price_usd=split.move_usd,
+            price_eur=split.move_eur + split.lead_eur,
+            price_usd=split.move_usd + split.lead_usd,
             currency_eur=split.overnight_eur,
             currency_usd=split.overnight_usd,
             overnight=True,

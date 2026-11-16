@@ -830,8 +830,8 @@ def _growth(
         and reference > 0
         and (reference_flow != ZERO or now_value is not None)
     ):
-        # After the close the line ends at the close; the growth is measured to the
-        # live "now" value so it equals the hero.
+        # After the close the growth is the frozen day total, measured to the session
+        # close at the close rate (``now_value``), so it equals the hero.
         closing = now_value if now_value is not None else last.value
         net = periods.growth_after_flows(reference, closing, reference_flow)
         return {"pct": dec(net), "mode": "reference"} if net is not None else None
@@ -1004,8 +1004,17 @@ def build_graph(
         return memo[key]  # type: ignore[no-any-return]
 
     def now_value(c: str) -> Decimal | None:
+        """The window's closing value: the session close at the close rate (day rule).
+
+        Once the market has shut the growth is the FROZEN day total (A+B+C), so it is
+        measured to the live value minus the currency since the close (D, the night
+        figure), i.e. the close prices at the close rate. ``now_point`` keeps the live
+        value (marker only).
+        """
         values = now_values(c)
-        return values[0] if values is not None else None
+        if values is None:
+            return None
+        return values[0] - (values[1] or ZERO)
 
     secondary: dict[str, Any] | None = None
     if compare:

@@ -7,11 +7,14 @@ import "./DaySplit.scss";
 
 /** The one explanation of the overnight part, shared by every place that shows the split. */
 export const DAY_SPLIT_TIP =
-  "☀ Session: the market's move during US market hours. ☾ Overnight: the currency's move outside them, from the last close to the next open. Both are part of today's figure; after the close ☾ shows how the currency is moving overnight.";
+  "☀ Day: the move during US market hours (prices and the currency then). ☾ Night: while the market is open, last night's currency move (previous close to this morning's open), part of today's total; after the close, the currency's move since the close, not in today's total, it counts toward the next day.";
 
-/** Hover text for each symbol: ☀ the session, ☾ the overnight currency move. */
-const SESSION_TITLE = "Session: the market's move (prices and the currency during market hours)";
-const OVERNIGHT_TITLE = "Overnight: the currency's move outside US market hours";
+/** Hover text for each symbol: ☀ the day, ☾ the night (wording depends on market open/shut). */
+const SESSION_TITLE = "Day: the move during US market hours (prices and the currency then)";
+const OVERNIGHT_TITLE_OPEN =
+  "Night: last night's currency move (previous close to this morning's open), part of today's total";
+const OVERNIGHT_TITLE_SHUT =
+  "Night: the currency's move since the close — not in today's total; it counts toward the next day";
 
 /** Smallest overnight move worth showing: 0.005 % of the baseline (or half a cent without a %). */
 const MIN_PCT = 0.00005;
@@ -35,6 +38,11 @@ export interface DaySplitProps {
   /** Money fallback for the overnight part when no percent is available. */
   overnight?: number | null;
   currency: string;
+  /**
+   * Whether the US market is open (server `last_session.market_open` / graph or row
+   * `market_open`): picks the ☾ tooltip. Defaults to shut, the case where ☾ is not in the total.
+   */
+  marketOpen?: boolean;
   /**
    * `inline`: "☀ +0.81 %  ☾ −0.45 % (i)" (graph header, hero, phone rows). `stacked`:
    * the same on one small line without the (i), right-aligned for a table cell (the Day
@@ -64,7 +72,10 @@ export function HoldingDaySplit({
   row,
   currency,
   ...rest
-}: { row: HoldingDaySplitFields; currency: string } & Pick<DaySplitProps, "layout" | "className" | "data-testid">) {
+}: { row: HoldingDaySplitFields; currency: string } & Pick<
+  DaySplitProps,
+  "layout" | "className" | "data-testid" | "marketOpen"
+>) {
   const num = (v: string | null | undefined) => (v == null || v === "" ? null : Number(v));
   return (
     <DaySplit
@@ -89,6 +100,7 @@ export function DaySplit({
   overnightPct,
   overnight = null,
   currency,
+  marketOpen = false,
   layout = "inline",
   className,
   "data-testid": testId = "day-split",
@@ -113,7 +125,7 @@ export function DaySplit({
         <span className="day-split__label">Session</span>
         <Percent ratio={sessionPct} signed colored />
       </span>
-      <span className="day-split__part" title={OVERNIGHT_TITLE}>
+      <span className="day-split__part" title={marketOpen ? OVERNIGHT_TITLE_OPEN : OVERNIGHT_TITLE_SHUT}>
         <Moon className="day-split__icon" aria-hidden />
         <span className="day-split__label">Overnight</span>
         {overnightPct !== null ? (

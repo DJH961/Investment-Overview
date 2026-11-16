@@ -75,6 +75,7 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
           <HoldingDaySplit
             row={row}
             currency={ccy}
+            marketOpen={row.market_open}
             className="holdings-page__item-split"
             data-testid="holding-day-split"
           />

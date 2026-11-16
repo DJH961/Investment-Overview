@@ -77,21 +77,18 @@ def test_pre_open_shows_last_session_move(api_db: Path) -> None:
     assert usd["kpis"]["daily_growth_as_of"] == TUE.isoformat()
     assert D(usd["kpis"]["daily_growth_pct"]) == D("0.1")
     assert D(usd["kpis"]["daily_move"]) == D("100")
-    # EUR: the whole change since Monday's close, each mark at its own rate (Monday's
-    # 1,000 USD at its 1.10 close, Tuesday's 1,100 USD book at the live 1.20), never the
-    # USD return converted: the last session's move plus the overnight currency.
+    # EUR (day rule 2026-11-16): the day figure is FROZEN at the session close, each mark
+    # at its own close rate (Monday's 1,000 USD and Tuesday's 1,100 USD book both at
+    # 1.10), never the USD return converted: it does not move with the live 1.20.
     prev_eur = D("1000") / D("1.10")
     now_eur = D("1100") / D("1.20")
-    assert abs(D(eur["kpis"]["daily_move"]) - (now_eur - prev_eur)) < D("0.01")
-    assert abs(D(eur["kpis"]["daily_growth_pct"]) - (now_eur / prev_eur - 1)) < D("1e-9")
-    # ... split into the session's price move and the currency since its close.
+    assert abs(D(eur["kpis"]["daily_move"]) - prev_eur * D("0.1")) < D("0.01")
+    assert abs(D(eur["kpis"]["daily_growth_pct"]) - D("0.1")) < D("1e-9")
+    # The currency since the close is shown beside it, not added.
     ds = eur["day_split"]
     assert ds["overnight"] is True
-    assert abs(D(ds["price_move"]) - prev_eur * D("0.1")) < D("0.01")
+    assert abs(D(ds["price_move"]) - D(eur["kpis"]["daily_move"])) < D("1e-9")
     assert abs(D(ds["currency_move"]) - (now_eur - D("1100") / D("1.10"))) < D("0.01")
-    assert abs(D(ds["price_move"]) + D(ds["currency_move"]) - D(eur["kpis"]["daily_move"])) < D(
-        "1e-9"
-    )
     assert D(usd["day_split"]["currency_move"]) == D("0")
     assert eur["daily_caption"]["title"] != "Today"
     # Overnight currency is its own figure: Tuesday's 1,100 USD book revalued from
@@ -104,6 +101,10 @@ def test_pre_open_shows_last_session_move(api_db: Path) -> None:
     assert abs(D(ls["overnight_currency"]) - (D("1100") / D("1.20") - D("1100") / D("1.10"))) < D(
         "0.01"
     )
+    # No open rate captured (no samples): A = 0, so the day part is the whole frozen total,
+    # and the value (live) is the frozen close value plus the night figure.
+    assert abs(D(ls["move"]) - D(ls["day_move"])) < D("1e-9")
+    assert abs(D(ls["day_move"]) - D(eur["kpis"]["daily_move"])) < D("1e-9")
     assert abs(
         D(ls["move"]) + D(ls["overnight_currency"]) - (D(ls["value_now"]) - D("1000") / D("1.10"))
     ) < D("0.01")

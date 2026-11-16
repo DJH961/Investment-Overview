@@ -35,8 +35,9 @@ class OverviewEstimate(ApiModel):
         default=None,
         description=(
             "Total change of the estimated book since the previous close (market open: "
-            "official move + adjustment; market shut: ``last_session.move_est + "
-            "last_session.overnight_currency_est``, the overnight currency included)"
+            "official move + adjustment; market shut: frozen at the close, "
+            "``last_session.move_est`` + last night's currency move, the currency since "
+            "the close not included)"
         ),
     )
     daily_growth_pct: DecStr | None = Field(
@@ -300,20 +301,19 @@ class DailyCaption(ApiModel):
 
 
 class LastSessionMove(ApiModel):
-    """Outside the session: the day move split into the last session + overnight currency.
+    """The day split into day (``move``) and night (``overnight_currency``).
 
-    ``move`` is the official closes/NAVs of ``session_date`` vs ``prev_date``, each
-    valued at its own session's 16:00 EUR/USD rate; ``overnight_currency`` the same
-    holdings revalued from that close rate to the rate now. ``move +
-    overnight_currency`` is the change in ``value_now`` since the previous close.
+    Day rule of 2026-11-16. Market shut: the day total ``day_move`` is FROZEN at the
+    close (close prices x the close rate minus the baseline); ``move`` is its
+    market-hours part (the total minus last night's currency move); ``overnight_currency``
+    is the currency's move since the close, shown beside the total and NOT part of it.
     Amounts in the response currency (each computed in it, never converted).
 
-    While the market is open (``market_open``) the same block carries the day split the
-    other way round: ``overnight_currency`` is LAST NIGHT's currency move only (the
-    previous-close book revalued from the previous close rate ``fx_close`` to the rate
-    at today's open ``fx_now``) and ``move`` the session (everything since the open, prices
-    and intraday FX); ``move + overnight_currency`` is the headline day move. No ``*_est``
-    fields then.
+    While the market is open (``market_open``): ``overnight_currency`` is LAST NIGHT's
+    currency move only (the previous-close book revalued from the previous close rate
+    ``fx_close`` to the rate at today's open ``fx_now``) and ``move`` the session
+    (everything since the open, prices and intraday FX); ``move + overnight_currency``
+    is ``day_move``. No ``*_est`` fields then.
     """
 
     #: True while the US market trades (``move`` = session since the open, overnight = last night's).
@@ -329,14 +329,14 @@ class LastSessionMove(ApiModel):
     value_now: DecStr
     fx_close: DecStr
     fx_now: DecStr
-    #: OFFICIAL total change since the previous close, overnight currency included:
-    #: ``move + overnight_currency`` = ``value_now`` minus the previous-close value (at
-    #: the previous close's rate). Mirrors ``kpis.estimate.daily_move`` /
+    #: OFFICIAL day total (frozen at the close once the market is shut; the same figure as
+    #: ``kpis.daily_move``). Mirrors ``kpis.estimate.daily_move`` /
     #: ``daily_growth_pct``: their difference is exactly ``kpis.estimate.adjustment``.
     day_move: DecStr | None = None
     day_move_pct: DecStr | None = None
     #: The same split on the estimated book (null / empty when no fund is estimating):
-    #: ``move_est + overnight_currency_est == value_now_est - previous-close value``.
+    #: ``move_est`` is the session part B+C; ``overnight_currency_est`` the currency since
+    #: the close (not in the frozen total).
     move_est: DecStr | None = None
     move_pct_est: DecStr | None = None
     overnight_currency_est: DecStr | None = None
@@ -347,10 +347,10 @@ class LastSessionMove(ApiModel):
 class DaySplit(ApiModel):
     """The headline day move (since the previous close) as price + currency.
 
-    ``price_move + currency_move`` is the headline move exactly (the estimated
-    book's when ``estimated``). ``overnight``: the market is shut, so ``price_move``
-    is the last session's move and ``currency_move`` the exchange-rate change since
-    its close; otherwise ``price_move`` is today's move at the previous close's rate
+    Market open: ``price_move + currency_move`` is the headline move exactly (the
+    estimated book's when ``estimated``). ``overnight``: the market is shut, so
+    ``price_move`` IS the headline day total frozen at the close and ``currency_move``
+    the exchange-rate change since its close, shown beside it and not added; otherwise ``price_move`` is today's move at the previous close's rate
     and ``currency_move`` the rate change since that close. ``*_secondary`` are the
     same figures computed in ``secondary_ccy`` (never converted).
     """

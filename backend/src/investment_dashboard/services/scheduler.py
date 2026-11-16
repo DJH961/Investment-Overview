@@ -182,12 +182,15 @@ def _tick_day_split(
     legs: Any,
     rate_last: Decimal | None,
     rate_prev: Decimal | None,
+    rate_live: Decimal | None = None,
 ) -> dict[str, Any]:
-    """A holding's session / overnight cut of its day move for the tick.
+    """A holding's day / night cut of its day move for the tick.
 
-    The same helper as the holdings rows (:func:`domain.day_move.holding_day_split`),
-    so a tick and the refetch agree. Null while the market is open, when the move is
-    not on the last session, and per currency when the currency did not move.
+    The same helpers as the holdings rows (:func:`domain.day_move.holding_day_split` /
+    ``holding_open_day_split``), so a tick and the refetch agree. ``rate_last`` is the
+    day figure's current-mark rate (live while open, the close rate once shut);
+    ``rate_live`` the live rate for the night figure D. Null when the move is not on
+    the last session, and per currency when the currency did not move.
     """
     from investment_dashboard.domain import day_move  # noqa: PLC0415
     from investment_dashboard.domain.market_hours import is_us_market_open  # noqa: PLC0415
@@ -212,13 +215,15 @@ def _tick_day_split(
         rate_close = intraday_snapshots_service.session_close_rate(session, legs.rate_date_last)
         if rate_close is None or rate_close <= 0:
             return dict(_NO_SPLIT)
+        # Shut: the day figure is frozen at the close; night = D against the LIVE rate.
         split = day_move.holding_day_split(
             shares=shares,
             native_currency=native,
             legs=legs,
             rate_close=rate_close,
-            rate_last=rate_last,
+            rate_live=rate_live,
             rate_prev=rate_prev,
+            rate_open=intraday_snapshots_service.session_open_fx(session, now=now),
         )
     out = dict(_NO_SPLIT)
     for side in ("eur", "usd"):
@@ -241,8 +246,8 @@ def _tick_day_moves(
     The holdings rows' own definition (:mod:`domain.day_move`): today's share count
     at the two marks, so a buy is never that holding's gain (B-007); each mark at
     its own rate. The current mark uses the tick's rate ``rate`` while the session
-    trades, and that session's close rate once it has shut (exactly as the
-    holdings rows do), so a tick and the refetch after it agree. A category's %
+    trades, and that session's close rate once it has shut (the day figure is frozen at
+    the close, exactly as the holdings rows), so a tick and the refetch agree. A category's %
     is its summed move over its summed previous value. Money is rounded to the
     cent like the rows; % are fractions. Best effort: ``({}, {})`` on failure.
     """
@@ -349,6 +354,7 @@ def _tick_day_moves(
                     legs=legs,
                     rate_last=_rate(legs.rate_date_last, True),
                     rate_prev=_rate(legs.rate_date_prev),
+                    rate_live=rate if rate is not None else _rate(legs.rate_date_last, True),
                 ),
             }
             members.setdefault(category[iid], []).append(move)
@@ -441,8 +447,10 @@ def _tick_estimates(
             return empty
         fx_prev = iss.previous_close_fx(session, iss.last_session_date(now))
         per_fund: dict[str, Any] = {}
+        # The day % freezes at the close rate once the market has shut (day rule).
+        rate_day = iss.day_figure_fx(session, now=now, live_rate=rate)
         for iid, est in estimates.items():
-            pct = iss.estimate_move_pct(est, rate, fx_prev)
+            pct = iss.estimate_move_pct(est, rate_day, fx_prev)
             per_fund[str(iid)] = {
                 "est_px": _dec(est.est_px),
                 "prev_nav": _dec(est.prev_nav),
