@@ -1323,7 +1323,7 @@ def _instrument_day_split(
 
     if market_open:
         # Market trading: last night's overnight (previous close -> the open rate) + the session.
-        rate_open = intraday_snapshots_service.session_open_fx(session, now=now)
+        rate_open = intraday_snapshots_service.day_open_rate(session, now=now)
         if rate_open is None or rate_open <= ZERO:
             return None
         return day_move.holding_open_day_split(
@@ -1348,7 +1348,7 @@ def _instrument_day_split(
         rate_close=rate_close,
         rate_live=rate_live,
         rate_prev=_leg_rate(legs.rate_date_prev, False),
-        rate_open=intraday_snapshots_service.session_open_fx(session, now=now),
+        rate_open=intraday_snapshots_service.day_open_rate(session, now=now),
     )
 
 

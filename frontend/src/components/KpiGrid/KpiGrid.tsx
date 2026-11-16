@@ -31,10 +31,11 @@ const STRIP_TIPS = {
 };
 
 export const KPI_TIPS = {
-  priceMove:
-    "What your holdings' prices did since the previous close, without the exchange rate. " +
-    "The FX figure under it is what the exchange rate did over the same time (overnight while the market is shut); " +
-    "add the two and you get the headline change exactly. " +
+  dayMove:
+    "The change since the previous close: prices and the exchange rate together, the same Total as the headline. " +
+    "It moves live while the US market is open and stays frozen at the close afterwards. " +
+    "The line under it shows the parts: the move during market hours and the exchange rate overnight. " +
+    "After the close the overnight figure is tonight's move, shown beside the Total and not counted in it. " +
     "While a fund's NAV is pending, its ETF twin's estimate stands in for it.",
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
   totalReturn:
@@ -99,10 +100,10 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     </span>
   ) : undefined;
 
-  // The day's move split into its two causes, both from the server (`day_split`):
-  // what the holdings' prices did, and what the exchange rate did since the
-  // previous close (overnight while the market is shut). Together they are the
-  // headline change exactly. Without a split the tile falls back to the whole move.
+  // The day Total, from the server (`day_split.price_move`; the field name is
+  // historical): always the headline change, live while the market is open and
+  // frozen at the close afterwards. `currency_move` is the exchange-rate figure:
+  // inside the Total while open, tonight's move beside it while shut.
   const ds = data?.day_split ?? null;
   const priceMove = ds ? ds.price_move : k?.daily_move;
   const priceMove2 = ds ? ds.price_move_secondary : k2?.daily_move;
@@ -154,8 +155,8 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     <div className="kpi-grid">
       <div className="kpi-grid__tiles">
         <KpiTile
-          label="Price move"
-          tooltip={KPI_TIPS.priceMove}
+          label="Day move"
+          tooltip={KPI_TIPS.dayMove}
           loading={loading}
           value={money(priceMove, true)}
           secondary={money2(priceMove2, true)}
