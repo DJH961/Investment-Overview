@@ -1,8 +1,8 @@
 # Architecture
 
-How the system is put together. Two apps share one Python core in `backend/` until
-cutover: the **v6 server** (FastAPI API + React frontend, hosted) and the **v5 desktop
-app** (NiceGUI, `ui/`). The rules that govern the code (layering, cache-tier access,
+How the system is put together. One Python core in `backend/` serves the **v6 server** (FastAPI API +
+React frontend, hosted). The v5 desktop app was removed in 7.0 (tag `v5-archive`,
+see [`legacy_v5.md`](legacy_v5.md)). The rules that govern the code (layering, cache-tier access,
 currency) live in [`../AGENTS.md`](../AGENTS.md); the original requirements are in
 [`original_spec.md`](original_spec.md); the v6 plan is
 [`v6_one_app_plan.md`](v6_one_app_plan.md) and the server runbook
@@ -27,25 +27,24 @@ backup sidecar (rclone) ── copies sealed snapshots ──► Backblaze B2 (a
   Origin check on writes, login rate limit; optional bearer token for scripts.
 - **Live:** `services/live_bus.py` → SSE `/api/stream`; the browser never calls a
   market-data provider.
-- **Rollback:** every v6 migration has a working downgrade to v5's head (`0014`,
-  tested in CI); `inv-dashboard-export-v5` turns the server DB back into v5 files.
+- **Migrations:** every migration keeps a working `downgrade()`. The extra "downgrade
+  to v5's head (`0014`)" check and `inv-dashboard-export-v5` were removed in 7.0.
 - **Layering is enforced** by `import-linter` (`[tool.importlinter]` in
   `backend/pyproject.toml`, `uv run lint-imports` in CI).
 
 ## Goal
 
-A local-first, single-user investment dashboard whose ground truth is a
+A single-user investment dashboard whose ground truth is a
 **transaction ledger**, with rich return metrics in **USD and EUR**, reachable from
-any device on the user's LAN. A read-only, encrypted web companion (`web/`) gives a
-phone view from a published snapshot.
+any device through the hosted server. `web/` builds an offline demo for GitHub Pages
+(no real data).
 
 ## Layered structure
 
 ```
-ui/         NiceGUI pages (v5 only).            Thin: input -> service -> render.
 api/        v6 FastAPI routers + schemas.       Thin wrappers over readmodels/services.
 services/   Use-case orchestration.             Composes domain + adapters + repos.
-readmodels/ UI-agnostic JSON shapes.            Shared by the API, export and publish.
+readmodels/ UI-agnostic JSON shapes.            Shared by the API and the export.
 repositories/   DB access.                      Only place that imports ORM models.
 adapters/   External I/O.                       Market data, FX, broker files; return dataclasses.
 domain/     Pure math.                          XIRR, TWR, CAGR, allocation, risk.
@@ -57,8 +56,7 @@ Notes beyond the rules in `AGENTS.md`:
 
 - `domain/` is checked with `mypy --strict`, which is what keeps it pure.
 - Services own transactions: a use-case is one logical commit.
-- Page queries live in `readmodels/queries/*_query.py` (the old
-  `ui/pages/_*_query.py` names are re-export shims for v5); they read through
+- Page queries live in `readmodels/queries/*_query.py`; they read through
   repositories, never ORM selects of their own.
 - Cashflow and currency legs come from one module, `services/cashflows.py`;
   positions and per-instrument metrics from one pass, `services/ledger_walk.py`.
@@ -115,7 +113,7 @@ Two physical layouts exist behind the same ORM:
 - **FX:** each transaction's EUR/USD amount is derived from `net_native` and that
   date's rate (FX conversion batches override the EUR side via the FIFO pool). The
   frozen `fx_rate_to_eur` / `net_eur` / `net_usd` legs are still written on import
-  for the v5 rollback and are only a cross-check (Diagnostics flags > 0.5 %
+  until a later release drops them and are only a cross-check (Diagnostics flags > 0.5 %
   differences). Snapshots and intraday samples store native USD plus the
   per-instant rate; EUR is `usd / fx` at that instant.
 - **`UNIQUE(account_id, external_id)`** on transactions is the dedup guard.
@@ -147,7 +145,7 @@ on demand. Failures are non-fatal — stale prices/FX still render, with a
 
 ## Why these choices
 
-- **NiceGUI**: event-driven (no full-rerun model), binds to `0.0.0.0` trivially.
+- **FastAPI + React**: a typed API contract (OpenAPI) and a thin client; see the v6 plan.
 - **SQLite + WAL**: single user, one file to back up, real transactions.
 - **Alembic with `render_as_batch=True`**: SQLite can't `ALTER COLUMN`; batch ops
   rebuild the table transparently.
