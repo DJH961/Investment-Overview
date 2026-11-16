@@ -926,8 +926,8 @@ class TestSessionCloseRateCompletenessGate:
         assert iss.session_close_rate(session, _SESSION_DAY) is None
 
     def test_legacy_schema_missing_fx_eur_usd_degrades_to_the_settled_rate(self) -> None:
-        """``tools/parity_check.py`` runs against a v5-era ledger copy whose
-        ``intraday_value`` table predates the ``fx_eur_usd`` column (added well
+        """A v5-era ledger copy may have an
+        ``intraday_value`` table that predates the ``fx_eur_usd`` column (added well
         after migration 0014, the v5 head). Before the fix, ``session_close_rate``
         let the resulting ``OperationalError`` propagate instead of falling
         through to the settled rate, exactly as:

@@ -9,6 +9,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
+from api._single import get_one
 from investment_dashboard.db import ledger_session_scope
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.services import intraday_snapshots_service
@@ -43,12 +44,12 @@ def offline_intraday(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_requires_auth(anon_client: TestClient) -> None:
-    assert anon_client.get("/api/graphs/1m").status_code == 401
+    assert anon_client.get("/api/graphs/1m/both").status_code == 401
 
 
 @pytest.mark.parametrize("range_key", DAILY_RANGES)
 def test_daily_ranges(api_client: TestClient, seeded: None, range_key: str) -> None:
-    body = api_client.get(f"/api/graphs/{range_key}?ccy=USD&compare=false").json()
+    body = get_one(api_client, f"/api/graphs/{range_key}?ccy=USD&compare=false")
     assert body["range"] == range_key
     assert body["ccy"] == "USD"
     assert body["intraday"] is False
@@ -68,7 +69,7 @@ def test_daily_ranges(api_client: TestClient, seeded: None, range_key: str) -> N
 def test_eur_line_uses_that_days_rate_and_compare_returns_other_ccy(
     api_client: TestClient, seeded: None
 ) -> None:
-    body = api_client.get("/api/graphs/1m?ccy=EUR&compare=true").json()
+    body = get_one(api_client, "/api/graphs/1m?ccy=EUR&compare=true")
     assert body["ccy"] == "EUR"
     secondary = body["secondary"]
     assert secondary["ccy"] == "USD"
@@ -79,16 +80,14 @@ def test_eur_line_uses_that_days_rate_and_compare_returns_other_ccy(
 
 
 def test_longer_ranges_never_have_fewer_points(api_client: TestClient, seeded: None) -> None:
-    sizes = {
-        key: len(api_client.get(f"/api/graphs/{key}").json()["points"]) for key in DAILY_RANGES
-    }
+    sizes = {key: len(get_one(api_client, f"/api/graphs/{key}")["points"]) for key in DAILY_RANGES}
     assert sizes["1m"] <= sizes["3m"] <= sizes["6m"] <= sizes["1y"] <= sizes["all"]
 
 
 def test_one_day_is_intraday_with_reference(
     api_client: TestClient, seeded: None, offline_intraday: None
 ) -> None:
-    body = api_client.get("/api/graphs/1d?ccy=USD").json()
+    body = get_one(api_client, "/api/graphs/1d?ccy=USD")
     assert body["intraday"] is True
     assert body["points"], "intraday samples plus the live tip"
     assert "T" in body["points"][0]["t"]  # a UTC timestamp, not a date
@@ -97,18 +96,18 @@ def test_one_day_is_intraday_with_reference(
 
 
 def test_one_week_is_intraday(api_client: TestClient, seeded: None, offline_intraday: None) -> None:
-    body = api_client.get("/api/graphs/1w?ccy=EUR&compare=true").json()
+    body = get_one(api_client, "/api/graphs/1w?ccy=EUR&compare=true")
     assert body["intraday"] is True
     assert body["points"]
     assert body["reference"] is not None  # the 1W baseline (close before its first session)
 
 
 def test_one_day_empty_ledger(api_client: TestClient, api_db: object) -> None:
-    body = api_client.get("/api/graphs/1d").json()
+    body = get_one(api_client, "/api/graphs/1d")
     assert body["points"] == []
 
 
-@pytest.mark.parametrize("path", ["/api/graphs/2w", "/api/graphs/1m?ccy=GBP", "/api/graphs/ALL"])
+@pytest.mark.parametrize("path", ["/api/graphs/2w/both", "/api/graphs/ALL/both"])
 def test_bad_input_is_422(api_client: TestClient, path: str) -> None:
     assert api_client.get(path).status_code == 422
 
@@ -119,7 +118,7 @@ def test_bad_input_is_422(api_client: TestClient, path: str) -> None:
 def test_secondary_is_on_by_default_with_shared_start_scale(
     api_client: TestClient, seeded: None
 ) -> None:
-    body = api_client.get("/api/graphs/1m?ccy=EUR").json()
+    body = get_one(api_client, "/api/graphs/1m?ccy=EUR")
     secondary = body["secondary"]
     assert secondary is not None
     assert secondary["ccy"] == "USD"
@@ -134,7 +133,7 @@ def test_secondary_is_on_by_default_with_shared_start_scale(
 
 
 def test_daily_ranges_have_no_sessions_or_coverage(api_client: TestClient, seeded: None) -> None:
-    body = api_client.get("/api/graphs/3m").json()
+    body = get_one(api_client, "/api/graphs/3m")
     assert body["sessions"] == []
     assert body["coverage"] is None
     assert body["session_date"] is None
@@ -143,8 +142,8 @@ def test_daily_ranges_have_no_sessions_or_coverage(api_client: TestClient, seede
 
 
 def test_all_range_growth_is_lifetime_total(api_client: TestClient, seeded: None) -> None:
-    body = api_client.get("/api/graphs/all?ccy=USD").json()
-    overview = api_client.get("/api/overview?ccy=USD").json()
+    body = get_one(api_client, "/api/graphs/all?ccy=USD")
+    overview = get_one(api_client, "/api/overview?ccy=USD")
     assert body["growth"]["mode"] == "total"
     assert Decimal(body["growth"]["pct"]) == Decimal(overview["kpis"]["total_growth_compounded"])
 
@@ -152,7 +151,7 @@ def test_all_range_growth_is_lifetime_total(api_client: TestClient, seeded: None
 def test_one_day_direction_sessions_and_growth(
     api_client: TestClient, seeded: None, offline_intraday: None
 ) -> None:
-    body = api_client.get("/api/graphs/1d?ccy=USD").json()
+    body = get_one(api_client, "/api/graphs/1d?ccy=USD")
     reference = Decimal(body["reference"])
     last = Decimal(body["points"][-1]["v"])
     expected = "up" if last > reference else "down" if last < reference else "flat"
@@ -169,7 +168,7 @@ def test_one_day_direction_sessions_and_growth(
 def test_one_week_sessions_are_ordered_trading_days(
     api_client: TestClient, seeded: None, offline_intraday: None
 ) -> None:
-    body = api_client.get("/api/graphs/1w?ccy=EUR").json()
+    body = get_one(api_client, "/api/graphs/1w?ccy=EUR")
     dates = [s["date"] for s in body["sessions"]]
     assert len(dates) == intraday_snapshots_service.WEEK_SESSIONS
     assert dates == sorted(dates)
@@ -205,7 +204,7 @@ def test_put_range_round_trip_when_closed(
     resp = api_client.put("/api/graphs/range", json={"range": "6m"})
     assert resp.status_code == 200
     assert resp.json() == {"range": "6m", "default_range": "6m"}
-    assert api_client.get("/api/overview").json()["default_range"] == "6m"
+    assert get_one(api_client, "/api/overview")["default_range"] == "6m"
 
 
 def test_put_range_while_market_open_is_session_scoped(

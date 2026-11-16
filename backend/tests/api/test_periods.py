@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
+from api._single import get_one
 from investment_dashboard.db import ledger_session_scope
 from investment_dashboard.models import Account, Transaction, TransactionKind
 from investment_dashboard.repositories import fx_repo
@@ -36,28 +37,24 @@ def seeded(api_db):  # type: ignore[no-untyped-def]
         )
 
 
-def test_periods_require_valid_ccy(api_client: TestClient) -> None:
-    assert api_client.get("/api/periods/monthly?ccy=GBP").status_code == 422
-
-
 def test_monthly_eur_and_usd_contributions(api_client: TestClient, seeded) -> None:  # type: ignore[no-untyped-def]
-    eur = api_client.get("/api/periods/monthly?ccy=EUR").json()
+    eur = get_one(api_client, "/api/periods/monthly?ccy=EUR")
     assert eur["ccy"] == "EUR"
     assert eur["granularity"] == "month"
     row = next(r for r in eur["rows"] if r["label"] == "2025-03")
     assert Decimal(row["contributions"]) == Decimal(800)
 
-    usd = api_client.get("/api/periods/monthly?ccy=USD").json()
+    usd = get_one(api_client, "/api/periods/monthly?ccy=USD")
     row = next(r for r in usd["rows"] if r["label"] == "2025-03")
     assert Decimal(row["contributions"]) == Decimal(1000)
 
 
 def test_yearly_shape(api_client: TestClient, seeded) -> None:  # type: ignore[no-untyped-def]
-    body = api_client.get("/api/periods/yearly").json()
+    body = get_one(api_client, "/api/periods/yearly")
     assert body["granularity"] == "year"
     assert any(r["label"] == "2025" for r in body["rows"])
     assert {"total_growth_compounded", "period_growth_xirr", "is_current"} <= set(body["rows"][0])
 
 
 def test_empty_db(api_client: TestClient) -> None:
-    assert api_client.get("/api/periods/yearly").json()["rows"] == []
+    assert get_one(api_client, "/api/periods/yearly")["rows"] == []

@@ -150,7 +150,6 @@ def test_withdrawals_reduce_contributions_once(session: Session) -> None:
 
     summary = compute_summary(session, today=date(2023, 8, 1))
     # 1000 deposit − 300 withdrawal = 700 net, in every currency leg.
-    assert summary.total_contrib_native == Decimal("700.00")
     assert summary.total_contrib_usd == Decimal("700.00")
     assert summary.total_contrib_eur == Decimal("630.00")
 

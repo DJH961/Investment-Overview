@@ -1,13 +1,7 @@
-"""``GET /api/overview`` currency box rate stats vs the NiceGUI currency box (parity).
-
-The golden values are the figures the Python page's ``_currency_box_html`` prints
-for the same metrics, anchors and clock, so the v6 payload provably shows the
-same regime-aware numbers and labels.
-"""
+"""``GET /api/overview/both`` currency box rate stats: regime-aware moves and labels."""
 
 from __future__ import annotations
 
-import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -56,66 +50,6 @@ def _view(session: Session, now: datetime, ccy: str) -> dict[str, object]:
         now=now,
         tz=UTC,
     )
-
-
-_STAT = re.compile(
-    r'inv-fx-box-stat-label">([^<]+)</span>'
-    r'<span class="inv-fx-box-stat-value[^"]*">([^<]+)</span>'
-    r'(?:<span class="inv-fx-box-stat-sub">([^<]+)</span>)?'
-)
-
-
-def _python_box(session: Session, now: datetime, ccy: str) -> list[tuple[str, str, str]]:
-    from investment_dashboard.ui.pages import overview as page
-
-    html = page._currency_box_html(session, _metrics(), display_ccy=ccy, now=now, tz=UTC)
-    assert html is not None
-    return [(m[0], m[1], m[2] or "") for m in _STAT.findall(html)]
-
-
-def _fmt(pct: object) -> str:
-    """The page's ``_fx_box_pct_value`` text for an API fraction."""
-    value = D(str(pct)) * 100
-    sign = "+" if value >= 0 else chr(0x2212)  # the page's minus sign
-    return f"{sign}{abs(value):.2f}%"
-
-
-_LABEL = {"today": "Today", "yesterday": "Yesterday"}
-_SUB = {
-    "prev_close": "since last close",
-    "overnight": "overnight",
-    "session_open": "since last open",
-}
-
-
-@pytest.mark.parametrize("ccy", ["EUR", "USD"])
-@pytest.mark.parametrize("now", ALL)
-def test_parity_with_python_currency_box(session: Session, now: datetime, ccy: str) -> None:
-    view = _view(session, now, ccy)
-    stats = _python_box(session, now, ccy)
-
-    pair_label, pair_value, _ = stats[0]
-    assert pair_label == view["pair"]
-    assert pair_value == f"{D(str(view['spot_display'])):,.4f}"
-
-    move = view["move"]
-    assert isinstance(move, dict)
-    label, value, sub = stats[1]
-    expected_label = _LABEL.get(move["label_kind"]) or datetime.fromisoformat(
-        move["session_date"]
-    ).strftime("%A")
-    assert label == expected_label
-    assert value == _fmt(move["pct"])
-    assert sub == _SUB[move["anchor_kind"]]
-
-    since = view["since"]
-    if since is None:
-        assert len(stats) == 2  # single overnight: no second stat
-    else:
-        assert isinstance(since, dict)
-        since_label, since_value, _ = stats[2]
-        assert since_label == ("Since open" if since["kind"] == "open" else "Since close")
-        assert since_value == _fmt(since["pct"])
 
 
 def test_eur_and_usd_moves_have_opposite_signs(session: Session) -> None:

@@ -1,4 +1,7 @@
-"""v5 (0014) -> head -> 0014 must give back identical rows in every table."""
+"""Every migration has a working downgrade: head -> first v6 revision (0015) -> head.
+
+The round trip must give back identical rows in every table that exists at 0015.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +13,8 @@ from alembic.config import Config
 
 from investment_dashboard.tools.upload_db import _find_alembic_ini
 
-V5_HEAD = "c1f5a3b9e2d4"  # migration 0014, the last v5 revision
+V5_HEAD = "c1f5a3b9e2d4"  # migration 0014, the last v5 revision (fixture base)
+FIRST_V6 = "d2a6b4c8e1f0"  # migration 0015, the first v6 revision
 
 
 def alembic_cfg(db: Path) -> Config:
@@ -88,18 +92,21 @@ def dump_rows(path: Path, tables: set[str] | None = None) -> dict[str, list[tupl
         conn.close()
 
 
-def test_every_v5_table_has_fixture_rows(tmp_path: Path) -> None:
+def test_every_fixture_table_has_rows(tmp_path: Path) -> None:
     db = tmp_path / "v5.sqlite"
     make_v5_fixture(db)
     empty = [n for n, rows in dump_rows(db).items() if not rows]
     assert empty == []
 
 
-def test_upgrade_head_then_downgrade_restores_v5_rows(tmp_path: Path) -> None:
-    db = tmp_path / "v5.sqlite"
+def test_upgrade_head_then_downgrade_restores_first_v6_rows(tmp_path: Path) -> None:
+    db = tmp_path / "v6.sqlite"
     make_v5_fixture(db)
-    before = dump_rows(db)
     cfg = alembic_cfg(db)
+    command.upgrade(cfg, FIRST_V6)
+    before = dump_rows(db)
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, V5_HEAD)
+    command.downgrade(cfg, FIRST_V6)
     assert dump_rows(db) == before
+    # ...and it can climb to head again (the downgrade left a sound schema).
+    command.upgrade(cfg, "head")

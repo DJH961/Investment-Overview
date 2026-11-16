@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 from investment_dashboard.models import Transaction
 from investment_dashboard.readmodels import live_graphs
 from investment_dashboard.readmodels._context import build_context
-from investment_dashboard.readmodels.mobile_export import build_mobile_export
 from investment_dashboard.repositories import (
     accounts_repo,
     fx_repo,
@@ -149,16 +148,6 @@ def test_live_graphs_caps_day_points_and_keeps_endpoints() -> None:
     assert len(capped) <= live_graphs.MAX_DAY_POINTS
     assert capped[0] == pts[0]
     assert capped[-1] == pts[-1]
-
-
-def test_mobile_export_includes_live_graphs_when_intraday_present(session: Session) -> None:
-    _seed_usd_holding_with_intraday(session)
-
-    export = build_mobile_export(session, as_of=_SESSION_DAY, now=_NOW)
-
-    assert "live_graphs" in export
-    assert export["meta"]["schema_version"] == 2
-    assert export["live_graphs"]["day"]["session_date"] == "2024-06-03"
 
 
 def test_live_graphs_v3_backbone_market_series_is_fx_free_and_aligned(session: Session) -> None:

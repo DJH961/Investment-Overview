@@ -157,7 +157,7 @@ def start(
     """Launch the watchdog on the running loop; return its task (or ``None``).
 
     Safe to call when no loop is running (it no-ops and returns ``None``), so it
-    can be wired into an ``app.on_startup`` hook without guarding the caller.
+    can be scheduled from a startup hook without guarding the caller.
     """
     try:
         loop = asyncio.get_running_loop()
@@ -171,15 +171,3 @@ def start(
         ),
         name="inv-loop-watchdog",
     )
-
-
-def install() -> None:
-    """Register the watchdog to start with the app (idempotent enough).
-
-    Mirrors :func:`investment_dashboard.services.error_reporting.install_asyncio_handler`:
-    the work needs a running loop, so it is scheduled from an ``app.on_startup``
-    hook rather than executed inline.
-    """
-    from nicegui import app  # noqa: PLC0415 - lazy (only needed when wiring the app)
-
-    app.on_startup(start)

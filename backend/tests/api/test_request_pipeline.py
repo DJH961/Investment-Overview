@@ -139,7 +139,7 @@ def test_one_shared_set_of_read_only_posts() -> None:
 
 
 def test_calculator_post_keeps_the_read_cache(api_client: TestClient) -> None:
-    assert api_client.get("/api/overview?ccy=EUR").status_code == 200
+    assert api_client.get("/api/overview/both").status_code == 200
     cached = read_cache.size()
     assert cached >= 1
     gens = read_cache.generations()
@@ -151,7 +151,7 @@ def test_calculator_post_keeps_the_read_cache(api_client: TestClient) -> None:
 
 
 def test_a_real_write_is_still_logged_and_flushes(api_client: TestClient) -> None:
-    assert api_client.get("/api/overview?ccy=EUR").status_code == 200
+    assert api_client.get("/api/overview/both").status_code == 200
     assert api_client.post("/api/diagnostics/problems/dismiss-all").status_code == 200
     assert read_cache.size() == 0
     assert activity.subject_for("POST", "/api/diagnostics/problems/dismiss-all") == "changes"

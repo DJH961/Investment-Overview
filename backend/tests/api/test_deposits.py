@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from hypothesis import given
 from hypothesis import strategies as st
 
+from api._single import get_one
 from investment_dashboard.db import ledger_session_scope
 from investment_dashboard.models import Account, Transaction, TransactionKind
 from investment_dashboard.readmodels import deposits as deposits_rm
@@ -33,8 +34,8 @@ def test_deposits_per_ccy(api_client: TestClient, api_db) -> None:  # type: igno
                 source="manual",
             )
         )
-    eur = api_client.get("/api/deposits?ccy=EUR").json()
-    usd = api_client.get("/api/deposits?ccy=USD").json()
+    eur = get_one(api_client, "/api/deposits?ccy=EUR")
+    usd = get_one(api_client, "/api/deposits?ccy=USD")
     assert Decimal(eur["summary"]["total_contrib"]) == Decimal(800)
     assert Decimal(usd["summary"]["total_contrib"]) == Decimal(1000)
     assert Decimal(eur["rows"][0]["amount"]) == Decimal(800)
@@ -43,8 +44,8 @@ def test_deposits_per_ccy(api_client: TestClient, api_db) -> None:  # type: igno
 
 
 def test_deposits_account_filter(api_client: TestClient, api_db) -> None:  # type: ignore[no-untyped-def]
-    assert api_client.get("/api/deposits?account_id=999").json()["rows"] == []
-    assert api_client.get("/api/deposits?account_id=0").status_code == 422
+    assert get_one(api_client, "/api/deposits?account_id=999")["rows"] == []
+    assert api_client.get("/api/deposits/both?account_id=0").status_code == 422
 
 
 def test_deposit_rows_show_conversion_batches_and_ecb_fallback(
@@ -80,7 +81,7 @@ def test_deposit_rows_show_conversion_batches_and_ecb_fallback(
                 note=None,
             )
         )
-    rows = {r["date"]: r for r in api_client.get("/api/deposits?ccy=EUR").json()["rows"]}
+    rows = {r["date"]: r for r in get_one(api_client, "/api/deposits?ccy=EUR")["rows"]}
     first, second = rows["2025-03-10"], rows["2025-04-10"]
     assert first["rate_source"] == "conversions"
     assert Decimal(first["effective_rate"]) == Decimal("1.25")
@@ -98,7 +99,7 @@ def test_deposit_rows_without_conversions_claim_no_source(
     api_client: TestClient,
     api_db,  # type: ignore[no-untyped-def]
 ) -> None:
-    assert api_client.get("/api/deposits").json()["rows"] == []
+    assert get_one(api_client, "/api/deposits")["rows"] == []
     check = next(
         c
         for c in api_client.get("/api/diagnostics").json()["checks"]
@@ -144,7 +145,7 @@ def _ledger() -> int:
 
 def test_deposits_by_year_and_second_currency(api_client: TestClient, api_db) -> None:  # type: ignore[no-untyped-def]
     _ledger()
-    body = api_client.get("/api/deposits?ccy=EUR").json()
+    body = get_one(api_client, "/api/deposits?ccy=EUR")
     assert body["other_ccy"] == "USD"
     years = {y["year"]: y for y in body["by_year"]}
     assert [y["year"] for y in body["by_year"]] == [2025, 2024]
@@ -160,24 +161,24 @@ def test_deposits_by_year_and_second_currency(api_client: TestClient, api_db) ->
     row = next(r for r in body["rows"] if r["date"] == "2025-03-10")
     assert Decimal(row["amount"]) == 800
     assert Decimal(row["amount_other"]) == 1000
-    usd = api_client.get("/api/deposits?ccy=USD").json()
+    usd = get_one(api_client, "/api/deposits?ccy=USD")
     assert Decimal(usd["by_year"][0]["total"]) == 1100
     assert Decimal(usd["by_year"][0]["total_other"]) == 880
 
 
 def test_deposits_filters(api_client: TestClient, api_db) -> None:  # type: ignore[no-untyped-def]
     a_id = _ledger()
-    kinds = lambda q: sorted(r["kind"] for r in api_client.get(f"/api/deposits?{q}").json()["rows"])  # noqa: E731
+    kinds = lambda q: sorted(r["kind"] for r in get_one(api_client, f"/api/deposits?{q}")["rows"])  # noqa: E731
     assert kinds("kind=deposit") == ["deposit", "deposit"]
     assert kinds("kind=withdrawal") == ["withdrawal"]
     assert kinds("kind=transfer") == ["transfer_in"]
     assert len(kinds("year=2024")) == 1
     assert len(kinds(f"account_id={a_id}")) == 2
     assert kinds("year=2025&kind=deposit") == ["deposit"]
-    filtered = api_client.get("/api/deposits?ccy=EUR&year=2024").json()
+    filtered = get_one(api_client, "/api/deposits?ccy=EUR&year=2024")
     assert [y["year"] for y in filtered["by_year"]] == [2024]
     assert filtered["years"] == [2025, 2024]  # option list is not narrowed
-    assert api_client.get("/api/deposits?kind=bogus").status_code == 422
+    assert api_client.get("/api/deposits/both?kind=bogus").status_code == 422
 
 
 @given(
@@ -250,8 +251,8 @@ def test_dividends_golden(api_client: TestClient, api_db) -> None:  # type: igno
                 _txn(acct.id, recent, "interest", "5", "4"),
             ]
         )
-    eur = api_client.get("/api/deposits/dividends?ccy=EUR").json()
-    usd = api_client.get("/api/deposits/dividends?ccy=USD").json()
+    eur = get_one(api_client, "/api/deposits/dividends?ccy=EUR")
+    usd = get_one(api_client, "/api/deposits/dividends?ccy=USD")
     # 40 USD at 1.00 = 40 EUR (old) + 10 USD at the 1.25 recent rate = 8 EUR.
     assert Decimal(eur["lifetime_total"]) == 48
     assert Decimal(eur["ttm_total"]) == 8
@@ -272,7 +273,7 @@ def test_dividends_golden(api_client: TestClient, api_db) -> None:  # type: igno
 
 
 def test_dividends_empty(api_client: TestClient, api_db) -> None:  # type: ignore[no-untyped-def]
-    body = api_client.get("/api/deposits/dividends").json()
+    body = get_one(api_client, "/api/deposits/dividends")
     assert body["rows"] == []
     assert body["by_holding"] == []
     assert body["yield_ttm"] is None

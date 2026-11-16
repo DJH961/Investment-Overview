@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
+from api._single import get_one
 from investment_dashboard.db import ledger_session_scope
 
 from ._seed import RATE_NOW, seed_ledger
@@ -28,11 +29,11 @@ def D(value: str | None) -> Decimal:
 
 
 def test_requires_auth(anon_client: TestClient) -> None:
-    assert anon_client.get("/api/overview").status_code == 401
+    assert anon_client.get("/api/overview/both").status_code == 401
 
 
 def test_shape_and_eur_numbers(api_client: TestClient, seeded: None) -> None:
-    body = api_client.get("/api/overview").json()
+    body = get_one(api_client, "/api/overview")
     assert body["ccy"] == "EUR"
     assert body["position_count"] == 2  # VTI is held in two accounts: one row
     assert set(body["kpis"]) >= {
@@ -57,8 +58,8 @@ def test_shape_and_eur_numbers(api_client: TestClient, seeded: None) -> None:
 
 
 def test_usd_switch_selects_usd_legs(api_client: TestClient, seeded: None) -> None:
-    eur = api_client.get("/api/overview?ccy=EUR").json()
-    usd = api_client.get("/api/overview?ccy=USD").json()
+    eur = get_one(api_client, "/api/overview?ccy=EUR")
+    usd = get_one(api_client, "/api/overview?ccy=USD")
     assert usd["ccy"] == "USD"
     assert D(usd["kpis"]["total_value"]) == USD_VALUE
     assert D(usd["kpis"]["total_invested"]) == Decimal("5050")  # frozen net_usd legs
@@ -72,7 +73,7 @@ def test_usd_switch_selects_usd_legs(api_client: TestClient, seeded: None) -> No
 
 
 def test_currency_effect_split(api_client: TestClient, seeded: None) -> None:
-    body = api_client.get("/api/overview").json()
+    body = get_one(api_client, "/api/overview")
     split = body["currency"]["return_split"]
     total_eur = D(split["total_return_eur"])
     investment = D(split["investment_return"])
@@ -97,30 +98,26 @@ def test_currency_effect_is_taken_against_the_reporting_currency(
     answer, not a reason to leave the USD view without a split at all.
     """
     for ccy in ("EUR", "USD"):
-        body = api_client.get(f"/api/overview?ccy={ccy}").json()
+        body = get_one(api_client, f"/api/overview?ccy={ccy}")
         split = body["currency"]["return_split"]
         investment = D(split["investment_return"])
         effect = D(split["currency_effect_pp"])
         growth = D(body["kpis"]["total_growth_compounded"])
         assert growth == pytest.approx(investment + effect, rel=Decimal("1e-9")), ccy
-    usd = api_client.get("/api/overview?ccy=USD").json()["currency"]["return_split"]
+    usd = get_one(api_client, "/api/overview?ccy=USD")["currency"]["return_split"]
     assert D(usd["currency_effect_pp"]) == 0
-    eur = api_client.get("/api/overview?ccy=EUR").json()["currency"]["return_split"]
+    eur = get_one(api_client, "/api/overview?ccy=EUR")["currency"]["return_split"]
     assert D(eur["currency_effect_pp"]) < 0
 
 
-def test_bad_ccy_is_422(api_client: TestClient) -> None:
-    assert api_client.get("/api/overview?ccy=GBP").status_code == 422
-
-
 def test_empty_ledger_still_answers(api_client: TestClient, api_db: object) -> None:
-    r = api_client.get("/api/overview")
+    r = api_client.get("/api/overview/both")
     assert r.status_code == 200
-    assert r.json()["position_count"] == 0
+    assert r.json()["EUR"]["position_count"] == 0
 
 
 def test_rate_move_is_a_fraction(api_client: TestClient, seeded: None) -> None:
-    today = api_client.get("/api/overview").json()["currency"]["today"]
+    today = get_one(api_client, "/api/overview")["currency"]["today"]
     if today["spot"] is None or today["prev"] is None:
         return
     expected = (D(today["spot"]) - D(today["prev"])) / D(today["prev"])
@@ -134,8 +131,8 @@ def test_rate_move_is_a_fraction(api_client: TestClient, seeded: None) -> None:
 def test_kpis_secondary_are_the_other_currencys_own_kpis(
     api_client: TestClient, seeded: None
 ) -> None:
-    eur = api_client.get("/api/overview?ccy=EUR").json()
-    usd = api_client.get("/api/overview?ccy=USD").json()
+    eur = get_one(api_client, "/api/overview?ccy=EUR")
+    usd = get_one(api_client, "/api/overview?ccy=USD")
     assert eur["secondary_ccy"] == "USD"
     assert usd["secondary_ccy"] == "EUR"
     assert eur["kpis_secondary"] == usd["kpis"]
@@ -148,7 +145,7 @@ def test_freshness_caption_and_default_range(
     from investment_dashboard.services import refresh_status
 
     refresh_status.reset()
-    body = api_client.get("/api/overview").json()
+    body = get_one(api_client, "/api/overview")
     fresh = body["freshness"]
     assert fresh["market_state"] in ("open", "closed", "holiday")
     # No refresh has landed in this process: never "live".
@@ -163,12 +160,12 @@ def test_freshness_caption_and_default_range(
 
     refresh_status.begin("Scheduled live refresh")
     try:
-        running = api_client.get("/api/overview").json()["freshness"]
+        running = get_one(api_client, "/api/overview")["freshness"]
         assert running["refresh_running"] is True
         assert running["refresh_source"] == "Scheduled live refresh"
     finally:
         refresh_status.finish("Scheduled live refresh", updated=True)
-        after = api_client.get("/api/overview").json()["freshness"]
+        after = get_one(api_client, "/api/overview")["freshness"]
         assert after["last_price_update_at"] is not None
         refresh_status.reset()
 
@@ -204,7 +201,7 @@ def test_prices_live_needs_open_market_and_fresh_price() -> None:
 
 
 def test_today_has_regime_aware_move(api_client: TestClient, seeded: None) -> None:
-    today = api_client.get("/api/overview?ccy=USD").json()["currency"]["today"]
+    today = get_one(api_client, "/api/overview?ccy=USD")["currency"]["today"]
     assert today["since_phrase"]["kind"] in ("since_yesterday", "yesterday", "on_day", "since_day")
     if today["spot"] is not None:
         assert today["pair"] == "EUR/USD"

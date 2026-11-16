@@ -15,6 +15,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
+from api._single import get_one
 from investment_dashboard.db import ledger_session_scope
 from investment_dashboard.domain.market_hours import exchange_today, is_trading_day
 from investment_dashboard.services import intraday_snapshots_service
@@ -42,9 +43,7 @@ def offline_intraday(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _graph(client: TestClient, key: str, ccy: str) -> dict[str, object]:
-    resp = client.get(f"/api/graphs/{key}?ccy={ccy}")
-    assert resp.status_code == 200
-    return resp.json()  # type: ignore[no-any-return]
+    return get_one(client, f"/api/graphs/{key}?ccy={ccy}")  # type: ignore[no-any-return]
 
 
 def _last(body: dict[str, object]) -> Decimal:
@@ -56,7 +55,7 @@ def _last(body: dict[str, object]) -> Decimal:
 
 @pytest.mark.parametrize("ccy", CCYS)
 def test_daily_ranges_end_at_the_hero_total(api_client: TestClient, seeded: None, ccy: str) -> None:
-    total = Decimal(api_client.get(f"/api/overview?ccy={ccy}").json()["kpis"]["total_value"])
+    total = Decimal(get_one(api_client, f"/api/overview?ccy={ccy}")["kpis"]["total_value"])
     today = exchange_today()
     for key in DAILY_RANGES:
         body = _graph(api_client, key, ccy)
@@ -84,7 +83,7 @@ def test_daily_ranges_agree_on_shared_dates(api_client: TestClient, seeded: None
 def test_intraday_ranges_end_at_the_hero_total(
     api_client: TestClient, seeded: None, offline_intraday: None, ccy: str
 ) -> None:
-    total = Decimal(api_client.get(f"/api/overview?ccy={ccy}").json()["kpis"]["total_value"])
+    total = Decimal(get_one(api_client, f"/api/overview?ccy={ccy}")["kpis"]["total_value"])
     day, week = _graph(api_client, "1d", ccy), _graph(api_client, "1w", ccy)
     if not day["points"]:
         pytest.skip("no live tip without a priced book")
@@ -131,7 +130,7 @@ def test_one_day_growth_is_the_headline_daily_move(
     body = _graph(api_client, "1d", "USD")
     if not body["points"] or body["growth"] is None:
         pytest.skip("no live tip / reference")
-    kpis = api_client.get("/api/overview?ccy=USD").json()["kpis"]
+    kpis = get_one(api_client, "/api/overview?ccy=USD")["kpis"]
     if kpis["daily_growth_pct"] is None:
         pytest.skip("no daily move yet")
     growth = Decimal(body["growth"]["pct"])  # type: ignore[index]

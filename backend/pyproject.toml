@@ -30,10 +30,9 @@ dependencies = [
     "python-dateutil>=2.9",
     "openpyxl>=3.1",
     "cryptography>=48.0.1",
-    # OS keychain access for the live-web companion secrets (mobile passphrase
-    # and GitHub publish token) and the optional synced-tier passphrase. Kept in
-    # core deps so the companion works out of the box; only the heavy SQLCipher
-    # driver below stays optional.
+    # OS keychain access for the optional database passphrase
+    # (storage/encryption.py). Only the heavy SQLCipher driver below stays
+    # optional.
     "keyring>=24.0",
     # v6 hosted server: password hashing, passkeys, multipart uploads.
     "argon2-cffi>=23.1",
