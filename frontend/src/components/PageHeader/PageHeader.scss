@@ -6,7 +6,7 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
 
   @include m.phone {
     margin-bottom: var(--space-4);
@@ -21,10 +21,8 @@
   }
 
   &__title {
-    font-size: var(--font-size-2xl);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: -0.02em;
-    line-height: var(--line-height-tight);
+    // The page's name in the display serif: the one place the type itself sets the tone.
+    @include m.display(var(--font-size-3xl));
 
     @include m.phone {
       @include m.visually-hidden;

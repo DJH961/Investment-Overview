@@ -20,10 +20,10 @@
     width: calc(100vw - var(--space-6));
     max-width: var(--dialog-width);
     max-height: calc(100dvh - var(--space-6));
-    padding: var(--space-5);
+    padding: var(--space-6);
     background: var(--color-surface);
     border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     box-shadow: var(--shadow-2);
     transform: translate(-50%, -50%);
     animation: dialog-pop var(--duration-base) var(--ease-standard);

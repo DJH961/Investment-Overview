@@ -4,15 +4,17 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-5);
-  background: var(--color-surface);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
+  // The page's subject: the one surface a step above the cards (larger radius, more air).
+  padding: var(--space-6) var(--space-7);
+  @include m.surface(var(--radius-xl));
+
+  @include m.tablet-only {
+    padding: var(--space-6);
+  }
 
   // Same inset as the Card on phones, so the figure gets the width the cards give theirs.
   @include m.phone {
-    padding: var(--space-4);
+    padding: var(--card-pad-y) var(--card-pad-x);
   }
 
   &__main {
@@ -94,6 +96,7 @@
     align-items: baseline;
     gap: var(--space-2) var(--space-4);
     min-width: 0;
+    margin: var(--space-1) 0 var(--space-2);
 
     @include m.phone {
       flex-direction: column;
@@ -101,19 +104,15 @@
     }
   }
 
+  // The headline figure in the display serif (lining tabular figures): the one
+  // memorable element of the new edition. Hide mode swaps the digits, not the type.
   &__value {
-    font-size: calc(var(--font-size-3xl) * var(--kpi-tile-fit, 1));
+    @include m.display(calc(var(--font-size-3xl) * var(--kpi-tile-fit, 1)));
 
-    // Desktop has the room, and the v5 app led with a figure this size: the
-    // headline should read as the page's subject, not as one stat among many.
+    // Desktop has the room: the headline reads as the page's subject, not one stat among many.
     @include m.desktop {
-      font-size: calc(var(--font-size-4xl) * var(--kpi-tile-fit, 1));
+      font-size: calc(var(--font-size-display) * var(--kpi-tile-fit, 1));
     }
-
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: -0.02em;
-    line-height: var(--line-height-tight);
-    font-variant-numeric: tabular-nums;
   }
 
   // The big number and, while a twin estimates a fund, its "≈ est." chip.

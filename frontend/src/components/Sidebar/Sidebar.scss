@@ -8,7 +8,8 @@
   flex-direction: column;
   width: var(--sidebar-width);
   padding: var(--space-5) var(--space-4);
-  background: var(--color-surface);
+  // The sidebar sits on the canvas, a shade apart from it: the cards are the surfaces.
+  background: var(--color-bg);
   border-right: var(--border-width) solid var(--color-border);
   transition: width var(--duration-base) var(--ease-standard);
 
@@ -46,6 +47,7 @@
 
   &__brand-text {
     font-size: var(--font-size-sm);
+    letter-spacing: var(--tracking-tight);
   }
 
   &--rail &__brand-text,
@@ -88,25 +90,24 @@
 
   &__group-title {
     padding: var(--space-3) var(--space-3) var(--space-2);
+    @include m.eyebrow;
     color: var(--color-faint);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
 
   &__list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: 2px;
   }
 
+  // Quiet rows; the open page is a raised surface pill with an accent icon.
   &__link {
     display: flex;
     align-items: center;
     gap: var(--space-3);
     height: var(--sidebar-item-height);
     padding: 0 var(--space-3);
+    border: var(--border-width) solid transparent;
     border-radius: var(--radius-sm);
     color: var(--color-muted);
     font-size: var(--font-size-sm);
@@ -121,11 +122,18 @@
       color: var(--color-fg);
     }
 
-    &--active {
-      background: var(--color-accent-soft);
-      color: var(--color-accent);
+    &--active,
+    &--active:hover {
+      background: var(--color-surface);
+      border-color: var(--color-border);
+      box-shadow: var(--shadow-1);
+      color: var(--color-fg);
       font-weight: var(--font-weight-semibold);
     }
+  }
+
+  &__link--active &__icon {
+    color: var(--color-accent);
   }
 
   &--rail &__link {

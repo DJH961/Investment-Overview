@@ -10,8 +10,10 @@
   gap: var(--space-4);
   min-height: calc(var(--topbar-height) + var(--safe-top));
   padding: var(--safe-top) var(--space-6) 0;
-  background: var(--color-surface);
+  // Frosted canvas: the page scrolls softly under it instead of a hard white bar.
+  background: var(--color-surface-glass);
   border-bottom: var(--border-width) solid var(--color-border);
+  backdrop-filter: saturate(1.4) blur(14px);
 
   &__title-block {
     display: flex;
@@ -39,6 +41,23 @@
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;
+  }
+
+  // The freshness chip and (v7) the market clock: one row that wraps rather than clips.
+  &__status {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  &__clock {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
   }
 
   // Phone: the short form, with a readable minimum, wrapping if it must (some pages
@@ -86,7 +105,8 @@
     padding: var(--space-1) var(--space-3);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-full);
-    background: var(--color-surface-2);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-1);
     font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
@@ -253,6 +273,10 @@
 
     .top-bar__freshness {
       max-width: 100%;
+    }
+
+    .top-bar__status {
+      gap: 0 var(--space-2);
     }
   }
 }

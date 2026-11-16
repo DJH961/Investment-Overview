@@ -5,11 +5,8 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-4) var(--space-5);
-  background: var(--color-surface);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
+  padding: var(--space-5) var(--card-pad-x);
+  @include m.surface;
   // The value is sized from the tile's own width so long figures never spill
   // into the next tile; KpiTile.tsx shrinks it further via --kpi-tile-fit.
   container-type: inline-size;
@@ -74,8 +71,8 @@
       font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-xl)) * var(--kpi-tile-fit, 1));
     }
     white-space: nowrap;
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: -0.02em;
+    font-weight: var(--font-weight-figure);
+    letter-spacing: var(--tracking-display);
     line-height: var(--line-height-tight);
     font-variant-numeric: tabular-nums;
   }

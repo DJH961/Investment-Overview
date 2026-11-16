@@ -6,8 +6,9 @@
   grid-template-columns: repeat(5, 1fr);
   height: calc(var(--tabbar-height) + var(--safe-bottom));
   padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
-  background: var(--color-surface);
+  background: var(--color-surface-glass);
   border-top: var(--border-width) solid var(--color-border);
+  backdrop-filter: saturate(1.4) blur(14px);
 
   &__tab {
     display: flex;
@@ -23,13 +24,24 @@
     text-decoration: none;
 
     &--active {
-      color: var(--color-accent);
+      color: var(--color-fg);
+      font-weight: var(--font-weight-semibold);
     }
   }
 
+  // The open tab: its icon sits in a soft accent pill (shape + weight, not hue alone).
   &__icon {
-    width: var(--icon-lg);
-    height: var(--icon-lg);
+    box-sizing: content-box;
+    width: var(--icon-md);
+    height: var(--icon-md);
+    padding: 2px var(--space-4);
+    border-radius: var(--radius-full);
+    transition: background-color var(--duration-base) var(--ease-standard);
+  }
+
+  &__tab--active &__icon {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
   }
 
   // Fixed wording: smaller type on the narrowest phones so "Transactions" fits.

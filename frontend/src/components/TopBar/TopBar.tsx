@@ -40,6 +40,11 @@ export interface TopBarProps {
   privacyToggle?: ReactNode;
   /** Extra content on the left, for example breadcrumbs. */
   leading?: ReactNode;
+  /**
+   * The market clock slot (v7): a `<Chip size="sm">` such as "Opens 15:30". It sits
+   * beside the freshness chip on every width (phones: give it the short form).
+   */
+  clock?: ReactNode;
 }
 
 const CURRENCIES = [
@@ -103,6 +108,7 @@ export function TopBar({
   privacyToggle,
   leading,
   summary,
+  clock,
 }: TopBarProps) {
   const { currency, setCurrency, theme, cycleTheme } = usePrefs();
   const navigate = useNavigate();
@@ -141,14 +147,19 @@ export function TopBar({
             </span>
           )}
         </div>
-        {freshness.label && (
-          <Freshness
-            className="top-bar__freshness"
-            status={freshness.status}
-            label={shortChip ? freshness.short! : freshness.label}
-            title={shortChip ? freshness.label : freshness.updated}
-            stacked={!shortChip}
-          />
+        {(freshness.label || clock) && (
+          <div className="top-bar__status">
+            {freshness.label && (
+              <Freshness
+                className="top-bar__freshness"
+                status={freshness.status}
+                label={shortChip ? freshness.short! : freshness.label}
+                title={shortChip ? freshness.label : freshness.updated}
+                stacked={!shortChip}
+              />
+            )}
+            {clock && <span className="top-bar__clock">{clock}</span>}
+          </div>
         )}
         {!compact && freshness.updated && (
           <span className="top-bar__updated" title="When the app last fetched prices">
