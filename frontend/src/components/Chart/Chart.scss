@@ -75,7 +75,7 @@
     border-radius: var(--radius-sm);
 
     &:focus-visible {
-      box-shadow: 0 0 0 2px var(--color-accent);
+      box-shadow: 0 0 0 var(--space-1) var(--color-accent-soft), 0 0 0 2px var(--color-accent);
     }
   }
 
@@ -83,6 +83,7 @@
     stroke: var(--color-border);
     stroke-width: 1;
     stroke-dasharray: 2 4;
+    opacity: 0.7;
   }
 
   &__session-sep {
@@ -249,10 +250,10 @@
   &__tooltip {
     position: absolute;
     z-index: var(--z-raised);
-    min-width: 140px;
-    padding: var(--space-2) var(--space-3);
+    min-width: 9rem;
+    padding: var(--space-3);
     background: var(--color-surface);
-    border: var(--border-width) solid var(--color-border-strong);
+    border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-2);
     font-size: var(--font-size-sm);
@@ -325,7 +326,7 @@
     flex-wrap: wrap;
     align-items: center;
     min-height: var(--control-height-sm);
-    gap: var(--space-4);
+    gap: var(--space-2);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -339,7 +340,7 @@
     gap: var(--space-2);
 
     &--off {
-      opacity: 0.5;
+      opacity: 0.55;
     }
   }
 
@@ -348,10 +349,11 @@
     align-items: center;
     gap: var(--space-2);
     min-height: var(--control-height-sm);
-    padding: 0 var(--space-2);
-    background: none;
+    padding: 0 var(--space-3);
+    background: var(--color-surface-2);
     border: var(--border-width) solid transparent;
-    border-radius: var(--radius-sm);
+    transition: border-color var(--duration-fast) var(--ease-standard);
+    border-radius: var(--radius-full);
     color: inherit;
     font: inherit;
     cursor: pointer;

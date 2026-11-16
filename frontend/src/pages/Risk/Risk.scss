@@ -7,13 +7,13 @@
 
   &__stack {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
   }
 
   &__headline {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--space-3);
+    gap: var(--page-gap);
     @include m.phone-tile-grid;
 
     @include m.tablet-only {
@@ -23,7 +23,7 @@
 
   &__main {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
 
     @include m.desktop {
       grid-template-columns: minmax(0, 1fr) minmax(22rem, 26rem);
@@ -46,7 +46,7 @@
 
   &__groups {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
 
     // Tablet: two groups side by side.
     @include m.tablet-only {
@@ -71,8 +71,8 @@
 // Section label above each metric group ("RETURNS", "RISK AND VOLATILITY").
 .risk-page__group-title {
   margin: 0;
-  padding-bottom: var(--space-1);
-  border-bottom: var(--border-width) solid var(--color-border-strong);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--border-width) solid var(--color-border);
   @include m.eyebrow;
 }
 
@@ -159,6 +159,6 @@
 // they line up with the card title instead of sitting a step further in.
 .risk-page__attribution {
   @include m.phone {
-    margin-inline: calc(-1 * var(--space-4));
+    margin-inline: calc(-1 * var(--card-pad-x));
   }
 }

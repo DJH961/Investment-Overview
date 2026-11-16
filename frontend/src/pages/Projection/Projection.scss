@@ -5,7 +5,7 @@
 
   &__layout {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
     grid-template-columns: 1fr;
 
     @include m.desktop {
@@ -36,7 +36,7 @@
 
   &__results {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
     min-width: 0;
 
     // Phone: the answer first, the assumptions to tweak it below.
@@ -53,11 +53,7 @@
 
   &__headline {
     margin: var(--space-1) 0 0;
-    font-size: var(--font-size-3xl);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: -0.02em;
-    line-height: var(--line-height-tight);
-    font-variant-numeric: tabular-nums;
+    @include m.figure(var(--font-size-3xl));
 
     @include m.phone {
       font-size: var(--font-size-2xl);

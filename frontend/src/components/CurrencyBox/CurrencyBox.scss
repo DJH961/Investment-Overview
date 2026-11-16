@@ -4,7 +4,6 @@
   &__title {
     @include m.phone {
       font-size: var(--font-size-sm);
-      letter-spacing: -0.02em;
       white-space: nowrap;
     }
   }
@@ -75,18 +74,20 @@
   &__left {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--space-4);
   }
 
+  // The three figures: equal cells split by hairlines (StatStrip / KpiGrid language).
   &__stats {
     display: grid;
-    gap: var(--space-3);
     // Three columns at every width (pair, move, since), as in v5.
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin: 0;
+    overflow: hidden;
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
 
     @include m.phone {
-      gap: var(--space-2);
       // Give the spot column slightly more room for "as of DD/MM, HH:MM" on 360-390px phones.
       grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.85fr);
     }
@@ -97,6 +98,14 @@
     flex-direction: column;
     gap: var(--space-1);
     min-width: 0;
+    padding: var(--space-4) var(--space-5);
+    box-shadow:
+      calc(-1 * var(--border-width)) 0 0 0 var(--color-border),
+      0 calc(-1 * var(--border-width)) 0 0 var(--color-border);
+
+    @include m.phone {
+      padding: var(--space-3);
+    }
   }
 
   &__label {
@@ -104,10 +113,8 @@
   }
 
   &__value {
+    @include m.figure(var(--font-size-xl));
     margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    font-variant-numeric: tabular-nums;
 
     @include m.phone {
       font-size: var(--font-size-md);
@@ -191,17 +198,11 @@
 
   &__effect-title {
     @include m.eyebrow;
-
-    @include m.phone {
-      letter-spacing: 0.02em;
-    }
   }
 
   &__effect-net {
+    @include m.figure(var(--font-size-xl));
     flex-shrink: 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    font-variant-numeric: tabular-nums;
 
     @include m.phone {
       font-size: var(--font-size-md);

@@ -3,7 +3,7 @@
 .settings {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--page-gap);
 
   &__header-actions {
     display: flex;
@@ -15,10 +15,11 @@
   &__layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-4);
+    gap: var(--page-gap);
 
     @include m.tablet-up {
       grid-template-columns: 220px minmax(0, 1fr);
+      gap: var(--space-7);
       align-items: start;
     }
   }
@@ -26,7 +27,7 @@
   &__content {
     display: flex;
     flex-direction: column;
-    gap: var(--space-6);
+    gap: var(--page-gap);
     min-width: 0;
 
     @include m.phone {
@@ -121,7 +122,7 @@
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-1);
     min-width: 0;
   }
 
@@ -151,10 +152,15 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-4);
     border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     color: var(--color-fg);
     font-size: var(--font-size-sm);
     text-decoration: none;
+    transition: border-color var(--duration-fast) var(--ease-standard);
+
+    &:hover {
+      border-color: var(--color-faint);
+    }
 
     &--sm {
       padding: var(--space-1) var(--space-3);
@@ -203,6 +209,7 @@
     &--active {
       background: var(--color-accent-soft);
       color: var(--color-fg);
+      font-weight: var(--font-weight-medium);
     }
   }
 
@@ -221,9 +228,7 @@
 
 // Phone: every section on one page, each foldable.
 .settings-fold {
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  @include m.surface;
 
   &__heading {
     margin: 0;
@@ -237,7 +242,7 @@
     gap: var(--space-2);
     width: 100%;
     min-height: var(--tap-min);
-    padding: var(--space-2) var(--space-4);
+    padding: var(--space-2) var(--card-pad-x);
     border: 0;
     background: none;
     color: var(--color-fg);
@@ -281,7 +286,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    padding: 0 var(--space-3) var(--space-3);
+    padding: 0 var(--card-pad-x) var(--card-pad-y);
   }
 }
 
@@ -289,10 +294,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  padding: var(--space-4) var(--card-pad-x);
+  @include m.surface(var(--radius-md));
+  box-shadow: none;
 
   &--dirty {
     border-color: var(--color-warn);
@@ -366,9 +370,8 @@
   &__textarea {
     width: 100%;
     padding: var(--space-2) var(--space-3);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
+    @include m.well(var(--radius-sm));
+    border: var(--border-width) solid var(--color-border);
     color: var(--color-fg);
     font-family: var(--font-sans);
     font-size: var(--font-size-sm);
@@ -430,7 +433,7 @@
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   border: var(--border-width) solid var(--color-warn);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-2);
 

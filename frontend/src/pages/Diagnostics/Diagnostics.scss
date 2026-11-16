@@ -19,7 +19,7 @@
 .diagnostics {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--page-gap);
 
   &__tabs {
     overflow-x: auto;
@@ -33,7 +33,7 @@
   &__tab {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--page-gap);
   }
 
   &__muted {
@@ -82,7 +82,7 @@
     flex-direction: column;
     gap: var(--space-2);
     padding: var(--space-3);
-    border-left: 3px solid var(--color-border-strong);
+    border-left: var(--space-1) solid var(--color-border-strong);
     border-radius: var(--radius-sm);
     background: var(--color-surface-2);
 

@@ -5,7 +5,7 @@
 
   &__stack {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
   }
 
   &__kpis {
@@ -44,7 +44,7 @@
     font-size: var(--font-size-sm);
   }
 
-  // Small uppercase badge. Neutral on purpose: blue and orange mean gain and loss here,
+  // Small badge. Neutral on purpose: blue and orange mean gain and loss here,
   // and the word (deposit, withdrawal) already says which way the cash went.
   &__kind {
     display: inline-block;
@@ -54,8 +54,6 @@
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
     white-space: nowrap;
   }
 }

@@ -3,13 +3,13 @@
 .conversions {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--page-gap);
 
   &__kpis {
     display: grid;
     // Two tiles today: fill the row instead of leaving half of it blank.
     grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: var(--space-3);
+    gap: var(--page-gap);
     @include m.phone-tile-grid;
   }
 

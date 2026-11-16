@@ -1,28 +1,48 @@
+@use "../../styles/mixins" as m;
+
+// The figure grid speaks the StatStrip / KpiGrid language: equal cells split by
+// hairlines (each cell draws its top and left rule, the frame clips the outer ones).
 .currency-lifetime {
   &__grid {
     display: grid;
-    gap: var(--space-4);
-    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     margin: 0;
+    overflow: hidden;
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+
+    @include m.tablet-up {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
   }
 
   &__stat {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-4) var(--space-5);
+    box-shadow:
+      calc(-1 * var(--border-width)) 0 0 0 var(--color-border),
+      0 calc(-1 * var(--border-width)) 0 0 var(--color-border);
+
+    @include m.phone {
+      padding: var(--space-3) var(--space-4);
+    }
   }
 
   &__label {
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
+    @include m.eyebrow;
   }
 
   &__value {
+    @include m.figure(var(--font-size-xl));
     margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+
+    @include m.phone {
+      font-size: var(--font-size-lg);
+    }
 
     &--pos {
       color: var(--color-pos);
@@ -37,5 +57,6 @@
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
   }
 }
