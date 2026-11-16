@@ -107,6 +107,20 @@ function MetricRow({ label, tip, value, hint }: { label: string; tip?: string; v
 
 const isLookback = (v: unknown): v is string => typeof v === "string" && LOOKBACKS.some((l) => l.value === v);
 
+/**
+ * The metrics card's window. A range longer than the history starts at the first
+ * invested day (the server trims the empty days), so it says so instead of
+ * claiming a full "5Y lookback".
+ */
+export function metricsSubtitle(lookback: string, start?: string, asOf?: string): string {
+  if (lookback === "0") return "Since the first transaction";
+  const label = `${LOOKBACKS.find((l) => l.value === lookback)?.label ?? ""} lookback`;
+  const days = Number(lookback);
+  if (!start || !asOf || !(days > 0)) return label;
+  const fullStart = Date.parse(asOf) - days * 86_400_000;
+  return Date.parse(start) > fullStart + 7 * 86_400_000 ? `${label} · from your first investment` : label;
+}
+
 export function Risk() {
   const { currency } = usePrefs();
   const defaultLookback = String(useDisplayPrefs().riskLookback);
@@ -277,7 +291,7 @@ export function Risk() {
           <Card
             className="risk-page__metrics-card"
             title="All metrics"
-            subtitle={lookback === "0" ? "Since the first transaction" : `${LOOKBACKS.find((l) => l.value === lookback)?.label ?? ""} lookback`}
+            subtitle={metricsSubtitle(lookback, d?.start, d?.as_of)}
             collapsibleId="risk.metrics"
           >
             <div className="risk-page__groups">

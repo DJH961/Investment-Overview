@@ -145,6 +145,100 @@ def holding_day_move(
     )
 
 
+@dataclass(frozen=True)
+class HoldingDaySplit:
+    """A holding's day move cut into the session and the overnight currency, per currency.
+
+    After the US close the day move (previous close at its close rate -> now) is
+    ``session`` (close price x the session-close rate, minus the baseline) plus
+    ``overnight`` (value now minus close price x the close rate: only the rate moved).
+    Money is rounded to the cent with ``overnight = rounded total - rounded session``,
+    so the two parts always add up to the row's ``today_move``. The % use the same
+    previous-mark base as the headline day %, so ``session_pct + overnight_pct`` is
+    the day %. In USD a USD-native holding has no overnight move at all.
+    """
+
+    session_eur: Decimal | None
+    session_usd: Decimal | None
+    overnight_eur: Decimal | None
+    overnight_usd: Decimal | None
+    session_pct_eur: Decimal | None
+    session_pct_usd: Decimal | None
+    overnight_pct_eur: Decimal | None
+    overnight_pct_usd: Decimal | None
+
+
+_CENT = Decimal("0.01")
+
+
+def _cents(value: Decimal) -> Decimal:
+    return value.quantize(_CENT, rounding="ROUND_HALF_UP")
+
+
+def _split_leg(
+    now: Decimal | None, at_close: Decimal | None, prev: Decimal | None
+) -> tuple[Decimal | None, Decimal | None, Decimal | None, Decimal | None]:
+    if now is None or at_close is None or prev is None:
+        return None, None, None, None
+    session = _cents(at_close - prev)
+    overnight = _cents(now - prev) - session
+    if prev <= ZERO:
+        return session, overnight, None, None
+    return session, overnight, (at_close - prev) / prev, (now - at_close) / prev
+
+
+def holding_day_split(
+    *,
+    shares: Decimal,
+    native_currency: str,
+    legs: DayLegs,
+    rate_close: Decimal | None,
+    rate_last: Decimal | None,
+    rate_prev: Decimal | None,
+) -> HoldingDaySplit:
+    """Split :func:`holding_day_move` (same inputs) at the session close.
+
+    ``rate_close`` is the session's 16:00 close rate (the ``last`` mark's close
+    value), ``rate_last`` the rate now (the one the day move's current mark uses).
+    """
+    last_native = shares * legs.close_last
+    now_eur, now_usd = convert_native(last_native, native_currency, rate_last)
+    close_eur, close_usd = convert_native(last_native, native_currency, rate_close)
+    prev_eur, prev_usd = convert_native(shares * legs.close_prev, native_currency, rate_prev)
+    s_eur, o_eur, sp_eur, op_eur = _split_leg(now_eur, close_eur, prev_eur)
+    s_usd, o_usd, sp_usd, op_usd = _split_leg(now_usd, close_usd, prev_usd)
+    return HoldingDaySplit(s_eur, s_usd, o_eur, o_usd, sp_eur, sp_usd, op_eur, op_usd)
+
+
+def holding_open_day_split(
+    *,
+    shares: Decimal,
+    native_currency: str,
+    legs: DayLegs,
+    rate_open: Decimal | None,
+    rate_last: Decimal | None,
+    rate_prev: Decimal | None,
+) -> HoldingDaySplit:
+    """The same cut while the market trades: last night's overnight, then the session.
+
+    ``overnight`` is the previous close's holding (``shares x close_prev``) revalued from
+    the previous close rate ``rate_prev`` to the rate at today's open ``rate_open``
+    (the same revaluation as ``metrics_service.fx_revaluation``); ``session`` is the rest of
+    the day move (prices and intraday FX), so the two add up to :func:`holding_day_move`.
+    """
+    prev_native = shares * legs.close_prev
+    now_eur, now_usd = convert_native(shares * legs.close_last, native_currency, rate_last)
+    prev_eur, prev_usd = convert_native(prev_native, native_currency, rate_prev)
+    open_eur, open_usd = convert_native(prev_native, native_currency, rate_open)
+
+    # ``_split_leg(now, mid, prev)``: first part = mid - prev, rest = now - mid. With
+    # ``mid`` = the previous close's holding at the open rate, the first part is the
+    # OVERNIGHT and the rest the SESSION (the reverse of the shut-market cut).
+    o_eur, s_eur, op_eur, sp_eur = _split_leg(now_eur, open_eur, prev_eur)
+    o_usd, s_usd, op_usd, sp_usd = _split_leg(now_usd, open_usd, prev_usd)
+    return HoldingDaySplit(s_eur, s_usd, o_eur, o_usd, sp_eur, sp_usd, op_eur, op_usd)
+
+
 def group_day_pct(members: Iterable[tuple[Decimal | None, Decimal | None]]) -> Decimal | None:
     """A group's day %: ``sum(move) / sum(prev)`` over its ``(move, prev)`` members.
 

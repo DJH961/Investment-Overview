@@ -125,6 +125,29 @@ class HoldingRow(ApiModel):
     mtd_growth: DecStr | None = Field(default=None, description=f"Month to date ({_FRAC})")
     today_pct: DecStr | None = Field(default=None, description=f"Latest daily move ({_FRAC})")
     today_move: DecStr | None = None
+    day_session: DecStr | None = Field(
+        default=None,
+        description=(
+            "When the currency moved: the session part of today_move (after the close the last session; while the market trades everything since the open) "
+            "(close price x close rate minus the previous-close baseline). "
+            "day_session + day_overnight == today_move. Null otherwise."
+        ),
+    )
+    day_session_pct: DecStr | None = Field(
+        default=None, description=f"day_session over the previous-close value ({_FRAC})"
+    )
+    day_overnight: DecStr | None = Field(
+        default=None,
+        description=(
+            "The currency's overnight move. After the US close: value now minus close "
+            "price x close rate. While the market trades: last night's (previous close rate "
+            "to the open rate). Null when nothing moved (a USD holding in USD)."
+        ),
+    )
+    day_overnight_pct: DecStr | None = Field(
+        default=None,
+        description=f"day_overnight over the previous-close value, today_pct's base ({_FRAC})",
+    )
     daily_growth_as_of: str | None = None
     daily_is_stale: bool
     weight_pct: DecStr | None = Field(

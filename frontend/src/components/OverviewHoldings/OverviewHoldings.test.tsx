@@ -65,6 +65,27 @@ describe("OverviewHoldings", () => {
     expect(screen.getByRole("button", { name: "Holdings" })).toHaveAttribute("aria-expanded", "true");
   });
 
+  it("shows the session / overnight split under a row's day figure only when the server sent one", () => {
+    holdings[7] = row(8, { day_session_pct: "0.0055", day_overnight_pct: "-0.0045", day_overnight: "-4.5" } as never);
+    try {
+      const { container } = render(
+        <MemoryRouter>
+          <OverviewHoldings currency="EUR" />
+        </MemoryRouter>,
+      );
+      const splits = container.querySelectorAll('[data-testid="holding-day-split"]');
+      expect(splits).toHaveLength(1);
+      // A table cell shows only the holding's own session part; the overnight part is said once above.
+      expect(splits[0]).toHaveTextContent(/Session\s*\+0\.55%\s*Overnight\s*-0\.45%/);
+      expect(screen.queryByTestId("overnight-note")).toBeNull(); // no note above the table
+      expect(splits[0].closest('[data-symbol="S8"]')).not.toBeNull();
+      // The compact, stacked form: no "next day" note in a table cell.
+      expect(splits[0]).not.toHaveTextContent("next day");
+    } finally {
+      holdings[7] = row(8);
+    }
+  });
+
   it("shows the mover badges once display.mover_badges is turned on", () => {
     render(
       <DisplayPrefsProvider values={{ "display.mover_badges": SET_ON } as never}>

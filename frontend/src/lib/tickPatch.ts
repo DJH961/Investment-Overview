@@ -200,6 +200,17 @@ function patchRow(row: HoldingRowDto, side: Ccy, fx: number | null, p: TickPrice
   const pct = decimal(side === "EUR" ? p.day_pct_eur : p.day_pct_usd);
   if (move !== null) next.today_move = move;
   if (pct !== null) next.today_pct = pct;
+  // The session / overnight cut of that move (after the close), also the server's: it
+  // travels with the day figure so the two never disagree. Unlike the figures above a
+  // missing value clears the row's split (the 09:30 rollover, or a currency that stopped
+  // moving), because a stale split next to a fresh total would not add up.
+  if (side === "EUR" ? p.day_session_eur !== undefined : p.day_session_usd !== undefined) {
+    const e = side === "EUR";
+    next.day_session = decimal(e ? p.day_session_eur : p.day_session_usd);
+    next.day_session_pct = decimal(e ? p.day_session_pct_eur : p.day_session_pct_usd);
+    next.day_overnight = decimal(e ? p.day_overnight_eur : p.day_overnight_usd);
+    next.day_overnight_pct = decimal(e ? p.day_overnight_pct_eur : p.day_overnight_pct_usd);
+  }
   return next;
 }
 

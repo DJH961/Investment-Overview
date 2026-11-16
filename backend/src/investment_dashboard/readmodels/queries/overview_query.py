@@ -781,6 +781,10 @@ class InstrumentMetrics:
     #: The print date today's move lands on (the newest close diffed). Lets the
     #: overview tell which holdings have repriced more recently than their peers.
     daily_growth_as_of: date | None = None
+    #: After the US close: the day move as session + overnight currency (see
+    #: :func:`_instrument_day_split`); ``None`` while the market is open or when
+    #: this holding's move is not on the book's last session.
+    day_split: day_move.HoldingDaySplit | None = None
 
 
 def get_metrics(session: Session, *, as_of: date | None = None) -> PortfolioMetrics:
@@ -1113,6 +1117,19 @@ def compute_instrument_metrics(  # noqa: PLR0915
             daily_move_eur=daily_move_eur,
             daily_move_usd=daily_move_usd,
             daily_growth_as_of=daily_as_of,
+            day_split=_instrument_day_split(
+                session=session,
+                instrument_id=iid,
+                shares=shares,
+                native_currency=native,
+                eur_to_usd=eur_to_usd,
+                today_rate=today_rate,
+                recent_closes=recent_closes,
+                now=now,
+                latest_price_date=latest_price_date,
+                previous_price_date=previous_price_date,
+                is_money_market=is_mm,
+            ),
         )
     return out
 
@@ -1251,6 +1268,83 @@ def _instrument_daily_growth(
     move_eur = _round_cent(e_last - e_prev)
     move_usd = _round_cent(u_last - u_prev)
     return growth_eur, growth_usd, move_eur, move_usd, legs.as_of
+
+
+def _instrument_day_split(
+    *,
+    session: Session,
+    instrument_id: int,
+    shares: Decimal,
+    native_currency: str,
+    eur_to_usd: dict[date, Decimal],
+    today_rate: Decimal | None,
+    recent_closes: dict[int, list[tuple[date, Decimal]]],
+    now: datetime,
+    latest_price_date: date | None,
+    previous_price_date: date | None,
+    is_money_market: bool,
+) -> day_move.HoldingDaySplit | None:
+    """The holding's day move as session + overnight currency.
+
+    Same legs and rates as :func:`_instrument_daily_growth` (the move is the sum of
+    the two parts). Market shut: the session part values the last close at that
+    session's close rate (``session_close_rate``), the overnight part is what the rate
+    moved since. Market open: the overnight part is LAST NIGHT's (the previous close
+    revalued from the previous close rate to the rate at the open, ``session_open_fx``)
+    and the session the rest of the day move. ``None`` for a money-market fund, when
+    the holding's move is not on the book's last session (an outdated NAV) or without
+    the needed rate.
+    """
+    from investment_dashboard.domain.market_hours import is_us_market_open  # noqa: PLC0415
+
+    if is_money_market:
+        return None
+    market_open = is_us_market_open(now)
+    legs = day_move.select_day_legs(
+        recent_closes.get(instrument_id, []),
+        latest_price_date=latest_price_date,
+        previous_price_date=previous_price_date,
+    )
+    if legs is None or legs.as_of != intraday_snapshots_service.last_session_date(now):
+        return None
+
+    def _leg_rate(on: date, now_leg: bool) -> Decimal | None:
+        live = today_rate if now_leg and today_rate is not None else None
+        if live is None:
+            live = lookup_rate_with_forward_fill(eur_to_usd, on)
+        resolved = intraday_snapshots_service.daily_growth_leg_fx(
+            session,
+            on,
+            now=now,
+            live_rate=live if live is not None else today_rate,
+            now_leg=now_leg,
+        )
+        return resolved if resolved is not None else today_rate
+
+    if market_open:
+        # Market trading: last night's overnight (previous close -> the open rate) + the session.
+        rate_open = intraday_snapshots_service.session_open_fx(session, now=now)
+        if rate_open is None or rate_open <= ZERO:
+            return None
+        return day_move.holding_open_day_split(
+            shares=shares,
+            native_currency=native_currency,
+            legs=legs,
+            rate_open=rate_open,
+            rate_last=_leg_rate(legs.rate_date_last, True),
+            rate_prev=_leg_rate(legs.rate_date_prev, False),
+        )
+    rate_close = intraday_snapshots_service.session_close_rate(session, legs.rate_date_last)
+    if rate_close is None or rate_close <= ZERO:
+        return None
+    return day_move.holding_day_split(
+        shares=shares,
+        native_currency=native_currency,
+        legs=legs,
+        rate_close=rate_close,
+        rate_last=_leg_rate(legs.rate_date_last, True),
+        rate_prev=_leg_rate(legs.rate_date_prev, False),
+    )
 
 
 def _instrument_ytd_growth(
@@ -1691,6 +1785,8 @@ class HoldingCard:
     income_usd: Decimal | None = None
     unrealised_gain_eur: Decimal | None = None
     unrealised_gain_usd: Decimal | None = None
+    #: Session + overnight cut of the day move (market shut), see ``InstrumentMetrics``.
+    day_split: day_move.HoldingDaySplit | None = None
 
 
 def build_holding_cards(
@@ -1784,6 +1880,7 @@ def build_holding_cards(
                 updated_at=fr.updated_at if fr is not None else None,
                 market_open=fr.market_open if fr is not None else False,
                 price_market_time=fr.price_market_time if fr is not None else None,
+                day_split=im.day_split if im is not None else None,
             )
         )
     # Portfolio weight: each card's EUR value as a share of the held total.

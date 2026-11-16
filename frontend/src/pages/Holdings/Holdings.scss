@@ -177,6 +177,13 @@
     align-items: flex-end;
   }
 
+  // "+€966.93  +0.10%": the day's money and % on one line when a split follows.
+  &__day-line {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
   &__stack-sub {
     color: var(--color-muted);
     font-size: var(--font-size-xs);
@@ -315,6 +322,23 @@
     font: inherit;
     text-align: left;
     cursor: pointer;
+  }
+
+  // After the close, when the currency moved: "Session +0.55 %  Overnight −0.45 % · next
+  // day" on its own full-width line between the figures and the chips. It is the phone
+  // row's third line only for rows that have a split, so a quiet row stays as it was.
+  &__item-split {
+    grid-area: split;
+    justify-content: flex-end;
+    font-size: var(--font-size-xs);
+  }
+
+  &__item-head--split {
+    grid-template-areas:
+      "title figures chevron"
+      "split split split"
+      "chips chips chips"
+      "stamp stamp stamp";
   }
 
   &__item-line {

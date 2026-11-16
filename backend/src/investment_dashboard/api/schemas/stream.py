@@ -42,6 +42,18 @@ class TickPrice(ApiModel):
     #: currency (the EUR % is never the USD % reused). Null as above.
     day_pct_eur: DecStr | None = None
     day_pct_usd: DecStr | None = None
+    #: After the US close, when the currency moved: the session / overnight cut of
+    #: ``day_move_*`` (same helper as the holdings rows' ``day_session`` /
+    #: ``day_overnight``; money to the cent, % fractions of the previous-close value).
+    #: Null while the market is open, and per currency when nothing moved.
+    day_session_eur: DecStr | None = None
+    day_session_usd: DecStr | None = None
+    day_session_pct_eur: DecStr | None = None
+    day_session_pct_usd: DecStr | None = None
+    day_overnight_eur: DecStr | None = None
+    day_overnight_usd: DecStr | None = None
+    day_overnight_pct_eur: DecStr | None = None
+    day_overnight_pct_usd: DecStr | None = None
 
 
 class TickCategory(ApiModel):

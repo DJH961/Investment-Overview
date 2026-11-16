@@ -585,6 +585,8 @@ class _Shared:
     cards: list[HoldingCard]
     freshness: dict[int, HoldingFreshness]
     estimates: Any
+    #: Market open: last night's overnight + the session (``metrics_service.open_session_split``).
+    open_split: Any = None
 
 
 def build_overview(
@@ -658,6 +660,7 @@ def _prepare(
         cards=cards,
         freshness=freshness,
         estimates=estimates,
+        open_split=metrics_service.open_session_split(session, metrics, now=now),
     )
 
 
@@ -754,7 +757,7 @@ def _project(session: Session, shared: _Shared, ccy: str) -> dict[str, Any]:
             "bad_history": [c.symbol for c in cards if c.price_data_warning],
             "missing_fx": ["EUR/USD"] if ctx.fx_rate_eur_usd is None else [],
         },
-        "last_session": _last_session(split, ccy),
+        "last_session": _last_session(split or shared.open_split, ccy, market_open=split is None),
         "day_split": _day_split(day_split, ccy),
     }
 
@@ -775,7 +778,7 @@ def _day_split(split: metrics_service.DayMoveSplit | None, ccy: str) -> dict[str
 
 
 def _last_session(
-    split: metrics_service.LastSessionSplit | None, ccy: str
+    split: metrics_service.LastSessionSplit | None, ccy: str, *, market_open: bool = False
 ) -> dict[str, Any] | None:
     if split is None:
         return None
@@ -786,6 +789,7 @@ def _last_session(
     day_move = move + overnight
     prev_value = value_now - day_move
     return {
+        "market_open": market_open,
         "day_move": dec(day_move),
         "day_move_pct": dec(day_move / prev_value if prev_value > ZERO else None),
         "session_date": split.session_date.isoformat(),

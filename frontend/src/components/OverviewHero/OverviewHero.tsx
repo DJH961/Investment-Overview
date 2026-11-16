@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { useRef, type ReactNode } from "react";
+import { DaySplit } from "../DaySplit";
 import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
 import { useFitWidth } from "../KpiTile/useFitWidth";
@@ -230,6 +231,19 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
             options={opts}
           />
         </div>
+        {/*
+          Market shut and the currency moved since the close: the headline above already
+          includes the overnight part, so say how it splits (same line as the graph header).
+        */}
+        {ls && (
+          <DaySplit
+            sessionPct={toNum(ls.move_pct ?? null)}
+            overnightPct={toNum(ls.overnight_pct ?? null)}
+            overnight={toNum(ls.overnight_currency)}
+            currency={currency}
+            data-testid="hero-day-split"
+          />
+        )}
         {data.total_value_complete === false && (
           <p className="overview-hero__note">Some holdings have no live price yet; the total is incomplete.</p>
         )}

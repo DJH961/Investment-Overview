@@ -4372,6 +4372,58 @@
             "title": "Daily Is Stale",
             "type": "boolean"
           },
+          "day_overnight": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The currency's overnight move. After the US close: value now minus close price x close rate. While the market trades: last night's (previous close rate to the open rate). Null when nothing moved (a USD holding in USD).",
+            "title": "Day Overnight"
+          },
+          "day_overnight_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "day_overnight over the previous-close value, today_pct's base (fraction, 0.01 = 1%)",
+            "title": "Day Overnight Pct"
+          },
+          "day_session": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the currency moved: the session part of today_move (after the close the last session; while the market trades everything since the open) (close price x close rate minus the previous-close baseline). day_session + day_overnight == today_move. Null otherwise.",
+            "title": "Day Session"
+          },
+          "day_session_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "day_session over the previous-close value (fraction, 0.01 = 1%)",
+            "title": "Day Session Pct"
+          },
           "dividends": {
             "anyOf": [
               {
@@ -6970,7 +7022,7 @@
         "type": "object"
       },
       "LastSessionMove": {
-        "description": "Outside the session: the day move split into the last session + overnight currency.\n\n``move`` is the official closes/NAVs of ``session_date`` vs ``prev_date``, each\nvalued at its own session's 16:00 EUR/USD rate; ``overnight_currency`` the same\nholdings revalued from that close rate to the rate now. ``move +\novernight_currency`` is the change in ``value_now`` since the previous close.\nAmounts in the response currency (each computed in it, never converted).",
+        "description": "Outside the session: the day move split into the last session + overnight currency.\n\n``move`` is the official closes/NAVs of ``session_date`` vs ``prev_date``, each\nvalued at its own session's 16:00 EUR/USD rate; ``overnight_currency`` the same\nholdings revalued from that close rate to the rate now. ``move +\novernight_currency`` is the change in ``value_now`` since the previous close.\nAmounts in the response currency (each computed in it, never converted).\n\nWhile the market is open (``market_open``) the same block carries the day split the\nother way round: ``overnight_currency`` is LAST NIGHT's currency move only (the\nprevious-close book revalued from the previous close rate ``fx_close`` to the rate\nat today's open ``fx_now``) and ``move`` the session (everything since the open, prices\nand intraday FX); ``move + overnight_currency`` is the headline day move. No ``*_est``\nfields then.",
         "properties": {
           "day_move": {
             "anyOf": [
@@ -7013,6 +7065,11 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Fx Now",
             "type": "string"
+          },
+          "market_open": {
+            "default": false,
+            "title": "Market Open",
+            "type": "boolean"
           },
           "move": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -11984,6 +12041,54 @@
             ],
             "title": "Day Move Usd"
           },
+          "day_overnight_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Overnight Eur"
+          },
+          "day_overnight_pct_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Overnight Pct Eur"
+          },
+          "day_overnight_pct_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Overnight Pct Usd"
+          },
+          "day_overnight_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Overnight Usd"
+          },
           "day_pct_eur": {
             "anyOf": [
               {
@@ -12007,6 +12112,54 @@
               }
             ],
             "title": "Day Pct Usd"
+          },
+          "day_session_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Session Eur"
+          },
+          "day_session_pct_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Session Pct Eur"
+          },
+          "day_session_pct_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Session Pct Usd"
+          },
+          "day_session_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Session Usd"
           },
           "prev_close": {
             "anyOf": [
@@ -13234,7 +13387,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.17.0"
+    "version": "6.17.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -17977,6 +18130,54 @@
                                     ],
                                     "title": "Day Move Usd"
                                   },
+                                  "day_overnight_eur": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Overnight Eur"
+                                  },
+                                  "day_overnight_pct_eur": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Overnight Pct Eur"
+                                  },
+                                  "day_overnight_pct_usd": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Overnight Pct Usd"
+                                  },
+                                  "day_overnight_usd": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Overnight Usd"
+                                  },
                                   "day_pct_eur": {
                                     "anyOf": [
                                       {
@@ -18000,6 +18201,54 @@
                                       }
                                     ],
                                     "title": "Day Pct Usd"
+                                  },
+                                  "day_session_eur": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Session Eur"
+                                  },
+                                  "day_session_pct_eur": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Session Pct Eur"
+                                  },
+                                  "day_session_pct_usd": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Session Pct Usd"
+                                  },
+                                  "day_session_usd": {
+                                    "anyOf": [
+                                      {
+                                        "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "title": "Day Session Usd"
                                   },
                                   "prev_close": {
                                     "anyOf": [

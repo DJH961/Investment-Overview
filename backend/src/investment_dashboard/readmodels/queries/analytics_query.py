@@ -31,12 +31,9 @@ from investment_dashboard.domain.attribution import (
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.domain.kinds import TransactionKind
 from investment_dashboard.domain.returns import (
-    Cashflow,
-    DailyValuation,
     annualize_return,
     growth_index,
     rebase_funded_series,
-    twr,
 )
 from investment_dashboard.domain.risk import (
     alpha,
@@ -381,6 +378,15 @@ def build_bundle(
         benchmark_values=benchmark_values or None,
     )
 
+    # A window that starts before the first investment (5Y on a 2-year history, or
+    # All) begins on the first day with money invested, so no figure divides by an
+    # empty start value and a 5Y window equals All. An all-zero curve is left as is.
+    lead = next((i for i, p in enumerate(curve) if p.portfolio_value > 0), 0)
+    if lead:
+        curve = curve[lead:]
+        start = curve[0].date
+        benchmark_series = benchmark_service.get_series(session, start=start, end=as_of)
+
     new_money = [
         pt.cumulative_contributions - curve[i - 1].cumulative_contributions if i else ZERO
         for i, pt in enumerate(curve)
@@ -425,23 +431,10 @@ def build_bundle(
         else None
     )
 
-    twr_input = [DailyValuation(p.date, p.portfolio_value) for p in curve]
-    # TWR uses the same deposit/withdrawal cashflows as the headline XIRR.
-    twr_cashflows = [
-        Cashflow(d, c)
-        for d, c in (
-            (
-                pt.date,
-                pt.cumulative_contributions
-                - (curve[i - 1].cumulative_contributions if i else ZERO),
-            )
-            for i, pt in enumerate(curve)
-        )
-        if c != 0
-    ]
-    # Convert into TWR's sign convention (negative = contribution INTO portfolio).
-    twr_cashflows = [Cashflow(c.date, -c.amount) for c in twr_cashflows]
-    twr_val = twr(twr_input, twr_cashflows) if len(twr_input) >= 2 else None
+    # TWR is the chained growth index over the invested part of the window (the
+    # same chain :func:`twr` builds), so All and any window longer than the ledger
+    # report it instead of failing on an empty start value.
+    twr_val = index[-1] - Decimal(1) if first_invested and len(index) >= 2 else None
 
     vol = annualized_volatility(daily_rets)
     sharpe = sharpe_ratio(daily_rets, rf_rate) if rf_rate is not None else None

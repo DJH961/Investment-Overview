@@ -19,8 +19,10 @@
       column-gap: var(--space-5);
     }
 
+    // The weight bar gives way first, so the Day column's two lines ("+€966.93 +0.10%"
+    // over "☀ +0.55%  ☾ −0.45%") always fit beside the value at 1024 px.
     @include m.desktop {
-      grid-template-columns: minmax(12rem, 1.8fr) minmax(8rem, 1fr) auto auto auto;
+      grid-template-columns: minmax(10rem, 1.8fr) minmax(4.5rem, 1fr) auto auto auto;
     }
   }
 
@@ -442,5 +444,12 @@
     &__twin &__total {
       display: flex;
     }
+  }
+
+  // "+€966.93  +0.10%": the day's money and % on one line when a split follows.
+  &__day-line {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-2);
   }
 }

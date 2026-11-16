@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import market_hours
+from investment_dashboard.domain.day_move import HoldingDaySplit
 from investment_dashboard.domain.instruments import is_nav_priced
 from investment_dashboard.domain.late_data import Holding, value_at_rate
 from investment_dashboard.domain.returns import capital_gain_excl_income
@@ -116,6 +117,31 @@ def portfolio_return_split(
     return total_return, capital_gain_excl_income(total_return, income), income
 
 
+def day_split_fields(split: HoldingDaySplit | None, ccy: str) -> dict[str, Any]:
+    """``day_session`` / ``day_overnight`` (+ ``_pct``) in ``ccy``; all null with no overnight move.
+
+    After the close only: session + overnight == ``today_move`` (and the %s add up to
+    ``today_pct``). Null while the market is open and when the currency did not move
+    for this holding (every USD holding in the USD view): nothing to explain.
+    """
+    usd = ccy == "USD"
+    session = split.session_usd if split and usd else (split.session_eur if split else None)
+    overnight = split.overnight_usd if split and usd else (split.overnight_eur if split else None)
+    if split is None or session is None or overnight is None or overnight == ZERO:
+        return {
+            "day_session": None,
+            "day_session_pct": None,
+            "day_overnight": None,
+            "day_overnight_pct": None,
+        }
+    return {
+        "day_session": dec(session),
+        "day_session_pct": dec(split.session_pct_usd if usd else split.session_pct_eur),
+        "day_overnight": dec(overnight),
+        "day_overnight_pct": dec(split.overnight_pct_usd if usd else split.overnight_pct_eur),
+    }
+
+
 def holding_row(
     card: HoldingCard,
     position: Position,
@@ -161,6 +187,7 @@ def holding_row(
         ),
         "today_pct": dec(pick(card.daily_growth_eur, card.daily_growth_usd, ccy)),
         "today_move": dec(pick(card.daily_move_eur, card.daily_move_usd, ccy)),
+        **day_split_fields(card.day_split, ccy),
         "daily_growth_as_of": iso(card.daily_growth_as_of),
         "daily_is_stale": card.daily_is_stale,
         "weight_pct": dec(card.weight),

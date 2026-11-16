@@ -42,6 +42,25 @@ describe("MoversCard", () => {
     }
   });
 
+  it("says 'incl. overnight' after the close when the currency moved, and not otherwise", () => {
+    const now = new Date("2020-06-26T18:00:00Z");
+    const moved = { overnight_pct: "-0.0045", overnight_currency: "-900" } as OverviewDto["last_session"];
+    const { rerender } = render(<MoversCard movers={movers} currency="EUR" loading={false} now={now} lastSession={moved} />);
+    expect(screen.getByText("Today · incl. overnight")).toBeInTheDocument();
+    rerender(
+      <MoversCard
+        movers={movers}
+        currency="USD"
+        loading={false}
+        now={now}
+        lastSession={{ overnight_pct: "0", overnight_currency: "0" } as OverviewDto["last_session"]}
+      />,
+    );
+    expect(screen.getByText("Today")).toBeInTheDocument();
+    rerender(<MoversCard movers={movers} currency="EUR" loading={false} now={now} lastSession={null} />);
+    expect(screen.getByText("Today")).toBeInTheDocument();
+  });
+
   it("shows an empty side as a quiet line", () => {
     render(<MoversCard movers={{ ...movers, losers: [] }} currency="EUR" loading={false} />);
     expect(screen.getByText("No losers")).toBeInTheDocument();

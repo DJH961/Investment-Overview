@@ -307,8 +307,17 @@ class LastSessionMove(ApiModel):
     holdings revalued from that close rate to the rate now. ``move +
     overnight_currency`` is the change in ``value_now`` since the previous close.
     Amounts in the response currency (each computed in it, never converted).
+
+    While the market is open (``market_open``) the same block carries the day split the
+    other way round: ``overnight_currency`` is LAST NIGHT's currency move only (the
+    previous-close book revalued from the previous close rate ``fx_close`` to the rate
+    at today's open ``fx_now``) and ``move`` the session (everything since the open, prices
+    and intraday FX); ``move + overnight_currency`` is the headline day move. No ``*_est``
+    fields then.
     """
 
+    #: True while the US market trades (``move`` = session since the open, overnight = last night's).
+    market_open: bool = False
     session_date: str
     prev_date: str
     move: DecStr
