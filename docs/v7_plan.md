@@ -9,11 +9,15 @@
 > Currency tab redesigned (§5), the work grouped into ten pushes with a
 > clear cut before the model features (§8), accepted additions in §9a.
 > Additions from the owner's 2026-11-15 list are in §9b.
+> Reworked 2026-11-16: 7.0 pulls in the easy wins (Currency page first
+> part, USD-view currency figure, a light holding page) and the push 3
+> leftovers; see §8, "Why 7.0 is a real release".
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> Nothing here is committed to code yet. Every decision is settled (§9,
-> §9a). Push 1 can start without asking.
+> Pushes 1 to 3 shipped (6.13.1 to 6.15.0), then 6.16.0 and 6.17.0. Every
+> decision is settled (§9, §9a, §9b). Push 4, release 7.0, can start
+> without asking.
 
 ---
 
@@ -31,8 +35,8 @@ has, in the right currency for that question?
 
 | The question | Truth | Answered by |
 |---|---|---|
-| What happened while I was away, and was it the market or the dollar? | EUR | Daily Brief (7.0), Currency tab (7.2) |
-| What is this holding doing, and what did I pay for it? | both | Deep-dive (7.1) |
+| What happened while I was away, and was it the market or the dollar? | EUR | Daily Brief (7.0), Currency tab (7.0 Today, 7.2 the rest) |
+| What is this holding doing, and what did I pay for it? | both | Holding page (7.0), deep-dive (7.1) |
 | What did converting cost me, and which euros paid for which dollars? | EUR | Conversions (7.3, 7.4) |
 | What would I owe if I sold, and what has this year produced for the IRS? | USD | Tranches (7.1), US tax pack (7.5) |
 | Can I trust the numbers? | — | Fix rounds (§7a) |
@@ -342,6 +346,9 @@ waste dressed as innovation.
 ---
 
 ## 5. Theme C — the Currency tab (v7.2)
+
+> The route, the always-visible strip and the Today sub-tab (without the
+> constant-currency chart) ship first, in 7.0 (§8, reworked 2026-11-16).
 
 > Redesigned 2026-11-10. The earlier version was a list of panels sorted by
 > where the data came from. This one is built around the questions a euro
@@ -1107,9 +1114,9 @@ afterwards, planned in detail when v7 is done.
 | 1 | 6.x "Trust" | Backend fixes: fix rounds 1 and 3 of §7a (half-days, MTD/YTD, day move, commit order, ETags, tab catch-up, cache flushes), and the server half of F-081 (the tick carries the day % so the browser stops computing it). **Before 27 Nov 2026.** | 1 | Golden tests for a deposit on the 1st, a deposit day and a half-day pass |
 | 2 | 6.x "Fit" | Frontend fixes: fix rounds 2 and 4 (every clipping finding, decimal comma, lost work, visible advanced settings, the five §7 patches), the fixture mode and the screenshot run. | 1–2 | Screenshot run green at six widths in both themes |
 | 3 | 6.x "Ready" | Fix round 5 (speed, scheduler, activity lines), the frozen-leg reads moved to the derived path (B-008), the second audit pass and its fixes, **ledger completeness checks (P7)**. | 1–2 | No high or medium finding open; Data Health reports a missing dividend in a test ledger |
-| 4 | **7.0** | **The cutover** (v5 removed, B-014, B-022) and the **Daily Brief** (§3.1), with the market clock (P13). | 2 | No v5 code on `main`; the Brief's trigger passes its table of cases; a dismissed card stays gone |
-| 5 | **7.1** | **Holding deep-dive** (§7): route and tabs, one shared holding row, per-holding 1D/1W, ETF-twin view, tranches in USD with the long-term countdown (P3), per-holding dividends and transactions, per-holding stored value series (P16). | 2 | A holding has a URL; holdings' 1D lines sum to the portfolio line; tranche shares sum to the position |
-| 6 | **7.2** | **Currency tab** (§5): Today, Effect, Rate, What if; currency as an allocation dimension; the Projection rate band (P5); the currency effect trend (P11) and a useful USD-view currency figure (P12). | 2 | Daily parts sum to every period; "today" equals the Overview card; lifetime equals the lifetime card |
+| 4 | **7.0** | **The cutover** (v5 removed, B-014, B-022, plus the API leftovers B-029 and B-031), the **Daily Brief** (§3.1) and the **market clock** (P13). Pulled in (reworked 2026-11-16): **the Currency page, first part** (the always-visible strip and the Today sub-tab, §5), **the USD-view currency figure** (P12), **a light holding page** (route with Details, Transactions and Dividends tabs, §7), and the push 3 leftovers (see below). | 3 | No v5 code on `main`; the Brief's trigger passes its table of cases; a dismissed card stays gone; the Currency page's "today" equals the Overview card; a holding has a URL |
+| 5 | **7.1** | **Holding deep-dive** (§7), on the 7.0 holding page: the Performance tab, one shared holding row, per-holding 1D/1W, ETF-twin view, tranches in USD with the long-term countdown (P3), per-holding stored value series (P16). | 2 | Holdings' 1D lines sum to the portfolio line; tranche shares sum to the position |
+| 6 | **7.2** | **Currency tab, the rest** (§5): Effect, Rate, What if, and the constant-currency chart on Today; currency as an allocation dimension; the Projection rate band (P5); the currency effect trend (P11). | 2 | Daily parts sum to every period; lifetime equals the lifetime card |
 | 7 | **7.3** | **Conversions** (§5.1): clear matching, pinning, costs and timing, currency-generic naming (C1), the Conversions sub-tab, the "Invest this month" flow (P6), scheduled auto-invest transactions (P14) and smart import matching (P15). | 2–3 | Every USD deposit declares how it was paid for; cost golden values match the hand calculation |
 | 8 | **7.4** | **One rate everywhere** (§5.1): the cash pool, holding EUR cost from the pool rate, the tranche EUR column, dollars back to euros, realised versus unrealised, currency effect on cash and idle dollars. | 2 | Holdings plus pool equal EUR invested on the real ledger; realised plus unrealised equals the lifetime effect |
 | 9 | **7.5** | **Tax information** (§6.2, P1–P3): realised gains by holding period, wash sales, sell planner, the loss list, the tax year page, the 1099 check, the withholding column. | 2 | Short/long-term totals match a hand-worked ledger, including a reinvested-dividend wash sale |
@@ -1119,8 +1126,65 @@ afterwards, planned in detail when v7 is done.
 | 12 | 7.8 | News, as its own page (§4.3). Licences read first. | later | |
 | — | 7.9 | Assistant (§4.2). Maybe later; not committed. | — | |
 
-**Count:** ten pushes to a complete v7, about 15 to 18 full sessions. The
-first three are fixes on v6; 7.0 arrives with push 4.
+**Count:** ten pushes to a complete v7, about 16 to 19 full sessions. The
+first three are fixes on v6 (shipped as 6.13.1, 6.14.0 and 6.15.0, then
+6.16.0 and 6.17.0); 7.0 arrives with push 4.
+
+### Why 7.0 is a real release (reworked 2026-11-16)
+
+The cutover on its own is deletions: nothing you would notice. So 7.0 also
+takes the easy wins from later pushes: things built only from data the
+server already has, with no new money maths, no migration and no account.
+
+**What you see on day one:** a Brief above the hero when the market moved
+while you were away; a clock saying when the market opens or closes; a
+Currency page in the sidebar; a currency figure that means something in the
+USD view; and a page of its own for every holding.
+
+**Pulled in, and why each is easy:**
+
+- **Market clock (P13)**, as planned: the next open and close come from the
+  existing NYSE calendar (`domain/market_hours.py`, half-days included).
+- **Currency page, first part (from 7.2).** The route, the always-visible
+  strip and the Today sub-tab. Today is the existing `CurrencyBox` content
+  (live rate, today's effect inside and outside market hours), today's rate
+  range from the stored intraday samples, and "€1,000 buys $X; yesterday $Y"
+  from `domain/session_fx.py`. The strip shows the tiles whose figures
+  already exist: rate now, effect today, lifetime effect (from
+  `CurrencyLifetime`), your average rate against now, and one cent of
+  EUR/USD (dollar value at two rates, one instant). The other tiles are left
+  out until 7.2, as the tile rule says. The Overview card links here.
+- **USD-view currency figure (P12, from 7.2).** The EUR-minus-USD gap is
+  already computed (`lifetime.currency_effect_pp`); the USD view shows it,
+  with the dollar's move against the euro, instead of a 0.
+- **Light holding page (from 7.1).** The route `/holdings/:id` with today's
+  sheet content as Details, plus that holding's transactions and dividends,
+  both already served (the Activity dividends are just not filterable or
+  linked). The plan already rated the route low-friction.
+
+**Leftovers from pushes 1 to 3, found while reworking:**
+
+- P7 is two-thirds done: missing dividends and days since the last import
+  shipped (6.15.0); the **missing-split check** (splits are already cached)
+  and the **optional share-count check** did not.
+- The **frontend half of the second audit pass** (Diagnostics sub-tabs,
+  Import and Settings parts): only the backend pass (B-023 to B-032) exists.
+- **Vitest coverage**: `pytest-cov` is in, the frontend report is not.
+- Small open audit items: B-029 and B-031 go with the cutover's API
+  clean-up; B-030 (Projection in real terms) and the B-026 remainder (failed
+  NAV probes) each need a one-line decision, then a small fix.
+
+**Deliberately later:** the Effect, Rate and What if sub-tabs and the
+currency trend (P11) need the new daily attribution (`fx_attribution`,
+golden values, a session-rate table); per-holding 1D/1W and P16 need a
+migration; tranches are new maths; recaps (P8) need the attribution and
+7.3's conversion cost; conversions, the pool and tax stay in order.
+
+**Running it: three sessions.** Session 1: lane A cutover (cheap
+subagents, deletions) beside lane B, the Brief's backend and the clock.
+Session 2: agree the Brief, Currency and P12 endpoints first, then a
+backend and a frontend lane. Session 3: the holding page and the leftovers
+as two lanes, then the screenshot run and the release.
 
 ### What can be combined, and what has to stay apart
 
@@ -1130,7 +1194,8 @@ first three are fixes on v6; 7.0 arrives with push 4.
   `frontend/`. Push 2 rebases once at the end to pick up the regenerated
   API types.
 - Inside push 4: the cutover (mostly deletions, good work for cheap
-  subagents) and the Daily Brief (new files only).
+  subagents) and the Daily Brief (new files only); later in the push, the
+  holding page and the leftovers.
 - Inside any feature push: a backend lane and a frontend lane, **once the
   API contract is written down first**. The session starts by agreeing the
   endpoint shapes, then the lanes run in parallel and meet at the end.
@@ -1319,12 +1384,12 @@ Same rules as §9a: built in the push named, detail settled at its start.
 | # | Addition | Push |
 |---|---|---|
 | P11 | **Currency effect trend.** Stocks drift up over the long run; a currency can trend either way for years. The Effect sub-tab gains a trend view of the currency effect: rolling 3, 6 and 12-month effect (pp and euros), the direction and length of the current run ("the dollar has cost you for 5 months running"), and where today's rate sits against your average buy rate and break-even, as a line over time. Plain facts, no forecast. Built from the same daily parts as the bridge, so it always adds up to the period figures. | 6 (7.2) |
-| P12 | **A useful currency figure in the USD view.** In USD the currency effect on the return is zero by definition (everything is already dollars), so the card shows 0 and wastes the space. In the USD view replace it with figures that mean something to a euro investor looking at dollars: the dollar's move against the euro over the period (%), and "your holdings are worth X % more/less in euros than in dollars since you bought" (the EUR-minus-USD return gap, computed server-side from the two FX-aware returns, never `usd / fx`). Hide mode shows the percentages. | 6 (7.2) |
+| P12 | **A useful currency figure in the USD view.** In USD the currency effect on the return is zero by definition (everything is already dollars), so the card shows 0 and wastes the space. In the USD view replace it with figures that mean something to a euro investor looking at dollars: the dollar's move against the euro over the period (%), and "your holdings are worth X % more/less in euros than in dollars since you bought" (the EUR-minus-USD return gap, computed server-side from the two FX-aware returns, never `usd / fx`). Hide mode shows the percentages. | 4 (7.0), moved from 6 (7.2) on 2026-11-16 |
 | P13 | **Market clock.** In the top bar or the hero: "Opens in 2 h 14 min" while closed (weekends, holidays and half-days from the existing NYSE calendar), "Open since 15:30 · closes in 3 h" while open, in the owner's time zone. Pure presentation from `domain/market_hours.py`; the server sends the next open/close instants so the browser only counts down. | 4 (7.0), with the Brief |
 | P14 | **Scheduled transactions (auto-invest).** A recurring buy is set up once (instrument, amount or shares, day of month, account). On each due date the app adds an *expected* transaction valued at that day's close, marked "scheduled, not yet confirmed"; the owner edits only the deviations. When the broker file is imported later, the matching import row **replaces** the expected one (the import's numbers win) and it becomes confirmed. Expected rows count in values and graphs but are flagged in Transactions and in Data Health until confirmed. | 7 (7.3), with P6 |
 | P15 | **Smart import matching.** An import row that is almost identical to an existing transaction (same account, instrument and type; date within one business day; amount and shares within a small tolerance, e.g. 0.5 % or a few cents) is not a new row: the preview shows it as "update" with the old and new figures, and confirming takes the newer import's numbers. Exact duplicates stay skipped as today. Needed by P14, useful on its own. | 7 (7.3), with P14 |
 | D1 | **The day rule (decided 2026-11-15, shipped in 6.17.0).** A day's move runs from the previous close (close prices × the 16:00 ET close rate). After the close the EUR figure keeps moving with the live rate; the hero, the 1D graph header and its "now" marker show the split "Session" + "Overnight currency (counts toward the next day)". Every view rolls over together at the 09:30 ET open, and the overnight move then belongs to the new day (close-to-close days, the industry convention). 1W follows the same rules. Periods keep valuing each day at the ECB rate for now (a small, known mismatch with the hero's 16:00 rate); the switch to open-to-open FX is one helper (`day_baseline_rate`) if it is ever wanted. | done |
-| P16 | **Per-holding stored value series.** Store each holding's daily (and intraday) value next to the portfolio total, so a new transaction late in the week recomputes only that holding from the trade date instead of rebuilding the whole portfolio history, and so the deep-dive's per-holding 1D/1W lines read stored points. The safe part (an import no longer re-downloads cached prices) shipped in 6.17.0. | 5 (7.1) |
+| P16 | **Per-holding stored value series.** Store each holding's daily (and intraday) value next to the portfolio total, so a new transaction late in the week recomputes only that holding from the trade date instead of rebuilding the whole portfolio history, and so the deep-dive's per-holding 1D/1W lines read stored points. The safe part (an import no longer re-downloads cached prices) shipped in 6.17.0. | 5 (7.1); the holding page it sits on ships in 4 (7.0) |
 
 ---
 
