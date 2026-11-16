@@ -3774,7 +3774,7 @@ def session_close_rate(session: Session, session_date: date) -> Decimal | None:
     Memoised per request: a Holdings build asks for the same session's rate once per
     fund row (``_divergence_view``), and each miss scans a whole session of samples.
 
-    **Legacy-schema degrade.** ``tools/parity_check.py`` runs this against a
+    **Legacy-schema degrade.** This can run against a
     v5.3.1-era ledger copy whose ``intraday_value`` table predates the
     ``fx_eur_usd`` column (added well after migration 0014, the v5 head) — the
     read below then raises ``OperationalError: no such column:

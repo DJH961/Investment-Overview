@@ -7,6 +7,8 @@
 > [`v7_audit_backend.md`](v7_audit_backend.md), F-… in
 > [`v7_audit_frontend.md`](v7_audit_frontend.md)).
 >
+> Push 4 lane A (cutover, mostly deletions) is in progress, landing in 7.0.
+>
 > Status of these notes: ideas and starting points, not decisions. Anything
 > marked **verify** was not checked in the code or against a provider. Where
 > a note and the code disagree, read the code, then fix the note. `AGENTS.md`

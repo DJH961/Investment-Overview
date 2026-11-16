@@ -69,7 +69,6 @@ def _conversion_info(session: Session) -> dict[int, dict[str, Any]]:
 
 def _summary_dict(s: DepositSummary) -> dict[str, Any]:
     return {
-        "total_contrib_native": dec(s.total_contrib_native),
         "total_contrib_eur": dec(s.total_contrib_eur),
         "ytd_contrib_eur": dec(s.ytd_contrib_eur),
         "mtd_contrib_eur": dec(s.mtd_contrib_eur),
@@ -110,7 +109,6 @@ def _summary_for(summary: DepositSummary, ccy: str) -> dict[str, Any]:
         "total_contrib": dec(summary.total_contrib_usd if usd else summary.total_contrib_eur),
         "ytd_contrib": dec(summary.ytd_contrib_usd if usd else summary.ytd_contrib_eur),
         "mtd_contrib": dec(summary.mtd_contrib_usd if usd else summary.mtd_contrib_eur),
-        "total_contrib_native": dec(summary.total_contrib_native),
     }
 
 

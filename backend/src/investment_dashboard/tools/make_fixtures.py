@@ -72,7 +72,6 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/deposits/dividends/both",
     "/api/accounts",
     "/api/instruments",
-    "/api/instruments/twin-suggestions",
     "/api/transactions?limit=50&offset=0&sort=date&order=desc&hide_sweeps=true",
     "/api/transactions/all",
     "/api/fx-conversions",

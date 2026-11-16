@@ -120,7 +120,6 @@ def configure_logging() -> None:
         settings.db_passphrase,
         settings.api_token,
         settings.tiingo_token,
-        settings.mobile_passphrase,
         os.environ.get("INV_DASHBOARD_BACKUP_PASSPHRASE"),
     )
 

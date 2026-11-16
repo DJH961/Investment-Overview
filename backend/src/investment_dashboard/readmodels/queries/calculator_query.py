@@ -5,8 +5,7 @@ EUR value, current weight, category, and an EUR-denominated price for share
 math — grouped by category so the user can think in categories ("10 %
 International") and let the funds inside share that slice automatically.
 
-Kept separate from :mod:`investment_dashboard.ui.pages.calculator` so the page
-stays a thin view layer and this query is reusable / inspectable.
+Kept separate from the API layer so this query is reusable / inspectable.
 """
 
 from __future__ import annotations

@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
+from api._single import get_one
 from investment_dashboard.db import ledger_session_scope
 
 from ._seed import RATE_NOW, seed_ledger
@@ -25,11 +26,11 @@ def _by_symbol(body: dict) -> dict[str, dict]:  # type: ignore[type-arg]
 
 
 def test_requires_auth(anon_client: TestClient) -> None:
-    assert anon_client.get("/api/holdings").status_code == 401
+    assert anon_client.get("/api/holdings/both").status_code == 401
 
 
 def test_rows_are_per_instrument_not_per_account(api_client: TestClient, seeded: None) -> None:
-    body = api_client.get("/api/holdings?ccy=USD").json()
+    body = get_one(api_client, "/api/holdings?ccy=USD")
     rows = _by_symbol(body)
     assert set(rows) == {"VTI", "BND"}  # VTI sits in two accounts: one row
     vti = rows["VTI"]
@@ -48,8 +49,8 @@ def test_rows_are_per_instrument_not_per_account(api_client: TestClient, seeded:
 
 
 def test_ccy_switch(api_client: TestClient, seeded: None) -> None:
-    eur = api_client.get("/api/holdings?ccy=EUR").json()
-    usd = api_client.get("/api/holdings?ccy=USD").json()
+    eur = get_one(api_client, "/api/holdings?ccy=EUR")
+    usd = get_one(api_client, "/api/holdings?ccy=USD")
     assert eur["ccy"] == "EUR"
     assert usd["ccy"] == "USD"
     # A value at one instant converts at that instant's rate...
@@ -67,26 +68,22 @@ def test_ccy_switch(api_client: TestClient, seeded: None) -> None:
 
 
 def test_summary(api_client: TestClient, seeded: None) -> None:
-    summary = api_client.get("/api/holdings?ccy=USD").json()["summary"]
+    summary = get_one(api_client, "/api/holdings?ccy=USD")["summary"]
     assert summary["most_concentrated_symbol"] == "VTI"
     assert summary["best_symbol"] == "VTI"
     assert summary["worst_symbol"] == "BND"
 
 
-def test_bad_ccy_is_422(api_client: TestClient) -> None:
-    assert api_client.get("/api/holdings?ccy=XXX").status_code == 422
-
-
 def test_empty_ledger(api_client: TestClient, api_db: object) -> None:
-    body = api_client.get("/api/holdings").json()
+    body = get_one(api_client, "/api/holdings")
     assert body["holdings"] == []
 
 
 @pytest.mark.parametrize("ccy", ["EUR", "USD"])
 def test_holdings_and_overview_agree(api_client: TestClient, seeded: None, ccy: str) -> None:
     """Same ledger, same definitions: the two screens reconcile exactly."""
-    hold = api_client.get(f"/api/holdings?ccy={ccy}").json()
-    over = api_client.get(f"/api/overview?ccy={ccy}").json()["kpis"]
+    hold = get_one(api_client, f"/api/holdings?ccy={ccy}")
+    over = get_one(api_client, f"/api/overview?ccy={ccy}")["kpis"]
     approx = pytest.approx
     tol = Decimal("0.01")
     assert Decimal(hold["total_value"]) == approx(Decimal(over["total_value"]), abs=tol)
@@ -120,7 +117,7 @@ def test_holdings_and_overview_agree(api_client: TestClient, seeded: None, ccy: 
 
 
 def test_group_by_category_subtotals_golden(api_client: TestClient, seeded: None) -> None:
-    body = api_client.get("/api/holdings?ccy=USD&group_by=category").json()
+    body = get_one(api_client, "/api/holdings?ccy=USD&group_by=category")
     assert body["group_by"] == "category"
     groups = {g["key"]: g for g in body["groups"]}
     assert [g["key"] for g in body["groups"]] == ["US Stocks", "Bonds"]  # value desc
@@ -141,7 +138,7 @@ def test_group_by_category_subtotals_golden(api_client: TestClient, seeded: None
 def test_group_subtotals_add_up_to_totals(
     api_client: TestClient, seeded: None, ccy: str, by: str
 ) -> None:
-    body = api_client.get(f"/api/holdings?ccy={ccy}&group_by={by}").json()
+    body = get_one(api_client, f"/api/holdings?ccy={ccy}&group_by={by}")
     groups = body["groups"]
     assert sum(g["count"] for g in groups) == len(body["holdings"])
     for field, total in (
@@ -163,14 +160,14 @@ def test_group_subtotals_add_up_to_totals(
 
 
 def test_group_by_default_none_and_invalid(api_client: TestClient, seeded: None) -> None:
-    assert api_client.get("/api/holdings?ccy=USD").json()["groups"] == []
-    assert api_client.get("/api/holdings?group_by=nope").status_code == 422
+    assert get_one(api_client, "/api/holdings?ccy=USD")["groups"] == []
+    assert api_client.get("/api/holdings/both?group_by=nope").status_code == 422
 
 
 @pytest.mark.parametrize("ccy", ["EUR", "USD"])
 def test_second_kpi_row_fields(api_client: TestClient, seeded: None, ccy: str) -> None:
-    body = api_client.get(f"/api/holdings?ccy={ccy}").json()
-    over = api_client.get(f"/api/overview?ccy={ccy}").json()["kpis"]
+    body = get_one(api_client, f"/api/holdings?ccy={ccy}")
+    over = get_one(api_client, f"/api/overview?ccy={ccy}")["kpis"]
     for field in ("xirr", "dividend_income", "dividends_ttm", "annual_expense_cost"):
         assert field in body
     assert body["xirr"] == over["xirr"]
@@ -192,11 +189,11 @@ def test_fx_block_is_reported_in_both_currencies(api_client: TestClient, seeded:
     change in the other. Whether the rate moved *this* book is a different question,
     and the total already answers it.
     """
-    eur = api_client.get("/api/holdings?ccy=EUR").json()
+    eur = get_one(api_client, "/api/holdings?ccy=EUR")
     assert eur["fx"]["pair"] == "USD/EUR"
     assert Decimal(eur["fx"]["spot"]) == pytest.approx(1 / RATE_NOW, rel=Decimal("1e-9"))
     # Every holding is USD, but the rate still has a value and a move to report.
-    usd = api_client.get("/api/holdings?ccy=USD").json()
+    usd = get_one(api_client, "/api/holdings?ccy=USD")
     assert usd["fx"]["pair"] == "EUR/USD"
     assert Decimal(usd["fx"]["spot"]) == pytest.approx(RATE_NOW, rel=Decimal("1e-9"))
     assert usd["fx"]["move_pct"] is not None
@@ -207,7 +204,7 @@ def test_history_requires_auth(anon_client: TestClient) -> None:
 
 
 def test_history_shape_and_ranges(api_client: TestClient, seeded: None) -> None:
-    iid = _by_symbol(api_client.get("/api/holdings?ccy=USD").json())["VTI"]["instrument_id"]
+    iid = _by_symbol(get_one(api_client, "/api/holdings?ccy=USD"))["VTI"]["instrument_id"]
     body = api_client.get(f"/api/holdings/{iid}/history?range=all").json()
     assert body["symbol"] == "VTI"
     assert body["ccy"] == "USD"  # native currency, never converted
@@ -223,5 +220,5 @@ def test_history_shape_and_ranges(api_client: TestClient, seeded: None) -> None:
 
 def test_history_unknown_instrument_and_bad_range(api_client: TestClient, seeded: None) -> None:
     assert api_client.get("/api/holdings/99999/history").status_code == 404
-    iid = _by_symbol(api_client.get("/api/holdings?ccy=USD").json())["VTI"]["instrument_id"]
+    iid = _by_symbol(get_one(api_client, "/api/holdings?ccy=USD"))["VTI"]["instrument_id"]
     assert api_client.get(f"/api/holdings/{iid}/history?range=5y").status_code == 422

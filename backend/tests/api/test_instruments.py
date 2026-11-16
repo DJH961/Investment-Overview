@@ -69,27 +69,6 @@ def _seed_funds() -> dict[str, int]:
         return ids
 
 
-def test_twin_suggestions_list(api_client: TestClient) -> None:
-    body = api_client.get("/api/instruments/twin-suggestions").json()
-    assert body["FXAIX"] == {
-        "etf": "VOO",
-        "tier": "same_index",
-        "index": "S&P 500",
-        "typical_daily_gap": None,
-    }
-    assert body["VTSAX"]["etf"] == "VTI"
-    assert body["VBMFX"]["etf"] == "BND"
-    # Measured close twins: a different index, labelled as such.
-    assert body["FSKAX"]["tier"] == "close"
-    assert body["FSKAX"]["etf"] == "VTI"
-    assert body["FNILX"]["etf"] == "VOO"
-    # No identical-index ETF and no measured close twin.
-    for fund in ("FZILX", "FSELX"):
-        assert fund not in body
-    close = {k for k, v in body.items() if v["tier"] == "close"}
-    assert close == {"FSKAX", "FZROX", "FNILX"}
-
-
 def test_twin_field_and_suggestion(api_client: TestClient) -> None:
     ids = _seed_funds()
     rows = {r["symbol"]: r for r in api_client.get("/api/instruments").json()}

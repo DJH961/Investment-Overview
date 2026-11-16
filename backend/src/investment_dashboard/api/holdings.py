@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
-from investment_dashboard.api.deps import ReportCcy, SessionDep
+from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.api.schemas.holdings import (
     GroupBy,
@@ -21,16 +21,6 @@ from investment_dashboard.services.read_cache import (
 )
 
 router = APIRouter(tags=["holdings"])
-
-
-@router.get("/holdings", response_model=HoldingsResponse)
-@cached_read
-def get_holdings(
-    session: SessionDep, ccy: ReportCcy = "EUR", group_by: GroupBy = "none"
-) -> HoldingsResponse:
-    return HoldingsResponse.model_validate(
-        holdings_readmodel.build(session, ccy=ccy, group_by=group_by)
-    )
 
 
 @router.get("/holdings/both", response_model=ByCurrency[HoldingsResponse])

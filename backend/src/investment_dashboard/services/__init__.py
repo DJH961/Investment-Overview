@@ -12,7 +12,6 @@ from investment_dashboard.services import (
     metrics_service,
     positions_service,
     prices_service,
-    publish_service,
 )
 
 __all__ = [
@@ -21,5 +20,4 @@ __all__ = [
     "metrics_service",
     "positions_service",
     "prices_service",
-    "publish_service",
 ]

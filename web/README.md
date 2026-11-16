@@ -1,4 +1,11 @@
-# web/ — Live Web Companion (static front-end)
+# web/ — offline demo (static front-end)
+
+> **Since 7.0 this directory only builds the offline demo** (`VITE_DEMO_ONLY=1`,
+> served by `pages.yml`). The encrypted blob, the Cloudflare Worker (`web/proxy/`),
+> the `live-data` release, live price polling and the publishing described further
+> down were removed; read them from the tag `v5-archive`
+> (`git show v5-archive:web/proxy/README.md`). Never reconnect this app to real
+> data or price APIs. The text below is the historical v5 design.
 
 This directory holds the **public**, read-only GitHub Pages front-end. It is frozen with
 v5.3.1 and is superseded by the hosted v6 frontend (see
@@ -449,7 +456,7 @@ How it behaves:
    must stay secret, so every call goes through the same Cloudflare Worker, on a
    dedicated **`…/price`** route that injects the `TIINGO_TOKEN` secret
    server-side. Set the token once (`wrangler secret put TIINGO_TOKEN`); see
-   [`web/proxy/README.md`](proxy/README.md). The `/price` route can only ever
+   `web/proxy/README.md` (on `v5-archive`). The `/price` route can only ever
    read pinned Tiingo price endpoints — every caller-supplied value is
    charset-validated (no SSRF).
 2. **Runs only after the primary, only on the gaps.** Each refresh first does
@@ -600,7 +607,7 @@ publish (this keeps old ciphertext out of git history and lets you re-push the
 blob frequently without rebuilding the Pages site). Release-asset downloads,
 however, are **not CORS-readable** from a browser, so the companion fetches the
 blob through a small CORS proxy you deploy once — a Cloudflare Worker under
-[`web/proxy/`](proxy/README.md). After deploying it, paste the Worker URL into
+`web/proxy/` (removed in 7.0, see `v5-archive`). After deploying it, paste the Worker URL into
 **Settings -> Blob URL override** in the app. See `web/proxy/README.md` for the
 full, copy-pasteable deploy steps.
 

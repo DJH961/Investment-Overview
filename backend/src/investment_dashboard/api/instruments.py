@@ -16,7 +16,6 @@ from investment_dashboard.api.schemas.instruments import (
     InstrumentUpdateResult,
     TwinSuggestionDto,
 )
-from investment_dashboard.domain.index_twins import all_suggestions
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import instruments_service
 from investment_dashboard.services.instruments_service import InstrumentView
@@ -64,17 +63,6 @@ def _out(v: InstrumentView) -> InstrumentOut:
 @router.get("/instruments", response_model=list[InstrumentOut])
 def list_instruments(session: SessionDep) -> list[InstrumentOut]:
     return [_out(v) for v in instruments_service.list_instruments(session)]
-
-
-@router.get("/instruments/twin-suggestions", response_model=dict[str, TwinSuggestionDto])
-def twin_suggestions() -> dict[str, TwinSuggestionDto]:
-    """The built-in fund -> ETF twin list (identical-index pairs, then measured close twins)."""
-    return {
-        s.fund: TwinSuggestionDto(
-            etf=s.etf, tier=s.tier, index=s.index, typical_daily_gap=s.typical_daily_gap
-        )
-        for s in all_suggestions()
-    }
 
 
 @router.get("/instruments/{instrument_id}", response_model=InstrumentOut)

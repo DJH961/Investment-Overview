@@ -6,10 +6,10 @@ never explicitly triggers:
 * the post-boot deferred refresh
   (:func:`investment_dashboard.boot.run_deferred_network_refresh`), and
 * the periodic live-price tick
-  (:func:`investment_dashboard.main._live_refresh_tick`).
+  (the server-side live price tick).
 
 Both run off the request path (a background daemon thread / a server-side
-``app.timer``), so without a cue the user has no way to tell the automatic
+scheduler job), so without a cue the user has no way to tell the automatic
 features are working at all. This module records a tiny, process-local view of
 that activity — whether a refresh is *running right now* and when one last
 brought in new data — so the header can show a live "Auto-updating…" chip (a

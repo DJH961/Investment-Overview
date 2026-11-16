@@ -47,13 +47,9 @@ class DepositSummary:
     re-aggregated by converting each transaction's EUR amount with the
     EUR→USD rate **on that transaction's date** (USD-native deposits
     use ``net_native`` directly so we never round-trip them through
-    EUR). ``total_contrib_native`` remains a single Decimal for
-    backwards compatibility but is only meaningful when the user has
-    a single-currency portfolio; mixed-currency users should consult
-    the EUR or USD totals.
+    EUR).
     """
 
-    total_contrib_native: Decimal
     total_contrib_eur: Decimal
     ytd_contrib_eur: Decimal
     mtd_contrib_eur: Decimal
@@ -204,11 +200,6 @@ def compute_summary(
     eur_to_usd = fx_service.get_rates(session, base="EUR", quote="USD")
     ov = eur_overrides if eur_overrides is not None else cashflows.eur_overrides_for(session)
 
-    total_native = sum(
-        (t.net_native or ZERO for t in txns if t.kind in cashflows.EXTERNAL_FLOW_KINDS),
-        ZERO,
-    )
-
     # Per-trade-date EUR + USD legs for every row, computed once.
     by_txn: list[tuple[Transaction, Decimal | None, Decimal | None]] = [
         (t, *_amounts(t, eur_to_usd=eur_to_usd, eur_overrides=ov)) for t in txns
@@ -235,7 +226,6 @@ def compute_summary(
     )
 
     return DepositSummary(
-        total_contrib_native=total_native,
         total_contrib_eur=total_eur,
         ytd_contrib_eur=ytd_eur,
         mtd_contrib_eur=mtd_eur,

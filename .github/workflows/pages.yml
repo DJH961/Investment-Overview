@@ -1,10 +1,10 @@
 name: Deploy Pages
 
-# Builds and publishes the v5 web companion to GitHub Pages as a **demo-only**
+# Builds and publishes the offline demo (`web/`) to GitHub Pages as a **demo-only**
 # site (since 6.0.0, v6 on the server is the real app). `VITE_DEMO_ONLY=1` boots
 # straight into the offline sample portfolios: no sign-in, no encrypted ledger,
 # no price polling, and a CSP that blocks every request to another origin.
-# Removed with `web/` in the post-cutover clean-up release.
+# Stays after the v7.0 cutover: the demo is kept on purpose.
 
 on:
   push:

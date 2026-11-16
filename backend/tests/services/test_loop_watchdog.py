@@ -69,6 +69,6 @@ def test_report_stall_emits_single_warning_without_double_recording(
 
 
 def test_start_without_running_loop_is_a_noop() -> None:
-    # Called outside any event loop it must not raise — install() relies on this
-    # so it is safe to wire unconditionally.
+    # Called outside any event loop it must not raise, so it is
+    # safe to wire unconditionally.
     assert loop_watchdog.start() is None

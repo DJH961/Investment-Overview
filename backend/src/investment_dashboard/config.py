@@ -75,60 +75,16 @@ class Settings(BaseSettings):
     #: driver installed, boot fails fast with a clear message.
     encrypt_synced_tiers: bool = False
 
-    #: When ``True``, the read-only JSON API (see
-    #: :mod:`investment_dashboard.api`) is mounted on the NiceGUI server
-    #: under ``/api``. Off by default so the default LAN experience is
-    #: unchanged.
-    api_enabled: bool = False
     #: Optional bearer token guarding every ``/api`` route. When ``None``
     #: the API is unauthenticated (acceptable on a trusted LAN); set it
     #: the moment the server is reachable beyond the LAN (e.g. via a VPN
     #: or reverse proxy). Compared in constant time.
     api_token: str | None = None
-    #: Output path for ``inv-dashboard-export-snapshot``. Defaults to a
-    #: ``mobile_snapshot.json`` next to the config tier so it rides the
-    #: same consumer-cloud sync the user already set up.
-    snapshot_path: Path | None = None
 
     #: Tiingo API token for the secondary-provider fallback (behind yfinance).
     #: Normally ``None`` — resolved from the OS keyring (or the encrypted blob);
     #: set via ``INV_DASHBOARD_TIINGO_TOKEN`` for CI/test only. Never committed.
     tiingo_token: str | None = None
-
-    # --- v3.0 live-web companion publishing (legacy/v5:docs/v3.0_live_web_companion_proposal.md §5.5) -------
-    # All additive and off by default: a vanilla install never publishes.
-    #: Master toggle. When ``False`` (default) no publishing happens, and the
-    #: auto-publish triggers stay dormant.
-    publish_enabled: bool = False
-    #: Target repository in ``owner/name`` form (e.g. ``DJH961/Investment-Overview``)
-    #: that hosts the GitHub Pages app + the encrypted release asset.
-    publish_repo: str | None = None
-    #: Release tag whose single asset is overwritten on each publish. Keeping
-    #: the ciphertext on a fixed release (not committed into the tree) keeps
-    #: old encrypted snapshots out of git history.
-    publish_release_tag: str = "live-data"
-    #: GitHub fine-grained PAT (Contents: write on ``publish_repo`` only).
-    #: Normally ``None`` — resolved from the OS keyring; set via env for CI.
-    publish_token: str | None = None
-    #: Passphrase the browser uses to decrypt the published blob. Separate from
-    #: ``db_passphrase``. Normally ``None`` — resolved from the OS keyring.
-    mobile_passphrase: str | None = None
-    #: Whether the published export includes the (larger) transaction list.
-    publish_include_transactions: bool = False
-
-    #: Optional password gating the Settings "Developer tools" panel (the
-    #: full audit export). When ``None`` the panel is ungated — fine for the
-    #: single-user, local-first default; set it to keep the export tucked
-    #: away behind a password. Compared in constant time.
-    dev_password: str | None = None
-
-    #: When ``True``, the server stops itself a short grace period after the
-    #: last browser tab disconnects, releasing the single-writer lock (see
-    #: :mod:`investment_dashboard.shutdown`). Off by default so a server left
-    #: open intentionally (e.g. a LAN host) keeps running; the desktop user
-    #: can enable it from Settings. Acts as the initial value only — the
-    #: persisted ``auto_shutdown_on_tab_close`` app-config key wins when set.
-    shutdown_on_tab_close: bool = False
 
     # --- v6 hosted server ------------------------------------------------
     #: ``True`` on the hosted v6 server: skips desktop-only boot steps (cloud
@@ -273,12 +229,8 @@ class Settings(BaseSettings):
     def resolved_snapshot_path(self) -> Path:
         """Where ``inv-dashboard-export-snapshot`` writes by default.
 
-        Uses ``snapshot_path`` when set, otherwise a ``mobile_snapshot.json``
-        beside the config tier so it inherits the user's existing
-        consumer-cloud sync.
+        A ``mobile_snapshot.json`` beside the config tier.
         """
-        if self.snapshot_path is not None:
-            return self.snapshot_path
         base = self.config_path if self.config_path is not None else self.db_path
         return base.parent / "mobile_snapshot.json"
 

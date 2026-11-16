@@ -17,7 +17,8 @@
 >
 > Pushes 1 to 3 shipped (6.13.1 to 6.15.0), then 6.16.0 and 6.17.0. Every
 > decision is settled (§9, §9a, §9b). Push 4, release 7.0, can start
-> without asking.
+> without asking. **Push 4 lane A (the v5 cutover) is landing in 7.0**; the
+> owner's manual steps are in [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
 
 ---
 

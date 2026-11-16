@@ -21,10 +21,10 @@ from api._seed import FIRST_DAY, seed_ledger
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.models import ALL_METADATAS, Transaction
 from investment_dashboard.models.transaction import TransactionSource
-from investment_dashboard.readmodels import allocations, mobile_export, periods, rebalance
+from investment_dashboard.readmodels import allocations, periods, rebalance
 from investment_dashboard.readmodels.calculator import build_inputs
 from investment_dashboard.readmodels.projection import build_seed
-from investment_dashboard.readmodels.queries.period_query import aggregate
+from investment_dashboard.readmodels.queries.period_query import _native_usd_boundaries, aggregate
 from investment_dashboard.repositories import (
     accounts_repo,
     fx_repo,
@@ -116,7 +116,6 @@ def _usd_figures(session: Session, ids: dict[str, int]) -> dict[str, Any]:
     summary = {k: v for k, v in plan["summary"].items() if not k.startswith("other_")}  # type: ignore[attr-defined]
 
     seed = build_seed(session, monthly=True, primary="USD", today=today)
-    openings = mobile_export._period_openings(session, as_of=today)
     return {
         "period": period,
         "monthly_usd": monthly_usd,
@@ -127,11 +126,6 @@ def _usd_figures(session: Session, ids: dict[str, int]) -> dict[str, Any]:
         "plan_categories": plan["categories"],
         "plan_summary": summary,
         "seed": (seed.starting_usd, seed.avg_contribution_usd),
-        "openings_usd": {k: v for k, v in openings.items() if k.endswith("_usd")},
-        "holdings_usd": {
-            s: {k: v for k, v in h.items() if k.endswith("_usd")}
-            for s, h in openings["holdings"].items()
-        },
     }
 
 
@@ -251,12 +245,18 @@ def test_eur_native_holding_converts_at_the_valuation_instant() -> None:
         assert by_symbol["IWDA"] == D("1500")
         assert D(calc["total_value"]) == D("6650")
 
-        # Opening values convert the EUR holding at each boundary's own rate.
-        openings = mobile_export._period_openings(session, as_of=today)
-        month_eur = D(openings["holdings"]["IWDA"]["month_start_value_eur"])
-        year_eur = D(openings["holdings"]["IWDA"]["year_start_value_eur"])
-        assert D(openings["holdings"]["IWDA"]["month_start_value_usd"]) == month_eur * D("1.40")
-        assert D(openings["holdings"]["IWDA"]["year_start_value_usd"]) == year_eur * D("0.90")
+        # Boundary values convert the EUR holding at each boundary's own rate.
+        year_pos = positions_service.compute_positions(session, as_of=year_start)
+        usd_part = sum(
+            (p.current_value_native for p in year_pos if p.instrument.native_currency == "USD"),
+            start=D(0),
+        )
+        eur_part = sum(
+            (p.current_value_native for p in year_pos if p.instrument.native_currency == "EUR"),
+            start=D(0),
+        )
+        got = _native_usd_boundaries(session, [year_start])[year_start]
+        assert got == usd_part + eur_part * D("0.90")
 
 
 @pytest.mark.parametrize("rates", [_constant, _wild])
@@ -266,11 +266,9 @@ def test_usd_openings_equal_native_value(rates: Rates) -> None:
     with _fresh_session() as session:
         seed_ledger(session)
         _set_rates(session, rates)
-        openings = mobile_export._period_openings(session, as_of=today)
         native: dict[str, Decimal] = {}
         for p in positions_service.compute_positions(session, as_of=year_start):
             sym = p.instrument.symbol
             native[sym] = native.get(sym, D(0)) + p.current_value_native
-        for symbol, value in native.items():
-            assert D(openings["holdings"][symbol]["year_start_value_usd"]) == value
-        assert D(openings["year_start_value_usd"]) == sum(native.values(), start=D(0))
+        got = _native_usd_boundaries(session, [year_start])[year_start]
+        assert got == sum(native.values(), start=D(0))

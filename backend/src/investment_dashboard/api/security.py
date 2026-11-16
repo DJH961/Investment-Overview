@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from fastapi import HTTPException, Request, status
 from starlette.concurrency import run_in_threadpool
 
-from investment_dashboard.api.token_auth import _extract_token
 from investment_dashboard.config import Settings, get_settings
 from investment_dashboard.db import config_session_scope
 from investment_dashboard.services import auth_service
@@ -49,6 +48,16 @@ def check_origin(request: Request, settings: Settings) -> None:
         origin.rstrip("/").encode("utf-8"), settings.webauthn_origin.rstrip("/").encode("utf-8")
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Cross-origin request rejected.")
+
+
+def _extract_token(authorization: str | None, x_api_token: str | None) -> str | None:
+    if x_api_token:
+        return x_api_token
+    if authorization:
+        scheme, _, credentials = authorization.partition(" ")
+        if scheme.lower() == "bearer" and credentials:
+            return credentials
+    return None
 
 
 def _presented_token(request: Request) -> str | None:

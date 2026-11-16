@@ -1,14 +1,14 @@
 """In-memory tracker for background-task failures, surfaced in the UI.
 
 The dashboard does slow/network work off the request path — the periodic live
-price refresh (:func:`investment_dashboard.main._live_refresh_tick`) and the
+price refresh (the server-side live price tick) and the
 post-boot deferred refresh (:func:`investment_dashboard.boot.run_deferred_network_refresh`).
 Those failures were previously *only* written to the log via ``log.warning``,
 which is invisible once the app runs with no console window.
 
 This module records the most recent background failures in a tiny process-local
-store so the UI can make them visible — both as a live toast (a per-page timer
-polls :func:`sequence` and pops a ``ui.notify`` when it advances) and on the
+store so the UI can make them visible — both as a live toast (the client
+polls :func:`sequence` and shows a notice when it advances) and on the
 Data Health page. It is the in-app counterpart to the launcher's native error
 dialog: errors are reported *both* visually and in the logs.
 

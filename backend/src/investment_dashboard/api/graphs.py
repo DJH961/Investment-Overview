@@ -1,6 +1,6 @@
 """Graph routes: ``GET /api/graphs/{range}`` plus the range pref and reload writes.
 
-* ``GET /graphs/{range}`` - portfolio value over time (+ the other currency line).
+* ``GET /graphs/{range}/both`` - portfolio value over time in both currencies.
 * ``PUT /graphs/range`` - remember the Overview graph range (market-aware default).
 * ``POST /graphs/{range}/reload`` - re-pull one graph's data on a daemon thread
   (single flight: a second request while one runs gets 409) and returns 202; a
@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from investment_dashboard.activity_log import activity
-from investment_dashboard.api.deps import ReportCcy, SessionDep
+from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.api.schemas.graphs import (
     GraphRange,
@@ -48,21 +48,6 @@ _reload_running: str | None = None
 def put_graph_range(body: GraphRangePref, session: SessionDep) -> GraphRangePrefResponse:
     default = live_graphs.remember_range(session, body.range)
     return GraphRangePrefResponse.model_validate({"range": body.range, "default_range": default})
-
-
-@router.get("/graphs/{range_key}", response_model=GraphResponse)
-@cached_read
-def get_graph(
-    range_key: GraphRange,
-    session: SessionDep,
-    ccy: ReportCcy = "EUR",
-    compare: Annotated[
-        bool, Query(description="Also return the other currency line (default on).")
-    ] = True,
-) -> GraphResponse:
-    return GraphResponse.model_validate(
-        live_graphs.build_graph(session, range_key=range_key, ccy=ccy, compare=compare)
-    )
 
 
 @router.get("/graphs/{range_key}/both", response_model=ByCurrency[GraphResponse])

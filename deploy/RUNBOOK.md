@@ -567,45 +567,12 @@ phone, before the server is involved. Your v5 files are only read.
 8. Clean up: delete `C:\Temp\upload` (it holds your ledger) and close the PowerShell
    window.
 
-## Rollback to v5
+## Going back to v5
 
-Use this only if v6 has to be abandoned. It turns the server's database back into the
-two files the v5.3.1 desktop app reads. Anything that exists only in v6 (FX conversion
-batches, passkeys, the login password) is not carried over.
-
-1. On the server: `cd /opt/investments && docker compose stop app`, then make a spare
-   copy of the database first (see "Backups").
-2. Export (asks for the DB passphrase; never changes `app.sqlite`):
-   `docker compose run --rm --no-deps -v /tmp/v5-export:/out --entrypoint inv-dashboard-export-v5 app --db /data/app.sqlite --out /out`
-3. From Git Bash on the laptop:
-   `/c/Windows/System32/OpenSSH/scp.exe -r daniel@hetzner-djh-v1:/tmp/v5-export .`
-   then on the server `rm -r /tmp/v5-export`.
-4. Close the v5 desktop app. In `OneDrive\inv-dashboard\`, rename the current
-   `ledger.sqlite` and `config.sqlite` to `*.bak`.
-5. Copy `ledger.sqlite` and `config.sqlite` from the export into that folder.
-6. Start v5 (installer or `git checkout legacy/v5`, see `docs/legacy_v5.md`). It
-   rebuilds prices and FX itself on the first refresh. Read
-   `docs/legacy_v5_known_bugs.md` on that branch for the numbers v5 gets wrong.
-7. Leave the server stopped, or `docker compose up -d app` to go back to v6.
-
-## Side-by-side week
-
-After the first upload, run v5 (desktop, as always) and v6 (server) together for a week.
-v5 stays the source of truth until you switch.
-
-- **Every day:** open both, look at Overview and Holdings in EUR and in USD. Compare the
-  totals (value, invested, gain), XIRR/TWR and the biggest holding. Write the numbers and
-  the date in your own notes (not in this repo).
-- **If something differs:** first check Diagnostics in v6 (deposits at the ECB rate,
-  missing prices). Known v5 bugs are listed in `docs/legacy_v5.md`; a difference you can
-  explain from there is expected. Anything else: stop and ask before trusting v6.
-- **New data during the week:** enter it in v5 only, then repeat "Uploading the ledger"
-  (it replaces the server database) when you want v6 to catch up. Do not enter data in
-  both.
-- **When to switch:** seven days in a row with no unexplained difference, backups
-  visible in B2 every day (see "Backups"), and one successful restore drill (see
-  "Restore"). Then: do a final upload from v5, stop using v5, and from then on enter
-  data in v6 only. Keep the v5 files and the "Rollback to v5" steps for at least a month.
+There is no supported way back since 7.0: the v5 exporter (`inv-dashboard-export-v5`),
+the side-by-side week and the v5 downgrade check were removed with the v5 code. The
+last tree that has them is the tag `v5-archive` (see `docs/legacy_v5.md`, "Comparing
+with v5"). Recover the server database from a sealed backup (see "Restore") instead.
 
 ## Uploading the ledger
 

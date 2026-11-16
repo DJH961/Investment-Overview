@@ -4280,13 +4280,11 @@
    "summary": {
     "mtd_contrib": "0",
     "total_contrib": "1102513.263314228814430480920",
-    "total_contrib_native": "1182500.000000",
     "ytd_contrib": "0"
    },
    "summary_other": {
     "mtd_contrib": "0",
     "total_contrib": "1185335.44000000000000",
-    "total_contrib_native": "1182500.000000",
     "ytd_contrib": "0"
    },
    "years": [
@@ -4387,13 +4385,11 @@
    "summary": {
     "mtd_contrib": "0",
     "total_contrib": "1185335.44000000000000",
-    "total_contrib_native": "1182500.000000",
     "ytd_contrib": "0"
    },
    "summary_other": {
     "mtd_contrib": "0",
     "total_contrib": "1102513.263314228814430480920",
-    "total_contrib_native": "1182500.000000",
     "ytd_contrib": "0"
    },
    "years": [
@@ -28517,242 +28513,6 @@
    "twin_suggestion": null
   }
  ],
- "GET /api/instruments/twin-suggestions": {
-  "FLCOX": {
-   "etf": "IWD",
-   "index": "Russell 1000 Value",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FNILX": {
-   "etf": "VOO",
-   "index": "Fidelity U.S. Large Cap vs S&P 500",
-   "tier": "close",
-   "typical_daily_gap": "0.00029"
-  },
-  "FPADX": {
-   "etf": "EEM",
-   "index": "MSCI Emerging Markets",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FSGGX": {
-   "etf": "ACWX",
-   "index": "MSCI ACWI ex USA",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FSKAX": {
-   "etf": "VTI",
-   "index": "Dow Jones U.S. Total Stock Market vs CRSP US Total Market",
-   "tier": "close",
-   "typical_daily_gap": "0.00019"
-  },
-  "FSMDX": {
-   "etf": "IWR",
-   "index": "Russell Midcap",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FSPGX": {
-   "etf": "IWF",
-   "index": "Russell 1000 Growth",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FSPSX": {
-   "etf": "EFA",
-   "index": "MSCI EAFE",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FSSNX": {
-   "etf": "IWM",
-   "index": "Russell 2000",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FTIHX": {
-   "etf": "IXUS",
-   "index": "MSCI ACWI ex USA IMI",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FXAIX": {
-   "etf": "VOO",
-   "index": "S&P 500",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FXNAX": {
-   "etf": "AGG",
-   "index": "Bloomberg US Aggregate Bond",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "FZROX": {
-   "etf": "VTI",
-   "index": "Fidelity U.S. Total Investable Market vs CRSP US Total Market",
-   "tier": "close",
-   "typical_daily_gap": "0.00020"
-  },
-  "VBILX": {
-   "etf": "BIV",
-   "index": "Bloomberg US 5-10 Year Gov/Credit Float Adjusted",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VBIRX": {
-   "etf": "BSV",
-   "index": "Bloomberg US 1-5 Year Gov/Credit Float Adjusted",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VBLAX": {
-   "etf": "BLV",
-   "index": "Bloomberg US Long Gov/Credit Float Adjusted",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VBMFX": {
-   "etf": "BND",
-   "index": "Bloomberg US Aggregate Float Adjusted",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VBTLX": {
-   "etf": "BND",
-   "index": "Bloomberg US Aggregate Float Adjusted",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VDADX": {
-   "etf": "VIG",
-   "index": "S&P US Dividend Growers",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VEMAX": {
-   "etf": "VWO",
-   "index": "FTSE Emerging Markets All Cap China A Inclusion",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VEXAX": {
-   "etf": "VXF",
-   "index": "S&P Completion",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VFIAX": {
-   "etf": "VOO",
-   "index": "S&P 500",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VFINX": {
-   "etf": "VOO",
-   "index": "S&P 500",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VFWAX": {
-   "etf": "VEU",
-   "index": "FTSE All-World ex US",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VGSLX": {
-   "etf": "VNQ",
-   "index": "MSCI US IMI Real Estate 25/50",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VGTSX": {
-   "etf": "VXUS",
-   "index": "FTSE Global All Cap ex US",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VHYAX": {
-   "etf": "VYM",
-   "index": "FTSE High Dividend Yield",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VIGAX": {
-   "etf": "VUG",
-   "index": "CRSP US Large Cap Growth",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VIMAX": {
-   "etf": "VO",
-   "index": "CRSP US Mid Cap",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VSGAX": {
-   "etf": "VBK",
-   "index": "CRSP US Small Cap Growth",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VSIAX": {
-   "etf": "VBR",
-   "index": "CRSP US Small Cap Value",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VSMAX": {
-   "etf": "VB",
-   "index": "CRSP US Small Cap",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VTABX": {
-   "etf": "BNDX",
-   "index": "Bloomberg Global Aggregate ex-USD Float Adj. (USD hedged)",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VTIAX": {
-   "etf": "VXUS",
-   "index": "FTSE Global All Cap ex US",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VTMGX": {
-   "etf": "VEA",
-   "index": "FTSE Developed All Cap ex US",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VTSAX": {
-   "etf": "VTI",
-   "index": "CRSP US Total Market",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VTSMX": {
-   "etf": "VTI",
-   "index": "CRSP US Total Market",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VTWAX": {
-   "etf": "VT",
-   "index": "FTSE Global All Cap",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  },
-  "VVIAX": {
-   "etf": "VTV",
-   "index": "CRSP US Large Cap Value",
-   "tier": "same_index",
-   "typical_daily_gap": null
-  }
- },
  "GET /api/live?since=0": {
   "boot_id": "fixture",
   "generations": {

@@ -8,50 +8,52 @@ web companion. It is frozen on:
 - branch `legacy/v5`
 - tag `v5.3.1`
 
-It has **zero support**: no fixes, no dependency updates, no backports. It exists
-only as a **rollback option** while the v6 rewrite
-([`v6_one_app_plan.md`](v6_one_app_plan.md)) settles in. Nothing is ever committed
-to `legacy/v5`, except the owner-requested list of known, unfixed v5 bugs
-(`docs/legacy_v5_known_bugs.md` on that branch); read it before rolling back.
+It has **zero support**: no fixes, no dependency updates, no backports. Nothing is
+ever committed to `legacy/v5`, except the owner-requested list of known, unfixed v5
+bugs (`docs/legacy_v5_known_bugs.md` on that branch).
 
-## Rolling back the desktop app
+**Since 7.0 the v5 code is gone from `main`.** The v5 desktop app, the Windows
+installer, the Cloudflare Worker and the encrypted-blob publishing were deleted in
+the cutover release (see [`v7_plan.md`](v7_plan.md) §8). The last `main` tree that
+still contained them is kept under the tag **`v5-archive`**. The GitHub Pages site
+(`web/`, built with `VITE_DEMO_ONLY=1`) stays as an offline demo only.
 
-Pick one:
+## Comparing with v5
 
-1. **Installer:** download `InvestmentDashboard-Setup.exe` (or
-   `InvestmentDashboard-Portable.zip`) from the GitHub release `v5.3.1` and run it.
-2. **From source:** `git checkout legacy/v5`, then start the app with
-   `run_dashboard.vbs` (or `run_dashboard.bat`).
+For "do it like in v5", read the old code from the `v5-archive` tag; do not copy it
+back into the tree without a design decision (it breaks the layering and the
+server-computes rule). All of these are read-only:
 
-Where the data lives (unchanged from v5):
+- Search the old code: `git grep -n "<pattern>" v5-archive`
+- Show one old file: `git show v5-archive:<path>`
+  (for example `git show v5-archive:backend/src/investment_dashboard/ui/main.py`)
+- List an old folder: `git ls-tree -r --name-only v5-archive <dir>/`
+- Browse it like a normal checkout, in a separate read-only worktree next to the repo:
+  `git worktree add ../Investment-Overview-v5 v5-archive`
+  (this checks out a detached HEAD; do not commit there).
+  Remove it when done: `git worktree remove ../Investment-Overview-v5`
+
+`legacy/v5` and `v5.3.1` stay frozen as before. `v5-archive` is a tag: never move or
+delete it.
+
+## Running v5 again
+
+Only as a temporary fallback, and only on the home network (LAN-only, as before).
+From a separate worktree (see above) of tag `v5.3.1` or `legacy/v5`, run it from
+source: `run_dashboard.vbs` (or `run_dashboard.bat`). The `v5.3.1` GitHub release
+also still carries `InvestmentDashboard-Setup.exe` and
+`InvestmentDashboard-Portable.zip`.
+
+Where the v5 data lives:
 
 - Ledger and config: `OneDrive\inv-dashboard\`
 - Cache (prices, FX, snapshots; safe to rebuild): `%LOCALAPPDATA%\inv-dashboard\cache.sqlite`
 
-## The web companion
-
-The companion only works while all three of these still exist:
-
-- GitHub Pages (workflow `pages.yml`)
-- the Cloudflare Worker (`web/proxy/`)
-- the `live-data` GitHub release
-
-v6 Phase 4 turns these off. Rolling back the companion therefore means
-re-enabling them: re-run `pages.yml` and redeploy the Worker with
-`wrangler deploy`.
-
-## Rolling back the data (the important part)
-
-Anything you enter in v6 after cutover is **not** in the old v5 ledger. Going back
-to v5 without carrying that data over would lose it. v6 commits to this:
-
-- Every v6 Alembic migration ships a working `downgrade()` back to v5's head
-  revision (`0014_v3_9_3_intraday_market_component`). This is tested in CI.
-- `tools/export_v5_ledger.py` decrypts a v6 database (SQLCipher) and downgrades it
-  into a v5-compatible `ledger.sqlite` and `config.sqlite`. Put those into
-  `OneDrive\inv-dashboard\` and start v5.
-- The final pre-cutover v5 ledger is also kept as a sealed (encrypted) backup, as
-  a last resort.
+Going back to v5 with data entered in v6 is no longer a supported tool: the
+`inv-dashboard-export-v5` exporter and the "downgrade to `0014`" CI check were removed
+in 7.0. If it is ever needed, take them from `v5-archive`
+(`git show v5-archive:backend/src/investment_dashboard/tools/export_v5_ledger.py`).
+The pre-cutover v5 ledger is also kept as a sealed (encrypted) backup.
 
 ## Troubleshooting: installed but nothing opens (Windows)
 

@@ -13,33 +13,27 @@ valuation moment's rate, so EUR returns are FX-aware (rule in
 | Track | State |
 | --- | --- |
 | **v6 "One App"** (6.0.0) | **Live.** One hosted FastAPI backend ([`backend/`](backend/)) plus a React frontend ([`frontend/`](frontend/)) on the owner's server, replacing both v5 apps. Plan: [`docs/v6_one_app_plan.md`](docs/v6_one_app_plan.md). |
-| **v5.3.1** | Final v5 release, **frozen, no support**: preserved on branch `legacy/v5` / tag `v5.3.1` ([rollback guide](docs/legacy_v5.md)). Its code stays on `main` until the clean-up release; the GitHub Pages companion ([`web/`](web/)) now serves only an offline demo. |
+| **v5.3.1** | Final v5 release, **frozen, no support**: preserved on branch `legacy/v5` / tag `v5.3.1`. The v5 code was removed from `main` in 7.0 and is archived under the tag `v5-archive` ([how to read it](docs/legacy_v5.md)). The GitHub Pages site ([`web/`](web/)) serves only an offline demo. |
 
-## Quick start (current v5 code)
+## Quick start (development)
 
-Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/).
+Requires Python 3.12+, [`uv`](https://docs.astral.sh/uv/) and Node 20+. The app is a
+FastAPI server ([`backend/`](backend/)) serving the React frontend
+([`frontend/`](frontend/)); production runs on the owner's server
+([`deploy/RUNBOOK.md`](deploy/RUNBOOK.md)).
 
 ```powershell
 cd backend
 uv sync                          # add --extra dev for lint/test tooling
-uv run alembic upgrade head      # create the SQLite schema
-uv run investment-dashboard      # NiceGUI on http://localhost:8080
+uv run inv-dashboard-server      # API on http://127.0.0.1:8080 (see backend/.env.example)
+cd ..\frontend; npm install; npm run dev
 ```
 
-No command line needed: double-click `run_dashboard.vbs` (Windows, no console) or
-`run_dashboard.bat` (Windows, visible console), run `./run_dashboard.sh`
-(macOS/Linux), or `python run_dashboard.py`. The first run bootstraps a local
-`.venv`. On Windows there is also a one-file installer and a portable bundle, see
-[`installer/README.md`](installer/README.md). Startup failures are written to
-`launcher.log` next to the launcher.
-
-The server is **LAN-only by design** (binds `0.0.0.0:8080`); do not expose it to
-the internet ([`SECURITY.md`](SECURITY.md)).
-
 Settings are `INV_DASHBOARD_*` environment variables (or a git-ignored `.env`);
-every variable is documented in [`.env.example`](.env.example). Useful CLIs:
-`inv-dashboard-backup`, `inv-dashboard-split-db`, `inv-dashboard-repair-sidecar`,
-`inv-dashboard-export-snapshot`, `inv-dashboard-publish-web`, `inv-dashboard-api`.
+every variable is documented in [`backend/.env.example`](backend/.env.example). Useful CLIs:
+`inv-dashboard-backup`, `inv-dashboard-restore`, `inv-dashboard-split-db`,
+`inv-dashboard-repair-sidecar`, `inv-dashboard-export-snapshot`,
+`inv-dashboard-upload-db`, `inv-dashboard-set-password`.
 Not sure what a screen does? Use the in-app Help page or the
 [user guide](docs/user_guide.md).
 
@@ -52,29 +46,25 @@ Not sure what a screen does? Use the in-app Help page or the
   more, per holding and for the portfolio, in EUR and USD.
 - **Pages:** overview, deposits, transactions, monthly, yearly, rebalancing
   calculator, projection, analytics, settings and data health.
-- **Local-first storage:** separate ledger / config / cache SQLite tiers; ledger and
-  config may live in a cloud-synced folder (optionally SQLCipher-encrypted), the
-  cache stays on the device.
-- **Web companion:** an encrypted snapshot published to a GitHub release and
-  decrypted in the browser, for a read-only phone view.
+- **Hosted storage:** one SQLCipher-encrypted database on the server, sealed
+  off-site backups.
+- **Offline demo:** `web/` builds a no-data demo for GitHub Pages.
 
 ## Repository layout
 
 ```
-backend/src/investment_dashboard/   Python package (layers: ui/api -> services/readmodels
+backend/src/investment_dashboard/   Python package (layers: api -> services/readmodels
                             -> repositories/adapters -> domain; see docs/architecture.md)
 backend/migrations/         Alembic migrations
 backend/tests/              pytest suite, mirrors src/
-web/                        v5 read-only web companion (TypeScript) + web/proxy Cloudflare Worker
-installer/                  Windows installer and portable-bundle build
+frontend/                   React frontend (the real app)
+web/                        offline demo for GitHub Pages (VITE_DEMO_ONLY=1)
+deploy/                     server stack, runbook, bootstrap
 backend/tools/              helper scripts
 docs/                       architecture, user guide, legacy guide, v6 plan (see docs/README.md)
-run_dashboard.*             one-click launchers
 ```
 
-The Python project lives in `backend/` (run all `uv` commands from there); `web/`
-moves to `frontend/` at the start of v6 Phase 1
-([plan §4a](docs/v6_one_app_plan.md)).
+The Python project lives in `backend/` (run all `uv` commands from there).
 
 ## Development
 
@@ -84,6 +74,7 @@ uv sync --extra dev
 uv run ruff format . ; uv run ruff check . --fix
 uv run mypy src/investment_dashboard/domain
 uv run pytest                      # add --run-network for live-API tests
+cd ..\frontend; npm run typecheck; npm run test
 cd ..\web; npm run typecheck; npm run test
 ```
 
