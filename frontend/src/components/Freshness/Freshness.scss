@@ -23,6 +23,51 @@
     overflow-wrap: anywhere;
   }
 
+  // Stacked: the state on line one, its detail on line two, the dot beside line one.
+  &--stacked {
+    align-items: flex-start;
+  }
+
+  &--stacked &__dot {
+    margin-top: calc((1lh - 8px) / 2);
+  }
+
+  &__head,
+  &__detail {
+    display: block;
+    white-space: nowrap;
+  }
+
+  &__detail {
+    color: var(--color-faint);
+
+    // Tablet: the title area is too narrow for a second line; the state alone, the
+    // full sentence on hover.
+    @include m.tablet-only {
+      display: none;
+    }
+  }
+
+  // Wide screens have the room: one line, "Closed · Prices 22:00 (close)".
+  @include m.wide {
+    &--stacked {
+      align-items: center;
+    }
+
+    &--stacked &__dot {
+      margin-top: 0;
+    }
+
+    &__head,
+    &__detail {
+      display: inline;
+    }
+
+    &__detail::before {
+      content: " · ";
+    }
+  }
+
   &--live &__dot {
     background: var(--color-pos);
     box-shadow: 0 0 0 3px var(--color-pos-soft);

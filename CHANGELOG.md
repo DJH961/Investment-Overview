@@ -85,10 +85,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the week.
 - **An import no longer wipes the whole week's graph points**, only from the
   trade date on, so no week of price history is re-downloaded.
-- **Top bar tidied.** The status chip no longer breaks over three lines: below
-  1280 px it shows its short form ("Closed", "Open · 15:42") with the full
-  sentence on hover; the portfolio pill is as wide as its figures (no dead
-  space).
+- **Top bar tidied.** The status no longer breaks over three lines: on tablet
+  and desktop it stacks the state over its price time ("Closed" / "Prices
+  22:00 (close)"), on one line when the screen is wide; phones keep the short
+  form. The portfolio pill is as wide as its figures (no dead space).
 - **"A refresh is already running" is said on screen** when you press
   refresh during one, instead of nothing.
 - **Graph axis labels never repeat** ("€1.27m, €1.27m" on a tight day): labels
@@ -98,7 +98,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   line ends at the close; the day can have turned since).
 - **Top movers: the "BIGGEST MOVE" tag drops below the symbol as a whole**
   instead of breaking mid-word.
-- A flaky growth-index property test (absolute tolerance on large values).
+- A flaky growth-index property test (absolute tolerance on large values), and
+  tests that assumed "today" has a session before the 09:30 open.
 
 ## [6.16.0] — 2026-11-10
 

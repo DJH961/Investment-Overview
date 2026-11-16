@@ -41,12 +41,17 @@
     letter-spacing: -0.01em;
   }
 
-  // The chip is one line, never broken mid-sentence: narrow screens get its short
-  // form (TopBar picks it), and it moves under the title only when even that can't fit.
+  // Phone: the short form, with a readable minimum, wrapping if it must (some pages
+  // have no short form, e.g. "As of 16/11/2026", and 360 px must not overflow).
+  // Tablet and up: stacked, the state over its detail (two lines, never three).
   &__freshness {
-    flex-shrink: 0;
+    flex-shrink: 1;
     max-width: 100%;
-    white-space: nowrap;
+    min-width: min(6.5rem, 100%);
+
+    @include m.tablet-up {
+      flex-shrink: 0;
+    }
   }
 
   // When the app last fetched prices (the chip says when they are from).

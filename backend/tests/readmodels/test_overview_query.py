@@ -83,9 +83,8 @@ def test_instrument_daily_growth_per_currency(session: Session, seeded: None) ->
     from investment_dashboard.services import intraday_snapshots_service
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-    latest_price_date = intraday_snapshots_service.previous_trading_session(
-        exchange_today() + timedelta(days=1)
-    )
+    # The session the holdings show: before 09:30 ET that is still the previous one.
+    latest_price_date = intraday_snapshots_service.last_session_date()
     previous_price_date = intraday_snapshots_service.previous_trading_session(latest_price_date)
 
     # Clear any seeded closes for VTI to prevent newer prints (like exchange_today() on weekends)
@@ -144,7 +143,7 @@ def test_instrument_daily_growth_prev_leg_matches_the_twin_estimate_anchor(
     from investment_dashboard.services import intraday_snapshots_service as iss
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-    latest_price_date = iss.previous_trading_session(exchange_today() + timedelta(days=1))
+    latest_price_date = iss.last_session_date()  # the session the holdings show
     previous_price_date = iss.previous_trading_session(latest_price_date)
 
     session.execute(delete(PriceHistory).where(PriceHistory.instrument_id == vti.id))
@@ -958,9 +957,13 @@ def test_build_holding_cards_flags_lagging_daily_move_as_stale(
         native_currency="USD",
         account_type="brokerage",
     )
-    today = exchange_today()
-    yesterday = today - timedelta(days=1)
-    two_days_ago = today - timedelta(days=2)
+    from investment_dashboard.services import intraday_snapshots_service as iss
+
+    # The session the holdings show (before 09:30 ET still the previous one) and the
+    # two trading sessions before it: the dates never depend on when CI runs.
+    today = iss.last_session_date()
+    yesterday = iss.previous_trading_session(today)
+    two_days_ago = iss.previous_trading_session(yesterday)
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
     fund = instruments_repo.get_or_create(session, symbol="VFIAX", asset_class="mutual_fund")
