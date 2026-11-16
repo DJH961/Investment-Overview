@@ -46,7 +46,7 @@ export interface DaySplitProps {
   /**
    * `inline`: "☀ +0.81 %  ☾ −0.45 % (i)" (graph header, hero, phone rows). `stacked`:
    * the same on one small line without the (i), right-aligned for a table cell (the Day
-   * column). `list`: the same, left-aligned, for a narrow tile (the KPI "Price move").
+   * column). `list`: the same, left-aligned, for a narrow tile (the KPI "Day move").
    */
   layout?: "inline" | "stacked" | "list";
   className?: string;

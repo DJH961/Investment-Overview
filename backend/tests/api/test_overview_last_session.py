@@ -11,6 +11,8 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from investment_dashboard.db import ledger_session_scope
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
@@ -111,7 +113,11 @@ def test_pre_open_shows_last_session_move(api_db: Path) -> None:
     assert D(usd["last_session"]["overnight_currency"]) == D("0")
 
 
-def test_open_session_keeps_todays_move(api_db: Path) -> None:
+def test_open_session_keeps_todays_move(api_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # No open rate at all (no sample, no fixing for the day): no split block.
+    monkeypatch.setattr(
+        "investment_dashboard.services.fx_service.get_settled_rate_on", lambda *_a, **_k: None
+    )
     _seed(wed_close=D("121"))
     with ledger_session_scope() as s:
         usd = build_overview(s, ccy="USD", as_of=WED, now=_at(11))
@@ -137,8 +143,10 @@ def test_open_session_splits_the_eur_move_into_price_and_currency(api_db: Path) 
     assert abs(move - (D("1210") / D("1.20") - D("1100") / D("1.10"))) < D("0.01")
     ds = eur["day_split"]
     assert ds["overnight"] is False
-    assert abs(D(ds["price_move"]) - D("110") / D("1.10")) < D("0.01")
+    # The tile figure is the whole day Total, open or shut (owner, 2026-11-16) ...
+    assert abs(D(ds["price_move"]) - move) < D("1e-9")
+    # ... and the currency figure is the part of it the rate caused (inside it).
     assert abs(D(ds["currency_move"]) - (D("1210") / D("1.20") - D("1210") / D("1.10"))) < D("0.01")
-    assert abs(D(ds["price_move"]) + D(ds["currency_move"]) - move) < D("1e-9")
+    assert abs(move - D(ds["currency_move"]) - D("110") / D("1.10")) < D("0.01")
     # The USD side of the same split: a USD book has no currency leg in USD.
     assert D(ds["currency_move_secondary"]) == D("0")

@@ -885,13 +885,35 @@ def session_open_fx(session: Session, *, now: datetime | None = None) -> Decimal
 
     Returns the earliest non-null rate among the session's samples, or ``None``
     when no session sample carries a rate yet. Reads only the cached samples — no
-    network.
+    network. The day rule's figures use :func:`day_open_rate`, which adds a fallback.
     """
     samples = day_series_with_fx(session, now=now)
     for _at, _market_eur, fx in samples:
         if fx is not None and fx > 0:
             return fx
     return None
+
+
+def day_open_rate(session: Session, *, now: datetime | None = None) -> Decimal | None:
+    """The open rate the DAY RULE splits on (A = previous close rate -> this rate).
+
+    :func:`session_open_fx` when a session sample carries a rate. When none does
+    (nothing was captured or reconstructed for that session, for example the server
+    was down and the feed served no bars), the ECB reference rate **dated on the
+    session day itself** stands in: that fixing is struck at 14:15 CET, always
+    before the 09:30 ET open, so last night's currency move is not silently counted
+    as zero. Never a forward-filled earlier day's rate (that would be the previous
+    close again and say "nothing moved overnight"). ``None`` when neither exists.
+    Every day-split figure (hero, holdings rows, the tick) goes through here so they
+    cannot disagree; the currency box keeps its own anchor rules. No network.
+    """
+    from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    rate = session_open_fx(session, now=now)
+    if rate is not None and rate > 0:
+        return rate
+    return fx_service.get_settled_rate_on(session, last_session_date(now), quote="USD")
 
 
 def _market_component_pivot_eur(

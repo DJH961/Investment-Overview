@@ -17,6 +17,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.17.3] — 2026-11-16
+
+### Fixed
+- **The first Overview tile always shows the day Total.** It used to show the
+  price-only move during market hours and the frozen Total after the close, under
+  the one name "Price move". It is now the same Total as the headline at all
+  times, in both currencies, and is called **Day move**; the ☀ / ☾ line under it
+  shows its parts. The info text says what the figure is and that tonight's
+  currency move sits beside it, not in it.
+- **A missed 09:30 rate no longer hides last night's currency move.** When no
+  rate was stored for a session at all (the server was down and the feed served
+  no bars), last night's move counted as 0 and ☀ showed the whole Total. The
+  open rate now falls back to that day's own ECB reference rate, which is fixed
+  at 14:15 CET, before the US open, so the overnight part is separated again.
+  A rate stored during the session still wins; an earlier day's rate is never
+  used in its place.
+
 ## [6.17.2] — 2026-11-16
 
 ### Fixed

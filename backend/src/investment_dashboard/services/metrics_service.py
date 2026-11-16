@@ -1075,10 +1075,12 @@ def last_session_split(
     base_usd = prev_usd + flow_usd
     # Day rule (2026-11-16): the day total is frozen at the close, A+B+C. The session
     # figure is its market-hours part B+C = total - A, where A = last night's currency
-    # move (previous book, previous close rate -> that session's open rate). Without a
-    # captured open rate A is unknown (0), so the session figure is the whole A+B+C.
+    # move (previous book, previous close rate -> that session's open rate). The open
+    # rate falls back to the session day's own ECB fixing when no sample carries one
+    # (``day_open_rate``); only with neither is A unknown (0) and the session figure
+    # the whole A+B+C.
     lead_eur = lead_usd = ZERO
-    fx_open = intraday_snapshots_service.session_open_fx(session, now=now)
+    fx_open = intraday_snapshots_service.day_open_rate(session, now=now)
     if fx_open is not None and fx_open > 0:
         lead_eur, lead_usd = fx_revaluation(session, prev_date, fx_from=fx_prev, fx_to=fx_open)
     eur = replace(
@@ -1158,7 +1160,7 @@ def open_session_split(
     session_date = intraday_snapshots_service.last_session_date(now)
     prev_date = intraday_snapshots_service.previous_trading_session(session_date)
     fx_prev = intraday_snapshots_service.day_baseline_rate(session, prev_date)
-    fx_open = intraday_snapshots_service.session_open_fx(session, now=now)
+    fx_open = intraday_snapshots_service.day_open_rate(session, now=now)
     if not fx_prev or not fx_open or fx_prev <= 0 or fx_open <= 0:
         return None
     ov_eur, ov_usd = fx_revaluation(session, prev_date, fx_from=fx_prev, fx_to=fx_open)
@@ -1215,16 +1217,17 @@ def with_last_session_split(metrics: PortfolioMetrics, split: LastSessionSplit) 
 
 @dataclass(frozen=True)
 class DayMoveSplit:
-    """The day move (since the previous close) split into its two causes, per currency.
+    """The headline day move (since the previous close) and its currency figure, per currency.
 
-    ``overnight`` says which split it is:
+    ``price`` is ALWAYS the headline day Total A+B+C (the estimated book's when
+    ``estimated``): live while the market is open, frozen at the close while it is
+    shut. The field keeps its old name; it is no longer a prices-only figure.
+    ``overnight`` says what ``currency`` is:
 
-    * market shut (``True``): ``price`` IS the frozen headline day total A+B+C (the
-      estimated book's when ``estimated``) and ``currency`` is D, the book revalued
-      from the close rate to the rate now, shown beside it and NOT part of it;
-    * market open (``False``): ``price_* + currency_* ==`` the headline day move
-      exactly: ``price`` is the move with today's book held at the previous close's
-      rate, and ``currency`` the current book revalued from that rate to the rate now.
+    * market shut (``True``): D, the book revalued from the close rate to the rate
+      now, shown beside the Total and NOT part of it;
+    * market open (``False``): the part of the Total the rate caused, the current
+      book revalued from the previous close's rate to the rate now (inside the Total).
     """
 
     price_eur: Decimal
@@ -1261,10 +1264,10 @@ def day_move_split(
     now: datetime,
     fx_now: Decimal | None,
 ) -> DayMoveSplit | None:
-    """Split the headline day move into price and currency (``None`` when not computable).
+    """The headline day Total with its currency figure (``None`` when not computable).
 
-    FX-aware: every figure is a book valued at one rate, per currency, and the price
-    part is the remainder of the move, so the two always add up to the headline.
+    FX-aware: every figure is a book valued at one rate, per currency. See
+    :class:`DayMoveSplit` for what ``currency`` means open and shut.
     """
     from investment_dashboard.domain.late_data import value_at_rate  # noqa: PLC0415
 
@@ -1314,9 +1317,11 @@ def day_move_split(
             cur_eur += a_eur - b_eur
             cur_usd += a_usd - b_usd
             estimated = True
+    # ``price`` is the whole headline move (owner, 2026-11-16: the tile always shows
+    # the day Total, open or shut); ``currency`` is the part of it the rate caused.
     return DayMoveSplit(
-        price_eur=move_eur - cur_eur,
-        price_usd=move_usd - cur_usd,
+        price_eur=move_eur,
+        price_usd=move_usd,
         currency_eur=cur_eur,
         currency_usd=cur_usd,
         overnight=False,

@@ -2564,14 +2564,15 @@ export interface components {
         };
         /**
          * DaySplit
-         * @description The headline day move (since the previous close) as price + currency.
+         * @description The headline day move (since the previous close) and its currency figure.
          *
-         *     Market open: ``price_move + currency_move`` is the headline move exactly (the
-         *     estimated book's when ``estimated``). ``overnight``: the market is shut, so
-         *     ``price_move`` IS the headline day total frozen at the close and ``currency_move``
-         *     the exchange-rate change since its close, shown beside it and not added; otherwise ``price_move`` is today's move at the previous close's rate
-         *     and ``currency_move`` the rate change since that close. ``*_secondary`` are the
-         *     same figures computed in ``secondary_ccy`` (never converted).
+         *     ``price_move`` is always the headline day Total (the estimated book's when
+         *     ``estimated``): live while the market is open, frozen at the close while it is
+         *     shut. The name is historical; it is not a prices-only figure. ``overnight``: the
+         *     market is shut and ``currency_move`` is the exchange-rate change since the close,
+         *     shown beside the Total and not added; otherwise ``currency_move`` is the part of
+         *     the Total the rate caused since the previous close. ``*_secondary`` are the same
+         *     figures computed in ``secondary_ccy`` (never converted).
          */
         DaySplit: {
             /** Currency Move */
