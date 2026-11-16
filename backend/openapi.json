@@ -846,6 +846,345 @@
         "title": "Body_upload_import_api_imports_post",
         "type": "object"
       },
+      "BriefAckIn": {
+        "properties": {
+          "seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seen At"
+          }
+        },
+        "title": "BriefAckIn",
+        "type": "object"
+      },
+      "BriefAckOut": {
+        "properties": {
+          "last_ack_at": {
+            "title": "Last Ack At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "last_ack_at"
+        ],
+        "title": "BriefAckOut",
+        "type": "object"
+      },
+      "BriefBoundary": {
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "open",
+              "close"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "session_date": {
+            "title": "Session Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "session_date"
+        ],
+        "title": "BriefBoundary",
+        "type": "object"
+      },
+      "BriefEvent": {
+        "description": "A ledger row created since the last acknowledgement (``transactions.created_at``).",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "date",
+          "created_at"
+        ],
+        "title": "BriefEvent",
+        "type": "object"
+      },
+      "BriefFxMove": {
+        "description": "The weekend line: the Overview's ``currency.today`` rate move, copied.",
+        "properties": {
+          "anchor_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "prev_close",
+                  "overnight",
+                  "session_open"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor Kind"
+          },
+          "pair": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pair"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fraction, 0.01 = 1%",
+            "title": "Pct"
+          },
+          "spot_display": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot Display"
+          }
+        },
+        "title": "BriefFxMove",
+        "type": "object"
+      },
+      "BriefMove": {
+        "description": "One session's move in one currency: the Overview's day move, reused as is.\n\nEvery figure is the same value the Overview payload carries for that currency\n(``kpis.daily_move``, ``kpis.daily_growth_pct``, ``day_split``, ``movers``), so\nthe Brief can never disagree with the hero. Amounts in that currency.",
+        "properties": {
+          "currency_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Move"
+          },
+          "currency_overnight": {
+            "default": false,
+            "title": "Currency Overnight",
+            "type": "boolean"
+          },
+          "day_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Move"
+          },
+          "day_move_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fraction, 0.01 = 1%",
+            "title": "Day Move Pct"
+          },
+          "estimated": {
+            "default": false,
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "movers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Movers"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Move"
+          },
+          "session_date": {
+            "title": "Session Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_date"
+        ],
+        "title": "BriefMove",
+        "type": "object"
+      },
+      "BriefOut": {
+        "description": "The Daily Brief. ``due`` false: show nothing (no \"up to date\" chrome).",
+        "properties": {
+          "boundaries": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BriefBoundary"
+            },
+            "title": "Boundaries",
+            "type": "array"
+          },
+          "due": {
+            "title": "Due",
+            "type": "boolean"
+          },
+          "events": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BriefEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "events_total": {
+            "default": 0,
+            "title": "Events Total",
+            "type": "integer"
+          },
+          "fx_move": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ByCurrency_BriefFxMove_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "session",
+                  "sessions",
+                  "fx_reopen"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "last_ack_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ack At"
+          },
+          "move": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ByCurrency_BriefMove_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "now": {
+            "title": "Now",
+            "type": "string"
+          },
+          "sessions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "sessions_passed": {
+            "default": 0,
+            "title": "Sessions Passed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "due",
+          "now"
+        ],
+        "title": "BriefOut",
+        "type": "object"
+      },
       "Bucket": {
         "properties": {
           "label": {
@@ -1071,6 +1410,60 @@
         "title": "ByCurrency[AnalyticsOut]",
         "type": "object"
       },
+      "ByCurrency_BriefFxMove_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/BriefFxMove"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/BriefFxMove"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[BriefFxMove]",
+        "type": "object"
+      },
+      "ByCurrency_BriefMove_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/BriefMove"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/BriefMove"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[BriefMove]",
+        "type": "object"
+      },
       "ByCurrency_CalculatorInputsOut_": {
         "properties": {
           "EUR": {
@@ -1096,6 +1489,33 @@
           "USD"
         ],
         "title": "ByCurrency[CalculatorInputsOut]",
+        "type": "object"
+      },
+      "ByCurrency_CurrencyOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/CurrencyOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/CurrencyOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[CurrencyOut]",
         "type": "object"
       },
       "ByCurrency_DepositsOut_": {
@@ -1822,6 +2242,75 @@
         "title": "CurrencyBlock",
         "type": "object"
       },
+      "CurrencyBuys": {
+        "description": "\"\u20ac1,000 buys $X; yesterday $Y\" (``domain/session_fx.fx_buying_power_split``).",
+        "properties": {
+          "amount_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Eur",
+            "type": "string"
+          },
+          "change_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Usd"
+          },
+          "market_hours_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Hours Usd"
+          },
+          "overnight_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overnight Usd"
+          },
+          "usd_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Now",
+            "type": "string"
+          },
+          "usd_prev": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Prev"
+          }
+        },
+        "required": [
+          "amount_eur",
+          "usd_now"
+        ],
+        "title": "CurrencyBuys",
+        "type": "object"
+      },
       "CurrencyLifetime": {
         "properties": {
           "avg_invest_rate": {
@@ -1899,6 +2388,280 @@
           }
         },
         "title": "CurrencyLifetime",
+        "type": "object"
+      },
+      "CurrencyOneCent": {
+        "description": "The book's value at the rate and at the rate + 0.01, one instant, this side's ccy.",
+        "properties": {
+          "change": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Change",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "value_at_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value At Rate",
+            "type": "string"
+          },
+          "value_at_rate_plus": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value At Rate Plus",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rate",
+          "value_at_rate",
+          "value_at_rate_plus",
+          "change"
+        ],
+        "title": "CurrencyOneCent",
+        "type": "object"
+      },
+      "CurrencyOut": {
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "buys": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CurrencyBuys"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Ccy",
+            "type": "string"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "lifetime": {
+            "$ref": "#/components/schemas/CurrencyLifetime"
+          },
+          "one_cent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CurrencyOneCent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rate_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CurrencyRateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "return_split": {
+            "$ref": "#/components/schemas/ReturnSplit"
+          },
+          "stats": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyStat"
+            },
+            "title": "Stats",
+            "type": "array"
+          },
+          "today": {
+            "$ref": "#/components/schemas/CurrencyToday"
+          }
+        },
+        "required": [
+          "ccy",
+          "as_of",
+          "generated_at",
+          "today",
+          "lifetime",
+          "return_split"
+        ],
+        "title": "CurrencyOut",
+        "type": "object"
+      },
+      "CurrencyRateRange": {
+        "description": "Today's EUR/USD low and high from the stored intraday samples (market hours).",
+        "properties": {
+          "first_at": {
+            "title": "First At",
+            "type": "string"
+          },
+          "high": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "High",
+            "type": "string"
+          },
+          "high_display": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "High Display",
+            "type": "string"
+          },
+          "last_at": {
+            "title": "Last At",
+            "type": "string"
+          },
+          "low": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Low",
+            "type": "string"
+          },
+          "low_display": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Low Display",
+            "type": "string"
+          },
+          "samples": {
+            "title": "Samples",
+            "type": "integer"
+          },
+          "session_date": {
+            "title": "Session Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_date",
+          "low",
+          "high",
+          "low_display",
+          "high_display",
+          "samples",
+          "first_at",
+          "last_at"
+        ],
+        "title": "CurrencyRateRange",
+        "type": "object"
+      },
+      "CurrencyStat": {
+        "description": "One strip tile (the ``stats`` shape push 6 extends).",
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "key": {
+            "enum": [
+              "rate_now",
+              "effect_today",
+              "investing_power_today",
+              "lifetime_effect",
+              "avg_rate_vs_now",
+              "one_cent"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tailwind",
+                  "headwind",
+                  "neutral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary"
+          },
+          "secondary_currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Currency"
+          },
+          "secondary_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rate",
+                  "fraction",
+                  "money"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Unit"
+          },
+          "unit": {
+            "enum": [
+              "rate",
+              "fraction",
+              "money"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "unit"
+        ],
+        "title": "CurrencyStat",
         "type": "object"
       },
       "CurrencyToday": {
@@ -3074,6 +3837,28 @@
             "title": "Market State",
             "type": "string"
           },
+          "next_close_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Close At"
+          },
+          "next_open_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Open At"
+          },
           "price_market_at": {
             "anyOf": [
               {
@@ -3135,6 +3920,17 @@
               }
             ],
             "title": "Refresh Source"
+          },
+          "session_opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Opened At"
           }
         },
         "required": [
@@ -9996,6 +10792,19 @@
             "description": "EUR return minus USD return, in percentage points",
             "title": "Currency Effect Pp"
           },
+          "eur_minus_usd_pp": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "EUR return minus USD return, same in both views (fraction, 0.01 = 1% points)",
+            "title": "Eur Minus Usd Pp"
+          },
           "investment_return": {
             "anyOf": [
               {
@@ -10021,6 +10830,19 @@
             ],
             "description": "Compounded EUR return (fraction, 0.01 = 1%)",
             "title": "Total Return Eur"
+          },
+          "usd_vs_eur_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dollar vs euro, average invest rate to now (fraction, 0.01 = 1%)",
+            "title": "Usd Vs Eur Pct"
           }
         },
         "title": "ReturnSplit",
@@ -14199,6 +15021,68 @@
         ]
       }
     },
+    "/api/brief": {
+      "get": {
+        "operationId": "get_brief_api_brief_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Brief",
+        "tags": [
+          "brief"
+        ]
+      }
+    },
+    "/api/brief/ack": {
+      "post": {
+        "operationId": "ack_brief_api_brief_ack_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefAckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefAckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ack Brief",
+        "tags": [
+          "brief"
+        ]
+      }
+    },
     "/api/calculator": {
       "get": {
         "operationId": "get_inputs_api_calculator_get",
@@ -14323,6 +15207,27 @@
         "summary": "Get Inputs Both",
         "tags": [
           "calculator"
+        ]
+      }
+    },
+    "/api/currency/both": {
+      "get": {
+        "operationId": "get_currency_both_api_currency_both_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_CurrencyOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Currency Both",
+        "tags": [
+          "currency"
         ]
       }
     },

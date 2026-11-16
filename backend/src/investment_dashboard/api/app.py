@@ -63,6 +63,9 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "ops",
     # B5 currency
     "fx_conversions",
+    # v7.0
+    "brief",
+    "currency",
     # B6 live
     "stream",
     "live",
