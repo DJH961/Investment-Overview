@@ -144,8 +144,13 @@ def test_parts_add_up_per_holding_and_across_the_book(api_db: Path) -> None:
         assert abs(overnight_sum - D(last["overnight_currency"])) < D("0.03"), ccy
 
 
-def test_no_split_while_open_without_an_open_rate(api_db: Path) -> None:
-    """No session sample yet (no open rate): nothing to split, nothing shown."""
+def test_no_split_while_open_without_an_open_rate(
+    api_db: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No session sample and no fixing for the day (no open rate): nothing shown."""
+    monkeypatch.setattr(
+        "investment_dashboard.services.fx_service.get_settled_rate_on", lambda *_a, **_k: None
+    )
     _seed()
     for ccy in ("EUR", "USD"):
         rows, last = _rows(ccy, _at(11))
@@ -153,6 +158,31 @@ def test_no_split_while_open_without_an_open_rate(api_db: Path) -> None:
         for r in rows.values():
             assert (r["day_session"], r["day_overnight"]) == (None, None)
             assert (r["day_session_pct"], r["day_overnight_pct"]) == (None, None)
+
+
+def test_shut_without_samples_the_days_fixing_stands_in_for_the_open_rate(api_db: Path) -> None:
+    """Thu 08:00 ET, market shut, last session Wed, and NO intraday sample for it.
+
+    Golden values, EUR view, VTI (10 sh, USD 110 on Tue and Wed, so B = 0):
+    baseline = Tue book 1,100 USD at Tue's rate 1.10 = 1,000.00 EUR. Wed has no samples,
+    so its close rate is Wed's ECB fixing 1.20: frozen Total = 1,100/1.20 - 1,000 = -83.33.
+    The open rate falls back to the same fixing (struck 14:15 CET, before the 09:30 ET
+    open), so A (last night) = 1,100/1.20 - 1,100/1.10 = -83.33 and the market-hours
+    part is Total - A = 0.00. Before 6.17.3 the open rate was "missing", A counted as 0
+    and the market-hours part showed the whole -83.33.
+    """
+    _seed()
+    now = datetime(2026, 10, 29, 8, 0, tzinfo=ET).astimezone(UTC)
+    with ledger_session_scope() as s:
+        last = build_overview(s, ccy="EUR", as_of=WED, now=now)["last_session"]
+        usd_last = build_overview(s, ccy="USD", as_of=WED, now=now)["last_session"]
+    assert last["session_date"] == WED.isoformat()
+    # EEE is EUR-native and flat: the whole EUR-view day move is VTI's.
+    assert _near(last["day_move"], "-83.33")
+    assert _near(last["move"], "0")
+    # USD view: VTI has no currency leg; EEE (550 EUR) is worth 605 -> 660 USD overnight.
+    assert _near(usd_last["day_move"], "55")
+    assert _near(usd_last["move"], "0")
 
 
 def _open_rate(monkeypatch: pytest.MonkeyPatch, rate: str = "1.15") -> None:

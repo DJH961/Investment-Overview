@@ -200,7 +200,7 @@ def _tick_day_split(
         return dict(_NO_SPLIT)
     if is_us_market_open(now):
         # Last night's overnight (previous close -> the open rate) + the session.
-        rate_open = intraday_snapshots_service.session_open_fx(session, now=now)
+        rate_open = intraday_snapshots_service.day_open_rate(session, now=now)
         if rate_open is None or rate_open <= 0:
             return dict(_NO_SPLIT)
         split = day_move.holding_open_day_split(
@@ -223,7 +223,7 @@ def _tick_day_split(
             rate_close=rate_close,
             rate_live=rate_live,
             rate_prev=rate_prev,
-            rate_open=intraday_snapshots_service.session_open_fx(session, now=now),
+            rate_open=intraday_snapshots_service.day_open_rate(session, now=now),
         )
     out = dict(_NO_SPLIT)
     for side in ("eur", "usd"):

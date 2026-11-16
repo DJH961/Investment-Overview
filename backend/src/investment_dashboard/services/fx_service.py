@@ -921,6 +921,27 @@ def get_settled_rate(
     return lookup_rate_with_forward_fill(rates, target)
 
 
+def get_settled_rate_on(
+    session: Session,
+    target: date,
+    *,
+    base: str = "EUR",
+    quote: str = "USD",
+) -> Decimal | None:
+    """The settled ECB/Frankfurter rate dated exactly ``target``; no forward fill.
+
+    ``None`` when ``target`` has no rate of its own (a weekend, a holiday, or today
+    before the fixing is published). For callers that need *that day's* fixing and
+    must not mistake an earlier day's rate for it
+    (:func:`intraday_snapshots_service.session_open_fx`).
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        rate = fx_repo.get_rates(cache, base=base, quote=quote).get(target)
+    return rate if rate is not None and rate > 0 else None
+
+
 @dataclass(frozen=True)
 class FxAsOf:
     """Provenance of the EUR→``quote`` rate currently driving the UI.
