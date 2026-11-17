@@ -44,6 +44,25 @@ def test_dividends_increase_pnl() -> None:
     assert out[0].absolute_pnl == Decimal(5)
 
 
+def test_paid_out_dividends_leave_the_net_added_so_every_row_reconciles() -> None:
+    """A fund pays 5 in cash that sweeps into the money-market row.
+
+    Fund: 100 -> 100, bought 0, paid 5: P&L +5, Net added -5 (money out of it).
+    Sweep fund: 10 -> 15, the 5 moved in: P&L 0, Net added +5.
+    Total: End 115 - Start 110 - Net added 0 = P&L 5.
+    """
+    rows = [
+        InstrumentReturn(1, "FUND", D(100), D(100), D(0), dividends_cash=D(5)),
+        InstrumentReturn(2, "MMF", D(10), D(15), D(5)),
+    ]
+    out = {r.symbol: r for r in attribute_portfolio_return(rows)}
+    assert out["FUND"].net_contribution == Decimal(-5)
+    assert out["FUND"].absolute_pnl == Decimal(5)
+    assert out["MMF"].absolute_pnl == Decimal(0)
+    for r in out.values():
+        assert r.absolute_pnl == r.end_value - r.start_value - r.net_contribution
+
+
 def test_sorted_by_absolute_pnl_desc() -> None:
     rows = [
         InstrumentReturn(1, "A", D(100), D(105), D(0)),  # +5

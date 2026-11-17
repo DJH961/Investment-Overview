@@ -6,6 +6,7 @@ import logging
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine, create_engine, event
@@ -107,6 +108,24 @@ def _isolate_scheduler_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(Scheduler, "_load_eod_session", lambda self: None)
     monkeypatch.setattr(Scheduler, "_save_eod_session", lambda self, session_date: None)
+
+
+@pytest.fixture(autouse=True)
+def snapshot_fill_calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, Any]]:
+    """Readers must not start a real snapshot-fill thread against the test database.
+
+    The calls are recorded instead; a test can request this fixture by name to read
+    them.
+    """
+    from investment_dashboard.services import snapshots_service
+
+    calls: list[tuple[Any, Any]] = []
+    monkeypatch.setattr(
+        snapshots_service,
+        "fill_missing_in_background",
+        lambda start, end: calls.append((start, end)) or True,
+    )
+    return calls
 
 
 @pytest.fixture(autouse=True)
