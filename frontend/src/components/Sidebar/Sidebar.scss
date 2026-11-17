@@ -44,7 +44,11 @@
   &__brand-text {
     @include m.truncate;
     font-family: var(--font-display);
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-sm);
+
+    @include m.xl {
+      font-size: var(--font-size-md);
+    }
     font-weight: var(--font-weight-medium);
     letter-spacing: var(--tracking-tight);
   }
