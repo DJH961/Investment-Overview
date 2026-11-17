@@ -5,10 +5,10 @@ This repository is **public**, so every tracked file is world-readable. The
 real data files are tracked" items into a regression that fails fast in CI if
 such a file is ever committed.
 
-It deliberately does **not** flag the anonymized synthetic fixtures under
-``docs/Comparison Files/`` (those are intentionally tracked) — it only catches
-files that must never be in the tree: ``.env`` files, local databases, private
-keys, and the un-fakeable real master workbook removed in §7.1.
+It catches files that must never be in the tree: ``.env`` files, local
+databases, private keys, audit exports and anything under
+``docs/Comparison Files/`` (the old "anonymised" exports kept real symbols,
+dates and returns and were removed).
 """
 
 from __future__ import annotations
@@ -36,7 +36,8 @@ _FORBIDDEN: tuple[tuple[str, str], ...] = (
     ("*.sqlite-*", "local database sidecars must never be committed"),
     ("db.sqlite*", "local databases must never be committed"),
     # The real personal workbook was removed as un-fakeable (§7.1).
-    ("docs/Comparison Files/Investments.xlsx", "real financial workbook (§7.1)"),
+    ("docs/Comparison Files/*", "broker exports and snapshots stay local"),
+    ("audit-export-*.json", "full app snapshots hold account data"),
 )
 
 

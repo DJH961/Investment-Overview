@@ -322,6 +322,13 @@ def _currency_effect_for(metrics: PortfolioMetrics, ccy: str, lifetime: Any) -> 
     return ZERO if metrics.total_growth_compounded_usd is not None else None
 
 
+def _usd_vs_eur(avg_rate: Decimal | None, current_rate: Decimal | None) -> Decimal | None:
+    """``avg_invest_rate / current_rate - 1`` (a ratio of two rates); ``None`` if unusable."""
+    if avg_rate is None or current_rate is None or avg_rate <= 0 or current_rate <= 0:
+        return None
+    return avg_rate / current_rate - 1
+
+
 def _currency_block(
     session: Session,
     metrics: PortfolioMetrics,
@@ -416,6 +423,9 @@ def _currency_block(
             "total_return_eur": dec(metrics.total_growth_compounded_eur),
             "investment_return": dec(metrics.total_growth_compounded_usd),
             "currency_effect_pp": dec(_currency_effect_for(metrics, ccy, lifetime)),
+            # P12: the same in both views (two FX-aware returns subtracted).
+            "eur_minus_usd_pp": dec(lifetime.currency_effect_pp),
+            "usd_vs_eur_pct": dec(_usd_vs_eur(lifetime.avg_invest_rate, lifetime.current_rate)),
         },
         "today": today,
     }
@@ -534,6 +544,9 @@ def _freshness(freshness: dict[int, HoldingFreshness], *, now: datetime) -> dict
     market_open = market_hours.is_us_market_open(now)
     stalled_since = feed_stall_service.stalled_since()
     return {
+        "next_open_at": _iso_utc(market_hours.next_session_open(now)),
+        "next_close_at": _iso_utc(market_hours.next_session_close(now)),
+        "session_opened_at": _iso_utc(market_hours.current_session_open(now)),
         "market_state": live_bus.market_state(now),
         "prices_live": market_hours.is_live_now(
             market_open=market_open,

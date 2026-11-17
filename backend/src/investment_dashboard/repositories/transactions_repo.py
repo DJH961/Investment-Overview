@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -170,6 +170,27 @@ def count_for_account(session: Session, account_id: int) -> int:
     """Number of transactions booked on ``account_id``."""
     stmt = select(func.count()).select_from(Transaction).where(Transaction.account_id == account_id)
     return int(session.scalar(stmt) or 0)
+
+
+def list_created_since(
+    session: Session, since: datetime, limit: int
+) -> tuple[list[Transaction], int]:
+    """Rows written after ``since`` (newest first, instrument loaded) and their total.
+
+    ``created_at`` is a naive UTC timestamp (``CURRENT_TIMESTAMP``), so ``since`` is
+    converted to naive UTC before comparing.
+    """
+    cut = since.astimezone(UTC).replace(tzinfo=None) if since.tzinfo is not None else since
+    where = Transaction.created_at > cut
+    total = int(session.scalar(select(func.count()).select_from(Transaction).where(where)) or 0)
+    rows = session.scalars(
+        select(Transaction)
+        .options(joinedload(Transaction.instrument))
+        .where(where)
+        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
+        .limit(limit)
+    ).all()
+    return list(rows), total
 
 
 def list_by_kinds_with_account(

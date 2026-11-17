@@ -1258,6 +1258,24 @@ class DayMoveSplit:
     estimated: bool = False
 
 
+def value_at_two_rates(
+    session: Session, on: date, rate: Decimal, rate_plus: Decimal
+) -> tuple[tuple[Decimal, Decimal], tuple[Decimal, Decimal]] | None:
+    """The book on ``on`` valued at two EUR/USD rates: ``((eur, usd), (eur_plus, usd_plus))``.
+
+    Same book and valuation as :func:`day_move_split` (``_book_holdings`` +
+    ``value_at_rate``): a market-price book of the holdings, no cash. Each currency's
+    figure comes from ``value_at_rate`` itself (USD holdings stay native dollars),
+    never converted from the other. ``None`` when either rate is not positive.
+    """
+    from investment_dashboard.domain.late_data import value_at_rate  # noqa: PLC0415
+
+    if rate <= ZERO or rate_plus <= ZERO:
+        return None
+    book = _book_holdings(session, on)
+    return value_at_rate(book, rate), value_at_rate(book, rate_plus)
+
+
 def day_move_split(
     session: Session,
     metrics: PortfolioMetrics,

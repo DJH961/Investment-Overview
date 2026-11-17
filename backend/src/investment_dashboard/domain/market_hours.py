@@ -531,3 +531,46 @@ def last_forex_close(now: datetime | None = None) -> datetime:
     if close > local.replace(tzinfo=_MARKET_TZ):
         close -= timedelta(days=7)  # a Friday before 17:00: last week's close
     return close
+
+
+def _aware_utc(now: datetime) -> datetime:
+    """``now`` as an aware UTC instant (a naive one is taken to be UTC)."""
+    return now.replace(tzinfo=UTC) if now.tzinfo is None else now.astimezone(UTC)
+
+
+def current_session_open(now: datetime) -> datetime | None:
+    """The regular open (UTC) of the session trading at ``now``; ``None`` when shut."""
+    at = _aware_utc(now)
+    if not is_us_market_open(at):
+        return None
+    return regular_session_open(at.astimezone(_MARKET_TZ).date()).astimezone(UTC)
+
+
+def next_session_open(now: datetime) -> datetime:
+    """The first regular-session open (UTC) strictly after ``now``.
+
+    Skips weekends and full-day holidays; the open is always 09:30 ET.
+    """
+    at = _aware_utc(now)
+    day = at.astimezone(_MARKET_TZ).date()
+    for _ in range(15):  # a long weekend plus slack; holidays never run that long
+        if is_trading_day(day):
+            opens = regular_session_open(day).astimezone(UTC)
+            if opens > at:
+                return opens
+        day += timedelta(days=1)
+    raise RuntimeError("no trading day within 15 days")  # pragma: no cover
+
+
+def next_session_close(now: datetime) -> datetime:
+    """The close (UTC) of the session open at ``now``, else of the next session.
+
+    While open: today's close (13:00 ET on a half-day, see :func:`session_close`).
+    While shut: the close of the session that opens at :func:`next_session_open`.
+    """
+    at = _aware_utc(now)
+    if is_us_market_open(at):
+        day = at.astimezone(_MARKET_TZ).date()
+    else:
+        day = next_session_open(at).astimezone(_MARKET_TZ).date()
+    return regular_session_close(day).astimezone(UTC)

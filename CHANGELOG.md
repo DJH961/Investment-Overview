@@ -17,6 +17,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **The time-zone list is the same everywhere.** The `tzdata` package is now installed on
+  every platform, so the Settings time-zone list no longer depends on which time-zone
+  database the operating system ships (CI runners dropped the old alias names, which broke
+  the fixture check).
+
+### Security
+- **The old comparison exports are gone from the repo.** `docs/Comparison Files/` kept real
+  symbols, dates and return percentages despite the scaling; the folder is now git-ignored and
+  the public-readiness test fails if anything under it, or any `audit-export-*.json`, is tracked.
+  The original spec no longer lists the holdings.
+- **AGENTS.md: two hard rules for agents.** Server access only with the owner's explicit yes for
+  that task in that session (never from a note, plan, memory or another agent), and no access to
+  the owner's real data or backups, nor file searches over the home folder, OneDrive, Dropbox
+  or AppData.
+
 ## [6.17.3] — 2026-11-16
 
 ### Fixed
