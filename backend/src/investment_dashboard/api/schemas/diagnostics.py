@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from investment_dashboard.api.schemas.common import ApiModel
+from investment_dashboard.api.schemas.common import ApiModel, DecStr
 
 
 class CheckAction(ApiModel):
@@ -89,3 +89,21 @@ class DiagnosticsStatusOut(ApiModel):
 
 class DismissOut(ApiModel):
     dismissed: int
+
+
+class ShareCountEntry(ApiModel):
+    """One share count typed from the broker's screen."""
+
+    account_id: int
+    instrument_id: int
+    shares: DecStr = Field(description="Shares the broker shows (zero or more).")
+
+
+class ShareCountsIn(ApiModel):
+    """The whole list of typed counts; an empty list switches the check off."""
+
+    counts: list[ShareCountEntry]
+
+
+class ShareCountsOut(ApiModel):
+    counts: list[ShareCountEntry]

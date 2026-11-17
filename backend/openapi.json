@@ -12084,6 +12084,65 @@
         "title": "SettingsValuesDto",
         "type": "object"
       },
+      "ShareCountEntry": {
+        "description": "One share count typed from the broker's screen.",
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "integer"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "shares": {
+            "description": "Shares the broker shows (zero or more).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Shares",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "instrument_id",
+          "shares"
+        ],
+        "title": "ShareCountEntry",
+        "type": "object"
+      },
+      "ShareCountsIn": {
+        "description": "The whole list of typed counts; an empty list switches the check off.",
+        "properties": {
+          "counts": {
+            "items": {
+              "$ref": "#/components/schemas/ShareCountEntry"
+            },
+            "title": "Counts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "counts"
+        ],
+        "title": "ShareCountsIn",
+        "type": "object"
+      },
+      "ShareCountsOut": {
+        "properties": {
+          "counts": {
+            "items": {
+              "$ref": "#/components/schemas/ShareCountEntry"
+            },
+            "title": "Counts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "counts"
+        ],
+        "title": "ShareCountsOut",
+        "type": "object"
+      },
       "SliceOut": {
         "properties": {
           "conversion_id": {
@@ -15425,6 +15484,68 @@
           }
         },
         "summary": "Dismiss Problem",
+        "tags": [
+          "diagnostics"
+        ]
+      }
+    },
+    "/api/diagnostics/share-counts": {
+      "get": {
+        "description": "Share counts typed from the broker's screen (empty: the check is not set up).",
+        "operationId": "get_share_counts_api_diagnostics_share_counts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareCountsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Share Counts",
+        "tags": [
+          "diagnostics"
+        ]
+      },
+      "put": {
+        "description": "Replace the typed share counts; Data Health compares them with the ledger.",
+        "operationId": "put_share_counts_api_diagnostics_share_counts_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareCountsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareCountsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Share Counts",
         "tags": [
           "diagnostics"
         ]

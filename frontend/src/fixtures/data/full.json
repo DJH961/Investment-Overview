@@ -5332,6 +5332,33 @@
    {
     "actions": [],
     "count": 0,
+    "detail": "Every provider split on shares you held has a matching ledger split row.",
+    "examples": [],
+    "id": "missing_splits",
+    "severity": "ok",
+    "title": "Possibly missing splits"
+   },
+   {
+    "actions": [],
+    "count": 0,
+    "detail": "Every ledger split row has a matching provider split.",
+    "examples": [],
+    "id": "unmatched_ledger_splits",
+    "severity": "ok",
+    "title": "Ledger splits the provider does not know"
+   },
+   {
+    "actions": [],
+    "count": 0,
+    "detail": "Not set up: type the share counts your broker shows to enable this check.",
+    "examples": [],
+    "id": "share_counts",
+    "severity": "ok",
+    "title": "Share counts against the broker"
+   },
+   {
+    "actions": [],
+    "count": 0,
     "detail": "Every imported brokerage account was imported recently.",
     "examples": [
      "fidelity Empty Account: never imported",
