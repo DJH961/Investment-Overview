@@ -152,32 +152,9 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
     <section className={cls} aria-label="Portfolio value">
       <div className="overview-hero__main">
         <div className="overview-hero__head">
-          <span className="overview-hero__label">Portfolio value</span>
-          {live && (
-            <span className="overview-hero__corner overview-hero__corner--live">
-              <span className="overview-hero__dot" aria-hidden />
-              Live
-            </span>
-          )}
-        </div>
-        {/*
-          The headline band: the value and the day's move side by side, so the two
-          things asked first are answered on one line and the desktop's width is used
-          rather than padded. Below the breakpoint they stack.
-        */}
-        {/*
-          v5's shape, deliberately: the figure, the other currency beneath it, and one
-          coloured change badge — nothing else. The supporting numbers that used to
-          crowd this card (the official total, the day's price/FX split, the lifetime
-          growth split) now sit in the KPI block directly below, which is where every
-          other figure on this page already lives. The card reads the same in every
-          market state, so nothing shifts under you as the day goes on.
-        */}
-        <div className="overview-hero__values" ref={valuesRef}>
-          <span className="overview-hero__headline">
-            <span className="overview-hero__value">
-              <Money amount={toNum(headTotal)} currency={currency} />
-            </span>
+          {/* The "≈ est." chip sits with the label, never competing with the figure's width. */}
+          <span className="overview-hero__label-line">
+            <span className="overview-hero__label">Portfolio value</span>
             {est && (
               <span className="overview-hero__est-chip" data-testid="hero-estimate-chip">
                 ≈ est.
@@ -187,6 +164,19 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
                 />
               </span>
             )}
+          </span>
+          {live && (
+            <span className="overview-hero__corner overview-hero__corner--live">
+              <span className="overview-hero__dot" aria-hidden />
+              Live
+            </span>
+          )}
+        </div>
+        <div className="overview-hero__values" ref={valuesRef}>
+          <span className="overview-hero__headline">
+            <span className="overview-hero__value">
+              <Money amount={toNum(headTotal)} currency={currency} />
+            </span>
           </span>
           {/* The other currency and the price time share one line. */}
           <span className="overview-hero__sub">

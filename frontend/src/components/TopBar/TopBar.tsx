@@ -185,7 +185,8 @@ export function TopBar({
             <>
               <span className="top-bar__summary-value">
                 {summary.estimated && <EstMark />}
-                <Money amount={summary.value} currency={summary.currency} />
+                <Money amount={summary.value} currency={summary.currency} className="top-bar__summary-full" />
+                <Money amount={summary.value} currency={summary.currency} compact className="top-bar__summary-short" />
               </span>
               <DeltaBadge value={summary.pct} />
               <span className="top-bar__summary-move">
