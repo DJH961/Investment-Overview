@@ -76,6 +76,25 @@ NAV_COOLDOWN_OFF_WINDOW = timedelta(minutes=30)
 NAV_MAX_PROBES_PER_DAY = 8
 
 
+#: Retry backoff after consecutive failed Tiingo calls for one symbol/probe key:
+#: 1, 2, 4, ... 128 minutes (failures 1-8), then every 2 hours until a call
+#: succeeds. A success resets it. Kept as constants (not a Settings knob).
+BACKOFF_DOUBLINGS = 8
+BACKOFF_CEILING = timedelta(hours=2)
+
+
+def next_retry_delay(consecutive_failures: int) -> timedelta:
+    """Wait before the next Tiingo attempt after ``consecutive_failures`` failures.
+
+    0 failures -> no wait; n in 1..8 -> ``2**(n-1)`` minutes (1..128); 9+ -> 2 h.
+    """
+    if consecutive_failures <= 0:
+        return timedelta(0)
+    if consecutive_failures > BACKOFF_DOUBLINGS:
+        return BACKOFF_CEILING
+    return timedelta(minutes=2 ** (consecutive_failures - 1))
+
+
 def now_eastern(now_utc: datetime) -> datetime:
     """Convert a naive-UTC instant to a naive Eastern wall-clock datetime."""
     aware = now_utc.replace(tzinfo=ZoneInfo("UTC")) if now_utc.tzinfo is None else now_utc
