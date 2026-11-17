@@ -53,22 +53,25 @@ describe("intradayShape", () => {
 });
 
 describe("HeroIntraday", () => {
-  it("labels the last session and shows low, high and the previous close", () => {
+  it("labels the last session and shows low, high and the previous close, with no curve", () => {
     graph.data = day;
     const { container } = render(<HeroIntraday currency="EUR" now={NOW} />);
     expect(screen.getByText("Last session · Fri")).toBeInTheDocument();
     expect(screen.getByText("€980.00")).toBeInTheDocument();
     expect(screen.getByText("€1,010.00")).toBeInTheDocument();
     expect(screen.getByText("€1,000.00")).toBeInTheDocument();
-    expect(container.querySelector(".hero-intraday--down .hero-intraday__line")).not.toBeNull();
-    expect(container.querySelector(".hero-intraday__ref")).not.toBeNull();
+    expect(container.querySelector("svg")).toBeNull();
   });
 
-  it("keeps its frame (same plot box) while the graph loads", () => {
+  it("keeps its frame (three stats) while the graph loads", () => {
     graph.data = undefined;
     const { container } = render(<HeroIntraday currency="EUR" now={NOW} />);
-    expect(container.querySelector(".hero-intraday__plot")).not.toBeNull();
     expect(container.querySelectorAll(".hero-intraday__fact")).toHaveLength(3);
-    expect(container.querySelector(".hero-intraday__line")).toBeNull();
+  });
+
+  it("renders nothing when loaded with no intraday data", () => {
+    graph.data = { range: "1d", ccy: "EUR", points: [], reference: null };
+    const { container } = render(<HeroIntraday currency="EUR" now={NOW} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

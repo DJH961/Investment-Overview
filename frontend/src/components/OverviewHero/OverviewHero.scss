@@ -32,32 +32,30 @@
     min-width: 0;
   }
 
-  // Phones and tablets keep the single stacked column; the right zone is desktop only.
+  // The "Today" stat block. Phones and tablets: one tidy row under the move.
   &__aside {
-    display: none;
+    min-width: 0;
+    margin-top: var(--space-3);
+
+    &:empty {
+      display: none;
+    }
   }
 
-  // Desktop: value on the left, the day's curve on the right, split by a hairline.
+  // Desktop: value on the left, the day's stats on the right, split by a hairline.
   &--split {
     @include m.desktop {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
       gap: var(--space-7);
-      // Both columns start on the same line. Centred, the text floated whenever it
-      // lost a row — which it now does as soon as the price time fits beside the
-      // change badge — so its label no longer met the curve's heading.
+      // Both columns start on the same line, so the label meets the stats' heading.
       align-items: start;
     }
-
-    // No wide override: an even split is what both zones want. Giving the curve the
-    // larger share (2fr/3fr) starved the text column and wrapped every sub-line onto
-    // two; giving the text the larger share left it holding a block of dead space.
   }
 
   &--split &__aside {
     @include m.desktop {
-      display: block;
-      min-width: 0;
+      margin-top: 0;
       padding-left: var(--space-7);
       border-left: var(--border-width) solid var(--color-border);
     }
@@ -178,6 +176,11 @@
 
   &__official-change {
     white-space: nowrap;
+
+    // Phones: always its own line, so EUR and USD (a longer figure) wrap the same way.
+    @include m.phone {
+      flex-basis: 100%;
+    }
   }
 
   &__value2 {

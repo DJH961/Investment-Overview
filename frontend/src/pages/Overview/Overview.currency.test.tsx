@@ -215,8 +215,8 @@ describe("Overview currency switch", () => {
     expect(usd.container.querySelectorAll(".movers-card__row")).toHaveLength(2);
     // The currency box keeps the same lines (the "Regular €100 · $118.87 today" line in both).
     expect(usd.container.querySelectorAll(".currency-box__amount")).toHaveLength(1);
-    // The hero's day curve renders in both (its trend modifier may flip; the boxes do not move).
-    expect(usd.container.querySelectorAll(".overview-hero__aside .hero-intraday__line")).toHaveLength(1);
+    // The hero's Today facts render in both (no sparkline: the stage's graph draws the day).
+    expect(usd.container.querySelectorAll(".overview-hero__aside .hero-intraday__line")).toHaveLength(0);
     expect(usd.container.querySelectorAll(".hero-intraday__fact")).toHaveLength(3);
     const diff = usdShape.flatMap((s, i) => (s === eurShape[i] ? [] : [`${i}: ${eurShape[i]} -> ${s}`]));
     expect(diff).toEqual([]);

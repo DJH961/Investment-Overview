@@ -22,7 +22,7 @@ export interface OverviewHeroProps {
   loading: boolean;
   /** Injected clock (tests). */
   now?: Date;
-  /** Desktop right zone (the intraday mini chart); hidden below the desktop breakpoint. */
+  /** The "Today" stat block: under the move on phones, a right column on desktop. */
   aside?: ReactNode;
   /** Set inside the Overview stage: no surface of its own, the stage draws it. */
   embedded?: boolean;
@@ -253,7 +253,7 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
               sessionPct={toNum(ls.move_pct ?? null)}
               overnightPct={toNum(ls.overnight_pct ?? null)}
               overnight={toNum(ls.overnight_currency)}
-              totalPct={toNum(ls.day_move_pct ?? null)}
+              totalPct={toNum(headPct)}
               estimate={est !== null}
               currency={currency}
               marketOpen={ls.market_open}
