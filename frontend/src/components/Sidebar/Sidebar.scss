@@ -1,7 +1,7 @@
 @use "../../styles/mixins" as m;
 
-// The navigation spine. `.u-ink` (tokens.scss) gives it the dark token set on a navy
-// canvas in both themes, so every colour below reads as "on ink".
+// The navigation spine. `.u-ink` (tokens.scss) gives it a light spine (light theme) or the dark token set on a navy
+// canvas (dark theme); every colour below reads on that surface.
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
@@ -213,6 +213,7 @@
     &--active,
     &--active:hover {
       background: var(--color-surface);
+      box-shadow: var(--shadow-1);
       color: var(--color-fg);
       font-weight: var(--font-weight-semibold);
 

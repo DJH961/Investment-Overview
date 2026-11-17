@@ -39,9 +39,7 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def golden(session):  # type: ignore[no-untyped-def]
-    acct = Account(
-        broker="vanguard", account_label="B", account_type="brokerage", native_currency="EUR"
-    )
+    acct = Account(broker="vanguard", account_label="B", account_type="cash", native_currency="EUR")
     bench = Instrument(symbol="VT", asset_class="etf", native_currency="USD")
     session.add_all([acct, bench])
     session.flush()

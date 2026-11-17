@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import type { ReactNode } from "react";
 import { Card } from "../Card";
 import { DivergingBar, type DivergingBarRow } from "../DivergingBar";
@@ -193,12 +192,11 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
   const ip = today.investing_power_usd;
   const amount = toNum(ip?.amount_eur);
   const amountUsd = toNum(ip?.amount_usd);
-  // USD only, but its line is held (invisible) in the EUR view too, so the card keeps
-  // one height and nothing below it moves on a currency switch.
-  const ghost = data.ccy !== "USD";
+  // What the regular euro amount buys today: shown in both views (it reads the same
+  // in EUR and USD), so the card keeps one shape on a currency switch.
   const amountLine =
     amount !== null ? (
-      <p className={clsx("currency-box__amount", ghost && "currency-box__amount--ghost")} data-ccy-specific aria-hidden={ghost || undefined}>
+      <p className="currency-box__amount">
         <span>
           Regular <Money amount={amount} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
         </span>

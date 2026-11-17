@@ -16,6 +16,8 @@ of being a uniform scalar of today's spot rate.
 
 from __future__ import annotations
 
+import logging
+import threading
 from collections.abc import Iterable
 from datetime import date, timedelta
 from decimal import Decimal
@@ -23,9 +25,12 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.activity_log import activity
 from investment_dashboard.domain.currency import usd_to_eur_at
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.repositories import snapshots_repo
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from investment_dashboard.models import PositionSnapshot
@@ -351,6 +356,54 @@ def warm_range(session: Session, start: date, end: date, *, force: bool = False)
         warmed += 1
         day += timedelta(days=1)
     return warmed
+
+
+_fill_lock = threading.Lock()
+_fill_running = False
+
+
+def fill_missing_in_background(start: date, end: date) -> bool:
+    """Compute the uncached days in ``[start, end]`` on a background thread.
+
+    A bounded read (``series_in_currency(..., recompute_tail_days=N)``) leaves out
+    uncached days older than its tail, so after an import or edit of past trades
+    (which drops every cached snapshot from that date on) the Risk curve silently
+    lost those days until the evening job warmed the cache again. The reader calls
+    this; once the days are stored a ``refresh`` event makes open pages re-read.
+    Single flight: returns ``False`` when a fill is already running. Best-effort.
+    """
+    global _fill_running  # noqa: PLW0603
+    with _fill_lock:
+        if _fill_running:
+            return False
+        _fill_running = True
+
+    def run() -> None:
+        global _fill_running  # noqa: PLW0603
+        try:
+            from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+            from investment_dashboard.services import refresh_status  # noqa: PLC0415
+
+            with ledger_session_scope() as session:
+                warmed = warm_range(session, start, end)
+            activity("system").info(
+                "filled %d missing daily snapshot(s) from %s to %s", warmed, start, end
+            )
+            if warmed:
+                refresh_status._publish({"type": "refresh", "reason": "snapshots filled"})
+        except Exception:  # pragma: no cover - best-effort, the evening job retries
+            log.warning("background snapshot fill failed", exc_info=True)
+        finally:
+            with _fill_lock:
+                _fill_running = False
+
+    try:
+        threading.Thread(target=run, name="inv-snapshot-fill", daemon=True).start()
+    except Exception:  # pragma: no cover - thread creation failure
+        with _fill_lock:
+            _fill_running = False
+        return False
+    return True
 
 
 def invalidate_from(session: Session, start: date) -> int:

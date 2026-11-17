@@ -22,7 +22,7 @@ export interface OverviewHeroProps {
   loading: boolean;
   /** Injected clock (tests). */
   now?: Date;
-  /** Desktop right zone (the intraday mini chart); hidden below the desktop breakpoint. */
+  /** The "Today" stat block: under the move on phones, a right column on desktop. */
   aside?: ReactNode;
   /** Set inside the Overview stage: no surface of its own, the stage draws it. */
   embedded?: boolean;
@@ -152,32 +152,9 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
     <section className={cls} aria-label="Portfolio value">
       <div className="overview-hero__main">
         <div className="overview-hero__head">
-          <span className="overview-hero__label">Portfolio value</span>
-          {live && (
-            <span className="overview-hero__corner overview-hero__corner--live">
-              <span className="overview-hero__dot" aria-hidden />
-              Live
-            </span>
-          )}
-        </div>
-        {/*
-          The headline band: the value and the day's move side by side, so the two
-          things asked first are answered on one line and the desktop's width is used
-          rather than padded. Below the breakpoint they stack.
-        */}
-        {/*
-          v5's shape, deliberately: the figure, the other currency beneath it, and one
-          coloured change badge — nothing else. The supporting numbers that used to
-          crowd this card (the official total, the day's price/FX split, the lifetime
-          growth split) now sit in the KPI block directly below, which is where every
-          other figure on this page already lives. The card reads the same in every
-          market state, so nothing shifts under you as the day goes on.
-        */}
-        <div className="overview-hero__values" ref={valuesRef}>
-          <span className="overview-hero__headline">
-            <span className="overview-hero__value">
-              <Money amount={toNum(headTotal)} currency={currency} />
-            </span>
+          {/* The "≈ est." chip sits with the label, never competing with the figure's width. */}
+          <span className="overview-hero__label-line">
+            <span className="overview-hero__label">Portfolio value</span>
             {est && (
               <span className="overview-hero__est-chip" data-testid="hero-estimate-chip">
                 ≈ est.
@@ -188,19 +165,44 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
               </span>
             )}
           </span>
-          {k2 && (
-            <span className="overview-hero__value2">
-              <Money amount={toNum(secTotal ?? null)} currency={ccy2} />
+          {live && (
+            <span className="overview-hero__corner overview-hero__corner--live">
+              <span className="overview-hero__dot" aria-hidden />
+              Live
             </span>
           )}
+        </div>
+        <div className="overview-hero__values" ref={valuesRef}>
+          <span className="overview-hero__headline">
+            <span className="overview-hero__value">
+              <Money amount={toNum(headTotal)} currency={currency} />
+            </span>
+          </span>
+          {/* The other currency and the price time share one line. */}
+          <span className="overview-hero__sub">
+            {k2 && (
+              <span className="overview-hero__value2">
+                <Money amount={toNum(secTotal ?? null)} currency={ccy2} />
+              </span>
+            )}
+            <PriceStamps
+              className="overview-hero__stamps"
+              price={heroPriceTime(data)}
+              updated={fetched}
+              compact
+              options={opts}
+            />
+          </span>
         </div>
         {est && (
           <p className="overview-hero__official" data-testid="hero-official">
             <span className="overview-hero__muted">Official</span>
             <Money amount={toNum(k.total_value)} currency={currency} />
             <span className="overview-hero__official-change" data-testid="hero-official-change">
-              <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
-              {" · "}
+              <span className="overview-hero__official-money">
+                <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
+                {" · "}
+              </span>
               <Percent ratio={toNum(officialPct ?? null)} signed />
             </span>
           </p>
@@ -217,26 +219,7 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
             <DeltaBadge value={toNum(headPct)} />
             <Money amount={toNum(headMove)} currency={currency} signed colored />
             <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
-            {secPct != null && (
-              <span className="overview-hero__muted overview-hero__usd">
-                {usdFlat ? (
-                  `${ccy2} unchanged`
-                ) : (
-                  <span>
-                    {ccy2} <Percent ratio={toNum(secPct)} signed />
-                  </span>
-                )}
-                <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
-              </span>
-            )}
           </div>
-          <PriceStamps
-            className="overview-hero__stamps"
-            price={heroPriceTime(data)}
-            updated={fetched}
-            compact
-            options={opts}
-          />
         </div>
         {/*
           Market shut and the currency moved since the close: the headline above already
@@ -248,12 +231,23 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
           so switching EUR/USD (USD has no currency leg) never moves the page.
         */}
         <div className="overview-hero__split">
+          {secPct != null && (
+            <span className="overview-hero__muted overview-hero__usd">
+              {usdFlat ? (
+                `${ccy2} unchanged`
+              ) : (
+                <span>
+                  {ccy2} <Percent ratio={toNum(secPct)} signed />
+                </span>
+              )}
+              <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
+            </span>
+          )}
           {ls && (
             <DaySplit
               sessionPct={toNum(ls.move_pct ?? null)}
               overnightPct={toNum(ls.overnight_pct ?? null)}
               overnight={toNum(ls.overnight_currency)}
-              totalPct={toNum(ls.day_move_pct ?? null)}
               estimate={est !== null}
               currency={currency}
               marketOpen={ls.market_open}

@@ -1,57 +1,62 @@
 @use "../../styles/mixins" as m;
 
-// One grid for the whole list (rows are subgrids), so labels, tracks, money
-// figures and status tags (live / last / paused) line up across every row.
+// Each leg is its own two-line block at the full width of its container: the name
+// (with its live / paused / last tag) left and the amount right, then a long bar
+// under them. Stacking the bar under its text is what keeps it long and readable in
+// a 300 px side column, where four columns in one line left a stub of a track.
 .diverging-bar {
-  display: grid;
-  grid-template-columns: minmax(6.5rem, auto) minmax(4rem, 1fr) auto auto;
-  row-gap: var(--space-2);
-  column-gap: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
 
-  @include m.phone {
-    grid-template-columns: minmax(5.25rem, auto) minmax(3.5rem, 1fr) auto auto;
-    column-gap: var(--space-2);
-  }
-
-  &--untagged {
-    grid-template-columns: minmax(6.5rem, auto) minmax(4rem, 1fr) auto;
-
-    @include m.phone {
-      grid-template-columns: minmax(5.25rem, auto) minmax(3.5rem, 1fr) auto;
-    }
-  }
-
   &__row {
     display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: var(--space-3);
+    row-gap: var(--space-2);
+    min-width: 0;
     font-size: var(--font-size-sm);
-
-    @include m.phone {
-      font-size: var(--font-size-xs);
-    }
   }
 
   &__label {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-2);
+    min-width: 0;
     font-weight: var(--font-weight-semibold);
+  }
+
+  &__value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+  }
+
+  // Status word beside the name: text, so the live leg never relies on colour.
+  &__tag {
+    @include m.eyebrow;
+
     white-space: nowrap;
   }
 
   &__track {
     position: relative;
-    height: var(--space-2);
+    grid-column: 1 / -1;
+    height: var(--space-3);
     background: var(--color-surface-2);
     border-radius: 4px;
 
     // centre line
     &::after {
       position: absolute;
-      top: -2px;
-      bottom: -2px;
+      top: -3px;
+      bottom: -3px;
       left: 50%;
       width: 1px;
       background: var(--color-border-strong);
@@ -79,6 +84,7 @@
       background: var(--color-neg);
     }
 
+    // The overnight leg is hatched, so it differs from market hours without colour.
     &--striped {
       background-image: repeating-linear-gradient(
         135deg,
@@ -86,19 +92,5 @@
         var(--color-surface) 3px 5px
       );
     }
-  }
-
-  &__value {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    font-weight: var(--font-weight-semibold);
-    white-space: nowrap;
-  }
-
-  &__tag {
-    @include m.eyebrow;
-
-    text-align: right;
-    white-space: nowrap;
   }
 }

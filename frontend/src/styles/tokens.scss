@@ -221,10 +221,23 @@
   }
 }
 
-// The navigation spine (sidebar, rail, phone tab bar): deep ink in BOTH themes, the
-// app's signature. Children see the dark token set on a navy canvas, so a Money or
-// Percent inside reads correctly; values are checked in tokens.cvd.test.ts (ink).
+// The navigation spine (sidebar, rail, phone tab bar). Light theme: a quiet light spine,
+// a step off the page canvas, with white raised tiles. Dark theme: deep ink (below).
+// Values are checked in tokens.cvd.test.ts (spine-light, ink).
 .u-ink {
+  --color-bg: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #e4e8f0;
+  --color-surface-glass: rgba(255, 255, 255, 0.88);
+  --color-border: #dde1e8;
+  --color-border-strong: #c3cad6;
+
+  color: var(--color-fg);
+}
+
+// Dark theme: the ink spine, the app's signature. Children see the dark token set on a
+// navy canvas, so a Money or Percent inside reads correctly.
+@mixin ink-tokens {
   @include dark-tokens;
   --color-bg: #0d1524;
   --color-surface: #16203a;
@@ -235,6 +248,16 @@
 
   color: var(--color-fg);
   color-scheme: dark;
+}
+
+:root[data-theme="dark"] .u-ink {
+  @include ink-tokens;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .u-ink {
+    @include ink-tokens;
+  }
 }
 
 // Phones: tighter rhythm, the cards give their width to the content.

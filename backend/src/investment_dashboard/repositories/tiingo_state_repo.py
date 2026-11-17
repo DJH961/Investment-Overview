@@ -22,6 +22,7 @@ from investment_dashboard.domain.tiingo_fallback import (
     Budget,
     eastern_day,
     is_new_budget_day,
+    next_retry_delay,
 )
 from investment_dashboard.repositories import app_config_repo
 
@@ -127,6 +128,11 @@ class TiingoDesktopState:
     #: the smart canary pick (earliest + most consistent publisher). Unlike the
     #: per-day ``earliest_habit`` floor, this is **not** reset at ET midnight.
     publish_habits: dict[str, list[time]] = field(default_factory=dict)
+    #: Consecutive failed Tiingo calls per symbol/probe key (cleared on success).
+    fetch_failures: dict[str, int] = field(default_factory=dict)
+    #: Earliest instant the next call for a key may be made (backoff, see
+    #: ``tiingo_fallback.next_retry_delay``); present only while failing.
+    retry_not_before: dict[str, datetime] = field(default_factory=dict)
 
     def budget(self) -> Budget:
         return Budget(
@@ -179,6 +185,10 @@ class TiingoDesktopState:
                     sym: [t.strftime("%H:%M") for t in times]
                     for sym, times in self.publish_habits.items()
                 },
+                "fetch_failures": dict(self.fetch_failures),
+                "retry_not_before": {
+                    sym: dt.isoformat() for sym, dt in self.retry_not_before.items()
+                },
             }
         )
 
@@ -191,7 +201,17 @@ class TiingoDesktopState:
         stale_raw = data.get("stale_since") or {}
         attempt_raw = data.get("last_market_attempt_at") or {}
         habits_raw = data.get("publish_habits") or {}
+        failures_raw = data.get("fetch_failures") or {}
+        retry_raw = data.get("retry_not_before") or {}
         return cls(
+            fetch_failures={
+                sym: int(n) for sym, n in failures_raw.items() if isinstance(n, int) and n > 0
+            },
+            retry_not_before={
+                sym: dt
+                for sym, raw_dt in retry_raw.items()
+                if (dt := _parse_dt(raw_dt)) is not None
+            },
             hour_stamp=_parse_dt(data.get("hour_stamp")),
             hour_used=int(data.get("hour_used", 0)),
             day_stamp=_parse_dt(data.get("day_stamp")),
@@ -248,6 +268,26 @@ def record_canary(state: TiingoDesktopState, now_utc: datetime) -> None:
     state.last_canary_at = now_utc
     state.canary_count_today += 1
     record_spend(state, 1)
+
+
+def in_backoff(state: TiingoDesktopState, key: str, now_utc: datetime) -> bool:
+    """Whether ``key`` is still waiting out its failure backoff."""
+    until = state.retry_not_before.get(key)
+    return until is not None and now_utc < until
+
+
+def record_fetch_failure(state: TiingoDesktopState, key: str, now_utc: datetime) -> int:
+    """Count a failed call for ``key`` and schedule its next retry; return the count."""
+    failures = state.fetch_failures.get(key, 0) + 1
+    state.fetch_failures[key] = failures
+    state.retry_not_before[key] = now_utc + next_retry_delay(failures)
+    return failures
+
+
+def record_fetch_success(state: TiingoDesktopState, key: str) -> None:
+    """A call for ``key`` succeeded: reset its backoff."""
+    state.fetch_failures.pop(key, None)
+    state.retry_not_before.pop(key, None)
 
 
 def exhaust_hour(state: TiingoDesktopState, now_utc: datetime) -> None:

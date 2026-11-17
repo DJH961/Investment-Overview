@@ -87,9 +87,11 @@ const dark = tokens(block("@mixin dark-tokens {"));
 const themes: Record<string, Record<string, string>> = {
   light: tokens(block(":root {")),
   dark,
-  // The navigation spine (.u-ink, both themes): the dark set on a navy canvas. The
-  // portfolio card in the sidebar shows pos/neg/warn figures and the market-state dot there.
-  ink: { ...dark, ...tokens(block(".u-ink {")) },
+  // The navigation spine. Light theme (.u-ink): the light set on a tinted canvas with
+  // white tiles. Dark theme (ink-tokens): the dark set on a navy canvas. The portfolio
+  // card in the sidebar shows pos/neg/warn figures and the market-state dot there.
+  "spine-light": { ...tokens(block(":root {")), ...tokens(block(".u-ink {")) },
+  ink: { ...dark, ...tokens(block("@mixin ink-tokens {")) },
 };
 const min = (v: Vision) => (v === "protan" ? MIN_PROTAN : MIN_OTHER);
 

@@ -64,10 +64,10 @@
     gap: var(--space-5);
     min-width: 0;
 
-    @container currency-box (min-width: 640px) {
+    @container currency-box (min-width: 34rem) {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: var(--space-8);
+      gap: var(--space-7);
       align-items: start;
 
       &--single {
@@ -89,7 +89,7 @@
     flex-direction: column;
     margin: 0;
 
-    @container currency-box (min-width: 480px) and (max-width: 639px) {
+    @container currency-box (min-width: 480px) and (max-width: 33.99rem) {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: var(--space-4);
@@ -128,7 +128,7 @@
       min-width: 0;
     }
 
-    @container currency-box (min-width: 480px) and (max-width: 639px) {
+    @container currency-box (min-width: 480px) and (max-width: 33.99rem) {
       display: flex;
       flex-direction: column;
       align-items: stretch;
@@ -210,7 +210,8 @@
     padding-bottom: var(--space-5);
     border-bottom: var(--border-width) solid var(--color-border);
 
-    @container currency-box (min-width: 640px) {
+    @container currency-box (min-width: 34rem) {
+      order: 0;
       padding-bottom: 0;
       border-bottom: 0;
     }
@@ -234,11 +235,6 @@
     @container currency-box (min-width: 480px) {
       font-size: var(--font-size-3xl);
     }
-  }
-
-  // The USD-only "Regular €100 … today" line, held invisibly in the EUR view.
-  &__amount--ghost {
-    visibility: hidden;
   }
 }
 

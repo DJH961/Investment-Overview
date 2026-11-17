@@ -36,6 +36,9 @@ if TYPE_CHECKING:
     from investment_dashboard.models import Account, Instrument, Transaction
 
 ZERO = Decimal(0)
+#: Accounts whose ledger cash balance is part of the portfolio value (the total adds
+#: their balance); every other account counts only its holdings.
+CASH_ACCOUNT_TYPES = frozenset({"savings", "cash"})
 #: Below this residual share count a holding is treated as fully closed, so a
 #: dust position left after a sale never raises the zero-value warning.
 _MIN_HELD_SHARES = Decimal("0.0000001")
@@ -362,7 +365,7 @@ def total_portfolio_value(
     fx_rate = fx_service.get_rate_eur_to_quote(session, as_of)
     rate_cache: dict[str, Decimal | None] = {"USD": fx_rate}
     for account in accounts_repo.list_accounts(session):
-        if account.account_type not in {"savings", "cash"}:
+        if account.account_type not in CASH_ACCOUNT_TYPES:
             continue
         balance_native = compute_cash_balance(session, account.id, as_of=as_of)
         ccy = account.native_currency.upper()
@@ -406,7 +409,7 @@ def total_portfolio_value_usd(
             total += p.current_value_eur * fx_usd
     rate_cache: dict[str, Decimal | None] = {"USD": fx_usd}
     for account in accounts_repo.list_accounts(session):
-        if account.account_type not in {"savings", "cash"}:
+        if account.account_type not in CASH_ACCOUNT_TYPES:
             continue
         balance_native = compute_cash_balance(session, account.id, as_of=as_of)
         ccy = account.native_currency.upper()

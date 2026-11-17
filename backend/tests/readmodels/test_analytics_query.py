@@ -35,7 +35,7 @@ def populated_session(session):  # type: ignore[no-untyped-def]
     account = Account(
         broker="vanguard",
         account_label="Brokerage",
-        account_type="brokerage",
+        account_type="cash",
         native_currency="EUR",
     )
     instrument = Instrument(symbol="VTI", asset_class="etf", native_currency="USD")

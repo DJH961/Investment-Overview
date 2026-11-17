@@ -6,9 +6,10 @@
 //   [ STAGE: value · today's move · today panel ]
 //   [ STAGE: the chart                          ]
 //   [ KPI panel                                 ]
-//   [ Holdings (main)          ][ Currency    ]   wide screens; stacked below
-//   [                          ][ Top movers  ]
-//   [ Allocation               ][ Asset classes / Lifetime FX ]
+//   [ Holdings (main)   ][ Currency        ]   wide screens; stacked below
+//   [ Allocation        ][ Top movers      ]
+//   [                   ][ Asset classes   ]
+//   [                   ][ Lifetime FX     ]
 .overview-page {
   display: flex;
   flex-direction: column;
@@ -31,34 +32,13 @@
     border-top: var(--border-width) solid var(--color-border);
   }
 
+  // Below wide: one column, Holdings first, then the side cards, Allocation last.
   &__row {
-    display: grid;
-    gap: var(--page-gap);
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-
-    @include m.desktop {
-      &--alloc {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      }
-    }
-
-    // Holdings in the main column, the side column beside it; both end level.
-    @include m.wide {
-      &--main {
-        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-        align-items: stretch;
-      }
-    }
-  }
-
-  &__cell {
     display: flex;
     flex-direction: column;
-    min-width: 0;
+    gap: var(--page-gap);
   }
 
-  // Cards stacked in one grid cell.
   &__side {
     display: flex;
     flex-direction: column;
@@ -66,12 +46,34 @@
     min-width: 0;
   }
 
-  // Wide: the main cell's card and the side's last card fill the row, so the two
-  // columns end on one line (no ragged bottoms).
+  // Below wide the main column dissolves into the row so Allocation can come last.
+  &__main {
+    display: contents;
+  }
+
+  &__alloc {
+    order: 1;
+    min-width: 0;
+  }
+
+  // Wide: Holdings (natural height) + Allocation on the left, the four side cards on
+  // the right. The treemap's height (set in Overview.tsx) closes the gap between them.
   @include m.wide {
-    &__row--main &__cell > :last-child,
-    &__side--fill > :last-child {
-      flex: 1 1 auto;
+    &__row {
+      display: grid;
+      align-items: start;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    }
+
+    &__main {
+      display: flex;
+      flex-direction: column;
+      gap: var(--page-gap);
+      min-width: 0;
+    }
+
+    &__alloc {
+      order: 0;
     }
   }
 }

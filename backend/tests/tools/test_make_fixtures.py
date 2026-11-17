@@ -60,7 +60,7 @@ def test_provider_state_is_pinned(runs: tuple[Path, Path]) -> None:
     assert (usage["hour_used"], usage["day_used"]) == (3, 41)
     assert usage["rate_limited_at"] is None
     assert usage["last_status"] == "ok"
-    assert usage["last_at"].startswith("2026-06-30T20:30:00")
+    assert usage["last_at"].startswith("2026-06-30T18:15:00")
 
 
 def test_generator_opens_no_socket_and_is_repeatable_in_one_process(tmp_path: Path) -> None:

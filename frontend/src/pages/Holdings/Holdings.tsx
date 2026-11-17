@@ -469,6 +469,7 @@ export function Holdings() {
       <HoldingsKpis data={data} currency={currency} />
       <FlagNotice rows={data?.holdings ?? []} />
 
+      <div className="holdings-page__bar">
       <div className="holdings-page__toolbar">
         <div className="holdings-page__tool holdings-page__tool--search">
         <Input
@@ -508,14 +509,14 @@ export function Holdings() {
           </div>
         )}
       </div>
-      {groupedReady && filtered && (
-        <p className="holdings-page__muted">Subtotals cover every position in the group, not only the matches.</p>
-      )}
-
       {data && (
         <div className="holdings-page__stamps">
           <PriceStamps priceText={stamps.price} updated={stamps.updated} options={{ timeZone }} />
         </div>
+      )}
+      </div>
+      {groupedReady && filtered && (
+        <p className="holdings-page__muted">Subtotals cover every position in the group, not only the matches.</p>
       )}
 
       {query.isPending ? (

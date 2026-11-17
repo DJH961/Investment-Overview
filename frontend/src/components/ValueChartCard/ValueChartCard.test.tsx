@@ -139,10 +139,14 @@ describe("ValueChartCard", () => {
         ],
       },
     };
+    const width = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockReturnValue({ width: 900, height: 300 } as DOMRect);
     const { container, unmount } = render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
     expect(container.querySelector('[data-series="secondary"]')).not.toBeNull();
     // Charts use the narrow symbol: "$116.7k", never "US$116.7k".
     expect(container.querySelector(".chart__axis-label--right")?.textContent).toMatch(/^\$/);
+    width.mockRestore();
     fireEvent.click(screen.getByRole("button", { name: "USD" }));
     expect(container.querySelector('[data-series="secondary"]')).toBeNull();
     expect(localStorage.getItem("iv.chart.overview.secondary")).toBe("false");

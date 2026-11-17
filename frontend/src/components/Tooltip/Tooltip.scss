@@ -1,14 +1,17 @@
+// Level-2 overlay surface (same family as the chart's hover tooltip).
 .tooltip {
   &__content {
     z-index: var(--z-popover);
-    max-width: 280px;
-    padding: var(--space-2) var(--space-3);
+    // Within the viewport minus the collision gutters on a phone.
+    max-width: min(20rem, calc(100vw - var(--space-6)));
+    padding: var(--space-3);
     line-height: var(--line-height-base);
-    background: var(--color-fg);
-    border-radius: var(--radius-sm);
-    color: var(--color-bg);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
     box-shadow: var(--shadow-2);
   }
 }

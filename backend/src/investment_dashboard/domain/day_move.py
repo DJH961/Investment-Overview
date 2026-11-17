@@ -262,12 +262,32 @@ def holding_open_day_split(
     now_eur, now_usd = convert_native(shares * legs.close_last, native_currency, rate_last)
     prev_eur, prev_usd = convert_native(prev_native, native_currency, rate_prev)
     open_eur, open_usd = convert_native(prev_native, native_currency, rate_open)
+    return open_day_split(
+        now=(now_eur, now_usd), at_open=(open_eur, open_usd), prev=(prev_eur, prev_usd)
+    )
 
+
+def open_day_split(
+    *,
+    now: tuple[Decimal | None, Decimal | None],
+    at_open: tuple[Decimal | None, Decimal | None],
+    prev: tuple[Decimal | None, Decimal | None],
+) -> HoldingDaySplit:
+    """The market-open cut from three ``(eur, usd)`` marks of one holding.
+
+    ``prev`` is the previous close's holding at the previous close rate, ``at_open``
+    the same holding at the rate of today's open and ``now`` the holding now (its
+    price now, at the rate now). Overnight = A = ``at_open - prev``; session = B+C =
+    the rest, so ``session + overnight == now - prev``. The ONE cut for a priced
+    holding (:func:`holding_open_day_split`) and for a pending fund at its ETF-twin
+    estimate (``intraday_snapshots_service.estimate_day_split``), so an estimated
+    row splits exactly like a priced one. Cents and % as :func:`_split_leg`.
+    """
     # ``_split_leg(now, mid, prev)``: first part = mid - prev, rest = now - mid. With
     # ``mid`` = the previous close's holding at the open rate, the first part is the
     # OVERNIGHT and the rest the SESSION (the reverse of the shut-market cut).
-    o_eur, s_eur, op_eur, sp_eur = _split_leg(now_eur, open_eur, prev_eur)
-    o_usd, s_usd, op_usd, sp_usd = _split_leg(now_usd, open_usd, prev_usd)
+    o_eur, s_eur, op_eur, sp_eur = _split_leg(now[0], at_open[0], prev[0])
+    o_usd, s_usd, op_usd, sp_usd = _split_leg(now[1], at_open[1], prev[1])
     return HoldingDaySplit(s_eur, s_usd, o_eur, o_usd, sp_eur, sp_usd, op_eur, op_usd)
 
 

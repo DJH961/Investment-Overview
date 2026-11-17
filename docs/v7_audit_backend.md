@@ -278,7 +278,7 @@ Covered: importer parsers (Fidelity, Vanguard CSV and workbook, generic), `impor
 - Where: `services/tiingo_fallback_wiring.py` `apply_desktop_fallback` (state saved only on `RateLimitedError`), `services/tiingo_fallback_runner.py` (`record_market_attempt` is stamped before the call, spend after it).
 - What happens: the runner stamps the per-symbol attempt before calling out so a failure starts the cooldown, but the state was only persisted for HTTP 429. Any other exception skipped the save, so the next cycle (every minute while yfinance is failing) called Tiingo again, each time waiting on the failing endpoint.
 - Fix direction: persist the state on every failure.
-- Status: **fixed** (test `test_failed_tiingo_call_still_persists_the_attempt_cooldown`). Open, Low: the NAV paths record the canary and spend only after a successful call, so a failing NAV probe is still retried; needs a decision on whether a failed probe costs budget.
+- Status: **fixed** (test `test_failed_tiingo_call_still_persists_the_attempt_cooldown`). Remainder fixed (owner decision 2026-11-17): a failed call on any path (market, NAV laggards, canary) now costs budget and backs off 1, 2, 4 ... 128 min, then every 2 h, until a call succeeds (tests `test_tiingo_fallback_backoff.py`).
 
 **B-027, Half-day rule in `intraday_snapshots_service` duplicated the explicit table**
 - Severity: Low

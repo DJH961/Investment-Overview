@@ -26,10 +26,9 @@ export interface DivergingBarProps {
 /** Horizontal bars growing left (negative) or right (positive) from a centre line. */
 export function DivergingBar({ rows, ariaLabel, className }: DivergingBarProps) {
   const max = Math.max(0, ...rows.map((r) => Math.abs(r.value)));
-  const hasTags = rows.some((r) => Boolean(r.tag));
   return (
     <ul
-      className={clsx("diverging-bar", !hasTags && "diverging-bar--untagged", className)}
+      className={clsx("diverging-bar", className)}
       aria-label={ariaLabel}
     >
       {rows.map((r) => {
@@ -37,7 +36,11 @@ export function DivergingBar({ rows, ariaLabel, className }: DivergingBarProps) 
         const frac = r.width ?? (max === 0 ? 0 : Math.abs(r.value) / max);
         return (
           <li key={r.id} className="diverging-bar__row" data-row={r.id}>
-            <span className="diverging-bar__label">{r.label}</span>
+            <span className="diverging-bar__label">
+              {r.label}
+              {r.tag && <span className="diverging-bar__tag">{r.tag}</span>}
+            </span>
+            <span className="diverging-bar__value">{r.display}</span>
             <span className="diverging-bar__track" aria-hidden>
               <span
                 className={clsx(
@@ -48,8 +51,6 @@ export function DivergingBar({ rows, ariaLabel, className }: DivergingBarProps) 
                 style={{ width: `${(frac * 50).toFixed(4)}%` }}
               />
             </span>
-            <span className="diverging-bar__value">{r.display}</span>
-            {hasTags && <span className="diverging-bar__tag">{r.tag ?? ""}</span>}
           </li>
         );
       })}

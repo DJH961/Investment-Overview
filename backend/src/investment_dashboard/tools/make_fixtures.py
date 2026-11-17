@@ -10,7 +10,8 @@ never drift from the read models) and writes one JSON file per data set:
   stale price, an empty account.
 * ``empty.json`` - a ledger with nothing in it (the empty states).
 
-The clock is frozen (2026-06-30 20:30 UTC, a Tuesday after the US close) and the
+The clock is frozen (2026-06-30 18:15 UTC, a Tuesday 14:15 New York, the US cash
+session open, with a seeded intraday series, live quotes and FX samples) and the
 output is normalised, so regenerating gives byte-identical files; CI relies on
 that. The frontend shifts all dates to the browser's today when it serves them.
 
@@ -39,12 +40,37 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-#: The frozen "now". A Tuesday, 16:30 New York time (cash session just closed).
-FROZEN_NOW = _dt.datetime(2026, 6, 30, 20, 30, tzinfo=_dt.UTC)
+#: The frozen "now". A Tuesday, 14:15 New York time (cash session open, 13:30 UTC open).
+FROZEN_NOW = _dt.datetime(2026, 6, 30, 18, 15, tzinfo=_dt.UTC)
+#: The regular-session open of that Tuesday (09:30 New York = 13:30 UTC, naive UTC).
+SESSION_OPEN_UTC = _dt.datetime(2026, 6, 30, 13, 30)
 FIRST_DAY = _dt.date(2023, 3, 1)
 SEED = 20260630
 
 D = Decimal
+
+#: EUR/USD (USD per EUR). Yesterday's close, today's ECB fixing, the rate when the
+#: session opened (last night: the euro gained) and the live spot now (the euro gave
+#: some back during the session), so the market-hours and overnight legs differ in sign.
+FX_PREV_CLOSE = D("1.1620")
+FX_ECB_TODAY = D("1.1650")
+FX_SESSION_OPEN = D("1.1662")
+FX_LIVE_NOW = D("1.1641")
+#: Today's moves per instrument (fraction of yesterday's close): blue and orange both show.
+DAY_MOVES = {
+    "FAKEL": D("0.0085"),
+    "FAKEB": D("-0.0035"),
+    "FAKEG": D("0.0240"),
+    "FAKEU": D("-0.0062"),
+}
+#: Intraday wobble (fraction of price) around each straight line to today's last price.
+DAY_VOL = {
+    "FAKEL": 0.0030,
+    "FAKEB": 0.0012,
+    "FAKEG": 0.0075,
+    "FAKEU": 0.0025,
+}
+SAMPLE_MINUTES = 5
 _REAL_DATETIME = _dt.datetime
 _REAL_DATE = _dt.date
 
@@ -62,6 +88,10 @@ GET_ENDPOINTS: tuple[str, ...] = (
     *(f"/api/graphs/{r}/both" for r in GRAPH_RANGES),
     "/api/holdings/both",
     "/api/holdings/both?group_by=none",
+    "/api/holdings/both?group_by=category",
+    "/api/holdings/both?group_by=account",
+    "/api/holdings/both?group_by=asset_class",
+    "/api/holdings/both?group_by=currency",
     "/api/periods/monthly/both?fill_gaps=true",
     "/api/periods/yearly/both",
     "/api/allocations/both",
@@ -377,6 +407,7 @@ def seed_full(session: Any) -> None:
         instruments_repo,
         prices_repo,
     )
+    from investment_dashboard.services import brief_service
 
     rng = random.Random(SEED)
     today = FROZEN_NOW.date()
@@ -385,6 +416,10 @@ def seed_full(session: Any) -> None:
     fx = _walk(
         rng, _weekdays(FIRST_DAY - _dt.timedelta(days=3), today), D("1.07"), D("1.1650"), 0.002
     )
+    # The last two daily fixings are pinned (they anchor the open-session story):
+    # EUR/USD closed yesterday at 1.1620, today's ECB fixing is 1.1650.
+    fx[today - _dt.timedelta(days=1)] = FX_PREV_CLOSE
+    fx[today] = FX_ECB_TODAY
     fx_repo.upsert_rates(session, fx)
 
     long_name = (
@@ -439,10 +474,26 @@ def seed_full(session: Any) -> None:
         "FAKEU": (D("31.50"), D("48.95"), 0.01, 0),
         "FAKEG": (D("27.10"), D("83.40"), 0.02, 0),
     }
+    walks: dict[str, dict[_dt.date, Decimal]] = {}
     for sym, (start, end, vol, lag) in paths.items():
         last = max(d for d in days if d <= today - _dt.timedelta(days=lag))
         series_days = [d for d in days if d <= last]
-        prices_repo.upsert_closes(session, inst[sym].id, _walk(rng, series_days, start, end, vol))
+        walks[sym] = _walk(rng, series_days, start, end, vol)
+        prices_repo.upsert_closes(session, inst[sym].id, walks[sym])
+
+    # The default market benchmark (not held), so "Vs market", beta and alpha have a
+    # series to compare with: it follows the world fund with its own noise and a lower
+    # level, like a real index ETF would. Its own generator keeps the draws above unchanged.
+    benchmark = instruments_repo.get_or_create(
+        session, symbol="VT", asset_class="etf", native_currency="USD"
+    )
+    bench_rng = random.Random(SEED + 1)
+    drift = 1.0
+    bench: dict[_dt.date, Decimal] = {}
+    for day, close in walks["FAKEL"].items():
+        drift *= 1 + bench_rng.gauss(-0.0002, 0.003)
+        bench[day] = D(str(round(float(close) * 0.45 * drift, 4)))
+    prices_repo.upsert_closes(session, benchmark.id, bench)
 
     brokerage = accounts_repo.create_account(
         session,
@@ -499,6 +550,8 @@ def seed_full(session: Any) -> None:
     def add(
         account: Any, day: _dt.date, kind: str, native: str, currency: str = "USD", **extra: object
     ) -> None:
+        # An explicit stamp (the DB default would be the real clock, not the frozen one).
+        extra.setdefault("created_at", _dt.datetime.combine(day, _dt.time(12, 0)))
         rows.append(
             Transaction(
                 account_id=account.id,
@@ -567,7 +620,133 @@ def seed_full(session: Any) -> None:
         add(euro, day, "dividend_cash", "212.40", "EUR", instrument_id=inst["FAKEU"].id)
     add(brokerage, _dt.date(2024, 8, 14), "fee", "-0.01")
     add(retirement, _dt.date(2024, 9, 2), "interest", "3.07")
+    # Booked since the owner last looked (the Brief lists these): yesterday afternoon.
+    seen = _dt.date(2026, 6, 29)
+    add(
+        brokerage,
+        seen,
+        "dividend_cash",
+        "312.50",
+        instrument_id=inst["FAKEB"].id,
+        created_at=_dt.datetime(2026, 6, 29, 16, 10),
+    )
+    add(retirement, seen, "interest", "5.42", created_at=_dt.datetime(2026, 6, 29, 16, 12))
     session.add_all(rows)
+    session.flush()
+    # The owner last opened the app yesterday before the open: the Brief has a window.
+    brief_service._store(session, _dt.datetime(2026, 6, 29, 11, 0, tzinfo=_dt.UTC))
+    _seed_open_session(session, inst, today)
+
+
+def _bridge(rng: random.Random, steps: int) -> list[float]:
+    """A Brownian bridge of ``steps + 1`` points (unit-ish scale), zero at both ends."""
+    raw = [0.0]
+    for _ in range(steps):
+        raw.append(raw[-1] + rng.gauss(0, 1) / steps**0.5)
+    return [raw[i] - raw[-1] * (i / steps) for i in range(steps + 1)]
+
+
+def _seed_open_session(session: Any, inst: dict[str, Any], today: _dt.date) -> None:
+    """Make the frozen moment a live US session: today's quotes, intraday samples, FX, twin.
+
+    Everything is stored the way the running app stores it: today's last price in
+    ``price_history`` (+ the refresh metadata), one ``intraday_value`` row per sample
+    (native-USD market component and the per-instant EUR/USD stored beside it), the
+    live EUR/USD spot in memory, and the ETF twin's intraday prices for the NAV fund.
+    """
+    from investment_dashboard.repositories import (
+        intraday_repo,
+        price_cache_repo,
+        prices_repo,
+        twin_prices_repo,
+    )
+    from investment_dashboard.services import (
+        fx_service,
+        intraday_snapshots_service,
+        positions_service,
+        refresh_status,
+    )
+
+    rng = random.Random(SEED + 1)  # own stream: the ledger above is unchanged by this
+    now_naive = FROZEN_NOW.replace(tzinfo=None)
+    prev_day = today - _dt.timedelta(days=1)
+    steps = int((now_naive - SESSION_OPEN_UTC).total_seconds() // 60 // SAMPLE_MINUTES)
+    times = [SESSION_OPEN_UTC + _dt.timedelta(minutes=SAMPLE_MINUTES * k) for k in range(steps + 1)]
+
+    # Today's last price per live-priced instrument and its intraday path.
+    prev_close: dict[str, Decimal] = {}
+    paths: dict[str, list[Decimal]] = {}
+    for key, move in DAY_MOVES.items():
+        iid = inst[key].id
+        prev = prices_repo_close(session, iid, prev_day)
+        prev_close[key] = prev
+        last = (prev * (1 + move)).quantize(D("0.000001"))
+        wobble = _bridge(rng, steps)
+        vol = DAY_VOL[key]
+        path = [
+            (prev * (1 + move * D(k / steps) + D(vol * wobble[k]))).quantize(D("0.000001"))
+            for k in range(steps + 1)
+        ]
+        path[-1] = last
+        paths[key] = path
+        prices_repo.upsert_closes(session, iid, {today: last})
+    session.flush()
+
+    # Provider bookkeeping: live quotes pulled seconds ago, the NAV fund's last NAV is yesterday's.
+    pulled = now_naive - _dt.timedelta(seconds=40)
+    for key in DAY_MOVES:
+        price_cache_repo.upsert_last_refreshed_at(
+            session,
+            inst[key].id,
+            pulled,
+            market_time=now_naive - _dt.timedelta(seconds=55),
+        )
+    nav_pulled = _dt.datetime.combine(prev_day, _dt.time(22, 5))
+    price_cache_repo.upsert_last_refreshed_at(
+        session,
+        inst["FAKENX"].id,
+        nav_pulled,
+        market_time=_dt.datetime.combine(prev_day, _dt.time(20, 0)),
+    )
+    refresh_status._state["last_update_at"] = FROZEN_NOW - _dt.timedelta(seconds=40)
+    refresh_status._state["last_price_update_at"] = FROZEN_NOW - _dt.timedelta(seconds=40)
+
+    # EUR/USD: a wandering path from the open rate to the live spot, one sample per step.
+    fx_wobble = _bridge(rng, steps)
+    fx_path = [
+        (
+            FX_SESSION_OPEN
+            + (FX_LIVE_NOW - FX_SESSION_OPEN) * D(k / steps)
+            + D(0.0013 * fx_wobble[k])
+        ).quantize(D("0.00000001"))
+        for k in range(steps + 1)
+    ]
+    fx_path[0] = FX_SESSION_OPEN
+    fx_path[-1] = FX_LIVE_NOW
+    fx_service.set_live_spot(
+        "USD", FX_LIVE_NOW, observed_on=today, observed_at=FROZEN_NOW - _dt.timedelta(seconds=20)
+    )
+
+    # The market component (stocks/ETFs only) per sample, FX-free in native USD.
+    positions = positions_service.compute_positions(session)
+    priced = [
+        p for p in positions if p.shares > 0 and intraday_snapshots_service.is_intraday_priced(p)
+    ]
+    by_symbol = {inst[k].symbol: {t: paths[k][i] for i, t in enumerate(times)} for k in paths}
+    lookups = {sym: (lambda at, m=series: m.get(at)) for sym, series in by_symbol.items()}
+    for i, at in enumerate(times):
+        usd = intraday_snapshots_service._market_component_usd(priced, lookups, at, fx_t=fx_path[i])
+        if usd is None:  # pragma: no cover - the seed always has a rate
+            continue
+        eur = (usd / fx_path[i]).quantize(D("0.000001"))
+        intraday_repo.insert_sample(session, at, eur, fx_path[i], usd.quantize(D("0.000001")))
+
+    # The NAV fund FAKENX estimates from its twin FAKEL: yesterday's 16:00 ET close + today's bars.
+    twin_rows = {
+        _dt.datetime.combine(prev_day, _dt.time(20, 0)): prev_close["FAKEL"],
+        **{t: paths["FAKEL"][i] for i, t in enumerate(times)},
+    }
+    twin_prices_repo.upsert_prices(session, "FAKEL", twin_rows)
     session.flush()
 
 
@@ -613,9 +792,10 @@ def _normalise(value: Any, key: str = "") -> Any:
             return "/fixtures" + value.split(_WORKDIR, 1)[1].replace("\\", "/")
         if _DT_RE.match(value):
             parsed = _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-            if parsed.date() > FROZEN_NOW.date() or (
-                key.endswith("_at") and parsed.date() >= FROZEN_NOW.date()
-            ):
+            if key.startswith("next_") or key == "reopen_at":
+                return value  # real, future clock fields (next open / close, FX reopen)
+            aware = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=_dt.UTC)
+            if parsed.date() > FROZEN_NOW.date() or (key.endswith("_at") and aware > FROZEN_NOW):
                 tz = "+00:00" if parsed.tzinfo is not None else ""
                 return FROZEN_NOW.replace(tzinfo=None).isoformat() + tz
     return value
@@ -689,6 +869,16 @@ def _collect(app: Any, dataset: str, ledger_session_scope: Any, test_client: Any
         _seed_provider_state(session)
         if dataset == "full":
             seed_full(session)
+    if dataset == "full":
+        # A running server warms every daily snapshot at boot (boot.py); do the same,
+        # so the equity curve, Periods and Risk read a daily history like the real app
+        # instead of the sparse month ends a cold first render would compute.
+        from investment_dashboard.services import snapshots_service
+
+        with ledger_session_scope() as session:
+            snapshots_service.warm_range(
+                session, FIRST_DAY, FROZEN_NOW.date() - _dt.timedelta(days=1)
+            )
     out: dict[str, Any] = {}
     with test_client(app) as client:
         endpoints = list(GET_ENDPOINTS)

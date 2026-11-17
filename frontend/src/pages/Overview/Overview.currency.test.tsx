@@ -204,8 +204,8 @@ describe("Overview currency switch", () => {
     const eur = renderIn("EUR");
     const eurShape = structure(eur.container);
     const eurCards = [...eur.container.querySelectorAll(".card__title, .overview-hero")].map((n) => n.textContent);
-    // The USD-only "Regular €100 … today" line is held invisibly in EUR (same height).
-    expect(eur.container.querySelectorAll(".currency-box__amount--ghost")).toHaveLength(1);
+    // The "Regular €100 … today" line shows in both views (same height).
+    expect(eur.container.querySelectorAll(".currency-box__amount")).toHaveLength(1);
     eur.unmount();
     const usd = renderIn("USD");
     const usdShape = structure(usd.container);
@@ -215,8 +215,8 @@ describe("Overview currency switch", () => {
     expect(usd.container.querySelectorAll(".movers-card__row")).toHaveLength(2);
     // The currency box keeps the same lines (the "Regular €100 · $118.87 today" line in both).
     expect(usd.container.querySelectorAll(".currency-box__amount")).toHaveLength(1);
-    // The hero's day curve renders in both (its trend modifier may flip; the boxes do not move).
-    expect(usd.container.querySelectorAll(".overview-hero__aside .hero-intraday__line")).toHaveLength(1);
+    // The hero's Today facts render in both (no sparkline: the stage's graph draws the day).
+    expect(usd.container.querySelectorAll(".overview-hero__aside .hero-intraday__line")).toHaveLength(0);
     expect(usd.container.querySelectorAll(".hero-intraday__fact")).toHaveLength(3);
     const diff = usdShape.flatMap((s, i) => (s === eurShape[i] ? [] : [`${i}: ${eurShape[i]} -> ${s}`]));
     expect(diff).toEqual([]);

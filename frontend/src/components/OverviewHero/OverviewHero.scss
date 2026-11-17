@@ -32,32 +32,30 @@
     min-width: 0;
   }
 
-  // Phones and tablets keep the single stacked column; the right zone is desktop only.
+  // The "Today" stat block. Phones and tablets: one tidy row under the move.
   &__aside {
-    display: none;
+    min-width: 0;
+    margin-top: var(--space-3);
+
+    &:empty {
+      display: none;
+    }
   }
 
-  // Desktop: value on the left, the day's curve on the right, split by a hairline.
+  // Desktop: value on the left, the day's stats on the right, split by a hairline.
   &--split {
     @include m.desktop {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
       gap: var(--space-7);
-      // Both columns start on the same line. Centred, the text floated whenever it
-      // lost a row — which it now does as soon as the price time fits beside the
-      // change badge — so its label no longer met the curve's heading.
+      // Both columns start on the same line, so the label meets the stats' heading.
       align-items: start;
     }
-
-    // No wide override: an even split is what both zones want. Giving the curve the
-    // larger share (2fr/3fr) starved the text column and wrapped every sub-line onto
-    // two; giving the text the larger share left it holding a block of dead space.
   }
 
   &--split &__aside {
     @include m.desktop {
-      display: block;
-      min-width: 0;
+      margin-top: 0;
       padding-left: var(--space-7);
       border-left: var(--border-width) solid var(--color-border);
     }
@@ -130,9 +128,15 @@
   }
 
   // The big number and, while a twin estimates a fund, its "≈ est." chip.
+  &__label-line {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
   &__headline {
     display: inline-flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: var(--space-2) var(--space-3);
   }
@@ -165,9 +169,12 @@
   }
 
   // The official book under the estimate: quiet, one line, never wrapped apart.
+  // One line at every width: the official money change only shows where it fits
+  // in both currencies (wide screens); the % always does.
   &__official {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    white-space: nowrap;
     align-items: baseline;
     gap: 0 var(--space-2);
     margin: 0;
@@ -180,7 +187,27 @@
     white-space: nowrap;
   }
 
+  &__official-money {
+    display: none;
+
+    @include m.wide {
+      display: inline;
+    }
+  }
+
+  // The other currency and the price time on one line.
+  &__sub {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    width: 100%;
+    min-width: 0;
+  }
+
   &__value2 {
+    white-space: nowrap;
     color: var(--color-muted);
     font-size: var(--font-size-lg);
     font-variant-numeric: tabular-nums;
@@ -220,7 +247,11 @@
   }
 
   // The other-currency move and its (i) never split across lines.
+  // The other currency's move, at the end of the split line.
   &__usd {
+    order: 2;
+    margin-left: auto;
+    font-size: var(--font-size-sm);
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
@@ -235,7 +266,9 @@
   // Reserved for the ☀ + ☾ = total line in every view (no jump on EUR/USD).
   &__split {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    gap: var(--space-1) var(--space-4);
     min-height: var(--control-height-sm);
   }
 

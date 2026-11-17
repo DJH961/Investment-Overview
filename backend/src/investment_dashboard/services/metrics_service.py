@@ -1131,8 +1131,20 @@ def open_session_split(
     metrics: PortfolioMetrics,
     *,
     now: datetime,
+    estimates: Mapping[int, intraday_snapshots_service.TwinEstimate] | None = None,
+    fx_now: Decimal | None = None,
 ) -> LastSessionSplit | None:
     """The day move split while the US market trades: last night's overnight + the session.
+
+    With ``estimates`` (pending mutual funds at their ETF-twin estimate, the book the
+    headline shows) the split describes the ESTIMATED book: the estimate's extra
+    move, ``estimate_adjustment`` at ``fx_now`` (the same figure the headline adds),
+    is a session price move and goes into ``move`` and ``value_now``; the overnight
+    part A (the previous close's book, funds at their previous NAV, revalued to the
+    open rate) and the % base are unchanged. So ☀ + ☾ == the estimated headline,
+    and each pending fund's row cut is
+    :func:`intraday_snapshots_service.estimate_day_split`. Without a usable rate
+    for the adjustment the official split is returned.
 
     ``overnight_*`` is last night's currency move only: the book at the previous
     close's prices revalued from the previous close rate to the rate at today's open
@@ -1166,6 +1178,13 @@ def open_session_split(
     ov_eur, ov_usd = fx_revaluation(session, prev_date, fx_from=fx_prev, fx_to=fx_open)
     base_eur = now_eur - day_eur
     base_usd = now_usd - day_usd
+    funds: tuple[str, ...] = ()
+    if estimates:
+        a_eur, a_usd = intraday_snapshots_service.estimate_adjustment(estimates.values(), fx_now)
+        if a_eur is not None and a_usd is not None:
+            day_eur, day_usd = day_eur + a_eur, day_usd + a_usd
+            now_eur, now_usd = now_eur + a_eur, now_usd + a_usd
+            funds = tuple(sorted(e.symbol for e in estimates.values()))
     return LastSessionSplit(
         session_date=session_date,
         prev_date=prev_date,
@@ -1186,6 +1205,7 @@ def open_session_split(
         lead_usd=ov_usd,
         base_eur=base_eur,
         base_usd=base_usd,
+        estimated_funds=funds,
     )
 
 

@@ -26,7 +26,7 @@ import { useTimeZone } from "../../lib/timezone";
 import { usePrefs } from "../../lib/prefs";
 import { useOverview } from "../../lib/queries/portfolio";
 import { useShellStatus } from "../../lib/shell";
-import { useIsDesktop } from "../../lib/useMediaQuery";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { OnboardingCard } from "./OnboardingCard";
 import "./Overview.scss";
 
@@ -44,39 +44,50 @@ function EmptyActions() {
   );
 }
 
-/** The treemap's own default height. */
-const MIN_TREEMAP = 280;
+const WIDE_QUERY = "(min-width: 1280px)";
+
+/** The treemap never gets smaller than this (14rem) or taller than MAX_TREEMAP on wide screens. */
+const MIN_TREEMAP = 224;
+const MAX_TREEMAP = 520;
 
 /**
- * Desktop: size the treemap so its card ends level with the stack beside it
- * (asset classes + lifetime FX). Phones and tablets keep the default height.
+ * Wide screens: the main column (Holdings, then Allocation) and the side column end
+ * level. Holdings keeps its natural height; the treemap takes what is left, within
+ * a sensible range. Narrower screens keep the treemap's own default height.
  */
 function useTreemapHeight(active: boolean) {
-  const desktop = useIsDesktop();
-  const slot = useRef<HTMLDivElement>(null);
+  const wide = useMediaQuery(WIDE_QUERY);
+  const main = useRef<HTMLDivElement>(null);
   const side = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState<number | undefined>(undefined);
   useEffect(() => {
-    const own = slot.current;
-    const col = side.current;
-    if (!desktop || !active || !own || !col || typeof ResizeObserver === "undefined") {
+    const colMain = main.current;
+    const colSide = side.current;
+    if (!wide || !active || !colMain || !colSide || typeof ResizeObserver === "undefined") {
       setHeight(undefined);
       return;
     }
     const fit = () => {
-      const map = own.querySelector<HTMLElement>(".treemap");
-      if (!map) return;
-      const chrome = own.offsetHeight - map.offsetHeight;
-      const next = Math.max(MIN_TREEMAP, Math.round(col.offsetHeight - chrome));
+      const map = colMain.querySelector<HTMLElement>(".treemap");
+      const alloc = colMain.querySelector<HTMLElement>(".allocation-card");
+      if (!map || !alloc) return;
+      const kids = Array.from(colMain.children) as HTMLElement[];
+      const slot = alloc.parentElement;
+      const chrome = alloc.offsetHeight - map.offsetHeight;
+      const gap = Number.parseFloat(getComputedStyle(colMain).rowGap) || 0;
+      const others = kids.filter((k) => k !== slot).reduce((a, k) => a + k.offsetHeight, 0);
+      const room = colSide.offsetHeight - others - gap * (kids.length - 1) - chrome;
+      const next = Math.min(MAX_TREEMAP, Math.max(MIN_TREEMAP, Math.round(room)));
       setHeight((h) => (h === next ? h : next));
     };
     const ro = new ResizeObserver(fit);
-    ro.observe(own);
-    ro.observe(col);
+    ro.observe(colMain);
+    ro.observe(colSide);
+    for (const el of Array.from(colMain.children)) ro.observe(el);
     fit();
     return () => ro.disconnect();
-  }, [desktop, active]);
-  return { slot, side, height };
+  }, [wide, active]);
+  return { main, side, height };
 }
 
 /**
@@ -94,7 +105,7 @@ export function Overview() {
   const timeZone = useTimeZone();
 
   const data = overview.data;
-  const { slot: treemapSlot, side: treemapSide, height: treemapHeight } = useTreemapHeight(Boolean(data));
+  const { main: mainCol, side: sideCol, height: treemapHeight } = useTreemapHeight(Boolean(data));
   let chip: FreshnessView;
   if (overview.isError) chip = { status: "stale", label: "Offline" };
   else if (data?.freshness) chip = describeFreshness(data.freshness, { live, refresh, timeZone, sessionDate: data.kpis?.daily_growth_as_of });
@@ -157,26 +168,21 @@ export function Overview() {
 
       {/*
         Holdings, the key content, owns the main column; today's currency and the
-        movers sit beside it (wide screens). Both columns end level: the side's
-        last card takes up the slack. Narrower, everything stacks, Holdings first.
+        movers and lifetime FX sit beside it (wide screens). Allocation
+        sits under Holdings; its treemap absorbs the height difference so both columns
+        end level. Narrower, everything stacks, Holdings first.
       */}
       <div className="overview-page__row overview-page__row--main">
-        <div className="overview-page__cell">
+        <div ref={mainCol} className="overview-page__main">
           <OverviewHoldings currency={currency} movers={data?.movers} />
+          <div className="overview-page__alloc">
+            <AllocationCard currency={currency} height={treemapHeight} />
+          </div>
+          <AssetClassCard currency={currency} />
         </div>
-        <div className="overview-page__side overview-page__side--fill">
+        <div ref={sideCol} className="overview-page__side">
           {data ? <CurrencyBox data={data} /> : <Skeleton height="12rem" />}
           <MoversCard movers={data?.movers} currency={currency} loading={loading} lastSession={data?.last_session} />
-        </div>
-      </div>
-
-      {/* The secondary lifetime FX card sits under asset classes, beside the treemap. */}
-      <div className="overview-page__row overview-page__row--alloc">
-        <div ref={treemapSlot} className="overview-page__cell">
-          <AllocationCard currency={currency} height={treemapHeight} />
-        </div>
-        <div ref={treemapSide} className="overview-page__side">
-          <AssetClassCard currency={currency} />
           {data ? <CurrencyLifetime data={data} /> : <Skeleton height="9rem" />}
         </div>
       </div>

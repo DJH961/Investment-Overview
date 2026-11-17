@@ -34,10 +34,10 @@
     gap: var(--space-3);
   }
 
+  // A page title breaks only between words, never inside one ("Overview" stays whole
+  // whatever the currency of the summary beside it).
   &__title {
     margin: 0;
-    min-width: 0;
-    overflow-wrap: anywhere;
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;
@@ -136,6 +136,21 @@
 
   &__summary-value {
     font-weight: var(--font-weight-semibold);
+  }
+
+  // Tablet: the short figure ("€1.3m"), so the page title keeps its room.
+  &__summary-full {
+    @include m.tablet-only {
+      display: none;
+    }
+  }
+
+  &__summary-short {
+    display: none;
+
+    @include m.tablet-only {
+      display: inline;
+    }
   }
 
   // Marks an estimated figure: the same "≈" the Overview headline uses, in the
