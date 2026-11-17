@@ -17,6 +17,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Projection in real terms adds up.** With "real terms" on, the projected growth and the
+  money paid in are now both in today's money (each contribution adjusted for inflation at
+  its own date), so start + paid in + growth = the end value. Before, the nominal payments
+  were subtracted from an inflation-adjusted end value, so the growth looked too small
+  (B-030). Nominal mode is unchanged.
+
 ### Security
 - **The old comparison exports are gone from the repo.** `docs/Comparison Files/` kept real
   symbols, dates and return percentages despite the scaling; the folder is now git-ignored and
