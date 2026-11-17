@@ -474,10 +474,26 @@ def seed_full(session: Any) -> None:
         "FAKEU": (D("31.50"), D("48.95"), 0.01, 0),
         "FAKEG": (D("27.10"), D("83.40"), 0.02, 0),
     }
+    walks: dict[str, dict[_dt.date, Decimal]] = {}
     for sym, (start, end, vol, lag) in paths.items():
         last = max(d for d in days if d <= today - _dt.timedelta(days=lag))
         series_days = [d for d in days if d <= last]
-        prices_repo.upsert_closes(session, inst[sym].id, _walk(rng, series_days, start, end, vol))
+        walks[sym] = _walk(rng, series_days, start, end, vol)
+        prices_repo.upsert_closes(session, inst[sym].id, walks[sym])
+
+    # The default market benchmark (not held), so "Vs market", beta and alpha have a
+    # series to compare with: it follows the world fund with its own noise and a lower
+    # level, like a real index ETF would. Its own generator keeps the draws above unchanged.
+    benchmark = instruments_repo.get_or_create(
+        session, symbol="VT", asset_class="etf", native_currency="USD"
+    )
+    bench_rng = random.Random(SEED + 1)
+    drift = 1.0
+    bench: dict[_dt.date, Decimal] = {}
+    for day, close in walks["FAKEL"].items():
+        drift *= 1 + bench_rng.gauss(-0.0002, 0.003)
+        bench[day] = D(str(round(float(close) * 0.45 * drift, 4)))
+    prices_repo.upsert_closes(session, benchmark.id, bench)
 
     brokerage = accounts_repo.create_account(
         session,
@@ -853,6 +869,16 @@ def _collect(app: Any, dataset: str, ledger_session_scope: Any, test_client: Any
         _seed_provider_state(session)
         if dataset == "full":
             seed_full(session)
+    if dataset == "full":
+        # A running server warms every daily snapshot at boot (boot.py); do the same,
+        # so the equity curve, Periods and Risk read a daily history like the real app
+        # instead of the sparse month ends a cold first render would compute.
+        from investment_dashboard.services import snapshots_service
+
+        with ledger_session_scope() as session:
+            snapshots_service.warm_range(
+                session, FIRST_DAY, FROZEN_NOW.date() - _dt.timedelta(days=1)
+            )
     out: dict[str, Any] = {}
     with test_client(app) as client:
         endpoints = list(GET_ENDPOINTS)
