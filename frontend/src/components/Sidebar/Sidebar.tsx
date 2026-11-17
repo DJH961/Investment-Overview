@@ -68,7 +68,7 @@ function Pocket({ summary }: { summary?: ShellSummary }) {
 }
 
 /**
- * The navigation spine: deep ink in both themes (`.u-ink`), grouped by what the owner
+ * The navigation spine: light in the light theme, deep ink in the dark (`.u-ink`), grouped by what the owner
  * is doing (Portfolio, Dig in, Manage), the System pages at its foot, and the
  * portfolio at a glance at its head. Collapses to an icon rail (tablet, or by choice).
  * Sized to fit without a scroll bar; short windows get denser rows (Sidebar.scss).

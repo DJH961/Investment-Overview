@@ -1,6 +1,6 @@
 @use "../../styles/mixins" as m;
 
-// Phone navigation: a floating ink dock (the spine's colours, .u-ink) that hovers
+// Phone navigation: a floating dock (the spine colours, .u-ink; light or ink) that hovers
 // over the page with a little air around it, the open tab a lit pill.
 .tab-bar {
   position: fixed;
