@@ -34,7 +34,7 @@ export function Freshness({ status, label, title, stacked = false, className }: 
   return (
     <output
       className={clsx("freshness", `freshness--${status}`, detail && "freshness--stacked", className)}
-      title={title ?? (detail ? label : undefined)}
+      title={title ?? label}
     >
       <span className="freshness__dot" aria-hidden />
       {detail ? (
@@ -43,7 +43,10 @@ export function Freshness({ status, label, title, stacked = false, className }: 
           <span className="freshness__detail">{detail}</span>
         </span>
       ) : (
-        <span className="freshness__label">{label}</span>
+        // One line on phones: the label may be cut with an ellipsis (full text in the title).
+        <span className="freshness__label" data-truncate-ok>
+          {label}
+        </span>
       )}
     </output>
   );
