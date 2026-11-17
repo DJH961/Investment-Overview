@@ -606,6 +606,11 @@ def build(
     twins_on = intraday_snapshots_service.estimates_enabled(session)
     session_date = intraday_snapshots_service.last_session_date(now)
     fx_prev = intraday_snapshots_service.previous_close_fx(session, session_date)
+    market_open = market_hours.is_us_market_open(now)
+    fx_day = intraday_snapshots_service.day_figure_fx(
+        session, now=now, live_rate=ctx.fx_rate_eur_usd
+    )
+    fx_open = intraday_snapshots_service.day_open_rate(session, now=now) if market_open else None
     est_deltas: dict[int, Decimal] = {}
     est_moves: dict[int, Decimal | None] = {}
     for card, row in zip(cards, rows, strict=True):
@@ -629,6 +634,18 @@ def build(
             est_deltas[card.instrument_id] = delta
         if view is not None and view["pending"]:
             est_moves[card.instrument_id] = est_move
+            est = estimates.get(card.instrument_id)
+            if est is not None and market_open:
+                # The row's ☀/☾ describe its estimated day move (the ≈ figure), like
+                # the hero's; after the close the official rule is unchanged.
+                row.update(
+                    day_split_fields(
+                        intraday_snapshots_service.estimate_day_split(
+                            est, fx_now=fx_day, fx_prev_close=fx_prev, fx_open=fx_open
+                        ),
+                        ccy,
+                    )
+                )
     total_value = _sum([pick(c.value_eur, c.value_usd, ccy) for c in cards])
     splits = [_gain_split(c, ccy) for c in cards]
     unrealised = _sum([s[0] for s in splits])
