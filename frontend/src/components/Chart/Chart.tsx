@@ -177,6 +177,13 @@ const CHAR_W = 7.6;
 const LABEL_GAP = 8;
 /** Below this width the chart uses inset axis labels and an inline readout. */
 const COMPACT_WIDTH = 520;
+/**
+ * A second (right) y axis needs a card this wide; below it the reporting currency's
+ * axis stands alone and the other currency is read from the tooltip and the legend.
+ */
+const TWO_AXIS_WIDTH = 720;
+/** Right gutter kept on a two-currency chart whether or not the right labels are drawn, so the plot never moves. */
+const RIGHT_GUTTER = 64;
 
 /** Estimated pixel width of an axis label. */
 export function labelWidth(text: string): number {
@@ -369,12 +376,15 @@ export function Chart({
     rightSeries && rightAxisFormat
       ? Math.max(0, ...yTicks.map((v) => labelWidth(rightAxisFormat(v * rightScale, yStep && yStep * rightScale))))
       : 0;
+  // The gutter is reserved by the width alone, so the plot is the same size with or
+  // without the right labels (and across currencies and ranges).
+  const showRightAxis = !!rightSeries && !!rightAxisFormat && width >= TWO_AXIS_WIDTH;
   const PAD = compact
     ? { top: 18, right: 2, bottom: 24, left: 2 }
     : {
         ...BASE_PAD,
         left: leftW + LABEL_GAP,
-        right: rightW ? rightW + LABEL_GAP : BASE_PAD.right,
+        right: rightSeries ? Math.max(RIGHT_GUTTER, rightW + LABEL_GAP) : BASE_PAD.right,
       };
   const innerW = Math.max(width - PAD.left - PAD.right, 10);
   const innerH = Math.max(height - PAD.top - PAD.bottom, 10);
@@ -566,7 +576,7 @@ export function Chart({
               >
                 {valueFormat(v, yStep)}
               </text>
-              {rightSeries && rightAxisFormat && (
+              {showRightAxis && rightSeries && rightAxisFormat && (
                 <text
                   className={clsx(
                     "chart__axis-label",

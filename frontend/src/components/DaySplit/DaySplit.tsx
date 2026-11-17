@@ -40,8 +40,20 @@ export function DaySplitLegend({ estimate = false }: { estimate?: boolean }) {
         <Moon className="day-split-legend__icon" aria-hidden />
         <span>{DAY_SPLIT_LINES.night}</span>
       </span>
-      <span className="day-split-legend__rule">{DAY_SPLIT_LINES.total}</span>
-      {estimate && <span className="day-split-legend__note">≈ {DAY_SPLIT_LINES.estimate}</span>}
+      <span className="day-split-legend__row day-split-legend__row--rule">
+        <span className="day-split-legend__sign" aria-hidden>
+          =
+        </span>
+        <span>{DAY_SPLIT_LINES.total}</span>
+      </span>
+      {estimate && (
+        <span className="day-split-legend__row">
+          <span className="day-split-legend__sign" aria-hidden>
+            ≈
+          </span>
+          <span>{DAY_SPLIT_LINES.estimate}</span>
+        </span>
+      )}
     </span>
   );
 }

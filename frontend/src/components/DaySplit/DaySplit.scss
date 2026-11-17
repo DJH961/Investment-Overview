@@ -70,11 +70,10 @@
   }
 }
 
-// The ☀/☾ legend inside an info tip: symbols aligned in a column, then the rule.
+// The ☀/☾ legend inside an info tip: a symbol column, then the rule, one row each.
 .day-split-legend {
   display: grid;
-  gap: var(--space-1);
-  max-width: 17rem;
+  gap: var(--space-2);
   line-height: var(--line-height-base);
 
   &__row {
@@ -82,24 +81,25 @@
     grid-template-columns: 1.25em minmax(0, 1fr);
     align-items: start;
     gap: var(--space-2);
+    overflow-wrap: anywhere;
+
+    // The Total rule sits under a hairline, apart from the two symbol lines.
+    &--rule {
+      padding-top: var(--space-2);
+      border-top: var(--border-width) solid var(--color-border);
+    }
   }
 
   &__icon {
     width: 1em;
     height: 1em;
     margin-top: 0.2em;
+    color: var(--color-muted);
   }
 
-  &__rule,
-  &__note {
-    margin-top: var(--space-1);
-    padding-top: var(--space-1);
-    border-top: var(--border-width) solid var(--color-border);
-  }
-
-  &__note + &__rule,
-  &__rule + &__note {
-    border-top: 0;
-    padding-top: 0;
+  &__sign {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-semibold);
+    text-align: center;
   }
 }
