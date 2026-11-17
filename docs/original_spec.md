@@ -48,7 +48,7 @@ This document is written so that an engineer with no access to the original `Inv
 | Tables | NiceGUI `ui.aggrid` (AG-Grid Community) | Sort, filter, inline edit, large datasets; matches the spreadsheet feel. |
 | ORM / DB | **SQLAlchemy 2.x** + **SQLite** (ledger / config / cache tiers; WAL locally, TRUNCATE in cloud-sync folders) | Single-user, zero-config; the ledger tier is the file to back up. Tiers can be split across local + cloud-sync locations. |
 | Migrations | **Alembic** | Schema evolution discipline. |
-| Market data | **yfinance** | Free; covers all current tickers (VTI, VOO, VUG, VTV, VXUS, VGK, VT, VWO, SCHK, IAUM, MSFT, FXAIX, FSKAX, FSPSX, FTIHX, SCHD, FSELX, plus the Global X DAX Germany ETF, ticker `DAX`, NASDAQ-listed). |
+| Market data | **yfinance** | Free; covers US-listed ETFs, mutual funds and stocks. |
 | FX rates | **Frankfurter API** (`https://api.frankfurter.dev`) | Free, no key, ECB-sourced, full historical daily series since 1999. |
 | Date handling | Python stdlib `datetime` + `zoneinfo` | Avoid pendulum. |
 | Numerics | `numpy`, `pandas`, `scipy.optimize.brentq` (XIRR solver) | Standard. |

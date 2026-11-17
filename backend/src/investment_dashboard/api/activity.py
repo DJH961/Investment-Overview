@@ -89,6 +89,7 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
         "settings revert rejected",
     ),
     ("POST", "/api/settings/import"): ("settings imported", "settings import rejected"),
+    ("POST", "/api/brief/ack"): ("brief acknowledged", "brief ack failed"),
     ("POST", "/api/maintenance/jobs/{job_id}"): ("repair job started", "repair job refused"),
     ("PATCH", "/api/instruments/{instrument_id}"): (
         "instrument settings changed",

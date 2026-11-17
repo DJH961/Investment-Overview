@@ -10,7 +10,6 @@ Project rules live in [`../AGENTS.md`](../AGENTS.md); what shipped when is in
 | [`user_guide.md`](user_guide.md) | Control-by-control user guide (also shown on the in-app Help page). |
 | [`legacy_v5.md`](legacy_v5.md) | The frozen v5.3.1 release and how to read the old v5 code (`v5-archive` tag). |
 | [`original_spec.md`](original_spec.md) | The original v1 requirements; historical reference, source of the FX-aware return definition. |
-| [`Comparison Files/`](Comparison%20Files/README.md) | Anonymized, fabricated import/export fixtures used by tests. |
 
 Component docs: [`../web/README.md`](../web/README.md) (offline demo),
 [`../web/devkit/README.md`](../web/devkit/README.md) (web dev kit),

@@ -1131,8 +1131,20 @@ def open_session_split(
     metrics: PortfolioMetrics,
     *,
     now: datetime,
+    estimates: Mapping[int, intraday_snapshots_service.TwinEstimate] | None = None,
+    fx_now: Decimal | None = None,
 ) -> LastSessionSplit | None:
     """The day move split while the US market trades: last night's overnight + the session.
+
+    With ``estimates`` (pending mutual funds at their ETF-twin estimate, the book the
+    headline shows) the split describes the ESTIMATED book: the estimate's extra
+    move, ``estimate_adjustment`` at ``fx_now`` (the same figure the headline adds),
+    is a session price move and goes into ``move`` and ``value_now``; the overnight
+    part A (the previous close's book, funds at their previous NAV, revalued to the
+    open rate) and the % base are unchanged. So ☀ + ☾ == the estimated headline,
+    and each pending fund's row cut is
+    :func:`intraday_snapshots_service.estimate_day_split`. Without a usable rate
+    for the adjustment the official split is returned.
 
     ``overnight_*`` is last night's currency move only: the book at the previous
     close's prices revalued from the previous close rate to the rate at today's open
@@ -1166,6 +1178,13 @@ def open_session_split(
     ov_eur, ov_usd = fx_revaluation(session, prev_date, fx_from=fx_prev, fx_to=fx_open)
     base_eur = now_eur - day_eur
     base_usd = now_usd - day_usd
+    funds: tuple[str, ...] = ()
+    if estimates:
+        a_eur, a_usd = intraday_snapshots_service.estimate_adjustment(estimates.values(), fx_now)
+        if a_eur is not None and a_usd is not None:
+            day_eur, day_usd = day_eur + a_eur, day_usd + a_usd
+            now_eur, now_usd = now_eur + a_eur, now_usd + a_usd
+            funds = tuple(sorted(e.symbol for e in estimates.values()))
     return LastSessionSplit(
         session_date=session_date,
         prev_date=prev_date,
@@ -1186,6 +1205,7 @@ def open_session_split(
         lead_usd=ov_usd,
         base_eur=base_eur,
         base_usd=base_usd,
+        estimated_funds=funds,
     )
 
 
@@ -1236,6 +1256,24 @@ class DayMoveSplit:
     currency_usd: Decimal
     overnight: bool
     estimated: bool = False
+
+
+def value_at_two_rates(
+    session: Session, on: date, rate: Decimal, rate_plus: Decimal
+) -> tuple[tuple[Decimal, Decimal], tuple[Decimal, Decimal]] | None:
+    """The book on ``on`` valued at two EUR/USD rates: ``((eur, usd), (eur_plus, usd_plus))``.
+
+    Same book and valuation as :func:`day_move_split` (``_book_holdings`` +
+    ``value_at_rate``): a market-price book of the holdings, no cash. Each currency's
+    figure comes from ``value_at_rate`` itself (USD holdings stay native dollars),
+    never converted from the other. ``None`` when either rate is not positive.
+    """
+    from investment_dashboard.domain.late_data import value_at_rate  # noqa: PLC0415
+
+    if rate <= ZERO or rate_plus <= ZERO:
+        return None
+    book = _book_holdings(session, on)
+    return value_at_rate(book, rate), value_at_rate(book, rate_plus)
 
 
 def day_move_split(
