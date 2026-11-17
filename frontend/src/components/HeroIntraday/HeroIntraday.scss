@@ -14,6 +14,12 @@
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
+
+    // Phones: the facts row speaks for itself (the top bar already says Live / Closed);
+    // the head would only add a line to the hero.
+    @include m.phone {
+      @include m.visually-hidden;
+    }
   }
 
   &__label {

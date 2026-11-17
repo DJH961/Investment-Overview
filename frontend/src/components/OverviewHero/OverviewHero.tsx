@@ -188,19 +188,31 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
               </span>
             )}
           </span>
-          {k2 && (
-            <span className="overview-hero__value2">
-              <Money amount={toNum(secTotal ?? null)} currency={ccy2} />
-            </span>
-          )}
+          {/* The other currency and the price time share one line. */}
+          <span className="overview-hero__sub">
+            {k2 && (
+              <span className="overview-hero__value2">
+                <Money amount={toNum(secTotal ?? null)} currency={ccy2} />
+              </span>
+            )}
+            <PriceStamps
+              className="overview-hero__stamps"
+              price={heroPriceTime(data)}
+              updated={fetched}
+              compact
+              options={opts}
+            />
+          </span>
         </div>
         {est && (
           <p className="overview-hero__official" data-testid="hero-official">
             <span className="overview-hero__muted">Official</span>
             <Money amount={toNum(k.total_value)} currency={currency} />
             <span className="overview-hero__official-change" data-testid="hero-official-change">
-              <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
-              {" · "}
+              <span className="overview-hero__official-money">
+                <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
+                {" · "}
+              </span>
               <Percent ratio={toNum(officialPct ?? null)} signed />
             </span>
           </p>
@@ -217,26 +229,7 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
             <DeltaBadge value={toNum(headPct)} />
             <Money amount={toNum(headMove)} currency={currency} signed colored />
             <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
-            {secPct != null && (
-              <span className="overview-hero__muted overview-hero__usd">
-                {usdFlat ? (
-                  `${ccy2} unchanged`
-                ) : (
-                  <span>
-                    {ccy2} <Percent ratio={toNum(secPct)} signed />
-                  </span>
-                )}
-                <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
-              </span>
-            )}
           </div>
-          <PriceStamps
-            className="overview-hero__stamps"
-            price={heroPriceTime(data)}
-            updated={fetched}
-            compact
-            options={opts}
-          />
         </div>
         {/*
           Market shut and the currency moved since the close: the headline above already
@@ -248,6 +241,18 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
           so switching EUR/USD (USD has no currency leg) never moves the page.
         */}
         <div className="overview-hero__split">
+          {secPct != null && (
+            <span className="overview-hero__muted overview-hero__usd">
+              {usdFlat ? (
+                `${ccy2} unchanged`
+              ) : (
+                <span>
+                  {ccy2} <Percent ratio={toNum(secPct)} signed />
+                </span>
+              )}
+              <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
+            </span>
+          )}
           {ls && (
             <DaySplit
               sessionPct={toNum(ls.move_pct ?? null)}
