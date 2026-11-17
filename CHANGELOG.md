@@ -24,6 +24,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   were subtracted from an inflation-adjusted end value, so the growth looked too small
   (B-030). Nominal mode is unchanged.
 
+### Changed
+- **The time-zone list is the same everywhere.** The `tzdata` package is now installed on
+  every platform, so the Settings time-zone list no longer depends on which time-zone
+  database the operating system ships (CI runners dropped the old alias names, which broke
+  the fixture check).
+
 ### Security
 - **The old comparison exports are gone from the repo.** `docs/Comparison Files/` kept real
   symbols, dates and return percentages despite the scaling; the folder is now git-ignored and

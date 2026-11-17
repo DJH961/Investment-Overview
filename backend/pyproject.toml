@@ -38,6 +38,10 @@ dependencies = [
     "argon2-cffi>=23.1",
     "webauthn>=2.2",
     "python-multipart>=0.0.9",
+    # The IANA time-zone database on every platform, so the Settings time-zone list
+    # (zoneinfo.available_timezones) is the same on Windows, CI runners and the
+    # server image, whatever tzdata the OS ships (some drop the backward aliases).
+    "tzdata>=2026.2",
 ]
 
 [project.optional-dependencies]
