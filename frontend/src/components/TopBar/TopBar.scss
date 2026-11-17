@@ -34,10 +34,12 @@
     gap: var(--space-3);
   }
 
+  // A page title never breaks mid-word (a wider US$ summary beside it must not
+  // push "Overview" onto two lines and change the bar's height).
   &__title {
+    flex-shrink: 0;
     margin: 0;
-    min-width: 0;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     letter-spacing: -0.01em;

@@ -236,9 +236,4 @@
       font-size: var(--font-size-3xl);
     }
   }
-
-  // The USD-only "Regular €100 … today" line, held invisibly in the EUR view.
-  &__amount--ghost {
-    visibility: hidden;
-  }
 }
