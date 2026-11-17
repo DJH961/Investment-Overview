@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
+import { InfoTip } from "../InfoTip";
 import "./StatStrip.scss";
 
 export interface StatItem {
@@ -9,6 +10,8 @@ export interface StatItem {
   value: ReactNode;
   /** One quiet line under the figure ("avg 1.0751", "since close"). */
   note?: ReactNode;
+  /** One sentence on what the figure means; shows an (i) beside the label. */
+  tip?: string;
 }
 
 export interface StatStripProps {
@@ -29,7 +32,10 @@ export function StatStrip({ items, label, className }: StatStripProps) {
       <dl className="stat-strip__list">
         {items.map((s) => (
           <div key={s.key} className="stat-strip__item">
-            <dt className="stat-strip__label">{s.label}</dt>
+            <dt className="stat-strip__label">
+              {s.label}
+              {s.tip ? <InfoTip label={s.label} content={s.tip} /> : null}
+            </dt>
             <dd className="stat-strip__value">{s.value}</dd>
             {s.note && <dd className="stat-strip__note">{s.note}</dd>}
           </div>
