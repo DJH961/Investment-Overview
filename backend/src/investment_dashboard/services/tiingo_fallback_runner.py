@@ -15,6 +15,7 @@ no HTTP and no clock.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -27,9 +28,12 @@ from investment_dashboard.services.tiingo_fallback import (
     NavAction,
     decide_nav,
     market_symbol_eligible,
+    next_retry_delay,
     now_eastern,
     select_within_budget,
 )
+
+log = logging.getLogger(__name__)
 
 #: Injected close-fetcher: maps symbols to ``{date: close}`` (Tiingo daily).
 FetchCloses = Callable[[Sequence[str]], Mapping[str, Mapping[date, Decimal]]]
@@ -73,6 +77,46 @@ def _merge(outcome: FallbackOutcome, fetched: Mapping[str, Mapping[date, Decimal
     return used
 
 
+def _call(
+    state: TiingoDesktopState,
+    keys: Sequence[str],
+    now_utc: datetime,
+    fetch_closes: FetchCloses,
+    *,
+    probe: bool = False,
+) -> Mapping[str, Mapping[date, Decimal]]:
+    """Call Tiingo once for ``keys``, charging the budget whatever the outcome.
+
+    A failed call (timeout, 5xx, any exception) still spends the budget and
+    advances each key's retry backoff (``next_retry_delay``); the exception is
+    re-raised for the caller to persist. A success spends and resets the backoff.
+    ``probe=True`` also stamps the canary (count + time) before re-raising.
+    """
+    try:
+        fetched = fetch_closes(keys)
+    except Exception:
+        if probe:
+            state_repo.record_canary(state, now_utc)
+        else:
+            state_repo.record_spend(state, len(keys))
+        for key in keys:
+            failures = state_repo.record_fetch_failure(state, key, now_utc)
+            log.warning(
+                "Tiingo call failed for %s (failure %d); next retry in %s",
+                key,
+                failures,
+                next_retry_delay(failures),
+            )
+        raise
+    if probe:
+        state_repo.record_canary(state, now_utc)
+    else:
+        state_repo.record_spend(state, len(keys))
+    for key in keys:
+        state_repo.record_fetch_success(state, key)
+    return fetched
+
+
 def _run_market(
     market: Sequence[FallbackCandidate],
     *,
@@ -99,7 +143,9 @@ def _run_market(
             repeat_failure_confirmed=cand.symbol in previously_stale,
             last_attempt_at=state.last_market_attempt_at.get(cand.symbol),
         )
-        if market_symbol_eligible(gate_state, now_utc=now_utc, manual=manual):
+        if market_symbol_eligible(gate_state, now_utc=now_utc, manual=manual) and (
+            manual or not state_repo.in_backoff(state, cand.symbol, now_utc)
+        ):
             eligible.append(cand.symbol)
 
     selected = select_within_budget(eligible, state.budget())
@@ -109,8 +155,7 @@ def _run_market(
     # starts the cooldown (see ``record_market_attempt``).
     for sym in selected:
         state_repo.record_market_attempt(state, sym, now_utc)
-    fetched = fetch_closes(selected)
-    state_repo.record_spend(state, len(selected))
+    fetched = _call(state, selected, now_utc, fetch_closes)
     for sym in _merge(outcome, fetched):
         state_repo.clear_stale(state, sym)
     outcome.reasons.append(f"market fallback: {', '.join(selected)}")
@@ -147,17 +192,24 @@ def _run_nav(
         return
 
     if decision.action is NavAction.FETCH_LAGGARDS:
-        fetched = fetch_closes(decision.symbols)
-        state_repo.record_spend(state, len(decision.symbols))
+        laggards = [
+            s for s in decision.symbols if manual or not state_repo.in_backoff(state, s, now_utc)
+        ]
+        if not laggards:
+            outcome.reasons.append("NAV wait: within failure backoff")
+            return
+        fetched = _call(state, laggards, now_utc, fetch_closes)
         for sym in _merge(outcome, fetched):
             state_repo.clear_stale(state, sym)
-        outcome.reasons.append(f"NAV laggards: {', '.join(decision.symbols)}")
+        outcome.reasons.append(f"NAV laggards: {', '.join(laggards)}")
         return
 
     # CANARY: probe one fund; on a fresh NAV, promote to the remaining laggards.
     canary = decision.symbols[0]
-    fetched = fetch_closes((canary,))
-    state_repo.record_canary(state, now_utc)
+    if not manual and state_repo.in_backoff(state, canary, now_utc):
+        outcome.reasons.append(f"NAV wait: canary {canary} within failure backoff")
+        return
+    fetched = _call(state, (canary,), now_utc, fetch_closes, probe=True)
     canary_fresh = _latest(fetched.get(canary, {})) == expected_nav_date
     if not canary_fresh:
         outcome.reasons.append(f"canary {canary}: NAV not yet published")
@@ -165,10 +217,16 @@ def _run_nav(
     state_repo.note_publish_habit_for(state, canary, now_eastern(now_utc).time())
     for sym in _merge(outcome, {canary: fetched.get(canary, {})}):
         state_repo.clear_stale(state, sym)
-    rest = select_within_budget([s for s in missing if s != canary], state.budget())
+    rest = select_within_budget(
+        [
+            s
+            for s in missing
+            if s != canary and (manual or not state_repo.in_backoff(state, s, now_utc))
+        ],
+        state.budget(),
+    )
     if rest:
-        more = fetch_closes(rest)
-        state_repo.record_spend(state, len(rest))
+        more = _call(state, rest, now_utc, fetch_closes)
         for sym in _merge(outcome, more):
             state_repo.clear_stale(state, sym)
     outcome.reasons.append(f"canary {canary} fresh; promoted: {', '.join(rest) or 'none'}")
