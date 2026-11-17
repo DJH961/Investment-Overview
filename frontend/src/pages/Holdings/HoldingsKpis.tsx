@@ -131,18 +131,27 @@ export function HoldingsKpis({ data, currency }: Props) {
     },
     { label: "In profit / loss", value: `${s?.in_profit ?? 0} / ${s?.in_loss ?? 0}`, hint: "since buying" },
   ];
+  // One subject: the total value, large, in the lead panel. The next four are the key figures
+  // (large); the rest sit in a quieter secondary band.
+  const renderStat = (st: Stat, tier: "lead" | "key" | "minor") => (
+    <div key={st.label} className={"holdings-page__stat holdings-page__stat--" + tier}>
+      <dt className="holdings-page__stat-label">
+        {st.label}
+        {st.tip && <InfoTip label={st.label} content={st.tip} />}
+      </dt>
+      <dd className="holdings-page__stat-value">{loading ? <Skeleton height="1.1rem" width="70%" /> : st.value}</dd>
+      <dd className="holdings-page__stat-hint">{loading ? null : (st.hint ?? " ")}</dd>
+    </div>
+  );
   return (
     <dl className="holdings-page__stats" aria-label="Portfolio summary">
-      {stats.map((st) => (
-        <div key={st.label} className="holdings-page__stat">
-          <dt className="holdings-page__stat-label">
-            {st.label}
-            {st.tip && <InfoTip label={st.label} content={st.tip} />}
-          </dt>
-          <dd className="holdings-page__stat-value">{loading ? <Skeleton height="1.1rem" width="70%" /> : st.value}</dd>
-          <dd className="holdings-page__stat-hint">{loading ? null : (st.hint ?? " ")}</dd>
-        </div>
-      ))}
+      {renderStat(stats[0]!, "lead")}
+      <div className="holdings-page__stat-group holdings-page__stat-group--key">
+        {stats.slice(1, 5).map((st) => renderStat(st, "key"))}
+      </div>
+      <div className="holdings-page__stat-group holdings-page__stat-group--minor">
+        {stats.slice(5).map((st) => renderStat(st, "minor"))}
+      </div>
     </dl>
   );
 }

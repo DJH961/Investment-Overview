@@ -129,9 +129,11 @@ export function MoversCard({ movers, currency, loading, className, now, lastSess
       {loading ? (
         <Skeleton height="6rem" />
       ) : (
-        <div className="movers-card__grid">
-          <MoverList title="Winners" movers={movers?.winners ?? []} ccy={currency} tone="pos" />
-          <MoverList title="Losers" movers={movers?.losers ?? []} ccy={currency} tone="neg" />
+        <div className="movers-card__body">
+          <div className="movers-card__grid">
+            <MoverList title="Winners" movers={movers?.winners ?? []} ccy={currency} tone="pos" />
+            <MoverList title="Losers" movers={movers?.losers ?? []} ccy={currency} tone="neg" />
+          </div>
         </div>
       )}
     </Card>

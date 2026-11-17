@@ -45,10 +45,23 @@
     align-items: center;
   }
 
+  // The card stretches to the row (Overview side column taller): the list keeps its natural
+  // height and the footer is pinned to the bottom, so the free space reads as deliberate.
+  display: flex;
+  flex-direction: column;
+
+  & > .card__body:not([hidden]) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
   &__row {
+    min-height: var(--space-8);
     padding: var(--space-3) 0;
     border-bottom: var(--border-width) solid var(--color-border);
     font-size: var(--font-size-sm);
+    transition: background var(--duration-fast) var(--ease-standard);
 
     &:last-child {
       border-bottom: 0;
@@ -57,11 +70,17 @@
     &:hover {
       background: linear-gradient(90deg, transparent, var(--color-surface-2) 12%, var(--color-surface-2) 88%, transparent);
     }
+
+    @include m.reduced-motion {
+      transition: none;
+    }
   }
 
+  // A calm header: quiet sentence-case labels over one hairline, a touch of air below.
   &__head {
-    padding-bottom: var(--space-2);
+    padding-bottom: var(--space-3);
     border-bottom: var(--border-width) solid var(--color-border);
+    color: var(--color-faint);
     @include m.eyebrow;
   }
 
@@ -101,7 +120,7 @@
   &__weight-bar {
     position: relative;
     flex: 1 1 auto;
-    height: var(--space-1);
+    height: calc(var(--space-1) + var(--border-width));
     overflow: hidden;
     border-radius: var(--radius-full);
     background: var(--color-surface-2);
@@ -373,16 +392,24 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    margin-top: var(--space-2);
+    // Pinned to the card's bottom edge when the card is taller than its list.
+    margin-top: auto;
+    padding-top: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
   }
 
   &__link {
     margin-left: auto;
-    color: var(--color-muted);
+    color: var(--color-accent);
     font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
 
     &:hover {
-      color: var(--color-fg);
+      text-decoration: underline;
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
     }
   }
 

@@ -209,7 +209,7 @@ export function Projection() {
     <div className="projection-page">
       <PageHeader title="Projection" subtitle="Project your portfolio forward." />
       <div className="projection-page__layout">
-        <Card title="Assumptions" collapsibleId="projection.assumptions">
+        <Card className="projection-page__assumptions" title="Assumptions" collapsibleId="projection.assumptions">
           <form className="projection-page__form" onSubmit={(e) => e.preventDefault()}>
             <div className="projection-page__toggles">
               <SegmentedControl
@@ -310,7 +310,8 @@ export function Projection() {
             <>
               {/* One summary instead of five similar tiles: the expected end value,
                   the range around it, then what you add and what it grows by. */}
-              <Card className="projection-page__summary">
+              <div className="projection-page__stage">
+              <Card variant="plain" className="projection-page__summary">
                 <p className="projection-page__eyebrow">Expected {endLabel ? `in ${endLabel}` : ""}</p>
                 <p className="projection-page__headline">{money(out.final.expected)}</p>
                 <p className="projection-page__range">
@@ -333,7 +334,7 @@ export function Projection() {
                   </div>
                 </dl>
               </Card>
-              <Card title={`Next ${out.inputs.horizon} ${out.monthly ? "months" : "years"}`}>
+              <Card variant="plain" className="projection-page__chart" title={`Next ${out.inputs.horizon} ${out.monthly ? "months" : "years"}`}>
                 <Chart
                   busy={isFetching}
                   series={hide ? series : series.map((s) => ({ ...s, valueFormat: chartMoneyFormat(currency, "tooltip") }))}
@@ -342,6 +343,7 @@ export function Projection() {
                   ariaLabel="Projected value scenarios"
                 />
               </Card>
+              </div>
               {toNum(out.inputs.target) ? (
                 <Card title="Goal">
                     <p className="projection-page__note">

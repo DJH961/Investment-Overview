@@ -9,9 +9,42 @@
     grid-template-columns: 1fr;
 
     @include m.desktop {
-      grid-template-columns: 20rem 1fr;
+      // The answer leads (left, wide); the assumptions are a quiet rail on the right.
+      grid-template-columns: minmax(0, 1fr) 20rem;
       align-items: start;
     }
+  }
+
+  &__assumptions {
+    @include m.desktop {
+      order: 2;
+    }
+  }
+
+  // One lit stage: the expected value, its range, and the scenario chart together.
+  &__stage {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-3) 0;
+    background: var(--stage-bg);
+    border: var(--border-width) solid var(--stage-border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-1);
+
+    @include m.phone {
+      border-radius: var(--radius-lg);
+    }
+  }
+
+  &__summary {
+    padding: var(--space-3) var(--card-pad-x) 0;
+    // The headline is sized from its own width, so a long figure never spills.
+    container-type: inline-size;
+  }
+
+  &__chart {
+    padding-bottom: var(--space-3);
   }
 
   // Two short fields per row (return + band, step-up + inflation, target +
@@ -53,11 +86,8 @@
 
   &__headline {
     margin: var(--space-1) 0 0;
-    @include m.figure(var(--font-size-3xl));
-
-    @include m.phone {
-      font-size: var(--font-size-2xl);
-    }
+    @include m.display(clamp(var(--font-size-2xl), 11cqi, var(--font-size-hero)));
+    white-space: nowrap;
   }
 
   &__range {

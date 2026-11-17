@@ -17,7 +17,7 @@
   &__filters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-    gap: var(--space-2);
+    gap: var(--space-3);
     align-items: center;
 
     @include m.phone {
@@ -34,7 +34,8 @@
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-3);
+    padding: 0 var(--space-1);
   }
 
   &__sort {
@@ -122,10 +123,10 @@
   &__kind {
     display: inline-block;
     padding: 0 var(--space-2);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-full);
     background: var(--color-surface-2);
     font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
 
     // Neutral on purpose: blue/orange mean gain/loss everywhere else, and a sale is not a loss.

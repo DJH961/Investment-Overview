@@ -45,7 +45,7 @@
     position: relative;
     height: var(--space-2);
     background: var(--color-surface-2);
-    border-radius: var(--radius-full);
+    border-radius: 4px;
 
     // centre line
     &::after {
@@ -64,7 +64,8 @@
     top: 0;
     bottom: 0;
     left: 50%;
-    border-radius: var(--radius-full);
+    // Anchored to the centre line; only the data end is rounded.
+    border-radius: 0 4px 4px 0;
     background: var(--color-faint);
 
     &--pos {
@@ -74,6 +75,7 @@
     &--neg {
       right: 50%;
       left: auto;
+      border-radius: 4px 0 0 4px;
       background: var(--color-neg);
     }
 

@@ -11,6 +11,17 @@
     grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
     gap: var(--page-gap);
     @include m.phone-tile-grid;
+
+    // One subject: the first figure leads on its own stage surface.
+    @include m.tablet-up {
+      grid-template-columns: minmax(0, 1.6fr) repeat(auto-fit, minmax(14rem, 1fr));
+
+      > :first-child {
+        background: var(--stage-bg);
+        border-color: var(--stage-border);
+        border-radius: var(--radius-xl);
+      }
+    }
   }
 
   &__muted {

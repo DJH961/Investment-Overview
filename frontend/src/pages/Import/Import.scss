@@ -5,6 +5,13 @@
   flex-direction: column;
   gap: var(--page-gap);
 
+  // The subject of the page: the step in hand, on the stage surface.
+  &__lead {
+    background: var(--stage-bg);
+    border-color: var(--stage-border);
+    border-radius: var(--radius-xl);
+  }
+
   &__steps {
     display: flex;
     gap: var(--space-4);

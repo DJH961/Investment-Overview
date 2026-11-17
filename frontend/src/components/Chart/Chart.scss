@@ -41,6 +41,7 @@
 
       .chart__series--primary .chart__dot,
       .chart__end-marker,
+      .chart__end-pill-dot,
       .chart__marker--primary {
         fill: var(#{$color});
       }
@@ -84,6 +85,31 @@
     stroke-width: 1;
     stroke-dasharray: 2 4;
     opacity: 0.7;
+  }
+
+  // The only axis line: a faint baseline under the plot.
+  &__baseline {
+    stroke: var(--color-border);
+    stroke-width: 1;
+  }
+
+  // End label: a small pill at the line's end. Surface fill + hairline, text in fg;
+  // the dot carries the series identity.
+  &__end-pill-box {
+    fill: var(--color-surface);
+    stroke: var(--color-border-strong);
+    stroke-width: 1;
+  }
+
+  &__end-pill-dot {
+    fill: var(--chart-1);
+  }
+
+  &__end-pill-text {
+    fill: var(--color-fg);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-medium);
   }
 
   &__session-sep {
@@ -334,10 +360,15 @@
     font-size: var(--font-size-xs);
   }
 
+  // Legend chips: a hairline pill, the swatch matching the series line style.
   &__legend-item {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+    min-height: var(--control-height-sm);
+    padding: 0 var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
 
     &--off {
       opacity: 0.55;
@@ -351,6 +382,7 @@
     min-height: var(--control-height-sm);
     padding: 0 var(--space-3);
     background: var(--color-surface-2);
+    margin: 0 calc(-1 * var(--space-3));
     border: var(--border-width) solid transparent;
     transition: border-color var(--duration-fast) var(--ease-standard);
     border-radius: var(--radius-full);
@@ -359,7 +391,7 @@
     cursor: pointer;
 
     &:hover {
-      border-color: var(--color-border);
+      background: var(--color-surface-2);
     }
 
     &:focus-visible {

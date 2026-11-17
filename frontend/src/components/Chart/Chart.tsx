@@ -489,6 +489,22 @@ export function Chart({
   // The trend triangle marks where the line ends. After the close the "now" dot is the
   // end (the line stops at the close, and the day can have turned since), so no triangle.
   const endPt = trend && !nowMarker && primaryPts.length ? primaryPts[primaryPts.length - 1] : null;
+  // End label: the primary series' last value in a small pill (identity = its dot, text = fg).
+  // Only on a single-axis chart with no "now" marker, so it never stacks on another label.
+  const primarySeries = prepared.find((s) => s.toneCls === "primary");
+  const lastRaw = primarySeries
+    ? [...primarySeries.pts].reverse().find((p) => p.y !== null && p.raw !== null)
+    : undefined;
+  let endPill: { x: number; y: number; w: number; text: string } | null = null;
+  if (!compact && !nowMarker && !rightSeries && primarySeries && lastRaw && lastRaw.y !== null && lastRaw.raw !== null) {
+    const text = (primarySeries.valueFormat ?? valueFormat)(lastRaw.raw);
+    const w = labelWidth(text) + 24;
+    const ex = scales.x(lastRaw.x);
+    const ey = scales.y(lastRaw.y);
+    const px = Math.min(Math.max(ex - w, PAD.left), width - PAD.right - w);
+    const py = ey + 30 <= PAD.top + innerH ? ey + 12 : ey - 30;
+    endPill = { x: px, y: py, w, text };
+  }
   const cursorT = cursor !== null ? (times[cursor] ?? null) : null;
   const cursorX = cursorT !== null ? scales.x(cursorT) : null;
   const tipRows =
@@ -566,6 +582,13 @@ export function Chart({
               )}
             </g>
           ))}
+          <line
+            className="chart__baseline"
+            x1={PAD.left}
+            x2={width - PAD.right}
+            y1={PAD.top + innerH}
+            y2={PAD.top + innerH}
+          />
           {xTicks.map((t, i) => (
             <text
               key={t}
@@ -684,6 +707,15 @@ export function Chart({
                   {line}
                 </text>
               ))}
+            </g>
+          )}
+          {endPill && (
+            <g className="chart__end-pill" data-end-pill pointerEvents="none">
+              <rect className="chart__end-pill-box" x={endPill.x} y={endPill.y} width={endPill.w} height={18} rx={9} />
+              <circle className="chart__end-pill-dot" cx={endPill.x + 9} cy={endPill.y + 9} r={3} />
+              <text className="chart__end-pill-text" x={endPill.x + 16} y={endPill.y + 9} dy="0.34em">
+                {endPill.text}
+              </text>
             </g>
           )}
           {cursorX !== null && (

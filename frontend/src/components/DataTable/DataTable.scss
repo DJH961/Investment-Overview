@@ -19,7 +19,9 @@
   // Quiet eyebrow headings over a hairline; the rows carry the weight.
   &__th {
     padding: var(--space-3) var(--space-4);
-    border-bottom: var(--border-width) solid var(--color-border-strong);
+    border-bottom: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-faint);
     text-align: left;
     white-space: nowrap;
     @include m.eyebrow;
@@ -40,8 +42,14 @@
     color: inherit;
     font: inherit;
 
+    border-radius: var(--radius-sm);
+
     &:hover {
       color: var(--color-fg);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
     }
   }
 
@@ -57,15 +65,25 @@
   &__row {
     transition: background-color var(--duration-fast) var(--ease-standard);
 
-    &:hover {
+    &:hover,
+    &:focus-within {
       background: var(--color-surface-2);
     }
+
+    @include m.reduced-motion {
+      transition: none;
+    }
+  }
+
+  &__row:last-child &__td {
+    border-bottom: 0;
   }
 
   &__td {
     padding: var(--space-3) var(--space-4);
     border-bottom: var(--border-width) solid var(--color-border);
     font-variant-numeric: tabular-nums;
+    vertical-align: middle;
 
     &--right {
       text-align: right;

@@ -1,35 +1,73 @@
 @use "../../styles/mixins" as m;
 
-// The figure grid speaks the StatStrip / KpiGrid language: equal cells split by
-// hairlines (each cell draws its top and left rule, the frame clips the outer ones).
+// Lays out by its OWN width (container queries): half the page on a wide desktop, the
+// full page below that. The lead figure (FX effect on return) is the big one; the
+// other five are ruled rows: a list when narrow, two or three columns as it widens.
 .currency-lifetime {
+  container: currency-lifetime / inline-size;
+
   &__grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: var(--space-8);
     margin: 0;
-    overflow: hidden;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-md);
 
-    // Three across only on a tablet, where the card spans the page; on a desktop it
-    // sits in the half-width side column and keeps two roomy columns.
-    @include m.tablet-only {
+    @container currency-lifetime (min-width: 420px) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @container currency-lifetime (min-width: 760px) {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
 
   &__stat {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label value"
+      "sub value";
+    column-gap: var(--space-3);
+    row-gap: var(--space-1);
+    align-items: center;
     min-width: 0;
-    padding: var(--space-4);
-    box-shadow:
-      calc(-1 * var(--border-width)) 0 0 0 var(--color-border),
-      0 calc(-1 * var(--border-width)) 0 0 var(--color-border);
+    padding: var(--space-3) 0;
+    border-top: var(--border-width) solid var(--color-border);
 
-    @include m.phone {
-      padding: var(--space-3) var(--space-4);
+    > .currency-lifetime__label {
+      grid-area: label;
+    }
+
+    > .currency-lifetime__value {
+      grid-area: value;
+      text-align: right;
+    }
+
+    > .currency-lifetime__sub {
+      grid-area: sub;
+    }
+
+    // The lead: the euro's effect on the return, across the full row, big.
+    &:nth-child(3) {
+      grid-column: 1 / -1;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        "label"
+        "value"
+        "sub";
+      order: -1;
+      padding: 0 0 var(--space-4);
+      border-top: 0;
+
+      > .currency-lifetime__value {
+        @include m.display(var(--font-size-2xl));
+        font-weight: var(--font-weight-figure);
+        text-align: left;
+
+        @container currency-lifetime (min-width: 420px) {
+          font-size: var(--font-size-3xl);
+        }
+      }
     }
   }
 
@@ -38,13 +76,9 @@
   }
 
   &__value {
-    @include m.figure(var(--font-size-xl));
+    @include m.figure(var(--font-size-md));
     margin: 0;
     overflow-wrap: anywhere;
-
-    @include m.phone {
-      font-size: var(--font-size-lg);
-    }
 
     &--pos {
       color: var(--color-pos);

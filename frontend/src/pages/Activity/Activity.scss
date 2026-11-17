@@ -13,6 +13,17 @@
     grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: var(--space-3);
     @include m.phone-tile-grid;
+
+    // One subject: the first figure leads on its own stage surface, the rest sit quietly.
+    @include m.tablet-up {
+      grid-template-columns: minmax(0, 1.6fr) repeat(auto-fit, minmax(10rem, 1fr));
+
+      > :first-child {
+        background: var(--stage-bg);
+        border-color: var(--stage-border);
+        border-radius: var(--radius-xl);
+      }
+    }
   }
 
   // Phone: two filters per row (the odd one spans), not three stacked rows.

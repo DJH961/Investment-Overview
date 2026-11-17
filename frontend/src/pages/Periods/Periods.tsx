@@ -202,12 +202,14 @@ export function Periods() {
       ) : (
         <div className="periods-page__grid">
           {view === "year" && recent.length > 1 && (
-            <Card title="Growth per month" subtitle="Last 24 months" collapsibleId="periods.bars">
-              <GrowthBars
-                ariaLabel="Monthly growth, last 24 months"
-                bars={recent.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
-              />
-            </Card>
+            <div className="periods-page__stage">
+              <Card variant="plain" title="Growth per month" subtitle="Last 24 months" collapsibleId="periods.bars">
+                <GrowthBars
+                  ariaLabel="Monthly growth, last 24 months"
+                  bars={recent.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
+                />
+              </Card>
+            </div>
           )}
           {view === "year" && phone ? (
             <PhoneYears groups={groups} currency={currency} monthsOther={mOther} yearOther={yOther} />
@@ -220,7 +222,7 @@ export function Periods() {
                 defaultOpen={g.isCurrent}
                 title={
                   <>
-                    {g.year}
+                    <span className="periods-page__year-title">{g.year}</span>
                     {g.isCurrent && <span className="periods-page__pill"> current</span>}
                   </>
                 }
@@ -237,12 +239,14 @@ export function Periods() {
             ))
           ) : (
             <>
-              <Card title={view === "monthly" ? "Growth per month" : "Growth per year"}>
-                <GrowthBars
-                  ariaLabel={`${view} growth bar chart`}
-                  bars={flat.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
-                />
-              </Card>
+              <div className="periods-page__stage">
+                <Card variant="plain" title={view === "monthly" ? "Growth per month" : "Growth per year"}>
+                  <GrowthBars
+                    ariaLabel={`${view} growth bar chart`}
+                    bars={flat.map((r) => ({ id: r.label, label: periodLabel(r.label), value: toNum(r.growth_pct) }))}
+                  />
+                </Card>
+              </div>
               <Card title={view === "monthly" ? "Monthly" : "Yearly"} flush>
                 <DataTable
                   caption={`${view} periods`}

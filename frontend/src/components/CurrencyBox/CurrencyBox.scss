@@ -53,17 +53,22 @@
     color: var(--color-fg);
   }
 
+  // The card lays out by its OWN width (it sits in a 300-380px side column on a wide
+  // desktop and spans the page below that): narrow = lead figure over a ruled list,
+  // medium = lead figure over a three-figure row, wide = two calm zones side by side.
+  container: currency-box / inline-size;
+
   &__body {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-5);
-    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
 
-    @include m.phone {
-      gap: var(--space-3);
-    }
-
-    @include m.desktop {
+    @container currency-box (min-width: 640px) {
+      display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--space-8);
+      align-items: start;
 
       &--single {
         grid-template-columns: minmax(0, 1fr);
@@ -75,36 +80,64 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
+    min-width: 0;
   }
 
-  // The three figures: equal cells split by hairlines (StatStrip / KpiGrid language).
+  // The three figures. Narrow: a ruled list, label and note left, figure right.
   &__stats {
-    display: grid;
-    // Three columns at every width (pair, move, since), as in v5.
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
+    flex-direction: column;
     margin: 0;
-    overflow: hidden;
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-md);
 
-    @include m.phone {
-      // Give the spot column slightly more room for "as of DD/MM, HH:MM" on 360-390px phones.
-      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.85fr);
+    @container currency-box (min-width: 480px) and (max-width: 639px) {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-4);
     }
   }
 
   &__stat {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label value"
+      "meta value";
+    column-gap: var(--space-4);
+    row-gap: var(--space-1);
+    align-items: center;
     min-width: 0;
-    padding: var(--space-4);
-    box-shadow:
-      calc(-1 * var(--border-width)) 0 0 0 var(--color-border),
-      0 calc(-1 * var(--border-width)) 0 0 var(--color-border);
+    padding: var(--space-3) 0;
+    border-top: var(--border-width) solid var(--color-border);
 
-    @include m.phone {
-      padding: var(--space-3);
+    &:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    > .currency-box__label {
+      grid-area: label;
+    }
+
+    > .currency-box__value {
+      grid-area: value;
+      text-align: right;
+    }
+
+    > .currency-box__meta {
+      grid-area: meta;
+      min-width: 0;
+    }
+
+    @container currency-box (min-width: 480px) and (max-width: 639px) {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 0;
+      border-top: 0;
+
+      > .currency-box__value {
+        text-align: left;
+      }
     }
   }
 
@@ -113,11 +146,12 @@
   }
 
   &__value {
-    @include m.figure(var(--font-size-xl));
+    @include m.figure(var(--font-size-lg));
     margin: 0;
+    white-space: nowrap;
 
-    @include m.phone {
-      font-size: var(--font-size-md);
+    @container currency-box (min-width: 480px) {
+      font-size: var(--font-size-xl);
     }
   }
 
@@ -166,34 +200,26 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The lead: what the rate did since yesterday, as the card's biggest figure.
   &__effect {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    padding-top: var(--space-4);
-    border-top: var(--border-width) solid var(--color-border);
+    min-width: 0;
+    order: -1;
+    padding-bottom: var(--space-5);
+    border-bottom: var(--border-width) solid var(--color-border);
 
-    @include m.phone {
-      padding-top: var(--space-3);
-    }
-
-    @include m.desktop {
-      padding-top: 0;
-      padding-left: var(--space-5);
-      border-top: 0;
-      border-left: var(--border-width) solid var(--color-border);
+    @container currency-box (min-width: 640px) {
+      padding-bottom: 0;
+      border-bottom: 0;
     }
   }
 
   &__effect-head {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
-
-    @include m.phone {
-      gap: var(--space-2);
-    }
+    flex-direction: column;
+    gap: var(--space-1);
   }
 
   &__effect-title {
@@ -201,11 +227,12 @@
   }
 
   &__effect-net {
-    @include m.figure(var(--font-size-xl));
-    flex-shrink: 0;
+    @include m.display(var(--font-size-2xl));
+    font-weight: var(--font-weight-figure);
+    overflow-wrap: anywhere;
 
-    @include m.phone {
-      font-size: var(--font-size-md);
+    @container currency-box (min-width: 480px) {
+      font-size: var(--font-size-3xl);
     }
   }
 }

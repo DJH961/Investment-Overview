@@ -5,7 +5,17 @@
   flex-direction: column;
   gap: var(--page-gap);
 
-  // -- 1 · How much: amount and switches side by side on wide screens ---------
+  // -- 1 · How much: the page's lead surface (the stage), amount and switches side by side
+
+  &__invest {
+    background: var(--stage-bg);
+    border-color: var(--stage-border);
+    border-radius: var(--radius-xl);
+  }
+
+  &__mix {
+    border-radius: var(--radius-xl);
+  }
 
   &__step {
     display: grid;
@@ -31,15 +41,20 @@
     grid-column: 1 / -1;
     justify-self: start;
     padding: var(--space-1) var(--space-3);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
+    @include m.well(var(--radius-full));
+    border: var(--border-width) solid transparent;
     color: var(--color-fg);
     font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
     cursor: pointer;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
 
     &[aria-pressed="true"] {
       border-color: var(--color-accent);
+      background: var(--color-accent-soft);
       font-weight: var(--font-weight-semibold);
     }
   }
@@ -81,10 +96,8 @@
   &__edit-group {
     break-inside: avoid;
     margin-bottom: var(--space-4);
-    padding: var(--space-3) var(--space-3) var(--space-1);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-2);
+    padding: var(--space-4) var(--space-4) var(--space-2);
+    @include m.well(var(--radius-lg));
 
     @include m.phone {
       padding: var(--space-2) var(--space-3) 0;
@@ -102,9 +115,8 @@
   }
 
   &__edit-title {
+    @include m.display(var(--font-size-lg));
     margin: 0;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
   }
 
   &__edit-sum {
@@ -635,10 +647,8 @@
   }
 
   &__stat-value {
+    @include m.figure(var(--font-size-xl));
     margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    font-variant-numeric: tabular-nums;
     white-space: nowrap;
 
     @include m.phone {
@@ -739,9 +749,7 @@
     gap: var(--space-2) var(--space-3);
     margin: 0 0 var(--space-3);
     padding: var(--space-2) var(--space-3);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-2);
+    @include m.well(var(--radius-md));
   }
 
   &__etf-toggle,
@@ -751,9 +759,9 @@
     gap: var(--space-2);
     min-height: var(--control-height-sm);
     padding: 0 var(--space-3) 0 var(--space-2);
-    border: var(--border-width) solid var(--color-border-strong);
+    border: var(--border-width) solid transparent;
     border-radius: var(--radius-full);
-    background: var(--color-surface);
+    background: var(--color-surface-2);
     color: var(--color-fg);
     font: inherit;
     font-size: var(--font-size-sm);
