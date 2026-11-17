@@ -692,7 +692,7 @@ export function Chart({
           )}
           {nowMarker && nowX !== null && Number.isFinite(nowMarker.v) && (
             <g className="chart__now" data-now-marker>
-              <circle className="chart__now-dot" cx={scales.x(nowX)} cy={scales.y(nowMarker.v)} r={4} />
+              <circle className="chart__now-dot" cx={scales.x(nowX)} cy={scales.y(nowMarker.v)} r={5} />
               {(nowMarker.lines ?? []).map((line, k, all) => (
                 <text
                   key={line}

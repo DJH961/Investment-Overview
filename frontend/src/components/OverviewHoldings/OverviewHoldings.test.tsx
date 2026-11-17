@@ -75,12 +75,36 @@ describe("OverviewHoldings", () => {
       );
       const splits = container.querySelectorAll('[data-testid="holding-day-split"]');
       expect(splits).toHaveLength(1);
-      // A table cell shows only the holding's own session part; the overnight part is said once above.
-      expect(splits[0]).toHaveTextContent(/Session\s*\+0\.55%\s*Overnight\s*-0\.45%/);
-      expect(screen.queryByTestId("overnight-note")).toBeNull(); // no note above the table
+      // A row shows only its own ☀ day part (in place of the money line, same height);
+      // the ☾ night part is the same for every dollar holding and is said once, in the header.
+      expect(splits[0]).toHaveTextContent(/Session\s*\+0\.55%/);
+      expect(splits[0]).not.toHaveTextContent(/Overnight/);
       expect(splits[0].closest('[data-symbol="S8"]')).not.toBeNull();
-      // The compact, stacked form: no "next day" note in a table cell.
-      expect(splits[0]).not.toHaveTextContent("next day");
+      expect(screen.getByTestId("holdings-night")).toHaveTextContent(/-0\.45%/);
+      expect(screen.getAllByTestId("holdings-night")).toHaveLength(1);
+    } finally {
+      holdings[7] = row(8);
+    }
+  });
+
+  it("keeps one row shape in EUR and USD: two day lines, no ☾ on the rows", () => {
+    holdings[7] = row(8, { day_session_pct: "0.0055", day_overnight_pct: "-0.0045", day_overnight: "-4.5" } as never);
+    try {
+      const lines = (c: "EUR" | "USD") => {
+        const { container, unmount } = render(
+          <MemoryRouter>
+            <OverviewHoldings currency={c} />
+          </MemoryRouter>,
+        );
+        // The Day cell: who, weight, value, day, since buying.
+        const cell = container.querySelector('[data-symbol="S8"]')!.children[3]!;
+        const n = cell.querySelectorAll(".overview-holdings__main, .overview-holdings__sub").length;
+        unmount();
+        return n;
+      };
+      expect(lines("EUR")).toBe(2);
+      expect(lines("USD")).toBe(2);
+      expect(screen.queryByTestId("holdings-night")).toBeNull();
     } finally {
       holdings[7] = row(8);
     }

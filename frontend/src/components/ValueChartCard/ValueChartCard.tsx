@@ -214,8 +214,9 @@ export function ValueChartCard({
   // The split explains the 1D figure only; 1W's header is the week, not a session.
   const sessionPct = moved && shown === "1d" && lastSession ? toNum(lastSession.move_pct) : null;
   // Sits left of the range buttons (one row on desktop; wraps under them on a phone).
+  // Inside the Overview stage the hero above already shows the split: once per screen.
   const split =
-    sessionPct !== null ? (
+    sessionPct !== null && !embedded ? (
       <DaySplit
         sessionPct={sessionPct}
         overnightPct={overnightPct}

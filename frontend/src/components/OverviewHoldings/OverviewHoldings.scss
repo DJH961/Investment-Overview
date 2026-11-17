@@ -105,10 +105,19 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  // The name gets two lines rather than an early ellipsis ("Vangu…"); it never grows
+  // a row beyond that, and the full name is in its title.
   &__name {
-    @include m.truncate;
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
   }
 
   &__weight {
@@ -476,5 +485,51 @@
     display: inline-flex;
     align-items: baseline;
     gap: var(--space-2);
+  }
+
+  // Header: ☾ once for every dollar holding, beside the price time.
+  &__meta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  &__night {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-1) 0 var(--space-2);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__night-icon,
+  &__sun-icon {
+    flex-shrink: 0;
+    width: 1em;
+    height: 1em;
+    color: var(--color-faint);
+  }
+
+  &__night-label {
+    @include m.phone {
+      @include m.visually-hidden;
+    }
+  }
+
+  // A row's ☀ day part, where the USD view shows the money: the same line, the same height.
+  &__sun {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    font-variant-numeric: tabular-nums;
   }
 }

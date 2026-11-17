@@ -158,7 +158,9 @@ export function TopBar({
                 status={freshness.status}
                 label={shortChip ? freshness.short! : freshness.label}
                 title={shortChip ? freshness.label : freshness.updated}
-                stacked={!shortChip}
+                // Phone: ONE status line ("● Live · Today 21:57"), never stacked: the bar
+                // stays at three lines at most (title, figures, status), clock included.
+                stacked={!compact}
               />
             )}
             {clock && <span className="top-bar__clock">{clock}</span>}

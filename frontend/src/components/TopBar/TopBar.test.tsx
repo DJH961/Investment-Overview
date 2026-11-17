@@ -31,9 +31,9 @@ function renderBar(props: Partial<TopBarProps> = {}) {
 describe("TopBar on a phone", () => {
   it("shows refresh, freshness and the account menu without opening anything", () => {
     const { onRefresh } = renderBar();
-    // Stacked on tablet and up: the state over its detail, full sentence on hover.
-    expect(screen.getByText("Live")).toBeInTheDocument();
-    expect(screen.getByText("14:32")).toBeInTheDocument();
+    // Phone: one status line, never stacked (the bar stays at three lines at most).
+    expect(screen.getByText("Live · 14:32")).toBeInTheDocument();
+    expect(document.querySelector(".freshness--stacked")).toBeNull();
     const refresh = screen.getByRole("button", { name: "Refresh data" });
     expect(refresh).toBeEnabled();
     fireEvent.click(refresh);

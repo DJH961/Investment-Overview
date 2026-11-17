@@ -5,16 +5,46 @@ import { Money } from "../Money";
 import { Percent } from "../Percent";
 import "./DaySplit.scss";
 
-/** The one explanation of the overnight part, shared by every place that shows the split. */
-export const DAY_SPLIT_TIP =
-  "☀ Day: the move during US market hours (prices and the currency then). ☾ Night: while the market is open, last night's currency move (previous close to this morning's open), part of today's total; after the close, the currency's move since the close, not in today's total, it counts toward the next day.";
+/**
+ * The one explanation of ☀ and ☾, the same words everywhere (the owner's day rule):
+ * Total = last night's currency + the session; while the market is open ☾ is last
+ * night's move and is in the Total; after the close ☾ is tonight's and is not.
+ */
+export const DAY_SPLIT_LINES = {
+  day: "Day: prices and currency while the US market is open.",
+  night: "Night: currency while the US market is closed.",
+  total: "Total = last night's ☾ + today's ☀. After the close, tonight's ☾ sits beside the Total, not in it.",
+  estimate: "Funds without today's price use their ETF twin until it is out.",
+} as const;
 
-/** Hover text for each symbol: ☀ the day, ☾ the night (wording depends on market open/shut). */
-const SESSION_TITLE = "Day: the move during US market hours (prices and the currency then)";
-const OVERNIGHT_TITLE_OPEN =
-  "Night: last night's currency move (previous close to this morning's open), part of today's total";
-const OVERNIGHT_TITLE_SHUT =
-  "Night: the currency's move since the close — not in today's total; it counts toward the next day";
+/** Plain-text form of the legend (titles, screen readers). */
+export const DAY_SPLIT_TIP = `☀ ${DAY_SPLIT_LINES.day} ☾ ${DAY_SPLIT_LINES.night} ${DAY_SPLIT_LINES.total}`;
+
+/** Hover text for each symbol. */
+const SESSION_TITLE = `☀ ${DAY_SPLIT_LINES.day}`;
+const OVERNIGHT_TITLE_OPEN = "☾ Last night's currency move, in today's Total.";
+const OVERNIGHT_TITLE_SHUT = "☾ Tonight's currency move, beside the Total, not in it.";
+
+/**
+ * The ☀/☾ legend for an info tip: two symbol lines and the rule, a fourth line only
+ * when an ETF-twin estimate is on screen. A legend, not a paragraph.
+ */
+export function DaySplitLegend({ estimate = false }: { estimate?: boolean }) {
+  return (
+    <span className="day-split-legend">
+      <span className="day-split-legend__row">
+        <Sun className="day-split-legend__icon" aria-hidden />
+        <span>{DAY_SPLIT_LINES.day}</span>
+      </span>
+      <span className="day-split-legend__row">
+        <Moon className="day-split-legend__icon" aria-hidden />
+        <span>{DAY_SPLIT_LINES.night}</span>
+      </span>
+      <span className="day-split-legend__rule">{DAY_SPLIT_LINES.total}</span>
+      {estimate && <span className="day-split-legend__note">≈ {DAY_SPLIT_LINES.estimate}</span>}
+    </span>
+  );
+}
 
 /** Smallest overnight move worth showing: 0.005 % of the baseline (or half a cent without a %). */
 const MIN_PCT = 0.00005;
@@ -49,6 +79,14 @@ export interface DaySplitProps {
    * column). `list`: the same, left-aligned, for a narrow tile (the KPI "Day move").
    */
   layout?: "inline" | "stacked" | "list";
+  /**
+   * The total the two parts make (server figure, the headline beside it): drawn as an
+   * equation "☀ +0.81 % + ☾ −0.45 % = +0.36 % Total" so the sum is visible at a glance.
+   * Inline layout only.
+   */
+  totalPct?: number | null;
+  /** An ETF-twin estimate is on screen: the legend adds its one extra line. */
+  estimate?: boolean;
   className?: string;
   "data-testid"?: string;
 }
@@ -102,6 +140,8 @@ export function DaySplit({
   currency,
   marketOpen = false,
   layout = "inline",
+  totalPct = null,
+  estimate = false,
   className,
   "data-testid": testId = "day-split",
 }: DaySplitProps) {
@@ -110,31 +150,70 @@ export function DaySplit({
   if (currency !== "EUR") return null;
   if (sessionPct === null || !daySplitMoved(overnightPct, overnight)) return null;
   const compact = layout !== "inline";
+  const equation = !compact && totalPct !== null;
+  const day = (
+    <span className="day-split__part" title={SESSION_TITLE}>
+      <Sun className="day-split__icon" aria-hidden />
+      <span className="day-split__label">Session</span>
+      <Percent ratio={sessionPct} signed colored />
+    </span>
+  );
+  const night = (
+    <span className="day-split__part" title={marketOpen ? OVERNIGHT_TITLE_OPEN : OVERNIGHT_TITLE_SHUT}>
+      <Moon className="day-split__icon" aria-hidden />
+      <span className="day-split__label">Overnight</span>
+      {overnightPct !== null ? (
+        <Percent ratio={overnightPct} signed colored />
+      ) : (
+        <Money amount={overnight} currency={currency} signed colored />
+      )}
+      {equation && !marketOpen && <span className="day-split__word">tonight, not in Total</span>}
+    </span>
+  );
+  const total = equation ? (
+    <span className="day-split__part day-split__part--total" data-testid={`${testId}-total`}>
+      <Percent ratio={totalPct} signed colored />
+      <span className="day-split__word">Total</span>
+    </span>
+  ) : null;
+  const op = (sign: string) => (
+    <span className="day-split__op" aria-hidden>
+      {sign}
+    </span>
+  );
   return (
     <span
       className={clsx(
         "day-split",
         compact && "day-split--compact",
+        equation && "day-split--equation",
         layout === "stacked" && "day-split--end",
         className,
       )}
       data-testid={testId}
     >
-      <span className="day-split__part" title={SESSION_TITLE}>
-        <Sun className="day-split__icon" aria-hidden />
-        <span className="day-split__label">Session</span>
-        <Percent ratio={sessionPct} signed colored />
-      </span>
-      <span className="day-split__part" title={marketOpen ? OVERNIGHT_TITLE_OPEN : OVERNIGHT_TITLE_SHUT}>
-        <Moon className="day-split__icon" aria-hidden />
-        <span className="day-split__label">Overnight</span>
-        {overnightPct !== null ? (
-          <Percent ratio={overnightPct} signed colored />
-        ) : (
-          <Money amount={overnight} currency={currency} signed colored />
-        )}
-      </span>
-      {!compact && <InfoTip label="session and overnight" content={DAY_SPLIT_TIP} />}
+      {!equation ? (
+        <>
+          {day}
+          {night}
+        </>
+      ) : marketOpen ? (
+        // Open: last night's currency plus the session make today's Total.
+        <>
+          {night}
+          {op("+")}
+          {day}
+          {op("=")}
+          {total}
+        </>
+      ) : (
+        // After the close: the session, and tonight's currency beside the Total, not in it.
+        <>
+          {day}
+          <span className="day-split__aside">{night}</span>
+        </>
+      )}
+      {!compact && <InfoTip label="session and overnight" content={<DaySplitLegend estimate={estimate} />} />}
     </span>
   );
 }

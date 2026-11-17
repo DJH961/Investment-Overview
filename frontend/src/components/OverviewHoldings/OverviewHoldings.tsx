@@ -1,9 +1,10 @@
 import clsx from "clsx";
-import { ChevronDown, Link2, X } from "lucide-react";
+import { ChevronDown, Link2, Moon, Sun, X } from "lucide-react";
 import { Fragment, useEffect, useId, useMemo } from "react";
 import { Link } from "react-router";
 import { Card } from "../Card";
-import { hasSplit, HoldingDaySplit } from "../DaySplit";
+import { DaySplitLegend, hasSplit } from "../DaySplit";
+import { InfoTip } from "../InfoTip";
 import { ErrorState } from "../ErrorState";
 import { foldStamps, formatStamp, holdingMarks, isNavRow, PriceStamps, PriceTick, sentenceCase } from "../Freshness";
 import { Money } from "../Money";
@@ -295,36 +296,33 @@ function Row({
           <Money amount={toNum(row.value)} currency={ccy} />
         </span>
         <span className="overview-holdings__sub overview-holdings__sub--phone">
-          <Percent ratio={weight} digits={1} /> of portfolio
+          <Percent ratio={weight} digits={1} />
+          <span className="overview-holdings__sr"> of portfolio</span>
         </span>
       </span>
       <span
         className={clsx("overview-holdings__cell", stale && "overview-holdings__today--stale")}
         title={staleMove ?? undefined}
       >
-        {/* Two lines: the day in money and %, then its ☀ session / ☾ overnight split
-            (server figures; a row without a split keeps the plain two lines). */}
+        {/*
+          Two lines in every currency, so EUR and USD rows have one shape: the day's
+          Total %, then (EUR, the row has a split) its ☀ day part, or else the Total in
+          money. The ☾ night part is the same for every dollar holding, so the card
+          says it once in its header instead of on every row (server figures only).
+        */}
+        <span className="overview-holdings__main">
+          <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
+        </span>
         {hasSplit(row, ccy) && !stale ? (
-          <>
-            <span className="overview-holdings__day-line">
-              <span className="overview-holdings__sub">
-                <Money amount={toNum(row.today_move)} currency={ccy} signed colored />
-              </span>
-              <span className="overview-holdings__main">
-                <Percent ratio={toNum(row.today_pct)} signed colored />
-              </span>
-            </span>
-            <HoldingDaySplit row={row} currency={ccy} layout="stacked" data-testid="holding-day-split" />
-          </>
+          <span className="overview-holdings__sub overview-holdings__sun" data-testid="holding-day-split" title="☀ Day: prices and currency while the US market is open">
+            <Sun className="overview-holdings__sun-icon" aria-hidden />
+            <span className="overview-holdings__sr">Session</span>
+            <Percent ratio={toNum(row.day_session_pct ?? null)} signed colored />
+          </span>
         ) : (
-          <>
-            <span className="overview-holdings__main">
-              <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
-            </span>
-            <span className="overview-holdings__sub">
-              <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
-            </span>
-          </>
+          <span className="overview-holdings__sub">
+            <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
+          </span>
         )}
         {staleMove && <span className="overview-holdings__sr">{staleMove}</span>}
       </span>
@@ -407,12 +405,35 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
   const stampOpts = useMemo(() => ({ timeZone, weekdays: true }) as const, [timeZone]);
   const stamps = useMemo(() => foldStamps(q.data?.holdings ?? [], stampOpts), [q.data, stampOpts]);
   const marks = useMemo(() => holdingMarks(q.data?.holdings ?? [], { timeZone }), [q.data, timeZone]);
+  // ☾ once for the card: the night (currency) move is the same for every dollar holding,
+  // so it is read from the first row that carries a split (server figure) and said here,
+  // not on each row. EUR view only; a euro-priced holding simply has no split.
+  const nightRow = currency === "EUR" ? all.find((r) => hasSplit(r, currency) && !marks.staleMove(r)) : undefined;
+  const night = nightRow ? (
+    <span
+      className="overview-holdings__night"
+      data-testid="holdings-night"
+      title={
+        nightRow.market_open
+          ? "☾ Night: last night's currency move for every US$ holding, in today's Total"
+          : "☾ Night: tonight's currency move for every US$ holding, beside the Total, not in it"
+      }
+    >
+      <Moon className="overview-holdings__night-icon" aria-hidden />
+      <span className="overview-holdings__night-label">Night, all US$</span>
+      <Percent ratio={toNum(nightRow.day_overnight_pct ?? null)} signed colored />
+      <InfoTip label="day and night" content={<DaySplitLegend />} />
+    </span>
+  ) : null;
   return (
     <Card
       className="overview-holdings"
       title="Holdings"
       meta={
-        stamps.price || stamps.updated ? (
+        stamps.price || stamps.updated || night ? (
+          <span className="overview-holdings__meta">
+            {night}
+            {(stamps.price || stamps.updated) && (
           <PriceStamps
             className="overview-holdings__stamps"
             priceText={stamps.price}
@@ -421,6 +442,8 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
             priceOnly
             options={stampOpts}
           />
+            )}
+          </span>
         ) : undefined
       }
       collapsibleId="overview.holdings"

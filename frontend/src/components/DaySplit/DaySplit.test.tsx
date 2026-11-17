@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { setHideAmounts } from "../../lib/format";
-import { DaySplit, daySplitMoved, hasSplit, HoldingDaySplit } from "./DaySplit";
+import { DAY_SPLIT_LINES, DaySplit, DaySplitLegend, daySplitMoved, hasSplit, HoldingDaySplit } from "./DaySplit";
 
 afterEach(() => {
   localStorage.clear();
@@ -27,12 +27,32 @@ describe("DaySplit", () => {
     // The words are visually hidden labels; the symbols say it on screen.
     expect(el).toHaveTextContent(/Session\s*\+0\.81%\s*Overnight\s*-0\.45%/);
     expect(container.querySelectorAll(".day-split__icon")).toHaveLength(2);
-    expect(container.querySelector(".day-split__part")).toHaveAttribute("title", expect.stringMatching(/^Day: the move during US market hours/));
+    expect(container.querySelector(".day-split__part")).toHaveAttribute("title", expect.stringMatching(/^☀ Day: prices and currency while the US market is open/));
     // Market shut (default): the night is the move since the close, not in today's total.
     const parts = container.querySelectorAll(".day-split__part");
-    expect(parts[1]).toHaveAttribute("title", expect.stringMatching(/since the close.*next day/));
-    expect(el).not.toHaveTextContent("next day");
+    expect(parts[1]).toHaveAttribute("title", expect.stringMatching(/Tonight's currency move, beside the Total, not in it/));
+    expect(el).not.toHaveTextContent("not in it");
     expect(screen.getByRole("button", { name: "About session and overnight" })).toBeInTheDocument();
+  });
+
+  it("as an equation: open, last night's ☾ + ☀ = Total; after the close, tonight's ☾ beside it", () => {
+    const { rerender } = render(
+      <DaySplit sessionPct={0.0081} overnightPct={-0.0045} totalPct={0.0036} marketOpen currency="EUR" />,
+    );
+    expect(screen.getByTestId("day-split")).toHaveTextContent(/Overnight\s*-0\.45%\s*\+\s*Session\s*\+0\.81%\s*=\s*\+0\.36%\s*Total/);
+    rerender(<DaySplit sessionPct={0.0081} overnightPct={-0.0045} totalPct={0.0036} currency="EUR" />);
+    const el = screen.getByTestId("day-split");
+    expect(el).toHaveTextContent(/tonight, not in Total/);
+    expect(el).not.toHaveTextContent("=");
+  });
+
+  it("explains itself as a short legend, the estimate line only when asked", () => {
+    const { rerender } = render(<DaySplitLegend />);
+    expect(screen.getByText(DAY_SPLIT_LINES.day)).toBeInTheDocument();
+    expect(screen.getByText(DAY_SPLIT_LINES.night)).toBeInTheDocument();
+    expect(screen.queryByText(/ETF twin/)).toBeNull();
+    rerender(<DaySplitLegend estimate />);
+    expect(screen.getByText(/ETF twin/)).toBeInTheDocument();
   });
 
   it("never shows in the USD view", () => {

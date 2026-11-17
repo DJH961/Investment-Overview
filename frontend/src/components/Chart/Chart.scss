@@ -40,6 +40,7 @@
       }
 
       .chart__series--primary .chart__dot,
+      .chart__now-dot,
       .chart__end-marker,
       .chart__end-pill-dot,
       .chart__marker--primary {
@@ -128,9 +129,12 @@
     font-size: var(--font-size-xs);
   }
 
+  // The after-close "now" point belongs to the primary (EUR) line: filled in the
+  // primary's colour (pos/neg on a trend day, below), ringed in the surface, never the
+  // pale hollow ring that read as the dashed second-currency series.
   &__now-dot {
-    fill: var(--color-surface);
-    stroke: var(--color-fg);
+    fill: var(--chart-1);
+    stroke: var(--color-surface);
     stroke-width: 2;
   }
 

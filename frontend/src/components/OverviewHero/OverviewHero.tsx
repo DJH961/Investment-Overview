@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { useRef, type ReactNode } from "react";
+import { Moon } from "lucide-react";
 import { DaySplit } from "../DaySplit";
 import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
@@ -11,6 +12,7 @@ import { latestInstant, lastSessionLabel, PriceStamps, type PriceTime, type Stam
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useTimeZone } from "../../lib/timezone";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import "./OverviewHero.scss";
 
 export interface OverviewHeroProps {
@@ -57,14 +59,8 @@ function EstimateTip({ est, official, currency }: { est: EstimateDto; official: 
 
 function moveTip(ccy: string, ccy2: string, closed: boolean, lastSession: boolean): string {
   return (
-    `The change since the previous close, in ${ccy}. ${ccy2}: the same change measured in ${ccy2}, ` +
-    `so the gap between the two is the exchange-rate effect.` +
-    (lastSession
-      ? ` The market has not traded yet today, so this is the last session's result plus what the exchange rate did since its close.`
-      : closed
-        ? ` US markets are closed now, so dollar prices stand still and only the exchange rate moves.`
-        : "") +
-    ` The Day move tile below shows its market-hours and overnight parts.`
+    `Change since the previous close, in ${ccy}. ${ccy2}: the same change in ${ccy2}; the gap is the currency.` +
+    (lastSession ? " No trading yet today: this is the last session." : closed ? " Market closed: only the currency moves now." : "")
   );
 }
 
@@ -91,6 +87,7 @@ export function heroPriceTime(data: OverviewDto): PriceTime {
  */
 export function OverviewHero({ data, currency, loading, now, aside, embedded = false }: OverviewHeroProps) {
   const timeZone = useTimeZone();
+  const { hide } = useHideAmounts();
   // The big figure shrinks to fit the card (seven-figure USD / de-DE values at 360 px).
   const valuesRef = useRef<HTMLDivElement>(null);
   useFitWidth(valuesRef, loading || !data);
@@ -142,6 +139,14 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
   const offShut = marketClosed && ls?.day_move != null;
   const officialPct = offShut ? ls?.day_move_pct : k.daily_growth_pct;
   const officialMove = offShut ? ls?.day_move : k.daily_move;
+  // Market open (no last_session): last night's currency move is inside today's total;
+  // the hero names it once (it used to sit under the Day move tile as well). Euro view
+  // only: a book reported in its own currency has no currency leg. Hide mode: the move
+  // as a share of the value it applies to (both server figures, one payload).
+  const fxMove = !ls && currency === "EUR" && data.day_split ? toNum(data.day_split.currency_move) : null;
+  const fxShown = fxMove !== null && Math.abs(fxMove) >= 0.005;
+  const fxTotal = toNum(k.total_value);
+  const fxShare = fxMove !== null && fxTotal ? fxMove / fxTotal : null;
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
     <section className={cls} aria-label="Portfolio value">
@@ -237,16 +242,36 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
           Market shut and the currency moved since the close: the headline above already
           includes the overnight part, so say how it splits (same line as the graph header).
         */}
-        {ls && (
-          <DaySplit
-            sessionPct={toNum(ls.move_pct ?? null)}
-            overnightPct={toNum(ls.overnight_pct ?? null)}
-            overnight={toNum(ls.overnight_currency)}
-            currency={currency}
-            marketOpen={ls.market_open}
-            data-testid="hero-day-split"
-          />
-        )}
+        {/*
+          The split is the one place on the screen that shows ☀ + ☾ = total (the KPI tile
+          and the graph header no longer repeat it). Its line is reserved in every view,
+          so switching EUR/USD (USD has no currency leg) never moves the page.
+        */}
+        <div className="overview-hero__split">
+          {ls && (
+            <DaySplit
+              sessionPct={toNum(ls.move_pct ?? null)}
+              overnightPct={toNum(ls.overnight_pct ?? null)}
+              overnight={toNum(ls.overnight_currency)}
+              totalPct={toNum(ls.day_move_pct ?? null)}
+              currency={currency}
+              marketOpen={ls.market_open}
+              data-testid="hero-day-split"
+            />
+          )}
+          {fxShown && (
+            <span className="overview-hero__fx" data-testid="overnight-currency">
+              <Moon className="overview-hero__fx-icon" aria-hidden />
+              {data.day_split?.overnight ? "Overnight FX" : "FX since close"}{" "}
+              {hide && fxShare !== null ? (
+                <Percent ratio={fxShare} signed colored />
+              ) : (
+                <Money amount={fxMove} currency={currency} signed colored />
+              )}
+              <span className="overview-hero__muted">in today&apos;s total</span>
+            </span>
+          )}
+        </div>
         {data.total_value_complete === false && (
           <p className="overview-hero__note">Some holdings have no live price yet; the total is incomplete.</p>
         )}

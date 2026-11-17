@@ -272,11 +272,18 @@
     }
 
     .top-bar__freshness {
+      flex: 0 1 auto;
+      min-width: 0;
       max-width: 100%;
     }
 
+    // One line, always: the chip gives way (ellipsis, full text in its title) before
+    // the status could wrap to a fourth line; the v7 clock chip shares this line.
     .top-bar__status {
+      flex-wrap: nowrap;
       gap: 0 var(--space-2);
+      max-width: 100%;
+      overflow: hidden;
     }
   }
 }

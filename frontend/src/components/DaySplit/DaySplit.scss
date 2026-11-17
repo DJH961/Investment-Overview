@@ -41,4 +41,65 @@
   &--end {
     justify-content: flex-end;
   }
+
+  // "☀ a + ☾ b = c Total": the parts as an equation, the operators quiet, the total
+  // set apart by weight so "day + night = today" reads at a glance.
+  &__op {
+    color: var(--color-faint);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &--equation {
+    gap: var(--space-1) var(--space-2);
+  }
+
+  &__part--total {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__word {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-medium);
+  }
+
+  // After the close, tonight's ☾ sits apart from the day's figures (beside the Total).
+  &__aside {
+    display: inline-flex;
+    padding-left: var(--space-3);
+    border-left: var(--border-width) solid var(--color-border);
+  }
+}
+
+// The ☀/☾ legend inside an info tip: symbols aligned in a column, then the rule.
+.day-split-legend {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 17rem;
+  line-height: var(--line-height-base);
+
+  &__row {
+    display: grid;
+    grid-template-columns: 1.25em minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-2);
+  }
+
+  &__icon {
+    width: 1em;
+    height: 1em;
+    margin-top: 0.2em;
+  }
+
+  &__rule,
+  &__note {
+    margin-top: var(--space-1);
+    padding-top: var(--space-1);
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  &__note + &__rule,
+  &__rule + &__note {
+    border-top: 0;
+    padding-top: 0;
+  }
 }

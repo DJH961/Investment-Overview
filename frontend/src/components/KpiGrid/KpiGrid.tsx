@@ -1,11 +1,9 @@
 import clsx from "clsx";
-import { DaySplit, daySplitMoved } from "../DaySplit";
 import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { formatPercent, formatPp } from "../../lib/format";
-import { useHideAmounts } from "../../lib/hideAmounts";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
@@ -32,11 +30,8 @@ const STRIP_TIPS = {
 
 export const KPI_TIPS = {
   dayMove:
-    "The change since the previous close: prices and the exchange rate together, the same Total as the headline. " +
-    "It moves live while the US market is open and stays frozen at the close afterwards. " +
-    "The line under it shows the parts: the move during market hours and the exchange rate overnight. " +
-    "After the close the overnight figure is tonight's move, shown beside the Total and not counted in it. " +
-    "While a fund's NAV is pending, its ETF twin's estimate stands in for it.",
+    "Change since the previous close: prices and currency together, the same Total as the headline. " +
+    "Its ☀ day and ☾ night parts sit under the portfolio value.",
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
   totalReturn:
     "What the portfolio has earned in money: current value + cash dividends received − net invested. Reinvested dividends are in the value, so every dividend counts once. Holdings splits it into capital gain and dividends.",
@@ -66,7 +61,6 @@ function VsMarket({ verdict }: { verdict: Verdict | undefined }) {
  * computed in that currency, never converted). Today lives in the hero.
  */
 export function KpiGrid({ data, currency, loading }: KpiGridProps) {
-  const { hide } = useHideAmounts();
   const k: Kpis | undefined = data?.kpis;
   const k2: Kpis | undefined = data?.kpis_secondary;
   const ccy2 = data?.secondary_ccy ?? (currency === "EUR" ? "USD" : "EUR");
@@ -107,46 +101,8 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
   const ds = data?.day_split ?? null;
   const priceMove = ds ? ds.price_move : k?.daily_move;
   const priceMove2 = ds ? ds.price_move_secondary : k2?.daily_move;
-  const fxMove = ds ? toNum(ds.currency_move) : null;
-  // A book reported in its own currency has no currency leg: the figure is a
-  // constant zero, so it is left out rather than printed as a finding. It is marked
-  // `data-ccy-specific` because that absence is correct, not a dropped section
-  // (see Overview.currency.test.tsx).
-  // Hide mode: the effect as a share of the portfolio value it applies to (both
-  // server-supplied, same payload), so the tile still informs without amounts.
-  const totalValue = toNum(k?.total_value ?? null);
-  const fxShare = fxMove !== null && totalValue ? fxMove / totalValue : null;
-  // Market shut and the currency moved since the close: the same "Session / Overnight ·
-  // overnight" line as the graph and the hero (`last_session`, server figures). The
-  // plain FX amount below stays for the in-session case, where there is no session part.
-  const ls = data?.last_session ?? null;
-  const splitHint = ls ? (
-    <DaySplit
-      sessionPct={toNum(ls.move_pct ?? null)}
-      overnightPct={toNum(ls.overnight_pct ?? null)}
-      overnight={toNum(ls.overnight_currency)}
-      currency={currency}
-      marketOpen={ls.market_open}
-      layout="list"
-      data-testid="kpi-day-split"
-    />
-  ) : null;
-  const overnightHint =
-    currency === "EUR" &&
-    splitHint &&
-    toNum(ls?.move_pct ?? null) !== null &&
-    daySplitMoved(toNum(ls?.overnight_pct ?? null), toNum(ls?.overnight_currency ?? null)) ? (
-      <span data-ccy-specific>{splitHint}</span>
-    ) : fxMove !== null && Math.abs(fxMove) >= 0.005 ? (
-      <span data-ccy-specific data-testid="overnight-currency">
-        {ds?.overnight ? "Overnight FX" : "FX since close"}{" "}
-        {hide && fxShare !== null ? (
-          <Percent ratio={fxShare} signed colored />
-        ) : (
-          <Money amount={fxMove} currency={currency} signed />
-        )}
-      </span>
-    ) : undefined;
+  // No ☀/☾ line here: the hero above shows the split (☀ + ☾ = total) once for the
+  // screen, and a tile with an EUR-only line made the panel jump on a currency switch.
 
   const expense = toNum(k?.weighted_expense_ratio);
   const ttm = toNum(k?.dividends_ttm);
@@ -160,7 +116,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={money(priceMove, true)}
           secondary={money2(priceMove2, true)}
-          hint={overnightHint}
         />
         <KpiTile
           label="Invested"
