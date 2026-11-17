@@ -321,8 +321,8 @@ class TestSyntheticWorkbook:
 
 @pytest.mark.skipif(not FIXTURE.exists(), reason="real fixture is not in this checkout")
 class TestRealFullHistoryFixture:
-    """Smoke-test the parser against the real workbook shipped under
-    ``docs/Comparison Files/``. Guards against regressions in either
+    """Smoke-test the parser against the real workbook kept locally under
+    ``docs/Comparison Files/`` (git-ignored, local only). Guards against regressions in either
     the action map or the header lookup when a new export style appears.
     """
 
