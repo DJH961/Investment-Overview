@@ -3488,6 +3488,19 @@
   "passkeys": 1
  },
  "GET /api/auth/passkeys": [],
+ "GET /api/brief": {
+  "boundaries": [],
+  "due": false,
+  "events": [],
+  "events_total": 0,
+  "fx_move": null,
+  "kind": null,
+  "last_ack_at": "2026-06-30T20:30:00+00:00",
+  "move": null,
+  "now": "2026-06-30T20:30:00+00:00",
+  "sessions": [],
+  "sessions_passed": 0
+ },
  "GET /api/calculator/both": {
   "EUR": {
    "as_of": "2026-06-30",
@@ -3554,6 +3567,113 @@
     }
    },
    "total_value": "0"
+  },
+  "detail": null
+ },
+ "GET /api/currency/both": {
+  "EUR": {
+   "as_of": "2026-06-30",
+   "buys": null,
+   "ccy": "EUR",
+   "generated_at": "2026-06-30T20:30:00+00:00",
+   "lifetime": {
+    "avg_invest_rate": null,
+    "breakeven_rate": null,
+    "current_rate": null,
+    "fx_pnl_eur": null,
+    "rate_change_pct": null,
+    "repatriation_value_eur": null
+   },
+   "one_cent": null,
+   "rate_range": null,
+   "return_split": {
+    "currency_effect_pp": null,
+    "eur_minus_usd_pp": null,
+    "investment_return": null,
+    "total_return_eur": null,
+    "usd_vs_eur_pct": null
+   },
+   "stats": [],
+   "today": {
+    "anchor_missing": false,
+    "as_of": null,
+    "effect_eur": null,
+    "investing_power_usd": null,
+    "move": null,
+    "pair": null,
+    "prev": null,
+    "rate_move_pct": null,
+    "regime": {
+     "forex_frozen": false,
+     "forex_open": true,
+     "holiday": false,
+     "market_open": false,
+     "session_view": true,
+     "single_overnight": false,
+     "weekend_overnight": false
+    },
+    "reopen_at": null,
+    "since": null,
+    "since_phrase": {
+     "kind": "since_yesterday",
+     "session_date": "2026-06-30"
+    },
+    "spot": null,
+    "spot_display": null,
+    "spot_observed_at": null
+   }
+  },
+  "USD": {
+   "as_of": "2026-06-30",
+   "buys": null,
+   "ccy": "USD",
+   "generated_at": "2026-06-30T20:30:00+00:00",
+   "lifetime": {
+    "avg_invest_rate": null,
+    "breakeven_rate": null,
+    "current_rate": null,
+    "fx_pnl_eur": null,
+    "rate_change_pct": null,
+    "repatriation_value_eur": null
+   },
+   "one_cent": null,
+   "rate_range": null,
+   "return_split": {
+    "currency_effect_pp": null,
+    "eur_minus_usd_pp": null,
+    "investment_return": null,
+    "total_return_eur": null,
+    "usd_vs_eur_pct": null
+   },
+   "stats": [],
+   "today": {
+    "anchor_missing": false,
+    "as_of": null,
+    "effect_eur": null,
+    "investing_power_usd": null,
+    "move": null,
+    "pair": null,
+    "prev": null,
+    "rate_move_pct": null,
+    "regime": {
+     "forex_frozen": false,
+     "forex_open": true,
+     "holiday": false,
+     "market_open": false,
+     "session_view": true,
+     "single_overnight": false,
+     "weekend_overnight": false
+    },
+    "reopen_at": null,
+    "since": null,
+    "since_phrase": {
+     "kind": "since_yesterday",
+     "session_date": "2026-06-30"
+    },
+    "spot": null,
+    "spot_display": null,
+    "spot_observed_at": null
+   }
   },
   "detail": null
  },
@@ -12391,8 +12511,10 @@
     },
     "return_split": {
      "currency_effect_pp": null,
+     "eur_minus_usd_pp": null,
      "investment_return": null,
-     "total_return_eur": null
+     "total_return_eur": null,
+     "usd_vs_eur_pct": null
     },
     "today": {
      "anchor_missing": false,
@@ -12437,6 +12559,8 @@
     "historical": false,
     "last_price_update_at": null,
     "market_state": "closed",
+    "next_close_at": "2026-06-30T20:30:00+00:00",
+    "next_open_at": "2026-06-30T20:30:00+00:00",
     "price_market_at": null,
     "price_observed_at": null,
     "prices_live": false,
@@ -12444,7 +12568,8 @@
     "progress_label": null,
     "progress_total": 0,
     "refresh_running": false,
-    "refresh_source": null
+    "refresh_source": null,
+    "session_opened_at": null
    },
    "fx_eur_usd": null,
    "generated_at": "2026-06-30T20:30:00+00:00",
@@ -12529,8 +12654,10 @@
     },
     "return_split": {
      "currency_effect_pp": null,
+     "eur_minus_usd_pp": null,
      "investment_return": null,
-     "total_return_eur": null
+     "total_return_eur": null,
+     "usd_vs_eur_pct": null
     },
     "today": {
      "anchor_missing": false,
@@ -12575,6 +12702,8 @@
     "historical": false,
     "last_price_update_at": null,
     "market_state": "closed",
+    "next_close_at": "2026-06-30T20:30:00+00:00",
+    "next_open_at": "2026-06-30T20:30:00+00:00",
     "price_market_at": null,
     "price_observed_at": null,
     "prices_live": false,
@@ -12582,7 +12711,8 @@
     "progress_label": null,
     "progress_total": 0,
     "refresh_running": false,
-    "refresh_source": null
+    "refresh_source": null,
+    "session_opened_at": null
    },
    "fx_eur_usd": null,
    "generated_at": "2026-06-30T20:30:00+00:00",

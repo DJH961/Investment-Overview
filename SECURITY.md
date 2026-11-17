@@ -139,7 +139,6 @@ bug-bounty program.
 - Running the older desktop or LAN server (v3 to v5) on an untrusted network. Those
   versions were LAN-only by design; set `INV_DASHBOARD_API_TOKEN` and keep them off the
   internet.
-- The anonymised, fabricated fixtures under `docs/Comparison Files/`.
 
 ## Handling data safely in this repository
 

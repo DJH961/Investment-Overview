@@ -48,6 +48,9 @@ LEDGER = "ledger"
 PRICES = "prices"
 FX = "fx"
 ALL_DEPS: tuple[str, ...] = (LEDGER, PRICES, FX)
+#: The Daily Brief's own key (the acknowledgement marker). Not in ``ALL_DEPS``: only
+#: ``POST /brief/ack`` bumps it, so a general ``invalidate()`` does not need to.
+BRIEF = "brief"
 
 _lock = threading.Lock()
 #: key -> (generations of the dependencies it read, expiry, value)
@@ -56,7 +59,7 @@ _entries: OrderedDict[tuple[Any, ...], tuple[tuple[tuple[str, int], ...], float,
 )
 #: Per-dependency generation; bumped by :func:`invalidate`. An answer computed
 #: across a bump of a dependency it reads is not stored.
-_gens: dict[str, int] = dict.fromkeys(ALL_DEPS, 0)
+_gens: dict[str, int] = dict.fromkeys((*ALL_DEPS, BRIEF), 0)
 #: (key, generations) -> Event set when the thread computing it finished (single flight).
 _inflight: dict[tuple[Any, ...], threading.Event] = {}
 #: Longest a waiter sits behind another thread's computation before computing itself.
