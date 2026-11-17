@@ -4203,12 +4203,12 @@
   "EUR": {
    "as_of": "2026-06-30",
    "buys": {
-    "amount_eur": "1000",
-    "change_usd": "-1.45900000",
+    "amount_eur": "100",
+    "change_usd": "-0.14590000",
     "market_hours_usd": null,
-    "overnight_usd": "-1.45900000",
-    "usd_now": "1165.00000000",
-    "usd_prev": "1166.45900000"
+    "overnight_usd": "-0.14590000",
+    "usd_now": "116.50000000",
+    "usd_prev": "116.64590000"
    },
    "ccy": "EUR",
    "generated_at": "2026-06-30T20:30:00+00:00",
@@ -4340,12 +4340,12 @@
   "USD": {
    "as_of": "2026-06-30",
    "buys": {
-    "amount_eur": "1000",
-    "change_usd": "-1.45900000",
+    "amount_eur": "100",
+    "change_usd": "-0.14590000",
     "market_hours_usd": null,
-    "overnight_usd": "-1.45900000",
-    "usd_now": "1165.00000000",
-    "usd_prev": "1166.45900000"
+    "overnight_usd": "-0.14590000",
+    "usd_now": "116.50000000",
+    "usd_prev": "116.64590000"
    },
    "ccy": "USD",
    "generated_at": "2026-06-30T20:30:00+00:00",

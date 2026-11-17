@@ -106,8 +106,27 @@ def test_buys_same_on_both_sides(api_client: TestClient, seeded: None) -> None:
     body = api_client.get("/api/currency/both").json()
     assert body["EUR"]["buys"] == body["USD"]["buys"]
     buys = body["EUR"]["buys"]
-    assert D(buys["amount_eur"]) == 1000
-    assert D(buys["usd_now"]) == 1000 * D(body["EUR"]["today"]["spot"])
+    # The owner's investing-power amount (default EUR 100), as the Overview card uses.
+    assert D(buys["amount_eur"]) == 100
+    assert D(buys["usd_now"]) == 100 * D(body["EUR"]["today"]["spot"])
+
+
+def test_buys_use_the_owner_amount(api_client: TestClient, seeded: None) -> None:
+    from investment_dashboard.db import ledger_session_scope
+    from investment_dashboard.services import investing_power_service
+
+    with ledger_session_scope() as session:
+        investing_power_service.set_amount_eur(session, Decimal("250"))
+    from investment_dashboard.services import read_cache
+
+    read_cache.invalidate()
+    body = api_client.get("/api/currency/both").json()
+    buys = body["USD"]["buys"]
+    assert D(buys["amount_eur"]) == 250
+    assert D(buys["usd_now"]) == 250 * D(body["USD"]["today"]["spot"])
+    power = body["USD"]["today"]["investing_power_usd"]
+    if power is not None:
+        assert D(power["amount_eur"]) == 250
 
 
 def _fake_series(*_a: Any, **_k: Any) -> list[tuple[datetime, Decimal, Decimal | None]]:

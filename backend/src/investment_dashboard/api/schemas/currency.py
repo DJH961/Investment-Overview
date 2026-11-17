@@ -58,8 +58,14 @@ class CurrencyRateRange(ApiModel):
 
 
 class CurrencyBuys(ApiModel):
-    """ "€1,000 buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``)."""
+    """ "€X buys $Y; yesterday $Z" (``domain/session_fx.fx_buying_power_split``).
 
+    ``amount_eur`` is the owner's regular investment amount, the same setting the
+    Overview's investing-power card uses (``investing_power.amount_eur``, default
+    €100); print it with the line. USD figures are that amount at one rate each.
+    """
+
+    #: The owner's investing-power amount in EUR (default 100).
     amount_eur: DecStr
     usd_now: DecStr
     usd_prev: DecStr | None = None

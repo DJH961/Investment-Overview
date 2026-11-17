@@ -4,7 +4,7 @@
 the same side, so the two pages can never disagree. Everything extra is built here:
 
 * ``rate_range``: low/high of the stored intraday EUR/USD samples of the session;
-* ``buys``: what a fixed EUR amount buys in dollars at one instant (a dollars figure
+* ``buys``: what the owner's regular EUR amount (the investing-power setting) buys in dollars at one instant (a dollars figure
   from a euro notional at a single rate; allowed by the currency rule);
 * ``one_cent``: the dollar book valued at the rate and at the rate + 0.01 at ONE
   instant, each currency from its own ``value_at_rate`` leg (never converted);
@@ -23,12 +23,14 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.domain import session_fx
 from investment_dashboard.readmodels._serialize import dec
-from investment_dashboard.services import intraday_snapshots_service, metrics_service
+from investment_dashboard.services import (
+    intraday_snapshots_service,
+    investing_power_service,
+    metrics_service,
+)
 
 ZERO = Decimal(0)
 ONE_CENT = Decimal("0.01")
-#: The euro notional of the "EUR 1,000 buys ..." line.
-BUYS_AMOUNT_EUR = Decimal(1000)
 
 
 def _d(value: Any) -> Decimal | None:
@@ -82,18 +84,20 @@ def _buys(session: Session, today: dict[str, Any], *, now: datetime) -> dict[str
     if spot is None or spot <= 0:
         return None
     market_open = bool(today["regime"]["market_open"])
+    # The owner's own regular amount, the same setting the Overview card values.
+    amount = investing_power_service.get_amount_eur(session)
     split = session_fx.fx_buying_power_split(
         market_open=market_open,
-        amount_eur=BUYS_AMOUNT_EUR,
+        amount_eur=amount,
         live_fx=spot,
         prev_fx=prev,
         session_close_fx=intraday_snapshots_service.session_close_fx(session, now=now),
         session_open_fx=intraday_snapshots_service.session_open_fx(session, now=now),
     )
     return {
-        "amount_eur": dec(BUYS_AMOUNT_EUR),
-        "usd_now": dec(BUYS_AMOUNT_EUR * spot),
-        "usd_prev": dec(BUYS_AMOUNT_EUR * prev) if prev is not None and prev > 0 else None,
+        "amount_eur": dec(amount),
+        "usd_now": dec(amount * spot),
+        "usd_prev": dec(amount * prev) if prev is not None and prev > 0 else None,
         "change_usd": dec(split.total_usd),
         "market_hours_usd": dec(split.market_hours_usd),
         "overnight_usd": dec(split.overnight_usd),
