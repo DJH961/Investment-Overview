@@ -140,7 +140,8 @@ export function HoldingsKpis({ data, currency }: Props) {
         {st.tip && <InfoTip label={st.label} content={st.tip} />}
       </dt>
       <dd className="holdings-page__stat-value">{loading ? <Skeleton height="1.1rem" width="70%" /> : st.value}</dd>
-      <dd className="holdings-page__stat-hint">{loading ? null : (st.hint ?? " ")}</dd>
+      {/* Key/minor stats keep a hint line for an even grid; the lead has none to keep. */}
+      {(tier !== "lead" || st.hint) && <dd className="holdings-page__stat-hint">{loading ? null : (st.hint ?? " ")}</dd>}
     </div>
   );
   return (
