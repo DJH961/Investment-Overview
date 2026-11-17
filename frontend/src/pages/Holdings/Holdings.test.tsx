@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, within, type RenderOptions } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HoldingsDto } from "../../lib/queries/holdings";
@@ -155,6 +155,16 @@ vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { Holdings } from "./Holdings";
 
+/** Every render sits in a router: the symbol cells are links. */
+const render = (ui: React.ReactElement, options?: RenderOptions) =>
+  rtlRender(ui, { wrapper: MemoryRouter, ...options });
+
+/** The sheet only opens from the phone row now (the desktop symbol links to the page). */
+function openSheet(symbol: string) {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(symbol) }));
+  fireEvent.click(screen.getByRole("button", { name: "Price chart" }));
+}
+
 beforeEach(() => {
   phone.value = false;
   groupOver = {};
@@ -167,6 +177,11 @@ describe("Holdings page", () => {
     expect(screen.getAllByText("VWCE").length).toBeGreaterThan(0);
     expect(screen.getByText("stale value")).toBeInTheDocument();
     expect(screen.getByLabelText("Search holdings")).toHaveAttribute("data-search");
+  });
+
+  it("links the symbol to the holding page", () => {
+    render(<Holdings />);
+    expect(screen.getByRole("link", { name: "Open VWCE" })).toHaveAttribute("href", "/holdings/1");
   });
 
   it("shows group subtotals when grouped", () => {
@@ -191,10 +206,11 @@ describe("Holdings page", () => {
   });
 
   it("keeps the open detail sheet in step with fresh data instead of a frozen copy", () => {
+    phone.value = true;
     const saved = holdings.holdings;
     try {
       const { rerender } = render(<Holdings />);
-      fireEvent.click(screen.getByRole("button", { name: "Details for VWCE" }));
+      openSheet("VWCE");
       expect(screen.getByRole("dialog")).toHaveTextContent("World ETF");
       holdings.holdings = [{ ...saved[0], name: "Renamed ETF" }] as typeof saved;
       rerender(<Holdings />);
@@ -208,11 +224,7 @@ describe("Holdings page", () => {
     const saved = holdings.holdings;
     holdings.holdings = [] as typeof saved;
     try {
-      render(
-        <MemoryRouter>
-          <Holdings />
-        </MemoryRouter>,
-      );
+      render(<Holdings />);
       expect(screen.getByRole("button", { name: "Import a broker file" })).toBeInTheDocument();
     } finally {
       holdings.holdings = saved;
@@ -378,8 +390,9 @@ describe("Holdings page", () => {
   });
 
   it("opens the detail drawer with a cost-basis line", () => {
+    phone.value = true;
     render(<Holdings />);
-    fireEvent.click(screen.getByRole("button", { name: "Details for VWCE" }));
+    openSheet("VWCE");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByLabelText("VWCE price against cost basis")).toBeInTheDocument();
     expect(screen.getByText("Cost basis", { selector: "text" })).toBeInTheDocument();
@@ -448,13 +461,14 @@ describe("Holdings page", () => {
     }
   });
 
-  it("shows the Twin block with estimate and divergence in the desktop drawer", () => {
+  it("shows the Twin block with estimate and divergence in the sheet", () => {
+    phone.value = true;
     const saved = holdings.holdings;
     holdings.holdings = [twinRow()] as typeof saved;
     try {
       render(<Holdings />);
-      fireEvent.click(screen.getByRole("button", { name: "Details for FXAIX" }));
-      const block = screen.getByLabelText("ETF twin of FXAIX");
+      openSheet("FXAIX");
+      const block = within(screen.getByRole("dialog")).getByLabelText("ETF twin of FXAIX");
       expect(within(block).getByText(/Same index/)).toBeInTheDocument();
       expect(within(block).getByText("Estimated value")).toBeInTheDocument();
       expect(within(block).getByText("€1,015.00")).toBeInTheDocument();
@@ -469,12 +483,13 @@ describe("Holdings page", () => {
   });
 
   it("says so when there is not enough history for a divergence, and hides the estimate once posted", () => {
+    phone.value = true;
     const saved = holdings.holdings;
     holdings.holdings = [twinRow({ twin: { ...twinRow().twin, pending: false, divergence: null } })] as typeof saved;
     try {
       render(<Holdings />);
-      fireEvent.click(screen.getByRole("button", { name: "Details for FXAIX" }));
-      const block = screen.getByLabelText("ETF twin of FXAIX");
+      openSheet("FXAIX");
+      const block = within(screen.getByRole("dialog")).getByLabelText("ETF twin of FXAIX");
       expect(within(block).getByText(/Not enough history yet/)).toBeInTheDocument();
       expect(within(block).queryByText("Estimated value")).toBeNull();
     } finally {
@@ -505,6 +520,7 @@ describe("Holdings page", () => {
   });
 
   it("hide mode masks twin money but keeps the percentages", () => {
+    phone.value = true;
     localStorage.setItem("iv.privacy.hideAmounts", "true");
     const saved = holdings.holdings;
     holdings.holdings = [twinRow()] as typeof saved;
@@ -514,7 +530,7 @@ describe("Holdings page", () => {
           <Holdings />
         </HideAmountsProvider>,
       );
-      fireEvent.click(screen.getByRole("button", { name: "Details for FXAIX" }));
+      openSheet("FXAIX");
       const text = container.ownerDocument.body.textContent ?? "";
       expect(text).not.toMatch(/1,015|3\.40/);
       expect(text).toContain("+0.42%");

@@ -105,6 +105,15 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  &__symbol-link {
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
   // The name gets two lines rather than an early ellipsis ("Vangu…"); it never grows
   // a row beyond that, and the full name is in its title.
   &__name {

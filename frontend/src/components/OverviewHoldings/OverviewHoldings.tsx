@@ -253,7 +253,9 @@ function Row({
     <li className={clsx("overview-holdings__row", hasTwinLine(row, watch) && "overview-holdings__row--twin")} data-symbol={row.symbol}>
       <span className="overview-holdings__who">
         <span className="overview-holdings__symbol">
-          {row.symbol}
+          <Link to={`/holdings/${row.instrument_id}`} className="overview-holdings__symbol-link">
+            {row.symbol}
+          </Link>
           {/* Warnings first: when the cell is narrow they wrap to a second line, never clip. */}
           {row.value_warning && (
             <span className="overview-holdings__pill overview-holdings__pill--warn">stale value</span>

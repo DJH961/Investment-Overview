@@ -1,10 +1,9 @@
 import clsx from "clsx";
 import { Inbox, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
-import { Chart } from "../../components/Chart";
 import { type Column, DataTable } from "../../components/DataTable";
 import { hasSplit, HoldingDaySplit } from "../../components/DaySplit";
 import { EmptyState } from "../../components/EmptyState";
@@ -17,14 +16,11 @@ import { Percent } from "../../components/Percent";
 import { Select } from "../../components/Select";
 import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
-import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { formatAxisDate, formatDate, formatMoney, formatQuantity } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import {
-  type HistoryRange,
   type HoldingRowDto,
   type HoldingsGroupBy,
-  useHoldingHistory,
   useHoldings,
 } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
@@ -34,7 +30,7 @@ import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { HoldingMobileRow } from "./HoldingMobileRow";
 import { GroupSummary } from "./GroupSummary";
-import { EstChip, Flags, HoldingDetails, RowStamp, TwinBlock, TwinLine, WeightCell, tintClass } from "./HoldingParts";
+import { EstChip, Flags, HoldingDetails, HoldingDrawerChart, RowStamp, TwinBlock, TwinLine, WeightCell, tintClass } from "./HoldingParts";
 import { HoldingsKpis } from "./HoldingsKpis";
 import "./Holdings.scss";
 
@@ -74,36 +70,6 @@ function sortNumber(row: HoldingRowDto, key: SortKey): number {
   return toNum(pick) ?? Number.NEGATIVE_INFINITY;
 }
 
-const HISTORY_RANGES: HistoryRange[] = ["1m", "3m", "6m", "ytd", "1y", "all"];
-
-/** Daily closes (native currency) with the average purchase price as a cost-basis line. */
-function HoldingDrawerChart({ row }: { row: HoldingRowDto }) {
-  const defaultRange = useDisplayPrefs().holdingsRange;
-  const [range, setRange] = useState<HistoryRange>(() =>
-    HISTORY_RANGES.includes(defaultRange as HistoryRange) ? (defaultRange as HistoryRange) : "1y",
-  );
-  const history = useHoldingHistory(row.instrument_id, range);
-  const avg = toNum(row.avg_price_native);
-  const ccy = history.data?.ccy ?? row.native_currency;
-  const points = (history.data?.points ?? []).map((p) => ({ t: p.t, v: toNum(p.v) }));
-  return (
-    <Chart
-      series={[{ id: row.symbol, label: row.symbol, points, tone: "primary" }]}
-      referenceLine={avg !== null ? { value: avg, label: "Cost basis" } : undefined}
-      range={range}
-      ranges={HISTORY_RANGES}
-      onRangeChange={(r) => setRange(r as HistoryRange)}
-      loading={history.isPending}
-      // Prices are public market data: unmasked, like the price in the table row.
-      valueFormat={(v) => formatMoney(v, ccy, { unmasked: true })}
-      timeFormat={(t) => formatAxisDate(t, range === "1m" || range === "3m" || range === "6m" ? 0 : Infinity)}
-      tooltipTimeFormat={(t) => formatDate(new Date(t).toISOString().slice(0, 10))}
-      height={200}
-      ariaLabel={`${row.symbol} price against cost basis`}
-      emptyMessage={history.isError ? "Could not load the price history." : "No price history yet."}
-    />
-  );
-}
 
 function HoldingDrawer({ row, ccy, onClose }: { row: HoldingRowDto | null; ccy: string; onClose: () => void }) {
   return (
@@ -233,14 +199,9 @@ export function Holdings() {
         cell: (r) => (
           <span className="holdings-page__holding">
             <span className="holdings-page__symbol">
-              <button
-                type="button"
-                className="holdings-page__open"
-                aria-label={`Details for ${r.symbol}`}
-                onClick={() => setSelectedId(r.instrument_id)}
-              >
+              <Link to={`/holdings/${r.instrument_id}`} className="holdings-page__open" aria-label={`Open ${r.symbol}`}>
                 {r.symbol}
-              </button>
+              </Link>
               <Flags row={r} />
             </span>
             <span className="holdings-page__holding-name" title={r.name}>

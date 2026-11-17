@@ -1,11 +1,45 @@
 import clsx from "clsx";
+import { useState } from "react";
+import { Chart } from "../../components/Chart";
 import { holdingPriceTime, formatStamp, PriceStamps, sentenceCase } from "../../components/Freshness";
 import { InfoTip } from "../../components/InfoTip";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
-import { formatDate, formatMoney, formatNumber, formatQuantity } from "../../lib/format";
-import type { HoldingRowDto } from "../../lib/queries/holdings";
+import { useDisplayPrefs } from "../../lib/displayPrefs";
+import { formatAxisDate, formatDate, formatMoney, formatNumber, formatQuantity } from "../../lib/format";
+import { type HistoryRange, type HoldingRowDto, useHoldingHistory } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
+
+const HISTORY_RANGES: HistoryRange[] = ["1m", "3m", "6m", "ytd", "1y", "all"];
+
+/** Daily closes (native currency) with the average purchase price as a cost-basis line; shared by the sheet and the holding page. */
+export function HoldingDrawerChart({ row }: { row: HoldingRowDto }) {
+  const defaultRange = useDisplayPrefs().holdingsRange;
+  const [range, setRange] = useState<HistoryRange>(() =>
+    HISTORY_RANGES.includes(defaultRange as HistoryRange) ? (defaultRange as HistoryRange) : "1y",
+  );
+  const history = useHoldingHistory(row.instrument_id, range);
+  const avg = toNum(row.avg_price_native);
+  const ccy = history.data?.ccy ?? row.native_currency;
+  const points = (history.data?.points ?? []).map((p) => ({ t: p.t, v: toNum(p.v) }));
+  return (
+    <Chart
+      series={[{ id: row.symbol, label: row.symbol, points, tone: "primary" }]}
+      referenceLine={avg !== null ? { value: avg, label: "Cost basis" } : undefined}
+      range={range}
+      ranges={HISTORY_RANGES}
+      onRangeChange={(r) => setRange(r as HistoryRange)}
+      loading={history.isPending}
+      // Prices are public market data: unmasked, like the price in the table row.
+      valueFormat={(v) => formatMoney(v, ccy, { unmasked: true })}
+      timeFormat={(t) => formatAxisDate(t, range === "1m" || range === "3m" || range === "6m" ? 0 : Infinity)}
+      tooltipTimeFormat={(t) => formatDate(new Date(t).toISOString().slice(0, 10))}
+      height={200}
+      ariaLabel={`${row.symbol} price against cost basis`}
+      emptyMessage={history.isError ? "Could not load the price history." : "No price history yet."}
+    />
+  );
+}
 
 /** Money-market funds read "CASH" (as on the web companion), NAV-priced funds "NAV". */
 export function Flags({ row }: { row: HoldingRowDto }) {
