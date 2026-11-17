@@ -88,7 +88,7 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
   const split = data?.currency?.return_split;
   const effect = toNum(split?.currency_effect_pp ?? null);
   const growthSplit = split ? (
-    <span data-testid="hero-split">
+    <span className="kpi-grid__growth" data-testid="hero-split">
       Investment {formatPercent(toNum(split.investment_return), { signed: true })}
       {effect !== null && Math.abs(effect) >= 0.00005 && <> · Currency {formatPp(effect)}</>}
     </span>

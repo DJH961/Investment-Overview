@@ -204,7 +204,8 @@ describe("Overview currency switch", () => {
     const eur = renderIn("EUR");
     const eurShape = structure(eur.container);
     const eurCards = [...eur.container.querySelectorAll(".card__title, .overview-hero")].map((n) => n.textContent);
-    expect(eur.container.querySelectorAll(".currency-box__amount")).toHaveLength(0);
+    // The USD-only "Regular €100 … today" line is held invisibly in EUR (same height).
+    expect(eur.container.querySelectorAll(".currency-box__amount--ghost")).toHaveLength(1);
     eur.unmount();
     const usd = renderIn("USD");
     const usdShape = structure(usd.container);

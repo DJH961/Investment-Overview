@@ -301,7 +301,7 @@ function Row({
         </span>
       </span>
       <span
-        className={clsx("overview-holdings__cell", stale && "overview-holdings__today--stale")}
+        className={clsx("overview-holdings__cell", "overview-holdings__day", stale && "overview-holdings__today--stale")}
         title={staleMove ?? undefined}
       >
         {/*

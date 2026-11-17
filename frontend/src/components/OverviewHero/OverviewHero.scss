@@ -116,16 +116,20 @@
   // memorable element of the new edition. Hide mode swaps the digits, not the type.
   &__value {
     @include m.display(calc(var(--font-size-3xl) * var(--kpi-tile-fit, 1)));
+    // A fixed line box (not a multiple of the fitted size): a longer figure that
+    // shrinks to fit (US$ vs €) keeps the same height, so nothing moves on a switch.
+    line-height: calc(var(--font-size-3xl) * var(--line-height-tight));
 
     // Tablet up: room for a confident figure. Desktop: the one oversized number in the
     // app, the page's subject (useFitWidth shrinks it if a long value must fit).
     @include m.tablet-up {
       font-size: calc(var(--font-size-display) * var(--kpi-tile-fit, 1));
+      line-height: calc(var(--font-size-display) * var(--line-height-tight));
     }
 
     @include m.wide {
       font-size: calc(var(--font-size-hero) * var(--kpi-tile-fit, 1));
-      line-height: 1.05;
+      line-height: calc(var(--font-size-hero) * 1.05);
     }
   }
 
@@ -234,7 +238,9 @@
 
   // Reserved for the ☀ + ☾ = total line in every view (no jump on EUR/USD).
   &__split {
-    min-height: calc(var(--font-size-sm) * var(--line-height-base));
+    display: flex;
+    align-items: center;
+    min-height: var(--control-height-sm);
   }
 
   &__fx {

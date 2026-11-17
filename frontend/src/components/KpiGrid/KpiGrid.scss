@@ -30,6 +30,13 @@
     }
   }
 
+  // "Investment … · Currency … pp": the currency clause is EUR-only, so the line
+  // keeps two lines of room in every view (no jump on a currency switch).
+  &__growth {
+    display: block;
+    min-height: calc(2em * var(--line-height-base));
+  }
+
   // "Need VT history": a note, not a figure.
   &__verdict {
     font-size: var(--font-size-md);
@@ -105,5 +112,17 @@
   &__stat-sub {
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+  }
+
+  // Phone: each stat's money note always takes its own line, so a longer US$ note
+  // cannot wrap one currency's strip taller than the other's.
+  @include m.phone {
+    &__stat-value {
+      flex-wrap: wrap;
+    }
+
+    &__stat-sub {
+      flex-basis: 100%;
+    }
   }
 }

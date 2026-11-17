@@ -56,7 +56,8 @@ describe("CurrencyBox", () => {
     expect(screen.getByText("Since open")).toBeInTheDocument();
     const panel = screen.getByRole("region", { name: "Currency effect since yesterday" });
     expect(within(panel).getAllByText("-€120")[0]).toBeInTheDocument();
-    expect(within(panel).queryByText(/Regular/)).toBeNull();
+    // The USD-only amount line is only held for height in EUR: invisible and hidden from readers.
+    expect(container.querySelector(".currency-box__amount--ghost")).toHaveAttribute("aria-hidden", "true");
     const rows = [...container.querySelectorAll(".diverging-bar__row")].map((r) => r.getAttribute("data-row"));
     expect(rows).toEqual(["market", "overnight"]);
     expect(container.querySelector('[data-row="market"]')).toHaveTextContent("live");

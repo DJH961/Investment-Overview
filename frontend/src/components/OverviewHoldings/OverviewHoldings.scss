@@ -118,6 +118,10 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     overflow-wrap: anywhere;
+
+    // Always two lines tall, so a row is the same height whatever the value column's
+    // width (US$ figures are longer) and EUR and USD never jump.
+    min-height: calc(2em * var(--line-height-tight));
   }
 
   &__weight {
@@ -531,5 +535,39 @@
     justify-content: flex-end;
     gap: var(--space-1);
     font-variant-numeric: tabular-nums;
+  }
+
+  // Phone: the ticker and its badges get the full row width on top, and the name,
+  // value and day share the line under it. Badges never wrap the row taller in one
+  // currency than the other, and the name has room instead of "Vangu…".
+  @include m.phone {
+    &__row {
+      align-items: start;
+      row-gap: 2px;
+    }
+
+    &__row > &__who {
+      display: contents;
+    }
+
+    &__row &__symbol {
+      grid-column: 1 / -1;
+      grid-row: 1;
+    }
+
+    &__row &__name {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    &__row &__asof {
+      grid-column: 1;
+      grid-row: 3;
+    }
+
+    &__row &__value,
+    &__row &__day {
+      grid-row: 2 / span 2;
+    }
   }
 }

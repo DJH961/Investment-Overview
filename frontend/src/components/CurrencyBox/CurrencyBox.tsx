@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { Card } from "../Card";
 import { DivergingBar, type DivergingBarRow } from "../DivergingBar";
 import { Money } from "../Money";
@@ -176,9 +177,12 @@ function EffectPanel({ data }: { data: OverviewDto }) {
   const ip = today.investing_power_usd;
   const amount = toNum(ip?.amount_eur);
   const amountUsd = toNum(ip?.amount_usd);
+  // USD only, but its line is held (invisible) in the EUR view too, so the card keeps
+  // one height and nothing below it moves on a currency switch.
+  const ghost = data.ccy !== "USD";
   const amountLine =
-    data.ccy === "USD" && amount !== null ? (
-      <p className="currency-box__amount" data-ccy-specific>
+    amount !== null ? (
+      <p className={clsx("currency-box__amount", ghost && "currency-box__amount--ghost")} data-ccy-specific aria-hidden={ghost || undefined}>
         <span>
           Regular <Money amount={amount} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
         </span>
@@ -228,6 +232,7 @@ function EffectPanel({ data }: { data: OverviewDto }) {
         <span className="currency-box__effect-net">{fmt(net)}</span>
       </div>
       <DivergingBar rows={legRows(today, legs, fmt)} ariaLabel="Market hours versus overnight" />
+      {amountLine}
     </section>
   );
 }

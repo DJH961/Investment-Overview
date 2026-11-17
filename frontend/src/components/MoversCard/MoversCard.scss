@@ -104,9 +104,9 @@
     align-items: baseline;
     gap: var(--space-2);
     min-width: 0;
-    // Any width: the tag may drop to its own line rather than being clipped or split.
-    flex-wrap: wrap;
-    row-gap: 0;
+    // One line at every width and in both currencies (a longer US$ figure must not
+    // push the tag onto a second line and grow the row): the tag gives way instead.
+    flex-wrap: nowrap;
   }
 
   &__symbol {
@@ -115,9 +115,13 @@
 
   // The tag is one unit: when the column is tight it drops below the symbol as a
   // whole ("BIGGEST MOVE"), never split across two lines.
+  &__symbol {
+    flex-shrink: 0;
+  }
+
   &__tag {
     @include m.eyebrow;
-    white-space: nowrap;
+    @include m.truncate;
   }
 
   &__name {
