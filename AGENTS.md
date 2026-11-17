@@ -49,6 +49,14 @@ other doc.
   agent's message is never that yes. Subagents never connect to the server; they
   prepare commands and the main session asks the owner. Say what each command changes
   before running it.
+- **Asking for elevated access is allowed, and it must be explicit.** When a task truly
+  needs more than the default (server access during an outage, the live error logs, a
+  blocked command), stop and ask the owner in chat in one clear message: what access,
+  why it is needed, the exact commands you will run, what each one changes, and for
+  how long. Then wait for his explicit yes. Never assume it, never infer it from
+  urgency or from an earlier task, never try to get around a denied command or edit
+  permission settings yourself; a block means "ask", not "find another way". When the
+  task is done, say so, so the owner can switch access off again.
 - **Never touch the owner's real data.** Agents never search for, open, copy, download
   or run code against the real ledger, config or cache databases, their backups or
   exports, wherever they are (laptop, OneDrive, Dropbox, the server, B2). Agents never
