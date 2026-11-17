@@ -116,6 +116,20 @@ class ReturnSplit(ApiModel):
     currency_effect_pp: DecStr | None = Field(
         default=None, description="EUR return minus USD return, in percentage points"
     )
+    #: P12. The same in both views: the EUR return minus the USD return (fractional
+    #: points, two FX-aware returns subtracted, never converted). Positive: the
+    #: holdings are worth that much more in euros than in dollars since you bought.
+    #: Null when either return is missing. (``currency_effect_pp`` stays 0 in USD.)
+    eur_minus_usd_pp: DecStr | None = Field(
+        default=None,
+        description=f"EUR return minus USD return, same in both views ({_FRAC} points)",
+    )
+    #: P12. The dollar's move against the euro from your average invest rate to now:
+    #: ``avg_invest_rate / current_rate - 1``. Positive: the dollar is stronger now.
+    usd_vs_eur_pct: DecStr | None = Field(
+        default=None,
+        description=f"Dollar vs euro, average invest rate to now ({_FRAC})",
+    )
 
 
 class FxRegime(ApiModel):
@@ -284,6 +298,15 @@ class Freshness(ApiModel):
     progress_done: int = 0
     progress_total: int = 0
     progress_label: str | None = None
+    #: Market clock (P13), UTC ISO instants from the NYSE calendar (holidays and
+    #: half-days included). The browser only counts down; it refetches at zero.
+    #: The next regular-session open strictly after now.
+    next_open_at: str | None = None
+    #: While open: this session's close (13:00 ET on a half-day). While shut: the
+    #: close of the session that opens at ``next_open_at``.
+    next_close_at: str | None = None
+    #: While open: when this session opened; null while shut.
+    session_opened_at: str | None = None
 
 
 class DailyCaption(ApiModel):
