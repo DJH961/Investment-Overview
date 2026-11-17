@@ -329,20 +329,22 @@ def project(
         hits[scenario] = {"label": hit.label, "years": dec(hit.years)} if hit is not None else None
     needed = required_contribution(params, target) if target > 0 else None
     expected_final = _final(result, SCENARIO_EXPECTED, real=real)
+    # B-030: in real terms every amount is today's money. The start value already is
+    # (it is today's); each contribution is deflated at its own period, so
+    # start + contributed + growth = final holds in both modes.
+    contributed = result.total_contributed_real if real else result.total_contributed
     return {
         "ccy": ccy,
         "monthly": seed.monthly,
         "real": real,
         "as_of": seed.today.isoformat(),
         "starting_value": dec(params.starting_value),
-        "total_contributed": dec(result.total_contributed),
+        "total_contributed": dec(contributed),
         "final": {
             "pessimistic": dec(_final(result, SCENARIO_PESSIMISTIC, real=real)),
             "expected": dec(expected_final),
             "optimistic": dec(_final(result, SCENARIO_OPTIMISTIC, real=real)),
-            "projected_growth": dec(
-                expected_final - params.starting_value - result.total_contributed
-            ),
+            "projected_growth": dec(expected_final - params.starting_value - contributed),
         },
         "points": points,
         "hits": hits,

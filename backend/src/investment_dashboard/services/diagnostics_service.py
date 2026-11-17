@@ -422,6 +422,129 @@ def _check_missing_dividends(session: Session, *, today: date | None = None) -> 
     )
 
 
+def _ledger_events_by_instrument(
+    session: Session,
+) -> dict[int, list[ledger_completeness.LedgerEvent]]:
+    events: dict[int, list[ledger_completeness.LedgerEvent]] = {}
+    for t in transactions_repo.list_transactions(session):
+        if t.instrument_id is None:
+            continue
+        events.setdefault(t.instrument_id, []).append(
+            ledger_completeness.LedgerEvent(
+                date=t.date, kind=t.kind, quantity=t.quantity, account_id=t.account_id
+            )
+        )
+    return events
+
+
+def _provider_splits(session: Session, instrument_id: int) -> list[tuple[date, Decimal]]:
+    """The feed's cached splits (manual entries are the owner's own and are left out)."""
+    return [
+        (on, ratio)
+        for on, ratio, source in prices_service.list_splits(session, instrument_id)
+        if source != prices_service.MANUAL_SOURCE
+    ]
+
+
+def _check_splits(session: Session) -> list[HealthItem]:
+    """Provider splits missing from the ledger, and ledger splits the provider lacks (hints).
+
+    Reads the splits cached by the split refresh through ``prices_service``; no provider call.
+    """
+    events = _ledger_events_by_instrument(session)
+    missing: list[str] = []
+    unmatched: list[str] = []
+    for instr in instruments_repo.list_instruments(session):
+        rows = events.get(instr.id)
+        if not rows or instr.asset_class in SYNTHETIC_ASSET_CLASSES:
+            continue
+        provider = _provider_splits(session, instr.id)
+        missing.extend(
+            f"possible missing split: {instr.symbol}, {m.date.isoformat()}, "
+            f"ratio {m.ratio.normalize():f}, {m.shares_held.normalize():f} shares held"
+            for m in ledger_completeness.find_missing_splits(provider, rows)
+        )
+        unmatched.extend(
+            f"ledger split without a provider split: {instr.symbol}, {s.date.isoformat()}, "
+            f"ratio {s.ratio.normalize():f}"
+            for s in ledger_completeness.find_unmatched_ledger_splits(provider, rows)
+        )
+    return [
+        HealthItem(
+            key="missing_splits",
+            title="Possibly missing splits",
+            severity="warning" if missing else "ok",
+            count=len(missing),
+            detail=(
+                f"{len(missing)} split(s) the data provider reports on shares you held have no "
+                "matching split row in the ledger (same ratio, within 3 days). Hints only: "
+                "check the broker statement, nothing is changed automatically."
+                if missing
+                else "Every provider split on shares you held has a matching ledger split row."
+            ),
+            examples=_examples(missing),
+        ),
+        HealthItem(
+            key="unmatched_ledger_splits",
+            title="Ledger splits the provider does not know",
+            severity="warning" if unmatched else "ok",
+            count=len(unmatched),
+            detail=(
+                f"{len(unmatched)} split row(s) in the ledger have no matching provider split "
+                "(it may simply not be fetched yet). A softer hint: check the ratio and date."
+                if unmatched
+                else "Every ledger split row has a matching provider split."
+            ),
+            examples=_examples(unmatched),
+        ),
+    ]
+
+
+def _check_share_counts(session: Session) -> HealthItem:
+    """Ledger shares against the counts the owner typed from the broker (optional, hints)."""
+    from investment_dashboard.services import broker_share_counts_service  # noqa: PLC0415
+
+    title = "Share counts against the broker"
+    typed = {(a, i): s for a, i, s in broker_share_counts_service.load(session)}
+    if not typed:
+        return HealthItem(
+            key="share_counts",
+            title=title,
+            severity="ok",
+            count=0,
+            detail="Not set up: type the share counts your broker shows to enable this check.",
+        )
+    totals = ledger_completeness.ledger_share_totals(_ledger_events_by_instrument(session))
+    mismatches = ledger_completeness.find_share_count_mismatches(totals, typed)
+    if not mismatches:
+        return HealthItem(
+            key="share_counts",
+            title=title,
+            severity="ok",
+            count=0,
+            detail=f"All {len(typed)} typed share count(s) match the ledger.",
+        )
+    symbols = {i.id: i.symbol for i in instruments_repo.list_instruments(session)}
+    names = {a.id: f"{a.broker} {a.account_label}" for a in accounts_repo.list_accounts(session)}
+    lines = [
+        f"share count differs: {symbols.get(m.instrument_id, m.instrument_id)} in "
+        f"{names.get(m.account_id, m.account_id)}, ledger {m.ledger.normalize():f}, "
+        f"broker {m.typed.normalize():f}"
+        for m in mismatches
+    ]
+    return HealthItem(
+        key="share_counts",
+        title=title,
+        severity="warning",
+        count=len(mismatches),
+        detail=(
+            f"{len(mismatches)} share count(s) you typed differ from the ledger. Hints only: "
+            "a missing buy, sale, split or reinvestment is the usual cause."
+        ),
+        examples=_examples(lines),
+    )
+
+
 #: An account with no import for this many days is mentioned in the import-age hint.
 _IMPORT_STALE_DAYS = 45
 
@@ -848,6 +971,8 @@ def check_health(session: Session) -> HealthReport:
         _check_positions(session),
         _check_brokerage_cash(session),
         _check_missing_dividends(session),
+        *_check_splits(session),
+        _check_share_counts(session),
         _check_import_age(session),
         _check_intraday_graph(session),
         _check_price_feed(session),

@@ -81,6 +81,10 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
         "problem dismissed",
         "problem dismiss failed",
     ),
+    ("PUT", "/api/diagnostics/share-counts"): (
+        "broker share counts changed",
+        "broker share counts rejected",
+    ),
     ("GET", "/api/settings/export"): ("settings exported", "settings export failed"),
     ("PATCH", "/api/settings/values"): ("settings changed", "settings change rejected"),
     ("POST", "/api/settings/reset"): ("settings reset", "settings reset rejected"),

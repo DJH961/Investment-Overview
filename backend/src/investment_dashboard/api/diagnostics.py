@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
@@ -12,9 +13,16 @@ from investment_dashboard.api.schemas.diagnostics import (
     DiagnosticsOut,
     DiagnosticsStatusOut,
     DismissOut,
+    ShareCountsIn,
+    ShareCountsOut,
 )
 from investment_dashboard.readmodels import diagnostics as diagnostics_rm
-from investment_dashboard.services import diagnostics_service, runtime_status, support_bundle
+from investment_dashboard.services import (
+    broker_share_counts_service,
+    diagnostics_service,
+    runtime_status,
+    support_bundle,
+)
 
 router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])
 
@@ -52,3 +60,25 @@ def dismiss_problem(problem_id: int) -> dict[str, Any]:
     if not runtime_status.dismiss(problem_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "problem not found (already dismissed?)")
     return {"dismissed": 1}
+
+
+def _share_counts_out(entries: list[broker_share_counts_service.Entry]) -> dict[str, Any]:
+    return {
+        "counts": [
+            {"account_id": a, "instrument_id": i, "shares": format(s.normalize(), "f")}
+            for a, i, s in entries
+        ]
+    }
+
+
+@router.get("/share-counts", response_model=ShareCountsOut)
+def get_share_counts(session: SessionDep) -> dict[str, Any]:
+    """Share counts typed from the broker's screen (empty: the check is not set up)."""
+    return _share_counts_out(broker_share_counts_service.load(session))
+
+
+@router.put("/share-counts", response_model=ShareCountsOut)
+def put_share_counts(body: ShareCountsIn, session: SessionDep) -> dict[str, Any]:
+    """Replace the typed share counts; Data Health compares them with the ledger."""
+    entries = [(c.account_id, c.instrument_id, Decimal(c.shares)) for c in body.counts]
+    return _share_counts_out(broker_share_counts_service.replace(session, entries))
