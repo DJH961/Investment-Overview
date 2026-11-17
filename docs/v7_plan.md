@@ -1392,6 +1392,13 @@ Same rules as §9a: built in the push named, detail settled at its start.
 | D1 | **The day rule (decided 2026-11-16, shipped in 6.17.2; supersedes the 2026-11-15 keep-moving rule).** With A = last night's currency move (previous close to the 09:30 open), B = the session's price move, C = the currency's move during market hours and D = tonight's currency move (close to now): while the market is open the Total is A+B+C (live), ☀ day = B+C, ☾ night = A. After the close the Total stays frozen at A+B+C (close prices × the 16:00 ET close rate against the previous close at its 16:00 rate), ☀ = B+C, and ☾ = D is shown beside it but **not added in**, like a broker's "after hours". Everything rolls over at the 09:30 ET open, where D becomes the new day's A, so each move counts once. The portfolio value stays live. Periods keep the ECB rate per day. The split shows in the EUR view only. | done |
 | P16 | **Per-holding stored value series.** Store each holding's daily (and intraday) value next to the portfolio total, so a new transaction late in the week recomputes only that holding from the trade date instead of rebuilding the whole portfolio history, and so the deep-dive's per-holding 1D/1W lines read stored points. The safe part (an import no longer re-downloads cached prices) shipped in 6.17.0. | 5 (7.1); the holding page it sits on ships in 4 (7.0) |
 
+## 9c. Additions accepted 2026-11-17
+
+| # | Addition | Push |
+|---|---|---|
+| P17 | **A fair "% of return" in the Risk contribution table.** Today each row divides its P&L by the window's start value; on "All" that is only the first deposit, so the shares look huge. Show each holding's share of the total P&L instead, ideally built from its lots (each lot's gain over its own holding time, then averaged by size). Detail settled at the start of the push; never fed into an aggregate. | 5 (7.1), with tax lots (§6.1) |
+| P18 | **The Overview counts uninvested brokerage cash.** Since #413 the Risk curve counts cash sitting in a brokerage account outside a money-market fund (B-017); the Overview total does not yet. Every brokerage the owner uses sweeps into a settlement fund, so for him the amount is zero today; this is consistency, not a visible change. Money maths: golden tests and a list of figures that move. | 5 (7.1) |
+
 ---
 
 ## 10. What v7 deliberately does not build

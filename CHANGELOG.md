@@ -17,6 +17,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Projection in real terms adds up.** With "real terms" on, the projected growth and the
+  money paid in are now both in today's money (each contribution adjusted for inflation at
+  its own date), so start + paid in + growth = the end value. Before, the nominal payments
+  were subtracted from an inflation-adjusted end value, so the growth looked too small
+  (B-030). Nominal mode is unchanged.
+
 ### Changed
 - **The time-zone list is the same everywhere.** The `tzdata` package is now installed on
   every platform, so the Settings time-zone list no longer depends on which time-zone
