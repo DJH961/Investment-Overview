@@ -93,6 +93,7 @@ from investment_dashboard.services import app_config_service
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
+    from investment_dashboard.domain.day_move import HoldingDaySplit
     from investment_dashboard.models import IntradayValue
     from investment_dashboard.services.positions_service import Position
 
@@ -2920,6 +2921,50 @@ def estimate_day_move(
         prev_value += prev
     money = now_value - prev_value
     return money, (money / prev_value if prev_value > 0 else None)
+
+
+def estimate_day_split(
+    est: TwinEstimate,
+    *,
+    fx_now: Decimal | None,
+    fx_prev_close: Decimal | None,
+    fx_open: Decimal | None,
+) -> HoldingDaySplit | None:
+    """A pending fund's ☀/☾ cut of its ESTIMATED day move while the market trades.
+
+    The same marks as :func:`estimate_day_move` (today at ``est_px`` and the rate now,
+    the previous close at ``prev_nav`` and that close's rate) plus the previous close
+    at the rate of today's open, cut by :func:`domain.day_move.open_day_split`: the
+    night part is last night's currency move A on the fund's previous NAV, the day
+    part B+C is the rest, including the whole estimated price move. So session +
+    overnight == the row's estimated day move, and the portfolio's estimated session
+    (``metrics_service.open_session_split`` with ``estimates``) is the sum of these.
+    A third-currency leg keeps its previous-close rate at the open (no open rate is
+    known for it). ``None`` without a needed rate.
+    """
+    from investment_dashboard.domain.day_move import open_day_split  # noqa: PLC0415
+
+    if fx_open is None or fx_open <= 0:
+        return None
+    marks: dict[str, tuple[Decimal | None, Decimal | None, Decimal | None]] = {}
+    for ccy in ("EUR", "USD"):
+        now_v: Decimal | None = Decimal(0)
+        open_v: Decimal | None = Decimal(0)
+        prev_v: Decimal | None = Decimal(0)
+        for leg in est.legs:
+            prev_rate = leg.eur_per_native_prev_close
+            n = _leg_value(leg, est.est_px, fx_now, ccy)
+            o = _leg_value(leg, est.prev_nav, fx_open, ccy, eur_per_native=prev_rate)
+            p = _leg_value(leg, est.prev_nav, fx_prev_close, ccy, eur_per_native=prev_rate)
+            now_v = None if n is None or now_v is None else now_v + n
+            open_v = None if o is None or open_v is None else open_v + o
+            prev_v = None if p is None or prev_v is None else prev_v + p
+        marks[ccy] = (now_v, open_v, prev_v)
+    return open_day_split(
+        now=(marks["EUR"][0], marks["USD"][0]),
+        at_open=(marks["EUR"][1], marks["USD"][1]),
+        prev=(marks["EUR"][2], marks["USD"][2]),
+    )
 
 
 def estimate_move_pct(
