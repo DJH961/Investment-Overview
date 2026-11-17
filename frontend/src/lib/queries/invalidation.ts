@@ -18,6 +18,9 @@ export const REPORT_ROOTS = [
   "analytics",
   "calculator",
   "deposits",
+  // 7.0: the Currency page and the Daily Brief narrate the same prices, FX and ledger.
+  "currency",
+  "brief",
 ] as const;
 
 export const INVALIDATION = {
@@ -31,9 +34,9 @@ export const INVALIDATION = {
   // "graphs": a changed ETF twin redraws the 1D line.
   instrumentEdit: ["instruments", "overview", "holdings", "allocations", "analytics", "calculator", "deposits", "transactions", "graphs"],
   /** EUR returns are rebuilt server-side from the conversions; values and ledger rows are untouched. */
-  fxConversionWrite: ["fx-conversions", "overview", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
+  fxConversionWrite: ["fx-conversions", "overview", "currency", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
   /** Prices or FX moved (tick, fx event): the live numbers. */
-  tick: ["overview", "holdings", "graphs", "periods", "allocations"],
+  tick: ["overview", "holdings", "graphs", "periods", "allocations", "currency", "brief"],
   /** End-of-day jobs or a price refresh finished: every report. */
   refresh: [...REPORT_ROOTS, "diagnostics"],
 } as const satisfies Record<string, readonly string[]>;

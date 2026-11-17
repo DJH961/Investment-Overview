@@ -9,6 +9,8 @@ type Loader = () => Promise<{ default: ComponentType }>;
 
 const loaders = {
   Holdings: () => import("../pages/Holdings").then((m) => ({ default: m.Holdings })),
+  Holding: () => import("../pages/Holding").then((m) => ({ default: m.Holding })),
+  Currency: () => import("../pages/Currency").then((m) => ({ default: m.Currency })),
   Periods: () => import("../pages/Periods").then((m) => ({ default: m.Periods })),
   Activity: () => import("../pages/Activity").then((m) => ({ default: m.Activity })),
   Risk: () => import("../pages/Risk").then((m) => ({ default: m.Risk })),
@@ -35,8 +37,10 @@ export const Pages = Object.fromEntries(
 /** Pages the owner opens often, first; the rest follow. */
 const PRELOAD_ORDER: PageName[] = [
   "Holdings",
+  "Holding",
   "Transactions",
   "Periods",
+  "Currency",
   "Activity",
   "Allocations",
   "Settings",

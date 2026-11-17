@@ -241,3 +241,25 @@
     visibility: hidden;
   }
 }
+
+// The Overview card's way into the Currency page: one quiet line, pinned to the foot.
+.currency-box__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.currency-box__link {
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  &:focus-visible {
+    @include m.focus-ring;
+  }
+}

@@ -63,6 +63,8 @@ export function App() {
               <Route index element={<Navigate to="/overview" replace />} />
               <Route path="/overview" element={withHide(<Overview />)} />
               <Route path="/holdings" element={lazyPage("Holdings")} />
+              <Route path="/holdings/:id/:tab?" element={lazyPage("Holding")} />
+              <Route path="/currency" element={lazyPage("Currency")} />
               <Route path="/periods" element={lazyPage("Periods")} />
               <Route path="/activity" element={lazyPage("Activity")} />
               <Route path="/risk" element={lazyPage("Risk")} />
