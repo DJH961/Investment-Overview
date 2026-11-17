@@ -473,6 +473,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diagnostics/share-counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Share Counts
+         * @description Share counts typed from the broker's screen (empty: the check is not set up).
+         */
+        get: operations["get_share_counts_api_diagnostics_share_counts_get"];
+        /**
+         * Put Share Counts
+         * @description Replace the typed share counts; Data Health compares them with the ledger.
+         */
+        put: operations["put_share_counts_api_diagnostics_share_counts_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/diagnostics/status": {
         parameters: {
             query?: never;
@@ -5667,6 +5691,34 @@ export interface components {
                 [key: string]: components["schemas"]["SettingValueDto"];
             };
         };
+        /**
+         * ShareCountEntry
+         * @description One share count typed from the broker's screen.
+         */
+        ShareCountEntry: {
+            /** Account Id */
+            account_id: number;
+            /** Instrument Id */
+            instrument_id: number;
+            /**
+             * Shares
+             * @description Shares the broker shows (zero or more).
+             */
+            shares: string;
+        };
+        /**
+         * ShareCountsIn
+         * @description The whole list of typed counts; an empty list switches the check off.
+         */
+        ShareCountsIn: {
+            /** Counts */
+            counts: components["schemas"]["ShareCountEntry"][];
+        };
+        /** ShareCountsOut */
+        ShareCountsOut: {
+            /** Counts */
+            counts: components["schemas"]["ShareCountEntry"][];
+        };
         /** SliceOut */
         SliceOut: {
             /** Conversion Id */
@@ -7332,6 +7384,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DismissOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_share_counts_api_diagnostics_share_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareCountsOut"];
+                };
+            };
+        };
+    };
+    put_share_counts_api_diagnostics_share_counts_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareCountsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareCountsOut"];
                 };
             };
             /** @description Validation Error */
