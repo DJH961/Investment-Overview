@@ -253,7 +253,6 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
               sessionPct={toNum(ls.move_pct ?? null)}
               overnightPct={toNum(ls.overnight_pct ?? null)}
               overnight={toNum(ls.overnight_currency)}
-              totalPct={toNum(headPct)}
               estimate={est !== null}
               currency={currency}
               marketOpen={ls.market_open}

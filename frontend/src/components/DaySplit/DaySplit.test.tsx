@@ -35,15 +35,15 @@ describe("DaySplit", () => {
     expect(screen.getByRole("button", { name: "About session and overnight" })).toBeInTheDocument();
   });
 
-  it("as an equation: open, last night's ☾ + ☀ = Total; after the close, tonight's ☾ beside it", () => {
-    const { rerender } = render(
-      <DaySplit sessionPct={0.0081} overnightPct={-0.0045} totalPct={0.0036} marketOpen currency="EUR" />,
-    );
-    expect(screen.getByTestId("day-split")).toHaveTextContent(/Overnight\s*-0\.45%\s*\+\s*Session\s*\+0\.81%\s*=\s*\+0\.36%\s*Total/);
-    rerender(<DaySplit sessionPct={0.0081} overnightPct={-0.0045} totalPct={0.0036} currency="EUR" />);
-    const el = screen.getByTestId("day-split");
-    expect(el).toHaveTextContent(/tonight, not in Total/);
-    expect(el).not.toHaveTextContent("=");
+  it("shows ☾ and ☀ side by side in the order they happened, never as an equation", () => {
+    const { rerender } = render(<DaySplit sessionPct={0.0081} overnightPct={-0.0045} marketOpen currency="EUR" />);
+    const open = screen.getByTestId("day-split");
+    expect(open).toHaveTextContent(/Overnight\s*-0\.45%\s*Session\s*\+0\.81%/);
+    expect(open).not.toHaveTextContent(/[=+]\s*Session|Total/);
+    rerender(<DaySplit sessionPct={0.0081} overnightPct={-0.0045} currency="EUR" />);
+    const shut = screen.getByTestId("day-split");
+    expect(shut).toHaveTextContent(/Session\s*\+0\.81%\s*Overnight\s*-0\.45%/);
+    expect(shut).not.toHaveTextContent("Total");
   });
 
   it("explains itself as a short legend, the estimate line only when asked", () => {

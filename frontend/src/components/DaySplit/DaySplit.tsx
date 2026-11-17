@@ -91,12 +91,6 @@ export interface DaySplitProps {
    * column). `list`: the same, left-aligned, for a narrow tile (the KPI "Day move").
    */
   layout?: "inline" | "stacked" | "list";
-  /**
-   * The total the two parts make (server figure, the headline beside it): drawn as an
-   * equation "☀ +0.81 % + ☾ −0.45 % = +0.36 % Total" so the sum is visible at a glance.
-   * Inline layout only.
-   */
-  totalPct?: number | null;
   /** An ETF-twin estimate is on screen: the legend adds its one extra line. */
   estimate?: boolean;
   className?: string;
@@ -152,7 +146,6 @@ export function DaySplit({
   currency,
   marketOpen = false,
   layout = "inline",
-  totalPct = null,
   estimate = false,
   className,
   "data-testid": testId = "day-split",
@@ -162,7 +155,6 @@ export function DaySplit({
   if (currency !== "EUR") return null;
   if (sessionPct === null || !daySplitMoved(overnightPct, overnight)) return null;
   const compact = layout !== "inline";
-  const equation = !compact && totalPct !== null;
   const day = (
     <span className="day-split__part" title={SESSION_TITLE}>
       <Sun className="day-split__icon" aria-hidden />
@@ -179,18 +171,6 @@ export function DaySplit({
       ) : (
         <Money amount={overnight} currency={currency} signed colored />
       )}
-      {equation && !marketOpen && <span className="day-split__word">tonight, not in Total</span>}
-    </span>
-  );
-  const total = equation ? (
-    <span className="day-split__part day-split__part--total" data-testid={`${testId}-total`}>
-      <Percent ratio={totalPct} signed colored />
-      <span className="day-split__word">Total</span>
-    </span>
-  ) : null;
-  const op = (sign: string) => (
-    <span className="day-split__op" aria-hidden>
-      {sign}
     </span>
   );
   return (
@@ -198,31 +178,25 @@ export function DaySplit({
       className={clsx(
         "day-split",
         compact && "day-split--compact",
-        equation && "day-split--equation",
         layout === "stacked" && "day-split--end",
         className,
       )}
       data-testid={testId}
     >
-      {!equation ? (
+      {/*
+        The two parts side by side, in the order they happened (no equation: the
+        headline pill already shows the day's total, owner). Open: last night's ☾,
+        then the session ☀. After the close: the session ☀, then tonight's ☾.
+      */}
+      {marketOpen ? (
         <>
-          {day}
           {night}
-        </>
-      ) : marketOpen ? (
-        // Open: last night's currency plus the session make today's Total.
-        <>
-          {night}
-          {op("+")}
           {day}
-          {op("=")}
-          {total}
         </>
       ) : (
-        // After the close: the session, and tonight's currency beside the Total, not in it.
         <>
           {day}
-          <span className="day-split__aside">{night}</span>
+          {night}
         </>
       )}
       {!compact && <InfoTip label="session and overnight" content={<DaySplitLegend estimate={estimate} />} />}
