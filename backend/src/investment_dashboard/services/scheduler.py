@@ -225,7 +225,18 @@ def _tick_day_split(
             rate_prev=rate_prev,
             rate_open=intraday_snapshots_service.day_open_rate(session, now=now),
         )
+    return _split_fields(split)
+
+
+def _split_fields(split: Any) -> dict[str, Any]:
+    """The tick's ``day_session_*`` / ``day_overnight_*`` of one holding split.
+
+    Null per currency when the currency did not move (nothing to explain), exactly
+    as the holdings rows (``readmodels.holdings.day_split_fields``).
+    """
     out = dict(_NO_SPLIT)
+    if split is None:
+        return out
     for side in ("eur", "usd"):
         overnight = getattr(split, f"overnight_{side}")
         session_part = getattr(split, f"session_{side}")
@@ -236,6 +247,34 @@ def _tick_day_split(
         out[f"day_session_pct_{side}"] = _dec(getattr(split, f"session_pct_{side}"))
         out[f"day_overnight_pct_{side}"] = _dec(getattr(split, f"overnight_pct_{side}"))
     return out
+
+
+def _tick_estimated_splits(
+    session: Any, symbols: dict[str, dict[str, Any]], *, now: datetime, rate: Decimal | None
+) -> None:
+    """While open, a pending fund's ☀/☾ in the tick describe its ETF-twin estimate.
+
+    The same helper and rates as the holdings rows
+    (``intraday_snapshots_service.estimate_day_split``), so a tick and a refetch
+    agree. After the close nothing changes (official rule).
+    """
+    from investment_dashboard.domain.market_hours import is_us_market_open  # noqa: PLC0415
+    from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
+
+    if not is_us_market_open(now):
+        return
+    estimates = iss.twin_estimates(session, now)
+    if not estimates:
+        return
+    fx_prev = iss.previous_close_fx(session, iss.last_session_date(now))
+    fx_day = iss.day_figure_fx(session, now=now, live_rate=rate)
+    fx_open = iss.day_open_rate(session, now=now)
+    for iid, est in estimates.items():
+        row = symbols.get(str(iid))
+        if row is None:
+            continue
+        split = iss.estimate_day_split(est, fx_now=fx_day, fx_prev_close=fx_prev, fx_open=fx_open)
+        row.update(_split_fields(split))
 
 
 def _tick_day_moves(
@@ -358,6 +397,7 @@ def _tick_day_moves(
                 ),
             }
             members.setdefault(category[iid], []).append(move)
+        _tick_estimated_splits(session, symbols, now=now, rate=rate)
         categories: dict[str, dict[str, Any]] = {}
         for name, group in members.items():
             moves_eur = [m.move_eur for m in group if m.move_eur is not None]

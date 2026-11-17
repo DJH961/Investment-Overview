@@ -673,7 +673,11 @@ def _prepare(
         cards=cards,
         freshness=freshness,
         estimates=estimates,
-        open_split=metrics_service.open_session_split(session, metrics, now=now),
+        # While estimating, ☀/☾ describe the estimated book the headline shows (owner,
+        # 2026-11-17): the same adjustment at the same rate as ``kpis.estimate``.
+        open_split=metrics_service.open_session_split(
+            session, metrics, now=now, estimates=estimates, fx_now=ctx.fx_rate_eur_usd
+        ),
     )
 
 
