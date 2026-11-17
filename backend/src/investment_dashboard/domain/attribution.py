@@ -62,6 +62,14 @@ def attribute_portfolio_return(
 
         pnl_i = end_value_i + dividends_cash_i − start_value_i − net_contribution_i
 
+    The output row's ``net_contribution`` is the money that moved into the
+    holding net of the cash dividends it paid out
+    (``net_contribution_i − dividends_cash_i``), so every row, and the table
+    total, reads ``P&L = End − Start − Net added``. The paid-out dividend lands in
+    the cash or money-market row as money moved in, so the dividend is counted
+    once (in this holding's P&L) and the column total is the money added from
+    outside the book.
+
     The "% of total return" denominator is the **starting total
     portfolio value** (sum of ``start_value`` across all rows). When
     that's zero we fall back to the absolute end value so a
@@ -86,7 +94,7 @@ def attribute_portfolio_return(
                 symbol=r.symbol,
                 start_value=r.start_value,
                 end_value=r.end_value,
-                net_contribution=r.net_contribution,
+                net_contribution=r.net_contribution - r.dividends_cash,
                 absolute_pnl=pnl,
                 pct_of_total_return=pct,
             )

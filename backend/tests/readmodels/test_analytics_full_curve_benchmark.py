@@ -32,7 +32,7 @@ def test_full_curve_is_built_with_the_funded_benchmark(
     session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     acct = Account(
-        broker="vanguard", account_label="USD", account_type="brokerage", native_currency="USD"
+        broker="vanguard", account_label="USD", account_type="cash", native_currency="USD"
     )
     session.add(acct)
     session.flush()

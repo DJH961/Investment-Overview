@@ -46,7 +46,7 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def seeded(session):  # type: ignore[no-untyped-def]
     acct = Account(
-        broker="vanguard", account_label="USD", account_type="brokerage", native_currency="USD"
+        broker="vanguard", account_label="USD", account_type="cash", native_currency="USD"
     )
     session.add(acct)
     session.flush()

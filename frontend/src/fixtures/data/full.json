@@ -155,8 +155,8 @@
      "absolute_pnl": "200116.6502780827438435128469",
      "end_value": "984206.5879828326180257510729",
      "instrument_id": 1,
-     "net_contribution": "0",
-     "pct_of_total_return": "0.1909676440900592435315874553",
+     "net_contribution": "-3145.768838774122555789189575",
+     "pct_of_total_return": "0.1403114035000227177815557361",
      "start_value": "787235.7065435239967380274156",
      "symbol": "FAKEL"
     },
@@ -165,7 +165,7 @@
      "end_value": "117987.9828326180257510729614",
      "instrument_id": 4,
      "net_contribution": "0",
-     "pct_of_total_return": "0.02523281047865836222793980183",
+     "pct_of_total_return": "0.01853953359156998587679525629",
      "start_value": "91546.30191776367830237576840",
      "symbol": "FAKENX"
     },
@@ -174,7 +174,7 @@
      "end_value": "53690.98712446351931330472103",
      "instrument_id": 6,
      "net_contribution": "-12833.17414400852958614762404",
-     "pct_of_total_return": "0.01291690546567224774145994268",
+     "pct_of_total_return": "0.009490556075095503059269465669",
      "start_value": "52988.42401797755951657776072",
      "symbol": "FAKEG"
     },
@@ -183,16 +183,25 @@
      "end_value": "79957.08154506437768240343348",
      "instrument_id": 2,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.01152034104422361346332758298",
+     "pct_of_total_return": "-0.008464445526445469099709219409",
      "start_value": "92029.34682757433180694226781",
      "symbol": "FAKEB"
+    },
+    {
+     "absolute_pnl": "-6331.519074191011414098563515",
+     "end_value": "377740.6303004291845493562232",
+     "instrument_id": 0,
+     "net_contribution": "5748.560046077848444503093115",
+     "pct_of_total_return": "-0.004439332391144882469804390843",
+     "start_value": "378323.5893285423475189516936",
+     "symbol": "Cash"
     },
     {
      "absolute_pnl": "790.90750000000000",
      "end_value": "24475.00000000000000",
      "instrument_id": 5,
-     "net_contribution": "0",
-     "pct_of_total_return": "0.0007547485017277472758075189958",
+     "net_contribution": "-424.800000",
+     "pct_of_total_return": "0.0005545432686859654303011376094",
      "start_value": "24108.89250000000000",
      "symbol": "FAKEU.DE"
     },
@@ -201,17 +210,17 @@
      "end_value": "0.000005667811158798283261802575107",
      "instrument_id": 3,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.000000000002524217505406313730422857773",
+     "pct_of_total_return": "-0.000000000001854641411169414957994483318",
      "start_value": "0.000008312960572261171076127552568",
      "symbol": "FAKET"
     }
    ],
    "attribution_currency": "EUR",
    "attribution_total": {
-    "absolute_pnl": "228812.7106582764771370829021",
-    "end_value": "1260317.639490646351931330471",
-    "net_contribution": "-12833.17414400852958614762404",
-    "start_value": "1047908.671815152526936184384"
+    "absolute_pnl": "222481.1915840854657229843386",
+    "end_value": "1638058.269791075536480686694",
+    "net_contribution": "-10655.18293670480369743372050",
+    "start_value": "1426232.261143694874455136078"
    },
    "benchmark_diff": null,
    "benchmark_diff_pct": null,
@@ -219,8 +228,8 @@
    "benchmark_last_value": null,
    "benchmark_symbol": "VT",
    "beta": null,
-   "cagr": "0.2139528745312",
-   "calmar": "9.967589013763491745524546712",
+   "cagr": "0.1565649040778105",
+   "calmar": "11.65004285545585388136174594",
    "ccy": "EUR",
    "currency": "EUR",
    "curve": [
@@ -228,1153 +237,1153 @@
      "benchmark_value": null,
      "cumulative_contributions": "1113168.446250933618127914640",
      "date": "2025-06-30",
-     "portfolio_value": "1047908.671815140902007092081"
+     "portfolio_value": "1426232.261143683249526043775"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1113168.446250933618127914640",
      "date": "2025-07-31",
-     "portfolio_value": "1065628.717288780056158856847"
+     "portfolio_value": "1444783.823715596129331832259"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1113168.446250933618127914640",
      "date": "2025-08-31",
-     "portfolio_value": "1094170.953739968894727121140"
+     "portfolio_value": "1468059.646935750867823304098"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1113168.446250933618127914640",
      "date": "2025-09-30",
-     "portfolio_value": "1093472.808318903003309755932"
+     "portfolio_value": "1465178.290111077090125022835"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1113168.446250933618127914640",
      "date": "2025-10-31",
-     "portfolio_value": "1111135.099199511455829036986"
+     "portfolio_value": "1482850.684611167385559642958"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1113168.446250933618127914640",
      "date": "2025-11-30",
-     "portfolio_value": "1149267.660501513621742214044"
+     "portfolio_value": "1532094.314751099477422840283"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2025-12-30",
-     "portfolio_value": "1168171.219511324371305075885"
+     "portfolio_value": "1540707.447158090688472474276"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2025-12-31",
-     "portfolio_value": "1176052.328408696830242761091"
+     "portfolio_value": "1549423.134195103538359422063"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-01",
-     "portfolio_value": "1177110.019731097562533915220"
+     "portfolio_value": "1550403.765312778189989973447"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-02",
-     "portfolio_value": "1172698.847028564960326680403"
+     "portfolio_value": "1545670.495246623108144796765"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-03",
-     "portfolio_value": "1172698.847028564960326680403"
+     "portfolio_value": "1545670.495246623108144796765"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-04",
-     "portfolio_value": "1172698.847028564960326680403"
+     "portfolio_value": "1545670.495246623108144796765"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-05",
-     "portfolio_value": "1172675.352554628384041304938"
+     "portfolio_value": "1545561.839529992963253206315"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-06",
-     "portfolio_value": "1175311.860072819986842228766"
+     "portfolio_value": "1549184.985246247432656018144"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-07",
-     "portfolio_value": "1187762.743444559507317541526"
+     "portfolio_value": "1563254.463391066701414130331"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-08",
-     "portfolio_value": "1188058.992274916794291532268"
+     "portfolio_value": "1562868.470526612992924306334"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-09",
-     "portfolio_value": "1189171.754548053744589930422"
+     "portfolio_value": "1564160.071170526762723935791"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-10",
-     "portfolio_value": "1189171.754548053744589930422"
+     "portfolio_value": "1564160.071170526762723935791"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-11",
-     "portfolio_value": "1189171.754548053744589930422"
+     "portfolio_value": "1564160.071170526762723935791"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-12",
-     "portfolio_value": "1192656.784716383046859346610"
+     "portfolio_value": "1567739.079767372961901842487"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-13",
-     "portfolio_value": "1191786.017565981651061788465"
+     "portfolio_value": "1567020.461210584476215767066"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-14",
-     "portfolio_value": "1189517.928805059620494267063"
+     "portfolio_value": "1564046.062653359914920682686"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-15",
-     "portfolio_value": "1199349.618093849371382411030"
+     "portfolio_value": "1574217.094087195232569681909"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-16",
-     "portfolio_value": "1202254.624333622161406278150"
+     "portfolio_value": "1578011.211915101704657567152"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-17",
-     "portfolio_value": "1202254.624333622161406278150"
+     "portfolio_value": "1578011.211915101704657567152"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-18",
-     "portfolio_value": "1202254.624333622161406278150"
+     "portfolio_value": "1578011.211915101704657567152"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-19",
-     "portfolio_value": "1199024.704463864970226620400"
+     "portfolio_value": "1574325.080330720130231761127"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-20",
-     "portfolio_value": "1199615.413419802146469190130"
+     "portfolio_value": "1574922.983396411355757647417"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-21",
-     "portfolio_value": "1206301.759496260384729290885"
+     "portfolio_value": "1581257.165687502032864790097"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-22",
-     "portfolio_value": "1204316.828942493054737377722"
+     "portfolio_value": "1578377.061080780191615825808"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-23",
-     "portfolio_value": "1203765.146919479836447820144"
+     "portfolio_value": "1577841.749316702625492317163"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-24",
-     "portfolio_value": "1203765.146919479836447820144"
+     "portfolio_value": "1577841.749316702625492317163"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-25",
-     "portfolio_value": "1203765.146919479836447820144"
+     "portfolio_value": "1577841.749316702625492317163"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-26",
-     "portfolio_value": "1202053.933963416770118939498"
+     "portfolio_value": "1576374.784500477176278400960"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-27",
-     "portfolio_value": "1203780.130052439261551478842"
+     "portfolio_value": "1577512.685420793514863477095"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-28",
-     "portfolio_value": "1196086.395260717595116101603"
+     "portfolio_value": "1569302.818577516897416330536"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-29",
-     "portfolio_value": "1190822.146678292557730027773"
+     "portfolio_value": "1563287.876347158625425347842"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-30",
-     "portfolio_value": "1184077.523027796450402353853"
+     "portfolio_value": "1555661.063911796643674614282"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-01-31",
-     "portfolio_value": "1184077.523027796450402353853"
+     "portfolio_value": "1555661.063911796643674614282"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-01",
-     "portfolio_value": "1184077.523027796450402353853"
+     "portfolio_value": "1555661.063911796643674614282"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-02",
-     "portfolio_value": "1180641.130476865506702944113"
+     "portfolio_value": "1551868.248349757261205234317"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-03",
-     "portfolio_value": "1182481.224322931170347021845"
+     "portfolio_value": "1553546.201961533806253824739"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-04",
-     "portfolio_value": "1184600.396229626468316871926"
+     "portfolio_value": "1555814.338190362963866195179"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-05",
-     "portfolio_value": "1183883.070395519823393280074"
+     "portfolio_value": "1554968.819243597752462793576"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-06",
-     "portfolio_value": "1182091.966055931547171214916"
+     "portfolio_value": "1552720.740668568134132919000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-07",
-     "portfolio_value": "1182091.966055931547171214916"
+     "portfolio_value": "1552720.740668568134132919000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-08",
-     "portfolio_value": "1182091.966055931547171214916"
+     "portfolio_value": "1552720.740668568134132919000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-09",
-     "portfolio_value": "1182060.533498920615194462338"
+     "portfolio_value": "1552244.891046230764619817623"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-10",
-     "portfolio_value": "1180622.637399685473039099886"
+     "portfolio_value": "1550574.024788774222288217388"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-11",
-     "portfolio_value": "1185382.487571089617051540975"
+     "portfolio_value": "1555735.151734878067528062080"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-12",
-     "portfolio_value": "1174470.949263204858933509552"
+     "portfolio_value": "1543655.851039257859358624144"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-13",
-     "portfolio_value": "1174491.133751988753546084365"
+     "portfolio_value": "1543671.695172779540882038504"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-14",
-     "portfolio_value": "1174491.133751988753546084365"
+     "portfolio_value": "1543671.695172779540882038504"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-15",
-     "portfolio_value": "1174491.133751988753546084365"
+     "portfolio_value": "1543671.695172779540882038504"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-16",
-     "portfolio_value": "1177717.375002106966473949467"
+     "portfolio_value": "1547300.608766497547491024323"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-17",
-     "portfolio_value": "1177983.375876381625799056934"
+     "portfolio_value": "1547562.259220263704590179132"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-18",
-     "portfolio_value": "1187684.084517052648638793130"
+     "portfolio_value": "1557806.460449942769548672895"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-19",
-     "portfolio_value": "1181863.372178639546560450744"
+     "portfolio_value": "1551308.606214507639324154013"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-20",
-     "portfolio_value": "1184288.713981046845506774940"
+     "portfolio_value": "1553668.176190434477187905088"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-21",
-     "portfolio_value": "1184288.713981046845506774940"
+     "portfolio_value": "1553668.176190434477187905088"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-22",
-     "portfolio_value": "1184288.713981046845506774940"
+     "portfolio_value": "1553668.176190434477187905088"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-23",
-     "portfolio_value": "1184236.673888622623582137242"
+     "portfolio_value": "1553024.164740979912384700116"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-24",
-     "portfolio_value": "1181680.996414860504105590093"
+     "portfolio_value": "1550450.011975475762472737301"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-25",
-     "portfolio_value": "1184554.613114194961351995490"
+     "portfolio_value": "1553033.769400811015836398935"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-26",
-     "portfolio_value": "1188630.953621962460127154987"
+     "portfolio_value": "1558110.387355914324567064735"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-27",
-     "portfolio_value": "1182882.538812650772900634762"
+     "portfolio_value": "1552269.822784834436193582296"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-02-28",
-     "portfolio_value": "1182882.538812650772900634762"
+     "portfolio_value": "1552269.822784834436193582296"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-01",
-     "portfolio_value": "1182882.538812650772900634762"
+     "portfolio_value": "1552269.822784834436193582296"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-02",
-     "portfolio_value": "1182008.993418937908634225562"
+     "portfolio_value": "1551050.721322775809695307175"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-03",
-     "portfolio_value": "1184608.719737455977390358227"
+     "portfolio_value": "1553925.910232749284606276600"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-04",
-     "portfolio_value": "1183619.169014309750848223717"
+     "portfolio_value": "1552758.936452804588277973286"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-05",
-     "portfolio_value": "1187622.237313138265032438286"
+     "portfolio_value": "1557467.859643027033592097406"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-06",
-     "portfolio_value": "1187772.118201576414293744317"
+     "portfolio_value": "1557333.020974198077391441384"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-07",
-     "portfolio_value": "1187772.118201576414293744317"
+     "portfolio_value": "1557333.020974198077391441384"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-08",
-     "portfolio_value": "1187772.118201576414293744317"
+     "portfolio_value": "1557333.020974198077391441384"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-09",
-     "portfolio_value": "1188471.821574551420093117276"
+     "portfolio_value": "1557269.994362057526867706030"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-10",
-     "portfolio_value": "1189427.919036091827240846535"
+     "portfolio_value": "1558685.176207348031641919228"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-11",
-     "portfolio_value": "1187042.536178240298604163529"
+     "portfolio_value": "1556068.941422879803578235082"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-12",
-     "portfolio_value": "1180634.145690867768456319512"
+     "portfolio_value": "1548780.208785547151695822800"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-13",
-     "portfolio_value": "1185073.742180015792335834628"
+     "portfolio_value": "1554257.775876247350406341178"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-14",
-     "portfolio_value": "1185073.742180015792335834628"
+     "portfolio_value": "1554257.775876247350406341178"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-15",
-     "portfolio_value": "1185073.742180015792335834628"
+     "portfolio_value": "1554257.775876247350406341178"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-16",
-     "portfolio_value": "1186817.874359856108801704578"
+     "portfolio_value": "1556426.632806923499644317680"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-17",
-     "portfolio_value": "1186792.814994885736588517133"
+     "portfolio_value": "1555712.577707060375225431348"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-18",
-     "portfolio_value": "1193286.734993026087909216941"
+     "portfolio_value": "1562862.718117675812113116432"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-19",
-     "portfolio_value": "1192540.733858903126463581871"
+     "portfolio_value": "1561945.400799995956723463470"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-20",
-     "portfolio_value": "1195484.354240365374123099575"
+     "portfolio_value": "1565266.955215410341753994804"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-21",
-     "portfolio_value": "1195484.354240365374123099575"
+     "portfolio_value": "1565266.955215410341753994804"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-22",
-     "portfolio_value": "1195484.354240365374123099575"
+     "portfolio_value": "1565266.955215410341753994804"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-23",
-     "portfolio_value": "1193816.673810096915183378729"
+     "portfolio_value": "1564130.886690314815987838094"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-24",
-     "portfolio_value": "1199754.284736590397836683432"
+     "portfolio_value": "1569614.140887796509239726819"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-25",
-     "portfolio_value": "1198641.663906956578218169211"
+     "portfolio_value": "1568523.599333300154954277100"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-26",
-     "portfolio_value": "1199829.242198245328150316494"
+     "portfolio_value": "1570039.795860132845765002984"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-27",
-     "portfolio_value": "1201487.655400612116667004479"
+     "portfolio_value": "1571783.519554087196221902426"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-28",
-     "portfolio_value": "1201487.655400612116667004479"
+     "portfolio_value": "1571783.519554087196221902426"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-29",
-     "portfolio_value": "1201487.655400612116667004479"
+     "portfolio_value": "1571783.519554087196221902426"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-30",
-     "portfolio_value": "1200076.983145750199100780812"
+     "portfolio_value": "1569647.165978585604908202952"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-03-31",
-     "portfolio_value": "1198317.566983584039215158167"
+     "portfolio_value": "1567445.474159203846102050985"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-01",
-     "portfolio_value": "1200372.038651554044180685879"
+     "portfolio_value": "1570719.458953603775959510470"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-02",
-     "portfolio_value": "1196464.032069399677254007514"
+     "portfolio_value": "1566723.495798694998281559145"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-03",
-     "portfolio_value": "1191383.570912681786235605774"
+     "portfolio_value": "1561760.999911438341352651782"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-04",
-     "portfolio_value": "1191383.570912681786235605774"
+     "portfolio_value": "1561760.999911438341352651782"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-05",
-     "portfolio_value": "1191383.570912681786235605774"
+     "portfolio_value": "1561760.999911438341352651782"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-06",
-     "portfolio_value": "1189947.901426020739969966064"
+     "portfolio_value": "1560271.143761606900034966393"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-07",
-     "portfolio_value": "1196693.512451713027782932137"
+     "portfolio_value": "1566543.782430627013714343550"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-08",
-     "portfolio_value": "1190615.747635779793377661587"
+     "portfolio_value": "1559310.881908524642529904759"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-09",
-     "portfolio_value": "1187765.870936476178777379724"
+     "portfolio_value": "1556763.658270447818456252177"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-10",
-     "portfolio_value": "1188973.267023069051003095294"
+     "portfolio_value": "1557220.888054162192747759962"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-11",
-     "portfolio_value": "1188973.267023069051003095294"
+     "portfolio_value": "1557220.888054162192747759962"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-12",
-     "portfolio_value": "1188973.267023069051003095294"
+     "portfolio_value": "1557220.888054162192747759962"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-13",
-     "portfolio_value": "1191889.225036945698864587390"
+     "portfolio_value": "1560787.320532337684949285352"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-14",
-     "portfolio_value": "1188022.314281992562556463643"
+     "portfolio_value": "1556626.583562409395550139715"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-15",
-     "portfolio_value": "1194657.875081493096535775785"
+     "portfolio_value": "1563601.041458657027417852856"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-16",
-     "portfolio_value": "1200850.699512729263618943334"
+     "portfolio_value": "1570235.376191117943102613236"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-17",
-     "portfolio_value": "1196297.423539533336245920977"
+     "portfolio_value": "1564812.028852025984762685720"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-18",
-     "portfolio_value": "1196297.423539533336245920977"
+     "portfolio_value": "1564812.028852025984762685720"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-19",
-     "portfolio_value": "1196297.423539533336245920977"
+     "portfolio_value": "1564812.028852025984762685720"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-20",
-     "portfolio_value": "1194873.924163103188980701473"
+     "portfolio_value": "1562625.547339090225494576611"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-21",
-     "portfolio_value": "1198524.569564674354488674894"
+     "portfolio_value": "1566253.238071886193186914329"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-22",
-     "portfolio_value": "1196598.718953722334004024145"
+     "portfolio_value": "1564375.882816901408450704226"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-23",
-     "portfolio_value": "1198677.406629316437146907456"
+     "portfolio_value": "1566439.360410763103249101104"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-24",
-     "portfolio_value": "1202504.311266696276171037707"
+     "portfolio_value": "1570781.864529951916739640942"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-25",
-     "portfolio_value": "1202504.311266696276171037707"
+     "portfolio_value": "1570781.864529951916739640942"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-26",
-     "portfolio_value": "1202504.311266696276171037707"
+     "portfolio_value": "1570781.864529951916739640942"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-27",
-     "portfolio_value": "1199784.261838447117690261955"
+     "portfolio_value": "1567583.238743816675106730476"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-28",
-     "portfolio_value": "1202798.478524432181466678653"
+     "portfolio_value": "1571319.713329681325947540482"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-29",
-     "portfolio_value": "1198194.838524309772573120108"
+     "portfolio_value": "1566838.332502468925162360721"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-30",
-     "portfolio_value": "1205968.148704888867963235121"
+     "portfolio_value": "1574725.040935836340461881493"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-01",
-     "portfolio_value": "1211345.835894236412527095907"
+     "portfolio_value": "1580132.171982604805876427527"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-02",
-     "portfolio_value": "1211345.835894236412527095907"
+     "portfolio_value": "1580132.171982604805876427527"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-03",
-     "portfolio_value": "1211345.835894236412527095907"
+     "portfolio_value": "1580132.171982604805876427527"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-04",
-     "portfolio_value": "1212973.929929923197977053546"
+     "portfolio_value": "1581685.800145802789621639071"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-05",
-     "portfolio_value": "1210778.405477157811889047195"
+     "portfolio_value": "1578846.830303192016016298228"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-06",
-     "portfolio_value": "1214276.724878589327613634933"
+     "portfolio_value": "1582512.259374414983147317213"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-07",
-     "portfolio_value": "1212855.806130972619242506286"
+     "portfolio_value": "1581102.851593440035595404499"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-08",
-     "portfolio_value": "1217208.768623840096197912068"
+     "portfolio_value": "1586017.912739328044129951270"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-09",
-     "portfolio_value": "1217208.768623840096197912068"
+     "portfolio_value": "1586017.912739328044129951270"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-10",
-     "portfolio_value": "1217208.768623840096197912068"
+     "portfolio_value": "1586017.912739328044129951270"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-11",
-     "portfolio_value": "1218438.213581250930363794320"
+     "portfolio_value": "1587294.715682523289581355215"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-12",
-     "portfolio_value": "1217243.645392524213992102047"
+     "portfolio_value": "1586358.825391716239281710482"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-13",
-     "portfolio_value": "1219982.296694267859794037063"
+     "portfolio_value": "1589880.212309119866110593730"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-14",
-     "portfolio_value": "1229206.383246469493774265500"
+     "portfolio_value": "1599517.100980577465062324910"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-15",
-     "portfolio_value": "1229747.498787995415314133695"
+     "portfolio_value": "1599832.056517968221172268390"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-16",
-     "portfolio_value": "1229747.498787995415314133695"
+     "portfolio_value": "1599832.056517968221172268390"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-17",
-     "portfolio_value": "1229747.498787995415314133695"
+     "portfolio_value": "1599832.056517968221172268390"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-18",
-     "portfolio_value": "1222950.600013814062715844730"
+     "portfolio_value": "1592343.678113740275405240584"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-19",
-     "portfolio_value": "1227109.417029741760728446849"
+     "portfolio_value": "1597335.399155098925297721577"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-20",
-     "portfolio_value": "1229725.869486216652406426164"
+     "portfolio_value": "1600745.802657854938232424148"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-21",
-     "portfolio_value": "1230127.683077308900940530767"
+     "portfolio_value": "1601532.920654160711214437795"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-22",
-     "portfolio_value": "1228398.844614568395930585360"
+     "portfolio_value": "1599911.687369254290954332652"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-23",
-     "portfolio_value": "1228398.844614568395930585360"
+     "portfolio_value": "1599911.687369254290954332652"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-24",
-     "portfolio_value": "1228398.844614568395930585360"
+     "portfolio_value": "1599911.687369254290954332652"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-25",
-     "portfolio_value": "1225373.961585579353149684069"
+     "portfolio_value": "1597002.107017636670846293993"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-26",
-     "portfolio_value": "1223021.826043004382260798415"
+     "portfolio_value": "1595053.107011175910891484086"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-27",
-     "portfolio_value": "1230116.700214364371738650910"
+     "portfolio_value": "1603325.718987965105534211856"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-28",
-     "portfolio_value": "1221431.047017254668528736158"
+     "portfolio_value": "1593117.312985950533055549196"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-29",
-     "portfolio_value": "1214128.610703137091392852340"
+     "portfolio_value": "1584916.487825213273669423486"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-30",
-     "portfolio_value": "1214128.610703137091392852340"
+     "portfolio_value": "1584916.487825213273669423486"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-31",
-     "portfolio_value": "1214128.610703137091392852340"
+     "portfolio_value": "1584916.487825213273669423486"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-01",
-     "portfolio_value": "1213834.284539961361096351437"
+     "portfolio_value": "1584219.580759971650161643075"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-02",
-     "portfolio_value": "1218975.544518261461170754245"
+     "portfolio_value": "1589953.368809520787373989952"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-03",
-     "portfolio_value": "1220139.324093501081193989965"
+     "portfolio_value": "1590901.501340629807127169893"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-04",
-     "portfolio_value": "1222662.887958476981197267367"
+     "portfolio_value": "1593907.575276375526214835384"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-05",
-     "portfolio_value": "1220652.717200880096570381079"
+     "portfolio_value": "1591515.963736925228166135569"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-06",
-     "portfolio_value": "1220652.717200880096570381079"
+     "portfolio_value": "1591515.963736925228166135569"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-07",
-     "portfolio_value": "1220652.717200880096570381079"
+     "portfolio_value": "1591515.963736925228166135569"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-08",
-     "portfolio_value": "1222082.547736376864036853207"
+     "portfolio_value": "1593563.424472586783589950451"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-09",
-     "portfolio_value": "1223787.300890983504478638677"
+     "portfolio_value": "1595166.160493620280231552355"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-10",
-     "portfolio_value": "1226211.746664650648382060382"
+     "portfolio_value": "1598514.172687901681733005560"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-11",
-     "portfolio_value": "1232824.695518669721052654031"
+     "portfolio_value": "1606652.041322685641399727835"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-12",
-     "portfolio_value": "1231765.823944094609123022577"
+     "portfolio_value": "1605624.381649516203348180003"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-13",
-     "portfolio_value": "1231765.823944094609123022577"
+     "portfolio_value": "1605624.381649516203348180003"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-14",
-     "portfolio_value": "1231765.823944094609123022577"
+     "portfolio_value": "1605624.381649516203348180003"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-15",
-     "portfolio_value": "1231903.467494193332348114744"
+     "portfolio_value": "1606161.734083870576446840480"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-16",
-     "portfolio_value": "1239278.871550013490851836293"
+     "portfolio_value": "1613380.181067109303223118197"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-17",
-     "portfolio_value": "1243807.665846842480057926264"
+     "portfolio_value": "1618326.548716500692875394418"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-18",
-     "portfolio_value": "1245974.685562741963245135474"
+     "portfolio_value": "1621083.028164132109255851433"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-19",
-     "portfolio_value": "1247546.532968732197210150235"
+     "portfolio_value": "1622801.053340101070587499561"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-20",
-     "portfolio_value": "1247546.532968732197210150235"
+     "portfolio_value": "1624592.537776618410130017656"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-21",
-     "portfolio_value": "1247546.532968732197210150235"
+     "portfolio_value": "1624592.537776618410130017656"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-22",
-     "portfolio_value": "1254564.856846975533647546561"
+     "portfolio_value": "1631274.640407712630978046441"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-23",
-     "portfolio_value": "1249732.918874097018716222525"
+     "portfolio_value": "1626754.843524241829802215725"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-24",
-     "portfolio_value": "1248065.845244867884437437883"
+     "portfolio_value": "1625154.901558655197230885225"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-25",
-     "portfolio_value": "1251253.329446357065385873780"
+     "portfolio_value": "1629149.063783915148902478087"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-26",
-     "portfolio_value": "1260937.178684416063719305473"
+     "portfolio_value": "1638644.568592836727862605247"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-27",
-     "portfolio_value": "1260937.178684416063719305473"
+     "portfolio_value": "1638644.568592836727862605247"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-28",
-     "portfolio_value": "1260937.178684416063719305473"
+     "portfolio_value": "1638644.568592836727862605247"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-29",
-     "portfolio_value": "1259552.652901645064250007930"
+     "portfolio_value": "1636852.904613689808214433598"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-30",
-     "portfolio_value": "1260317.639490646351931330472"
+     "portfolio_value": "1638058.269791075536480686695"
     }
    ],
    "curve_start": "2025-06-30",
-   "cvar_95": "-0.006133892708241812",
-   "kurtosis": "17.942305215806677",
-   "max_drawdown": "-0.02638710420711626543360277412",
+   "cvar_95": "-0.005674354338426275",
+   "kurtosis": "42.26079091182121",
+   "max_drawdown": "-0.02377937976451528147086552058",
    "net_invested_last": "1102513.263314228814430480920",
-   "portfolio_last_value": "1260317.639490646351931330472",
+   "portfolio_last_value": "1638058.269791075536480686695",
    "risk_free_rate": "0.037320001125335693",
    "risk_free_symbol": "^IRX",
-   "sharpe": "2.889895220288779908976059751",
-   "skew": "3.405542276253236",
-   "sortino": "7.790201704012688589455083697",
+   "sharpe": "2.894823966505420875545086541",
+   "skew": "5.136630791893409",
+   "sortino": "8.221090434641700791027191251",
    "start": "2025-06-30",
-   "twr": "0.213952874531200140403345545",
-   "ulcer": "0.010985242956805403",
-   "var_95": "-0.004900892766261135",
-   "volatility": "0.07809826712402244",
+   "twr": "0.156564904077810440512361016",
+   "ulcer": "0.010624784078200052",
+   "var_95": "-0.004684067937676197",
+   "volatility": "0.08280669048653815",
    "xirr": "0.04546202615742324"
   },
   "USD": {
@@ -1385,8 +1394,8 @@
      "absolute_pnl": "249616.35379350000000",
      "end_value": "1146600.67500000000000",
      "instrument_id": 1,
-     "net_contribution": "0",
-     "pct_of_total_return": "0.2082036181159201419067061152",
+     "net_contribution": "-3686.540000",
+     "pct_of_total_return": "0.1529753483152919171004082815",
      "start_value": "900670.86120650000000",
      "symbol": "FAKEL"
     },
@@ -1395,7 +1404,7 @@
      "end_value": "137456.00000000000000",
      "instrument_id": 4,
      "net_contribution": "0",
-     "pct_of_total_return": "0.02729033364048723909809836794",
+     "pct_of_total_return": "0.02005127639986408447871908701",
      "start_value": "104737.48320000000000",
      "symbol": "FAKENX"
     },
@@ -1404,7 +1413,7 @@
      "end_value": "62550.00000000000000",
      "instrument_id": 6,
      "net_contribution": "-15021.410000",
-     "pct_of_total_return": "0.01413600355188553639582522771",
+     "pct_of_total_return": "0.01038627516036688255752777396",
      "start_value": "60623.68500000000000",
      "symbol": "FAKEG"
     },
@@ -1413,7 +1422,7 @@
      "end_value": "93150.00000000000000",
      "instrument_id": 2,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.01012601644199191837213279750",
+     "pct_of_total_return": "-0.007439980660651358367771691529",
      "start_value": "105290.13150000000000",
      "symbol": "FAKEB"
     },
@@ -1421,27 +1430,36 @@
      "absolute_pnl": "1428.3925309975000000000000",
      "end_value": "28513.3750000000000000000000",
      "instrument_id": 5,
-     "net_contribution": "0",
-     "pct_of_total_return": "0.001191414298477667719168543330",
+     "net_contribution": "-497.83267800000000",
+     "pct_of_total_return": "0.0008753787227461453721384984090",
      "start_value": "27582.8151470025000000000000",
      "symbol": "FAKEU.DE"
+    },
+    {
+     "absolute_pnl": "524.68133634000000",
+     "end_value": "440067.83430000000000",
+     "instrument_id": 0,
+     "net_contribution": "6705.78267800000000",
+     "pct_of_total_return": "0.0003215466813826778369936678445",
+     "start_value": "432837.37028566000000",
+     "symbol": "Cash"
     },
     {
      "absolute_pnl": "-0.00000290780000",
      "end_value": "0.00000660300000",
      "instrument_id": 3,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.000000000002425379874182095988209662190",
+     "pct_of_total_return": "-0.000000000001782021534531320345402067896",
      "start_value": "0.00000951080000",
      "symbol": "FAKET"
     }
    ],
    "attribution_currency": "USD",
    "attribution_total": {
-    "absolute_pnl": "288570.8566215897000000000000",
-    "end_value": "1468270.050006603000000000000",
-    "net_contribution": "-15021.410000",
-    "start_value": "1198904.976063013300000000000"
+    "absolute_pnl": "289095.5379579297000000000000",
+    "end_value": "1908337.884306603000000000000",
+    "net_contribution": "-12500.00000000000000",
+    "start_value": "1631742.346348673300000000000"
    },
    "benchmark_diff": null,
    "benchmark_diff_pct": null,
@@ -1449,8 +1467,8 @@
    "benchmark_last_value": null,
    "benchmark_symbol": "VT",
    "beta": null,
-   "cagr": "0.236150750654159",
-   "calmar": "19.57528521483628247756411059",
+   "cagr": "0.177709985778972",
+   "calmar": "27.54986705086294487157365649",
    "ccy": "USD",
    "currency": "USD",
    "curve": [
@@ -1458,1153 +1476,1153 @@
      "benchmark_value": null,
      "cumulative_contributions": "1197835.44000000000000",
      "date": "2025-06-30",
-     "portfolio_value": "1198904.976063"
+     "portfolio_value": "1631742.34634866000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1197835.44000000000000",
      "date": "2025-07-31",
-     "portfolio_value": "1216313.946057"
+     "portfolio_value": "1649083.48030810000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1197835.44000000000000",
      "date": "2025-08-31",
-     "portfolio_value": "1267756.798867"
+     "portfolio_value": "1700961.43768352000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1197835.44000000000000",
      "date": "2025-09-30",
-     "portfolio_value": "1274931.340441"
+     "portfolio_value": "1708320.23182014000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1197835.44000000000000",
      "date": "2025-10-31",
-     "portfolio_value": "1295486.856913"
+     "portfolio_value": "1728874.89024706000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1197835.44000000000000",
      "date": "2025-11-30",
-     "portfolio_value": "1346588.872936"
+     "portfolio_value": "1795144.18393366000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2025-12-30",
-     "portfolio_value": "1374289.190338"
+     "portfolio_value": "1812557.57267190000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2025-12-31",
-     "portfolio_value": "1380242.061824"
+     "portfolio_value": "1818438.62702346000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-01",
-     "portfolio_value": "1381789.441292"
+     "portfolio_value": "1819992.62323666000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-02",
-     "portfolio_value": "1377887.136992"
+     "portfolio_value": "1816118.00747042000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-03",
-     "portfolio_value": "1377887.136992"
+     "portfolio_value": "1816118.00747042000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-04",
-     "portfolio_value": "1377887.136992"
+     "portfolio_value": "1816118.00747042000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-05",
-     "portfolio_value": "1378197.262168"
+     "portfolio_value": "1816435.46196418000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-06",
-     "portfolio_value": "1377384.403487"
+     "portfolio_value": "1815537.90894462000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-07",
-     "portfolio_value": "1385539.493381"
+     "portfolio_value": "1823555.09059924000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-08",
-     "portfolio_value": "1388591.469581"
+     "portfolio_value": "1826665.03966680000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-09",
-     "portfolio_value": "1389180.930289"
+     "portfolio_value": "1827239.28186084000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-10",
-     "portfolio_value": "1389180.930289"
+     "portfolio_value": "1827239.28186084000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-11",
-     "portfolio_value": "1389180.930289"
+     "portfolio_value": "1827239.28186084000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-12",
-     "portfolio_value": "1392877.620421"
+     "portfolio_value": "1830927.98100056000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-13",
-     "portfolio_value": "1391255.243326"
+     "portfolio_value": "1829292.67580340000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-14",
-     "portfolio_value": "1391417.185897"
+     "portfolio_value": "1829514.72895964000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-15",
-     "portfolio_value": "1401555.166306"
+     "portfolio_value": "1839623.79928192000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-16",
-     "portfolio_value": "1401384.057762"
+     "portfolio_value": "1839377.20894460000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-17",
-     "portfolio_value": "1401384.057762"
+     "portfolio_value": "1839377.20894460000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-18",
-     "portfolio_value": "1401384.057762"
+     "portfolio_value": "1839377.20894460000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-19",
-     "portfolio_value": "1399441.683815"
+     "portfolio_value": "1837473.51750800000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-20",
-     "portfolio_value": "1400102.339003"
+     "portfolio_value": "1838133.56191952000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-21",
-     "portfolio_value": "1409324.758223"
+     "portfolio_value": "1847385.90918704000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-22",
-     "portfolio_value": "1410618.710374"
+     "portfolio_value": "1848756.20839804000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-23",
-     "portfolio_value": "1409906.317034"
+     "portfolio_value": "1848042.41536194000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-24",
-     "portfolio_value": "1409906.317034"
+     "portfolio_value": "1848042.41536194000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-25",
-     "portfolio_value": "1409906.317034"
+     "portfolio_value": "1848042.41536194000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-26",
-     "portfolio_value": "1406916.379767"
+     "portfolio_value": "1845031.60989854000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-27",
-     "portfolio_value": "1411316.639594"
+     "portfolio_value": "1849482.18243808000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-28",
-     "portfolio_value": "1404377.664477"
+     "portfolio_value": "1842587.48861588000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-29",
-     "portfolio_value": "1401221.366842"
+     "portfolio_value": "1839495.83149168000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-30",
-     "portfolio_value": "1396836.124598"
+     "portfolio_value": "1835186.91085866000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-01-31",
-     "portfolio_value": "1396836.124598"
+     "portfolio_value": "1835186.91085866000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-01",
-     "portfolio_value": "1396836.124598"
+     "portfolio_value": "1835186.91085866000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-02",
-     "portfolio_value": "1394217.930339"
+     "portfolio_value": "1832599.66260798000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-03",
-     "portfolio_value": "1397045.989920"
+     "portfolio_value": "1835441.82094606000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-04",
-     "portfolio_value": "1398946.730325"
+     "portfolio_value": "1837329.60779988000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-05",
-     "portfolio_value": "1398618.149470"
+     "portfolio_value": "1837012.17361564000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-06",
-     "portfolio_value": "1398350.962878"
+     "portfolio_value": "1836784.78929092000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-07",
-     "portfolio_value": "1398350.962878"
+     "portfolio_value": "1836784.78929092000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-08",
-     "portfolio_value": "1398350.962878"
+     "portfolio_value": "1836784.78929092000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-09",
-     "portfolio_value": "1400116.422174"
+     "portfolio_value": "1838589.05834242000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-10",
-     "portfolio_value": "1399358.954676"
+     "portfolio_value": "1837851.97550944000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-11",
-     "portfolio_value": "1403366.029358"
+     "portfolio_value": "1841823.95599286000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-12",
-     "portfolio_value": "1395171.657694"
+     "portfolio_value": "1833731.94028730000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-13",
-     "portfolio_value": "1395213.252518"
+     "portfolio_value": "1833773.91684660000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-14",
-     "portfolio_value": "1395213.252518"
+     "portfolio_value": "1833773.91684660000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-15",
-     "portfolio_value": "1395213.252518"
+     "portfolio_value": "1833773.91684660000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-16",
-     "portfolio_value": "1397408.774135"
+     "portfolio_value": "1835934.06432580000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-17",
-     "portfolio_value": "1397742.064563"
+     "portfolio_value": "1836267.73648910000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-18",
-     "portfolio_value": "1407030.331982"
+     "portfolio_value": "1845508.38879168000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-19",
-     "portfolio_value": "1402890.732590"
+     "portfolio_value": "1841428.13651432000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-20",
-     "portfolio_value": "1406038.485653"
+     "portfolio_value": "1844581.66650486000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-21",
-     "portfolio_value": "1406038.485653"
+     "portfolio_value": "1844581.66650486000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-22",
-     "portfolio_value": "1406038.485653"
+     "portfolio_value": "1844581.66650486000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-23",
-     "portfolio_value": "1408400.833889"
+     "portfolio_value": "1846996.10888480000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-24",
-     "portfolio_value": "1405437.019810"
+     "portfolio_value": "1844033.92354308000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-25",
-     "portfolio_value": "1410045.244712"
+     "portfolio_value": "1848667.72471018000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-26",
-     "portfolio_value": "1410783.701592"
+     "portfolio_value": "1849318.10253196000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-27",
-     "portfolio_value": "1404337.076199"
+     "portfolio_value": "1842879.56992732000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-02-28",
-     "portfolio_value": "1404337.076199"
+     "portfolio_value": "1842879.56992732000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-01",
-     "portfolio_value": "1404337.076199"
+     "portfolio_value": "1842879.56992732000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-02",
-     "portfolio_value": "1404711.307869"
+     "portfolio_value": "1843284.18772720000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-03",
-     "portfolio_value": "1406673.101122"
+     "portfolio_value": "1845221.75351316000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-04",
-     "portfolio_value": "1406223.609750"
+     "portfolio_value": "1844787.86239042000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-05",
-     "portfolio_value": "1408087.678959"
+     "portfolio_value": "1846589.96323572000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-06",
-     "portfolio_value": "1409430.587584"
+     "portfolio_value": "1847957.83734934000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-07",
-     "portfolio_value": "1409430.587584"
+     "portfolio_value": "1847957.83734934000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-08",
-     "portfolio_value": "1409430.587584"
+     "portfolio_value": "1847957.83734934000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-09",
-     "portfolio_value": "1413393.679223"
+     "portfolio_value": "1851988.01260506000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-10",
-     "portfolio_value": "1412641.909462"
+     "portfolio_value": "1851195.82980030000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-11",
-     "portfolio_value": "1410756.133674"
+     "portfolio_value": "1849330.36233026000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-12",
-     "portfolio_value": "1406744.474737"
+     "portfolio_value": "1845396.39925132000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-13",
-     "portfolio_value": "1407770.429663"
+     "portfolio_value": "1846330.78860336000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-14",
-     "portfolio_value": "1407770.429663"
+     "portfolio_value": "1846330.78860336000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-15",
-     "portfolio_value": "1407770.429663"
+     "portfolio_value": "1846330.78860336000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-16",
-     "portfolio_value": "1408102.440670"
+     "portfolio_value": "1846625.49134704000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-17",
-     "portfolio_value": "1410897.275836"
+     "portfolio_value": "1849480.89518064000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-18",
-     "portfolio_value": "1415912.274707"
+     "portfolio_value": "1854438.20112330000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-19",
-     "portfolio_value": "1415731.887445"
+     "portfolio_value": "1854272.85423212000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-20",
-     "portfolio_value": "1417668.707929"
+     "portfolio_value": "1856176.51464306000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-21",
-     "portfolio_value": "1417668.707929"
+     "portfolio_value": "1856176.51464306000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-22",
-     "portfolio_value": "1417668.707929"
+     "portfolio_value": "1856176.51464306000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-23",
-     "portfolio_value": "1413508.787208"
+     "portfolio_value": "1851970.07311350000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-24",
-     "portfolio_value": "1422413.083178"
+     "portfolio_value": "1860914.12045274000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-25",
-     "portfolio_value": "1421002.877620"
+     "portfolio_value": "1859501.98076922000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-26",
-     "portfolio_value": "1421054.957704"
+     "portfolio_value": "1859525.30346062000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-27",
-     "portfolio_value": "1422667.114908"
+     "portfolio_value": "1861130.00410176000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-28",
-     "portfolio_value": "1422667.114908"
+     "portfolio_value": "1861130.00410176000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-29",
-     "portfolio_value": "1422667.114908"
+     "portfolio_value": "1861130.00410176000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-30",
-     "portfolio_value": "1423993.347046"
+     "portfolio_value": "1862519.78244270000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-03-31",
-     "portfolio_value": "1423735.481144"
+     "portfolio_value": "1862300.77719424000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-01",
-     "portfolio_value": "1421133.660652"
+     "portfolio_value": "1859592.04536922000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-02",
-     "portfolio_value": "1416868.260809"
+     "portfolio_value": "1855334.33113026000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-03",
-     "portfolio_value": "1410369.402315"
+     "portfolio_value": "1848825.16578316000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-04",
-     "portfolio_value": "1410369.402315"
+     "portfolio_value": "1848825.16578316000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-05",
-     "portfolio_value": "1410369.402315"
+     "portfolio_value": "1848825.16578316000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-06",
-     "portfolio_value": "1408891.175601"
+     "portfolio_value": "1847351.67258688000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-07",
-     "portfolio_value": "1418823.762233"
+     "portfolio_value": "1857325.63932540000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-08",
-     "portfolio_value": "1416368.399545"
+     "portfolio_value": "1854971.81822720000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-09",
-     "portfolio_value": "1411733.379092"
+     "portfolio_value": "1850310.12720124000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-10",
-     "portfolio_value": "1416260.963667"
+     "portfolio_value": "1854903.90467726000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-11",
-     "portfolio_value": "1416260.963667"
+     "portfolio_value": "1854903.90467726000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-12",
-     "portfolio_value": "1416260.963667"
+     "portfolio_value": "1854903.90467726000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-13",
-     "portfolio_value": "1417045.442871"
+     "portfolio_value": "1855630.97089214000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-14",
-     "portfolio_value": "1413657.452322"
+     "portfolio_value": "1852268.88744550000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-15",
-     "portfolio_value": "1420150.743661"
+     "portfolio_value": "1858732.30163502000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-16",
-     "portfolio_value": "1425679.971729"
+     "portfolio_value": "1864222.69449850000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-17",
-     "portfolio_value": "1423876.260204"
+     "portfolio_value": "1862495.60997272000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-18",
-     "portfolio_value": "1423876.260204"
+     "portfolio_value": "1862495.60997272000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-19",
-     "portfolio_value": "1423876.260204"
+     "portfolio_value": "1862495.60997272000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-20",
-     "portfolio_value": "1425351.960521"
+     "portfolio_value": "1864038.82653978000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-21",
-     "portfolio_value": "1429802.657229"
+     "portfolio_value": "1868491.55916938000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-22",
-     "portfolio_value": "1427302.951968"
+     "portfolio_value": "1865987.55302400000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-23",
-     "portfolio_value": "1429845.940530"
+     "portfolio_value": "1868531.89038406000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-24",
-     "portfolio_value": "1432253.582473"
+     "portfolio_value": "1870893.87678518000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-25",
-     "portfolio_value": "1432253.582473"
+     "portfolio_value": "1870893.87678518000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-26",
-     "portfolio_value": "1432253.582473"
+     "portfolio_value": "1870893.87678518000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-27",
-     "portfolio_value": "1431011.483917"
+     "portfolio_value": "1869694.15084748000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-28",
-     "portfolio_value": "1431586.385520"
+     "portfolio_value": "1870205.14996126000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-29",
-     "portfolio_value": "1425599.038733"
+     "portfolio_value": "1864207.01278978000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-30",
-     "portfolio_value": "1434373.692197"
+     "portfolio_value": "1872971.66478892000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-01",
-     "portfolio_value": "1440646.334554"
+     "portfolio_value": "1879241.71134588000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-02",
-     "portfolio_value": "1440646.334554"
+     "portfolio_value": "1879241.71134588000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-03",
-     "portfolio_value": "1440646.334554"
+     "portfolio_value": "1879241.71134588000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-04",
-     "portfolio_value": "1442895.564296"
+     "portfolio_value": "1881497.50693504000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-05",
-     "portfolio_value": "1442988.752750"
+     "portfolio_value": "1881647.54849972000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-06",
-     "portfolio_value": "1446452.506059"
+     "portfolio_value": "1885096.51592810000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-07",
-     "portfolio_value": "1444711.386310"
+     "portfolio_value": "1883354.37821830000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-08",
-     "portfolio_value": "1447522.925779"
+     "portfolio_value": "1886116.29209830000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-09",
-     "portfolio_value": "1447522.925779"
+     "portfolio_value": "1886116.29209830000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-10",
-     "portfolio_value": "1447522.925779"
+     "portfolio_value": "1886116.29209830000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-11",
-     "portfolio_value": "1448785.176297"
+     "portfolio_value": "1887374.36897702000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-12",
-     "portfolio_value": "1446275.340735"
+     "portfolio_value": "1884841.75654212000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-13",
-     "portfolio_value": "1446235.333510"
+     "portfolio_value": "1884733.03696312000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-14",
-     "portfolio_value": "1455425.838400"
+     "portfolio_value": "1893887.42969374000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-15",
-     "portfolio_value": "1457022.053029"
+     "portfolio_value": "1895503.41821128000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-16",
-     "portfolio_value": "1457022.053029"
+     "portfolio_value": "1895503.41821128000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-17",
-     "portfolio_value": "1457022.053029"
+     "portfolio_value": "1895503.41821128000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-18",
-     "portfolio_value": "1451882.060534"
+     "portfolio_value": "1890424.04528192000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-19",
-     "portfolio_value": "1453300.041652"
+     "portfolio_value": "1891769.03861056000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-20",
-     "portfolio_value": "1453052.695466"
+     "portfolio_value": "1891452.44564114000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-21",
-     "portfolio_value": "1451908.633187"
+     "portfolio_value": "1890274.89245182000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-22",
-     "portfolio_value": "1449417.278333"
+     "portfolio_value": "1887774.19780748000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-23",
-     "portfolio_value": "1449417.278333"
+     "portfolio_value": "1887774.19780748000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-24",
-     "portfolio_value": "1449417.278333"
+     "portfolio_value": "1887774.19780748000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-25",
-     "portfolio_value": "1445366.574283"
+     "portfolio_value": "1883713.49229262000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-26",
-     "portfolio_value": "1440914.171549"
+     "portfolio_value": "1879226.17350318000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-27",
-     "portfolio_value": "1444364.895774"
+     "portfolio_value": "1882575.35613838000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-28",
-     "portfolio_value": "1440473.940972"
+     "portfolio_value": "1878815.82007566000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-29",
-     "portfolio_value": "1435586.883424"
+     "portfolio_value": "1874006.84012102000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-30",
-     "portfolio_value": "1435586.883424"
+     "portfolio_value": "1874006.84012102000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-31",
-     "portfolio_value": "1435586.883424"
+     "portfolio_value": "1874006.84012102000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-01",
-     "portfolio_value": "1436913.963187"
+     "portfolio_value": "1875369.03953162000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-02",
-     "portfolio_value": "1440525.568710"
+     "portfolio_value": "1878928.98354402000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-03",
-     "portfolio_value": "1442801.329208"
+     "portfolio_value": "1881223.52541878000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-04",
-     "portfolio_value": "1443768.021954"
+     "portfolio_value": "1882148.22728178000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-05",
-     "portfolio_value": "1442986.065070"
+     "portfolio_value": "1881399.45591986000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-06",
-     "portfolio_value": "1442986.065070"
+     "portfolio_value": "1881399.45591986000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-07",
-     "portfolio_value": "1442986.065070"
+     "portfolio_value": "1881399.45591986000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-08",
-     "portfolio_value": "1442097.735053"
+     "portfolio_value": "1880457.42847066000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-09",
-     "portfolio_value": "1444535.278013"
+     "portfolio_value": "1882903.82768962000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-10",
-     "portfolio_value": "1443543.064220"
+     "portfolio_value": "1881831.62762676000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-11",
-     "portfolio_value": "1444975.333247"
+     "portfolio_value": "1883132.75785370000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-12",
-     "portfolio_value": "1443604.910346"
+     "portfolio_value": "1881759.66280560000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-13",
-     "portfolio_value": "1443604.910346"
+     "portfolio_value": "1881759.66280560000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-14",
-     "portfolio_value": "1443604.910346"
+     "portfolio_value": "1881759.66280560000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-15",
-     "portfolio_value": "1442111.779477"
+     "portfolio_value": "1880232.35390274000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-16",
-     "portfolio_value": "1451398.800320"
+     "portfolio_value": "1889532.78637928000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-17",
-     "portfolio_value": "1454960.186624"
+     "portfolio_value": "1893058.51860626000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-18",
-     "portfolio_value": "1455038.024028"
+     "portfolio_value": "1893086.17054282000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-19",
-     "portfolio_value": "1456264.810574"
+     "portfolio_value": "1894300.53796706000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-20",
-     "portfolio_value": "1456264.810574"
+     "portfolio_value": "1896391.74312426000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-21",
-     "portfolio_value": "1456264.810574"
+     "portfolio_value": "1896391.74312426000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-22",
-     "portfolio_value": "1465859.924602"
+     "portfolio_value": "1906015.54661982000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-23",
-     "portfolio_value": "1458916.964034"
+     "portfolio_value": "1899045.94949786000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-24",
-     "portfolio_value": "1456692.531936"
+     "portfolio_value": "1896815.79490320000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-25",
-     "portfolio_value": "1457068.235847"
+     "portfolio_value": "1897122.90583854000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-26",
-     "portfolio_value": "1469130.516257"
+     "portfolio_value": "1909201.17331320000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-27",
-     "portfolio_value": "1469130.516257"
+     "portfolio_value": "1909201.17331320000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-28",
-     "portfolio_value": "1469130.516257"
+     "portfolio_value": "1909201.17331320000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-29",
-     "portfolio_value": "1469216.527951"
+     "portfolio_value": "1909321.80226278000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-30",
-     "portfolio_value": "1468270.050007"
+     "portfolio_value": "1908337.88430700000000"
     }
    ],
    "curve_start": "2025-06-30",
-   "cvar_95": "-0.004335966794792492",
-   "kurtosis": "33.47151804497747",
-   "max_drawdown": "-0.01471163017775775746947120859",
+   "cvar_95": "-0.0036625245442893895",
+   "kurtosis": "52.73861924811197",
+   "max_drawdown": "-0.01134082792134744115601363291",
    "net_invested_last": "1185335.44000000000000",
-   "portfolio_last_value": "1468270.050007",
+   "portfolio_last_value": "1908337.88430700000000",
    "risk_free_rate": "0.037320001125335693",
    "risk_free_symbol": "^IRX",
-   "sharpe": "2.897378914119280935145106674",
-   "skew": "5.191808503893942",
-   "sortino": "11.67247373073044967977244301",
+   "sharpe": "2.807033008561987149004538165",
+   "skew": "6.646117347966758",
+   "sortino": "14.00164555588198047099135114",
    "start": "2025-06-30",
-   "twr": "0.236150750654158859100356571",
-   "ulcer": "0.005544453429918855",
-   "var_95": "-0.0032724681336359757",
-   "volatility": "0.08651417816218204",
+   "twr": "0.177709985778971999924258135",
+   "ulcer": "0.004227450966955184",
+   "var_95": "-0.003207208135216742",
+   "volatility": "0.09801035453282426",
    "xirr": "0.07180385754424208"
   },
   "detail": null
@@ -2618,8 +2636,8 @@
      "absolute_pnl": "50957.7644634309737933063541",
      "end_value": "984206.5879828326180257510729",
      "instrument_id": 1,
-     "net_contribution": "0",
-     "pct_of_total_return": "0.04245164234305165471662983019",
+     "net_contribution": "-1579.084436517339542518095130",
+     "pct_of_total_return": "0.03244230799647823740537015189",
      "start_value": "934827.9079559189837749628139",
      "symbol": "FAKEL"
     },
@@ -2628,16 +2646,25 @@
      "end_value": "117987.9828326180257510729614",
      "instrument_id": 4,
      "net_contribution": "0",
-     "pct_of_total_return": "0.01104540577565902162434589912",
+     "pct_of_total_return": "0.008441097595807415122980778263",
      "start_value": "104729.3865839577468238744298",
      "symbol": "FAKENX"
+    },
+    {
+     "absolute_pnl": "5601.725561862113228013537370",
+     "end_value": "377740.6303004291845493562232",
+     "instrument_id": 0,
+     "net_contribution": "1791.484436517339542518095130",
+     "pct_of_total_return": "0.003566343773186782992191262924",
+     "start_value": "370347.4203020497317788245907",
+     "symbol": "Cash"
     },
     {
      "absolute_pnl": "-1655.19050206415041862614202",
      "end_value": "53690.98712446351931330472103",
      "instrument_id": 6,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.001378897915619284461010060078",
+     "pct_of_total_return": "-0.001053778567922583646868087678",
      "start_value": "55346.17762652766973193086305",
      "symbol": "FAKEG"
     },
@@ -2646,7 +2673,7 @@
      "end_value": "79957.08154506437768240343348",
      "instrument_id": 2,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.001193840648403933930433707472",
+     "pct_of_total_return": "-0.0009123544785676604943224427986",
      "start_value": "81390.13447801397233406903053",
      "symbol": "FAKEB"
     },
@@ -2654,8 +2681,8 @@
      "absolute_pnl": "608.96800000000000",
      "end_value": "24475.00000000000000",
      "instrument_id": 5,
-     "net_contribution": "0",
-     "pct_of_total_return": "0.0005073160490177219991878173635",
+     "net_contribution": "-212.400000",
+     "pct_of_total_return": "0.0003877000418685394306828411370",
      "start_value": "24078.43200000000000",
      "symbol": "FAKEU.DE"
     },
@@ -2664,17 +2691,17 @@
      "end_value": "0.000005667811158798283261802575107",
      "instrument_id": 3,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.000000000001133050372219993297306117669",
+     "pct_of_total_return": "-0.0000000000008658974570179824009041658027",
      "start_value": "0.000007027893143994776634392281177",
      "symbol": "FAKET"
     }
    ],
    "attribution_currency": "EUR",
    "attribution_total": {
-    "absolute_pnl": "61737.08527571742566501665326",
-    "end_value": "1260317.639490646351931330471",
-    "net_contribution": "0",
-    "start_value": "1200372.038651446265808831915"
+    "absolute_pnl": "67338.81083757953889303019063",
+    "end_value": "1638058.269791075536480686694",
+    "net_contribution": "0.000000000000000000000000",
+    "start_value": "1570719.458953495997587656506"
    },
    "benchmark_diff": null,
    "benchmark_diff_pct": null,
@@ -2682,8 +2709,8 @@
    "benchmark_last_value": null,
    "benchmark_symbol": "VT",
    "beta": null,
-   "cagr": "0.0499391846101584",
-   "calmar": "10.38636936593966649047565375",
+   "cagr": "0.0428713163599133",
+   "calmar": "13.96226680141008861394757850",
    "ccy": "EUR",
    "currency": "EUR",
    "curve": [
@@ -2691,565 +2718,565 @@
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-01",
-     "portfolio_value": "1200372.038651554044180685879"
+     "portfolio_value": "1570719.458953603775959510470"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-02",
-     "portfolio_value": "1196464.032069399677254007514"
+     "portfolio_value": "1566723.495798694998281559145"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-03",
-     "portfolio_value": "1191383.570912681786235605774"
+     "portfolio_value": "1561760.999911438341352651782"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-04",
-     "portfolio_value": "1191383.570912681786235605774"
+     "portfolio_value": "1561760.999911438341352651782"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-05",
-     "portfolio_value": "1191383.570912681786235605774"
+     "portfolio_value": "1561760.999911438341352651782"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-06",
-     "portfolio_value": "1189947.901426020739969966064"
+     "portfolio_value": "1560271.143761606900034966393"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-07",
-     "portfolio_value": "1196693.512451713027782932137"
+     "portfolio_value": "1566543.782430627013714343550"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-08",
-     "portfolio_value": "1190615.747635779793377661587"
+     "portfolio_value": "1559310.881908524642529904759"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-09",
-     "portfolio_value": "1187765.870936476178777379724"
+     "portfolio_value": "1556763.658270447818456252177"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-10",
-     "portfolio_value": "1188973.267023069051003095294"
+     "portfolio_value": "1557220.888054162192747759962"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-11",
-     "portfolio_value": "1188973.267023069051003095294"
+     "portfolio_value": "1557220.888054162192747759962"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-12",
-     "portfolio_value": "1188973.267023069051003095294"
+     "portfolio_value": "1557220.888054162192747759962"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-13",
-     "portfolio_value": "1191889.225036945698864587390"
+     "portfolio_value": "1560787.320532337684949285352"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-14",
-     "portfolio_value": "1188022.314281992562556463643"
+     "portfolio_value": "1556626.583562409395550139715"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-15",
-     "portfolio_value": "1194657.875081493096535775785"
+     "portfolio_value": "1563601.041458657027417852856"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-16",
-     "portfolio_value": "1200850.699512729263618943334"
+     "portfolio_value": "1570235.376191117943102613236"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-17",
-     "portfolio_value": "1196297.423539533336245920977"
+     "portfolio_value": "1564812.028852025984762685720"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-18",
-     "portfolio_value": "1196297.423539533336245920977"
+     "portfolio_value": "1564812.028852025984762685720"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-19",
-     "portfolio_value": "1196297.423539533336245920977"
+     "portfolio_value": "1564812.028852025984762685720"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-20",
-     "portfolio_value": "1194873.924163103188980701473"
+     "portfolio_value": "1562625.547339090225494576611"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-21",
-     "portfolio_value": "1198524.569564674354488674894"
+     "portfolio_value": "1566253.238071886193186914329"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-22",
-     "portfolio_value": "1196598.718953722334004024145"
+     "portfolio_value": "1564375.882816901408450704226"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-23",
-     "portfolio_value": "1198677.406629316437146907456"
+     "portfolio_value": "1566439.360410763103249101104"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-24",
-     "portfolio_value": "1202504.311266696276171037707"
+     "portfolio_value": "1570781.864529951916739640942"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-25",
-     "portfolio_value": "1202504.311266696276171037707"
+     "portfolio_value": "1570781.864529951916739640942"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-26",
-     "portfolio_value": "1202504.311266696276171037707"
+     "portfolio_value": "1570781.864529951916739640942"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-27",
-     "portfolio_value": "1199784.261838447117690261955"
+     "portfolio_value": "1567583.238743816675106730476"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-28",
-     "portfolio_value": "1202798.478524432181466678653"
+     "portfolio_value": "1571319.713329681325947540482"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-29",
-     "portfolio_value": "1198194.838524309772573120108"
+     "portfolio_value": "1566838.332502468925162360721"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-04-30",
-     "portfolio_value": "1205968.148704888867963235121"
+     "portfolio_value": "1574725.040935836340461881493"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-01",
-     "portfolio_value": "1211345.835894236412527095907"
+     "portfolio_value": "1580132.171982604805876427527"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-02",
-     "portfolio_value": "1211345.835894236412527095907"
+     "portfolio_value": "1580132.171982604805876427527"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-03",
-     "portfolio_value": "1211345.835894236412527095907"
+     "portfolio_value": "1580132.171982604805876427527"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-04",
-     "portfolio_value": "1212973.929929923197977053546"
+     "portfolio_value": "1581685.800145802789621639071"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-05",
-     "portfolio_value": "1210778.405477157811889047195"
+     "portfolio_value": "1578846.830303192016016298228"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-06",
-     "portfolio_value": "1214276.724878589327613634933"
+     "portfolio_value": "1582512.259374414983147317213"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-07",
-     "portfolio_value": "1212855.806130972619242506286"
+     "portfolio_value": "1581102.851593440035595404499"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-08",
-     "portfolio_value": "1217208.768623840096197912068"
+     "portfolio_value": "1586017.912739328044129951270"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-09",
-     "portfolio_value": "1217208.768623840096197912068"
+     "portfolio_value": "1586017.912739328044129951270"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-10",
-     "portfolio_value": "1217208.768623840096197912068"
+     "portfolio_value": "1586017.912739328044129951270"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-11",
-     "portfolio_value": "1218438.213581250930363794320"
+     "portfolio_value": "1587294.715682523289581355215"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-12",
-     "portfolio_value": "1217243.645392524213992102047"
+     "portfolio_value": "1586358.825391716239281710482"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-13",
-     "portfolio_value": "1219982.296694267859794037063"
+     "portfolio_value": "1589880.212309119866110593730"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-14",
-     "portfolio_value": "1229206.383246469493774265500"
+     "portfolio_value": "1599517.100980577465062324910"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-15",
-     "portfolio_value": "1229747.498787995415314133695"
+     "portfolio_value": "1599832.056517968221172268390"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-16",
-     "portfolio_value": "1229747.498787995415314133695"
+     "portfolio_value": "1599832.056517968221172268390"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-17",
-     "portfolio_value": "1229747.498787995415314133695"
+     "portfolio_value": "1599832.056517968221172268390"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-18",
-     "portfolio_value": "1222950.600013814062715844730"
+     "portfolio_value": "1592343.678113740275405240584"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-19",
-     "portfolio_value": "1227109.417029741760728446849"
+     "portfolio_value": "1597335.399155098925297721577"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-20",
-     "portfolio_value": "1229725.869486216652406426164"
+     "portfolio_value": "1600745.802657854938232424148"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-21",
-     "portfolio_value": "1230127.683077308900940530767"
+     "portfolio_value": "1601532.920654160711214437795"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-22",
-     "portfolio_value": "1228398.844614568395930585360"
+     "portfolio_value": "1599911.687369254290954332652"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-23",
-     "portfolio_value": "1228398.844614568395930585360"
+     "portfolio_value": "1599911.687369254290954332652"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-24",
-     "portfolio_value": "1228398.844614568395930585360"
+     "portfolio_value": "1599911.687369254290954332652"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-25",
-     "portfolio_value": "1225373.961585579353149684069"
+     "portfolio_value": "1597002.107017636670846293993"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-26",
-     "portfolio_value": "1223021.826043004382260798415"
+     "portfolio_value": "1595053.107011175910891484086"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-27",
-     "portfolio_value": "1230116.700214364371738650910"
+     "portfolio_value": "1603325.718987965105534211856"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-28",
-     "portfolio_value": "1221431.047017254668528736158"
+     "portfolio_value": "1593117.312985950533055549196"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-29",
-     "portfolio_value": "1214128.610703137091392852340"
+     "portfolio_value": "1584916.487825213273669423486"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-30",
-     "portfolio_value": "1214128.610703137091392852340"
+     "portfolio_value": "1584916.487825213273669423486"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-05-31",
-     "portfolio_value": "1214128.610703137091392852340"
+     "portfolio_value": "1584916.487825213273669423486"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-01",
-     "portfolio_value": "1213834.284539961361096351437"
+     "portfolio_value": "1584219.580759971650161643075"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-02",
-     "portfolio_value": "1218975.544518261461170754245"
+     "portfolio_value": "1589953.368809520787373989952"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-03",
-     "portfolio_value": "1220139.324093501081193989965"
+     "portfolio_value": "1590901.501340629807127169893"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-04",
-     "portfolio_value": "1222662.887958476981197267367"
+     "portfolio_value": "1593907.575276375526214835384"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-05",
-     "portfolio_value": "1220652.717200880096570381079"
+     "portfolio_value": "1591515.963736925228166135569"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-06",
-     "portfolio_value": "1220652.717200880096570381079"
+     "portfolio_value": "1591515.963736925228166135569"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-07",
-     "portfolio_value": "1220652.717200880096570381079"
+     "portfolio_value": "1591515.963736925228166135569"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-08",
-     "portfolio_value": "1222082.547736376864036853207"
+     "portfolio_value": "1593563.424472586783589950451"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-09",
-     "portfolio_value": "1223787.300890983504478638677"
+     "portfolio_value": "1595166.160493620280231552355"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-10",
-     "portfolio_value": "1226211.746664650648382060382"
+     "portfolio_value": "1598514.172687901681733005560"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-11",
-     "portfolio_value": "1232824.695518669721052654031"
+     "portfolio_value": "1606652.041322685641399727835"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-12",
-     "portfolio_value": "1231765.823944094609123022577"
+     "portfolio_value": "1605624.381649516203348180003"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-13",
-     "portfolio_value": "1231765.823944094609123022577"
+     "portfolio_value": "1605624.381649516203348180003"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-14",
-     "portfolio_value": "1231765.823944094609123022577"
+     "portfolio_value": "1605624.381649516203348180003"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-15",
-     "portfolio_value": "1231903.467494193332348114744"
+     "portfolio_value": "1606161.734083870576446840480"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-16",
-     "portfolio_value": "1239278.871550013490851836293"
+     "portfolio_value": "1613380.181067109303223118197"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-17",
-     "portfolio_value": "1243807.665846842480057926264"
+     "portfolio_value": "1618326.548716500692875394418"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-18",
-     "portfolio_value": "1245974.685562741963245135474"
+     "portfolio_value": "1621083.028164132109255851433"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-19",
-     "portfolio_value": "1247546.532968732197210150235"
+     "portfolio_value": "1622801.053340101070587499561"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-20",
-     "portfolio_value": "1247546.532968732197210150235"
+     "portfolio_value": "1624592.537776618410130017656"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-21",
-     "portfolio_value": "1247546.532968732197210150235"
+     "portfolio_value": "1624592.537776618410130017656"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-22",
-     "portfolio_value": "1254564.856846975533647546561"
+     "portfolio_value": "1631274.640407712630978046441"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-23",
-     "portfolio_value": "1249732.918874097018716222525"
+     "portfolio_value": "1626754.843524241829802215725"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-24",
-     "portfolio_value": "1248065.845244867884437437883"
+     "portfolio_value": "1625154.901558655197230885225"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-25",
-     "portfolio_value": "1251253.329446357065385873780"
+     "portfolio_value": "1629149.063783915148902478087"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-26",
-     "portfolio_value": "1260937.178684416063719305473"
+     "portfolio_value": "1638644.568592836727862605247"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-27",
-     "portfolio_value": "1260937.178684416063719305473"
+     "portfolio_value": "1638644.568592836727862605247"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-28",
-     "portfolio_value": "1260937.178684416063719305473"
+     "portfolio_value": "1638644.568592836727862605247"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-29",
-     "portfolio_value": "1259552.652901645064250007930"
+     "portfolio_value": "1636852.904613689808214433598"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1102513.263314228814430480920",
      "date": "2026-06-30",
-     "portfolio_value": "1260317.639490646351931330472"
+     "portfolio_value": "1638058.269791075536480686695"
     }
    ],
    "curve_start": "2026-04-01",
-   "cvar_95": "-0.0059113235533100675",
-   "kurtosis": "0.3601741639125846",
-   "max_drawdown": "-0.01324529051861322999878160547",
+   "cvar_95": "-0.005398468848990215",
+   "kurtosis": "-0.5053459011486172",
+   "max_drawdown": "-0.01191656692194361911677715256",
    "net_invested_last": "1102513.263314228814430480920",
-   "portfolio_last_value": "1260317.639490646351931330472",
+   "portfolio_last_value": "1638058.269791075536480686695",
    "risk_free_rate": "0.037320001125335693",
    "risk_free_symbol": "^IRX",
-   "sharpe": "2.140901423540417278768098890",
-   "skew": "0.16327211919004272",
-   "sortino": "3.518094131028807045914616575",
+   "sharpe": "2.806515645724002332877447639",
+   "skew": "-0.17167484682225587",
+   "sortino": "4.501322065947782831841070475",
    "start": "2026-04-01",
-   "twr": "0.049939184610158529913048453",
-   "ulcer": "0.005048447839950598",
-   "var_95": "-0.005078798165690294",
-   "volatility": "0.04682629356861058",
+   "twr": "0.042871316359913274442932501",
+   "ulcer": "0.004474587614079415",
+   "var_95": "-0.004680727813722141",
+   "volatility": "0.04598666171426415",
    "xirr": "0.04546202615742324"
   },
   "USD": {
@@ -3260,8 +3287,8 @@
      "absolute_pnl": "41690.90166400000000",
      "end_value": "1146600.67500000000000",
      "instrument_id": 1,
-     "net_contribution": "0",
-     "pct_of_total_return": "0.02933636913847810109741144819",
+     "net_contribution": "-1843.270000",
+     "pct_of_total_return": "0.02241938051295824780749640667",
      "start_value": "1106753.04333600000000",
      "symbol": "FAKEL"
     },
@@ -3270,7 +3297,7 @@
      "end_value": "137456.00000000000000",
      "instrument_id": 4,
      "net_contribution": "0",
-     "pct_of_total_return": "0.009475341815366815103089231845",
+     "pct_of_total_return": "0.007241226501013193101607099059",
      "start_value": "123990.27280000000000",
      "symbol": "FAKENX"
     },
@@ -3279,7 +3306,7 @@
      "end_value": "93150.00000000000000",
      "instrument_id": 2,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.002257828090939865701000714802",
+     "pct_of_total_return": "-0.001725472803559525391387381543",
      "start_value": "96358.67550000000000",
      "symbol": "FAKEB"
     },
@@ -3288,16 +3315,25 @@
      "end_value": "62550.00000000000000",
      "instrument_id": 6,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.002093362913264185505013992534",
+     "pct_of_total_return": "-0.001599785559100695824124254272",
      "start_value": "65524.94850000000000",
      "symbol": "FAKEG"
+    },
+    {
+     "absolute_pnl": "-481.75557442000000",
+     "end_value": "440067.83430000000000",
+     "instrument_id": 0,
+     "net_contribution": "2091.20515720000000",
+     "pct_of_total_return": "-0.0002590651942288670124449802780",
+     "start_value": "438458.38471722000000",
+     "symbol": "Cash"
     },
     {
      "absolute_pnl": "254.5896496480000000000000",
      "end_value": "28513.3750000000000000000000",
      "instrument_id": 5,
-     "net_contribution": "0",
-     "pct_of_total_return": "0.0001791454644253658844136603731",
+     "net_contribution": "-247.93515720000000",
+     "pct_of_total_return": "0.0001369061834190998425071259290",
      "start_value": "28506.7205075520000000000000",
      "symbol": "FAKEU.DE"
     },
@@ -3306,17 +3342,17 @@
      "end_value": "0.00000660300000",
      "instrument_id": 3,
      "net_contribution": "0",
-     "pct_of_total_return": "-0.000000000001208471833122459829577228237",
+     "pct_of_total_return": "-0.0000000000009235358928732833554432939890",
      "start_value": "0.00000832040000",
      "symbol": "FAKET"
     }
    ],
    "attribution_currency": "USD",
    "attribution_total": {
-    "absolute_pnl": "49227.5945119306000000000000",
-    "end_value": "1468270.050006603000000000000",
-    "net_contribution": "0",
-    "start_value": "1421133.660651872400000000000"
+    "absolute_pnl": "48745.8389375106000000000000",
+    "end_value": "1908337.884306603000000000000",
+    "net_contribution": "0.00000000000000",
+    "start_value": "1859592.045369092400000000000"
    },
    "benchmark_diff": null,
    "benchmark_diff_pct": null,
@@ -3324,8 +3360,8 @@
    "benchmark_last_value": null,
    "benchmark_symbol": "VT",
    "beta": null,
-   "cagr": "0.0331681605046033",
-   "calmar": "6.263882015485928471139487908",
+   "cagr": "0.026213189639721",
+   "calmar": "9.043289870076408763928928192",
    "ccy": "USD",
    "currency": "USD",
    "curve": [
@@ -3333,565 +3369,565 @@
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-01",
-     "portfolio_value": "1421133.660652"
+     "portfolio_value": "1859592.04536922000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-02",
-     "portfolio_value": "1416868.260809"
+     "portfolio_value": "1855334.33113026000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-03",
-     "portfolio_value": "1410369.402315"
+     "portfolio_value": "1848825.16578316000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-04",
-     "portfolio_value": "1410369.402315"
+     "portfolio_value": "1848825.16578316000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-05",
-     "portfolio_value": "1410369.402315"
+     "portfolio_value": "1848825.16578316000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-06",
-     "portfolio_value": "1408891.175601"
+     "portfolio_value": "1847351.67258688000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-07",
-     "portfolio_value": "1418823.762233"
+     "portfolio_value": "1857325.63932540000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-08",
-     "portfolio_value": "1416368.399545"
+     "portfolio_value": "1854971.81822720000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-09",
-     "portfolio_value": "1411733.379092"
+     "portfolio_value": "1850310.12720124000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-10",
-     "portfolio_value": "1416260.963667"
+     "portfolio_value": "1854903.90467726000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-11",
-     "portfolio_value": "1416260.963667"
+     "portfolio_value": "1854903.90467726000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-12",
-     "portfolio_value": "1416260.963667"
+     "portfolio_value": "1854903.90467726000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-13",
-     "portfolio_value": "1417045.442871"
+     "portfolio_value": "1855630.97089214000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-14",
-     "portfolio_value": "1413657.452322"
+     "portfolio_value": "1852268.88744550000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-15",
-     "portfolio_value": "1420150.743661"
+     "portfolio_value": "1858732.30163502000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-16",
-     "portfolio_value": "1425679.971729"
+     "portfolio_value": "1864222.69449850000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-17",
-     "portfolio_value": "1423876.260204"
+     "portfolio_value": "1862495.60997272000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-18",
-     "portfolio_value": "1423876.260204"
+     "portfolio_value": "1862495.60997272000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-19",
-     "portfolio_value": "1423876.260204"
+     "portfolio_value": "1862495.60997272000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-20",
-     "portfolio_value": "1425351.960521"
+     "portfolio_value": "1864038.82653978000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-21",
-     "portfolio_value": "1429802.657229"
+     "portfolio_value": "1868491.55916938000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-22",
-     "portfolio_value": "1427302.951968"
+     "portfolio_value": "1865987.55302400000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-23",
-     "portfolio_value": "1429845.940530"
+     "portfolio_value": "1868531.89038406000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-24",
-     "portfolio_value": "1432253.582473"
+     "portfolio_value": "1870893.87678518000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-25",
-     "portfolio_value": "1432253.582473"
+     "portfolio_value": "1870893.87678518000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-26",
-     "portfolio_value": "1432253.582473"
+     "portfolio_value": "1870893.87678518000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-27",
-     "portfolio_value": "1431011.483917"
+     "portfolio_value": "1869694.15084748000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-28",
-     "portfolio_value": "1431586.385520"
+     "portfolio_value": "1870205.14996126000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-29",
-     "portfolio_value": "1425599.038733"
+     "portfolio_value": "1864207.01278978000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-04-30",
-     "portfolio_value": "1434373.692197"
+     "portfolio_value": "1872971.66478892000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-01",
-     "portfolio_value": "1440646.334554"
+     "portfolio_value": "1879241.71134588000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-02",
-     "portfolio_value": "1440646.334554"
+     "portfolio_value": "1879241.71134588000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-03",
-     "portfolio_value": "1440646.334554"
+     "portfolio_value": "1879241.71134588000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-04",
-     "portfolio_value": "1442895.564296"
+     "portfolio_value": "1881497.50693504000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-05",
-     "portfolio_value": "1442988.752750"
+     "portfolio_value": "1881647.54849972000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-06",
-     "portfolio_value": "1446452.506059"
+     "portfolio_value": "1885096.51592810000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-07",
-     "portfolio_value": "1444711.386310"
+     "portfolio_value": "1883354.37821830000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-08",
-     "portfolio_value": "1447522.925779"
+     "portfolio_value": "1886116.29209830000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-09",
-     "portfolio_value": "1447522.925779"
+     "portfolio_value": "1886116.29209830000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-10",
-     "portfolio_value": "1447522.925779"
+     "portfolio_value": "1886116.29209830000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-11",
-     "portfolio_value": "1448785.176297"
+     "portfolio_value": "1887374.36897702000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-12",
-     "portfolio_value": "1446275.340735"
+     "portfolio_value": "1884841.75654212000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-13",
-     "portfolio_value": "1446235.333510"
+     "portfolio_value": "1884733.03696312000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-14",
-     "portfolio_value": "1455425.838400"
+     "portfolio_value": "1893887.42969374000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-15",
-     "portfolio_value": "1457022.053029"
+     "portfolio_value": "1895503.41821128000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-16",
-     "portfolio_value": "1457022.053029"
+     "portfolio_value": "1895503.41821128000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-17",
-     "portfolio_value": "1457022.053029"
+     "portfolio_value": "1895503.41821128000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-18",
-     "portfolio_value": "1451882.060534"
+     "portfolio_value": "1890424.04528192000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-19",
-     "portfolio_value": "1453300.041652"
+     "portfolio_value": "1891769.03861056000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-20",
-     "portfolio_value": "1453052.695466"
+     "portfolio_value": "1891452.44564114000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-21",
-     "portfolio_value": "1451908.633187"
+     "portfolio_value": "1890274.89245182000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-22",
-     "portfolio_value": "1449417.278333"
+     "portfolio_value": "1887774.19780748000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-23",
-     "portfolio_value": "1449417.278333"
+     "portfolio_value": "1887774.19780748000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-24",
-     "portfolio_value": "1449417.278333"
+     "portfolio_value": "1887774.19780748000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-25",
-     "portfolio_value": "1445366.574283"
+     "portfolio_value": "1883713.49229262000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-26",
-     "portfolio_value": "1440914.171549"
+     "portfolio_value": "1879226.17350318000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-27",
-     "portfolio_value": "1444364.895774"
+     "portfolio_value": "1882575.35613838000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-28",
-     "portfolio_value": "1440473.940972"
+     "portfolio_value": "1878815.82007566000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-29",
-     "portfolio_value": "1435586.883424"
+     "portfolio_value": "1874006.84012102000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-30",
-     "portfolio_value": "1435586.883424"
+     "portfolio_value": "1874006.84012102000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-05-31",
-     "portfolio_value": "1435586.883424"
+     "portfolio_value": "1874006.84012102000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-01",
-     "portfolio_value": "1436913.963187"
+     "portfolio_value": "1875369.03953162000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-02",
-     "portfolio_value": "1440525.568710"
+     "portfolio_value": "1878928.98354402000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-03",
-     "portfolio_value": "1442801.329208"
+     "portfolio_value": "1881223.52541878000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-04",
-     "portfolio_value": "1443768.021954"
+     "portfolio_value": "1882148.22728178000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-05",
-     "portfolio_value": "1442986.065070"
+     "portfolio_value": "1881399.45591986000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-06",
-     "portfolio_value": "1442986.065070"
+     "portfolio_value": "1881399.45591986000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-07",
-     "portfolio_value": "1442986.065070"
+     "portfolio_value": "1881399.45591986000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-08",
-     "portfolio_value": "1442097.735053"
+     "portfolio_value": "1880457.42847066000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-09",
-     "portfolio_value": "1444535.278013"
+     "portfolio_value": "1882903.82768962000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-10",
-     "portfolio_value": "1443543.064220"
+     "portfolio_value": "1881831.62762676000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-11",
-     "portfolio_value": "1444975.333247"
+     "portfolio_value": "1883132.75785370000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-12",
-     "portfolio_value": "1443604.910346"
+     "portfolio_value": "1881759.66280560000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-13",
-     "portfolio_value": "1443604.910346"
+     "portfolio_value": "1881759.66280560000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-14",
-     "portfolio_value": "1443604.910346"
+     "portfolio_value": "1881759.66280560000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-15",
-     "portfolio_value": "1442111.779477"
+     "portfolio_value": "1880232.35390274000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-16",
-     "portfolio_value": "1451398.800320"
+     "portfolio_value": "1889532.78637928000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-17",
-     "portfolio_value": "1454960.186624"
+     "portfolio_value": "1893058.51860626000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-18",
-     "portfolio_value": "1455038.024028"
+     "portfolio_value": "1893086.17054282000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-19",
-     "portfolio_value": "1456264.810574"
+     "portfolio_value": "1894300.53796706000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-20",
-     "portfolio_value": "1456264.810574"
+     "portfolio_value": "1896391.74312426000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-21",
-     "portfolio_value": "1456264.810574"
+     "portfolio_value": "1896391.74312426000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-22",
-     "portfolio_value": "1465859.924602"
+     "portfolio_value": "1906015.54661982000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-23",
-     "portfolio_value": "1458916.964034"
+     "portfolio_value": "1899045.94949786000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-24",
-     "portfolio_value": "1456692.531936"
+     "portfolio_value": "1896815.79490320000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-25",
-     "portfolio_value": "1457068.235847"
+     "portfolio_value": "1897122.90583854000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-26",
-     "portfolio_value": "1469130.516257"
+     "portfolio_value": "1909201.17331320000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-27",
-     "portfolio_value": "1469130.516257"
+     "portfolio_value": "1909201.17331320000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-28",
-     "portfolio_value": "1469130.516257"
+     "portfolio_value": "1909201.17331320000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-29",
-     "portfolio_value": "1469216.527951"
+     "portfolio_value": "1909321.80226278000000"
     },
     {
      "benchmark_value": null,
      "cumulative_contributions": "1185335.44000000000000",
      "date": "2026-06-30",
-     "portfolio_value": "1468270.050007"
+     "portfolio_value": "1908337.88430700000000"
     }
    ],
    "curve_start": "2026-04-01",
-   "cvar_95": "-0.004258318312858575",
-   "kurtosis": "1.6098416361265624",
-   "max_drawdown": "-0.01471163017775775746947120941",
+   "cvar_95": "-0.0034573972213749076",
+   "kurtosis": "0.3746530415022713",
+   "max_drawdown": "-0.01134082792134744115601363179",
    "net_invested_last": "1185335.44000000000000",
-   "portfolio_last_value": "1468270.050007",
+   "portfolio_last_value": "1908337.88430700000000",
    "risk_free_rate": "0.037320001125335693",
    "risk_free_symbol": "^IRX",
-   "sharpe": "1.386897485529964839238090043",
-   "skew": "0.9005662155593641",
-   "sortino": "2.455461878217977049144883264",
+   "sharpe": "1.789828217337514844185929261",
+   "skew": "0.6996108129480014",
+   "sortino": "3.169924151446113557533265544",
    "start": "2026-04-01",
-   "twr": "0.033168160504603317432505705",
-   "ulcer": "0.0058994064120289754",
-   "var_95": "-0.003527738296283492",
-   "volatility": "0.03953566513436187",
+   "twr": "0.026213189639720988439280086",
+   "ulcer": "0.004566117344569091",
+   "var_95": "-0.003207208135216742",
+   "volatility": "0.03644952767093573",
    "xirr": "0.07180385754424208"
   },
   "detail": null

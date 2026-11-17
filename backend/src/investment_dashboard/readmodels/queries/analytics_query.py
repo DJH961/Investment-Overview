@@ -52,7 +52,7 @@ from investment_dashboard.domain.risk_extras import (
     skewness,
     ulcer_index,
 )
-from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.repositories import accounts_repo, transactions_repo
 from investment_dashboard.services import (
     benchmark_service,
     cashflows,
@@ -64,6 +64,7 @@ from investment_dashboard.services import (
 )
 
 if TYPE_CHECKING:
+    from investment_dashboard.models import Transaction
     from investment_dashboard.services.positions_service import Position
 
 ZERO = Decimal(0)
@@ -119,13 +120,147 @@ class AnalyticsBundle:
     metrics: metrics_service.PortfolioMetrics
 
 
-def _daily_returns(values: list[Decimal]) -> list[Decimal]:
-    out: list[Decimal] = []
-    for prev, curr in pairwise(values):
-        if prev == 0:
+def _session_returns(
+    session: Session,
+    curve: list[EquityCurvePoint],
+    index: list[Decimal],
+    benchmark_closes: dict[date, Decimal],
+    *,
+    currency: str,
+) -> tuple[list[Decimal], list[Decimal], list[Decimal]]:
+    """Trading-day returns of the growth index, and the benchmark's on the same days.
+
+    The curve has one point per calendar day, but every risk figure annualises
+    with 252 trading days, so weekend and holiday points (a zero move each) are
+    dropped: the returns run from one trading day's close to the next (the
+    benchmark's close dates; weekdays when there is no benchmark). Beta and alpha
+    pair the portfolio and the benchmark return of the SAME day; pairing the last
+    N calendar-day returns with the last N trading-day returns matched different
+    days, which is why beta read about zero. The benchmark is valued in the
+    display currency at each day's own rate (USD: the raw close), like the funded
+    line.
+
+    Returns ``(portfolio returns, paired portfolio returns, paired benchmark
+    returns)``.
+    """
+    ccy = currency.upper()
+    rates = fx_service.get_rates(session, base="EUR", quote="USD") if ccy == "EUR" else {}
+
+    def bench_value(d: date) -> Decimal | None:
+        close = benchmark_closes.get(d)
+        if close is None or ccy != "EUR":
+            return close
+        rate = lookup_rate_with_forward_fill(rates, d)
+        return close / rate if rate else None
+
+    has_bench = bool(benchmark_closes)
+    trading = [
+        (pt.date, idx)
+        for pt, idx in zip(curve, index, strict=True)
+        if (pt.date in benchmark_closes if has_bench else pt.date.weekday() < 5)
+    ]
+    rets: list[Decimal] = []
+    paired: list[Decimal] = []
+    bench: list[Decimal] = []
+    for (d0, i0), (d1, i1) in pairwise(trading):
+        if i0 == 0:
             continue
-        out.append((curr - prev) / prev)
-    return out
+        r = i1 / i0 - 1
+        rets.append(r)
+        b0, b1 = bench_value(d0), bench_value(d1)
+        if b0 and b1 is not None:
+            paired.append(r)
+            bench.append(b1 / b0 - 1)
+    return rets, paired, bench
+
+
+class _LedgerCash:
+    """Ledger cash (the running sum of ``net_native`` legs), valued in ``currency``.
+
+    The snapshot value counts holdings (money-market sweep funds included) plus
+    savings/cash account balances, but NOT cash sitting in a brokerage account
+    outside a money-market fund (B-017). A deposit into such an account is an
+    external flow on its own date while the value only rose when the cash was
+    invested, so the daily return read the buy as a gain, and a deposit before the
+    first valued day was dropped entirely (the window starts on the first valued
+    day): TWR, volatility, beta and the funded benchmark went wrong for every
+    window holding such a flow. The Risk curve therefore adds that cash back
+    (``brokerage_only=True``: the savings/cash accounts are already in the
+    snapshot). A fully swept account (Vanguard: every cash row has its
+    money-market counter-leg on the same day) sums to zero, so nothing is counted
+    twice. The attribution table's "Cash" row uses every account
+    (``brokerage_only=False``), so its rows add up to the same book as the curve.
+
+    Each native amount is valued at ``day``'s own rate (one instant, a valuation,
+    never a converted return); a missing rate omits it rather than counting it at
+    par, like the snapshot.
+    """
+
+    def __init__(
+        self,
+        session: Session,
+        txns: list[Transaction],
+        *,
+        currency: str,
+        brokerage_only: bool,
+    ) -> None:
+        native_of = {
+            a.id: a.native_currency.upper()
+            for a in accounts_repo.list_accounts(session)
+            if not brokerage_only or a.account_type not in positions_service.CASH_ACCOUNT_TYPES
+        }
+        deltas: dict[date, dict[str, Decimal]] = {}
+        for t in txns:
+            native = native_of.get(t.account_id)
+            if native is None or not t.net_native:
+                continue
+            per_day = deltas.setdefault(t.date, {})
+            per_day[native] = per_day.get(native, ZERO) + t.net_native
+        self._session = session
+        self._deltas = deltas
+        self._dates = sorted(deltas)
+        self._idx = 0
+        self._running: dict[str, Decimal] = {}
+        self._ccy = currency.upper()
+        #: EUR -> quote rate series per currency, loaded once when first needed.
+        self._rates: dict[str, dict[date, Decimal]] = {}
+        self.account_ids = frozenset(native_of)
+
+    def _rate(self, quote: str, day: date) -> Decimal | None:
+        if quote not in self._rates:
+            self._rates[quote] = fx_service.get_rates(self._session, base="EUR", quote=quote)
+        return lookup_rate_with_forward_fill(self._rates[quote], day)
+
+    def _value(self, native: str, amount: Decimal, day: date) -> Decimal | None:
+        """``amount`` of ``native`` in the display currency at ``day``'s rate."""
+        if native == self._ccy:
+            return amount
+        # native -> EUR at the day's EUR->native rate, then EUR -> display.
+        eur = amount
+        if native != "EUR":
+            rate = self._rate(native, day)
+            if not rate:
+                return None
+            eur = amount / rate
+        if self._ccy == "EUR":
+            return eur
+        rate = self._rate(self._ccy, day)
+        return eur * rate if rate else None
+
+    def through(self, day: date) -> Decimal:
+        """Cash after every transaction dated ``<= day`` (call with rising days)."""
+        while self._idx < len(self._dates) and self._dates[self._idx] <= day:
+            for native, amount in self._deltas[self._dates[self._idx]].items():
+                self._running[native] = self._running.get(native, ZERO) + amount
+            self._idx += 1
+        total = ZERO
+        for native, amount in self._running.items():
+            if amount == 0:
+                continue
+            value = self._value(native, amount, day)
+            if value is not None:
+                total += value
+        return total
 
 
 def _build_curve(
@@ -171,6 +306,8 @@ def _build_curve(
             continue  # leg can't be derived: omitted, never counted as 0
         contribs_by_date[t.date] = contribs_by_date.get(t.date, ZERO) + amt
 
+    cash = _LedgerCash(session, txns, currency=currency, brokerage_only=True)
+
     # The benchmark overlay source: prefer the funded simulation (already in the
     # display currency, comparable to the portfolio value); otherwise fall back
     # to raw closes for the caller to rebase.
@@ -193,6 +330,12 @@ def _build_curve(
         currency,
         recompute_tail_days=recompute_tail_days,
     )
+    if len(series) < (end - start).days + 1:
+        # Uncached days older than the recompute tail were left out (a cold cache
+        # after an import or edit of past trades drops every snapshot from that
+        # date on, and only the evening job used to fill them back). Fill them off
+        # the request thread; a ``refresh`` event then makes the page re-read.
+        snapshots_service.fill_missing_in_background(start, end)
 
     # Cumulative contributions must account for flows on every calendar day,
     # including days the bounded series skipped, so the overlay stays correct
@@ -213,7 +356,7 @@ def _build_curve(
         points.append(
             EquityCurvePoint(
                 date=day,
-                portfolio_value=value,
+                portfolio_value=value + cash.through(day),
                 cumulative_contributions=cumulative,
                 benchmark_value=last_bench,
             )
@@ -296,7 +439,15 @@ def _attribution_for_window(
         )
     for p in start_positions:
         names.setdefault(p.instrument.id, p.instrument.symbol)
-    txns = list(transactions_repo.list_transactions(session, start=start, end=end))
+    # Flows over ``(start, end]``: the start marks are taken AFTER the start day's
+    # own transactions (``compute_positions(as_of=start)`` includes them), so a
+    # start-day buy or sweep leg counted again here was a phantom loss. On "All"
+    # (which starts on the first invested day) the first deposit's money-market
+    # leg sat in the start value and in the net contribution: the sweep fund
+    # showed the whole deposit as a loss.
+    txns = list(
+        transactions_repo.list_transactions(session, start=start + timedelta(days=1), end=end)
+    )
 
     contribs: dict[int, Decimal] = {}
     dividends: dict[int, Decimal] = {}
@@ -338,7 +489,68 @@ def _attribution_for_window(
                 dividends_cash=dividends.get(instr_id, ZERO),
             )
         )
+    cash_row = _cash_row(session, start=start, end=end, currency=ccy, eur_to_usd=eur_to_usd)
+    if cash_row is not None:
+        rows.append(cash_row)
     return attribute_portfolio_return(rows)
+
+
+#: ``instrument_id`` of the attribution table's "Cash" row (no instrument has id 0).
+CASH_ROW_ID = 0
+_TRADE_KINDS = frozenset(
+    {
+        TransactionKind.BUY.value,
+        TransactionKind.SELL.value,
+        TransactionKind.DIVIDEND_CASH.value,
+    }
+)
+
+
+def _cash_row(
+    session: Session,
+    *,
+    start: date,
+    end: date,
+    currency: str,
+    eur_to_usd: dict[date, Decimal],
+) -> InstrumentReturn | None:
+    """Ledger cash (savings balances and uninvested brokerage cash) as one row.
+
+    The Risk curve counts this cash, so the table must too or its End would not be
+    the curve's end value. Start and End are the cash on those days at their own
+    rate. Net added is the money moved into cash over ``(start, end]``: deposits
+    and withdrawals (each at its own date's rate, as the contributions line), plus
+    the cash legs of the trades and paid-out dividends the holding rows count
+    (equal and opposite, so they cancel in the total). What is left, P&L, is what
+    the cash earned: interest less fees, plus (in a currency other than the
+    cash's own) its revaluation. ``None`` when the book never held cash.
+    """
+    txns = list(transactions_repo.list_transactions(session, end=end))
+    cash = _LedgerCash(session, txns, currency=currency, brokerage_only=False)
+    start_value = cash.through(start)
+    end_value = cash.through(end)
+    ov = cashflows.eur_overrides_for(session)
+    moved_in = ZERO
+    for t in txns:
+        if t.date <= start or t.account_id not in cash.account_ids or not t.net_native:
+            continue
+        if t.kind in cashflows.EXTERNAL_FLOW_KINDS:
+            amt = cashflows.txn_amount(t, currency, eur_to_usd=eur_to_usd, eur_overrides=ov)
+        elif t.instrument_id is not None and t.kind in _TRADE_KINDS:
+            amt = cashflows.txn_amount(t, currency, eur_to_usd=eur_to_usd)
+        else:
+            continue  # interest, fees, tax: what the cash earned or paid
+        if amt is not None:
+            moved_in += amt
+    if start_value == 0 and end_value == 0 and moved_in == 0:
+        return None
+    return InstrumentReturn(
+        instrument_id=CASH_ROW_ID,
+        symbol="Cash",
+        start_value=start_value,
+        end_value=end_value,
+        net_contribution=moved_in,
+    )
 
 
 def build_bundle(
@@ -408,12 +620,10 @@ def build_bundle(
     # (All, 5Y) the raw values are mostly new money, which made CAGR, volatility,
     # VaR and beta meaningless there.
     index = growth_index(portfolio_values, new_money)
-    daily_rets = _daily_returns(index)
-    bench_rets = benchmark_series.daily_returns()
-    # Align lengths for beta/alpha (last N pairs).
-    n = min(len(daily_rets), len(bench_rets))
-    portfolio_tail = daily_rets[-n:] if n else []
-    bench_tail = bench_rets[-n:] if n else []
+    daily_rets, portfolio_tail, bench_tail = _session_returns(
+        session, curve, index, benchmark_series.closes, currency=currency
+    )
+    n = len(portfolio_tail)
 
     portfolio_metrics = metrics_service.compute_portfolio_metrics(session, as_of=as_of)
     rf_snapshot = risk_free_service.get_risk_free_rate(session)
