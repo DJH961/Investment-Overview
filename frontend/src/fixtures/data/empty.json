@@ -3495,9 +3495,9 @@
   "events_total": 0,
   "fx_move": null,
   "kind": null,
-  "last_ack_at": "2026-06-30T20:30:00+00:00",
+  "last_ack_at": "2026-06-30T18:15:00+00:00",
   "move": null,
-  "now": "2026-06-30T20:30:00+00:00",
+  "now": "2026-06-30T18:15:00+00:00",
   "sessions": [],
   "sessions_passed": 0
  },
@@ -3575,7 +3575,7 @@
    "as_of": "2026-06-30",
    "buys": null,
    "ccy": "EUR",
-   "generated_at": "2026-06-30T20:30:00+00:00",
+   "generated_at": "2026-06-30T18:15:00+00:00",
    "lifetime": {
     "avg_invest_rate": null,
     "breakeven_rate": null,
@@ -3607,7 +3607,7 @@
      "forex_frozen": false,
      "forex_open": true,
      "holiday": false,
-     "market_open": false,
+     "market_open": true,
      "session_view": true,
      "single_overnight": false,
      "weekend_overnight": false
@@ -3627,7 +3627,7 @@
    "as_of": "2026-06-30",
    "buys": null,
    "ccy": "USD",
-   "generated_at": "2026-06-30T20:30:00+00:00",
+   "generated_at": "2026-06-30T18:15:00+00:00",
    "lifetime": {
     "avg_invest_rate": null,
     "breakeven_rate": null,
@@ -3659,7 +3659,7 @@
      "forex_frozen": false,
      "forex_open": true,
      "holiday": false,
-     "market_open": false,
+     "market_open": true,
      "session_view": true,
      "single_overnight": false,
      "weekend_overnight": false
@@ -3878,23 +3878,23 @@
    }
   ],
   "count": 1,
-  "generated_at": "2026-06-30T20:30:00+00:00",
+  "generated_at": "2026-06-30T18:15:00+00:00",
   "problems": [],
   "provider_log": [
    {
-    "at": "2026-06-30T20:30:00+00:00",
+    "at": "2026-06-30T18:15:00+00:00",
     "message": "EUR/USD 1 rate(s)",
     "provider": "frankfurter",
     "status": "ok"
    },
    {
-    "at": "2026-06-30T20:30:00+00:00",
+    "at": "2026-06-30T18:15:00+00:00",
     "message": "FAKEL 5 daily bar(s)",
     "provider": "yfinance",
     "status": "ok"
    },
    {
-    "at": "2026-06-30T20:30:00+00:00",
+    "at": "2026-06-30T18:15:00+00:00",
     "message": "IEX FAKEL 390 intraday bar(s) 2026-06-30..2026-06-30",
     "provider": "tiingo",
     "status": "ok"
@@ -3902,7 +3902,7 @@
   ],
   "providers": [
    {
-    "at": "2026-06-30T20:30:00+00:00",
+    "at": "2026-06-30T18:15:00+00:00",
     "last_fetch_at": null,
     "last_fetch_symbols": [],
     "message": "EUR/USD 1 rate(s)",
@@ -3910,7 +3910,7 @@
     "status": "ok"
    },
    {
-    "at": "2026-06-30T20:30:00+00:00",
+    "at": "2026-06-30T18:15:00+00:00",
     "last_fetch_at": null,
     "last_fetch_symbols": [],
     "message": "IEX FAKEL 390 intraday bar(s) 2026-06-30..2026-06-30",
@@ -3918,7 +3918,7 @@
     "status": "ok"
    },
    {
-    "at": "2026-06-30T20:30:00+00:00",
+    "at": "2026-06-30T18:15:00+00:00",
     "last_fetch_at": null,
     "last_fetch_symbols": [],
     "message": "FAKEL 5 daily bar(s)",
@@ -3965,13 +3965,8 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": true,
-   "market_open": false,
-   "now_point": {
-    "overnight_currency": null,
-    "overnight_pct": null,
-    "t": "2026-06-30T20:30:00+00:00",
-    "v": "0"
-   },
+   "market_open": true,
+   "now_point": null,
    "points": [],
    "range": "1d",
    "reference": null,
@@ -3999,13 +3994,8 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": true,
-   "market_open": false,
-   "now_point": {
-    "overnight_currency": null,
-    "overnight_pct": null,
-    "t": "2026-06-30T20:30:00+00:00",
-    "v": "0"
-   },
+   "market_open": true,
+   "now_point": null,
    "points": [],
    "range": "1d",
    "reference": null,
@@ -4032,7 +4022,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -4227,7 +4217,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -4425,7 +4415,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -4500,7 +4490,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -4578,7 +4568,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -5605,7 +5595,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -6635,7 +6625,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -7166,7 +7156,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -7700,7 +7690,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -8727,7 +8717,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -9757,7 +9747,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [],
    "range": "all",
@@ -9776,7 +9766,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [],
    "range": "all",
@@ -9798,7 +9788,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -10809,7 +10799,7 @@
    "funds_estimated": false,
    "growth": null,
    "intraday": false,
-   "market_open": false,
+   "market_open": true,
    "now_point": null,
    "points": [
     {
@@ -11891,6 +11881,306 @@
   },
   "detail": null
  },
+ "GET /api/holdings/both?group_by=account": {
+  "EUR": {
+   "annual_expense_cost": "0",
+   "as_of": "2026-06-30",
+   "ccy": "EUR",
+   "dividend_income": "0",
+   "dividend_yield_pct": null,
+   "dividend_yield_ttm_pct": null,
+   "dividends_ttm": "0",
+   "fx": null,
+   "fx_eur_usd": null,
+   "group_by": "account",
+   "groups": [],
+   "holdings": [],
+   "summary": {
+    "best_growth": null,
+    "best_symbol": null,
+    "gainers": 0,
+    "in_loss": 0,
+    "in_profit": 0,
+    "losers": 0,
+    "most_concentrated_symbol": null,
+    "most_concentrated_weight_pct": null,
+    "worst_growth": null,
+    "worst_symbol": null
+   },
+   "total_capital_gain": "0",
+   "total_cost_basis": "0",
+   "total_dividends": "0",
+   "total_growth": null,
+   "total_realised_other": "0",
+   "total_return": "0",
+   "total_unrealised_gain": "0",
+   "total_value": "0",
+   "weighted_expense_ratio": null,
+   "xirr": null
+  },
+  "USD": {
+   "annual_expense_cost": "0",
+   "as_of": "2026-06-30",
+   "ccy": "USD",
+   "dividend_income": "0",
+   "dividend_yield_pct": null,
+   "dividend_yield_ttm_pct": null,
+   "dividends_ttm": "0",
+   "fx": null,
+   "fx_eur_usd": null,
+   "group_by": "account",
+   "groups": [],
+   "holdings": [],
+   "summary": {
+    "best_growth": null,
+    "best_symbol": null,
+    "gainers": 0,
+    "in_loss": 0,
+    "in_profit": 0,
+    "losers": 0,
+    "most_concentrated_symbol": null,
+    "most_concentrated_weight_pct": null,
+    "worst_growth": null,
+    "worst_symbol": null
+   },
+   "total_capital_gain": "0",
+   "total_cost_basis": "0",
+   "total_dividends": "0",
+   "total_growth": null,
+   "total_realised_other": "0",
+   "total_return": "0",
+   "total_unrealised_gain": "0",
+   "total_value": "0",
+   "weighted_expense_ratio": null,
+   "xirr": null
+  },
+  "detail": null
+ },
+ "GET /api/holdings/both?group_by=asset_class": {
+  "EUR": {
+   "annual_expense_cost": "0",
+   "as_of": "2026-06-30",
+   "ccy": "EUR",
+   "dividend_income": "0",
+   "dividend_yield_pct": null,
+   "dividend_yield_ttm_pct": null,
+   "dividends_ttm": "0",
+   "fx": null,
+   "fx_eur_usd": null,
+   "group_by": "asset_class",
+   "groups": [],
+   "holdings": [],
+   "summary": {
+    "best_growth": null,
+    "best_symbol": null,
+    "gainers": 0,
+    "in_loss": 0,
+    "in_profit": 0,
+    "losers": 0,
+    "most_concentrated_symbol": null,
+    "most_concentrated_weight_pct": null,
+    "worst_growth": null,
+    "worst_symbol": null
+   },
+   "total_capital_gain": "0",
+   "total_cost_basis": "0",
+   "total_dividends": "0",
+   "total_growth": null,
+   "total_realised_other": "0",
+   "total_return": "0",
+   "total_unrealised_gain": "0",
+   "total_value": "0",
+   "weighted_expense_ratio": null,
+   "xirr": null
+  },
+  "USD": {
+   "annual_expense_cost": "0",
+   "as_of": "2026-06-30",
+   "ccy": "USD",
+   "dividend_income": "0",
+   "dividend_yield_pct": null,
+   "dividend_yield_ttm_pct": null,
+   "dividends_ttm": "0",
+   "fx": null,
+   "fx_eur_usd": null,
+   "group_by": "asset_class",
+   "groups": [],
+   "holdings": [],
+   "summary": {
+    "best_growth": null,
+    "best_symbol": null,
+    "gainers": 0,
+    "in_loss": 0,
+    "in_profit": 0,
+    "losers": 0,
+    "most_concentrated_symbol": null,
+    "most_concentrated_weight_pct": null,
+    "worst_growth": null,
+    "worst_symbol": null
+   },
+   "total_capital_gain": "0",
+   "total_cost_basis": "0",
+   "total_dividends": "0",
+   "total_growth": null,
+   "total_realised_other": "0",
+   "total_return": "0",
+   "total_unrealised_gain": "0",
+   "total_value": "0",
+   "weighted_expense_ratio": null,
+   "xirr": null
+  },
+  "detail": null
+ },
+ "GET /api/holdings/both?group_by=category": {
+  "EUR": {
+   "annual_expense_cost": "0",
+   "as_of": "2026-06-30",
+   "ccy": "EUR",
+   "dividend_income": "0",
+   "dividend_yield_pct": null,
+   "dividend_yield_ttm_pct": null,
+   "dividends_ttm": "0",
+   "fx": null,
+   "fx_eur_usd": null,
+   "group_by": "category",
+   "groups": [],
+   "holdings": [],
+   "summary": {
+    "best_growth": null,
+    "best_symbol": null,
+    "gainers": 0,
+    "in_loss": 0,
+    "in_profit": 0,
+    "losers": 0,
+    "most_concentrated_symbol": null,
+    "most_concentrated_weight_pct": null,
+    "worst_growth": null,
+    "worst_symbol": null
+   },
+   "total_capital_gain": "0",
+   "total_cost_basis": "0",
+   "total_dividends": "0",
+   "total_growth": null,
+   "total_realised_other": "0",
+   "total_return": "0",
+   "total_unrealised_gain": "0",
+   "total_value": "0",
+   "weighted_expense_ratio": null,
+   "xirr": null
+  },
+  "USD": {
+   "annual_expense_cost": "0",
+   "as_of": "2026-06-30",
+   "ccy": "USD",
+   "dividend_income": "0",
+   "dividend_yield_pct": null,
+   "dividend_yield_ttm_pct": null,
+   "dividends_ttm": "0",
+   "fx": null,
+   "fx_eur_usd": null,
+   "group_by": "category",
+   "groups": [],
+   "holdings": [],
+   "summary": {
+    "best_growth": null,
+    "best_symbol": null,
+    "gainers": 0,
+    "in_loss": 0,
+    "in_profit": 0,
+    "losers": 0,
+    "most_concentrated_symbol": null,
+    "most_concentrated_weight_pct": null,
+    "worst_growth": null,
+    "worst_symbol": null
+   },
+   "total_capital_gain": "0",
+   "total_cost_basis": "0",
+   "total_dividends": "0",
+   "total_growth": null,
+   "total_realised_other": "0",
+   "total_return": "0",
+   "total_unrealised_gain": "0",
+   "total_value": "0",
+   "weighted_expense_ratio": null,
+   "xirr": null
+  },
+  "detail": null
+ },
+ "GET /api/holdings/both?group_by=currency": {
+  "EUR": {
+   "annual_expense_cost": "0",
+   "as_of": "2026-06-30",
+   "ccy": "EUR",
+   "dividend_income": "0",
+   "dividend_yield_pct": null,
+   "dividend_yield_ttm_pct": null,
+   "dividends_ttm": "0",
+   "fx": null,
+   "fx_eur_usd": null,
+   "group_by": "currency",
+   "groups": [],
+   "holdings": [],
+   "summary": {
+    "best_growth": null,
+    "best_symbol": null,
+    "gainers": 0,
+    "in_loss": 0,
+    "in_profit": 0,
+    "losers": 0,
+    "most_concentrated_symbol": null,
+    "most_concentrated_weight_pct": null,
+    "worst_growth": null,
+    "worst_symbol": null
+   },
+   "total_capital_gain": "0",
+   "total_cost_basis": "0",
+   "total_dividends": "0",
+   "total_growth": null,
+   "total_realised_other": "0",
+   "total_return": "0",
+   "total_unrealised_gain": "0",
+   "total_value": "0",
+   "weighted_expense_ratio": null,
+   "xirr": null
+  },
+  "USD": {
+   "annual_expense_cost": "0",
+   "as_of": "2026-06-30",
+   "ccy": "USD",
+   "dividend_income": "0",
+   "dividend_yield_pct": null,
+   "dividend_yield_ttm_pct": null,
+   "dividends_ttm": "0",
+   "fx": null,
+   "fx_eur_usd": null,
+   "group_by": "currency",
+   "groups": [],
+   "holdings": [],
+   "summary": {
+    "best_growth": null,
+    "best_symbol": null,
+    "gainers": 0,
+    "in_loss": 0,
+    "in_profit": 0,
+    "losers": 0,
+    "most_concentrated_symbol": null,
+    "most_concentrated_weight_pct": null,
+    "worst_growth": null,
+    "worst_symbol": null
+   },
+   "total_capital_gain": "0",
+   "total_cost_basis": "0",
+   "total_dividends": "0",
+   "total_growth": null,
+   "total_realised_other": "0",
+   "total_return": "0",
+   "total_unrealised_gain": "0",
+   "total_value": "0",
+   "weighted_expense_ratio": null,
+   "xirr": null
+  },
+  "detail": null
+ },
  "GET /api/holdings/both?group_by=none": {
   "EUR": {
    "annual_expense_cost": "0",
@@ -12026,7 +12316,7 @@
   "snapshots": []
  },
  "GET /api/maintenance/jobs": {
-  "generated_at": "2026-06-30T20:30:00+00:00",
+  "generated_at": "2026-06-30T18:15:00+00:00",
   "groups": [
    {
     "id": "prices",
@@ -12448,12 +12738,12 @@
  "GET /api/maintenance/tiingo": {
   "configured": false,
   "daily_cap": 200,
-  "day_resets_at": "2026-06-30T20:30:00+00:00",
+  "day_resets_at": "2026-06-30T18:15:00+00:00",
   "day_used": 41,
-  "hour_resets_at": "2026-06-30T20:30:00+00:00",
+  "hour_resets_at": "2026-06-30T18:15:00+00:00",
   "hour_used": 3,
   "hourly_cap": 10,
-  "last_at": "2026-06-30T20:30:00+00:00",
+  "last_at": "2026-06-30T18:15:00+00:00",
   "last_message": "IEX FAKEL 390 intraday bar(s) 2026-06-30..2026-06-30",
   "last_status": "ok",
   "nav_probes_today": 0,
@@ -12529,7 +12819,7 @@
       "forex_frozen": false,
       "forex_open": true,
       "holiday": false,
-      "market_open": false,
+      "market_open": true,
       "session_view": true,
       "single_overnight": false,
       "weekend_overnight": false
@@ -12553,14 +12843,14 @@
     "updated_text": null
    },
    "day_split": null,
-   "default_range": "1y",
+   "default_range": "1d",
    "freshness": {
     "feed_stalled_since": null,
     "historical": false,
     "last_price_update_at": null,
-    "market_state": "closed",
-    "next_close_at": "2026-06-30T20:30:00+00:00",
-    "next_open_at": "2026-06-30T20:30:00+00:00",
+    "market_state": "open",
+    "next_close_at": "2026-06-30T20:00:00+00:00",
+    "next_open_at": "2026-07-01T13:30:00+00:00",
     "price_market_at": null,
     "price_observed_at": null,
     "prices_live": false,
@@ -12569,11 +12859,11 @@
     "progress_total": 0,
     "refresh_running": false,
     "refresh_source": null,
-    "session_opened_at": null
+    "session_opened_at": "2026-06-30T13:30:00+00:00"
    },
    "fx_eur_usd": null,
-   "generated_at": "2026-06-30T20:30:00+00:00",
-   "is_live": false,
+   "generated_at": "2026-06-30T18:15:00+00:00",
+   "is_live": true,
    "kpis": {
     "annual_expense_cost": "0",
     "capital_gain": "0",
@@ -12672,7 +12962,7 @@
       "forex_frozen": false,
       "forex_open": true,
       "holiday": false,
-      "market_open": false,
+      "market_open": true,
       "session_view": true,
       "single_overnight": false,
       "weekend_overnight": false
@@ -12696,14 +12986,14 @@
     "updated_text": null
    },
    "day_split": null,
-   "default_range": "1y",
+   "default_range": "1d",
    "freshness": {
     "feed_stalled_since": null,
     "historical": false,
     "last_price_update_at": null,
-    "market_state": "closed",
-    "next_close_at": "2026-06-30T20:30:00+00:00",
-    "next_open_at": "2026-06-30T20:30:00+00:00",
+    "market_state": "open",
+    "next_close_at": "2026-06-30T20:00:00+00:00",
+    "next_open_at": "2026-07-01T13:30:00+00:00",
     "price_market_at": null,
     "price_observed_at": null,
     "prices_live": false,
@@ -12712,11 +13002,11 @@
     "progress_total": 0,
     "refresh_running": false,
     "refresh_source": null,
-    "session_opened_at": null
+    "session_opened_at": "2026-06-30T13:30:00+00:00"
    },
    "fx_eur_usd": null,
-   "generated_at": "2026-06-30T20:30:00+00:00",
-   "is_live": false,
+   "generated_at": "2026-06-30T18:15:00+00:00",
+   "is_live": true,
    "kpis": {
     "annual_expense_cost": "0",
     "capital_gain": "0",
@@ -13481,7 +13771,7 @@
   "timezone": "Local"
  },
  "GET /api/settings/export": {
-  "exported_at": "2026-06-30T20:30:00+00:00",
+  "exported_at": "2026-06-30T18:15:00+00:00",
   "kind": "inv-dashboard-settings",
   "settings": {},
   "version": 1
@@ -15523,7 +15813,7 @@
   "scheduler_enabled": false,
   "server_mode": true,
   "split_db": false,
-  "started_at": "2026-06-30T20:30:00+00:00",
+  "started_at": "2026-06-30T18:15:00+00:00",
   "uptime_seconds": 0,
   "version": "fixtures-version"
  },
