@@ -7,31 +7,41 @@ names (AGENTS.md › "v6 structure and style"). This file says what the tokens a
 
 The brief: a private-bank statement, not a trading terminal. Generous, even
 spacing; soft layered surfaces with restrained depth; large confident figures; one
-restrained accent; quiet motion. Two signatures carry the identity: the **ink spine**
-(navigation in deep navy, in both themes) and the **Overview stage** (the portfolio
+restrained accent; quiet motion. Two signatures carry the identity: the **spine**
+(the grouped navigation with the portfolio at its head; light in the light theme, deep
+navy ink in the dark) and the **Overview stage** (the portfolio
 value in an oversized serif, today's move and the chart on one lit surface). Everything
 around them stays quiet.
 
-## Structure (pass 2)
+## Structure (pass 2, refined in pass 3)
 
-- **Navigation spine** (`Sidebar`, `TabBar`, `.u-ink` in tokens.scss): the dark token set
-  on navy in both themes. Groups by what the owner is doing: Portfolio, Dig in, Manage;
+- **Navigation spine** (`Sidebar`, `TabBar`, `.u-ink` in tokens.scss): a light spine
+  (a hairline off the canvas, a raised pocket card and active row) in the light theme;
+  in the dark theme the ink token set on navy (`@mixin ink-tokens`). Groups by what the owner is doing: Portfolio, Dig in, Manage;
   System at the foot. The portfolio's value sits at the head of the spine (the top bar
-  shows it only when the spine is a rail or on phones). Phones get a floating ink dock.
+  shows it only when the spine is a rail or on phones). Phones get a floating dock that follows the theme.
   New pages join a group in `lib/nav.ts` (the Currency page joins Dig in).
 - **The stage** (`.overview-page__stage`, `--stage-bg`, `--stage-border`, `--radius-xl`): a
   page's one subject. Overview: hero + graph. Holdings: the summary. Periods: the
   growth chart. Projection: the answer + chart. One stage per page, at most.
 - **Composition**: one lead surface, then quieter panels. Overview at >= 1280 px:
-  Holdings (2fr) beside today's currency and the movers (1fr); both columns end level.
+  main column Holdings (natural height), Allocation, Asset classes; side column today's
+  currency, the movers, lifetime FX. The treemap takes the slack so both columns end
+  level: no hollow cards. Below 1280 px everything stacks, Holdings first.
   Cards set into a narrow column lay out by their own width (container queries).
 - **A figure appears once per screen.** The ☀ day / ☾ night split of today's move lives
-  in the hero only ("☾ + ☀ = Total" while the market is open; after the close tonight's
-  ☾ sits beside the Total, not in it). Its explanation is one shared legend
+  in the hero only, as two figures side by side in the order they happened (open:
+  last night's ☾, then ☀; after the close: ☀, then tonight's ☾). Never an equation: the
+  headline pill already shows the day's total. Its explanation is one shared legend
   (`DaySplitLegend`, `DAY_SPLIT_LINES`). The Holdings card says ☾ once in its header.
 - **EUR and USD have one shape.** A currency switch never moves anything: fitted
   figures keep a fixed line box, currency-only lines are reserved or held invisibly,
   rows keep their line count. Check with the EUR | USD height script in the PR notes.
+- **A compact hero.** Lines are shared where it helps: the other currency and the price
+  time; ☾/☀ and the other currency's move. The hero's Today block is facts only (low,
+  high, previous close), never a second graph, and is left out when it has nothing.
+- **Two chart axes only when there is room** (>= 720 px chart width); the right gutter
+  is reserved either way, so the plot never resizes.
 
 ## Type
 
@@ -63,7 +73,7 @@ around them stays quiet.
 | Level | Token | Use |
 | --- | --- | --- |
 | 0 canvas | `--color-bg` (+ `--color-bg-glow`) | The page. Dark: a deep blue-black lit by two faint glows. |
-| spine | `.u-ink` | Sidebar, rail, phone dock: navy in both themes. |
+| spine | `.u-ink` | Sidebar, rail, phone dock: light in the light theme, navy ink in the dark. |
 | stage | `--stage-bg`, `--stage-border` | A page's one subject, a step above the cards. |
 | 1 surface | `--color-surface`, `--shadow-1`, `--color-border` (`m.surface`) | Cards, tiles, the hero, the active sidebar row. |
 | well | `--color-surface-2` (`m.well`) | Sunken: segmented tracks, inputs, chips, table hover. |
