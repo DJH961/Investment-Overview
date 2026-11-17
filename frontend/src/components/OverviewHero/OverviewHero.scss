@@ -96,20 +96,16 @@
     box-shadow: 0 0 0 3px var(--color-pos-soft);
   }
 
-  // Phone: the second currency always on its own line, so a long value, a
-  // short one and the hidden "€••,•••.••" all lay out the same way.
+  // The second currency always sits on its own line, at every width: beside the
+  // figure, a longer value (US$ vs €, or the hidden "€••,•••.••") would wrap at some
+  // widths and not others, and the hero would change height on a currency switch.
   &__values {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-2) var(--space-4);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
     min-width: 0;
     margin: var(--space-1) 0 var(--space-2);
-
-    @include m.phone {
-      flex-direction: column;
-      gap: var(--space-1);
-    }
   }
 
   // The headline figure in the display serif (lining tabular figures): the one
