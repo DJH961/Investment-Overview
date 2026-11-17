@@ -61,6 +61,34 @@ def test_projection_hand_checked(api_client: TestClient) -> None:
     assert body["assumptions"]["usd_per_eur"] is not None
 
 
+def test_projection_real_terms_growth_is_in_todays_money(api_client: TestClient) -> None:
+    """B-030: in real terms the growth uses today's money on every side.
+
+    Hand check: empty portfolio, 100 / year for 2 years at 10 % return with 10 %
+    inflation (contribution at period end). Nominal: year 1 = 100, year 2 =
+    100 * 1.1 + 100 = 210. Real final = 210 / 1.1^2 = 173.5537. Contributions in
+    today's money: 100 / 1.1 + 100 / 1.1^2 = 90.9091 + 82.6446 = 173.5537. Return
+    equals inflation, so real growth is 0. The old code subtracted the nominal 200
+    and showed -26.45. Nominal mode is unchanged: 210 - 200 = +10.
+    """
+    payload = {
+        "monthly": False,
+        "expected_return_pct": "0.10",
+        "band_pp": "0",
+        "inflation_pct": "0.10",
+        "contribution": "100",
+        "horizon": 2,
+        "target": "150",
+    }
+    real = api_client.post("/api/calculator?ccy=EUR", json={**payload, "real": True}).json()
+    assert abs(Decimal(real["final"]["expected"]) - Decimal("173.5537")) < Decimal("0.001")
+    assert abs(Decimal(real["total_contributed"]) - Decimal("173.5537")) < Decimal("0.001")
+    assert abs(Decimal(real["final"]["projected_growth"])) < Decimal("0.001")
+    nominal = api_client.post("/api/calculator?ccy=EUR", json=payload).json()
+    assert Decimal(nominal["total_contributed"]) == Decimal(200)
+    assert Decimal(nominal["final"]["projected_growth"]) == Decimal("10.0")
+
+
 def test_projection_validation(api_client: TestClient) -> None:
     assert api_client.post("/api/calculator", json={"horizon": -1}).status_code == 422
     assert api_client.post("/api/calculator?ccy=GBP", json={}).status_code == 422

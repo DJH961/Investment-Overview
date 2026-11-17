@@ -82,6 +82,8 @@ class ProjectionPoint:
     contributed: Decimal  # cumulative new money up to and including this period
     nominal_by_scenario: dict[str, Decimal]
     real_by_scenario: dict[str, Decimal]  # inflation-adjusted to today's euros
+    #: ``contributed`` with each contribution deflated to today's money at its own period.
+    contributed_real: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,12 @@ class ProjectionResult:
     def total_contributed(self) -> Decimal:
         last = self.final
         return last.contributed if last is not None else ZERO
+
+    @property
+    def total_contributed_real(self) -> Decimal:
+        """All contributions in today's money (each deflated at its own period)."""
+        last = self.final
+        return last.contributed_real if last is not None else ZERO
 
 
 def _per_period_rate(annual_rate: Decimal, periods_per_year: int) -> Decimal:
@@ -207,6 +215,7 @@ def simulate(params: ProjectionParams) -> ProjectionResult:
     }
     values = {name: params.starting_value for name in params.annual_rates}
     cumulative = ZERO
+    cumulative_real = ZERO
     points: list[ProjectionPoint] = []
 
     for index in range(1, params.periods + 1):
@@ -222,6 +231,7 @@ def simulate(params: ProjectionParams) -> ProjectionResult:
 
         years_elapsed = Decimal(index) / Decimal(params.periods_per_year)
         deflator = (ONE + params.inflation_rate) ** years_elapsed
+        cumulative_real += contrib / deflator if deflator != 0 else contrib
         label, period_date = _advance_label(start, index, params.periods_per_year)
         nominal = dict(values)
         real = (
@@ -235,6 +245,7 @@ def simulate(params: ProjectionParams) -> ProjectionResult:
                 contributed=cumulative,
                 nominal_by_scenario=nominal,
                 real_by_scenario=real,
+                contributed_real=cumulative_real,
             )
         )
 
