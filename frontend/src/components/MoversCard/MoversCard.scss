@@ -4,7 +4,8 @@
   // The card lays itself out by its OWN width (container query), not the viewport: it sits
   // in the Overview's narrow side column on desktop and full width below 1280 px.
   // Narrow: winners over losers, each row one line (symbol + figure) with the name beneath.
-  // Wide (>= 34rem): two equal columns side by side.
+  // Wide (>= 44rem): two equal columns side by side. Below that a column would leave
+  // the name too little room for the symbol and its "biggest move" tag.
   &__body {
     container-type: inline-size;
     container-name: movers;
@@ -15,7 +16,7 @@
     gap: var(--space-6);
     grid-template-columns: minmax(0, 1fr);
 
-    @container movers (min-width: 34rem) {
+    @container movers (min-width: 44rem) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: var(--space-7);
     }
@@ -54,7 +55,7 @@
     list-style: none;
 
     // Wide: one grid for the whole list so every figure lines up across rows.
-    @container movers (min-width: 34rem) {
+    @container movers (min-width: 44rem) {
       grid-template-columns: auto minmax(0, 1fr) auto auto;
     }
   }
@@ -73,7 +74,7 @@
       border-bottom: 0;
     }
 
-    @container movers (min-width: 34rem) {
+    @container movers (min-width: 44rem) {
       grid-template-areas: "icon who lead trail";
     }
   }
