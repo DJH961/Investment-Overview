@@ -207,9 +207,13 @@ def test_live_eur_usd_spot_does_not_shift_daily_growth_once_shut(
         return orig_is_trading(day)
 
     vti = instruments_repo.get_or_create(session, symbol="VTI", asset_class="etf")
-    yesterday = exchange_today() - timedelta(days=1)
-    prices_repo.upsert_closes(session, vti.id, {yesterday: Decimal("220.00")})
-    fx_repo.upsert_rates(session, {yesterday: Decimal("1.20")})
+    # The baseline is the previous trading SESSION (not the calendar day before:
+    # on a Monday that is a Sunday the engine never reads, so the test only passed
+    # on days after a weekend).
+    with patch.object(intraday_snapshots_service, "_is_trading_day", mock_is_trading):
+        prev_session = intraday_snapshots_service.previous_trading_session(exchange_today())
+    prices_repo.upsert_closes(session, vti.id, {prev_session: Decimal("220.00")})
+    fx_repo.upsert_rates(session, {prev_session: Decimal("1.20")})
     session.flush()
 
     # Pinned well after the 16:00 ET close on today's real calendar date
@@ -229,11 +233,12 @@ def test_live_eur_usd_spot_does_not_shift_daily_growth_once_shut(
             fx_service.set_live_spot("USD", Decimal("1.32"), observed_on=exchange_today())
             live = compute_instrument_metrics(session, get_positions(session), now=shut_now)[vti.id]
             # Day rule (2026-11-16): the whole day figure is frozen at the close: close
-            # prices x the close rate (1.25) minus the baseline, whatever the live rate
-            # does afterwards. Hand check: $2,300 / 1.25 - $2,200 / 1.25 = +80.00 EUR at
-            # both spots, and USD stays native: +$100.
-            assert base.daily_move_eur == Decimal("80.00")
-            assert live.daily_move_eur == Decimal("80.00")
+            # prices x the close rate (1.25) minus the baseline (the previous session's
+            # holding at ITS close rate, 1.20), whatever the live rate does afterwards.
+            # Hand check: $2,300 / 1.25 - $2,200 / 1.20 = 1,840.00 - 1,833.33 = +6.67 EUR
+            # at both spots, and USD stays native: +$100.
+            assert base.daily_move_eur == Decimal("6.67")
+            assert live.daily_move_eur == Decimal("6.67")
             assert live.daily_growth_usd == base.daily_growth_usd
             assert live.daily_move_usd == Decimal("100.00")
             # The YTD growth's start value is priced at the Jan FX (1.25), untouched

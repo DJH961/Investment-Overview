@@ -299,6 +299,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Brief */
+        get: operations["get_brief_api_brief_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/brief/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ack Brief */
+        post: operations["ack_brief_api_brief_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/calculator": {
         parameters: {
             query?: never;
@@ -326,6 +360,23 @@ export interface paths {
         };
         /** Get Inputs Both */
         get: operations["get_inputs_both_api_calculator_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/currency/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Currency Both */
+        get: operations["get_currency_both_api_currency_both_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1798,6 +1849,136 @@ export interface components {
             /** File */
             file: string;
         };
+        /** BriefAckIn */
+        BriefAckIn: {
+            /** Seen At */
+            seen_at?: string | null;
+        };
+        /** BriefAckOut */
+        BriefAckOut: {
+            /** Last Ack At */
+            last_ack_at: string;
+        };
+        /** BriefBoundary */
+        BriefBoundary: {
+            /** At */
+            at: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "open" | "close";
+            /** Session Date */
+            session_date: string;
+        };
+        /**
+         * BriefEvent
+         * @description A ledger row created since the last acknowledgement (``transactions.created_at``).
+         */
+        BriefEvent: {
+            /** Created At */
+            created_at: string;
+            /** Date */
+            date: string;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Symbol */
+            symbol?: string | null;
+        };
+        /**
+         * BriefFxMove
+         * @description The weekend line: the Overview's ``currency.today`` rate move, copied.
+         */
+        BriefFxMove: {
+            /** Anchor Kind */
+            anchor_kind?: ("prev_close" | "overnight" | "session_open") | null;
+            /** Pair */
+            pair?: string | null;
+            /**
+             * Pct
+             * @description fraction, 0.01 = 1%
+             */
+            pct?: string | null;
+            /** Spot Display */
+            spot_display?: string | null;
+        };
+        /**
+         * BriefMove
+         * @description One session's move in one currency: the Overview's day move, reused as is.
+         *
+         *     Every figure is the same value the Overview payload carries for that currency
+         *     (``kpis.daily_move``, ``kpis.daily_growth_pct``, ``day_split``, ``movers``), so
+         *     the Brief can never disagree with the hero. Amounts in that currency.
+         */
+        BriefMove: {
+            /** Currency Move */
+            currency_move?: string | null;
+            /**
+             * Currency Overnight
+             * @default false
+             */
+            currency_overnight: boolean;
+            /** Day Move */
+            day_move?: string | null;
+            /**
+             * Day Move Pct
+             * @description fraction, 0.01 = 1%
+             */
+            day_move_pct?: string | null;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            movers?: components["schemas"]["Movers"] | null;
+            /** Price Move */
+            price_move?: string | null;
+            /** Session Date */
+            session_date: string;
+        };
+        /**
+         * BriefOut
+         * @description The Daily Brief. ``due`` false: show nothing (no "up to date" chrome).
+         */
+        BriefOut: {
+            /**
+             * Boundaries
+             * @default []
+             */
+            boundaries: components["schemas"]["BriefBoundary"][];
+            /** Due */
+            due: boolean;
+            /**
+             * Events
+             * @default []
+             */
+            events: components["schemas"]["BriefEvent"][];
+            /**
+             * Events Total
+             * @default 0
+             */
+            events_total: number;
+            fx_move?: components["schemas"]["ByCurrency_BriefFxMove_"] | null;
+            /** Kind */
+            kind?: ("session" | "sessions" | "fx_reopen") | null;
+            /** Last Ack At */
+            last_ack_at?: string | null;
+            move?: components["schemas"]["ByCurrency_BriefMove_"] | null;
+            /** Now */
+            now: string;
+            /**
+             * Sessions
+             * @default []
+             */
+            sessions: string[];
+            /**
+             * Sessions Passed
+             * @default 0
+             */
+            sessions_passed: number;
+        };
         /** Bucket */
         Bucket: {
             /** Label */
@@ -1893,10 +2074,31 @@ export interface components {
             /** Detail */
             detail?: string | null;
         };
+        /** ByCurrency[BriefFxMove] */
+        ByCurrency_BriefFxMove_: {
+            EUR: components["schemas"]["BriefFxMove"];
+            USD: components["schemas"]["BriefFxMove"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[BriefMove] */
+        ByCurrency_BriefMove_: {
+            EUR: components["schemas"]["BriefMove"];
+            USD: components["schemas"]["BriefMove"];
+            /** Detail */
+            detail?: string | null;
+        };
         /** ByCurrency[CalculatorInputsOut] */
         ByCurrency_CalculatorInputsOut_: {
             EUR: components["schemas"]["CalculatorInputsOut"];
             USD: components["schemas"]["CalculatorInputsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[CurrencyOut] */
+        ByCurrency_CurrencyOut_: {
+            EUR: components["schemas"]["CurrencyOut"];
+            USD: components["schemas"]["CurrencyOut"];
             /** Detail */
             detail?: string | null;
         };
@@ -2181,6 +2383,28 @@ export interface components {
             return_split: components["schemas"]["ReturnSplit"];
             today: components["schemas"]["CurrencyToday"];
         };
+        /**
+         * CurrencyBuys
+         * @description "€X buys $Y; yesterday $Z" (``domain/session_fx.fx_buying_power_split``).
+         *
+         *     ``amount_eur`` is the owner's regular investment amount, the same setting the
+         *     Overview's investing-power card uses (``investing_power.amount_eur``, default
+         *     €100); print it with the line. USD figures are that amount at one rate each.
+         */
+        CurrencyBuys: {
+            /** Amount Eur */
+            amount_eur: string;
+            /** Change Usd */
+            change_usd?: string | null;
+            /** Market Hours Usd */
+            market_hours_usd?: string | null;
+            /** Overnight Usd */
+            overnight_usd?: string | null;
+            /** Usd Now */
+            usd_now: string;
+            /** Usd Prev */
+            usd_prev?: string | null;
+        };
         /** CurrencyLifetime */
         CurrencyLifetime: {
             /** Avg Invest Rate */
@@ -2198,6 +2422,90 @@ export interface components {
             rate_change_pct?: string | null;
             /** Repatriation Value Eur */
             repatriation_value_eur?: string | null;
+        };
+        /**
+         * CurrencyOneCent
+         * @description The book's value at the rate and at the rate + 0.01, one instant, this side's ccy.
+         */
+        CurrencyOneCent: {
+            /** Change */
+            change: string;
+            /** Rate */
+            rate: string;
+            /** Value At Rate */
+            value_at_rate: string;
+            /** Value At Rate Plus */
+            value_at_rate_plus: string;
+        };
+        /** CurrencyOut */
+        CurrencyOut: {
+            /** As Of */
+            as_of: string;
+            buys?: components["schemas"]["CurrencyBuys"] | null;
+            /**
+             * Ccy
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /** Generated At */
+            generated_at: string;
+            lifetime: components["schemas"]["CurrencyLifetime"];
+            one_cent?: components["schemas"]["CurrencyOneCent"] | null;
+            rate_range?: components["schemas"]["CurrencyRateRange"] | null;
+            return_split: components["schemas"]["ReturnSplit"];
+            /** Stats */
+            stats?: components["schemas"]["CurrencyStat"][];
+            today: components["schemas"]["CurrencyToday"];
+        };
+        /**
+         * CurrencyRateRange
+         * @description Today's EUR/USD low and high from the stored intraday samples (market hours).
+         */
+        CurrencyRateRange: {
+            /** First At */
+            first_at: string;
+            /** High */
+            high: string;
+            /** High Display */
+            high_display: string;
+            /** Last At */
+            last_at: string;
+            /** Low */
+            low: string;
+            /** Low Display */
+            low_display: string;
+            /** Samples */
+            samples: number;
+            /** Session Date */
+            session_date: string;
+        };
+        /**
+         * CurrencyStat
+         * @description One strip tile (the ``stats`` shape push 6 extends).
+         */
+        CurrencyStat: {
+            /** Currency */
+            currency?: ("EUR" | "USD") | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "rate_now" | "effect_today" | "investing_power_today" | "lifetime_effect" | "avg_rate_vs_now" | "one_cent";
+            /** Kind */
+            kind?: ("tailwind" | "headwind" | "neutral") | null;
+            /** Secondary */
+            secondary?: string | null;
+            /** Secondary Currency */
+            secondary_currency?: ("EUR" | "USD") | null;
+            /** Secondary Unit */
+            secondary_unit?: ("rate" | "fraction" | "money") | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "rate" | "fraction" | "money";
+            /** Value */
+            value: string;
         };
         /** CurrencyToday */
         CurrencyToday: {
@@ -2626,6 +2934,10 @@ export interface components {
              * @enum {string}
              */
             market_state: "open" | "closed" | "holiday";
+            /** Next Close At */
+            next_close_at?: string | null;
+            /** Next Open At */
+            next_open_at?: string | null;
             /** Price Market At */
             price_market_at?: string | null;
             /** Price Observed At */
@@ -2648,6 +2960,8 @@ export interface components {
             refresh_running: boolean;
             /** Refresh Source */
             refresh_source?: string | null;
+            /** Session Opened At */
+            session_opened_at?: string | null;
         };
         /** FundWeightIn */
         FundWeightIn: {
@@ -4958,6 +5272,11 @@ export interface components {
              */
             currency_effect_pp?: string | null;
             /**
+             * Eur Minus Usd Pp
+             * @description EUR return minus USD return, same in both views (fraction, 0.01 = 1% points)
+             */
+            eur_minus_usd_pp?: string | null;
+            /**
              * Investment Return
              * @description Investment return in the USD wallet (fraction, 0.01 = 1%)
              */
@@ -4967,6 +5286,11 @@ export interface components {
              * @description Compounded EUR return (fraction, 0.01 = 1%)
              */
             total_return_eur?: string | null;
+            /**
+             * Usd Vs Eur Pct
+             * @description Dollar vs euro, average invest rate to now (fraction, 0.01 = 1%)
+             */
+            usd_vs_eur_pct?: string | null;
         };
         /** SchedulerJob */
         SchedulerJob: {
@@ -6734,6 +7058,59 @@ export interface operations {
             };
         };
     };
+    get_brief_api_brief_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefOut"];
+                };
+            };
+        };
+    };
+    ack_brief_api_brief_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BriefAckIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefAckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_inputs_api_calculator_get: {
         parameters: {
             query?: {
@@ -6818,6 +7195,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ByCurrency_CalculatorInputsOut_"];
+                };
+            };
+        };
+    };
+    get_currency_both_api_currency_both_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_CurrencyOut_"];
                 };
             };
         };

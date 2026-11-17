@@ -3901,6 +3901,19 @@
   "passkeys": 1
  },
  "GET /api/auth/passkeys": [],
+ "GET /api/brief": {
+  "boundaries": [],
+  "due": false,
+  "events": [],
+  "events_total": 0,
+  "fx_move": null,
+  "kind": null,
+  "last_ack_at": "2026-06-30T20:30:00+00:00",
+  "move": null,
+  "now": "2026-06-30T20:30:00+00:00",
+  "sessions": [],
+  "sessions_passed": 0
+ },
  "GET /api/calculator/both": {
   "EUR": {
    "as_of": "2026-06-30",
@@ -4183,6 +4196,283 @@
     }
    },
    "total_value": "1468270.050006603000000000000"
+  },
+  "detail": null
+ },
+ "GET /api/currency/both": {
+  "EUR": {
+   "as_of": "2026-06-30",
+   "buys": {
+    "amount_eur": "100",
+    "change_usd": "-0.14590000",
+    "market_hours_usd": null,
+    "overnight_usd": "-0.14590000",
+    "usd_now": "116.50000000",
+    "usd_prev": "116.64590000"
+   },
+   "ccy": "EUR",
+   "generated_at": "2026-06-30T20:30:00+00:00",
+   "lifetime": {
+    "avg_invest_rate": "1.075121251999093568832024575",
+    "breakeven_rate": "1.075121251999093568832024575",
+    "current_rate": "1.165000000000000000000000000",
+    "fx_pnl_eur": "-105360.926788723310847795406",
+    "rate_change_pct": "0.083598708363158844564295042",
+    "repatriation_value_eur": "1260317.639490646351931330472"
+   },
+   "one_cent": {
+    "change": "-10517.809697792734910053877",
+    "rate": "1.16500000",
+    "value_at_rate": "1260317.639490646351931330472",
+    "value_at_rate_plus": "1249799.829792853617021276595"
+   },
+   "rate_range": null,
+   "return_split": {
+    "currency_effect_pp": "-0.1002504936285320",
+    "eur_minus_usd_pp": "-0.1002504936285320",
+    "investment_return": "0.2599205521980033",
+    "total_return_eur": "0.1596700585694713",
+    "usd_vs_eur_pct": "-0.0771491399149411426334553004"
+   },
+   "stats": [
+    {
+     "currency": null,
+     "key": "rate_now",
+     "kind": null,
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "rate",
+     "value": "1.16500000"
+    },
+    {
+     "currency": "EUR",
+     "key": "effect_today",
+     "kind": "tailwind",
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "money",
+     "value": "1545.784644824081281440506"
+    },
+    {
+     "currency": "EUR",
+     "key": "lifetime_effect",
+     "kind": "headwind",
+     "secondary": "-0.1002504936285320",
+     "secondary_currency": null,
+     "secondary_unit": "fraction",
+     "unit": "money",
+     "value": "-105360.926788723310847795406"
+    },
+    {
+     "currency": null,
+     "key": "avg_rate_vs_now",
+     "kind": "headwind",
+     "secondary": "1.165000000000000000000000000",
+     "secondary_currency": null,
+     "secondary_unit": "rate",
+     "unit": "rate",
+     "value": "1.075121251999093568832024575"
+    },
+    {
+     "currency": "EUR",
+     "key": "one_cent",
+     "kind": null,
+     "secondary": "1.16500000",
+     "secondary_currency": null,
+     "secondary_unit": "rate",
+     "unit": "money",
+     "value": "-10517.809697792734910053877"
+    }
+   ],
+   "today": {
+    "anchor_missing": true,
+    "as_of": {
+     "as_of": "2026-06-30",
+     "observed_at": "2026-06-30T20:30:00+00:00",
+     "source": "eod"
+    },
+    "effect_eur": {
+     "market_hours": "1545.784644824081281440506",
+     "net": "1545.784644824081281440506",
+     "overnight": null
+    },
+    "investing_power_usd": {
+     "amount_eur": "100",
+     "amount_usd": "116.50000000",
+     "market_hours": null,
+     "net": "-0.14590000",
+     "overnight": "-0.14590000"
+    },
+    "move": {
+     "anchor_kind": "session_open",
+     "label_kind": "today",
+     "pct": null,
+     "session_date": "2026-06-30"
+    },
+    "pair": "USD/EUR",
+    "prev": "1.16645900",
+    "rate_move_pct": "-0.001250794069915873596928824759",
+    "regime": {
+     "forex_frozen": false,
+     "forex_open": true,
+     "holiday": false,
+     "market_open": false,
+     "session_view": true,
+     "single_overnight": false,
+     "weekend_overnight": false
+    },
+    "reopen_at": null,
+    "since": {
+     "kind": "close",
+     "pct": null
+    },
+    "since_phrase": {
+     "kind": "since_yesterday",
+     "session_date": "2026-06-30"
+    },
+    "spot": "1.16500000",
+    "spot_display": "0.8583690987124463519313304721",
+    "spot_observed_at": "2026-06-30T20:30:00+00:00"
+   }
+  },
+  "USD": {
+   "as_of": "2026-06-30",
+   "buys": {
+    "amount_eur": "100",
+    "change_usd": "-0.14590000",
+    "market_hours_usd": null,
+    "overnight_usd": "-0.14590000",
+    "usd_now": "116.50000000",
+    "usd_prev": "116.64590000"
+   },
+   "ccy": "USD",
+   "generated_at": "2026-06-30T20:30:00+00:00",
+   "lifetime": {
+    "avg_invest_rate": "1.075121251999093568832024575",
+    "breakeven_rate": "1.075121251999093568832024575",
+    "current_rate": "1.165000000000000000000000000",
+    "fx_pnl_eur": "-105360.926788723310847795406",
+    "rate_change_pct": "0.083598708363158844564295042",
+    "repatriation_value_eur": "1260317.639490646351931330472"
+   },
+   "one_cent": {
+    "change": "244.750000000000000000000",
+    "rate": "1.16500000",
+    "value_at_rate": "1468270.050006603000000000000",
+    "value_at_rate_plus": "1468514.800006603000000000000"
+   },
+   "rate_range": null,
+   "return_split": {
+    "currency_effect_pp": "0",
+    "eur_minus_usd_pp": "-0.1002504936285320",
+    "investment_return": "0.2599205521980033",
+    "total_return_eur": "0.1596700585694713",
+    "usd_vs_eur_pct": "-0.0771491399149411426334553004"
+   },
+   "stats": [
+    {
+     "currency": null,
+     "key": "rate_now",
+     "kind": null,
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "rate",
+     "value": "1.16500000"
+    },
+    {
+     "currency": "USD",
+     "key": "investing_power_today",
+     "kind": "headwind",
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "money",
+     "value": "-0.14590000"
+    },
+    {
+     "currency": null,
+     "key": "lifetime_effect",
+     "kind": "neutral",
+     "secondary": null,
+     "secondary_currency": null,
+     "secondary_unit": null,
+     "unit": "fraction",
+     "value": "-0.1002504936285320"
+    },
+    {
+     "currency": null,
+     "key": "avg_rate_vs_now",
+     "kind": "neutral",
+     "secondary": "1.165000000000000000000000000",
+     "secondary_currency": null,
+     "secondary_unit": "rate",
+     "unit": "rate",
+     "value": "1.075121251999093568832024575"
+    },
+    {
+     "currency": "USD",
+     "key": "one_cent",
+     "kind": null,
+     "secondary": "1.16500000",
+     "secondary_currency": null,
+     "secondary_unit": "rate",
+     "unit": "money",
+     "value": "244.750000000000000000000"
+    }
+   ],
+   "today": {
+    "anchor_missing": true,
+    "as_of": {
+     "as_of": "2026-06-30",
+     "observed_at": "2026-06-30T20:30:00+00:00",
+     "source": "eod"
+    },
+    "effect_eur": {
+     "market_hours": "1545.784644824081281440506",
+     "net": "1545.784644824081281440506",
+     "overnight": null
+    },
+    "investing_power_usd": {
+     "amount_eur": "100",
+     "amount_usd": "116.50000000",
+     "market_hours": null,
+     "net": "-0.14590000",
+     "overnight": "-0.14590000"
+    },
+    "move": {
+     "anchor_kind": "session_open",
+     "label_kind": "today",
+     "pct": null,
+     "session_date": "2026-06-30"
+    },
+    "pair": "EUR/USD",
+    "prev": "1.16645900",
+    "rate_move_pct": "-0.001250794069915873596928824759",
+    "regime": {
+     "forex_frozen": false,
+     "forex_open": true,
+     "holiday": false,
+     "market_open": false,
+     "session_view": true,
+     "single_overnight": false,
+     "weekend_overnight": false
+    },
+    "reopen_at": null,
+    "since": {
+     "kind": "close",
+     "pct": null
+    },
+    "since_phrase": {
+     "kind": "since_yesterday",
+     "session_date": "2026-06-30"
+    },
+    "spot": "1.16500000",
+    "spot_display": "1.16500000",
+    "spot_observed_at": "2026-06-30T20:30:00+00:00"
+   }
   },
   "detail": null
  },
@@ -29029,8 +29319,10 @@
     },
     "return_split": {
      "currency_effect_pp": "-0.1002504936285320",
+     "eur_minus_usd_pp": "-0.1002504936285320",
      "investment_return": "0.2599205521980033",
-     "total_return_eur": "0.1596700585694713"
+     "total_return_eur": "0.1596700585694713",
+     "usd_vs_eur_pct": "-0.0771491399149411426334553004"
     },
     "today": {
      "anchor_missing": true,
@@ -29104,6 +29396,8 @@
     "historical": false,
     "last_price_update_at": null,
     "market_state": "closed",
+    "next_close_at": "2026-06-30T20:30:00+00:00",
+    "next_open_at": "2026-06-30T20:30:00+00:00",
     "price_market_at": null,
     "price_observed_at": null,
     "prices_live": false,
@@ -29111,7 +29405,8 @@
     "progress_label": null,
     "progress_total": 0,
     "refresh_running": false,
-    "refresh_source": null
+    "refresh_source": null,
+    "session_opened_at": null
    },
    "fx_eur_usd": "1.16500000",
    "generated_at": "2026-06-30T20:30:00+00:00",
@@ -29246,8 +29541,10 @@
     },
     "return_split": {
      "currency_effect_pp": "0",
+     "eur_minus_usd_pp": "-0.1002504936285320",
      "investment_return": "0.2599205521980033",
-     "total_return_eur": "0.1596700585694713"
+     "total_return_eur": "0.1596700585694713",
+     "usd_vs_eur_pct": "-0.0771491399149411426334553004"
     },
     "today": {
      "anchor_missing": true,
@@ -29321,6 +29618,8 @@
     "historical": false,
     "last_price_update_at": null,
     "market_state": "closed",
+    "next_close_at": "2026-06-30T20:30:00+00:00",
+    "next_open_at": "2026-06-30T20:30:00+00:00",
     "price_market_at": null,
     "price_observed_at": null,
     "prices_live": false,
@@ -29328,7 +29627,8 @@
     "progress_label": null,
     "progress_total": 0,
     "refresh_running": false,
-    "refresh_source": null
+    "refresh_source": null,
+    "session_opened_at": null
    },
    "fx_eur_usd": "1.16500000",
    "generated_at": "2026-06-30T20:30:00+00:00",
