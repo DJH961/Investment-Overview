@@ -254,6 +254,7 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
               overnightPct={toNum(ls.overnight_pct ?? null)}
               overnight={toNum(ls.overnight_currency)}
               totalPct={toNum(ls.day_move_pct ?? null)}
+              estimate={est !== null}
               currency={currency}
               marketOpen={ls.market_open}
               data-testid="hero-day-split"

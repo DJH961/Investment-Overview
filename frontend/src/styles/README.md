@@ -7,14 +7,37 @@ names (AGENTS.md › "v6 structure and style"). This file says what the tokens a
 
 The brief: a private-bank statement, not a trading terminal. Generous, even
 spacing; soft layered surfaces with restrained depth; large confident figures; one
-restrained accent; quiet motion. The memorable element is the **headline figure in
-a serif**; everything around it stays quiet.
+restrained accent; quiet motion. Two signatures carry the identity: the **ink spine**
+(navigation in deep navy, in both themes) and the **Overview stage** (the portfolio
+value in an oversized serif, today's move and the chart on one lit surface). Everything
+around them stays quiet.
+
+## Structure (pass 2)
+
+- **Navigation spine** (`Sidebar`, `TabBar`, `.u-ink` in tokens.scss): the dark token set
+  on navy in both themes. Groups by what the owner is doing: Portfolio, Dig in, Manage;
+  System at the foot. The portfolio's value sits at the head of the spine (the top bar
+  shows it only when the spine is a rail or on phones). Phones get a floating ink dock.
+  New pages join a group in `lib/nav.ts` (the Currency page joins Dig in).
+- **The stage** (`.overview-page__stage`, `--stage-bg`, `--stage-border`, `--radius-xl`): a
+  page's one subject. Overview: hero + graph. Holdings: the summary. Periods: the
+  growth chart. Projection: the answer + chart. One stage per page, at most.
+- **Composition**: one lead surface, then quieter panels. Overview at >= 1280 px:
+  Holdings (2fr) beside today's currency and the movers (1fr); both columns end level.
+  Cards set into a narrow column lay out by their own width (container queries).
+- **A figure appears once per screen.** The ☀ day / ☾ night split of today's move lives
+  in the hero only ("☾ + ☀ = Total" while the market is open; after the close tonight's
+  ☾ sits beside the Total, not in it). Its explanation is one shared legend
+  (`DaySplitLegend`, `DAY_SPLIT_LINES`). The Holdings card says ☾ once in its header.
+- **EUR and USD have one shape.** A currency switch never moves anything: fitted
+  figures keep a fixed line box, currency-only lines are reserved or held invisibly,
+  rows keep their line count. Check with the EUR | USD height script in the PR notes.
 
 ## Type
 
 | Role | Face | Where |
 | --- | --- | --- |
-| Display | Source Serif 4 Variable, optical sizing (`--font-display`, `m.display($size)`) | Page titles, the Overview headline value, the Brief's title, the app name on the login card. Nowhere else. |
+| Display | Source Serif 4 Variable, optical sizing (`--font-display`, `m.display($size)`) | **The serif marks the subject**: page and section titles, the one lead figure of a page or card (the Overview value at `--font-size-hero`), the Brief's title, the app name. Never in tables, tiles or controls. |
 | Interface and figures | Inter Variable, optical sizing (`--font-sans`) | Everything else, including every number in a table or tile. |
 
 - Both fonts are self-hosted through `@fontsource-variable/*` (CSP: no external requests).
@@ -39,7 +62,9 @@ a serif**; everything around it stays quiet.
 
 | Level | Token | Use |
 | --- | --- | --- |
-| 0 canvas | `--color-bg` (+ a faint `--color-bg-glow`) | The page; the sidebar sits on it. |
+| 0 canvas | `--color-bg` (+ `--color-bg-glow`) | The page. Dark: a deep blue-black lit by two faint glows. |
+| spine | `.u-ink` | Sidebar, rail, phone dock: navy in both themes. |
+| stage | `--stage-bg`, `--stage-border` | A page's one subject, a step above the cards. |
 | 1 surface | `--color-surface`, `--shadow-1`, `--color-border` (`m.surface`) | Cards, tiles, the hero, the active sidebar row. |
 | well | `--color-surface-2` (`m.well`) | Sunken: segmented tracks, inputs, chips, table hover. |
 | glass | `--color-surface-glass` + backdrop blur | Fixed bars (top bar, phone tab bar). |
@@ -67,9 +92,12 @@ hero, dialogs, sheets `--radius-xl` (20) · pills `--radius-full`. Larger things
 ## Charts
 
 Series palette `--chart-1` … `--chart-6` (unchanged from v6; validated in the CVD test).
-Primary line solid `--chart-1` (or pos/neg on 1D), second currency dashed `--chart-2`,
-gridlines `--color-border`, axis labels `--color-muted` xs tabular. Area fills are a soft
-fade of the line colour; no gradients as decoration.
+Primary line solid 2 px `--chart-1` (or pos/neg on 1D), second currency dashed `--chart-2`,
+horizontal gridlines only (`--color-border`), a faint baseline, axis labels `--color-muted`
+xs tabular. Area: a soft fade of the line colour (top ≤ 0.18). The last value as a small
+pill at the line's end (single-axis charts), text in fg, a dot for identity. The after-close
+"now" point is filled in the primary's colour. Hover: crosshair, ringed dots, a level-2
+tooltip. Bars: rounded at the data end only, 2 px apart.
 
 ## Motion
 
