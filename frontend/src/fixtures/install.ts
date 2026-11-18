@@ -221,7 +221,10 @@ export async function installFixtures(): Promise<void> {
   const data = (
     dataset === "empty" ? await import("./data/empty.json") : await import("./data/full.json")
   ).default as Fixtures;
-  const days = dayNumber(new Date().toISOString().slice(0, 10)) - dayNumber(ANCHOR);
+  // Whole weeks only, so weekdays survive the shift (a recorded Tuesday stays a Tuesday,
+  // sessions never land on a weekend). The data can be up to six days old; screenshot
+  // scripts set the browser clock to the shifted anchor day.
+  const days = Math.floor((dayNumber(new Date().toISOString().slice(0, 10)) - dayNumber(ANCHOR)) / 7) * 7;
   const version = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "";
   const realFetch = window.fetch.bind(window);
   let briefMode = pickBrief();
