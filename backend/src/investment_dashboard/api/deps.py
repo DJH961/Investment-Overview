@@ -19,7 +19,9 @@ live events / cache bumps collected on ``session.info["after_commit"]`` (see
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import Depends, Query, Request
@@ -67,3 +69,34 @@ async def require_auth(request: Request) -> None:
     if isinstance(getattr(request.state, "principal", None), security.Principal):
         return
     await security.authenticate(request)
+
+
+def visit_clock() -> datetime:
+    """The server clock for visit heartbeats (a seam for tests)."""
+    return datetime.now(UTC)
+
+
+#: Request header the client sends on its reads only while the tab is visible
+#: (``document.visibilityState === "visible"``; an unfocused but visible tab counts).
+VISIBLE_HEADER = "X-Visible"
+
+
+def visit_heartbeat(request: Request, session: SessionDep) -> None:
+    """Route dependency: a read with ``X-Visible: 1`` is a sign the owner has the app open.
+
+    Used by the Overview and Brief reads; it runs even when the route answers 304.
+    Reads without the header (background tabs keep polling) never count. Throttled and
+    best-effort: it never fails the request.
+    """
+    from investment_dashboard.services import brief_service, settings_service  # noqa: PLC0415
+
+    if request.headers.get(VISIBLE_HEADER) != "1":
+        return
+    try:
+        gap = timedelta(minutes=int(settings_service.get("brief_visit_gap_minutes", session)))
+        if brief_service.heartbeat(session, visit_clock(), gap=gap):
+            read_cache.invalidate(read_cache.BRIEF)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.getLogger(__name__).warning("visit heartbeat failed", exc_info=True)

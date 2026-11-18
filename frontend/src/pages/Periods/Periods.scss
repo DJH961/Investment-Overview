@@ -5,12 +5,33 @@
 
   &__grid {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
   }
 
   &__pill {
     color: var(--color-accent);
+    font-family: var(--font-sans);
     font-size: var(--font-size-xs);
+    letter-spacing: 0;
+  }
+
+  // The page's one subject: the growth chart on a lit stage surface.
+  &__stage {
+    padding: var(--space-2) 0;
+    background: var(--stage-bg);
+    border: var(--border-width) solid var(--stage-border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-1);
+    min-width: 0;
+
+    @include m.phone {
+      border-radius: var(--radius-lg);
+    }
+  }
+
+  // Year sections: the year in the serif display, its figures a calm row under it.
+  &__year-title {
+    @include m.display(var(--font-size-2xl));
   }
 
   &__note {
@@ -104,13 +125,13 @@
   margin: 0;
   color: var(--color-fg);
   font-size: var(--font-size-md);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-medium);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .periods-page__stat--lead .periods-page__stat-value {
-  font-size: var(--font-size-lg);
+  @include m.figure(var(--font-size-xl));
 }
 
 .periods-page__stat-sub {

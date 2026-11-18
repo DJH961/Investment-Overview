@@ -1,13 +1,22 @@
+@use "../../styles/mixins" as m;
+
+// Phone navigation: a floating dock (the spine colours, .u-ink; light or ink) that hovers
+// over the page with a little air around it, the open tab a lit pill.
 .tab-bar {
   position: fixed;
-  inset: auto 0 0 0;
+  right: calc(var(--space-2) + var(--safe-right));
+  bottom: calc(var(--space-2) + var(--safe-bottom));
+  left: calc(var(--space-2) + var(--safe-left));
   z-index: var(--z-tabbar);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  height: calc(var(--tabbar-height) + var(--safe-bottom));
-  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
-  background: var(--color-surface);
-  border-top: var(--border-width) solid var(--color-border);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  height: calc(var(--tabbar-height) - var(--space-2));
+  padding: var(--space-1);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-glass);
+  box-shadow: var(--shadow-2);
+  backdrop-filter: saturate(1.4) blur(16px);
 
   &__tab {
     display: flex;
@@ -17,25 +26,41 @@
     gap: 2px;
     min-width: 0;
     min-height: var(--tap-min);
+    border-radius: var(--radius-lg);
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
     text-decoration: none;
+    transition:
+      background-color var(--duration-base) var(--ease-standard),
+      color var(--duration-fast) var(--ease-standard);
 
+    &:focus-visible {
+      @include m.focus-ring;
+      outline-offset: -2px;
+    }
+
+    // The open tab: a lit pill, bold label and accent icon (shape + weight, not hue alone).
     &--active {
-      color: var(--color-accent);
+      background: var(--color-surface);
+      color: var(--color-fg);
+      font-weight: var(--font-weight-semibold);
     }
   }
 
   &__icon {
-    width: var(--icon-lg);
-    height: var(--icon-lg);
+    width: var(--icon-md);
+    height: var(--icon-md);
+  }
+
+  &__tab--active &__icon {
+    color: var(--color-accent);
   }
 
   // Fixed wording: smaller type on the narrowest phones so "Transactions" fits.
   &__label {
     max-width: 100%;
-    font-size: clamp(0.625rem, 2.9vw, var(--font-size-xs));
+    font-size: clamp(0.625rem, 2.7vw, var(--font-size-xs));
     white-space: nowrap;
   }
 
@@ -48,11 +73,7 @@
   &__section-title {
     margin-bottom: var(--space-2);
     padding: 0 var(--space-1);
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    @include m.eyebrow;
   }
 
   &__grid {

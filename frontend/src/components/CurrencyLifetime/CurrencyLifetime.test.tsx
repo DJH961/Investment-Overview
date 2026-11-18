@@ -38,6 +38,33 @@ describe("CurrencyLifetime", () => {
     expect(screen.getByText("€180,000")).toBeInTheDocument();
     expect(screen.getByText("1.0850")).toBeInTheDocument();
   });
+  it("USD view (P12): the dollar vs the euro and the EUR-minus-USD gap instead of a 0", () => {
+    const usd = {
+      ...data("0.0545"),
+      ccy: "USD",
+      currency: {
+        ...data("0.0545").currency,
+        return_split: {
+          currency_effect_pp: "0",
+          eur_minus_usd_pp: "-0.031",
+          usd_vs_eur_pct: "-0.0517",
+          investment_return: "0.4",
+          total_return_eur: "0.369",
+        },
+      },
+    } as unknown as OverviewDto;
+    const { container } = render(<CurrencyLifetime data={usd} />);
+    expect(screen.getByText("Dollar vs euro since buying")).toBeInTheDocument();
+    expect(screen.getByTestId("lifetime-rate-move")).toHaveTextContent("-5.17%");
+    expect(screen.getByText("headwind")).toBeInTheDocument();
+    expect(screen.getByText("In euros vs dollars")).toBeInTheDocument();
+    expect(screen.getByTestId("lifetime-fx-gap")).toHaveTextContent("-3.10 pp");
+    expect(screen.queryByText("0.00 pp")).not.toBeInTheDocument();
+    // One shape in both views: same tiles, same lines.
+    const nUsd = container.querySelectorAll(".currency-lifetime__stat dd").length;
+    const eur = render(<CurrencyLifetime data={data("0.0545")} />);
+    expect(eur.container.querySelectorAll(".currency-lifetime__stat dd").length).toBe(nUsd);
+  });
   it("a weaker euro is a tailwind", () => {
     render(<CurrencyLifetime data={data("-0.02")} />);
     expect(screen.getByText("tailwind")).toBeInTheDocument();

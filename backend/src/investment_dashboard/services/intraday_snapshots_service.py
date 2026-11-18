@@ -266,6 +266,12 @@ def effective_interval(desired: str, day: date, today: date) -> str:
 #: now set high enough to reject a thin, coarse-cadence day on the count alone. A
 #: fully sourced 5-minute session clears it with wide margin.
 WEEK_POINTS_PER_COMPLETE_SESSION = 30
+#: A forced reload re-pulls a finished day holding fewer than this share of the bars
+#: its resolution would give (so a sparse day can be upgraded, not just hole-filled).
+WEEK_DENSITY_FRACTION = 0.7
+#: Coarser bar widths tried, in order, when the provider serves nothing at the wanted one
+#: (yfinance keeps 1m about a week, 2m / 5m / 15m / 30m about 60 days).
+_INTERVAL_FALLBACKS = ("1m", "2m", "5m", "15m", "30m")
 
 #: Smallest share count treated as a real holding (mirrors the Overview filter).
 _MIN_SHARES = Decimal("0.0000001")
@@ -892,6 +898,55 @@ def session_open_fx(session: Session, *, now: datetime | None = None) -> Decimal
     for _at, _market_eur, fx in samples:
         if fx is not None and fx > 0:
             return fx
+    return None
+
+
+def sample_fx_at(
+    session: Session, at: datetime, *, max_age: timedelta = timedelta(minutes=30)
+) -> Decimal | None:
+    """EUR/USD stored beside the newest intraday sample in ``[at - max_age, at]``.
+
+    The rate struck at (or just before) the instant ``at``, from the per-instant rate
+    every sample carries. ``None`` when no sample with a rate lies that close (samples
+    exist only while the market trades and only for the retained week). No network.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    end = _to_naive_utc(at)
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, end - max_age, end)
+    for row in reversed(rows):
+        if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
+            return row.fx_eur_usd
+    return None
+
+
+@dataclass(frozen=True)
+class SampleAt:
+    """A stored intraday sample: the intraday-priced holdings' value and the rate then."""
+
+    market_eur: Decimal
+    #: Native-USD market component (FX-free); ``None`` for a legacy row without it.
+    market_usd: Decimal | None
+    fx_eur_usd: Decimal
+
+
+def sample_at(
+    session: Session, at: datetime, *, max_age: timedelta = timedelta(minutes=30)
+) -> SampleAt | None:
+    """The newest stored intraday sample in ``[at - max_age, at]`` that carries a rate.
+
+    ``None`` when none lies that close. Only the sample's own columns are read (the
+    market component in EUR and native USD, and the per-instant rate). No network.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    end = _to_naive_utc(at)
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, end - max_age, end)
+    for row in reversed(rows):
+        if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
+            return SampleAt(_row_eur(row), row.market_value_usd, row.fx_eur_usd)
     return None
 
 
@@ -1596,10 +1651,19 @@ def week_series_with_fx(
         # A reload is stricter: a few-minute hole or a missing afternoon is filled
         # too (gaps only; stored finer samples are kept by the fetch).
         day_interval = effective_interval(interval, session_date, exchange_today(now))
-        tolerance = min(WEEK_MAX_GAP_SECONDS, max(3 * interval_seconds(day_interval), 180))
-        return _week_day_is_covered(
+        step = interval_seconds(day_interval)
+        tolerance = min(WEEK_MAX_GAP_SECONDS, max(3 * step, 180))
+        if not _week_day_is_covered(
             session_date, anchor, now, sample_times, max_gap_seconds=tolerance, check_tail=True
-        )
+        ):
+            return False
+        # A finished day stored coarser than the reload resolution (say 10-minute
+        # points when 5-minute bars are wanted) has no hole, yet can still be
+        # upgraded: re-pull it unless it already holds most of the bars.
+        if session_date == anchor and _to_naive_utc(now) <= _session_close_utc(session_date):
+            return True
+        span = (_session_close_utc(session_date) - _session_open_utc(session_date)).total_seconds()
+        return span <= 0 or len(sample_times) >= WEEK_DENSITY_FRACTION * (span / step)
 
     # 2. Fetch only the gaps, and only days not already attempted this session
     #    (``force`` re-pulls every uncovered day regardless of the marker).
@@ -1620,6 +1684,7 @@ def week_series_with_fx(
             fx_fetcher=fx_fetcher,
             fx_fallback_fetcher=fx_fallback_fetcher,
             interval=interval,
+            today=exchange_today(now),
         )
 
     # 3. Merge cached + freshly fetched (disjoint by session), oldest first.
@@ -1718,6 +1783,47 @@ def _interval_runs(days: list[date], desired: str, today: date) -> list[tuple[st
     return runs
 
 
+def _fetch_run_with_fallback(
+    fetch: object,
+    symbols: list[str],
+    run_days: list[date],
+    wanted: str,
+) -> tuple[dict[str, dict[datetime, Decimal]], str]:
+    """One provider request for ``run_days``; when it serves nothing (or fails), a coarser width.
+
+    The ladder only goes coarser (1m -> 2m -> 5m -> 15m -> 30m): a day at the edge of the
+    1-minute window (or past it) still gets bars at the finest width the provider keeps.
+    Returns the bars and the width they came at; every attempt goes to the activity log.
+    """
+    from investment_dashboard.activity_log import activity  # noqa: PLC0415
+
+    ladder = (
+        [wanted]
+        if wanted not in _INTERVAL_FALLBACKS
+        else list(_INTERVAL_FALLBACKS[_INTERVAL_FALLBACKS.index(wanted) :])
+    )
+    last: dict[str, dict[datetime, Decimal]] = {}
+    for width in ladder:
+        try:
+            bars: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
+                symbols, run_days[0], run_days[-1], interval=width
+            )
+        except Exception:
+            log.warning("week curve intraday fetch failed at %s", width, exc_info=True)
+            activity("market_data").warning(
+                "intraday bars %s..%s at %s: request failed", run_days[0], run_days[-1], width
+            )
+            continue
+        count = sum(len(v) for v in bars.values())
+        activity("market_data").info(
+            "intraday bars %s..%s at %s: %d bars", run_days[0], run_days[-1], width, count
+        )
+        if count:
+            return bars, width
+        last = bars
+    return last, ladder[-1]
+
+
 def _fetch_and_persist_week_days(
     session: Session,
     to_fetch: list[date],
@@ -1728,6 +1834,7 @@ def _fetch_and_persist_week_days(
     fx_fetcher: object | None,
     fx_fallback_fetcher: object | None = None,
     interval: str = WEEK_INTERVAL,
+    today: date | None = None,
 ) -> list[tuple[datetime, Decimal, Decimal | None]]:
     """Fetch, build, persist and mark the uncovered week sessions in ``to_fetch``.
 
@@ -1753,18 +1860,17 @@ def _fetch_and_persist_week_days(
         # One request per (bar width, <= 6-day span) run of days: the finest width
         # yfinance serves for the day's age (1m only for the last week, 2m for ~60
         # days, 5m otherwise), never finer than the caller asked for.
-        today = exchange_today()
+        today = today or exchange_today()
         runs = _interval_runs(to_fetch, interval, today)
+        used_interval: dict[date, str] = {}
         bars_by_symbol: dict[str, dict[datetime, Decimal]] = {}
         fx_bars: dict[datetime, Decimal] = {}
-        for run_interval, run_days in runs:
-            try:
-                run_bars: dict[str, dict[datetime, Decimal]] = fetch(  # type: ignore[operator]
-                    symbols, run_days[0], run_days[-1], interval=run_interval
-                )
-            except Exception:  # pragma: no cover - defensive: best-effort network fetch
-                log.warning("week curve intraday fetch failed", exc_info=True)
-                continue
+        for wanted_interval, run_days in runs:
+            run_bars, run_interval = _fetch_run_with_fallback(
+                fetch, symbols, run_days, wanted_interval
+            )
+            for d in run_days:
+                used_interval[d] = run_interval
             for sym, bars in run_bars.items():
                 bars_by_symbol.setdefault(sym, {}).update(bars)
             if not (needs_fx and run_bars):
@@ -1799,7 +1905,7 @@ def _fetch_and_persist_week_days(
                     _session_start_utc(to_fetch[-1] + timedelta(days=1)),
                 )
             )
-        day_interval = {d: i for i, days in runs for d in days}
+        day_interval = {d: i for i, days in runs for d in days} | used_interval
         for session_date in to_fetch:
             built = _build_week_day_samples(
                 session, session_date, positions_by_day[session_date], bars_by_symbol, fx_bars

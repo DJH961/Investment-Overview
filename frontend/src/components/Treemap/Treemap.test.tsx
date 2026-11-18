@@ -69,8 +69,8 @@ describe("Treemap", () => {
       <Treemap
         height={100}
         items={[
-          { id: "big", label: "Big", value: 95 },
-          { id: "small", label: "Small", value: 5 },
+          { id: "big", label: "Big", value: 90 },
+          { id: "small", label: "Small", value: 10 },
         ]}
       />,
     );

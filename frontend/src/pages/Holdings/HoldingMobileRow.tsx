@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { ChevronDown, LineChart } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router";
 import { Button } from "../../components/Button";
 import { daySplitMoved, HoldingDaySplit } from "../../components/DaySplit";
 import { PriceTick } from "../../components/Freshness";
@@ -125,6 +126,9 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
             </div>
           )}
           <div className="holdings-page__item-actions">
+            <Link to={`/holdings/${row.instrument_id}`} className="holdings-page__page-link">
+              Open {row.symbol}
+            </Link>
             <Button variant="secondary" leftIcon={<LineChart aria-hidden size={16} />} onClick={() => onOpenChart(row)}>
               Price chart
             </Button>

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from investment_dashboard.domain.market_hours import (
     current_session_open,
+    last_session_close,
     next_session_close,
     next_session_open,
 )
@@ -84,3 +85,20 @@ def test_dst_change_weeks() -> None:
     fri_after = utc(2026, 10, 30, 21, 0)
     assert next_session_open(fri_after) == utc(2026, 11, 2, 14, 30)
     assert next_session_close(fri_after) == utc(2026, 11, 2, 21, 0)
+
+
+def test_last_close_after_a_half_day_and_a_holiday() -> None:
+    # Thanksgiving Thu 26/11/2026 is shut; Black Friday 27/11 closes at 13:00 ET = 18:00Z.
+    friday_morning = utc(2026, 11, 27, 10, 0)
+    assert last_session_close(friday_morning) == utc(2026, 11, 25, 21, 0)  # skips the holiday
+    during = utc(2026, 11, 27, 16, 0)
+    assert next_session_close(during) == utc(2026, 11, 27, 18, 0)  # the half-day close
+    saturday = utc(2026, 11, 28, 12, 0)
+    assert last_session_close(saturday) == utc(2026, 11, 27, 18, 0)
+    assert next_session_open(saturday) == utc(2026, 11, 30, 14, 30)
+
+
+def test_last_close_is_at_or_before_now() -> None:
+    at_bell = utc(2026, 11, 17, 21, 0)
+    assert last_session_close(at_bell) == at_bell
+    assert last_session_close(utc(2026, 11, 17, 20, 59)) == utc(2026, 11, 16, 21, 0)

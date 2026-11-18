@@ -220,7 +220,7 @@ export function Import() {
       </ol>
 
       {step === 1 && (
-        <Card title="Upload" subtitle="Drop your file first, then pick the broker and account. The import only runs when you press Import.">
+        <Card className="import-page__lead" title="Upload" subtitle="Drop your file first, then pick the broker and account. The import only runs when you press Import.">
           <div className="import-page__upload">
             <div
               className={`import-page__drop${dragging ? " import-page__drop--active" : ""}`}
@@ -247,6 +247,7 @@ export function Import() {
                 ref={inputRef}
                 className="import-page__file"
                 type="file"
+                tabIndex={-1}
                 accept=".csv,.tsv,.txt,.xlsx,.xlsm,.xls"
                 aria-label="Broker file"
                 onChange={(e) => pick(e.target.files?.[0])}
@@ -282,7 +283,7 @@ export function Import() {
       )}
 
       {step === 2 && preview && (
-        <Card title={`Preview: ${preview.filename}`} subtitle={`Broker: ${preview.broker}. Nothing is written until you confirm.`}>
+        <Card className="import-page__lead" title={`Preview: ${preview.filename}`} subtitle={`Broker: ${preview.broker}. Nothing is written until you confirm.`}>
           <div className="import-page__chips">
             <span className="import-page__chip">New {preview.counts.new}</span>
             <span className="import-page__chip">Duplicate {preview.counts.duplicates}</span>

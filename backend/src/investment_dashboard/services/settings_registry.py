@@ -224,6 +224,37 @@ DEFS: tuple[SettingDef, ...] = (
         ),
     ),
     SettingDef(
+        "brief_autoclose_minutes",
+        SettingType.INT,
+        3,
+        "display",
+        "Daily Brief closes after (minutes, 0 = never)",
+        help=(
+            "How long the Daily Brief above the Overview stays open before it closes "
+            "itself and counts as seen. 0 keeps it open until you close it."
+        ),
+        min=_D(0),
+        max=_D(60),
+        unit="min",
+        since="7.0",
+    ),
+    SettingDef(
+        "brief_visit_gap_minutes",
+        SettingType.INT,
+        5,
+        "display",
+        "New visit after being away (minutes)",
+        help=(
+            "The Daily Brief covers what happened while you were away. Leaving the app "
+            "(or its tab) for at least this long, then coming back, counts as a new "
+            "visit; shorter breaks, like flicking to another tab, do not."
+        ),
+        min=_D(1),
+        max=_D(120),
+        unit="min",
+        since="7.0",
+    ),
+    SettingDef(
         "chart_pref.analytics_lookback",
         SettingType.INT,
         365,

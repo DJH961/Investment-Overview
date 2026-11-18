@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Card } from "../Card";
+import { EmptyState } from "../EmptyState";
 import { ErrorState } from "../ErrorState";
 import { SegmentedControl } from "../SegmentedControl";
 import { Skeleton } from "../Skeleton";
@@ -84,6 +85,11 @@ export function AllocationCard({ currency, height }: AllocationCardProps) {
         <ErrorState message={holdings.error.message} onRetry={() => void holdings.refetch()} />
       ) : holdings.isPending ? (
         <Skeleton height="12rem" />
+      ) : items.length === 0 ? (
+        <EmptyState
+          title="Nothing to map yet"
+          description={view === "category" ? "No categories with a value. Try the Fund view." : "No holdings with a value."}
+        />
       ) : (
         <Treemap
           items={items}

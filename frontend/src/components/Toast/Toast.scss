@@ -8,7 +8,7 @@
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
   border-left: var(--space-1) solid var(--color-accent);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-2);
 
   &--success {
@@ -20,11 +20,11 @@
   }
 
   &[data-state="open"] {
-    animation: toast-in var(--duration-base) var(--ease-standard);
+    animation: toast-in var(--duration-base) var(--ease-out);
   }
 
   &[data-state="closed"] {
-    animation: toast-out var(--duration-fast) ease-in;
+    animation: toast-out var(--duration-fast) var(--ease-standard);
   }
 
   &__viewport {
@@ -111,10 +111,17 @@
   }
 }
 
+@include m.reduced-motion {
+  .toast[data-state="open"],
+  .toast[data-state="closed"] {
+    animation: none;
+  }
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(var(--space-2));
   }
 }
 

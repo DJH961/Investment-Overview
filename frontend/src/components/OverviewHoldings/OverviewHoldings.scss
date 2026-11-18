@@ -11,6 +11,10 @@
     grid-template-columns: minmax(0, 1fr) auto auto;
     column-gap: var(--space-4);
     margin: 0;
+
+    @include m.phone {
+      column-gap: var(--space-3);
+    }
     padding: 0;
     list-style: none;
 
@@ -22,7 +26,8 @@
     // The weight bar gives way first, so the Day column's two lines ("+€966.93 +0.10%"
     // over "☀ +0.55%  ☾ −0.45%") always fit beside the value at 1024 px.
     @include m.desktop {
-      grid-template-columns: minmax(10rem, 1.8fr) minmax(4.5rem, 1fr) auto auto auto;
+      grid-template-columns: minmax(8rem, 1.8fr) minmax(3rem, 1fr) auto auto auto;
+      column-gap: var(--space-4);
     }
   }
 
@@ -45,10 +50,23 @@
     align-items: center;
   }
 
+  // The card stretches to the row (Overview side column taller): the list keeps its natural
+  // height and the footer is pinned to the bottom, so the free space reads as deliberate.
+  display: flex;
+  flex-direction: column;
+
+  & > .card__body:not([hidden]) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
   &__row {
-    padding: var(--space-2) 0;
+    min-height: var(--space-8);
+    padding: var(--space-3) 0;
     border-bottom: var(--border-width) solid var(--color-border);
     font-size: var(--font-size-sm);
+    transition: background var(--duration-fast) var(--ease-standard);
 
     &:last-child {
       border-bottom: 0;
@@ -57,11 +75,17 @@
     &:hover {
       background: linear-gradient(90deg, transparent, var(--color-surface-2) 12%, var(--color-surface-2) 88%, transparent);
     }
+
+    @include m.reduced-motion {
+      transition: none;
+    }
   }
 
+  // A calm header: quiet sentence-case labels over one hairline, a touch of air below.
   &__head {
-    padding-bottom: var(--space-2);
-    border-bottom: var(--border-width) solid var(--color-border-strong);
+    padding-bottom: var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-border);
+    color: var(--color-faint);
     @include m.eyebrow;
   }
 
@@ -86,10 +110,32 @@
     font-weight: var(--font-weight-semibold);
   }
 
+  &__symbol-link {
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  // The name gets two lines rather than an early ellipsis ("Vangu…"); it never grows
+  // a row beyond that, and the full name is in its title.
   &__name {
-    @include m.truncate;
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
+
+    // Always two lines tall, so a row is the same height whatever the value column's
+    // width (US$ figures are longer) and EUR and USD never jump.
+    min-height: calc(2em * var(--line-height-tight));
   }
 
   &__weight {
@@ -101,7 +147,7 @@
   &__weight-bar {
     position: relative;
     flex: 1 1 auto;
-    height: var(--space-1);
+    height: calc(var(--space-1) + var(--border-width));
     overflow: hidden;
     border-radius: var(--radius-full);
     background: var(--color-surface-2);
@@ -128,13 +174,20 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    // Never narrower than its own text: a Day line "-0.53% sun -0.40%" claims its width from the
+    // weight bar instead of running left into the Value column.
     min-width: 0;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+
+    @include m.tablet-up {
+      min-width: max-content;
+    }
   }
 
   &__main {
     font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
   }
 
   &__sub {
@@ -239,7 +292,6 @@
     font-size: var(--font-size-2xs);
     font-style: normal;
     font-weight: var(--font-weight-medium);
-    letter-spacing: 0.04em;
     white-space: nowrap;
 
     @include m.tablet-up {
@@ -259,9 +311,12 @@
     height: var(--font-size-2xs);
   }
 
+  // "≈ FAKEL" is one unit: never split over two lines (the row would grow in USD,
+  // where the figures beside it are wider).
   &__twin-symbol {
     align-self: center;
     font-weight: var(--font-weight-medium);
+    white-space: nowrap;
   }
 
   &__twin-note {
@@ -273,7 +328,7 @@
     align-items: center;
     justify-content: center;
     align-self: center;
-    padding: 2px;
+    padding: var(--space-1);
     border: 0;
     border-radius: var(--radius-sm);
     background: transparent;
@@ -344,8 +399,6 @@
     color: var(--color-muted);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
 
     &--live {
       background: var(--color-pos-soft);
@@ -375,16 +428,24 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    margin-top: var(--space-2);
+    // Pinned to the card's bottom edge when the card is taller than its list.
+    margin-top: auto;
+    padding-top: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
   }
 
   &__link {
     margin-left: auto;
-    color: var(--color-muted);
+    color: var(--color-accent);
     font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
 
     &:hover {
-      color: var(--color-fg);
+      text-decoration: underline;
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
     }
   }
 
@@ -446,10 +507,108 @@
     }
   }
 
-  // "+€966.93  +0.10%": the day's money and % on one line when a split follows.
-  &__day-line {
+  // Under the day's money: its % and, in EUR, the ☀ day part, one quiet line.
+  &__day-sub {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
+    justify-content: flex-end;
     gap: var(--space-2);
+  }
+
+  // Header: ☾ once for every dollar holding, beside the price time.
+  &__meta {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  &__night {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-1) 0 var(--space-2);
+    // Outline drawn inside (no border): the chip is exactly one text line tall, like the
+    // price stamp, so the header keeps its height in USD where the chip is absent.
+    border-radius: var(--radius-full);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__night-icon,
+  &__sun-icon {
+    flex-shrink: 0;
+    width: 1em;
+    height: 1em;
+    color: var(--color-faint);
+  }
+
+  &__night-label {
+    @include m.phone {
+      @include m.visually-hidden;
+    }
+  }
+
+  // A row's ☀ day part, where the USD view shows the money: the same line, the same height.
+  &__sun {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Phone: the ticker and its badges get the full row width on top, and the name,
+  // value and day share the line under it. Badges never wrap the row taller in one
+  // currency than the other, and the name has room instead of "Vangu…".
+  @include m.phone {
+    &__row {
+      align-items: start;
+      row-gap: 2px;
+    }
+
+    &__row > &__who {
+      display: contents;
+    }
+
+    &__row &__symbol {
+      grid-column: 1 / -1;
+      grid-row: 1;
+    }
+
+    &__row &__name {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    // The price time wraps under the name rather than losing its day or (NAV).
+    &__row &__asof {
+      grid-column: 1;
+      grid-row: 3;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+    }
+
+    // The twin line's "≈ FAKEL" needs the narrow first column whole: the dashed
+    // connector and the indent step aside (italic and "≈" still mark the estimate).
+    &__twin-who {
+      gap: 0;
+      margin-left: 0;
+    }
+
+    &__twin-link {
+      display: none;
+    }
+
+    &__row &__value,
+    &__row &__day {
+      grid-row: 2 / span 2;
+    }
   }
 }

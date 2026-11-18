@@ -1,0 +1,84 @@
+@use "../../styles/mixins" as m;
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
+  min-width: 0;
+
+  &__list {
+    display: flex;
+    gap: var(--space-5);
+    overflow-x: auto;
+    border-bottom: var(--border-width) solid var(--color-border);
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  &__trigger {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--control-height-lg);
+    padding: 0 var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+    transition: color var(--duration-fast) var(--ease-standard);
+
+    // The indicator: a 2px ink line on the hairline (shape + weight, not hue alone).
+    &::after {
+      content: "";
+      position: absolute;
+      right: 0;
+      bottom: calc(-1 * var(--border-width));
+      left: 0;
+      height: 2px;
+      border-radius: var(--radius-full);
+      background: transparent;
+      transition: background-color var(--duration-base) var(--ease-standard);
+    }
+
+    &:hover {
+      color: var(--color-fg);
+    }
+
+    &[data-state="active"] {
+      color: var(--color-fg);
+      font-weight: var(--font-weight-semibold);
+
+      &::after {
+        background: var(--color-fg);
+      }
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+      outline-offset: -2px;
+    }
+  }
+
+  &__badge {
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.6;
+  }
+
+  &__panel {
+    min-width: 0;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+}

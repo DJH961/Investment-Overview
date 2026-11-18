@@ -97,6 +97,13 @@ describe("startLive", () => {
     expect(stale(["graphs", "1d", "EUR"])).toBe(true);
     expect(stale(["graphs", "1w", "EUR"])).toBe(false);
     expect(seen).toEqual(["graphs"]);
+    // A 1W reload rebuilds the last session too: both lines refetch.
+    qc.setQueryData(["graphs", "1d", "EUR"], 1);
+    qc.setQueryData(["graphs", "1m", "EUR"], 1);
+    FakeEventSource.instances[0]!.emit({ type: "graphs", range: "1w", ok: true, points: 400 });
+    expect(stale(["graphs", "1w", "EUR"])).toBe(true);
+    expect(stale(["graphs", "1d", "EUR"])).toBe(true);
+    expect(stale(["graphs", "1m", "EUR"])).toBe(false);
     off();
     stop();
   });

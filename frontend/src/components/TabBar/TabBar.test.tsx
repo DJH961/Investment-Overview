@@ -28,7 +28,7 @@ describe("TabBar", () => {
     renderTabs();
     await user.click(screen.getByRole("button", { name: "More" }));
     const sheet = screen.getByRole("dialog", { name: "More" });
-    expect(within(sheet).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["Portfolio", "Manage", "System"]);
+    expect(within(sheet).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["Portfolio", "Dig in", "Manage", "System"]);
     const portfolio = within(sheet).getByRole("region", { name: "Portfolio" });
     expect(within(portfolio).getAllByRole("link")[0]).toHaveTextContent("Activity");
     expect(within(sheet).getByRole("link", { name: "Health & Repair" })).toBeInTheDocument();

@@ -5,11 +5,13 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-4) var(--space-5);
-  background: var(--color-surface);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-1);
+  padding: var(--space-5) var(--card-pad-x);
+  // A standalone tile is a level-1 surface. A parent that groups tiles into one panel
+  // (KpiGrid) sets these hooks to flatten them and draw hairline dividers instead.
+  background: var(--kpi-tile-bg, var(--color-surface));
+  border: var(--kpi-tile-border, var(--border-width) solid var(--color-border));
+  border-radius: var(--kpi-tile-radius, var(--radius-lg));
+  box-shadow: var(--kpi-tile-shadow, var(--shadow-1));
   // The value is sized from the tile's own width so long figures never spill
   // into the next tile; KpiTile.tsx shrinks it further via --kpi-tile-fit.
   container-type: inline-size;
@@ -18,7 +20,7 @@
   @include m.phone {
     gap: var(--space-1);
     padding: var(--space-3) var(--space-4);
-    border-radius: var(--radius-md);
+    border-radius: var(--kpi-tile-radius, var(--radius-md));
   }
 
   &__head {
@@ -69,14 +71,18 @@
     max-width: 100%;
     font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-2xl)) * var(--kpi-tile-fit, 1));
 
+    // A fixed line box (the unfitted size): a longer figure that shrinks to fit keeps
+    // the tile's height, so a currency switch never moves the panel.
+    line-height: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-2xl)) * var(--line-height-tight));
+
     // Phone: the same size in every tile, even one spanning the full row.
     @include m.phone {
       font-size: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-xl)) * var(--kpi-tile-fit, 1));
+      line-height: calc(clamp(var(--font-size-md), 13cqi, var(--font-size-xl)) * var(--line-height-tight));
     }
     white-space: nowrap;
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: -0.02em;
-    line-height: var(--line-height-tight);
+    font-weight: var(--font-weight-figure);
+    letter-spacing: var(--tracking-display);
     font-variant-numeric: tabular-nums;
   }
 

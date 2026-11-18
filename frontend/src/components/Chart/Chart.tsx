@@ -151,6 +151,8 @@ export interface ChartProps {
   rangeLabel?: (range: string) => string;
   /** Extra content in the header row, left of the range control (growth, reload). */
   headerExtra?: ReactNode;
+  /** A note at the right end of the legend row (same line as the series chips). */
+  legendExtra?: ReactNode;
   xMode?: ChartXMode;
   /** Colours the primary series green/red and draws a ▲/▼ end marker. */
   trend?: ChartTrend;
@@ -177,6 +179,13 @@ const CHAR_W = 7.6;
 const LABEL_GAP = 8;
 /** Below this width the chart uses inset axis labels and an inline readout. */
 const COMPACT_WIDTH = 520;
+/**
+ * A second (right) y axis needs a card this wide; below it the reporting currency's
+ * axis stands alone and the other currency is read from the tooltip and the legend.
+ */
+const TWO_AXIS_WIDTH = 720;
+/** Right gutter kept on a two-currency chart whether or not the right labels are drawn, so the plot never moves. */
+const RIGHT_GUTTER = 64;
 
 /** Estimated pixel width of an axis label. */
 export function labelWidth(text: string): number {
@@ -260,6 +269,7 @@ export function Chart({
   tooltipTimeFormat,
   rangeLabel,
   headerExtra,
+  legendExtra,
   xMode = "date",
   trend,
   busy = false,
@@ -369,12 +379,15 @@ export function Chart({
     rightSeries && rightAxisFormat
       ? Math.max(0, ...yTicks.map((v) => labelWidth(rightAxisFormat(v * rightScale, yStep && yStep * rightScale))))
       : 0;
+  // The gutter is reserved by the width alone, so the plot is the same size with or
+  // without the right labels (and across currencies and ranges).
+  const showRightAxis = !!rightSeries && !!rightAxisFormat && width >= TWO_AXIS_WIDTH;
   const PAD = compact
     ? { top: 18, right: 2, bottom: 24, left: 2 }
     : {
         ...BASE_PAD,
         left: leftW + LABEL_GAP,
-        right: rightW ? rightW + LABEL_GAP : BASE_PAD.right,
+        right: rightSeries ? Math.max(RIGHT_GUTTER, rightW + LABEL_GAP) : BASE_PAD.right,
       };
   const innerW = Math.max(width - PAD.left - PAD.right, 10);
   const innerH = Math.max(height - PAD.top - PAD.bottom, 10);
@@ -489,6 +502,22 @@ export function Chart({
   // The trend triangle marks where the line ends. After the close the "now" dot is the
   // end (the line stops at the close, and the day can have turned since), so no triangle.
   const endPt = trend && !nowMarker && primaryPts.length ? primaryPts[primaryPts.length - 1] : null;
+  // End label: the primary series' last value in a small pill (identity = its dot, text = fg).
+  // Only on a single-axis chart with no "now" marker, so it never stacks on another label.
+  const primarySeries = prepared.find((s) => s.toneCls === "primary");
+  const lastRaw = primarySeries
+    ? [...primarySeries.pts].reverse().find((p) => p.y !== null && p.raw !== null)
+    : undefined;
+  let endPill: { x: number; y: number; w: number; text: string } | null = null;
+  if (!compact && !nowMarker && !rightSeries && primarySeries && lastRaw && lastRaw.y !== null && lastRaw.raw !== null) {
+    const text = (primarySeries.valueFormat ?? valueFormat)(lastRaw.raw);
+    const w = labelWidth(text) + 24;
+    const ex = scales.x(lastRaw.x);
+    const ey = scales.y(lastRaw.y);
+    const px = Math.min(Math.max(ex - w, PAD.left), width - PAD.right - w);
+    const py = ey + 30 <= PAD.top + innerH ? ey + 12 : ey - 30;
+    endPill = { x: px, y: py, w, text };
+  }
   const cursorT = cursor !== null ? (times[cursor] ?? null) : null;
   const cursorX = cursorT !== null ? scales.x(cursorT) : null;
   const tipRows =
@@ -550,7 +579,7 @@ export function Chart({
               >
                 {valueFormat(v, yStep)}
               </text>
-              {rightSeries && rightAxisFormat && (
+              {showRightAxis && rightSeries && rightAxisFormat && (
                 <text
                   className={clsx(
                     "chart__axis-label",
@@ -566,6 +595,13 @@ export function Chart({
               )}
             </g>
           ))}
+          <line
+            className="chart__baseline"
+            x1={PAD.left}
+            x2={width - PAD.right}
+            y1={PAD.top + innerH}
+            y2={PAD.top + innerH}
+          />
           {xTicks.map((t, i) => (
             <text
               key={t}
@@ -669,7 +705,7 @@ export function Chart({
           )}
           {nowMarker && nowX !== null && Number.isFinite(nowMarker.v) && (
             <g className="chart__now" data-now-marker>
-              <circle className="chart__now-dot" cx={scales.x(nowX)} cy={scales.y(nowMarker.v)} r={4} />
+              <circle className="chart__now-dot" cx={scales.x(nowX)} cy={scales.y(nowMarker.v)} r={5} />
               {(nowMarker.lines ?? []).map((line, k, all) => (
                 <text
                   key={line}
@@ -684,6 +720,15 @@ export function Chart({
                   {line}
                 </text>
               ))}
+            </g>
+          )}
+          {endPill && (
+            <g className="chart__end-pill" data-end-pill pointerEvents="none">
+              <rect className="chart__end-pill-box" x={endPill.x} y={endPill.y} width={endPill.w} height={18} rx={9} />
+              <circle className="chart__end-pill-dot" cx={endPill.x + 9} cy={endPill.y + 9} r={3} />
+              <text className="chart__end-pill-text" x={endPill.x + 16} y={endPill.y + 9} dy="0.34em">
+                {endPill.text}
+              </text>
             </g>
           )}
           {cursorX !== null && (
@@ -728,9 +773,9 @@ export function Chart({
             </span>
           ))}
         </output>
-      ) : all.length > 1 ? (
+      ) : all.length > 1 || legendExtra ? (
         <ul className="chart__legend">
-          {all.map((s) => {
+          {(all.length > 1 ? all : []).map((s) => {
             const swatch = <span className={clsx("chart__swatch", `chart__swatch--${s.toneCls}`)} aria-hidden />;
             return (
               <li key={s.id} className={clsx("chart__legend-item", s.hidden && "chart__legend-item--off")}>
@@ -753,6 +798,7 @@ export function Chart({
               </li>
             );
           })}
+          {legendExtra && <li className="chart__legend-extra">{legendExtra}</li>}
         </ul>
       ) : compact ? (
         // Same height as the readout, so scrubbing never moves the page.

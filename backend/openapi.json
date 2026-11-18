@@ -903,8 +903,47 @@
         "title": "BriefBoundary",
         "type": "object"
       },
+      "BriefCurrencyEffect": {
+        "description": "EUR view: the EUR/USD rate's effect on the portfolio over the whole window.\n\nThe current book valued at ``rate_now`` minus the same book at ``rate_then``\n(holdings held constant, only the rate moves: the Overview currency box's\nrevaluation). USD holdings move by ``usd x (1/rate_now - 1/rate_then)``; EUR\nholdings do not move. Euros.",
+        "properties": {
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "pct": {
+            "description": "fraction, 0.01 = 1%",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Pct",
+            "type": "string"
+          },
+          "rate_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Now",
+            "type": "string"
+          },
+          "rate_then": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Then",
+            "type": "string"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "pct",
+          "rate_then",
+          "rate_now",
+          "since"
+        ],
+        "title": "BriefCurrencyEffect",
+        "type": "object"
+      },
       "BriefEvent": {
-        "description": "A ledger row created since the last acknowledgement (``transactions.created_at``).",
+        "description": "A ledger row created since the previous visit (``transactions.created_at``).",
         "properties": {
           "created_at": {
             "title": "Created At",
@@ -1002,6 +1041,63 @@
         "title": "BriefFxMove",
         "type": "object"
       },
+      "BriefInvestingPower": {
+        "description": "USD view: the regular euro amount in dollars now versus at the window's start.\n\nThe Overview's ``investing_power_usd`` maths over the whole window: the fixed\n``amount_eur`` buys ``amount_eur x rate`` dollars; ``net`` = now - then (USD).",
+        "properties": {
+          "amount_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Eur",
+            "type": "string"
+          },
+          "amount_usd_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Usd Now",
+            "type": "string"
+          },
+          "amount_usd_then": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Usd Then",
+            "type": "string"
+          },
+          "net": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Net",
+            "type": "string"
+          },
+          "pct": {
+            "description": "fraction, 0.01 = 1%",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Pct",
+            "type": "string"
+          },
+          "rate_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Now",
+            "type": "string"
+          },
+          "rate_then": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Then",
+            "type": "string"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_eur",
+          "amount_usd_now",
+          "amount_usd_then",
+          "net",
+          "pct",
+          "rate_then",
+          "rate_now",
+          "since"
+        ],
+        "title": "BriefInvestingPower",
+        "type": "object"
+      },
       "BriefMove": {
         "description": "One session's move in one currency: the Overview's day move, reused as is.\n\nEvery figure is the same value the Overview payload carries for that currency\n(``kpis.daily_move``, ``kpis.daily_growth_pct``, ``day_split``, ``movers``), so\nthe Brief can never disagree with the hero. Amounts in that currency.",
         "properties": {
@@ -1096,6 +1192,16 @@
             "title": "Boundaries",
             "type": "array"
           },
+          "currency_effect_since": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ByCurrency_Union_BriefCurrencyEffect__NoneType__"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "due": {
             "title": "Due",
             "type": "boolean"
@@ -1117,6 +1223,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ByCurrency_BriefFxMove_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "investing_power_since": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ByCurrency_Union_BriefInvestingPower__NoneType__"
               },
               {
                 "type": "null"
@@ -1150,6 +1266,17 @@
             ],
             "title": "Last Ack At"
           },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
           "move": {
             "anyOf": [
               {
@@ -1176,6 +1303,27 @@
             "default": 0,
             "title": "Sessions Passed",
             "type": "integer"
+          },
+          "visit_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit From"
+          },
+          "window_move": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ByCurrency_Union_BriefWindowMove__NoneType__"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1183,6 +1331,111 @@
           "now"
         ],
         "title": "BriefOut",
+        "type": "object"
+      },
+      "BriefVisitIn": {
+        "properties": {
+          "visit_from": {
+            "title": "Visit From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visit_from"
+        ],
+        "title": "BriefVisitIn",
+        "type": "object"
+      },
+      "BriefWindowMove": {
+        "description": "The book's move over the whole window (``visit_from`` to now) in one currency.\n\n``move = end_value - start_value - net_flows``; ``pct`` is the period-growth\ndefinition ``move / (start_value + net_flows)``. EUR view: ``price_move +\ncurrency_move == move`` (the currency part is the rate's effect on the start\nbook); USD view: ``currency_move`` is null and ``price_move == move``.",
+        "properties": {
+          "currency_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Move"
+          },
+          "end_at": {
+            "title": "End At",
+            "type": "string"
+          },
+          "end_value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "End Value",
+            "type": "string"
+          },
+          "estimated": {
+            "default": false,
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "move": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Move",
+            "type": "string"
+          },
+          "movers": {
+            "$ref": "#/components/schemas/Movers"
+          },
+          "net_flows": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Net Flows",
+            "type": "string"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fraction, 0.01 = 1%",
+            "title": "Pct"
+          },
+          "price_move": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Price Move",
+            "type": "string"
+          },
+          "start_at": {
+            "title": "Start At",
+            "type": "string"
+          },
+          "start_basis": {
+            "enum": [
+              "intraday",
+              "close"
+            ],
+            "title": "Start Basis",
+            "type": "string"
+          },
+          "start_value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_at",
+          "end_at",
+          "start_basis",
+          "start_value",
+          "end_value",
+          "net_flows",
+          "move",
+          "price_move",
+          "movers"
+        ],
+        "title": "BriefWindowMove",
         "type": "object"
       },
       "Bucket": {
@@ -1678,6 +1931,129 @@
           "USD"
         ],
         "title": "ByCurrency[PeriodsOut]",
+        "type": "object"
+      },
+      "ByCurrency_Union_BriefCurrencyEffect__NoneType__": {
+        "properties": {
+          "EUR": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefCurrencyEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "USD": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefCurrencyEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[Union[BriefCurrencyEffect, NoneType]]",
+        "type": "object"
+      },
+      "ByCurrency_Union_BriefInvestingPower__NoneType__": {
+        "properties": {
+          "EUR": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefInvestingPower"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "USD": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefInvestingPower"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[Union[BriefInvestingPower, NoneType]]",
+        "type": "object"
+      },
+      "ByCurrency_Union_BriefWindowMove__NoneType__": {
+        "properties": {
+          "EUR": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefWindowMove"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "USD": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefWindowMove"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[Union[BriefWindowMove, NoneType]]",
         "type": "object"
       },
       "CalcCategoryOut": {
@@ -3816,6 +4192,17 @@
             "default": false,
             "title": "Historical",
             "type": "boolean"
+          },
+          "last_close_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Close At"
           },
           "last_price_update_at": {
             "anyOf": [
@@ -14255,7 +14642,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "6.17.3"
+    "version": "7.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -15137,6 +15524,68 @@
           }
         },
         "summary": "Ack Brief",
+        "tags": [
+          "brief"
+        ]
+      }
+    },
+    "/api/brief/visit": {
+      "delete": {
+        "description": "Back to automatic: the next absence rolls the window as normal.",
+        "operationId": "clear_visit_api_brief_visit_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Clear Visit",
+        "tags": [
+          "brief"
+        ]
+      },
+      "put": {
+        "description": "Debug: set the current visit's window start by hand; the visit continues.",
+        "operationId": "set_visit_api_brief_visit_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefVisitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Visit",
         "tags": [
           "brief"
         ]

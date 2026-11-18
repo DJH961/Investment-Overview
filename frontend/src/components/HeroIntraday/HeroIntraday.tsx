@@ -1,8 +1,7 @@
-import clsx from "clsx";
-import { useId, useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { lastSessionLabel } from "../Freshness";
 import { Money } from "../Money";
-import { formatTime, parseInstant } from "../../lib/format";
+import { parseInstant } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { toNum, useGraph, type GraphDto } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
@@ -12,6 +11,12 @@ export interface HeroIntradayProps {
   currency: ReportingCurrency;
   /** Injected clock (tests). */
   now?: Date;
+  /**
+   * The market clock (from the hero), in the slot the intraday curve used to fill:
+   * under the head, over the facts. It carries the market state, so the head's
+   * "Market open" pill steps aside while it is shown.
+   */
+  clock?: ReactNode;
 }
 
 /** viewBox units; the SVG stretches to its box (strokes stay 1.75 px). */
@@ -75,51 +80,27 @@ export function intradayShape(g: Pick<GraphDto, "points" | "reference" | "sessio
 }
 
 /**
- * Desktop hero, right zone: today's (or the last session's) intraday curve
- * from the cached, live-patched 1D graph, with the previous close as a dashed
- * guide and the day's low / high. The box keeps its height while loading.
+ * The hero's "Today" stat block: the day's low and high and the previous close
+ * (from the cached, live-patched 1D graph) with the market state. No curve: the
+ * big graph below already draws 1D. While the graph loads the block keeps its
+ * frame (dashes); once loaded with nothing to show it renders nothing.
  */
-export function HeroIntraday({ currency, now }: HeroIntradayProps) {
+export function HeroIntraday({ currency, now, clock }: HeroIntradayProps) {
   const timeZone = useTimeZone();
   const graph = useGraph("1d", currency);
   const g = graph.data?.range === "1d" ? graph.data : undefined;
   const shape = useMemo(() => (g ? intradayShape(g) : null), [g]);
   const label = g?.session_date ? (lastSessionLabel(g.session_date, { timeZone, now }) ?? "Today") : "Today";
   const ref = toNum(g?.reference ?? null);
-  const trend = g?.direction ?? null;
-  const gradId = `hero-intraday-grad-${useId().replace(/:/g, "")}`;
+  const loading = graph.isPending || !g;
+  if (!loading && !shape && ref === null) return clock ? <div className="hero-intraday">{clock}</div> : null;
   return (
-    <div className={clsx("hero-intraday", trend && `hero-intraday--${trend}`)}>
+    <div className={clock ? "hero-intraday hero-intraday--with-clock" : "hero-intraday"}>
+      {/* The countdown leads; the label then names the figures under it (Today / Last session). */}
+      {clock}
       <div className="hero-intraday__head">
         <span className="hero-intraday__label">{label}</span>
-        <span className="hero-intraday__state">{g?.market_open ? "Market open" : "Market closed"}</span>
-      </div>
-      <div className="hero-intraday__plot">
-        <span className="u-sr-only">{label}: portfolio value through the session, chart</span>
-        <svg className="hero-intraday__svg" viewBox={`0 0 ${VB_W} ${VB_H}`} preserveAspectRatio="none" aria-hidden>
-          <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" className="hero-intraday__grad-stop hero-intraday__grad-stop--top" />
-              <stop offset="100%" className="hero-intraday__grad-stop" />
-            </linearGradient>
-          </defs>
-          {shape?.refY != null && (
-            <line className="hero-intraday__ref" x1={0} x2={VB_W} y1={shape.refY} y2={shape.refY} />
-          )}
-          {shape && <path className="hero-intraday__area" d={shape.area} fill={`url(#${gradId})`} />}
-          {shape && <path className="hero-intraday__line" d={shape.line} />}
-        </svg>
-        {shape?.end && (
-          <span
-            className="hero-intraday__end"
-            style={{ left: `${shape.end.left}%`, top: `${shape.end.top}%` }}
-            aria-hidden
-          />
-        )}
-      </div>
-      <div className="hero-intraday__axis" aria-hidden>
-        <span>{shape ? formatTime(new Date(shape.start), timeZone) : " "}</span>
-        <span>{shape ? formatTime(new Date(shape.stop), timeZone) : " "}</span>
+        {!clock && <span className="hero-intraday__state">{g?.market_open ? "Market open" : "Market closed"}</span>}
       </div>
       <dl className="hero-intraday__facts">
         <div className="hero-intraday__fact">
@@ -135,10 +116,7 @@ export function HeroIntraday({ currency, now }: HeroIntradayProps) {
           </dd>
         </div>
         <div className="hero-intraday__fact">
-          <dt className="hero-intraday__fact-label">
-            <span className="hero-intraday__swatch" aria-hidden />
-            Prev close
-          </dt>
+          <dt className="hero-intraday__fact-label">Prev close</dt>
           <dd className="hero-intraday__fact-value">
             <Money amount={ref} currency={currency} />
           </dd>

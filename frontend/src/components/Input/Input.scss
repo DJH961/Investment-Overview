@@ -14,28 +14,31 @@
     pointer-events: none;
   }
 
+  // A well: sunken surface with a hairline, a clear accent ring on focus.
   &__control {
+    @include m.well(var(--radius-sm));
     width: 100%;
     height: var(--control-height-lg);
     padding: 0 var(--space-3);
-    background: var(--color-surface);
-    border: var(--border-width) solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
+    border: var(--border-width) solid var(--color-border);
     font-size: var(--font-size-md);
-    transition: border-color var(--duration-fast) var(--ease-standard);
+    transition:
+      border-color var(--duration-fast) var(--ease-standard),
+      background-color var(--duration-fast) var(--ease-standard);
 
     &::placeholder {
       color: var(--color-faint);
     }
 
     &:hover:not(:disabled) {
-      border-color: var(--color-faint);
+      border-color: var(--color-border-strong);
     }
 
     &:focus-visible {
       @include m.focus-ring;
       outline-offset: 0;
       border-color: var(--color-accent);
+      background: var(--color-surface);
     }
 
     &:disabled {

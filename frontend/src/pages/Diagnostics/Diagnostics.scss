@@ -19,7 +19,7 @@
 .diagnostics {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--page-gap);
 
   &__tabs {
     overflow-x: auto;
@@ -33,7 +33,7 @@
   &__tab {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--page-gap);
   }
 
   &__muted {
@@ -81,9 +81,9 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    padding: var(--space-3);
-    border-left: 3px solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
+    padding: var(--space-4);
+    border-left: var(--space-1) solid var(--color-border-strong);
+    border-radius: var(--radius-md);
     background: var(--color-surface-2);
 
     &--warning {
@@ -697,5 +697,111 @@
     margin: var(--space-1) 0 0;
     font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
+  }
+}
+
+.sharecounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  &__lead {
+    margin: 0;
+    color: var(--color-fg-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 8rem) auto;
+    gap: var(--space-2);
+    align-items: center;
+
+    @include m.phone {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+  }
+
+  &__cell {
+    min-width: 0;
+
+    @include m.phone {
+      grid-column: 1;
+    }
+  }
+
+  &__remove {
+    @include m.phone {
+      grid-column: 2;
+      grid-row: 1 / span 3;
+    }
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--color-neg);
+    font-size: var(--font-size-sm);
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+}
+
+.briefvisit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  &__lead {
+    margin: 0;
+    color: var(--color-fg-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__facts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-1) var(--space-4);
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__label {
+    color: var(--color-muted);
+  }
+
+  &__value {
+    margin: 0;
+  }
+
+  &__form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  &__input {
+    flex: 0 1 14rem;
+    min-width: 0;
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--color-neg);
+    font-size: var(--font-size-sm);
   }
 }

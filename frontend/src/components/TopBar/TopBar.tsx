@@ -28,6 +28,8 @@ export interface TopBarProps {
   freshness: { status: FreshnessStatus; label: string; short?: string; updated?: string };
   /** The portfolio's value and day move: the same place on every view (phone: under the title). */
   summary?: ShellSummary;
+  /** Show the desktop summary pill (default). Off while the expanded sidebar shows the same figures. */
+  showSummary?: boolean;
   /** Phone layout: title + freshness on the left, the essential actions on the right. */
   compact?: boolean;
   /** Server refresh; always available (disabled only while one runs). */
@@ -40,6 +42,11 @@ export interface TopBarProps {
   privacyToggle?: ReactNode;
   /** Extra content on the left, for example breadcrumbs. */
   leading?: ReactNode;
+  /**
+   * The market clock slot (v7): a `<Chip size="sm">` such as "Opens 15:30". It sits
+   * beside the freshness chip on every width (phones: give it the short form).
+   */
+  clock?: ReactNode;
 }
 
 const CURRENCIES = [
@@ -103,6 +110,8 @@ export function TopBar({
   privacyToggle,
   leading,
   summary,
+  showSummary = true,
+  clock,
 }: TopBarProps) {
   const { currency, setCurrency, theme, cycleTheme } = usePrefs();
   const navigate = useNavigate();
@@ -141,14 +150,21 @@ export function TopBar({
             </span>
           )}
         </div>
-        {freshness.label && (
-          <Freshness
-            className="top-bar__freshness"
-            status={freshness.status}
-            label={shortChip ? freshness.short! : freshness.label}
-            title={shortChip ? freshness.label : freshness.updated}
-            stacked={!shortChip}
-          />
+        {(freshness.label || clock) && (
+          <div className="top-bar__status">
+            {freshness.label && (
+              <Freshness
+                className="top-bar__freshness"
+                status={freshness.status}
+                label={shortChip ? freshness.short! : freshness.label}
+                title={shortChip ? freshness.label : freshness.updated}
+                // Phone: ONE status line ("● Live · Today 21:57"), never stacked: the bar
+                // stays at three lines at most (title, figures, status), clock included.
+                stacked={!compact}
+              />
+            )}
+            {clock && <span className="top-bar__clock">{clock}</span>}
+          </div>
         )}
         {!compact && freshness.updated && (
           <span className="top-bar__updated" title="When the app last fetched prices">
@@ -157,7 +173,7 @@ export function TopBar({
           </span>
         )}
       </div>
-      {!compact && (
+      {!compact && showSummary && (
         // Always rendered (a placeholder until the figures load), so the bar's
         // items never shift between views.
         <div
@@ -169,7 +185,8 @@ export function TopBar({
             <>
               <span className="top-bar__summary-value">
                 {summary.estimated && <EstMark />}
-                <Money amount={summary.value} currency={summary.currency} />
+                <Money amount={summary.value} currency={summary.currency} className="top-bar__summary-full" />
+                <Money amount={summary.value} currency={summary.currency} compact className="top-bar__summary-short" />
               </span>
               <DeltaBadge value={summary.pct} />
               <span className="top-bar__summary-move">

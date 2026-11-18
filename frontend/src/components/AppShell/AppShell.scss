@@ -15,6 +15,9 @@
 
   &__main {
     min-width: 0;
+    // Nothing in a page may widen the document: a wide table scrolls in its own box, and the page never
+    // slides under the fixed sidebar (clip, not hidden, so sticky headers keep working).
+    overflow-x: clip;
     margin-left: var(--shell-offset);
     transition: margin-left var(--duration-base) var(--ease-standard);
   }
@@ -55,12 +58,23 @@
   &__content {
     max-width: var(--content-max-width);
     margin: 0 auto;
-    padding: var(--space-6);
+    padding: var(--space-7) var(--space-6) var(--space-8);
+
+    @include m.xl {
+      padding: var(--space-7) var(--space-7) var(--space-8);
+    }
 
     @include m.phone {
       padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6))
         calc(var(--space-4) + var(--safe-left));
     }
+  }
+
+  // Each page fades in once as it mounts (route changes only; reduced motion: off).
+  // Opacity only and no forward fill: a lingering transform would trap the pages'
+  // fixed bars (the unsaved-changes bar) inside the page box.
+  &__content > * {
+    animation: app-shell-enter var(--duration-slow) var(--ease-out) backwards;
   }
 
   &__pull {
@@ -110,6 +124,12 @@
     font-family: var(--font-sans);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
+  }
+}
+
+@keyframes app-shell-enter {
+  from {
+    opacity: 0;
   }
 }
 

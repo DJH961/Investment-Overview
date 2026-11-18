@@ -170,7 +170,7 @@ export function Treemap({
         // size with an ellipsis; only a sliver too thin for any text stays blank
         // (its name is in the tooltip on tap / hover and in its aria-label).
         const compact = r.w < 90 || r.h < 48;
-        const fitsLabel = r.w > 28 && r.h > 18;
+        const fitsLabel = r.w > 44 && r.h > 22;
         const fitsDetail = compact ? r.w > 48 && r.h > 34 : true;
         return (
           <button
@@ -203,7 +203,7 @@ export function Treemap({
           >
             {fitsLabel && (
               <span className="treemap__label">
-                <span className="treemap__name">{item.label}</span>
+                <span className="treemap__name" data-truncate-ok>{item.label}</span>
                 {fitsDetail && <span className="treemap__detail">{hide ? share(item.value) : (item.detail ?? valueFormat(item.value))}</span>}
               </span>
             )}

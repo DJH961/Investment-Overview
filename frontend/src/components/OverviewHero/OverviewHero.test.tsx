@@ -39,6 +39,22 @@ describe("OverviewHero", () => {
     // Nothing is estimating here, so there is no official line to contrast with.
     expect(screen.queryByTestId("hero-official")).toBeNull();
   });
+  it("places the market clock in the aside slot it is handed (where the sparkline was)", () => {
+    const f = { ...base.freshness!, next_open_at: "2026-11-02T14:30:00Z" } as OverviewDto["freshness"];
+    const { container } = render(
+      <OverviewHero
+        data={{ ...base, freshness: f }}
+        currency="EUR"
+        loading={false}
+        now={NOW}
+        aside={(clock) => <div data-testid="today-block">{clock}</div>}
+      />,
+    );
+    const clock = screen.getByTestId("market-clock");
+    expect(clock).toHaveTextContent("Closed");
+    expect(clock).toHaveTextContent("05:30:00");
+    expect(container.querySelector(".overview-hero__aside [data-testid='today-block']")).toContainElement(clock);
+  });
   it("shows the live corner stamp and the incomplete-total note", () => {
     const live = {
       ...base,

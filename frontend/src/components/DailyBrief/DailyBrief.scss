@@ -1,0 +1,272 @@
+@use "../../styles/mixins" as m;
+
+// The Daily Brief: one header line (what window, when it closes, ×), then one row of
+// figures with hairlines between them, like the stage's stat strip. Phones: two even
+// columns, a lone last figure spans both. Every figure wraps as a whole, never mid-number.
+.daily-brief {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  @include m.surface;
+
+  // A thin accent rule on the leading edge: the shape says "note", not the hue alone.
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--color-accent);
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    min-width: 0;
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
+    border-bottom: var(--border-width) solid var(--color-border);
+
+    // Phone: icon, title, countdown and × on the first line; the window below them.
+    @include m.phone {
+      flex-wrap: wrap;
+      row-gap: 0;
+      padding-left: var(--space-4);
+    }
+  }
+
+  &__icon {
+    display: inline-flex;
+    flex: none;
+    color: var(--color-accent);
+
+    & > svg {
+      width: var(--icon-sm);
+      height: var(--icon-sm);
+    }
+  }
+
+  &__title {
+    flex: none;
+    margin: 0;
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+
+  &__window {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    @include m.eyebrow(var(--font-size-xs));
+    font-variant-numeric: tabular-nums;
+    @include m.truncate;
+
+    @include m.phone {
+      flex-basis: 100%;
+      order: 5;
+      padding-bottom: var(--space-1);
+    }
+  }
+
+  &__timer {
+    flex: none;
+    margin-left: auto;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__dismiss {
+    flex: none;
+
+    // No countdown ("never"): the × still sits at the end.
+    .daily-brief__window + & {
+      margin-left: auto;
+    }
+  }
+
+  // The figures: as many as there are, side by side, each drawing its left and top
+  // hairline; the negative margin clips the outer ones (as `.stat-strip`). Flex, so
+  // every row fills (no empty cell) and the leading figure gets a little more room.
+  &__facts {
+    display: flex;
+    flex-wrap: wrap;
+    margin: calc(-1 * var(--border-width)) 0 0 calc(-1 * var(--border-width));
+
+    // Phone: two even columns; a wide figure (the sessions line, the movers) takes a
+    // full row, and a figure that would sit alone takes one too (no half-empty row).
+    @include m.phone {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+
+      &:not(:has(> .daily-brief__fact--wide)) > :last-child:nth-child(odd),
+      &:has(> .daily-brief__fact--wide:first-child) > :last-child:nth-child(even),
+      &:not(:has(> .daily-brief__fact--wide:first-child)) > :nth-child(odd):has(+ .daily-brief__fact--wide) {
+        grid-column: 1 / -1;
+      }
+    }
+  }
+
+  &__fact {
+    display: flex;
+    flex: 1 1 11rem;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    container-type: inline-size;
+    padding: var(--space-3) var(--space-5);
+    border-top: var(--border-width) solid var(--color-border);
+    border-left: var(--border-width) solid var(--color-border);
+
+    &:first-child {
+      flex: 1.5 1 15rem;
+    }
+
+    // The movers' chips (and the sessions line) need the most room.
+    &--wide {
+      flex: 2 1 18rem;
+    }
+
+    // The window's headline cell: the figure a little larger than a session's, a little more room.
+    &--lead {
+      flex: 2.2 1 18rem;
+
+      & > .daily-brief__value {
+        font-size: clamp(var(--font-size-md), 8.5cqi, var(--font-size-xl));
+      }
+    }
+
+    @include m.phone {
+      padding: var(--space-3) var(--space-4);
+
+      &--wide {
+        grid-column: 1 / -1;
+      }
+    }
+  }
+
+  // A label is one line: it is cut with an ellipsis rather than broken.
+  &__label {
+    @include m.eyebrow;
+    @include m.truncate;
+  }
+
+  // "Session of" on wide cells, the shorter "Session" on a phone.
+  &__short {
+    display: none;
+  }
+
+  @include m.phone {
+    &__long {
+      display: none;
+    }
+
+    &__short {
+      display: inline;
+    }
+  }
+
+  // One line of a note (never broken: the lines are short by design).
+  &__line {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__est {
+    color: var(--color-muted);
+  }
+
+  &__value {
+    min-width: 0;
+    margin: 0;
+    color: var(--color-fg);
+    @include m.figure(var(--font-size-lg));
+    // A long money figure shrinks with its cell rather than wrap, so EUR and USD
+    // (different lengths) keep the same height.
+    font-size: clamp(var(--font-size-sm), 7.5cqi, var(--font-size-lg));
+
+    @include m.phone {
+      font-size: var(--font-size-md);
+    }
+  }
+
+  // A figure and its badge on one line (the cell shrinks the type, not the layout).
+  &__figure {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    white-space: nowrap;
+
+    &--none {
+      color: var(--color-muted);
+    }
+  }
+
+  &__note {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--line-height-base);
+    overflow-wrap: anywhere;
+  }
+
+  &__aside {
+    color: var(--color-muted);
+  }
+
+  &__parts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--space-3);
+  }
+
+  // A label and its figure: they wrap as one unit, never apart.
+  &__pair {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: var(--space-1);
+    color: var(--color-fg);
+    white-space: nowrap;
+  }
+
+  &__key {
+    color: var(--color-muted);
+  }
+
+  &__movers {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+    font-size: var(--font-size-sm);
+  }
+
+  // A tiny ledger: the part on the left, its amount right-aligned, so the figures line up.
+  &__ledger {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-1) var(--space-4);
+    max-width: 16rem;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--line-height-base);
+
+    & > :nth-child(even) {
+      justify-self: end;
+    }
+  }
+}

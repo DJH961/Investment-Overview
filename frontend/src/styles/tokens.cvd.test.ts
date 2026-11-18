@@ -61,7 +61,7 @@ export const RARE_PAIRS: { a: string; b: string }[] = [
 /** Text colours: >= 4.5:1 on surface and bg for normal vision, >= 3:1 as a protan sees it. */
 const TEXT_TOKENS = ["--color-pos", "--color-neg", "--color-warn", "--color-faint"];
 /** Lines / marks: >= 3:1 on surface and bg, in normal vision and as a protan sees it. */
-const MARK_TOKENS = [...SERIES, "--color-muted", "--color-estimate"];
+const MARK_TOKENS = [...SERIES, "--color-muted", "--color-estimate", "--color-accent"];
 
 const here = dirname(fileURLToPath(import.meta.url));
 const scss = readFileSync(join(here, "tokens.scss"), "utf8");
@@ -83,9 +83,15 @@ function tokens(css: string): Record<string, string> {
   return out;
 }
 
+const dark = tokens(block("@mixin dark-tokens {"));
 const themes: Record<string, Record<string, string>> = {
   light: tokens(block(":root {")),
-  dark: tokens(block("@mixin dark-tokens {")),
+  dark,
+  // The navigation spine. Light theme (.u-ink): the light set on a tinted canvas with
+  // white tiles. Dark theme (ink-tokens): the dark set on a navy canvas. The portfolio
+  // card in the sidebar shows pos/neg/warn figures and the market-state dot there.
+  "spine-light": { ...tokens(block(":root {")), ...tokens(block(".u-ink {")) },
+  ink: { ...dark, ...tokens(block("@mixin ink-tokens {")) },
 };
 const min = (v: Vision) => (v === "protan" ? MIN_PROTAN : MIN_OTHER);
 

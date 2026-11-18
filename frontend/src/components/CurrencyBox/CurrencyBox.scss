@@ -1,26 +1,38 @@
 @use "../../styles/mixins" as m;
 
 .currency-box {
+  // Title and the Live / closed pill always share ONE line (no wrap, no jump): the
+  // title gives way first (smaller in a narrow card, then an ellipsis).
+  & > .card__header {
+    flex-wrap: nowrap;
+  }
+
+  & > .card__header > :first-child {
+    min-width: 0;
+  }
+
   &__title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    @container currency-box (max-width: 26rem) {
+      font-size: var(--font-size-md);
+    }
+
     @include m.phone {
       font-size: var(--font-size-sm);
-      letter-spacing: -0.02em;
-      white-space: nowrap;
     }
   }
 
   &__header-badges {
     display: inline-flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: flex-end;
-    gap: var(--space-1) var(--space-2);
+    gap: var(--space-1);
     margin-left: auto;
-
-    @include m.phone {
-      flex-wrap: nowrap;
-      gap: var(--space-1);
-    }
   }
 
   &__stamp,
@@ -54,17 +66,22 @@
     color: var(--color-fg);
   }
 
+  // The card lays out by its OWN width (it sits in a 300-380px side column on a wide
+  // desktop and spans the page below that): narrow = lead figure over a ruled list,
+  // medium = lead figure over a three-figure row, wide = two calm zones side by side.
+  container: currency-box / inline-size;
+
   &__body {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-5);
-    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
 
-    @include m.phone {
-      gap: var(--space-3);
-    }
-
-    @include m.desktop {
+    @container currency-box (min-width: 34rem) {
+      display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: var(--space-7);
+      align-items: start;
 
       &--single {
         grid-template-columns: minmax(0, 1fr);
@@ -75,28 +92,66 @@
   &__left {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--space-4);
+    min-width: 0;
   }
 
+  // The three figures. Narrow: a ruled list, label and note left, figure right.
   &__stats {
-    display: grid;
-    gap: var(--space-3);
-    // Three columns at every width (pair, move, since), as in v5.
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
+    flex-direction: column;
     margin: 0;
 
-    @include m.phone {
-      gap: var(--space-2);
-      // Give the spot column slightly more room for "as of DD/MM, HH:MM" on 360-390px phones.
-      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.85fr);
+    @container currency-box (min-width: 480px) and (max-width: 33.99rem) {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-4);
     }
   }
 
   &__stat {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label value"
+      "meta value";
+    column-gap: var(--space-4);
+    row-gap: var(--space-1);
+    align-items: center;
     min-width: 0;
+    padding: var(--space-3) 0;
+    border-top: var(--border-width) solid var(--color-border);
+
+    &:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    > .currency-box__label {
+      grid-area: label;
+    }
+
+    > .currency-box__value {
+      grid-area: value;
+      text-align: right;
+    }
+
+    > .currency-box__meta {
+      grid-area: meta;
+      min-width: 0;
+    }
+
+    @container currency-box (min-width: 480px) and (max-width: 33.99rem) {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 0;
+      border-top: 0;
+
+      > .currency-box__value {
+        text-align: left;
+      }
+    }
   }
 
   &__label {
@@ -104,13 +159,12 @@
   }
 
   &__value {
+    @include m.figure(var(--font-size-lg));
     margin: 0;
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 
-    @include m.phone {
-      font-size: var(--font-size-md);
+    @container currency-box (min-width: 480px) {
+      font-size: var(--font-size-xl);
     }
   }
 
@@ -159,52 +213,63 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The lead: what the rate did since yesterday, as the card's biggest figure. It
+  // comes first at every width (left column when wide), so the headline value sits
+  // right under the card title instead of floating beside the rate list.
   &__effect {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    padding-top: var(--space-4);
-    border-top: var(--border-width) solid var(--color-border);
+    min-width: 0;
+    order: -1;
+    padding-bottom: var(--space-5);
+    border-bottom: var(--border-width) solid var(--color-border);
 
-    @include m.phone {
-      padding-top: var(--space-3);
-    }
-
-    @include m.desktop {
-      padding-top: 0;
-      padding-left: var(--space-5);
-      border-top: 0;
-      border-left: var(--border-width) solid var(--color-border);
+    @container currency-box (min-width: 34rem) {
+      padding-bottom: 0;
+      border-bottom: 0;
     }
   }
 
   &__effect-head {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
-
-    @include m.phone {
-      gap: var(--space-2);
-    }
+    flex-direction: column;
+    gap: 2px;
   }
 
   &__effect-title {
     @include m.eyebrow;
-
-    @include m.phone {
-      letter-spacing: 0.02em;
-    }
   }
 
   &__effect-net {
-    flex-shrink: 0;
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    font-variant-numeric: tabular-nums;
+    @include m.display(var(--font-size-2xl));
+    font-weight: var(--font-weight-figure);
+    overflow-wrap: anywhere;
 
-    @include m.phone {
-      font-size: var(--font-size-md);
+    @container currency-box (min-width: 480px) {
+      font-size: var(--font-size-3xl);
     }
+  }
+}
+
+// The Overview card's way into the Currency page: one quiet line, pinned to the foot.
+.currency-box__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.currency-box__link {
+  color: var(--color-accent);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  &:focus-visible {
+    @include m.focus-ring;
   }
 }

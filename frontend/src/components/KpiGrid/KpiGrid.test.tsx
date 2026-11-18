@@ -1,6 +1,5 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { setHideAmounts } from "../../lib/format";
 import type { OverviewDto } from "../../lib/queries/portfolio";
 import { KpiGrid } from "./KpiGrid";
@@ -53,56 +52,8 @@ describe("KpiGrid", () => {
     expect(screen.getByRole("button", { name: "About XIRR" })).toBeInTheDocument();
   });
 
-  it("Day move shows the server's day Total, with the FX figure under it", () => {
-    const split = (overnight: boolean) =>
-      ({
-        ...data({ beating: true }),
-        kpis: { ...kpis, daily_move: "300" },
-        day_split: {
-          price_move: "420",
-          currency_move: "-120",
-          price_move_secondary: "500",
-          currency_move_secondary: "0",
-          overnight,
-          estimated: false,
-        },
-      }) as unknown as OverviewDto;
-    const { rerender } = render(<KpiGrid data={split(true)} currency="EUR" loading={false} />);
-    expect(screen.getByText("+€420.00")).toBeInTheDocument();
-    expect(screen.getByText("+US$500.00")).toBeInTheDocument();
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("Overnight FX");
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("-€120.00");
-    rerender(<KpiGrid data={split(false)} currency="EUR" loading={false} />);
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("FX since close");
-  });
-
-  it("hide mode shows the FX part as a share of the portfolio value", () => {
-    window.localStorage.setItem("iv.privacy.hideAmounts", "true");
-    const d = {
-      ...data({ beating: true }),
-      kpis: { ...kpis, daily_move: "300", total_value: "10000" },
-      day_split: {
-        price_move: "420",
-        currency_move: "-120",
-        price_move_secondary: "500",
-        currency_move_secondary: "0",
-        overnight: true,
-        estimated: false,
-      },
-    } as unknown as OverviewDto;
-    render(
-      <HideAmountsProvider>
-        <KpiGrid data={d} currency="EUR" loading={false} />
-      </HideAmountsProvider>,
-    );
-    expect(screen.getByTestId("overnight-currency")).toHaveTextContent("-1.20%");
-    expect(screen.getByTestId("overnight-currency")).not.toHaveTextContent("€");
-    window.localStorage.removeItem("iv.privacy.hideAmounts");
-    setHideAmounts(false);
-  });
-
-  describe("Day move tile: session / overnight split as its hint", () => {
-    const shut = (ls: Record<string, string | null>) =>
+  describe("Day move tile: the Total only (the hero shows its parts once)", () => {
+    const shut = (ls: Record<string, string | null> | null) =>
       ({
         ...data({ beating: true }),
         kpis: { ...kpis, daily_move: "300", total_value: "10000" },
@@ -114,37 +65,28 @@ describe("KpiGrid", () => {
           overnight: true,
           estimated: false,
         },
-        last_session: { move: "420", overnight_currency: "-120", ...ls },
+        last_session: ls ? { move: "420", overnight_currency: "-120", ...ls } : null,
       }) as unknown as OverviewDto;
 
-    it("after the close with an FX move: the graph's Session / Overnight line replaces the FX amount", () => {
-      render(
-        <KpiGrid data={shut({ move_pct: "0.0081", overnight_pct: "-0.0045" })} currency="EUR" loading={false} />,
-      );
-      expect(screen.getByTestId("kpi-day-split")).toHaveTextContent(
-        /Session\s*\+0\.81%\s*Overnight\s*-0\.45%/,
-      );
-      expect(screen.queryByTestId("overnight-currency")).toBeNull();
+    it("shows the server's day Total in both currencies", () => {
+      render(<KpiGrid data={shut(null)} currency="EUR" loading={false} />);
+      expect(screen.getByText("+€420.00")).toBeInTheDocument();
+      expect(screen.getByText("+US$500.00")).toBeInTheDocument();
     });
 
-    it("keeps the plain FX hint when the server sends no session %, and shows nothing extra in USD", () => {
-      const { rerender } = render(<KpiGrid data={shut({ move_pct: null })} currency="EUR" loading={false} />);
-      expect(screen.queryByTestId("kpi-day-split")).toBeNull();
-      expect(screen.getByTestId("overnight-currency")).toHaveTextContent("Overnight FX");
-      rerender(
-        <KpiGrid
-          data={shut({ move_pct: "0.0081", overnight_pct: "0", overnight_currency: "0" })}
-          currency="USD"
-          loading={false}
-        />,
-      );
-      expect(screen.queryByTestId("kpi-day-split")).toBeNull();
-    });
-
-    it("is absent while the market is open (no last_session)", () => {
-      const open = { ...shut({}), last_session: null } as unknown as OverviewDto;
-      render(<KpiGrid data={open} currency="EUR" loading={false} />);
-      expect(screen.queryByTestId("kpi-day-split")).toBeNull();
+    it("never repeats the ☀/☾ split or the FX figure, so EUR and USD have the same shape", () => {
+      const tile = (c: "EUR" | "USD", d: OverviewDto) => {
+        const { container, unmount } = render(<KpiGrid data={d} currency={c} loading={false} />);
+        const html = [...container.querySelectorAll(".kpi-tile")][0]!;
+        const shape = [...html.querySelectorAll("*")].map((n) => n.className).join("|");
+        expect(screen.queryByTestId("kpi-day-split")).toBeNull();
+        expect(screen.queryByTestId("overnight-currency")).toBeNull();
+        unmount();
+        return shape;
+      };
+      for (const d of [shut(null), shut({ move_pct: "0.0081", overnight_pct: "-0.0045" })]) {
+        expect(tile("EUR", d)).toEqual(tile("USD", d));
+      }
     });
   });
 
@@ -164,22 +106,14 @@ describe("KpiGrid", () => {
       currency: { return_split: { investment_return: "0.3", currency_effect_pp: effect } },
     }) as unknown as OverviewDto;
 
-  it("explains Total growth with the investment / currency split in EUR", () => {
-    render(<KpiGrid data={withSplit("-0.012")} currency="EUR" loading={false} />);
-    const split = screen.getByTestId("hero-split");
-    expect(split).toHaveTextContent("Investment +30.00%");
-    expect(split).toHaveTextContent("Currency -1.20 pp");
-  });
-
-  it("drops only the currency clause when the rate did nothing — never the growth", () => {
-    // A dollar return has no exchange-rate leg, so the server reports an effect of
-    // 0 and the clause does not apply. The investment figure stays, so the USD view
-    // is not missing a number the EUR view shows.
-    render(<KpiGrid data={withSplit("0")} currency="USD" loading={false} />);
-    const split = screen.getByTestId("hero-split");
-    expect(split).toHaveTextContent("Investment +30.00%");
-    expect(split).not.toHaveTextContent("Currency");
-    expect(screen.getByText("Total growth")).toBeInTheDocument();
+  it("shows no Investment / Currency line under Total growth (owner, pass 4)", () => {
+    // Investment equals the USD figure already on the tile, so the line only repeated it.
+    for (const ccy of ["EUR", "USD"] as const) {
+      const { unmount } = render(<KpiGrid data={withSplit("-0.012")} currency={ccy} loading={false} />);
+      expect(screen.queryByTestId("hero-split")).toBeNull();
+      expect(screen.getByText("Total growth")).toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("reports the year once: no second, unlike YTD figure under the XIRR tile", () => {

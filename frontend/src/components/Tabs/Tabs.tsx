@@ -1,0 +1,46 @@
+import clsx from "clsx";
+import { Tabs as RadixTabs } from "radix-ui";
+import type { ReactNode } from "react";
+import "./Tabs.scss";
+
+export interface TabItem<T extends string> {
+  value: T;
+  label: string;
+  /** Optional count or short note after the label ("12"). */
+  badge?: ReactNode;
+  content: ReactNode;
+}
+
+export interface TabsProps<T extends string> {
+  items: TabItem<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+  className?: string;
+}
+
+/**
+ * Underlined page tabs (v7: the holding page's Details / Transactions / Dividends).
+ * For switching between views of one figure use the SegmentedControl instead; tabs
+ * switch between whole panels. On a phone the tab row scrolls sideways when it must.
+ * Controlled, so a page can mirror the tab in the URL.
+ */
+export function Tabs<T extends string>({ items, value, onChange, ariaLabel, className }: TabsProps<T>) {
+  return (
+    <RadixTabs.Root className={clsx("tabs", className)} value={value} onValueChange={(v) => onChange(v as T)}>
+      <RadixTabs.List className="tabs__list" aria-label={ariaLabel} data-scrollable>
+        {items.map((item) => (
+          <RadixTabs.Trigger key={item.value} value={item.value} className="tabs__trigger">
+            <span className="tabs__label">{item.label}</span>
+            {item.badge != null && <span className="tabs__badge">{item.badge}</span>}
+          </RadixTabs.Trigger>
+        ))}
+      </RadixTabs.List>
+      {items.map((item) => (
+        <RadixTabs.Content key={item.value} value={item.value} className="tabs__panel">
+          {item.content}
+        </RadixTabs.Content>
+      ))}
+    </RadixTabs.Root>
+  );
+}

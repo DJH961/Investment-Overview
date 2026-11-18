@@ -991,6 +991,20 @@ def fx_revaluation(
     return eur_to - eur_from, usd_to - usd_from
 
 
+def book_holdings(
+    session: Session,
+    on: date,
+    *,
+    positions: list[positions_service.Position] | None = None,
+) -> list[Any]:
+    """The book :func:`fx_revaluation` revalues (native holdings on ``on``), for reuse.
+
+    ``positions`` limits the securities part (cash and savings accounts are always
+    added), e.g. to the holdings that do not price intraday.
+    """
+    return _book_holdings(session, on, positions=positions)
+
+
 def _book_holdings(
     session: Session,
     on: date,

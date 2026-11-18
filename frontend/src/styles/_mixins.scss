@@ -115,12 +115,59 @@ $bp-xxl: 1920px;
   }
 }
 
-// Small uppercase, letter-spaced label (KPI names, stat labels, tags), the
-// label style of the v5 web and desktop apps.
-@mixin eyebrow($size: var(--font-size-2xs)) {
+// A quiet label over a figure or a column (KPI names, stat labels, table heads).
+// v7: sentence case in medium weight, not tracked capitals: the figure is the loud part.
+@mixin eyebrow($size: var(--font-size-xs)) {
   color: var(--color-muted);
   font-size: $size;
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0;
+  line-height: var(--line-height-tight);
+}
+
+// Display line (page titles, the portfolio headline): the serif's optical display cut,
+// lining tabular figures so a changing headline never jitters.
+@mixin display($size) {
+  font-family: var(--font-display);
+  font-size: $size;
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-optical-sizing: auto;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--line-height-tight);
+}
+
+// A level-1 surface: the card. Soft hairline border, restrained depth.
+@mixin surface($radius: var(--radius-lg)) {
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: $radius;
+  box-shadow: var(--shadow-1);
+}
+
+// A sunken well inside a surface (segmented tracks, inputs, chips, stat wells).
+@mixin well($radius: var(--radius-md)) {
+  background: var(--color-surface-2);
+  border-radius: $radius;
+}
+
+// Large confident figure: optical display cut, lighter weight, tabular numerals.
+@mixin figure($size) {
+  font-size: $size;
+  font-weight: var(--font-weight-figure);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--line-height-tight);
+}
+
+// Hover lift for clickable surfaces (no movement when motion is reduced).
+@mixin lift {
+  transition:
+    box-shadow var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard);
+
+  &:hover {
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-hover);
+  }
 }

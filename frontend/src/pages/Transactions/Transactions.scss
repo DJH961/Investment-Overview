@@ -3,7 +3,7 @@
 .transactions-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--page-gap);
 
   &__link {
     display: inline-flex;
@@ -17,7 +17,7 @@
   &__filters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-    gap: var(--space-2);
+    gap: var(--space-3);
     align-items: center;
 
     @include m.phone {
@@ -34,7 +34,8 @@
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-3);
+    padding: 0 var(--space-1);
   }
 
   &__sort {
@@ -72,7 +73,7 @@
   &__fx-warn {
     display: inline-flex;
     align-items: center;
-    padding: 1px var(--space-2);
+    padding: 0 var(--space-2);
     border-radius: var(--radius-full);
     background: var(--color-warn-soft);
     color: var(--color-fg);
@@ -118,16 +119,14 @@
     color: var(--color-muted);
   }
 
-  // Small uppercase badge, as in the v5 activity list.
+  // Small neutral badge for the transaction kind.
   &__kind {
     display: inline-block;
-    padding: 1px var(--space-2);
-    border-radius: var(--radius-sm);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-full);
     background: var(--color-surface-2);
     font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-weight: var(--font-weight-medium);
     white-space: nowrap;
 
     // Neutral on purpose: blue/orange mean gain/loss everywhere else, and a sale is not a loss.

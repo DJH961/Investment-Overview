@@ -547,6 +547,7 @@ def _freshness(freshness: dict[int, HoldingFreshness], *, now: datetime) -> dict
         "next_open_at": _iso_utc(market_hours.next_session_open(now)),
         "next_close_at": _iso_utc(market_hours.next_session_close(now)),
         "session_opened_at": _iso_utc(market_hours.current_session_open(now)),
+        "last_close_at": _iso_utc(market_hours.last_session_close(now)),
         "market_state": live_bus.market_state(now),
         "prices_live": market_hours.is_live_now(
             market_open=market_open,

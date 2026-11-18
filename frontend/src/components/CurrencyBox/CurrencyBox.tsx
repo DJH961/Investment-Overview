@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Card } from "../Card";
 import { DivergingBar, type DivergingBarRow } from "../DivergingBar";
 import { Money } from "../Money";
@@ -10,8 +11,23 @@ import "./CurrencyBox.scss";
 
 type Today = OverviewDto["currency"]["today"];
 
+/**
+ * What the box reads: the Overview payload satisfies it as is, and the Currency page
+ * passes `/api/currency/both`'s `today` block (the same server block, moved) with the
+ * Overview's total value for hide mode. One component, so both pages say the same.
+ */
+export interface CurrencyBoxData {
+  ccy: OverviewDto["ccy"];
+  currency: { today: Today };
+  kpis?: { total_value?: string | null } | null;
+}
+
 export interface CurrencyBoxProps {
-  data: OverviewDto;
+  data: CurrencyBoxData;
+  /** A quiet link under the box (the Overview card links to the Currency page). */
+  footer?: ReactNode;
+  /** Fold-state id (default `overview.currency`). */
+  collapsibleId?: string;
 }
 
 const MOVE_SUB = { prev_close: "since last close", overnight: "overnight", session_open: "since last open" } as const;
@@ -166,7 +182,7 @@ function HeaderStamp({
   return null;
 }
 
-function EffectPanel({ data }: { data: OverviewDto }) {
+function EffectPanel({ data }: { data: CurrencyBoxData }) {
   const { hide } = useHideAmounts();
   // Hide mode: each figure as a share of the portfolio value (server-supplied).
   const total = toNum(data.kpis?.total_value ?? null);
@@ -176,9 +192,11 @@ function EffectPanel({ data }: { data: OverviewDto }) {
   const ip = today.investing_power_usd;
   const amount = toNum(ip?.amount_eur);
   const amountUsd = toNum(ip?.amount_usd);
+  // What the regular euro amount buys today: shown in both views (it reads the same
+  // in EUR and USD), so the card keeps one shape on a currency switch.
   const amountLine =
-    data.ccy === "USD" && amount !== null ? (
-      <p className="currency-box__amount" data-ccy-specific>
+    amount !== null ? (
+      <p className="currency-box__amount">
         <span>
           Regular <Money amount={amount} currency="EUR" digits={Number.isInteger(amount) ? 0 : 2} />
         </span>
@@ -228,17 +246,18 @@ function EffectPanel({ data }: { data: OverviewDto }) {
         <span className="currency-box__effect-net">{fmt(net)}</span>
       </div>
       <DivergingBar rows={legRows(today, legs, fmt)} ariaLabel="Market hours versus overnight" />
+      {amountLine}
     </section>
   );
 }
 
 /**
- * The daily "Currency · EUR ↔ USD" box (NiceGUI `_currency_box_html`): spot pair
+ * The daily "Currency" box (the first stat names the pair) (NiceGUI `_currency_box_html`): spot pair
  * with provenance stamp, the regime-aware move and since-open/close stat, the
  * weekend freeze, and the currency effect (EUR) / investing power (USD) split
  * into market hours and overnight.
  */
-export function CurrencyBox({ data }: CurrencyBoxProps) {
+export function CurrencyBox({ data, footer, collapsibleId = "overview.currency" }: CurrencyBoxProps) {
   const timeZone = useTimeZone();
   const today = data.currency.today;
   const frozen = today.regime?.forex_frozen ?? false;
@@ -248,8 +267,12 @@ export function CurrencyBox({ data }: CurrencyBoxProps) {
   return (
     <Card
       className="currency-box"
-      title={<span className="currency-box__title">Currency · EUR ↔ USD</span>}
-      collapsibleId="overview.currency"
+      title={
+        <span className="currency-box__title" data-truncate-ok>
+          Currency
+        </span>
+      }
+      collapsibleId={collapsibleId}
       actions={
         <HeaderStamp
           asOf={today.as_of}
@@ -309,6 +332,7 @@ export function CurrencyBox({ data }: CurrencyBoxProps) {
         </div>
         {effect}
       </div>
+      {footer && <div className="currency-box__footer">{footer}</div>}
     </Card>
   );
 }

@@ -13,6 +13,8 @@ export interface SegmentedControlProps<T extends string> {
   onChange: (value: T) => void;
   ariaLabel: string;
   size?: "sm" | "md";
+  /** Stretch across the row, options sharing it evenly (sub-tab switchers, e.g. the Currency page). */
+  block?: boolean;
   className?: string;
 }
 
@@ -22,6 +24,7 @@ export function SegmentedControl<T extends string>({
   onChange,
   ariaLabel,
   size = "md",
+  block = false,
   className,
 }: SegmentedControlProps<T>) {
   return (
@@ -32,7 +35,7 @@ export function SegmentedControl<T extends string>({
       onValueChange={(next) => {
         if (next) onChange(next as T);
       }}
-      className={clsx("segmented", `segmented--${size}`, className)}
+      className={clsx("segmented", `segmented--${size}`, block && "segmented--block", className)}
     >
       {options.map((opt) => (
         <ToggleGroup.Item key={opt.value} value={opt.value} className="segmented__item">
