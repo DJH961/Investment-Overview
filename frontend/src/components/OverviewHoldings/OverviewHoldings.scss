@@ -26,7 +26,8 @@
     // The weight bar gives way first, so the Day column's two lines ("+€966.93 +0.10%"
     // over "☀ +0.55%  ☾ −0.45%") always fit beside the value at 1024 px.
     @include m.desktop {
-      grid-template-columns: minmax(10rem, 1.8fr) minmax(4.5rem, 1fr) auto auto auto;
+      grid-template-columns: minmax(8rem, 1.8fr) minmax(3rem, 1fr) auto auto auto;
+      column-gap: var(--space-4);
     }
   }
 

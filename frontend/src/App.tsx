@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, type ComponentType, type ReactElement } from "react";
+import { SHOW_CURRENCY_PAGE } from "./lib/features";
 import { Navigate, Route, Routes, useNavigate } from "react-router";
 import { AppShell } from "./components/AppShell";
 import { Tour } from "./components/Tour";
@@ -64,7 +65,7 @@ export function App() {
               <Route path="/overview" element={withHide(<Overview />)} />
               <Route path="/holdings" element={lazyPage("Holdings")} />
               <Route path="/holdings/:id/:tab?" element={lazyPage("Holding")} />
-              <Route path="/currency" element={lazyPage("Currency")} />
+              <Route path="/currency" element={SHOW_CURRENCY_PAGE ? lazyPage("Currency") : <Navigate to="/overview" replace />} />
               <Route path="/periods" element={lazyPage("Periods")} />
               <Route path="/activity" element={lazyPage("Activity")} />
               <Route path="/risk" element={lazyPage("Risk")} />

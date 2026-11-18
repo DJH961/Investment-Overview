@@ -1,4 +1,5 @@
 import { Inbox } from "lucide-react";
+import { SHOW_CURRENCY_PAGE } from "../../lib/features";
 import { Link, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/Button";
@@ -200,9 +201,11 @@ export function Overview() {
             <CurrencyBox
               data={data}
               footer={
-                <Link to="/currency" className="currency-box__link">
-                  Currency page →
-                </Link>
+                SHOW_CURRENCY_PAGE ? (
+                  <Link to="/currency" className="currency-box__link">
+                    Currency page →
+                  </Link>
+                ) : undefined
               }
             />
           ) : (
