@@ -14,13 +14,14 @@ afterEach(() => vi.unstubAllGlobals());
 
 const recorded = (full as Record<string, unknown>)["GET /api/brief"] as BriefDto;
 
-/** A three-session window (the recorded fixture is a single session). */
+/** A three-session window with no window figures (the honest "N sessions passed" fallback). */
 const multi: BriefDto = {
   ...recorded,
   kind: "sessions",
   sessions: ["2026-06-26", "2026-06-29", "2026-06-30"],
   sessions_passed: 3,
   move: null,
+  window_move: null,
 };
 
 const move = (ccy: "EUR" | "USD") => ({

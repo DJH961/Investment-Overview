@@ -113,25 +113,12 @@ function SessionFact({ move, currency }: { move: BriefMoveDto; currency: Reporti
   );
 }
 
-// TODO: switch to `S["BriefOut"]["window_move"]` once api-types.ts carries it.
-/** The whole absence as one move (server figures: EUR parts add up, flows are separate). */
-export interface BriefWindowMove {
-  start_at: string;
-  end_at: string;
-  start_value: string | null;
-  end_value: string | null;
-  move: string | null;
-  pct: string | null;
-  price_move: string | null;
-  currency_move: string | null;
-  net_flows?: string | null; // never shown: nothing is added while he is away
-  estimated: boolean;
-  start_basis?: "intraday" | "close";
-  movers?: BriefMoveDto["movers"];
-}
-type WindowByCurrency = { EUR: BriefWindowMove | null; USD: BriefWindowMove | null } | null;
-const windowOf = (b: BriefDto, currency: ReportingCurrency): BriefWindowMove | null =>
-  (b as BriefDto & { window_move?: WindowByCurrency }).window_move?.[currency] ?? null;
+/**
+ * The whole absence as one move (server figures: EUR parts add up). `net_flows` is never
+ * shown: nothing is added to the ledger while the owner is away.
+ */
+export type BriefWindowMove = NonNullable<NonNullable<BriefDto["window_move"]>["EUR"]>;
+const windowOf = (b: BriefDto, currency: ReportingCurrency): BriefWindowMove | null => b.window_move?.[currency] ?? null;
 
 /** A custom time frame (several sessions away): the move as the headline, the book then → now under it. */
 function WindowFact({ w, currency }: { w: BriefWindowMove; currency: ReportingCurrency }) {
