@@ -991,6 +991,11 @@ def fx_revaluation(
     return eur_to - eur_from, usd_to - usd_from
 
 
+def book_holdings(session: Session, on: date) -> list[Any]:
+    """The book :func:`fx_revaluation` revalues (native holdings on ``on``), for reuse."""
+    return _book_holdings(session, on)
+
+
 def _book_holdings(
     session: Session,
     on: date,

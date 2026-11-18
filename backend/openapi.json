@@ -903,6 +903,45 @@
         "title": "BriefBoundary",
         "type": "object"
       },
+      "BriefCurrencyEffect": {
+        "description": "EUR view: the EUR/USD rate's effect on the portfolio over the whole window.\n\nThe current book valued at ``rate_now`` minus the same book at ``rate_then``\n(holdings held constant, only the rate moves: the Overview currency box's\nrevaluation). USD holdings move by ``usd x (1/rate_now - 1/rate_then)``; EUR\nholdings do not move. Euros.",
+        "properties": {
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "pct": {
+            "description": "fraction, 0.01 = 1%",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Pct",
+            "type": "string"
+          },
+          "rate_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Now",
+            "type": "string"
+          },
+          "rate_then": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Then",
+            "type": "string"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "pct",
+          "rate_then",
+          "rate_now",
+          "since"
+        ],
+        "title": "BriefCurrencyEffect",
+        "type": "object"
+      },
       "BriefEvent": {
         "description": "A ledger row created since the last acknowledgement (``transactions.created_at``).",
         "properties": {
@@ -1002,6 +1041,63 @@
         "title": "BriefFxMove",
         "type": "object"
       },
+      "BriefInvestingPower": {
+        "description": "USD view: the regular euro amount in dollars now versus at the window's start.\n\nThe Overview's ``investing_power_usd`` maths over the whole window: the fixed\n``amount_eur`` buys ``amount_eur x rate`` dollars; ``net`` = now - then (USD).",
+        "properties": {
+          "amount_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Eur",
+            "type": "string"
+          },
+          "amount_usd_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Usd Now",
+            "type": "string"
+          },
+          "amount_usd_then": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Usd Then",
+            "type": "string"
+          },
+          "net": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Net",
+            "type": "string"
+          },
+          "pct": {
+            "description": "fraction, 0.01 = 1%",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Pct",
+            "type": "string"
+          },
+          "rate_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Now",
+            "type": "string"
+          },
+          "rate_then": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Then",
+            "type": "string"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_eur",
+          "amount_usd_now",
+          "amount_usd_then",
+          "net",
+          "pct",
+          "rate_then",
+          "rate_now",
+          "since"
+        ],
+        "title": "BriefInvestingPower",
+        "type": "object"
+      },
       "BriefMove": {
         "description": "One session's move in one currency: the Overview's day move, reused as is.\n\nEvery figure is the same value the Overview payload carries for that currency\n(``kpis.daily_move``, ``kpis.daily_growth_pct``, ``day_split``, ``movers``), so\nthe Brief can never disagree with the hero. Amounts in that currency.",
         "properties": {
@@ -1096,6 +1192,16 @@
             "title": "Boundaries",
             "type": "array"
           },
+          "currency_effect_since": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ByCurrency_Union_BriefCurrencyEffect__NoneType__"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "due": {
             "title": "Due",
             "type": "boolean"
@@ -1117,6 +1223,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ByCurrency_BriefFxMove_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "investing_power_since": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ByCurrency_Union_BriefInvestingPower__NoneType__"
               },
               {
                 "type": "null"
@@ -1678,6 +1794,88 @@
           "USD"
         ],
         "title": "ByCurrency[PeriodsOut]",
+        "type": "object"
+      },
+      "ByCurrency_Union_BriefCurrencyEffect__NoneType__": {
+        "properties": {
+          "EUR": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefCurrencyEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "USD": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefCurrencyEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[Union[BriefCurrencyEffect, NoneType]]",
+        "type": "object"
+      },
+      "ByCurrency_Union_BriefInvestingPower__NoneType__": {
+        "properties": {
+          "EUR": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefInvestingPower"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "USD": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefInvestingPower"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[Union[BriefInvestingPower, NoneType]]",
         "type": "object"
       },
       "CalcCategoryOut": {

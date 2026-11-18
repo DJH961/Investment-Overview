@@ -6079,6 +6079,17 @@
     "session_date": "2026-06-30"
    }
   ],
+  "currency_effect_since": {
+   "EUR": {
+    "amount": "-5486.926164606958654287801",
+    "pct": "-0.004297454518392515799873182306",
+    "rate_now": "1.1641",
+    "rate_then": "1.1590",
+    "since": "2026-06-29T11:00:00+00:00"
+   },
+   "USD": null,
+   "detail": null
+  },
   "due": true,
   "events": [
    {
@@ -6098,6 +6109,20 @@
   ],
   "events_total": 2,
   "fx_move": null,
+  "investing_power_since": {
+   "EUR": null,
+   "USD": {
+    "amount_eur": "100",
+    "amount_usd_now": "116.4100",
+    "amount_usd_then": "115.9000",
+    "net": "0.5100",
+    "pct": "0.004400345125107851596203623814",
+    "rate_now": "1.1641",
+    "rate_then": "1.1590",
+    "since": "2026-06-29T11:00:00+00:00"
+   },
+   "detail": null
+  },
   "kind": "sessions",
   "last_ack_at": "2026-06-29T11:00:00+00:00",
   "move": null,
@@ -52465,6 +52490,26 @@
    {
     "choices": [],
     "danger": null,
+    "default": 3,
+    "env_bound": null,
+    "env_var": null,
+    "help": "How long the Daily Brief above the Overview stays open before it closes itself and counts as seen. 0 keeps it open until you close it.",
+    "key": "brief_autoclose_minutes",
+    "label": "Daily Brief closes after (minutes, 0 = never)",
+    "level": "user",
+    "max": "60",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "display",
+    "since": "7.0",
+    "type": "int",
+    "unit": "min"
+   },
+   {
+    "choices": [],
+    "danger": null,
     "default": 365,
     "env_bound": null,
     "env_var": null,
@@ -53701,6 +53746,15 @@
     "source": "default",
     "stored_invalid": false,
     "value": 7
+   },
+   "brief_autoclose_minutes": {
+    "default": 3,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": 3
    },
    "chart_pref.analytics_lookback": {
     "default": 365,

@@ -895,6 +895,26 @@ def session_open_fx(session: Session, *, now: datetime | None = None) -> Decimal
     return None
 
 
+def sample_fx_at(
+    session: Session, at: datetime, *, max_age: timedelta = timedelta(minutes=30)
+) -> Decimal | None:
+    """EUR/USD stored beside the newest intraday sample in ``[at - max_age, at]``.
+
+    The rate struck at (or just before) the instant ``at``, from the per-instant rate
+    every sample carries. ``None`` when no sample with a rate lies that close (samples
+    exist only while the market trades and only for the retained week). No network.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    end = _to_naive_utc(at)
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, end - max_age, end)
+    for row in reversed(rows):
+        if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
+            return row.fx_eur_usd
+    return None
+
+
 def day_open_rate(session: Session, *, now: datetime | None = None) -> Decimal | None:
     """The open rate the DAY RULE splits on (A = previous close rate -> this rate).
 

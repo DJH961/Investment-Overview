@@ -57,6 +57,17 @@ const SCHEMA = {
       max: "3600",
       unit: "s",
     }),
+    field({
+      key: "brief_autoclose_minutes",
+      type: "int",
+      section: "display",
+      label: "Daily Brief closes after (minutes, 0 = never)",
+      help: "0 keeps it open until you close it.",
+      default: 3,
+      min: "0",
+      max: "60",
+      unit: "min",
+    }),
     field({ key: "boot.backfill_days", type: "int", section: "display", label: "Boot backfill", level: "advanced" }),
     field({
       key: "twin.divergence_window",
@@ -82,6 +93,7 @@ beforeEach(() => {
   values = {
     theme: val("auto"),
     live_refresh_interval_seconds: val(60, { source: "db", default: 60 }),
+    brief_autoclose_minutes: val(3),
     "boot.backfill_days": val(14),
     "twin.divergence_window": val(20),
     "tiingo.api_token": val(null, { is_set: true, source: "db" }),
@@ -181,6 +193,19 @@ describe("Settings (schema form)", () => {
     expect(await screen.findByText("too fast for the provider")).toBeInTheDocument();
     const patch = calls.find((c) => c.method === "PATCH");
     expect(patch?.body).toEqual({ changes: { live_refresh_interval_seconds: 20 } });
+  });
+
+  it("shows the Daily Brief close-after minutes under Display, visible, 0..60", async () => {
+    renderPage();
+    const input = await screen.findByLabelText("Daily Brief closes after (minutes, 0 = never)");
+    expect(input).toHaveValue("3");
+    expect(screen.getByText(/Range 0–60 min/)).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "61" } });
+    expect(screen.getByText("At most 60")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ changes: { brief_autoclose_minutes: 0 } });
   });
 
   it("shows the ETF twin divergence window in Data refresh with its range and help", async () => {
