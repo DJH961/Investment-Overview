@@ -699,3 +699,62 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+.sharecounts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  &__lead {
+    margin: 0;
+    color: var(--color-fg-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 8rem) auto;
+    gap: var(--space-2);
+    align-items: center;
+
+    @include m.phone {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+  }
+
+  &__cell {
+    min-width: 0;
+
+    @include m.phone {
+      grid-column: 1;
+    }
+  }
+
+  &__remove {
+    @include m.phone {
+      grid-column: 2;
+      grid-row: 1 / span 3;
+    }
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--color-neg);
+    font-size: var(--font-size-sm);
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+}

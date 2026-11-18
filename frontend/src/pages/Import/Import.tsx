@@ -247,6 +247,7 @@ export function Import() {
                 ref={inputRef}
                 className="import-page__file"
                 type="file"
+                tabIndex={-1}
                 accept=".csv,.tsv,.txt,.xlsx,.xlsm,.xls"
                 aria-label="Broker file"
                 onChange={(e) => pick(e.target.files?.[0])}

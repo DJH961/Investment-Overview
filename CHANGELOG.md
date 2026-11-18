@@ -17,7 +17,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Broker share counts in Health.** A new card on the Health tab lets you type the shares your
+  broker shows per holding; the server compares them with the ledger and lists differences as
+  hints (an empty list switches the check off). Also adds `npm run test:coverage` (reported,
+  not gated).
+
 ### Fixed
+- **Import: one tab stop for the file picker.** The hidden file input no longer takes a keyboard
+  stop of its own next to "Choose file".
 - **Projection in real terms adds up.** With "real terms" on, the projected growth and the
   money paid in are now both in today's money (each contribution adjusted for inflation at
   its own date), so start + paid in + growth = the end value. Before, the nominal payments
