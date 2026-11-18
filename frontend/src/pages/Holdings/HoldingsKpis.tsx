@@ -64,9 +64,9 @@ export function HoldingsKpis({ data, currency }: Props) {
         </>
       ),
     },
-    { label: "Total growth", value: <Percent ratio={toNum(data?.total_growth)} signed colored />, hint: "compounded" },
     { label: "XIRR", value: <Percent ratio={toNum(data?.xirr)} signed colored />, hint: "per year" },
-    { label: "Up / down today", value: `${s?.gainers ?? 0} / ${s?.losers ?? 0}`, hint: "holdings" },
+    // The 10-tile grid. Row 1 = return, income, cost and currency; row 2 = position facts.
+    { label: "Total growth", value: <Percent ratio={toNum(data?.total_growth)} signed colored />, hint: "compounded" },
     {
       label: "Dividend return",
       value: <Percent ratio={toNum(data?.dividend_yield_pct)} />,
@@ -110,6 +110,8 @@ export function HoldingsKpis({ data, currency }: Props) {
           hint: fxStamp(fx),
         }
       : { label: "FX EUR/USD", value: formatNumber(toNum(data?.fx_eur_usd), 4), hint: "all holdings in USD" },
+    { label: "Up / down today", value: `${s?.gainers ?? 0} / ${s?.losers ?? 0}`, hint: "holdings" },
+    { label: "In profit / loss", value: `${s?.in_profit ?? 0} / ${s?.in_loss ?? 0}`, hint: "since buying" },
     {
       label: "Best",
       value: s?.best_symbol ?? "–",
@@ -129,10 +131,9 @@ export function HoldingsKpis({ data, currency }: Props) {
         </>
       ) : undefined,
     },
-    { label: "In profit / loss", value: `${s?.in_profit ?? 0} / ${s?.in_loss ?? 0}`, hint: "since buying" },
   ];
-  // One subject: the total value, large, in the lead panel. The next four are the key figures
-  // (large); the rest sit in a quieter secondary band.
+  // One subject: the total value, large, with the three key figures beside it (one row on
+  // desktop); the other ten fill a quieter 5 x 2 band (2 x 5 on phones), every cell used.
   const renderStat = (st: Stat, tier: "lead" | "key" | "minor") => (
     <div key={st.label} className={"holdings-page__stat holdings-page__stat--" + tier}>
       <dt className="holdings-page__stat-label">
@@ -146,12 +147,14 @@ export function HoldingsKpis({ data, currency }: Props) {
   );
   return (
     <dl className="holdings-page__stats" aria-label="Portfolio summary">
-      {renderStat(stats[0]!, "lead")}
-      <div className="holdings-page__stat-group holdings-page__stat-group--key">
-        {stats.slice(1, 5).map((st) => renderStat(st, "key"))}
+      <div className="holdings-page__stat-top">
+        {renderStat(stats[0]!, "lead")}
+        <div className="holdings-page__stat-group holdings-page__stat-group--key">
+          {stats.slice(1, 4).map((st) => renderStat(st, "key"))}
+        </div>
       </div>
       <div className="holdings-page__stat-group holdings-page__stat-group--minor">
-        {stats.slice(5).map((st) => renderStat(st, "minor"))}
+        {stats.slice(4).map((st) => renderStat(st, "minor"))}
       </div>
     </dl>
   );

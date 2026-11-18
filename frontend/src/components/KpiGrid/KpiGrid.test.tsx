@@ -106,22 +106,14 @@ describe("KpiGrid", () => {
       currency: { return_split: { investment_return: "0.3", currency_effect_pp: effect } },
     }) as unknown as OverviewDto;
 
-  it("explains Total growth with the investment / currency split in EUR", () => {
-    render(<KpiGrid data={withSplit("-0.012")} currency="EUR" loading={false} />);
-    const split = screen.getByTestId("hero-split");
-    expect(split).toHaveTextContent("Investment +30.00%");
-    expect(split).toHaveTextContent("Currency -1.20 pp");
-  });
-
-  it("drops only the currency clause when the rate did nothing — never the growth", () => {
-    // A dollar return has no exchange-rate leg, so the server reports an effect of
-    // 0 and the clause does not apply. The investment figure stays, so the USD view
-    // is not missing a number the EUR view shows.
-    render(<KpiGrid data={withSplit("0")} currency="USD" loading={false} />);
-    const split = screen.getByTestId("hero-split");
-    expect(split).toHaveTextContent("Investment +30.00%");
-    expect(split).not.toHaveTextContent("Currency");
-    expect(screen.getByText("Total growth")).toBeInTheDocument();
+  it("shows no Investment / Currency line under Total growth (owner, pass 4)", () => {
+    // Investment equals the USD figure already on the tile, so the line only repeated it.
+    for (const ccy of ["EUR", "USD"] as const) {
+      const { unmount } = render(<KpiGrid data={withSplit("-0.012")} currency={ccy} loading={false} />);
+      expect(screen.queryByTestId("hero-split")).toBeNull();
+      expect(screen.getByText("Total growth")).toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("reports the year once: no second, unlike YTD figure under the XIRR tile", () => {
