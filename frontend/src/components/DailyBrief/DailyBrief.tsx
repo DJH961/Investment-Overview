@@ -113,6 +113,91 @@ function SessionFact({ move, currency }: { move: BriefMoveDto; currency: Reporti
   );
 }
 
+// TODO: switch to `S["BriefOut"]["window_move"]` once api-types.ts carries it.
+/** The whole absence as one move (server figures: EUR parts add up, flows are separate). */
+export interface BriefWindowMove {
+  start_at: string;
+  end_at: string;
+  start_value: string | null;
+  end_value: string | null;
+  move: string | null;
+  pct: string | null;
+  price_move: string | null;
+  currency_move: string | null;
+  net_flows: string | null;
+  estimated: boolean;
+  start_basis?: "intraday" | "close";
+  movers?: BriefMoveDto["movers"];
+}
+type WindowByCurrency = { EUR: BriefWindowMove | null; USD: BriefWindowMove | null } | null;
+const windowOf = (b: BriefDto, currency: ReportingCurrency): BriefWindowMove | null =>
+  (b as BriefDto & { window_move?: WindowByCurrency }).window_move?.[currency] ?? null;
+
+/** A custom time frame (several sessions away): the same figure row as one session. */
+function WindowFact({ brief, w, currency }: { brief: BriefDto; w: BriefWindowMove; currency: ReportingCurrency }) {
+  const move = toNum(w.move);
+  const fx = toNum(w.currency_move);
+  // Shown to the cent, Market + Currency add up to the headline as displayed.
+  const cents = (v: number) => Math.round(v * 100) / 100;
+  const market = move !== null && fx !== null ? cents(cents(move) - cents(fx)) : toNum(w.price_move);
+  const flows = toNum(w.net_flows);
+  const first = brief.sessions[0];
+  const last = brief.sessions[brief.sessions.length - 1];
+  const days = first && last && first !== last ? `${formatDayLabel(first)} – ${formatDayLabel(last)}` : first ? formatDayLabel(first) : null;
+  const start = toNum(w.start_value);
+  const end = toNum(w.end_value);
+  const deposits =
+    flows !== null && flows !== 0 ? (
+      <span className="daily-brief__pair" data-testid="brief-flows">
+        <span className="daily-brief__key">{flows > 0 ? "Deposits" : "Withdrawals"}</span>
+        <Money amount={Math.abs(flows)} currency={currency} />
+      </span>
+    ) : null;
+  return (
+    <Fact
+      testId="brief-window-move"
+      label={
+        <>
+          {days ?? "Time away"}
+          {w.estimated && <span className="daily-brief__est"> ≈ est.</span>}
+        </>
+      }
+      value={
+        <span className="daily-brief__figure" data-testid="brief-figure">
+          <Money amount={move} currency={currency} signed colored />
+          <DeltaBadge value={toNum(w.pct)} />
+        </span>
+      }
+      note={
+        currency === "EUR" ? (
+          <span className="daily-brief__parts" data-testid="brief-split" data-ccy-specific="">
+            <span className="daily-brief__pair">
+              <span className="daily-brief__key">Market</span>
+              <Money amount={market} currency={currency} signed colored />
+            </span>
+            {fx !== null && (
+              <span className="daily-brief__pair">
+                <span className="daily-brief__key">Currency</span>
+                <Money amount={fx} currency={currency} signed colored />
+              </span>
+            )}
+            {deposits}
+          </span>
+        ) : (
+          <>
+            {start !== null && end !== null && (
+              <span className="daily-brief__line" data-testid="brief-value-path" data-ccy-specific="">
+                <Money amount={start} currency={currency} digits={0} /> → <Money amount={end} currency={currency} digits={0} />
+              </span>
+            )}
+            {deposits && <span className="daily-brief__line">{deposits}</span>}
+          </>
+        )
+      }
+    />
+  );
+}
+
 function SessionsFact({ brief }: { brief: BriefDto }) {
   const n = Math.max(brief.sessions_passed, brief.sessions.length);
   return (
@@ -248,9 +333,9 @@ function MoverChip({ m, up }: { m: BriefMoverDto; up: boolean }) {
 }
 
 /** The session's biggest movers each way, as chips (arrow + sign, never colour alone). */
-function MoversFact({ move }: { move: BriefMoveDto }) {
-  const up = move.movers?.winners.slice(0, MOVERS_EACH_WAY) ?? [];
-  const down = move.movers?.losers.slice(0, MOVERS_EACH_WAY) ?? [];
+function MoversFact({ movers }: { movers: BriefMoveDto["movers"] }) {
+  const up = movers?.winners.slice(0, MOVERS_EACH_WAY) ?? [];
+  const down = movers?.losers.slice(0, MOVERS_EACH_WAY) ?? [];
   if (up.length === 0 && down.length === 0) return null;
   return (
     <Fact
@@ -374,6 +459,7 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
 
   const move = b.move?.[currency] ?? null;
   const kind = b.kind === "session" && move ? "session" : b.kind === "fx_reopen" ? "fx" : "sessions";
+  const win = kind === "sessions" ? windowOf(b, currency) : null;
   const n = Math.max(b.sessions_passed, b.sessions.length);
   const icon = kind === "session" ? <Newspaper aria-hidden /> : kind === "fx" ? <Repeat aria-hidden /> : <CalendarRange aria-hidden />;
   // "Since" is the previous visit (the server's marker), as the currency slot's rates use it.
@@ -400,10 +486,12 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
       </header>
       <dl className="daily-brief__facts">
         {kind === "session" && move && <SessionFact move={move} currency={currency} />}
-        {kind === "sessions" && <SessionsFact brief={b} />}
+        {kind === "sessions" && win && <WindowFact brief={b} w={win} currency={currency} />}
+        {kind === "sessions" && !win && <SessionsFact brief={b} />}
         {kind === "fx" && <FxReopenFact brief={b} currency={currency} />}
         {showCurrency && <CurrencySinceFact brief={b} currency={currency} />}
-        {kind === "session" && move && <MoversFact move={move} />}
+        {kind === "session" && move && <MoversFact movers={move.movers} />}
+        {win && <MoversFact movers={win.movers} />}
       </dl>
     </section>
   );
