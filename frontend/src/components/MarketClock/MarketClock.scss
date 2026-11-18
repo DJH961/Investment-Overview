@@ -1,0 +1,40 @@
+// The market clock: one quiet line, an icon and the state word carry the meaning
+// (never a colour). Never wraps; where the line is short (phones, the hero's
+// right column) the "since 15:30" part steps aside so the countdown stays whole.
+.market-clock {
+  container: market-clock / inline-size;
+  margin: 0;
+
+  &__line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__icon {
+    flex: none;
+    width: var(--icon-sm);
+    height: var(--icon-sm);
+  }
+
+  &__state {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__since {
+    @container market-clock (max-width: 24rem) {
+      display: none;
+    }
+  }
+
+  &__next {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

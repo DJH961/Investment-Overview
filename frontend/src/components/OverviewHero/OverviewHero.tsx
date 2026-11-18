@@ -6,6 +6,7 @@ import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
 import { useFitWidth } from "../KpiTile/useFitWidth";
 import { Money } from "../Money";
+import { MarketClock } from "../MarketClock";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
 import { latestInstant, lastSessionLabel, PriceStamps, type PriceTime, type StampOptions } from "../Freshness";
@@ -22,8 +23,14 @@ export interface OverviewHeroProps {
   loading: boolean;
   /** Injected clock (tests). */
   now?: Date;
-  /** The "Today" stat block: under the move on phones, a right column on desktop. */
-  aside?: ReactNode;
+  /**
+   * The "Today" stat block: under the move on phones, a right column on desktop. As a
+   * function it receives the market clock and places it (in the slot the intraday
+   * sparkline used to fill); a plain node gets the clock above it.
+   */
+  aside?: ReactNode | ((clock: ReactNode) => ReactNode);
+  /** The market clock reached its open / close: fetch the server's next instants. */
+  onClockBoundary?: () => void;
   /** Set inside the Overview stage: no surface of its own, the stage draws it. */
   embedded?: boolean;
 }
@@ -85,13 +92,21 @@ export function heroPriceTime(data: OverviewDto): PriceTime {
  * "Today" or "Last session · Tue", with when the prices are from and when the
  * app last fetched them, plus the investment-vs-currency return split.
  */
-export function OverviewHero({ data, currency, loading, now, aside, embedded = false }: OverviewHeroProps) {
+export function OverviewHero({ data, currency, loading, now, aside, onClockBoundary, embedded = false }: OverviewHeroProps) {
   const timeZone = useTimeZone();
   const { hide } = useHideAmounts();
   // The big figure shrinks to fit the card (seven-figure USD / de-DE values at 360 px).
   const valuesRef = useRef<HTMLDivElement>(null);
   useFitWidth(valuesRef, loading || !data);
-  const side = aside ? <div className="overview-hero__aside">{aside}</div> : null;
+  const clock = data && !loading ? <MarketClock freshness={data.freshness} now={now} onBoundary={onClockBoundary} /> : null;
+  const asideNode =
+    typeof aside === "function" ? aside(clock) : aside ? (
+      <>
+        {clock}
+        {aside}
+      </>
+    ) : null;
+  const side = asideNode ? <div className="overview-hero__aside">{asideNode}</div> : null;
   const cls = clsx("overview-hero", side && "overview-hero--split", embedded && "overview-hero--embedded");
   if (loading || !data) {
     return (
@@ -260,6 +275,7 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
         {data.total_value_complete === false && (
           <p className="overview-hero__note">Some holdings have no live price yet; the total is incomplete.</p>
         )}
+        {!aside && clock}
       </div>
       {side}
     </section>

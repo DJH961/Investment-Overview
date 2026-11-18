@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { lastSessionLabel } from "../Freshness";
 import { Money } from "../Money";
 import { parseInstant } from "../../lib/format";
@@ -11,6 +11,12 @@ export interface HeroIntradayProps {
   currency: ReportingCurrency;
   /** Injected clock (tests). */
   now?: Date;
+  /**
+   * The market clock (from the hero), in the slot the intraday curve used to fill:
+   * under the head, over the facts. It carries the market state, so the head's
+   * "Market open" pill steps aside while it is shown.
+   */
+  clock?: ReactNode;
 }
 
 /** viewBox units; the SVG stretches to its box (strokes stay 1.75 px). */
@@ -79,7 +85,7 @@ export function intradayShape(g: Pick<GraphDto, "points" | "reference" | "sessio
  * big graph below already draws 1D. While the graph loads the block keeps its
  * frame (dashes); once loaded with nothing to show it renders nothing.
  */
-export function HeroIntraday({ currency, now }: HeroIntradayProps) {
+export function HeroIntraday({ currency, now, clock }: HeroIntradayProps) {
   const timeZone = useTimeZone();
   const graph = useGraph("1d", currency);
   const g = graph.data?.range === "1d" ? graph.data : undefined;
@@ -87,13 +93,14 @@ export function HeroIntraday({ currency, now }: HeroIntradayProps) {
   const label = g?.session_date ? (lastSessionLabel(g.session_date, { timeZone, now }) ?? "Today") : "Today";
   const ref = toNum(g?.reference ?? null);
   const loading = graph.isPending || !g;
-  if (!loading && !shape && ref === null) return null;
+  if (!loading && !shape && ref === null) return clock ? <div className="hero-intraday">{clock}</div> : null;
   return (
     <div className="hero-intraday">
       <div className="hero-intraday__head">
         <span className="hero-intraday__label">{label}</span>
-        <span className="hero-intraday__state">{g?.market_open ? "Market open" : "Market closed"}</span>
+        {!clock && <span className="hero-intraday__state">{g?.market_open ? "Market open" : "Market closed"}</span>}
       </div>
+      {clock}
       <dl className="hero-intraday__facts">
         <div className="hero-intraday__fact">
           <dt className="hero-intraday__fact-label">Low</dt>
