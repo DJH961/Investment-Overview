@@ -15,6 +15,9 @@
 
   &__main {
     min-width: 0;
+    // Nothing in a page may widen the document: a wide table scrolls in its own box, and the page never
+    // slides under the fixed sidebar (clip, not hidden, so sticky headers keep working).
+    overflow-x: clip;
     margin-left: var(--shell-offset);
     transition: margin-left var(--duration-base) var(--ease-standard);
   }

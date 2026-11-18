@@ -78,6 +78,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (B-030). Nominal mode is unchanged.
 
 ### Changed
+- Currency page hidden until 7.2 (nav entries, Overview link and route; the code stays behind `SHOW_CURRENCY_PAGE`).
 - **The time-zone list is the same everywhere.** The `tzdata` package is now installed on
   every platform, so the Settings time-zone list no longer depends on which time-zone
   database the operating system ships (CI runners dropped the old alias names, which broke

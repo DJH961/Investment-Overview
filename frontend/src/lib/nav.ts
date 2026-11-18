@@ -37,6 +37,8 @@ export interface NavItem {
   shortcut?: string;
 }
 
+import { SHOW_CURRENCY_PAGE } from "./features";
+
 export const NAV_ITEMS: NavItem[] = [
   { to: "/overview", label: "Overview", icon: LayoutDashboard, group: "Portfolio", tab: true, shortcut: "o" },
   { to: "/holdings", label: "Holdings", icon: Wallet, group: "Portfolio", tab: true, shortcut: "h" },
@@ -44,7 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/periods", label: "Periods", icon: CalendarRange, group: "Dig in", tab: true, shortcut: "p" },
   { to: "/risk", label: "Risk & analytics", icon: ShieldAlert, group: "Dig in", shortcut: "r" },
   { to: "/projection", label: "Projection", icon: Calculator, group: "Dig in", shortcut: "c" },
-  { to: "/currency", label: "Currency", icon: Euro, group: "Dig in", shortcut: "u" },
+  ...(SHOW_CURRENCY_PAGE ? [{ to: "/currency", label: "Currency", icon: Euro, group: "Dig in" as const, shortcut: "u" }] : []),
   { to: "/allocations", label: "Allocations", icon: PieChart, group: "Dig in", shortcut: "l" },
   { to: "/transactions", label: "Transactions", icon: Receipt, group: "Manage", tab: true, shortcut: "t" },
   { to: "/import", label: "Import", icon: Upload, group: "Manage", shortcut: "i" },
