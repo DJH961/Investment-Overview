@@ -16,6 +16,8 @@ const ALL_KEYS: unknown[][] = [
   ["calculator", "projection", "EUR", {}],
   ["deposits", "both", null, null, null],
   ["deposits", "dividends", "both"],
+  ["currency", "both"],
+  ["brief"],
   ["transactions", {}],
   ["transaction", 1],
   ["instruments"],

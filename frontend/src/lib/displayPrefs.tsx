@@ -38,6 +38,8 @@ export interface DisplayPrefs {
   riskLookback: number;
   currency: "EUR" | "USD";
   theme: "auto" | "light" | "dark";
+  /** Minutes the Daily Brief stays open before it closes itself (`brief_autoclose_minutes`); 0 = never. */
+  briefAutocloseMinutes: number;
 }
 
 export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
@@ -54,6 +56,7 @@ export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
   riskLookback: 365,
   currency: "EUR",
   theme: "auto",
+  briefAutocloseMinutes: 3,
 };
 
 const CACHE_KEY = "displayPrefs";
@@ -85,6 +88,7 @@ export function prefsFromValues(values: SettingsValues | undefined, base: Displa
   const timezone = typeof v("display_timezone") === "string" ? String(v("display_timezone")) : base.timezone;
   const clockFormat = pick<ClockFormat>(["auto", "12h", "24h"], v("clock_format"), base.clockFormat);
   const lookback = Number(v("chart_pref.analytics_lookback"));
+  const autoclose = v("brief_autoclose_minutes");
   return {
     locale: pick(LOCALES, v("display.locale"), base.locale),
     dateFormat: pick(DATE_FORMATS, v("display.date_format"), "auto"),
@@ -99,6 +103,8 @@ export function prefsFromValues(values: SettingsValues | undefined, base: Displa
     riskLookback: Number.isFinite(lookback) && lookback > 0 ? lookback : base.riskLookback,
     currency: pick(["EUR", "USD"] as const, v("display_currency"), base.currency),
     theme: pick(["auto", "light", "dark"] as const, v("theme"), base.theme),
+    briefAutocloseMinutes:
+      typeof autoclose === "number" && Number.isFinite(autoclose) && autoclose >= 0 ? autoclose : base.briefAutocloseMinutes,
   };
 }
 

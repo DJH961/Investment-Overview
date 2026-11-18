@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { api } from "../api";
 import type { components } from "../api-types";
 import { subscribeLiveEvents } from "../live";
-import { invalidateFor } from "./invalidation";
+import { invalidateFor, jobAffectsReports } from "./invalidation";
 
 type S = components["schemas"];
 export type JobCatalogue = S["JobCatalogue"];
@@ -86,11 +86,24 @@ export function useStartJob() {
   });
 }
 
+/** Runs whose end already refreshed the reports (once per run, SSE or polling). */
+const FINISHED_SEEN = new Set<string>();
+
 /** One run; polls every 2 s while running (the SSE `job` event usually beats it). */
 export function useJobRun(runId: string | null) {
+  const qc = useQueryClient();
   return useQuery({
     queryKey: [M, "run", runId],
-    queryFn: ({ signal }) => api<JobRun>(`/api/maintenance/runs/${runId}`, { signal }),
+    queryFn: async ({ signal }) => {
+      const run = await api<JobRun>(`/api/maintenance/runs/${runId}`, { signal });
+      // Polling is the fallback when the SSE stream is down: a run seen finishing here
+      // refreshes every report once, exactly as the `job` event would.
+      if (run.status !== "running" && !FINISHED_SEEN.has(run.id)) {
+        FINISHED_SEEN.add(run.id);
+        if (jobAffectsReports(run.job)) void invalidateFor(qc, "refresh");
+      }
+      return run;
+    },
     enabled: runId !== null,
     refetchInterval: (q) => (q.state.data?.status === "running" ? 2000 : false),
   });
@@ -101,8 +114,11 @@ export function applyJobEvent(qc: QueryClient, ev: Record<string, unknown>): voi
   const { type: _t, ts: _ts, ...run } = ev;
   qc.setQueryData([M, "run", ev.id], run as unknown as JobRun);
   if (ev.status !== "running") {
+    FINISHED_SEEN.add(ev.id);
     void qc.invalidateQueries({ queryKey: [M, "jobs"] });
     void qc.invalidateQueries({ queryKey: [M, "tiingo"] });
+    void qc.invalidateQueries({ queryKey: [M, "twins"] });
+    void qc.invalidateQueries({ queryKey: [M, "anomalies"] });
     void qc.invalidateQueries({ queryKey: ["diagnostics"] });
     if (String(ev.job).startsWith("backup.")) void qc.invalidateQueries({ queryKey: [M, "backups"] });
   }

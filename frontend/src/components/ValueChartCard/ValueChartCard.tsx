@@ -50,7 +50,7 @@ export const RANGE_LABELS: Record<GraphRange, string> = {
 };
 
 /**
- * "NAVs estimated from ETF twins": one short line however many funds are
+ * "NAVs estimated": one short line however many funds are
  * estimated; the fund -> twin mapping is in the (i) tooltip. Mounted only while
  * an estimate is on screen, so the instruments list is fetched only then.
  */
@@ -59,13 +59,13 @@ export function EstimatedNote({ funds, week }: { funds: string[]; week: boolean 
   const twinOf = (symbol: string) => twins?.find((i) => i.symbol === symbol)?.intraday_twin ?? null;
   return (
     <p className="value-chart-card__note" data-testid="funds-estimated-note">
-      <span>NAVs estimated from ETF twins</span>
+      <span>NAVs estimated</span>
       <InfoTip
         label="estimated NAVs"
         content={
           <div className="value-chart-card__twins">
             <p className="value-chart-card__twins-text">
-              Until a fund's official NAV posts, its line follows its ETF twin{week ? " (latest session only)" : ""}.
+              NAVs estimated from their ETF twins: until a fund's official NAV posts, its line follows its twin{week ? " (latest session only)" : ""}.
             </p>
             <ul className="value-chart-card__twins-list">
               {funds.map((f) => (
@@ -110,6 +110,8 @@ export interface ValueChartCardProps {
   marketOpen?: boolean;
   /** `GET /api/overview` `last_session` (session move + overnight currency, after the close). */
   lastSession?: OverviewDto["last_session"];
+  /** Set inside the Overview stage: no surface of its own (see Card `variant="plain"`). */
+  embedded?: boolean;
   className?: string;
 }
 
@@ -120,6 +122,7 @@ export function ValueChartCard({
   configuredRange,
   marketOpen = false,
   lastSession,
+  embedded = false,
   className,
 }: ValueChartCardProps) {
   const timeZone = useTimeZone();
@@ -211,8 +214,9 @@ export function ValueChartCard({
   // The split explains the 1D figure only; 1W's header is the week, not a session.
   const sessionPct = moved && shown === "1d" && lastSession ? toNum(lastSession.move_pct) : null;
   // Sits left of the range buttons (one row on desktop; wraps under them on a phone).
+  // Inside the Overview stage the hero above already shows the split: once per screen.
   const split =
-    sessionPct !== null ? (
+    sessionPct !== null && !embedded ? (
       <DaySplit
         sessionPct={sessionPct}
         overnightPct={overnightPct}
@@ -225,7 +229,8 @@ export function ValueChartCard({
 
   return (
     <Card
-      className={clsx("value-chart-card", className)}
+      className={clsx("value-chart-card", embedded && "value-chart-card--embedded", className)}
+      variant={embedded ? "plain" : "surface"}
       title="Graph"
       collapsibleId="overview.chart"
       // The range's growth sits beside the title rather than over the plot: it is
@@ -255,6 +260,12 @@ export function ValueChartCard({
         <>
           <Chart
             headerExtra={split}
+            // On the legend row, right-aligned: no extra line under the chart.
+            legendExtra={
+              (shown === "1d" || shown === "1w") && g?.funds_estimated ? (
+                <EstimatedNote funds={g.estimated_funds} week={shown === "1w"} />
+              ) : undefined
+            }
             nowMarker={nowMarker}
             series={series}
             range={range}
@@ -283,9 +294,6 @@ export function ValueChartCard({
             emptyMessage="No history for this range yet."
             ariaLabel="Portfolio value over time"
           />
-          {(shown === "1d" || shown === "1w") && g?.funds_estimated && (
-            <EstimatedNote funds={g.estimated_funds} week={shown === "1w"} />
-          )}
           {(shown === "1d" || shown === "1w") && (g?.data_gaps?.length ?? 0) > 0 && (
             <p className="value-chart-card__note" data-testid="data-gaps-note">
               No market data from the price provider{" "}

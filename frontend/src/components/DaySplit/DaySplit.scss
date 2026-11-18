@@ -41,4 +41,39 @@
   &--end {
     justify-content: flex-end;
   }
+
+}
+
+// The ☀/☾ legend inside an info tip: a symbol column, then the rule, one row each.
+.day-split-legend {
+  display: grid;
+  gap: var(--space-2);
+  line-height: var(--line-height-base);
+
+  &__row {
+    display: grid;
+    grid-template-columns: 1.25em minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-2);
+    overflow-wrap: anywhere;
+
+    // The Total rule sits under a hairline, apart from the two symbol lines.
+    &--rule {
+      padding-top: var(--space-2);
+      border-top: var(--border-width) solid var(--color-border);
+    }
+  }
+
+  &__icon {
+    width: 1em;
+    height: 1em;
+    margin-top: 0.2em;
+    color: var(--color-muted);
+  }
+
+  &__sign {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-semibold);
+    text-align: center;
+  }
 }

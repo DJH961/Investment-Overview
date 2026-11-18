@@ -68,6 +68,27 @@ def test_patch_round_trip_and_per_key_errors(api_client: TestClient, as_token: N
     assert values["theme"]["value"] == "auto"  # nothing half-applied
 
 
+def test_brief_autoclose_minutes_is_a_visible_display_setting(
+    api_client: TestClient, as_token: None
+) -> None:
+    schema = {f["key"]: f for f in api_client.get("/api/settings/schema").json()["fields"]}
+    field = schema["brief_autoclose_minutes"]
+    assert field["section"] == "display"
+    assert field["level"] == "user"
+    assert field["label"] == "Daily Brief closes after (minutes, 0 = never)"
+    assert (field["type"], field["default"], field["min"], field["max"]) == ("int", 3, "0", "60")
+    values = api_client.get("/api/settings/values").json()["values"]
+    assert values["brief_autoclose_minutes"]["value"] == 3
+    ok = api_client.patch("/api/settings/values", json={"changes": {"brief_autoclose_minutes": 0}})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["values"]["brief_autoclose_minutes"]["value"] == 0
+    for bad in (61, -1, "2.5"):
+        resp = api_client.patch(
+            "/api/settings/values", json={"changes": {"brief_autoclose_minutes": bad}}
+        )
+        assert resp.status_code == 422, bad
+
+
 def test_secrets_are_write_only_and_need_a_session(
     api_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Chart, fitLabel, freeLabelY, segments, sessionLayout, timeTicks, type ChartSeries } from "./Chart";
 
 const series: ChartSeries[] = [
@@ -163,10 +163,34 @@ describe("Chart", () => {
     const firstY = (container: HTMLElement, id: string) =>
       /M[\d.]+,([\d.]+)/.exec(container.querySelector(`[data-series="${id}"] .chart__line`)?.getAttribute("d") ?? "")?.[1];
 
+    const atWidth = (w: number) =>
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({ width: w, height: 300 } as DOMRect);
+
+    it("draws one axis on a card too narrow for two, with the same right gutter", () => {
+      const gridEnd = (w: number) => {
+        const spy = atWidth(w);
+        const r = render(<Chart {...props} series={[eur, usd]} rightAxisFormat={(v) => `R${Math.round(v)}`} />);
+        spy.mockRestore();
+        const out = {
+          right: r.container.querySelectorAll(".chart__axis-label--right").length,
+          gutter: w - Number(r.container.querySelector(".chart__grid")?.getAttribute("x2")),
+        };
+        r.unmount();
+        return out;
+      };
+      const narrow = gridEnd(700);
+      const wide = gridEnd(740);
+      expect(narrow.right).toBe(0);
+      expect(wide.right).toBeGreaterThan(0);
+      expect(wide.gutter).toBe(narrow.gutter);
+    });
+
     it("starts both lines at the same pixel and labels the right axis as left x scale", () => {
+      const spy = atWidth(900);
       const { container } = render(
         <Chart {...props} series={[eur, usd]} rightAxisFormat={(v) => `R${Math.round(v)}`} />,
       );
+      spy.mockRestore();
       expect(firstY(container, "primary")).toBeDefined();
       expect(Number(firstY(container, "secondary"))).toBeCloseTo(Number(firstY(container, "primary")), 6);
       const left = [...container.querySelectorAll(".chart__axis-label--y")].map((n) => Number(n.textContent?.slice(1)));

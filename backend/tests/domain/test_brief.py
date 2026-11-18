@@ -1,4 +1,4 @@
-"""Daily Brief window: which NYSE sessions passed since the last acknowledgement."""
+"""Daily Brief window: which NYSE sessions passed since the previous visit."""
 
 from __future__ import annotations
 
@@ -51,14 +51,16 @@ CASES = [
     pytest.param(
         et(2026, 11, 16, 17, 0), et(2026, 11, 23, 17, 0), "sessions", 5, id="mon-to-next-mon"
     ),
-    pytest.param(et(2026, 11, 16, 8, 0), et(2026, 11, 16, 8, 0), None, 0, id="now-equals-ack"),
-    pytest.param(et(2026, 11, 16, 12, 0), et(2026, 11, 16, 8, 0), None, 0, id="now-before-ack"),
+    pytest.param(et(2026, 11, 16, 8, 0), et(2026, 11, 16, 8, 0), None, 0, id="now-equals-seen"),
+    pytest.param(et(2026, 11, 16, 12, 0), et(2026, 11, 16, 8, 0), None, 0, id="now-before-seen"),
 ]
 
 
-@pytest.mark.parametrize(("ack", "now", "kind", "passed"), CASES)
-def test_window_table(ack: datetime, now: datetime, kind: str | None, passed: int) -> None:
-    window = brief_window(ack, now)
+@pytest.mark.parametrize(("previous_seen", "now", "kind", "passed"), CASES)
+def test_window_table(
+    previous_seen: datetime, now: datetime, kind: str | None, passed: int
+) -> None:
+    window = brief_window(previous_seen, now)
     if kind is None:
         assert window is None
     else:
@@ -86,7 +88,7 @@ def test_naive_datetimes_are_utc() -> None:
     assert window.sessions == (date(2026, 11, 16),)
 
 
-def test_ancient_ack_stays_cheap() -> None:
+def test_ancient_visit_stays_cheap() -> None:
     window = brief_window(datetime(1990, 1, 1, tzinfo=UTC), et(2026, 11, 16, 12, 0))
     assert window is not None
     assert window.kind == "sessions"
@@ -94,13 +96,13 @@ def test_ancient_ack_stays_cheap() -> None:
 
 @settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(
-    ack=st.datetimes(min_value=datetime(2024, 1, 1), max_value=datetime(2028, 1, 1)),
+    previous_seen=st.datetimes(min_value=datetime(2024, 1, 1), max_value=datetime(2028, 1, 1)),
     gap=st.integers(min_value=0, max_value=60 * 24 * 40),
 )
-def test_boundaries_inside_window_and_sorted(ack: datetime, gap: int) -> None:
-    ack = ack.replace(tzinfo=UTC)
-    now = ack + timedelta(minutes=gap)
-    for b in session_boundaries(ack, now):
-        assert ack < b.at <= now
-    bounds = session_boundaries(ack, now)
+def test_boundaries_inside_window_and_sorted(previous_seen: datetime, gap: int) -> None:
+    previous_seen = previous_seen.replace(tzinfo=UTC)
+    now = previous_seen + timedelta(minutes=gap)
+    for b in session_boundaries(previous_seen, now):
+        assert previous_seen < b.at <= now
+    bounds = session_boundaries(previous_seen, now)
     assert [b.at for b in bounds] == sorted(b.at for b in bounds)

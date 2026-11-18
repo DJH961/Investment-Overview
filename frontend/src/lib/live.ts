@@ -253,6 +253,10 @@ export function handleLiveEvent(queryClient: QueryClient, data: string): void {
     markStaleAndRefetch(queryClient, "refresh");
   } else if (type === "graphs" && typeof ev.range === "string") {
     void queryClient.invalidateQueries({ queryKey: ["graphs", ev.range] });
+    // A 1W reload also rebuilds the last session, so the 1D line moves too.
+    if (ev.range === "1w") {
+      void queryClient.invalidateQueries({ queryKey: ["graphs", "1d"] });
+    }
   } else if (type === "job") {
     // A repair / maintenance job finished (from any page): the prices, FX or ledger
     // it touched feed every report; the Health & Repair page tracks the run itself.

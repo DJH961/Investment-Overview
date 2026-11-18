@@ -18,7 +18,12 @@
   transition:
     background-color var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
+    color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
 
   &:disabled {
     opacity: 0.55;
@@ -41,12 +46,14 @@
     width: 100%;
   }
 
+  // Ink, not colour: the one strong action on a screen reads by weight.
   &--primary {
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
+    background: var(--color-ink);
+    color: var(--color-ink-fg);
+    box-shadow: var(--shadow-1);
 
     &:hover:not(:disabled) {
-      filter: brightness(1.08);
+      opacity: 0.88;
     }
   }
 
@@ -54,6 +61,7 @@
     background: var(--color-surface);
     border-color: var(--color-border-strong);
     color: var(--color-fg);
+    box-shadow: var(--shadow-1);
 
     &:hover:not(:disabled) {
       background: var(--color-surface-2);

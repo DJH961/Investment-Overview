@@ -1,16 +1,20 @@
 import clsx from "clsx";
 import { useRef, type ReactNode } from "react";
+import { Moon } from "lucide-react";
 import { DaySplit } from "../DaySplit";
 import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
 import { useFitWidth } from "../KpiTile/useFitWidth";
 import { Money } from "../Money";
+import { MarketChip, MarketClock } from "../MarketClock";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
 import { latestInstant, lastSessionLabel, PriceStamps, type PriceTime, type StampOptions } from "../Freshness";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { useTimeZone } from "../../lib/timezone";
+import { useHideAmounts } from "../../lib/hideAmounts";
 import "./OverviewHero.scss";
 
 export interface OverviewHeroProps {
@@ -20,8 +24,16 @@ export interface OverviewHeroProps {
   loading: boolean;
   /** Injected clock (tests). */
   now?: Date;
-  /** Desktop right zone (the intraday mini chart); hidden below the desktop breakpoint. */
-  aside?: ReactNode;
+  /**
+   * The "Today" stat block: under the move on phones, a right column on desktop. As a
+   * function it receives the market clock and places it (in the slot the intraday
+   * sparkline used to fill); a plain node gets the clock above it.
+   */
+  aside?: ReactNode | ((clock: ReactNode) => ReactNode);
+  /** The market clock reached its open / close: fetch the server's next instants. */
+  onClockBoundary?: () => void;
+  /** Set inside the Overview stage: no surface of its own, the stage draws it. */
+  embedded?: boolean;
 }
 
 
@@ -55,14 +67,8 @@ function EstimateTip({ est, official, currency }: { est: EstimateDto; official: 
 
 function moveTip(ccy: string, ccy2: string, closed: boolean, lastSession: boolean): string {
   return (
-    `The change since the previous close, in ${ccy}. ${ccy2}: the same change measured in ${ccy2}, ` +
-    `so the gap between the two is the exchange-rate effect.` +
-    (lastSession
-      ? ` The market has not traded yet today, so this is the last session's result plus what the exchange rate did since its close.`
-      : closed
-        ? ` US markets are closed now, so dollar prices stand still and only the exchange rate moves.`
-        : "") +
-    ` The Day move tile below shows its market-hours and overnight parts.`
+    `Change since the previous close, in ${ccy}. ${ccy2}: the same change in ${ccy2}; the gap is the currency.` +
+    (lastSession ? " No trading yet today: this is the last session." : closed ? " Market closed: only the currency moves now." : "")
   );
 }
 
@@ -87,13 +93,28 @@ export function heroPriceTime(data: OverviewDto): PriceTime {
  * "Today" or "Last session · Tue", with when the prices are from and when the
  * app last fetched them, plus the investment-vs-currency return split.
  */
-export function OverviewHero({ data, currency, loading, now, aside }: OverviewHeroProps) {
+export function OverviewHero({ data, currency, loading, now, aside, onClockBoundary, embedded = false }: OverviewHeroProps) {
   const timeZone = useTimeZone();
+  const { hide } = useHideAmounts();
   // The big figure shrinks to fit the card (seven-figure USD / de-DE values at 360 px).
   const valuesRef = useRef<HTMLDivElement>(null);
   useFitWidth(valuesRef, loading || !data);
-  const side = aside ? <div className="overview-hero__aside">{aside}</div> : null;
-  const cls = clsx("overview-hero", side && "overview-hero--split");
+  // Phones: no standing clock band. A quiet chip in the corner opens the full clock; the
+  // compact band shows by itself only in the last 15 minutes to a bell (and 5 after).
+  const phone = useMediaQuery("(max-width: 767px)");
+  const clock =
+    data && !loading ? (
+      <MarketClock freshness={data.freshness} now={now} onBoundary={onClockBoundary} variant={phone ? "near" : "full"} />
+    ) : null;
+  const asideNode =
+    typeof aside === "function" ? aside(clock) : aside ? (
+      <>
+        {clock}
+        {aside}
+      </>
+    ) : null;
+  const side = asideNode ? <div className="overview-hero__aside">{asideNode}</div> : null;
+  const cls = clsx("overview-hero", side && "overview-hero--split", embedded && "overview-hero--embedded");
   if (loading || !data) {
     return (
       <section className={cls} aria-label="Portfolio value">
@@ -140,37 +161,22 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
   const offShut = marketClosed && ls?.day_move != null;
   const officialPct = offShut ? ls?.day_move_pct : k.daily_growth_pct;
   const officialMove = offShut ? ls?.day_move : k.daily_move;
+  // Market open (no last_session): last night's currency move is inside today's total;
+  // the hero names it once (it used to sit under the Day move tile as well). Euro view
+  // only: a book reported in its own currency has no currency leg. Hide mode: the move
+  // as a share of the value it applies to (both server figures, one payload).
+  const fxMove = !ls && currency === "EUR" && data.day_split ? toNum(data.day_split.currency_move) : null;
+  const fxShown = fxMove !== null && Math.abs(fxMove) >= 0.005;
+  const fxTotal = toNum(k.total_value);
+  const fxShare = fxMove !== null && fxTotal ? fxMove / fxTotal : null;
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
     <section className={cls} aria-label="Portfolio value">
       <div className="overview-hero__main">
         <div className="overview-hero__head">
-          <span className="overview-hero__label">Portfolio value</span>
-          {live && (
-            <span className="overview-hero__corner overview-hero__corner--live">
-              <span className="overview-hero__dot" aria-hidden />
-              Live
-            </span>
-          )}
-        </div>
-        {/*
-          The headline band: the value and the day's move side by side, so the two
-          things asked first are answered on one line and the desktop's width is used
-          rather than padded. Below the breakpoint they stack.
-        */}
-        {/*
-          v5's shape, deliberately: the figure, the other currency beneath it, and one
-          coloured change badge — nothing else. The supporting numbers that used to
-          crowd this card (the official total, the day's price/FX split, the lifetime
-          growth split) now sit in the KPI block directly below, which is where every
-          other figure on this page already lives. The card reads the same in every
-          market state, so nothing shifts under you as the day goes on.
-        */}
-        <div className="overview-hero__values" ref={valuesRef}>
-          <span className="overview-hero__headline">
-            <span className="overview-hero__value">
-              <Money amount={toNum(headTotal)} currency={currency} />
-            </span>
+          {/* The "≈ est." chip sits with the label, never competing with the figure's width. */}
+          <span className="overview-hero__label-line">
+            <span className="overview-hero__label">Portfolio value</span>
             {est && (
               <span className="overview-hero__est-chip" data-testid="hero-estimate-chip">
                 ≈ est.
@@ -181,73 +187,104 @@ export function OverviewHero({ data, currency, loading, now, aside }: OverviewHe
               </span>
             )}
           </span>
-          {k2 && (
-            <span className="overview-hero__value2">
-              <Money amount={toNum(secTotal ?? null)} currency={ccy2} />
+          {phone && f ? (
+            <MarketChip freshness={f} live={live} currency={currency} now={now} />
+          ) : live && (
+            <span className="overview-hero__corner overview-hero__corner--live">
+              <span className="overview-hero__dot" aria-hidden />
+              Live
             </span>
           )}
         </div>
-        {est && (
-          <p className="overview-hero__official" data-testid="hero-official">
-            <span className="overview-hero__muted">Official</span>
-            <Money amount={toNum(k.total_value)} currency={currency} />
-            <span className="overview-hero__official-change" data-testid="hero-official-change">
-              <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
-              {" · "}
-              <Percent ratio={toNum(officialPct ?? null)} signed />
+        <div className="overview-hero__values" ref={valuesRef}>
+          <span className="overview-hero__headline">
+            <span className="overview-hero__value">
+              <Money amount={toNum(headTotal)} currency={currency} />
             </span>
-          </p>
-        )}
+          </span>
+          {/* The other currency and the price time share one line. */}
+          <span className="overview-hero__sub">
+            {k2 && (
+              <span className="overview-hero__value2">
+                <Money amount={toNum(secTotal ?? null)} currency={ccy2} />
+              </span>
+            )}
+            <PriceStamps
+              className="overview-hero__stamps"
+              price={heroPriceTime(data)}
+              updated={fetched}
+              compact
+              options={opts}
+            />
+          </span>
+        </div>
         {/*
-          The change row and the price time share a line when there is room for both,
-          and the stamps fall to their own line when there is not — flex wrap decides
-          from the actual content, so no width has to be guessed. `space-between`
-          holds the stamps right while they share the line and lets them sit at the
-          left edge once they wrap, which is where they read best on a phone.
+          Everything under the big value on ONE wrapping row, using the full width:
+          the day's move (badge, money, day pill), its ☀ + ☾ split, the overnight FX,
+          the official book while estimating, and the other currency's move pushed to
+          the right edge. Flex wrap decides from the real content where a phone breaks
+          the row. The row's height is reserved in every view, so switching EUR/USD
+          (USD has no currency leg) never moves the page.
         */}
-        <div className="overview-hero__line">
+        <div className="overview-hero__facts">
           <div className="overview-hero__move">
             <DeltaBadge value={toNum(headPct)} />
             <Money amount={toNum(headMove)} currency={currency} signed colored />
             <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
-            {secPct != null && (
-              <span className="overview-hero__muted overview-hero__usd">
-                {usdFlat ? (
-                  `${ccy2} unchanged`
-                ) : (
-                  <span>
-                    {ccy2} <Percent ratio={toNum(secPct)} signed />
-                  </span>
-                )}
-                <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
-              </span>
-            )}
           </div>
-          <PriceStamps
-            className="overview-hero__stamps"
-            price={heroPriceTime(data)}
-            updated={fetched}
-            compact
-            options={opts}
-          />
+          {secPct != null && (
+            <span className="overview-hero__muted overview-hero__usd">
+              {usdFlat ? (
+                `${ccy2} unchanged`
+              ) : (
+                <span>
+                  {ccy2} <Percent ratio={toNum(secPct)} signed />
+                </span>
+              )}
+              <InfoTip label="today's move" content={moveTip(currency, ccy2, marketClosed, lastSession)} />
+            </span>
+          )}
+          {ls && (
+            <DaySplit
+              sessionPct={toNum(ls.move_pct ?? null)}
+              overnightPct={toNum(ls.overnight_pct ?? null)}
+              overnight={toNum(ls.overnight_currency)}
+              estimate={est !== null}
+              currency={currency}
+              marketOpen={ls.market_open}
+              data-testid="hero-day-split"
+            />
+          )}
+          {fxShown && (
+            <span className="overview-hero__fx" data-testid="overnight-currency">
+              <Moon className="overview-hero__fx-icon" aria-hidden />
+              {data.day_split?.overnight ? "Overnight FX" : "FX since close"}{" "}
+              {hide && fxShare !== null ? (
+                <Percent ratio={fxShare} signed colored />
+              ) : (
+                <Money amount={fxMove} currency={currency} signed colored />
+              )}
+              <span className="overview-hero__muted">in today&apos;s total</span>
+            </span>
+          )}
+          {est && (
+            <p className="overview-hero__official" data-testid="hero-official">
+              <span className="overview-hero__muted">Official</span>
+              <Money amount={toNum(k.total_value)} currency={currency} />
+              <span className="overview-hero__official-change" data-testid="hero-official-change">
+                <span className="overview-hero__official-money">
+                  <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
+                  {" · "}
+                </span>
+                <Percent ratio={toNum(officialPct ?? null)} signed />
+              </span>
+            </p>
+          )}
         </div>
-        {/*
-          Market shut and the currency moved since the close: the headline above already
-          includes the overnight part, so say how it splits (same line as the graph header).
-        */}
-        {ls && (
-          <DaySplit
-            sessionPct={toNum(ls.move_pct ?? null)}
-            overnightPct={toNum(ls.overnight_pct ?? null)}
-            overnight={toNum(ls.overnight_currency)}
-            currency={currency}
-            marketOpen={ls.market_open}
-            data-testid="hero-day-split"
-          />
-        )}
         {data.total_value_complete === false && (
           <p className="overview-hero__note">Some holdings have no live price yet; the total is incomplete.</p>
         )}
+        {!aside && clock}
       </div>
       {side}
     </section>

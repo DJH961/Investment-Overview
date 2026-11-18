@@ -748,3 +748,41 @@ ordering and the ECB-fallback action (F-061).
 - Front/back comparison was done for the endpoints behind the findings (stream, holdings day growth, the `/both` reads, invalidation targets), not for every router in `backend/src/investment_dashboard/api/`.
 - Not run: Playwright e2e, Lighthouse/axe, a bundle visualiser (F-089 is therefore "suspected").
 
+
+## Second pass: Diagnostics, Import, Settings (v7.0 audit pass 2)
+
+Method: Playwright on the fixture build (full and empty ledger, light and dark, 360 and 390 px;
+every Diagnostics sub-tab, Import and Settings, full page), console watched, horizontal scroll
+measured, plus a code read of the three page folders (inline styles, raw colours, unlabelled
+inputs, focus order). Shots are kept outside the repo. No real data was used.
+
+| ID | Sev | Finding | State |
+| --- | --- | --- | --- |
+| G-001 | medium | Data Health had no way to type the broker share counts the P7 check compares with (backend GET/PUT `/api/diagnostics/share-counts` existed, the UI did not). | Fixed: "Broker share counts" card (account, holding, shares rows; validated; empty list switches the check off). |
+| G-002 | medium | Import: the visually hidden file input stayed in the tab order with no focus ring, a second invisible stop next to "Choose file". | Fixed: `tabIndex={-1}`; the button is the keyboard route. |
+| G-003 | low | The Diagnostics section switch wraps "Market data" onto two lines at 360 px (it scrolls sideways when needed, nothing overflows). | Left. |
+| G-004 | low | Repair is a long single column on a phone (about 5900 px at 390); group folding would help. | Left. |
+| G-005 | low | Settings's search box and 12-setting Display group are long on a phone; no overflow, no console errors. | Left. |
+
+Checked and fine: no horizontal scroll at 360/390 on any of the eight views in either theme or
+either dataset; no console errors; no inline styles, raw colours or `dangerouslySetInnerHTML`
+in the three folders (the few `px` values are max-widths and a 2 px marker); every `input`,
+`textarea` and Select has a label or aria-label; no client-side return maths in these pages.
+Activity log: `PUT /api/diagnostics/share-counts` is already in `api/activity.py` `_LABELS`.
+
+Counts: 0 high, 2 medium (both fixed), 3 low (left).
+
+### Vitest coverage (reported, not gated; `npm run test:coverage`)
+
+Whole frontend: statements 76.85 %, branches 69.77 %, functions 67.64 %, lines 80.49 %.
+
+| Area | Lines | Branches |
+| --- | --- | --- |
+| pages/Diagnostics | 46.4% | 33.1% |
+| pages/Import | 75.3% | 66.0% |
+| pages/Settings | 54.6% | 48.6% |
+| lib/queries | 72.5% | 54.2% |
+| lib | 87.7% | 78.2% |
+
+The coverage run also showed two failing `KpiGrid.test.tsx` cases (hero-split test id); KpiGrid
+belongs to the Overview work, not this pass.

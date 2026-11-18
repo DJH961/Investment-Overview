@@ -1,47 +1,79 @@
 @use "../../styles/mixins" as m;
 
-// Page layout only; each section styles itself in its own component.
+// Page composition only; each section styles itself in its own component.
+//
+//   [ Brief (v7) ]
+//   [ STAGE: value · today's move · today panel ]
+//   [ STAGE: the chart                          ]
+//   [ KPI panel                                 ]
+//   [ Holdings (main)   ][ Currency        ]   wide screens; stacked below
+//   [ Allocation        ][ Top movers      ]
+//   [                   ][ Asset classes   ]
+//   [                   ][ Lifetime FX     ]
 .overview-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--page-gap);
 
-  @include m.phone {
-    gap: var(--space-3);
-  }
-
-  &__row {
-    display: grid;
-    gap: var(--space-4);
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-
-    @include m.phone {
-      gap: var(--space-3);
-    }
-
-    @include m.desktop {
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-
-      &--alloc {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      }
-    }
-  }
-
-  &__cell {
+  // The stage: the portfolio's one composed statement, lit from above (--stage-bg),
+  // the largest radius in the app. The hero and the chart share it, split by a hairline.
+  &__stage {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
+    overflow: hidden;
+    border: var(--border-width) solid var(--stage-border);
+    border-radius: var(--radius-xl);
+    background: var(--stage-bg);
+    box-shadow: var(--shadow-hover);
   }
 
-  // Cards stacked in one grid cell (asset classes + lifetime FX).
+  &__stage-chart {
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  // Below wide: one column, Holdings first, then the side cards, Allocation last.
+  &__row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-gap);
+  }
+
   &__side {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--page-gap);
     min-width: 0;
+  }
 
-    @include m.phone {
-      gap: var(--space-3);
+  // Below wide the main column dissolves into the row so Allocation can come last.
+  &__main {
+    display: contents;
+  }
+
+  &__alloc {
+    order: 1;
+    min-width: 0;
+  }
+
+  // Wide: Holdings (natural height) + Allocation on the left, the four side cards on
+  // the right. The treemap's height (set in Overview.tsx) closes the gap between them.
+  @include m.wide {
+    &__row {
+      display: grid;
+      align-items: start;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    }
+
+    &__main {
+      display: flex;
+      flex-direction: column;
+      gap: var(--page-gap);
+      min-width: 0;
+    }
+
+    &__alloc {
+      order: 0;
     }
   }
 }

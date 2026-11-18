@@ -3,6 +3,7 @@
  * cards below jumped). The `/both` hooks select one side of the same payload;
  * every section must render the same element structure on both sides.
  */
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render as rtlRender } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -66,7 +67,12 @@ const side = (c: "EUR" | "USD") => {
         repatriation_value_eur: "112606.59",
         breakeven_rate: "1.0755",
       },
-      return_split: { investment_return: "0.123", currency_effect_pp: "-0.1188" },
+      return_split: {
+        investment_return: "0.123",
+        currency_effect_pp: c === "EUR" ? "-0.1188" : "0",
+        eur_minus_usd_pp: "-0.1188",
+        usd_vs_eur_pct: "-0.095",
+      },
       today: {
         pair: c === "EUR" ? "USD/EUR" : "EUR/USD",
         spot: "1.1887",
@@ -160,6 +166,30 @@ vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: ccy.value }) })
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined, useShellSummary: () => undefined }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 vi.mock("./OnboardingCard", () => ({ OnboardingCard: () => null }));
+// A due one-session Brief, so the switch also covers the card above the stage.
+const briefMove = (c: "EUR" | "USD") => ({
+  session_date: "2026-11-04",
+  day_move: side(c).kpis.daily_move,
+  day_move_pct: "-0.0031",
+  price_move: String(-300 * (c === "EUR" ? 1 : 1.1887)),
+  currency_move: c === "EUR" ? "-47.59" : null,
+  currency_overnight: false,
+  estimated: false,
+  movers: side(c).movers,
+});
+const brief = {
+  due: true,
+  kind: "session",
+  now: "2026-11-04T21:05:00Z",
+  last_ack_at: "2026-11-04T13:00:00Z",
+  sessions: ["2026-11-04"],
+  sessions_passed: 1,
+  boundaries: [],
+  events: [{ id: 1, kind: "dividend_cash", symbol: "AAA", date: "2026-11-04", created_at: "2026-11-04T16:00:00Z" }],
+  events_total: 1,
+  move: { EUR: briefMove("EUR"), USD: briefMove("USD") },
+};
+vi.mock("../../lib/queries/brief", () => ({ useBrief: () => ({ data: brief }), useAckBrief: () => ({ mutate: vi.fn() }) }));
 
 import { ToastProvider } from "../../components/Toast";
 import { Overview } from "./Overview";
@@ -186,11 +216,13 @@ function structure(root: Element): string[] {
 function renderIn(c: "EUR" | "USD") {
   ccy.value = c;
   return rtlRender(
-    <MemoryRouter>
-      <ToastProvider>
-        <Overview />
-      </ToastProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <ToastProvider>
+          <Overview />
+        </ToastProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -204,7 +236,8 @@ describe("Overview currency switch", () => {
     const eur = renderIn("EUR");
     const eurShape = structure(eur.container);
     const eurCards = [...eur.container.querySelectorAll(".card__title, .overview-hero")].map((n) => n.textContent);
-    expect(eur.container.querySelectorAll(".currency-box__amount")).toHaveLength(0);
+    // The "Regular €100 … today" line shows in both views (same height).
+    expect(eur.container.querySelectorAll(".currency-box__amount")).toHaveLength(1);
     eur.unmount();
     const usd = renderIn("USD");
     const usdShape = structure(usd.container);
@@ -214,8 +247,8 @@ describe("Overview currency switch", () => {
     expect(usd.container.querySelectorAll(".movers-card__row")).toHaveLength(2);
     // The currency box keeps the same lines (the "Regular €100 · $118.87 today" line in both).
     expect(usd.container.querySelectorAll(".currency-box__amount")).toHaveLength(1);
-    // The hero's day curve renders in both (its trend modifier may flip; the boxes do not move).
-    expect(usd.container.querySelectorAll(".overview-hero__aside .hero-intraday__line")).toHaveLength(1);
+    // The hero's Today facts render in both (no sparkline: the stage's graph draws the day).
+    expect(usd.container.querySelectorAll(".overview-hero__aside .hero-intraday__line")).toHaveLength(0);
     expect(usd.container.querySelectorAll(".hero-intraday__fact")).toHaveLength(3);
     const diff = usdShape.flatMap((s, i) => (s === eurShape[i] ? [] : [`${i}: ${eurShape[i]} -> ${s}`]));
     expect(diff).toEqual([]);

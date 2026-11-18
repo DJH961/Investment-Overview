@@ -9,6 +9,7 @@ import { ErrorState } from "../../components/ErrorState";
 import { Input } from "../../components/Input";
 import { PageHeader } from "../../components/PageHeader";
 import { Skeleton } from "../../components/Skeleton";
+import { Switch } from "../../components/Switch";
 import { useToast } from "../../components/Toast";
 import { useHideAmounts } from "../../lib/hideAmounts";
 import { BACKUP_URL } from "../../lib/queries/manage";
@@ -91,10 +92,11 @@ function HideNumbersCard() {
   const { hide, setHide } = useHideAmounts();
   return (
     <Card title="Hide numbers" subtitle="This device only">
-      <label className="settings__switch">
-        <input type="checkbox" role="switch" aria-checked={hide} checked={hide} onChange={(e) => setHide(e.target.checked)} />
-        <span>Hide amounts and share counts (percentages, names and weights stay visible).</span>
-      </label>
+      <Switch
+        checked={hide}
+        onCheckedChange={setHide}
+        label="Hide amounts and share counts (percentages, names and weights stay visible)."
+      />
     </Card>
   );
 }

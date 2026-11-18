@@ -144,7 +144,7 @@ export function AppShell() {
 
   return (
     <div className={clsx("app-shell", phone && "app-shell--phone", rail && "app-shell--rail")}>
-      {!phone && <Sidebar collapsed={rail} onToggle={desktop ? toggleRail : undefined} />}
+      {!phone && <Sidebar collapsed={rail} onToggle={desktop ? toggleRail : undefined} summary={summary} />}
       <div className="app-shell__main">
         {refresh.running && (
           <div
@@ -170,6 +170,8 @@ export function AppShell() {
           onLogout={logout}
           health={health}
           summary={summary}
+          // The expanded sidebar carries the portfolio at its head; the bar keeps it otherwise.
+          showSummary={phone || rail}
           privacyToggle={
             <IconButton
               label={hide ? "Show numbers" : "Hide numbers"}

@@ -574,3 +574,21 @@ def next_session_close(now: datetime) -> datetime:
     else:
         day = next_session_open(at).astimezone(_MARKET_TZ).date()
     return regular_session_close(day).astimezone(UTC)
+
+
+def last_session_close(now: datetime) -> datetime:
+    """The most recent regular-session close (UTC) at or before ``now``.
+
+    Skips weekends and full-day holidays; a half-day closes at 13:00 ET
+    (:func:`session_close`). The overnight countdown runs from here to
+    :func:`next_session_open`.
+    """
+    at = _aware_utc(now)
+    day = at.astimezone(_MARKET_TZ).date()
+    for _ in range(15):  # a long weekend plus slack; holidays never run that long
+        if is_trading_day(day):
+            closes = regular_session_close(day).astimezone(UTC)
+            if closes <= at:
+                return closes
+        day -= timedelta(days=1)
+    raise RuntimeError("no trading day within 15 days")  # pragma: no cover

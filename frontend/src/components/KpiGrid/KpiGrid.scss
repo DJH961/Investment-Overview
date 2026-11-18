@@ -1,15 +1,29 @@
 @use "../../styles/mixins" as m;
 
+// One statement panel: the eight figures share a surface, split by hairlines (each
+// tile draws its right and bottom rule; the panel clips the outer ones), with the
+// cost and income strip as its footer. Calmer than eight separate boxes.
 .kpi-grid {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  min-width: 0;
+  overflow: hidden;
+  @include m.surface;
 
   &__tiles {
+    --kpi-tile-bg: transparent;
+    --kpi-tile-border: 0;
+    --kpi-tile-radius: 0;
+    --kpi-tile-shadow: var(--border-width) 0 0 0 var(--color-border), 0 var(--border-width) 0 0 var(--color-border);
+
     display: grid;
-    gap: var(--space-3);
+    gap: 0;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     @include m.phone-tile-grid;
+
+    @include m.phone {
+      gap: 0;
+    }
 
     @include m.desktop {
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -36,12 +50,14 @@
     }
   }
 
+  // The footer: a sunken band under the figures.
   &__strip {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-3) var(--space-6);
+    gap: var(--space-2) var(--space-6);
     margin: 0;
-    padding: 0 var(--space-2);
+    padding: var(--space-3) var(--card-pad-x);
+    background: var(--color-surface-2);
   }
 
   &__stat {
@@ -86,8 +102,79 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The money notes ride in the (i) until there is room for them beside the figure.
   &__stat-sub {
+    display: none;
+    margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+
+    @include m.wide {
+      display: inline;
+    }
+  }
+
+  // The long label on tablet up; a short one on phones (the full name stays for screen readers).
+  &__stat-short {
+    display: none;
+  }
+
+  &__tip {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  // Phone: ONE compact row of three small stats, label over figure, hairline dividers.
+  // The money notes move into each (i) tooltip. About 52 px tall, no wrap at 360 px,
+  // the same in EUR and USD.
+  @include m.phone {
+    &__strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0;
+      padding: var(--space-2) 0;
+    }
+
+    &__stat {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+      min-width: 0;
+      padding: 0 var(--space-3);
+      border-left: var(--border-width) solid var(--color-border);
+
+      &:first-child {
+        padding-left: var(--card-pad-x);
+        border-left: 0;
+      }
+    }
+
+    &__stat-label {
+      flex-wrap: nowrap;
+      gap: var(--space-1);
+      min-width: 0;
+      font-size: var(--font-size-xs);
+      white-space: nowrap;
+    }
+
+    &__stat-long {
+      @include m.visually-hidden;
+    }
+
+    &__stat-short {
+      display: inline;
+    }
+
+    &__stat-value {
+      font-size: var(--font-size-md);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    &__stat-sub {
+      display: none;
+    }
   }
 }

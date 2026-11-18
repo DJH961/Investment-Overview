@@ -1,15 +1,24 @@
 @use "../../styles/mixins" as m;
 
 .movers-card {
-  // Phone: winners above losers. Wider: two equal columns side by side.
+  // The card lays itself out by its OWN width (container query), not the viewport: it sits
+  // in the Overview's narrow side column on desktop and full width below 1280 px.
+  // Narrow: winners over losers, each row one line (symbol + figure) with the name beneath.
+  // Wide (>= 44rem): two equal columns side by side. Below that a column would leave
+  // the name too little room for the symbol and its "biggest move" tag.
+  &__body {
+    container-type: inline-size;
+    container-name: movers;
+  }
+
   &__grid {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-6);
     grid-template-columns: minmax(0, 1fr);
 
-    @include m.tablet-up {
+    @container movers (min-width: 44rem) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--space-6);
+      gap: var(--space-7);
     }
   }
 
@@ -36,31 +45,42 @@
     border-bottom-color: var(--color-neg);
   }
 
-  // One grid for the whole list so every figure lines up across rows.
+  // Narrow: icon | who | figure, the second figure under the first, the name under the symbol.
   &__list {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     column-gap: var(--space-3);
     margin: 0;
     padding: 0;
     list-style: none;
+
+    // Wide: one grid for the whole list so every figure lines up across rows.
+    @container movers (min-width: 44rem) {
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+    }
   }
 
   &__row {
     display: grid;
     grid-column: 1 / -1;
     grid-template-columns: subgrid;
+    grid-template-areas: "icon who lead" "icon who trail";
     align-items: center;
-    padding: var(--space-2) 0;
+    padding: var(--space-3) 0;
     border-bottom: var(--border-width) solid var(--color-border);
     font-size: var(--font-size-sm);
 
     &:last-child {
       border-bottom: 0;
     }
+
+    @container movers (min-width: 44rem) {
+      grid-template-areas: "icon who lead trail";
+    }
   }
 
   &__icon {
+    grid-area: icon;
     width: var(--icon-sm);
     height: var(--icon-sm);
   }
@@ -74,6 +94,7 @@
   }
 
   &__who {
+    grid-area: who;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -84,9 +105,9 @@
     align-items: baseline;
     gap: var(--space-2);
     min-width: 0;
-    // Any width: the tag may drop to its own line rather than being clipped or split.
-    flex-wrap: wrap;
-    row-gap: 0;
+    // One line at every width and in both currencies (a longer US$ figure must not
+    // push the tag onto a second line and grow the row): the tag gives way instead.
+    flex-wrap: nowrap;
   }
 
   &__symbol {
@@ -95,9 +116,13 @@
 
   // The tag is one unit: when the column is tight it drops below the symbol as a
   // whole ("BIGGEST MOVE"), never split across two lines.
+  &__symbol {
+    flex-shrink: 0;
+  }
+
   &__tag {
     @include m.eyebrow;
-    white-space: nowrap;
+    @include m.truncate;
   }
 
   &__name {
@@ -119,7 +144,6 @@
     color: var(--color-muted);
     font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
-    letter-spacing: 0.04em;
     white-space: nowrap;
   }
 
@@ -142,11 +166,13 @@
   }
 
   &__lead {
+    grid-area: lead;
     font-size: var(--font-size-md);
-    font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-medium);
   }
 
   &__trail {
+    grid-area: trail;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
   }

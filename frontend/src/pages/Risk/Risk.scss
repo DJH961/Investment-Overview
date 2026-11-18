@@ -7,14 +7,32 @@
 
   &__stack {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
   }
 
+  // The lead panel: the four headline figures share one lit stage surface, split
+  // by hairlines (each tile draws its right and bottom rule; the panel clips the
+  // outer ones). The figures read as one statement, not four boxes.
   &__headline {
+    --kpi-tile-bg: transparent;
+    --kpi-tile-border: 0;
+    --kpi-tile-radius: 0;
+    --kpi-tile-shadow: var(--border-width) 0 0 0 var(--color-border), 0 var(--border-width) 0 0 var(--color-border);
+
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--space-3);
+    gap: 0;
+    overflow: hidden;
+    background: var(--stage-bg);
+    border: var(--border-width) solid var(--stage-border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-1);
     @include m.phone-tile-grid;
+
+    @include m.phone {
+      gap: 0;
+      border-radius: var(--radius-lg);
+    }
 
     @include m.tablet-only {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -23,7 +41,7 @@
 
   &__main {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
 
     @include m.desktop {
       grid-template-columns: minmax(0, 1fr) minmax(22rem, 26rem);
@@ -46,7 +64,7 @@
 
   &__groups {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--page-gap);
 
     // Tablet: two groups side by side.
     @include m.tablet-only {
@@ -71,8 +89,8 @@
 // Section label above each metric group ("RETURNS", "RISK AND VOLATILITY").
 .risk-page__group-title {
   margin: 0;
-  padding-bottom: var(--space-1);
-  border-bottom: var(--border-width) solid var(--color-border-strong);
+  padding-bottom: var(--space-2);
+  border-bottom: var(--border-width) solid var(--color-border);
   @include m.eyebrow;
 }
 
@@ -159,6 +177,6 @@
 // they line up with the card title instead of sitting a step further in.
 .risk-page__attribution {
   @include m.phone {
-    margin-inline: calc(-1 * var(--space-4));
+    margin-inline: calc(-1 * var(--card-pad-x));
   }
 }

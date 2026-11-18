@@ -333,6 +333,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/brief/visit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Visit
+         * @description Debug: set the current visit's window start by hand; the visit continues.
+         */
+        put: operations["set_visit_api_brief_visit_put"];
+        post?: never;
+        /**
+         * Clear Visit
+         * @description Back to automatic: the next absence rolls the window as normal.
+         */
+        delete: operations["clear_visit_api_brief_visit_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/calculator": {
         parameters: {
             query?: never;
@@ -1896,8 +1920,32 @@ export interface components {
             session_date: string;
         };
         /**
+         * BriefCurrencyEffect
+         * @description EUR view: the EUR/USD rate's effect on the portfolio over the whole window.
+         *
+         *     The current book valued at ``rate_now`` minus the same book at ``rate_then``
+         *     (holdings held constant, only the rate moves: the Overview currency box's
+         *     revaluation). USD holdings move by ``usd x (1/rate_now - 1/rate_then)``; EUR
+         *     holdings do not move. Euros.
+         */
+        BriefCurrencyEffect: {
+            /** Amount */
+            amount: string;
+            /**
+             * Pct
+             * @description fraction, 0.01 = 1%
+             */
+            pct: string;
+            /** Rate Now */
+            rate_now: string;
+            /** Rate Then */
+            rate_then: string;
+            /** Since */
+            since: string;
+        };
+        /**
          * BriefEvent
-         * @description A ledger row created since the last acknowledgement (``transactions.created_at``).
+         * @description A ledger row created since the previous visit (``transactions.created_at``).
          */
         BriefEvent: {
             /** Created At */
@@ -1927,6 +1975,34 @@ export interface components {
             pct?: string | null;
             /** Spot Display */
             spot_display?: string | null;
+        };
+        /**
+         * BriefInvestingPower
+         * @description USD view: the regular euro amount in dollars now versus at the window's start.
+         *
+         *     The Overview's ``investing_power_usd`` maths over the whole window: the fixed
+         *     ``amount_eur`` buys ``amount_eur x rate`` dollars; ``net`` = now - then (USD).
+         */
+        BriefInvestingPower: {
+            /** Amount Eur */
+            amount_eur: string;
+            /** Amount Usd Now */
+            amount_usd_now: string;
+            /** Amount Usd Then */
+            amount_usd_then: string;
+            /** Net */
+            net: string;
+            /**
+             * Pct
+             * @description fraction, 0.01 = 1%
+             */
+            pct: string;
+            /** Rate Now */
+            rate_now: string;
+            /** Rate Then */
+            rate_then: string;
+            /** Since */
+            since: string;
         };
         /**
          * BriefMove
@@ -1972,6 +2048,7 @@ export interface components {
              * @default []
              */
             boundaries: components["schemas"]["BriefBoundary"][];
+            currency_effect_since?: components["schemas"]["ByCurrency_Union_BriefCurrencyEffect__NoneType__"] | null;
             /** Due */
             due: boolean;
             /**
@@ -1985,10 +2062,13 @@ export interface components {
              */
             events_total: number;
             fx_move?: components["schemas"]["ByCurrency_BriefFxMove_"] | null;
+            investing_power_since?: components["schemas"]["ByCurrency_Union_BriefInvestingPower__NoneType__"] | null;
             /** Kind */
             kind?: ("session" | "sessions" | "fx_reopen") | null;
             /** Last Ack At */
             last_ack_at?: string | null;
+            /** Last Seen At */
+            last_seen_at?: string | null;
             move?: components["schemas"]["ByCurrency_BriefMove_"] | null;
             /** Now */
             now: string;
@@ -2002,6 +2082,57 @@ export interface components {
              * @default 0
              */
             sessions_passed: number;
+            /** Visit From */
+            visit_from?: string | null;
+            window_move?: components["schemas"]["ByCurrency_Union_BriefWindowMove__NoneType__"] | null;
+        };
+        /** BriefVisitIn */
+        BriefVisitIn: {
+            /** Visit From */
+            visit_from: string;
+        };
+        /**
+         * BriefWindowMove
+         * @description The book's move over the whole window (``visit_from`` to now) in one currency.
+         *
+         *     ``move = end_value - start_value - net_flows``; ``pct`` is the period-growth
+         *     definition ``move / (start_value + net_flows)``. EUR view: ``price_move +
+         *     currency_move == move`` (the currency part is the rate's effect on the start
+         *     book); USD view: ``currency_move`` is null and ``price_move == move``.
+         */
+        BriefWindowMove: {
+            /** Currency Move */
+            currency_move?: string | null;
+            /** End At */
+            end_at: string;
+            /** End Value */
+            end_value: string;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            /** Move */
+            move: string;
+            movers: components["schemas"]["Movers"];
+            /** Net Flows */
+            net_flows: string;
+            /**
+             * Pct
+             * @description fraction, 0.01 = 1%
+             */
+            pct?: string | null;
+            /** Price Move */
+            price_move: string;
+            /** Start At */
+            start_at: string;
+            /**
+             * Start Basis
+             * @enum {string}
+             */
+            start_basis: "intraday" | "close";
+            /** Start Value */
+            start_value: string;
         };
         /** Bucket */
         Bucket: {
@@ -2165,6 +2296,27 @@ export interface components {
         ByCurrency_PeriodsOut_: {
             EUR: components["schemas"]["PeriodsOut"];
             USD: components["schemas"]["PeriodsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[Union[BriefCurrencyEffect, NoneType]] */
+        ByCurrency_Union_BriefCurrencyEffect__NoneType__: {
+            EUR: components["schemas"]["BriefCurrencyEffect"] | null;
+            USD: components["schemas"]["BriefCurrencyEffect"] | null;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[Union[BriefInvestingPower, NoneType]] */
+        ByCurrency_Union_BriefInvestingPower__NoneType__: {
+            EUR: components["schemas"]["BriefInvestingPower"] | null;
+            USD: components["schemas"]["BriefInvestingPower"] | null;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[Union[BriefWindowMove, NoneType]] */
+        ByCurrency_Union_BriefWindowMove__NoneType__: {
+            EUR: components["schemas"]["BriefWindowMove"] | null;
+            USD: components["schemas"]["BriefWindowMove"] | null;
             /** Detail */
             detail?: string | null;
         };
@@ -2951,6 +3103,8 @@ export interface components {
              * @default false
              */
             historical: boolean;
+            /** Last Close At */
+            last_close_at?: string | null;
             /** Last Price Update At */
             last_price_update_at?: string | null;
             /**
@@ -7159,6 +7313,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_visit_api_brief_visit_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BriefVisitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_visit_api_brief_visit_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefOut"];
                 };
             };
         };

@@ -1,11 +1,9 @@
 import clsx from "clsx";
-import { DaySplit, daySplitMoved } from "../DaySplit";
+import type { ReactNode } from "react";
 import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
-import { formatPercent, formatPp } from "../../lib/format";
-import { useHideAmounts } from "../../lib/hideAmounts";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
@@ -24,7 +22,7 @@ export interface KpiGridProps {
 /** Copy for the info buttons (NiceGUI `ui/copy/tooltips.py` wording, shortened). */
 const STRIP_TIPS = {
   expense:
-    "Weighted average yearly fund fee (TER) across your holdings, and roughly what that costs per year at today's value.",
+    "Weighted average yearly fund fee (TER) across your holdings.",
   dividendReturn: "All dividends received since you started, as a share of the money you invested.",
   yield12:
     "Dividends received in the last 12 months as a share of today's portfolio value: your current income yield.",
@@ -32,11 +30,8 @@ const STRIP_TIPS = {
 
 export const KPI_TIPS = {
   dayMove:
-    "The change since the previous close: prices and the exchange rate together, the same Total as the headline. " +
-    "It moves live while the US market is open and stays frozen at the close afterwards. " +
-    "The line under it shows the parts: the move during market hours and the exchange rate overnight. " +
-    "After the close the overnight figure is tonight's move, shown beside the Total and not counted in it. " +
-    "While a fund's NAV is pending, its ETF twin's estimate stands in for it.",
+    "Change since the previous close: prices and currency together, the same Total as the headline. " +
+    "Its ☀ day and ☾ night parts sit under the portfolio value.",
   invested: "Money put in minus money taken out, each at its own day's exchange rate.",
   totalReturn:
     "What the portfolio has earned in money: current value + cash dividends received − net invested. Reinvested dividends are in the value, so every dividend counts once. Holdings splits it into capital gain and dividends.",
@@ -66,7 +61,6 @@ function VsMarket({ verdict }: { verdict: Verdict | undefined }) {
  * computed in that currency, never converted). Today lives in the hero.
  */
 export function KpiGrid({ data, currency, loading }: KpiGridProps) {
-  const { hide } = useHideAmounts();
   const k: Kpis | undefined = data?.kpis;
   const k2: Kpis | undefined = data?.kpis_secondary;
   const ccy2 = data?.secondary_ccy ?? (currency === "EUR" ? "USD" : "EUR");
@@ -84,22 +78,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     ) : undefined;
   const v = data?.market_verdict;
 
-  // The lifetime return split, under the tile it explains. The GROWTH figure is the
-  // tile's own value and shows in every currency — never hide in one view a number
-  // the other shows. The currency clause is gated on the VALUE, not on the currency
-  // name: a dollar return has no exchange-rate leg, so the server reports an effect
-  // of 0 and the clause simply does not apply. Gating on the figure rather than on
-  // "is this EUR" keeps the two views structurally identical (the Overview currency
-  // test asserts that) and still works for a EUR-native holding viewed in USD.
-  const split = data?.currency?.return_split;
-  const effect = toNum(split?.currency_effect_pp ?? null);
-  const growthSplit = split ? (
-    <span data-testid="hero-split">
-      Investment {formatPercent(toNum(split.investment_return), { signed: true })}
-      {effect !== null && Math.abs(effect) >= 0.00005 && <> · Currency {formatPp(effect)}</>}
-    </span>
-  ) : undefined;
-
   // The day Total, from the server (`day_split.price_move`; the field name is
   // historical): always the headline change, live while the market is open and
   // frozen at the close afterwards. `currency_move` is the exchange-rate figure:
@@ -107,49 +85,46 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
   const ds = data?.day_split ?? null;
   const priceMove = ds ? ds.price_move : k?.daily_move;
   const priceMove2 = ds ? ds.price_move_secondary : k2?.daily_move;
-  const fxMove = ds ? toNum(ds.currency_move) : null;
-  // A book reported in its own currency has no currency leg: the figure is a
-  // constant zero, so it is left out rather than printed as a finding. It is marked
-  // `data-ccy-specific` because that absence is correct, not a dropped section
-  // (see Overview.currency.test.tsx).
-  // Hide mode: the effect as a share of the portfolio value it applies to (both
-  // server-supplied, same payload), so the tile still informs without amounts.
-  const totalValue = toNum(k?.total_value ?? null);
-  const fxShare = fxMove !== null && totalValue ? fxMove / totalValue : null;
-  // Market shut and the currency moved since the close: the same "Session / Overnight ·
-  // overnight" line as the graph and the hero (`last_session`, server figures). The
-  // plain FX amount below stays for the in-session case, where there is no session part.
-  const ls = data?.last_session ?? null;
-  const splitHint = ls ? (
-    <DaySplit
-      sessionPct={toNum(ls.move_pct ?? null)}
-      overnightPct={toNum(ls.overnight_pct ?? null)}
-      overnight={toNum(ls.overnight_currency)}
-      currency={currency}
-      marketOpen={ls.market_open}
-      layout="list"
-      data-testid="kpi-day-split"
-    />
-  ) : null;
-  const overnightHint =
-    currency === "EUR" &&
-    splitHint &&
-    toNum(ls?.move_pct ?? null) !== null &&
-    daySplitMoved(toNum(ls?.overnight_pct ?? null), toNum(ls?.overnight_currency ?? null)) ? (
-      <span data-ccy-specific>{splitHint}</span>
-    ) : fxMove !== null && Math.abs(fxMove) >= 0.005 ? (
-      <span data-ccy-specific data-testid="overnight-currency">
-        {ds?.overnight ? "Overnight FX" : "FX since close"}{" "}
-        {hide && fxShare !== null ? (
-          <Percent ratio={fxShare} signed colored />
-        ) : (
-          <Money amount={fxMove} currency={currency} signed />
-        )}
-      </span>
-    ) : undefined;
+  // No ☀/☾ line here: the hero above shows the split (☀ + ☾ = total) once for the
+  // screen, and a tile with an EUR-only line made the panel jump on a currency switch.
 
   const expense = toNum(k?.weighted_expense_ratio);
   const ttm = toNum(k?.dividends_ttm);
+  // The money notes show under the figure from tablet up; on phones the strip is one compact
+  // row, so the same note rides in the (i) instead.
+  const withNote = (text: string, note: ReactNode) =>
+    note ? (
+      <span className="kpi-grid__tip">
+        <span>{text}</span>
+        <span>{note}</span>
+      </span>
+    ) : (
+      text
+    );
+  const expenseTip = withNote(
+    STRIP_TIPS.expense,
+    k?.annual_expense_cost != null ? (
+      <>
+        About <Money amount={toNum(k.annual_expense_cost)} currency={currency} digits={0} /> a year.
+      </>
+    ) : null,
+  );
+  const returnTip = withNote(
+    STRIP_TIPS.dividendReturn,
+    k?.dividend_income != null ? (
+      <>
+        <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} /> received so far.
+      </>
+    ) : null,
+  );
+  const yieldTip = withNote(
+    STRIP_TIPS.yield12,
+    ttm !== null ? (
+      <>
+        <Money amount={ttm} currency={currency} digits={0} /> paid in the last 12 months.
+      </>
+    ) : null,
+  );
 
   return (
     <div className="kpi-grid">
@@ -160,7 +135,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={money(priceMove, true)}
           secondary={money2(priceMove2, true)}
-          hint={overnightHint}
         />
         <KpiTile
           label="Invested"
@@ -189,7 +163,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={pct(k?.total_growth_compounded)}
           secondary={pct2(k2?.total_growth_compounded)}
-          hint={growthSplit}
         />
         <KpiTile
           label="Vs market"
@@ -231,46 +204,55 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
         <dl className="kpi-grid__strip">
           <div className="kpi-grid__stat">
             <dt className="kpi-grid__stat-label">
-              Expense ratio
-              <InfoTip label="Expense ratio" content={STRIP_TIPS.expense} />
+              <span className="kpi-grid__stat-long">Expense ratio</span>
+              <span className="kpi-grid__stat-short" aria-hidden>
+                Expense
+              </span>
+              <InfoTip label="Expense ratio" content={expenseTip} />
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={expense} />
-              {k.annual_expense_cost != null && (
-                <span className="kpi-grid__stat-sub">
-                  ≈ <Money amount={toNum(k.annual_expense_cost)} currency={currency} digits={0} />
-                  /yr
-                </span>
-              )}
             </dd>
+            {k.annual_expense_cost != null && (
+              <dd className="kpi-grid__stat-sub">
+                ≈ <Money amount={toNum(k.annual_expense_cost)} currency={currency} digits={0} />
+                /yr
+              </dd>
+            )}
           </div>
           <div className="kpi-grid__stat">
             <dt className="kpi-grid__stat-label">
-              Dividend return
-              <InfoTip label="Dividend return" content={STRIP_TIPS.dividendReturn} />
+              <span className="kpi-grid__stat-long">Dividend return</span>
+              <span className="kpi-grid__stat-short" aria-hidden>
+                Div. return
+              </span>
+              <InfoTip label="Dividend return" content={returnTip} />
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={toNum(k.dividend_yield_pct)} />
-              {k.dividend_income != null && (
-                <span className="kpi-grid__stat-sub">
-                  <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} /> received
-                </span>
-              )}
             </dd>
+            {k.dividend_income != null && (
+              <dd className="kpi-grid__stat-sub">
+                <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} /> received
+              </dd>
+            )}
           </div>
           <div className="kpi-grid__stat">
             <dt className="kpi-grid__stat-label">
-              Dividend yield, 12 mo
-              <InfoTip label="Dividend yield, 12 months" content={STRIP_TIPS.yield12} />
+              <span className="kpi-grid__stat-long">Dividend yield, 12 mo</span>
+              <span className="kpi-grid__stat-short" aria-hidden>
+                Yield 12 mo
+              </span>
+              <InfoTip label="Dividend yield, 12 months" content={yieldTip} />
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={toNum(k.dividend_yield_ttm_pct)} />
-              {ttm !== null && (
-                <span className="kpi-grid__stat-sub">
-                  <Money amount={ttm} currency={currency} digits={0} /> paid
-                </span>
-              )}
             </dd>
+            {ttm !== null && (
+              <dd className="kpi-grid__stat-sub">
+                <Money amount={ttm} currency={currency} digits={0} /> paid
+              </dd>
+            )}
           </div>
         </dl>
       )}

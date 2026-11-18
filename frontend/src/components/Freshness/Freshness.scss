@@ -17,10 +17,10 @@
     background: var(--color-faint);
   }
 
-  // Fixed wording: it wraps rather than being cut.
+  // One line (phones): the label gives way with an ellipsis; the chip's title holds
+  // the full sentence. Stacked chips (wider screens) keep their two clean lines.
   &__label {
-    min-width: 0;
-    overflow-wrap: anywhere;
+    @include m.truncate;
   }
 
   // Stacked: the state on line one, its detail on line two, the dot beside line one.

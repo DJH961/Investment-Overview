@@ -1,0 +1,58 @@
+@use "../../styles/mixins" as m;
+
+.stat-strip {
+  @include m.surface;
+  min-width: 0;
+  overflow: hidden;
+
+  // Equal columns with hairline dividers: each item draws its left and top rule,
+  // and the strip clips the outer ones, so any count lays out evenly.
+  &__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    margin: calc(-1 * var(--border-width)) 0 0 calc(-1 * var(--border-width));
+
+    @include m.phone {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  &__item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    container-type: inline-size;
+    padding: var(--space-4) var(--space-5);
+    border-top: var(--border-width) solid var(--color-border);
+    border-left: var(--border-width) solid var(--color-border);
+
+    @include m.phone {
+      padding: var(--space-3) var(--space-4);
+    }
+  }
+
+  &__label {
+    @include m.eyebrow;
+    overflow-wrap: anywhere;
+  }
+
+  &__value {
+    @include m.figure(var(--font-size-xl));
+    margin: 0;
+    overflow-wrap: anywhere;
+    // A long money figure shrinks with its cell before it could break or spill.
+    font-size: clamp(var(--font-size-md), 11cqi, var(--font-size-xl));
+
+    @include m.phone {
+      font-size: var(--font-size-lg);
+    }
+  }
+
+  &__note {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+}

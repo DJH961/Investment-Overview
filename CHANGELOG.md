@@ -17,7 +17,67 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Daily Brief: the currency since your last visit.** `GET /api/brief` now carries,
+  for the whole time you were away, the euro view's currency effect on
+  the portfolio (`currency_effect_since`: the current book at today's rate minus the
+  same book at the rate when you last looked) and the dollar view's investing power
+  (`investing_power_since`: what your regular euro amount buys in dollars now versus
+  then). The rate at the start of your absence is the intraday rate stored then.
+- **Daily Brief covers your absence, not your last dismissal.** The window is when you
+  were away (`visit_from` to the moment you came back): the page counts as open only
+  while its tab is visible (reads carry `X-Visible: 1`), and a break of at least the new
+  Display setting "New visit after being away" (default 5 min, 1 to 120) starts a new
+  visit. Sessions that pass while you watch never brief you; dismissing only hides the
+  card for the visit. The Brief refetches when the tab comes back (also on iOS page
+  restore). `PUT`/`DELETE /api/brief/visit` set or clear the window by hand (debugging).
+- **Setting "Daily Brief closes after (minutes, 0 = never)"** under Display (default 3,
+  0 to 60).
+- **Daily Brief on the Overview.** When a NYSE open or close has passed since you last
+  dismissed it, a card above the portfolio value says what happened: for one session the
+  day's move (market and currency apart in the euro view), the biggest mover each way and
+  the ledger rows added meanwhile; for longer gaps an honest "N sessions passed" with the
+  dates; over a weekend a single line on the euro. Every figure is the server's. Dismiss
+  removes it at once and it stays gone (it comes back only if the dismissal fails).
+  Compact layout: one header line (the window, "closes in m:ss", ×) and one row of
+  figures with hairlines (two columns on phones): the session move, the currency since
+  your last visit (EUR: currency effect with the rate then → now; USD: investing power
+  of the regular euro amount) and the top three movers each way as chips. It closes
+  itself after `brief_autoclose_minutes` (default 3, 0 = never), paused while you
+  point at or focus it. Ledger rows are no longer listed (you added them yourself).
+- **Market clock in the hero.** Where the intraday sparkline used to sit: "Open since
+  15:30 · closes in 3 h 12 min" or "Closed · opens in 2 h 14 min" (weekday and time when
+  more than a day away), in your time zone, one line on phones. When it reaches zero it
+  fetches the next open/close once; old instants never show a negative time.
+- **USD view: a currency figure that means something.** The lifetime currency card shows,
+  in dollars, the dollar's move against the euro since you bought and how far the euro
+  return sits from the dollar one (in percentage points), instead of a currency effect
+  that is always 0. Same tiles in both views, so a switch does not move the page.
+- **Currency page link** at the foot of the Overview's currency card.
+- **Fixture mode:** `?brief=session|sessions|fx|off` shows each kind of Daily Brief.
+
+- **Broker share counts in Health.** A new card on the Health tab lets you type the shares your
+  broker shows per holding; the server compares them with the ledger and lists differences as
+  hints (an empty list switches the check off). Also adds `npm run test:coverage` (reported,
+  not gated).
+
 ### Fixed
+- Overview polish: the hero day line puts the other currency first with the ☾/☀ split beside it (same rows in EUR and USD, no lone right-floated item); the graph legend carries a short "NAVs estimated" note on the chip line; the cost and dividend side stats are one compact row of three on phones, with the money notes in their tooltips.
+- **Daily Brief shows the whole absence, also over several sessions.** `GET /api/brief`
+  carries `window_move` (per currency, for one session and for several): the book's value
+  at the start of your absence (an intraday sample when one exists, else the last official
+  close), the value now (the hero's headline), money put in meanwhile, the move net of it,
+  its percentage (the period-growth definition), the market and currency parts (euro view)
+  and the top three up and down holdings by the shares held at the start.
+- **Daily Brief numbers add up.** The session's move is the hero's headline (the estimate
+  while it says est.), Market + Currency sum to it in the euro view and Market is the
+  whole move in the dollar view (the Brief used to mix the official and the estimated
+  figures). The fixtures' Brief now shows a real absence.
+- **Live ticks keep a pending fund's day move FX-inclusive.** The tick recomputed an
+  estimated fund's day move from the price alone, dropping the currency part the server
+  includes; it now keeps the server's figure until the refetch.
+- **Import: one tab stop for the file picker.** The hidden file input no longer takes a keyboard
+  stop of its own next to "Choose file".
 - **Projection in real terms adds up.** With "real terms" on, the projected growth and the
   money paid in are now both in today's money (each contribution adjusted for inflation at
   its own date), so start + paid in + growth = the end value. Before, the nominal payments
@@ -25,6 +85,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (B-030). Nominal mode is unchanged.
 
 ### Changed
+- Currency page hidden until 7.2 (nav entries, Overview link and route; the code stays behind `SHOW_CURRENCY_PAGE`).
 - **The time-zone list is the same everywhere.** The `tzdata` package is now installed on
   every platform, so the Settings time-zone list no longer depends on which time-zone
   database the operating system ships (CI runners dropped the old alias names, which broke

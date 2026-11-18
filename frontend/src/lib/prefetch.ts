@@ -20,6 +20,8 @@ import {
   type GraphRange,
 } from "./queries/portfolio";
 import { accountsQuery } from "./queries/accounts";
+import { SHOW_CURRENCY_PAGE } from "./features";
+import { currencyQuery } from "./queries/currency";
 import { dividendsQuery, depositsQuery } from "./queries/activity";
 import { instrumentsQuery } from "./queries/instruments";
 import { ledgerAllQuery } from "./queries/ledgerAll";
@@ -66,6 +68,7 @@ function reportJobs(ccy: ReportingCurrency) {
     periodsQuery("yearly", ccy),
     ...ranges.filter((r) => r !== first).map((r) => graphQuery(r, ccy)),
     allocationsQuery(ccy),
+    ...(SHOW_CURRENCY_PAGE ? [currencyQuery(ccy)] : []),
     calculatorInputsQuery(ccy),
     analyticsQuery(ccy, Number.isFinite(lookback) && lookback >= 0 ? lookback : DEFAULT_LOOKBACK_DAYS),
     depositsQuery(ccy),

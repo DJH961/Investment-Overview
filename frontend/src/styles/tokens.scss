@@ -1,4 +1,5 @@
-// Design tokens. Palette ported from the v5 web companion (web/src/styles.css).
+// Design tokens: the v7 "calm and premium" system. The spec (type scale, spacing
+// rhythm, elevation, radii, accent, chart palette, motion) is in styles/README.md.
 // Gains/losses use the colour-blind-safe blue/orange pair, never red/green.
 // The owner is protan (red-green) colour-blind. Rule: series colours (--chart-*) must
 // stay distinct from pos/neg (the main chart recolours its primary line to them), and
@@ -11,33 +12,52 @@
 // Theme: [data-theme="light"|"dark"] on <html>; without it, prefers-color-scheme.
 
 @mixin dark-tokens {
+  // Ink and text
   --color-fg: #eef2f8;
-  --color-muted: #9aa6b8;
-  --color-faint: #8190a6;
-  --color-accent: #8b85ff;
+  --color-muted: #9aa4b5;
+  --color-faint: #8692a6;
+  // Restrained accent: selection, links, focus. Never a value colour.
+  --color-accent: #a09bff;
   --color-accent-2: #3ad7ee;
   --color-accent-fg: #0b0e14;
-  --color-accent-soft: rgba(139, 133, 255, 0.16);
-  --color-bg: #0b0e14;
+  --color-accent-soft: rgba(160, 155, 255, 0.14);
+  // Primary actions: ink on canvas (inverted in dark), the quiet private-bank button.
+  --color-ink: #e9edf5;
+  --color-ink-fg: #0b0f17;
+  // Canvas and surfaces, lowest to highest.
+  // Dark is its own theme, not an inverted light one: a deep blue-black canvas lit
+  // from above (two faint glows), surfaces that step up in blue-grey, light hairlines.
+  --color-bg: #070a10;
   --color-bg-glow:
-    radial-gradient(1200px 600px at 100% -10%, rgba(139, 133, 255, 0.16), transparent 60%),
-    radial-gradient(900px 500px at -10% 0%, rgba(58, 215, 238, 0.12), transparent 55%);
-  --color-surface: #141925;
-  --color-surface-2: #1d2433;
-  --color-border: #232b3b;
-  --color-border-strong: #33405a;
+    radial-gradient(1200px 560px at 70% -18%, rgba(160, 155, 255, 0.09), transparent 62%),
+    radial-gradient(800px 420px at 0% 0%, rgba(78, 176, 205, 0.05), transparent 60%);
+  --color-surface: #0f141d;
+  --color-surface-2: #161c28;
+  --color-surface-raised: #131925;
+  --color-surface-glass: rgba(10, 14, 21, 0.78);
+  --color-border: #1d2431;
+  --color-border-strong: #2d3647;
+  --color-hairline: rgba(255, 255, 255, 0.05);
+  // The Overview stage: lit from the top-left, a step above the cards.
+  --stage-bg:
+    radial-gradient(900px 380px at 8% -30%, rgba(160, 155, 255, 0.13), transparent 62%),
+    linear-gradient(180deg, #141b28, #0f141d 70%);
+  --stage-border: #252e3f;
+  // Values
   --color-pos: #4eb0cd;
   --color-neg: #d0784e;
-  --color-pos-soft: rgba(78, 176, 205, 0.16);
-  --color-neg-soft: rgba(208, 120, 78, 0.16);
+  --color-pos-soft: rgba(78, 176, 205, 0.15);
+  --color-neg-soft: rgba(208, 120, 78, 0.15);
   --color-warn: #eacb5d;
-  --color-warn-soft: rgba(234, 203, 93, 0.16);
+  --color-warn-soft: rgba(234, 203, 93, 0.14);
   // Twin estimate: badge outline and connector only (never text; values use fg/pos/neg).
   --color-estimate: #8152e0;
   --color-estimate-soft: rgba(129, 82, 224, 0.16);
-  --color-overlay: rgba(4, 6, 10, 0.62);
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --color-overlay: rgba(3, 5, 9, 0.66);
+  // Depth: hairline top highlight + soft drop; the overlay level for sheets and menus.
+  --shadow-1: inset 0 1px 0 var(--color-hairline), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-hover: inset 0 1px 0 var(--color-hairline), 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 18px 48px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
   --chart-1: #887eff;
   --chart-2: #9efeff;
   --chart-3: #e4bf49;
@@ -50,36 +70,46 @@
   color-scheme: light dark;
 
   // Colour (light)
-  --color-fg: #0f1623;
-  --color-muted: #5b6678;
-  --color-faint: #5f6a7d;
-  --color-accent: #4f46e5;
+  --color-fg: #0d1626;
+  --color-muted: #566173;
+  --color-faint: #5a6578;
+  --color-accent: #3e3cb4;
   --color-accent-2: #06b6d4;
   // Brand mark (same in both themes; matches public/favicon.svg)
   --color-brand-start: #4f46e5;
   --color-brand-end: #0891b2;
   --color-brand-fg: #ffffff;
   --color-accent-fg: #ffffff;
-  --color-accent-soft: rgba(79, 70, 229, 0.1);
-  --color-bg: #f4f6fb;
-  --color-bg-glow:
-    radial-gradient(1200px 600px at 100% -10%, rgba(79, 70, 229, 0.1), transparent 60%),
-    radial-gradient(900px 500px at -10% 0%, rgba(6, 182, 212, 0.1), transparent 55%);
+  --color-accent-soft: rgba(62, 60, 180, 0.08);
+  --color-ink: #121b2c;
+  --color-ink-fg: #ffffff;
+  --color-bg: #f6f7fa;
+  --color-bg-glow: radial-gradient(1100px 520px at 85% -12%, rgba(62, 60, 180, 0.05), transparent 62%);
   --color-surface: #ffffff;
-  --color-surface-2: #eef1f7;
-  --color-border: #e6eaf2;
-  --color-border-strong: #cfd6e4;
+  --color-surface-2: #eef0f4;
+  --color-surface-raised: #ffffff;
+  --color-surface-glass: rgba(246, 247, 250, 0.82);
+  --color-border: #e3e6ec;
+  --color-border-strong: #cbd1db;
+  --color-hairline: rgba(255, 255, 255, 0);
+  --stage-bg:
+    radial-gradient(900px 380px at 8% -30%, rgba(62, 60, 180, 0.06), transparent 62%),
+    linear-gradient(180deg, #ffffff, #fcfcfe);
+  --stage-border: #dde1e8;
+  // The navigation spine: deep ink in both themes (see .u-ink below).
+  --color-spine: #0d1524;
   --color-pos: #2a6181;
   --color-neg: #74210c;
-  --color-pos-soft: rgba(42, 97, 129, 0.12);
-  --color-neg-soft: rgba(116, 33, 12, 0.12);
+  --color-pos-soft: rgba(42, 97, 129, 0.1);
+  --color-neg-soft: rgba(116, 33, 12, 0.09);
   --color-warn: #806912;
-  --color-warn-soft: rgba(128, 105, 18, 0.12);
+  --color-warn-soft: rgba(128, 105, 18, 0.11);
   --color-estimate: #9c6ef7;
   --color-estimate-soft: rgba(156, 110, 247, 0.12);
-  --color-overlay: rgba(15, 22, 35, 0.4);
-  --shadow-1: 0 1px 2px rgba(16, 22, 35, 0.05);
-  --shadow-2: 0 12px 32px rgba(16, 22, 35, 0.14), 0 2px 6px rgba(16, 22, 35, 0.08);
+  --color-overlay: rgba(13, 22, 38, 0.38);
+  --shadow-1: 0 1px 2px rgba(13, 22, 38, 0.04), 0 1px 1px rgba(13, 22, 38, 0.03);
+  --shadow-hover: 0 8px 24px rgba(13, 22, 38, 0.07), 0 1px 2px rgba(13, 22, 38, 0.05);
+  --shadow-2: 0 18px 48px rgba(13, 22, 38, 0.14), 0 2px 8px rgba(13, 22, 38, 0.07);
   --chart-1: #414df3;
   --chart-2: #319790;
   --chart-3: #8a6d00;
@@ -87,7 +117,7 @@
   --chart-5: #356c62;
   --chart-6: #691586;
 
-  // Spacing (4px scale)
+  // Spacing (4px base; 8px rhythm between blocks)
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -96,14 +126,23 @@
   --space-6: 24px;
   --space-7: 32px;
   --space-8: 48px;
+  --space-9: 64px;
+  // Layout rhythm: the gap between page sections and a card's inner padding.
+  --page-gap: var(--space-5);
+  --card-pad-x: var(--space-6);
+  --card-pad-y: var(--space-5);
 
-  // Radii
+  // Radii: controls < tiles < cards < hero
+  --radius-xs: 6px;
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 18px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-full: 999px;
 
-  // Type
+  // Type: Inter (optical sizing) for the interface and every figure in it; Source Serif 4
+  // (optical sizing) for the few display lines: page titles and the portfolio headline.
+  --font-display: "Source Serif 4 Variable", Georgia, "Times New Roman", serif;
   --font-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-size-2xs: 0.6875rem;
   --font-size-xs: 0.75rem;
@@ -114,17 +153,25 @@
   --font-size-2xl: 1.625rem;
   --font-size-3xl: 2.125rem;
   --font-size-4xl: 2.75rem;
+  --font-size-display: 3.25rem;
+  // The Overview headline on a desktop: the one oversized figure in the app.
+  --font-size-hero: 4.5rem;
+  --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
+  // Big figures: lighter than headings, the optical-size cut carries them.
+  --font-weight-figure: 500;
   --line-height-tight: 1.2;
   --line-height-base: 1.5;
+  --tracking-tight: -0.015em;
+  --tracking-display: -0.02em;
 
   // Sizes
   --sidebar-width: 264px; // 288px at >= 1440, 312px at >= 1920 (below)
-  --sidebar-item-height: 40px;
+  --sidebar-item-height: 38px;
   --sidebar-rail-width: 64px;
   --topbar-height: 56px;
-  --tabbar-height: 60px;
+  --tabbar-height: 64px; // the room the floating phone dock takes: 56px dock + 8px of air below it
   --content-max-width: 1440px;
   --tap-min: 44px;
   --control-height: 36px;
@@ -140,13 +187,16 @@
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
-  // Motion
+  // Motion: quiet and short; nothing bounces. Reduced motion turns it all off (base.scss).
   --duration-fast: 120ms;
   --duration-base: 200ms;
+  --duration-slow: 320ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   // Stacking
   --z-raised: 1;
+  --z-sticky: 5;
   --z-sidebar: 20;
   --z-topbar: 30;
   --z-tabbar: 30;
@@ -171,9 +221,58 @@
   }
 }
 
+// The navigation spine (sidebar, rail, phone tab bar). Light theme: a quiet light spine,
+// a step off the page canvas, with white raised tiles. Dark theme: deep ink (below).
+// Values are checked in tokens.cvd.test.ts (spine-light, ink).
+.u-ink {
+  --color-bg: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #e4e8f0;
+  --color-surface-glass: rgba(255, 255, 255, 0.88);
+  --color-border: #dde1e8;
+  --color-border-strong: #c3cad6;
+
+  color: var(--color-fg);
+}
+
+// Dark theme: the ink spine, the app's signature. Children see the dark token set on a
+// navy canvas, so a Money or Percent inside reads correctly.
+@mixin ink-tokens {
+  @include dark-tokens;
+  --color-bg: #0d1524;
+  --color-surface: #16203a;
+  --color-surface-2: #1a2540;
+  --color-surface-glass: rgba(13, 21, 36, 0.86);
+  --color-border: #22304b;
+  --color-border-strong: #33446a;
+
+  color: var(--color-fg);
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] .u-ink {
+  @include ink-tokens;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .u-ink {
+    @include ink-tokens;
+  }
+}
+
+// Phones: tighter rhythm, the cards give their width to the content.
+@media (max-width: 639px) {
+  :root {
+    --page-gap: var(--space-3);
+    --card-pad-x: var(--space-4);
+    --card-pad-y: var(--space-4);
+  }
+}
+
 // Large screens: the sidebar takes more of the room (the shell offset follows).
 @media (min-width: 1440px) {
   :root {
+    --page-gap: var(--space-6);
     --sidebar-width: 288px;
   }
 }

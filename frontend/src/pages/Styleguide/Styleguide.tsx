@@ -1,9 +1,11 @@
-import { Moon, Plus, Settings as SettingsIcon, Sun, SunMoon, Trash2 } from "lucide-react";
+import { Info, Moon, Plus, Settings as SettingsIcon, Sun, SunMoon, Trash2 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { AllocationBar } from "../../components/AllocationBar";
 import { Button } from "../../components/Button";
+import { Callout } from "../../components/Callout";
 import { Card } from "../../components/Card";
 import { Chart } from "../../components/Chart";
+import { Chip } from "../../components/Chip";
 import { DataTable, type Column } from "../../components/DataTable";
 import { DeltaBadge } from "../../components/DeltaBadge";
 import { Dialog } from "../../components/Dialog";
@@ -23,6 +25,8 @@ import { Select } from "../../components/Select";
 import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
 import { Sparkline } from "../../components/Sparkline";
+import { StatStrip } from "../../components/StatStrip";
+import { Tabs } from "../../components/Tabs";
 import { useToast } from "../../components/Toast";
 import { Tooltip } from "../../components/Tooltip";
 import { Treemap } from "../../components/Treemap";
@@ -54,6 +58,7 @@ const SECTIONS = [
   ["numbers", "Numbers"],
   ["buttons", "Buttons"],
   ["forms", "Forms"],
+  ["primitives", "Primitives"],
   ["overlays", "Overlays"],
   ["feedback", "Feedback"],
   ["table", "Table"],
@@ -67,6 +72,8 @@ export function Styleguide() {
   const [select, setSelect] = useState("acc");
   const [dialog, setDialog] = useState(false);
   const [sheet, setSheet] = useState(false);
+  const [tab, setTab] = useState("details");
+  const [sub, setSub] = useState("all");
 
   const series = useMemo(() => demoSeries(range), [range]);
   const sparkValues = useMemo(() => demoSeries("1M")[0].points.map((p) => p.v), []);
@@ -328,6 +335,51 @@ export function Styleguide() {
             </Field>
           </div>
         </Card>
+      </Section>
+
+      <Section id="primitives" title="Primitives">
+        <Callout label="Example note" eyebrow="Since you last looked" title="A calm headline note" icon={<Info aria-hidden size={18} />}>
+          Callout: a soft tinted surface with an icon, a sentence and optional actions.
+        </Callout>
+        <div className="styleguide__row">
+          <Chip>Neutral</Chip>
+          <Chip tone="accent">Accent</Chip>
+          <Chip tone="pos">Gain</Chip>
+          <Chip tone="neg">Loss</Chip>
+          <Chip tone="warn">Warning</Chip>
+          <Chip tone="estimate">Estimate</Chip>
+          <Chip outline>Outline</Chip>
+          <Chip size="sm">Small</Chip>
+        </div>
+        <StatStrip
+          label="Example figures"
+          items={[
+            { key: "a", label: "Spot", value: "1.0842", note: "since close" },
+            { key: "b", label: "Average", value: "1.0751", note: "cost basis" },
+            { key: "c", label: "Range", value: "1.06 to 1.10" },
+          ]}
+        />
+        <Tabs
+          ariaLabel="Example tabs"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: "details", label: "Details", content: <p>Details panel.</p> },
+            { value: "transactions", label: "Transactions", badge: "12", content: <p>Transactions panel.</p> },
+            { value: "dividends", label: "Dividends", content: <p>Dividends panel.</p> },
+          ]}
+        />
+        <SegmentedControl
+          block
+          ariaLabel="Example sub-tabs"
+          value={sub}
+          onChange={setSub}
+          options={[
+            { value: "all", label: "All" },
+            { value: "gains", label: "Gains" },
+            { value: "losses", label: "Losses" },
+          ]}
+        />
       </Section>
 
       <Section id="overlays" title="Overlays">
