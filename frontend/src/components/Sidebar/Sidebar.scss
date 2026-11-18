@@ -43,16 +43,13 @@
 
   &__brand-text {
     @include m.truncate;
-    // The wordmark in the UI sans, semibold: the display serif at 14-16 px rendered
+    // The wordmark in the UI sans, medium: the display serif at 14-16 px rendered
     // thin and blotchy on Windows (caption optical size + tight tracking) and read as
-    // a broken fallback. The serif stays for the big figures, where it is crisp.
+    // a broken fallback. 14 px medium fits the 139 px brand slot (semibold or 16 px
+    // overflowed it). The serif stays for the big figures, where it is crisp.
     font-family: var(--font-sans);
     font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-
-    @include m.xl {
-      font-size: var(--font-size-md);
-    }
+    font-weight: var(--font-weight-medium);
     letter-spacing: -0.01em;
     line-height: var(--line-height-tight);
     -webkit-font-smoothing: antialiased;
