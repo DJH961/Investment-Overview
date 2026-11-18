@@ -96,11 +96,12 @@ export function HeroIntraday({ currency, now, clock }: HeroIntradayProps) {
   if (!loading && !shape && ref === null) return clock ? <div className="hero-intraday">{clock}</div> : null;
   return (
     <div className="hero-intraday">
+      {/* The countdown leads; the label then names the figures under it (Today / Last session). */}
+      {clock}
       <div className="hero-intraday__head">
         <span className="hero-intraday__label">{label}</span>
         {!clock && <span className="hero-intraday__state">{g?.market_open ? "Market open" : "Market closed"}</span>}
       </div>
-      {clock}
       <dl className="hero-intraday__facts">
         <div className="hero-intraday__fact">
           <dt className="hero-intraday__fact-label">Low</dt>
