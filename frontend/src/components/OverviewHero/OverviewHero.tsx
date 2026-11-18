@@ -6,7 +6,7 @@ import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
 import { useFitWidth } from "../KpiTile/useFitWidth";
 import { Money } from "../Money";
-import { MarketChip, MarketClock, SessionLine } from "../MarketClock";
+import { MarketChip, MarketClock } from "../MarketClock";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
@@ -172,7 +172,6 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
     <section className={cls} aria-label="Portfolio value">
-      {phone && <SessionLine freshness={f} now={now} />}
       <div className="overview-hero__main">
         <div className="overview-hero__head">
           {/* The "≈ est." chip sits with the label, never competing with the figure's width. */}

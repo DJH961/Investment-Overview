@@ -118,6 +118,7 @@
 
   &__label {
     @include m.eyebrow(var(--font-size-xs));
+    white-space: nowrap;
   }
 
   &__corner {

@@ -95,7 +95,7 @@ export function HeroIntraday({ currency, now, clock }: HeroIntradayProps) {
   const loading = graph.isPending || !g;
   if (!loading && !shape && ref === null) return clock ? <div className="hero-intraday">{clock}</div> : null;
   return (
-    <div className="hero-intraday">
+    <div className={clock ? "hero-intraday hero-intraday--with-clock" : "hero-intraday"}>
       {/* The countdown leads; the label then names the figures under it (Today / Last session). */}
       {clock}
       <div className="hero-intraday__head">

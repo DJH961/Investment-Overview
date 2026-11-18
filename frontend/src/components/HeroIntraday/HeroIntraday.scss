@@ -80,6 +80,34 @@
     @include m.eyebrow;
   }
 
+  // Desktop with the countdown leading the aside: the three facts fold into one ruled
+  // row of three under it, so the aside stays as tall as the hero's left column.
+  &--with-clock &__facts {
+    @include m.desktop {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-2);
+      padding-top: var(--space-3);
+      border-top: var(--border-width) solid var(--color-border);
+    }
+  }
+
+  &--with-clock &__fact {
+    @include m.desktop {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-1);
+      padding: 0;
+      border-top: 0;
+      container-type: inline-size;
+    }
+  }
+
+  &--with-clock &__fact-value {
+    @include m.desktop {
+      font-size: clamp(var(--font-size-2xs), 11cqi, var(--font-size-sm));
+    }
+  }
+
   &__fact-value {
     // A money figure is never cut: on phones it scales down with its cell.
     margin: 0;

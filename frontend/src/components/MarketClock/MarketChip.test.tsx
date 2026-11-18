@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { MarketChip } from "./MarketChip";
 import { MarketClock, formatChipSpan, type ClockFreshness } from "./MarketClock";
-import { SessionLine } from "./SessionLine";
 
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
@@ -37,6 +36,17 @@ describe("MarketChip", () => {
     await userEvent.click(btn);
     expect(await screen.findByTestId("market-clock-digits")).toHaveTextContent("01:46:11");
   });
+
+  it("is the session's mini progress bar: filled to the elapsed share", () => {
+    const qc = new QueryClient();
+    render(
+      <QueryClientProvider client={qc}>
+        <MarketChip freshness={open} currency="EUR" now={new Date("2026-06-30T16:45:00Z")} />
+      </QueryClientProvider>,
+    );
+    // 13:30 -> 20:00 is 6.5 h; 16:45 is 3.25 h in.
+    expect(screen.getByTestId("market-chip-fill")).toHaveStyle({ width: "50.0%" });
+  });
 });
 
 describe("MarketClock near variant", () => {
@@ -46,12 +56,5 @@ describe("MarketClock near variant", () => {
     rerender(<MarketClock freshness={open} now={new Date("2026-06-30T19:50:00Z")} variant="near" />);
     expect(screen.getByTestId("market-clock")).toHaveClass("market-clock--near");
     expect(screen.getByTestId("market-clock-digits")).toHaveTextContent("00:10:00");
-  });
-});
-
-describe("SessionLine", () => {
-  it("fills with the elapsed share of the session", () => {
-    render(<SessionLine freshness={open} now={new Date("2026-06-30T16:45:00Z")} />);
-    expect(screen.getByTestId("session-line").firstElementChild).toHaveStyle({ width: "50%" });
   });
 });

@@ -129,7 +129,27 @@ function briefFor(mode: BriefMode, data: Fixtures, recorded: unknown): unknown {
     // Away since the evening before that session (the recorded absence spans three).
     const day = dayNumber(sessions[0] ?? ANCHOR);
     const visitFrom = `${new Date((day - 1) * 86_400_000).toISOString().slice(0, 10)}T21:00:00+00:00`;
-    return { ...base, kind: "session", sessions, sessions_passed: 1, move, visit_from: visitFrom, window_move: null };
+    // The recorded currency effect spans the three-session absence; for one session away
+    // it is the session's own currency part (the same window, give or take an hour).
+    const recordedFx = (base.currency_effect_since as { EUR?: Obj | null } | null | undefined)?.EUR ?? null;
+    const eurMove = (move as Record<string, Obj>).EUR;
+    const fxAmount = eurMove?.currency_move as string | null | undefined;
+    const eurKpis = field(field(both, "EUR"), "kpis");
+    const endBook = Number(field(field(eurKpis, "estimate"), "total_value") ?? field(eurKpis, "total_value"));
+    const startBook = endBook - Number(eurMove?.day_move ?? 0);
+    const fxPct = fxAmount && startBook > 0 ? String(Number(fxAmount) / startBook) : recordedFx?.pct;
+    const currencyEffect =
+      recordedFx && fxAmount ? { EUR: { ...recordedFx, amount: fxAmount, pct: fxPct, since: visitFrom }, USD: null } : base.currency_effect_since;
+    return {
+      ...base,
+      kind: "session",
+      sessions,
+      sessions_passed: 1,
+      move,
+      visit_from: visitFrom,
+      window_move: null,
+      currency_effect_since: currencyEffect,
+    };
   }
   const fx = Object.fromEntries(
     sides.map((c) => {

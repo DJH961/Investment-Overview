@@ -1,6 +1,9 @@
 // The phone's market chip: a small pill in the hero's corner. A word, not a colour,
 // says open or closed; the dot only keeps the "prices are live" meaning.
 .market-chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -17,7 +20,30 @@
   white-space: nowrap;
   cursor: pointer;
 
+  // The mini progress bar: a soft accent fill behind the text with a firm 2 px line
+  // along its foot, so it reads as progress (never a line through the digits).
+  &__fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: -1;
+    background: var(--color-accent-soft);
+    box-shadow: inset 0 -2px 0 var(--color-accent);
+    transition: width var(--duration-slow) var(--ease-standard);
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  // Narrow phones (360): a tighter pill so the hero's "Portfolio value" keeps one line.
+  @media (max-width: 374px) {
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    font-size: var(--font-size-2xs);
+  }
+
   &__dot {
+    flex-shrink: 0;
     width: 8px;
     height: 8px;
     border-radius: var(--radius-full);
