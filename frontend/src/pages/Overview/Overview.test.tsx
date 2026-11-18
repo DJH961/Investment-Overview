@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render as rtlRender, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router";
@@ -42,6 +43,7 @@ vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined, useShellSummary: () => undefined }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 vi.mock("./OnboardingCard", () => ({ OnboardingCard: () => null }));
+vi.mock("../../lib/queries/brief", () => ({ useBrief: () => ({ data: undefined }), useAckBrief: () => ({ mutate: vi.fn() }) }));
 
 import { ToastProvider } from "../../components/Toast";
 import { HideAmountsProvider } from "../../lib/hideAmounts";
@@ -49,9 +51,11 @@ import { Overview } from "./Overview";
 
 const render = (ui: ReactElement) =>
   rtlRender(
-    <MemoryRouter>
-      <ToastProvider>{ui}</ToastProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <ToastProvider>{ui}</ToastProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 
 afterEach(() => {

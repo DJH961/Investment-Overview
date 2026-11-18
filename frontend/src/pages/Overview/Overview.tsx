@@ -1,11 +1,13 @@
 import { Inbox } from "lucide-react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/Button";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AllocationCard } from "../../components/AllocationCard";
 import { AssetClassCard } from "../../components/AssetClassCard";
 import { CurrencyBox } from "../../components/CurrencyBox";
 import { CurrencyLifetime } from "../../components/CurrencyLifetime";
+import { DailyBrief } from "../../components/DailyBrief";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { HeroIntraday } from "../../components/HeroIntraday";
@@ -105,6 +107,11 @@ export function Overview() {
   const timeZone = useTimeZone();
 
   const data = overview.data;
+  const qc = useQueryClient();
+  // The clock reached an open or close: the server's next instants, and maybe a Brief.
+  const onClockBoundary = useCallback(() => {
+    void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "overview" || q.queryKey[0] === "brief" });
+  }, [qc]);
   const { main: mainCol, side: sideCol, height: treemapHeight } = useTreemapHeight(Boolean(data));
   let chip: FreshnessView;
   if (overview.isError) chip = { status: "stale", label: "Offline" };
@@ -146,13 +153,21 @@ export function Overview() {
       <OnboardingCard />
       {data && <OverviewWarnings warnings={data.warnings} />}
 
+      {/* v7: the Daily Brief, directly above the stage, only when the server says one is due. */}
+      <DailyBrief currency={currency} />
       {/*
-        v7: the Daily Brief (Callout) lands here, directly above the stage.
         The stage: the portfolio value, today's move and the chart as one composed
         statement on one lit surface, the centre of the app.
       */}
       <section className="overview-page__stage" aria-label="Portfolio value and chart">
-        <OverviewHero data={data} currency={currency} loading={loading} aside={<HeroIntraday currency={currency} />} embedded />
+        <OverviewHero
+          data={data}
+          currency={currency}
+          loading={loading}
+          aside={(clock) => <HeroIntraday currency={currency} clock={clock} />}
+          onClockBoundary={onClockBoundary}
+          embedded
+        />
         <ValueChartCard
           embedded
           className="overview-page__stage-chart"
@@ -181,7 +196,18 @@ export function Overview() {
           <AssetClassCard currency={currency} />
         </div>
         <div ref={sideCol} className="overview-page__side">
-          {data ? <CurrencyBox data={data} /> : <Skeleton height="12rem" />}
+          {data ? (
+            <CurrencyBox
+              data={data}
+              footer={
+                <Link to="/currency" className="currency-box__link">
+                  Currency page →
+                </Link>
+              }
+            />
+          ) : (
+            <Skeleton height="12rem" />
+          )}
           <MoversCard movers={data?.movers} currency={currency} loading={loading} lastSession={data?.last_session} />
           {data ? <CurrencyLifetime data={data} /> : <Skeleton height="9rem" />}
         </div>

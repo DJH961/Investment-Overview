@@ -1,0 +1,55 @@
+// The Daily Brief: a Callout above the Overview stage. Each line is a few labelled
+// facts that wrap as whole pairs on a phone, never mid-figure.
+.daily-brief {
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-2);
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__key {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  // A label and its figure: they wrap as one unit, never apart.
+  &__pair {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: var(--space-1);
+    margin-right: var(--space-2);
+    color: var(--color-fg);
+    white-space: nowrap;
+  }
+
+  &__note {
+    flex-basis: 100%;
+    font-size: var(--font-size-xs);
+  }
+
+  &__events {
+    min-width: 0;
+  }
+
+  &__est {
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__figure {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+}
