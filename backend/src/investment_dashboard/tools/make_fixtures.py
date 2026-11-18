@@ -83,6 +83,7 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/health",
     "/api/diagnostics/status",
     "/api/diagnostics",
+    "/api/diagnostics/share-counts",
     "/api/live?since=0",
     "/api/overview/both",
     *(f"/api/graphs/{r}/both" for r in GRAPH_RANGES),

@@ -3964,6 +3964,9 @@
   },
   "status": "warning"
  },
+ "GET /api/diagnostics/share-counts": {
+  "counts": []
+ },
  "GET /api/diagnostics/status": {
   "count": 0,
   "problems": 0,

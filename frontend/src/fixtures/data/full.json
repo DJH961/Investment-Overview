@@ -7704,6 +7704,9 @@
   },
   "status": "warning"
  },
+ "GET /api/diagnostics/share-counts": {
+  "counts": []
+ },
  "GET /api/diagnostics/status": {
   "count": 1,
   "problems": 0,
