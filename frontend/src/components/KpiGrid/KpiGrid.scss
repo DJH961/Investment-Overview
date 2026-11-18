@@ -102,62 +102,79 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The money notes ride in the (i) until there is room for them beside the figure.
   &__stat-sub {
+    display: none;
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
+
+    @include m.wide {
+      display: inline;
+    }
   }
 
-  // Phone: a ruled statement list, one stat per row. The label (and its ⓘ) sits
-  // left on one line; the figure is right-aligned with its money note directly
-  // under it, so nothing wraps or floats at 360 px, in EUR or USD.
+  // The long label on tablet up; a short one on phones (the full name stays for screen readers).
+  &__stat-short {
+    display: none;
+  }
+
+  &__tip {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  // Phone: ONE compact row of three small stats, label over figure, hairline dividers.
+  // The money notes move into each (i) tooltip. About 52 px tall, no wrap at 360 px,
+  // the same in EUR and USD.
   @include m.phone {
     &__strip {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 0;
-      padding: var(--space-1) var(--card-pad-x);
+      padding: var(--space-2) 0;
     }
 
     &__stat {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      grid-template-areas:
-        "label value"
-        "label sub";
-      align-items: center;
-      column-gap: var(--space-4);
-      row-gap: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
       min-width: 0;
-      padding: var(--space-3) 0;
-      border-top: var(--border-width) solid var(--color-border);
+      padding: 0 var(--space-3);
+      border-left: var(--border-width) solid var(--color-border);
 
       &:first-child {
-        border-top: 0;
+        padding-left: var(--card-pad-x);
+        border-left: 0;
       }
     }
 
     &__stat-label {
-      grid-area: label;
       flex-wrap: nowrap;
       gap: var(--space-1);
       min-width: 0;
-      font-size: var(--font-size-sm);
+      font-size: var(--font-size-xs);
       white-space: nowrap;
     }
 
+    &__stat-long {
+      @include m.visually-hidden;
+    }
+
+    &__stat-short {
+      display: inline;
+    }
+
     &__stat-value {
-      grid-area: value;
-      justify-self: end;
       font-size: var(--font-size-md);
       font-weight: var(--font-weight-semibold);
     }
 
     &__stat-sub {
-      grid-area: sub;
-      justify-self: end;
-      white-space: nowrap;
+      display: none;
     }
   }
 }

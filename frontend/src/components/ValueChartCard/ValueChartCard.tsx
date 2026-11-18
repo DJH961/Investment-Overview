@@ -50,7 +50,7 @@ export const RANGE_LABELS: Record<GraphRange, string> = {
 };
 
 /**
- * "NAVs estimated from ETF twins": one short line however many funds are
+ * "NAVs estimated": one short line however many funds are
  * estimated; the fund -> twin mapping is in the (i) tooltip. Mounted only while
  * an estimate is on screen, so the instruments list is fetched only then.
  */
@@ -59,13 +59,13 @@ export function EstimatedNote({ funds, week }: { funds: string[]; week: boolean 
   const twinOf = (symbol: string) => twins?.find((i) => i.symbol === symbol)?.intraday_twin ?? null;
   return (
     <p className="value-chart-card__note" data-testid="funds-estimated-note">
-      <span>NAVs estimated from ETF twins</span>
+      <span>NAVs estimated</span>
       <InfoTip
         label="estimated NAVs"
         content={
           <div className="value-chart-card__twins">
             <p className="value-chart-card__twins-text">
-              Until a fund's official NAV posts, its line follows its ETF twin{week ? " (latest session only)" : ""}.
+              NAVs estimated from their ETF twins: until a fund's official NAV posts, its line follows its twin{week ? " (latest session only)" : ""}.
             </p>
             <ul className="value-chart-card__twins-list">
               {funds.map((f) => (

@@ -62,6 +62,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not gated).
 
 ### Fixed
+- Overview polish: the hero day line puts the other currency first with the ☾/☀ split beside it (same rows in EUR and USD, no lone right-floated item); the graph legend carries a short "NAVs estimated" note on the chip line; the cost and dividend side stats are one compact row of three on phones, with the money notes in their tooltips.
 - **Daily Brief numbers add up.** The session's move is the hero's headline (the estimate
   while it says est.), Market + Currency sum to it in the euro view and Market is the
   whole move in the dollar view (the Brief used to mix the official and the estimated
