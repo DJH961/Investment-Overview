@@ -15,10 +15,13 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> Pushes 1 to 3 shipped (6.13.1 to 6.15.0), then 6.16.0 and 6.17.0. Every
-> decision is settled (§9, §9a, §9b). Push 4, release 7.0, can start
-> without asking. **Push 4 lane A (the v5 cutover) is landing in 7.0**; the
-> owner's manual steps are in [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
+> **Status (2026-11-18): push 4 shipped as 7.0.0** (v5 cutover, Daily Brief,
+> the multi-session window, the market countdown, P12, holding page, the push 3
+> leftovers and the visual overhaul). The Currency page is built but hidden until
+> 7.2 (`SHOW_CURRENCY_PAGE` in `frontend/src/lib/features.ts`). Pushes 1 to 3 shipped as 6.13.1 to
+> 6.15.0, then 6.16.0 and 6.17.x. Next: push 5 (7.1); do not start it until
+> the owner approves. The owner's post-cutover steps are in
+> [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
 
 ---
 
@@ -143,11 +146,17 @@ dedicated marker in app config, advanced only by an explicit acknowledgement —
 never by a page load. That makes it mean "the last time you were *shown* what
 happened," which is the only definition that behaves correctly.
 
-**Scope for the first release.** Gaps and single sessions only, where the
-existing single-day FX comparison already works. Longer absences get an honest
-"four sessions passed" strip with no numbers until the multi-session version is
-built. Movers over a multi-day window need shares held *at the start* of the
-window, not now, or a position you opened mid-window shows a fake move.
+**Scope (as shipped in 7.0).** The multi-session window IS the Brief's main use case
+(away from Tuesday the 2nd to Thursday the 18th) and ships in 7.0: `window_move` gives
+the book then → now, the move net of flows, its period-growth percentage, the market and
+currency parts (EUR) and the movers on the shares held *at the start* of the window. An
+earlier draft scoped this out ("gaps and single sessions only"); that was wrong.
+
+**Last visit (as shipped).** "Since you last looked" is the last moment the page was
+visible (`X-Visible: 1` on the Overview and Brief reads; background tabs never count). A
+visible read after a gap of `brief_visit_gap_minutes` (default 5) starts a visit; the
+window is the absence, frozen for the visit. Dismiss only hides the card. Health has a
+manual "last visit" for testing. Nothing is added to the ledger while the owner is away.
 
 **Needs the fix rounds first (§7a).** The Brief narrates the day move, so the
 day move must exclude deposits and buys (B-007) and the MTD/YTD start value
@@ -1398,6 +1407,7 @@ Same rules as §9a: built in the push named, detail settled at its start.
 |---|---|---|
 | P17 | **A fair "% of return" in the Risk contribution table.** Today each row divides its P&L by the window's start value; on "All" that is only the first deposit, so the shares look huge. Show each holding's share of the total P&L instead, ideally built from its lots (each lot's gain over its own holding time, then averaged by size). Detail settled at the start of the push; never fed into an aggregate. | 5 (7.1), with tax lots (§6.1) |
 | P18 | **The Overview counts uninvested brokerage cash.** Since #413 the Risk curve counts cash sitting in a brokerage account outside a money-market fund (B-017); the Overview total does not yet. Every brokerage the owner uses sweeps into a settlement fund, so for him the amount is zero today; this is consistency, not a visible change. Money maths: golden tests and a list of figures that move. | 5 (7.1) |
+| P19 | **Stop writing the frozen currency legs.** The cutover could not drop `net_eur` / `net_usd` / `fx_rate_to_eur` on cashflow legs or the EUR snapshot columns (`PositionSnapshot`, `IntradayValue`): a few fallbacks still read them and the EUR columns are `NOT NULL`. Its own money change: move the last readers onto `net_native` + that date's FX (or native USD + the per-instant rate), golden tests that the figures do not move, then a migration (with a working downgrade) that drops or nulls the columns. | Before push 8 (7.4) |
 
 ---
 

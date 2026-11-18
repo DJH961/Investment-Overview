@@ -17,7 +17,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.0.0] — 2026-11-18
+
+v7's first release: the v5 desktop app is gone, the Overview gets a Daily Brief and a
+market countdown, every holding gets its own page, and the whole app has a new look.
+The Daily Brief tells you what happened while you were away, however long that was.
+
 ### Added
+- **A new look across the app.** A calmer, bolder design: the Overview's value, graph and
+  key figures share one stage, the headline figure in a display serif, hairline panels
+  instead of boxes, a light sidebar in the light theme, tidy phone layouts (one figure per
+  line, no jump when you switch EUR/USD), and gains in blue and losses in orange
+  throughout, checked for colour-blind readability.
 - **Daily Brief: the currency since your last visit.** `GET /api/brief` now carries,
   for the whole time you were away, the euro view's currency effect on
   the portfolio (`currency_effect_since`: the current book at today's rate minus the
@@ -45,21 +56,50 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the regular euro amount) and the top three movers each way as chips. It closes
   itself after `brief_autoclose_minutes` (default 3, 0 = never), paused while you
   point at or focus it. Ledger rows are no longer listed (you added them yourself).
-- **Market clock in the hero.** Where the intraday sparkline used to sit: "Open since
-  15:30 · closes in 3 h 12 min" or "Closed · opens in 2 h 14 min" (weekday and time when
-  more than a day away), in your time zone, one line on phones. When it reaches zero it
-  fetches the next open/close once; old instants never show a negative time.
+- **Market countdown.** The hero counts down to the next bell in hours, minutes and
+  seconds, with the session as a progress bar notched on the full hours and the bell
+  time in your time zone (half-days and holidays from the NYSE calendar). On phones a
+  small "Open · 1 h 46 m" chip fills as the session runs; tap it for the full clock, and
+  a compact countdown appears by itself in the last 15 minutes before a bell.
 - **USD view: a currency figure that means something.** The lifetime currency card shows,
   in dollars, the dollar's move against the euro since you bought and how far the euro
   return sits from the dollar one (in percentage points), instead of a currency effect
   that is always 0. Same tiles in both views, so a switch does not move the page.
-- **Currency page link** at the foot of the Overview's currency card.
 - **Fixture mode:** `?brief=session|sessions|fx|off` shows each kind of Daily Brief.
 
 - **Broker share counts in Health.** A new card on the Health tab lets you type the shares your
   broker shows per holding; the server compares them with the ledger and lists differences as
   hints (an empty list switches the check off). Also adds `npm run test:coverage` (reported,
   not gated).
+
+- Daily Brief (server): `GET /api/brief` tells whether a market open or close
+  passed since you last dismissed it, with that session's move, its price and
+  currency parts and the top movers, or a "N sessions passed" note for longer
+  absences, the weekend currency line, and ledger rows added since.
+  `POST /api/brief/ack` dismisses it.
+- Market clock: the Overview's freshness block carries the next open and close
+  (half-days and holidays included).
+- Currency page data: `GET /api/currency/both` with today's rate, its range
+  through the session, what €1,000 buys now and yesterday, the lifetime
+  effect, your average rate against now and what one cent of EUR/USD is worth.
+- USD view: the gap between your euro and dollar returns, and the dollar's move
+  against the euro since your average buy, as their own fields.
+- **Data Health: split and share-count checks (P7).** Data Health now flags splits the data
+  provider reports on shares you held that have no matching split row in the ledger, and
+  ledger split rows the provider does not know (a softer hint). An optional share-count
+  check compares the ledger with the share counts you type from your broker
+  (`GET`/`PUT /api/diagnostics/share-counts`); with nothing typed it reports "not set up".
+  Hints only: nothing is changed automatically.
+
+### Removed
+- The v5 desktop app (NiceGUI), the Windows installer and portable bundle, the
+  Cloudflare Worker, the encrypted live-data publishing and the v5 export and
+  parity tools. The demo website stays. The v5 code is kept at the tag
+  `v5-archive`; see "Comparing with v5" in `docs/legacy_v5.md`.
+- Single-currency API reads that the app never used (only the `/both` reads
+  remain), `/api/instruments/twin-suggestions`, the old v5 settings and the
+  deposits field `summary.total_contrib_native`, which added different
+  currencies together.
 
 ### Fixed
 - Overview polish: the hero day line puts the other currency first with the ☾/☀ split beside it (same rows in EUR and USD, no lone right-floated item); the graph legend carries a short "NAVs estimated" note on the chip line; the cost and dividend side stats are one compact row of three on phones, with the money notes in their tooltips.
@@ -78,6 +118,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   includes; it now keeps the server's figure until the refetch.
 - **Import: one tab stop for the file picker.** The hidden file input no longer takes a keyboard
   stop of its own next to "Choose file".
+- Prices recovered from Tiingo are stored with source `tiingo` instead of
+  `yfinance`.
+- Risk & analytics: TWR, CAGR, volatility, beta and the funded benchmark are right for
+  every period again. Cash waiting in a brokerage account now counts as part of the
+  portfolio, so a deposit is no longer read as a gain when it is invested, and a first
+  deposit is no longer dropped. Risk figures use trading days, and beta pairs the
+  portfolio and the benchmark on the same day.
+- Risk & analytics, attribution table: money moved in or out of a holding on the window's
+  first day is no longer counted twice (the money-market fund showed a deposit as a loss).
+  Cash dividends a holding paid out leave its "Net added", a new Cash row shows savings and
+  uninvested cash, and every row and the total now read P&L = End − Start − Net added.
+- Risk & analytics: after an import or edit of past trades, missing days of the curve are
+  filled in the background instead of being left out until the evening job.
+- Overview: while the market is open and mutual funds are estimated from their ETF twin,
+  the day/night split (hero, graph, KPI hint, holdings rows and live updates) now splits
+  the same estimated figure the headline shows, instead of the official one.
+- Failed Tiingo calls (NAV probes and market fallback) now count against the daily call
+  budget and retry with backoff (1, 2, 4 ... 128 minutes, then every 2 hours) instead of
+  every minute during an outage (B-026).
 - **Projection in real terms adds up.** With "real terms" on, the projected growth and the
   money paid in are now both in today's money (each contribution adjusted for inflation at
   its own date), so start + paid in + growth = the end value. Before, the nominal payments

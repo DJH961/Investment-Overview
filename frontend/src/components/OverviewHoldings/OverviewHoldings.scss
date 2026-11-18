@@ -19,7 +19,7 @@
     list-style: none;
 
     @include m.tablet-up {
-      grid-template-columns: minmax(9rem, 1.4fr) minmax(7rem, 1fr) auto auto auto;
+      grid-template-columns: minmax(7rem, 1.4fr) minmax(4rem, 1fr) auto auto auto;
       column-gap: var(--space-5);
     }
 
