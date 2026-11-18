@@ -138,9 +138,33 @@
     }
   }
 
+  // A label is one line: it is cut with an ellipsis rather than broken.
   &__label {
     @include m.eyebrow;
-    overflow-wrap: anywhere;
+    @include m.truncate;
+  }
+
+  // "Session of" on wide cells, the shorter "Session" on a phone.
+  &__short {
+    display: none;
+  }
+
+  @include m.phone {
+    &__long {
+      display: none;
+    }
+
+    &__short {
+      display: inline;
+    }
+  }
+
+  // One line of a note (never broken: the lines are short by design).
+  &__line {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__est {
@@ -169,13 +193,6 @@
     gap: var(--space-2);
     max-width: 100%;
     white-space: nowrap;
-
-    // Phone: the figure, then its badge under it, in every view (one shape).
-    @include m.phone {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: var(--space-1);
-    }
 
     &--none {
       color: var(--color-muted);

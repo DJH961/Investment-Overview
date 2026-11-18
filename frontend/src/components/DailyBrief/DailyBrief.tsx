@@ -53,14 +53,16 @@ function Fact({ label, value, note, testId, wide = false }: { label: ReactNode; 
 
 function SessionFact({ move, currency }: { move: BriefMoveDto; currency: ReportingCurrency }) {
   // The euro view splits the move into the market and the dollar; the dollar view has
-  // no currency leg, so it says so on the same line (one shape in both views).
+  // no currency leg, so that part is left out.
   const fx = toNum(move.currency_move ?? null);
   return (
     <Fact
       testId="brief-session"
       label={
         <>
-          Session of {formatDayLabel(move.session_date)}
+          <span className="daily-brief__long">Session of </span>
+          <span className="daily-brief__short">Session </span>
+          {formatDayLabel(move.session_date)}
           {move.estimated && <span className="daily-brief__est"> ≈ est.</span>}
         </>
       }
@@ -76,13 +78,13 @@ function SessionFact({ move, currency }: { move: BriefMoveDto; currency: Reporti
             <span className="daily-brief__key">Market</span>
             <Money amount={toNum(move.price_move ?? null)} currency={currency} signed colored />
           </span>
-          <span className="daily-brief__pair">
-            <span className="daily-brief__key">Currency</span>
-            {/* The dollar book has no currency leg: the figure exists in one view only. */}
-            <span data-ccy-specific>
-              {currency === "EUR" && fx !== null ? <Money amount={fx} currency={currency} signed colored /> : `none in ${currency}`}
+          {/* The dollar book has no currency leg: the part is simply absent there. */}
+          {currency === "EUR" && fx !== null && (
+            <span className="daily-brief__pair">
+              <span className="daily-brief__key">Currency</span>
+              <Money amount={fx} currency={currency} signed colored />
             </span>
-          </span>
+          )}
         </span>
       }
     />
@@ -135,16 +137,17 @@ const NONE = <span className="daily-brief__figure daily-brief__figure--none">–
  * (never converted here); a side without one shows a calm dash in the same slot, so a
  * currency switch never changes the card's shape.
  */
-function CurrencySinceFact({ brief, currency, fallbackSince }: { brief: BriefDto; currency: ReportingCurrency; fallbackSince: string }) {
+function CurrencySinceFact({ brief, currency }: { brief: BriefDto; currency: ReportingCurrency }) {
   const timeZone = useTimeZone();
-  const when = (iso: string | undefined) => (iso ? sinceLabel(iso, brief.now, timeZone) : fallbackSince);
+  const title = (iso: string | undefined) => (iso ? `Since you last looked · ${sinceLabel(iso, brief.now, timeZone)}` : undefined);
   if (currency === "USD") {
-    const ip = brief.investing_power_since ?? null;
+    const ip = brief.investing_power_since?.USD ?? null;
     const eur = toNum(ip?.amount_eur ?? null);
     return (
       <Fact
         testId="brief-currency-effect"
-        label={`Investing power since ${when(ip?.since)}`}
+        wide
+        label={<span title={title(ip?.since)}>Investing power</span>}
         value={
           ip ? (
             <span className="daily-brief__figure">
@@ -157,10 +160,15 @@ function CurrencySinceFact({ brief, currency, fallbackSince }: { brief: BriefDto
         }
         note={
           ip ? (
-            <span title={`EUR/USD ${rate(ip.rate_then)} → ${rate(ip.rate_now)}`}>
-              Regular <Money amount={eur} currency="EUR" digits={eur !== null && Number.isInteger(eur) ? 0 : 2} /> buys{" "}
-              <Money amount={toNum(ip.amount_usd_now)} currency="USD" /> (was <Money amount={toNum(ip.amount_usd_then)} currency="USD" />)
-            </span>
+            <>
+              <span className="daily-brief__line">
+                <Money amount={eur} currency="EUR" digits={eur !== null && Number.isInteger(eur) ? 0 : 2} /> →{" "}
+                <Money amount={toNum(ip.amount_usd_now)} currency="USD" /> (was <Money amount={toNum(ip.amount_usd_then)} currency="USD" />)
+              </span>
+              <span className="daily-brief__line">
+                EUR/USD {rate(ip.rate_then)} → {rate(ip.rate_now)}
+              </span>
+            </>
           ) : (
             "No rate on record"
           )
@@ -172,7 +180,8 @@ function CurrencySinceFact({ brief, currency, fallbackSince }: { brief: BriefDto
   return (
     <Fact
       testId="brief-currency-effect"
-      label={`Currency effect since ${when(effect?.since)}`}
+      wide
+      label={<span title={title(effect?.since)}>Currency effect</span>}
       value={
         effect ? (
           <span className="daily-brief__figure">
@@ -183,7 +192,18 @@ function CurrencySinceFact({ brief, currency, fallbackSince }: { brief: BriefDto
           NONE
         )
       }
-      note={effect ? `EUR/USD ${rate(effect.rate_then)} → ${rate(effect.rate_now)}` : "No rate on record"}
+      note={
+        effect ? (
+          <>
+            <span className="daily-brief__line">Dollar holdings in euros</span>
+            <span className="daily-brief__line">
+              EUR/USD {rate(effect.rate_then)} → {rate(effect.rate_now)}
+            </span>
+          </>
+        ) : (
+          "No rate on record"
+        )
+      }
     />
   );
 }
@@ -334,10 +354,12 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
   const kind = b.kind === "session" && move ? "session" : b.kind === "fx_reopen" ? "fx" : "sessions";
   const n = Math.max(b.sessions_passed, b.sessions.length);
   const icon = kind === "session" ? <Newspaper aria-hidden /> : kind === "fx" ? <Repeat aria-hidden /> : <CalendarRange aria-hidden />;
-  const since = b.last_ack_at ? sinceLabel(b.last_ack_at, b.now, timeZone) : null;
+  // "Since" is the previous visit (the server's marker), as the currency slot's rates use it.
+  const sinceIso = b.currency_effect_since?.EUR?.since ?? b.investing_power_since?.USD?.since ?? b.last_ack_at;
+  const since = sinceIso ? sinceLabel(sinceIso, b.now, timeZone) : null;
   const span = kind === "fx" ? "weekend" : n === 1 ? "1 session" : `${n} sessions`;
   // One slot for the currency since the last look, shown when the server sends either side.
-  const showCurrency = Boolean(b.currency_effect_since?.EUR || b.investing_power_since);
+  const showCurrency = Boolean(b.currency_effect_since?.EUR || b.investing_power_since?.USD);
 
   return (
     <section ref={card} className="daily-brief u-enter" aria-label="Daily brief">
@@ -345,7 +367,7 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
         <span className="daily-brief__icon">{icon}</span>
         <h2 className="daily-brief__title">Daily brief</h2>
         <p className="daily-brief__window" data-testid="brief-window">
-          {since ? `Since ${since}` : "Since you last looked"} · {span}
+          {since ? `Since you last looked · ${since}` : "Since you last looked"} · {span}
         </p>
         {remaining !== null && (
           <span className="daily-brief__timer" data-testid="brief-timer" title="Pauses while you point at or focus the brief">
@@ -358,7 +380,7 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
         {kind === "session" && move && <SessionFact move={move} currency={currency} />}
         {kind === "sessions" && <SessionsFact brief={b} />}
         {kind === "fx" && <FxReopenFact brief={b} currency={currency} />}
-        {showCurrency && <CurrencySinceFact brief={b} currency={currency} fallbackSince={since ?? "you looked"} />}
+        {showCurrency && <CurrencySinceFact brief={b} currency={currency} />}
         {kind === "session" && move && <MoversFact move={move} />}
       </dl>
     </section>
