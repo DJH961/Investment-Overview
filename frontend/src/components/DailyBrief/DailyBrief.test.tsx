@@ -115,6 +115,55 @@ describe("DailyBrief", () => {
     expect(screen.queryByText(/Interest|Dividend FAKEB/)).toBeNull();
   });
 
+  const mv = (symbol: string, pct: string) => ({ symbol, name: symbol, pct, move: "1", reason: "total" });
+  const windowOf = (flows: string | null) => ({
+    start_at: "2026-06-25T20:00:00+00:00",
+    end_at: "2026-06-30T20:00:00+00:00",
+    start_value: "1469107.4",
+    end_value: "1481087.4",
+    move: "11980.5",
+    pct: "0.0082",
+    price_move: "14000.2",
+    currency_move: "-2019.7",
+    net_flows: flows,
+    estimated: false,
+    start_basis: "close" as const,
+    movers: { winners: [mv("WIN1", "0.05")], losers: [mv("LOS1", "-0.03")] },
+  });
+  const withWindow = (flows: string | null) =>
+    ({ ...multi, window_move: { EUR: windowOf(flows), USD: { ...windowOf(flows), currency_move: null } } }) as unknown as BriefDto;
+
+  it("several sessions with a window move: headline, split that adds up, movers", async () => {
+    stub(() => withWindow(null));
+    mount("EUR");
+    expect(await screen.findByTestId("brief-figure")).toHaveTextContent("+€11,980.50");
+    expect(screen.getByTestId("brief-window-move")).toHaveTextContent("While you were away");
+    expect(screen.getByTestId("brief-rates")).toHaveTextContent("EUR/USD 1.1590 → 1.1641");
+    expect(screen.queryByTestId("brief-currency-effect")).toBeNull();
+    expect(screen.getByTestId("brief-split")).toHaveTextContent("Market+€14,000.20Currency-€2,019.70");
+    expect(screen.getByTestId("brief-value-path")).toHaveTextContent("€1,469,107 → €1,481,087");
+    expect(screen.queryByTestId("brief-flows")).toBeNull();
+    expect(screen.queryByText(/sessions passed/)).toBeNull();
+    expect(screen.getByTestId("brief-movers-up")).toHaveTextContent("WIN1");
+    expect(screen.getByTestId("brief-movers-down")).toHaveTextContent("LOS1");
+  });
+
+  it("several sessions, USD view: the value then → now, no Market line", async () => {
+    stub(() => withWindow(null));
+    mount("USD");
+    expect(await screen.findByTestId("brief-value-path")).toHaveTextContent("US$1,469,107 → US$1,481,087");
+    expect(screen.getByTestId("brief-window-move")).not.toHaveTextContent("Market");
+    expect(screen.getByTestId("brief-currency-effect")).toHaveTextContent("Investing power");
+    expect(screen.queryByTestId("brief-flows")).toBeNull();
+  });
+
+  it("net flows are never shown (nothing is added while he is away)", async () => {
+    stub(() => withWindow("500"));
+    mount("EUR");
+    await screen.findByTestId("brief-figure");
+    expect(screen.getByTestId("brief-window-move").closest("dl")).not.toHaveTextContent(/Deposit|Withdraw|counted as growth/);
+  });
+
   it("one session: the server's move, market vs currency, and the movers", async () => {
     stub(() => session);
     mount("EUR");

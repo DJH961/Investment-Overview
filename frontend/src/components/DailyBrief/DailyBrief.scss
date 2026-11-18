@@ -129,6 +129,15 @@
       flex: 2 1 18rem;
     }
 
+    // The window's headline cell: the figure a little larger than a session's, a little more room.
+    &--lead {
+      flex: 2.2 1 18rem;
+
+      & > .daily-brief__value {
+        font-size: clamp(var(--font-size-md), 8.5cqi, var(--font-size-xl));
+      }
+    }
+
     @include m.phone {
       padding: var(--space-3) var(--space-4);
 
@@ -243,5 +252,21 @@
     flex-wrap: wrap;
     gap: var(--space-1) var(--space-2);
     font-size: var(--font-size-sm);
+  }
+
+  // A tiny ledger: the part on the left, its amount right-aligned, so the figures line up.
+  &__ledger {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-1) var(--space-4);
+    max-width: 16rem;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--line-height-base);
+
+    & > :nth-child(even) {
+      justify-self: end;
+    }
   }
 }
