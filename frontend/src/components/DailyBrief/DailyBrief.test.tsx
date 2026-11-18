@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import full from "../../fixtures/data/full.json";
+import { DisplayPrefsProvider } from "../../lib/displayPrefs";
+import type { SettingsValues } from "../../lib/queries/settings";
 import type { BriefDto } from "../../lib/queries/brief";
-import { DailyBrief, eventLabel } from "./DailyBrief";
+import { DailyBrief, formatRemaining, sinceLabel, useAutoClose } from "./DailyBrief";
 
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
@@ -62,11 +64,21 @@ function stub(brief: () => BriefDto, ack: { status: number; gate?: Promise<void>
   return calls;
 }
 
-function mount(currency: "EUR" | "USD" = "EUR") {
+/** Settings values with only `brief_autoclose_minutes` set (or none: the defaults). */
+const prefs = (minutes?: number): SettingsValues | undefined =>
+  minutes === undefined
+    ? undefined
+    : ({
+        brief_autoclose_minutes: { value: minutes, source: "db", default: 3, env_value_present: false, modified_at: null, is_set: true, stored_invalid: false },
+      } as never);
+
+function mount(currency: "EUR" | "USD" = "EUR", minutes?: number) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
     <QueryClientProvider client={qc}>
-      <DailyBrief currency={currency} />
+      <DisplayPrefsProvider values={prefs(minutes)}>
+        <DailyBrief currency={currency} />
+      </DisplayPrefsProvider>
     </QueryClientProvider>,
   );
   return { qc, ...view };
@@ -85,8 +97,9 @@ describe("DailyBrief", () => {
     mount();
     expect(await screen.findByText(`${recorded.sessions_passed} sessions passed`)).toBeInTheDocument();
     expect(screen.queryByTestId("brief-figure")).toBeNull();
-    // The ledger rows that landed while away are named.
-    expect(screen.getByTestId("brief-events")).toHaveTextContent("Interest, Dividend FAKEB");
+    // The owner's own ledger rows are not news to him (owner): the card does not list them.
+    expect(screen.queryByTestId("brief-events")).toBeNull();
+    expect(screen.queryByText(/Interest|Dividend FAKEB/)).toBeNull();
   });
 
   it("one session: the server's move, market vs currency, and the movers", async () => {
@@ -133,9 +146,152 @@ describe("DailyBrief", () => {
     expect(await screen.findByRole("region", { name: "Daily brief" })).toBeInTheDocument();
   });
 
-  it("names ledger events in a few words", () => {
-    expect(eventLabel({ id: 1, kind: "dividend_cash", symbol: "VT", date: "2026-06-30", created_at: "x" })).toBe("Dividend VT");
-    expect(eventLabel({ id: 2, kind: "interest", symbol: null, date: "2026-06-30", created_at: "x" })).toBe("Interest");
-    expect(eventLabel({ id: 3, kind: "odd_kind", symbol: null, date: "2026-06-30", created_at: "x" })).toBe("odd kind");
+  it("the header names the window", async () => {
+    stub(() => recorded);
+    mount();
+    expect(await screen.findByTestId("brief-window")).toHaveTextContent(`· ${recorded.sessions_passed} sessions`);
+  });
+
+  it("movers: up to three each way, arrow and sign on every chip", async () => {
+    const m = (symbol: string, pct: string) => ({ symbol, name: symbol, pct, move: "1", reason: "total" });
+    const many = move("EUR");
+    many.movers = {
+      ...many.movers,
+      winners: [m("U1", "0.04"), m("U2", "0.03"), m("U3", "0.02"), m("U4", "0.01")],
+      losers: [m("D1", "-0.04")],
+    };
+    stub(() => ({ ...session, move: { EUR: many, USD: many } }));
+    mount("EUR");
+    const up = await screen.findByTestId("brief-movers-up");
+    expect(up).toHaveTextContent("U1");
+    expect(up).toHaveTextContent("U3");
+    expect(up).not.toHaveTextContent("U4");
+    expect(up).toHaveTextContent("+4.00%");
+    expect(screen.getByTestId("brief-movers-down")).toHaveTextContent("D1 -4.00%");
+  });
+
+  const since = "2026-06-29T11:00:00+00:00";
+  const effect = { amount: "-1187.42", pct: "-0.0049", rate_then: "1.0712", rate_now: "1.0765", since };
+  const power = {
+    amount_eur: "1000",
+    amount_usd_now: "1076.50",
+    amount_usd_then: "1071.20",
+    net: "5.30",
+    pct: "0.004948",
+    rate_then: "1.0712",
+    rate_now: "1.0765",
+    since,
+  };
+  const withEffect: BriefDto = { ...session, currency_effect_since: { EUR: effect, USD: null }, investing_power_since: power };
+
+  it("EUR view: the currency effect since the last look, with the rates", async () => {
+    stub(() => withEffect);
+    mount("EUR");
+    const slot = await screen.findByTestId("brief-currency-effect");
+    expect(slot).toHaveTextContent("Currency effect since Mon 11:00");
+    expect(slot).toHaveTextContent("-€1,187.42");
+    expect(slot).toHaveTextContent("EUR/USD 1.0712 → 1.0765");
+    expect(slot).not.toHaveTextContent("Investing power");
+  });
+
+  it("USD view: the investing power of the regular euro amount, server dollars only", async () => {
+    stub(() => withEffect);
+    mount("USD");
+    const slot = await screen.findByTestId("brief-currency-effect");
+    expect(slot).toHaveTextContent("Investing power since Mon 11:00");
+    expect(slot).toHaveTextContent("+US$5.30");
+    expect(slot).toHaveTextContent("Regular €1,000 buys US$1,076.50 (was US$1,071.20)");
+    expect(slot).not.toHaveTextContent("1,187.42");
+  });
+
+  it("a side without its figure keeps the slot with a dash; neither field omits it", async () => {
+    stub(() => ({ ...withEffect, investing_power_since: null }));
+    const a = mount("USD");
+    expect(await screen.findByTestId("brief-currency-effect")).toHaveTextContent("–");
+    a.unmount();
+    stub(() => ({ ...withEffect, currency_effect_since: null }));
+    const c = mount("EUR");
+    expect(await screen.findByTestId("brief-currency-effect")).toHaveTextContent("–");
+    c.unmount();
+    stub(() => session);
+    mount("EUR");
+    await screen.findByTestId("brief-figure");
+    expect(screen.queryByTestId("brief-currency-effect")).toBeNull();
+  });
+
+  it("auto-close: 3 minutes by default, shown as a countdown", async () => {
+    stub(() => recorded);
+    mount();
+    expect(await screen.findByTestId("brief-timer")).toHaveTextContent("closes in 3:00");
+  });
+
+  it("auto-close: 0 means never (no countdown)", async () => {
+    stub(() => recorded);
+    mount("EUR", 0);
+    await screen.findByRole("region", { name: "Daily brief" });
+    expect(screen.queryByTestId("brief-timer")).toBeNull();
+  });
+
+  it("auto-close: a custom value from the settings", async () => {
+    stub(() => recorded);
+    mount("EUR", 5);
+    expect(await screen.findByTestId("brief-timer")).toHaveTextContent("closes in 5:00");
+  });
+
+  it("auto-close acknowledges like a dismiss; pointing at the card pauses it", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const calls = stub(() => recorded);
+      mount("EUR", 1);
+      const card = await screen.findByRole("region", { name: "Daily brief" });
+      act(() => void card.dispatchEvent(new Event("pointerenter")));
+      await act(async () => vi.advanceTimersByTime(90_000));
+      expect(screen.getByTestId("brief-timer")).toHaveTextContent(/closes in 0:5\d|closes in 1:00/);
+      act(() => void card.dispatchEvent(new Event("pointerleave")));
+      await act(async () => vi.advanceTimersByTime(61_000));
+      await waitFor(() => expect(screen.queryByRole("region", { name: "Daily brief" })).toBeNull());
+      await waitFor(() => expect(calls.find((c) => c.method === "POST")?.body).toEqual({ seen_at: recorded.now }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("formats the countdown and the window start", () => {
+    expect(formatRemaining(180_000)).toBe("3:00");
+    expect(formatRemaining(161_001)).toBe("2:42");
+    expect(formatRemaining(-5)).toBe("0:00");
+    expect(sinceLabel("2026-06-29T11:00:00Z", "2026-06-30T18:15:00Z", "UTC")).toMatch(/^Mon 11:00$/);
+    expect(sinceLabel("2026-06-01T11:00:00Z", "2026-06-30T18:15:00Z", "UTC")).toMatch(/^Mon \S+ 11:00$/);
+  });
+});
+
+describe("useAutoClose", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("closes after the minutes on screen, once; pausing stops the count", () => {
+    vi.useFakeTimers();
+    const done = vi.fn();
+    const { result } = renderHook(() => useAutoClose(3, done));
+    expect(result.current.remaining).toBe(180_000);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(result.current.remaining).toBe(120_000);
+    act(() => result.current.setPaused(true));
+    act(() => vi.advanceTimersByTime(300_000));
+    expect(done).not.toHaveBeenCalled();
+    expect(result.current.remaining).toBe(120_000);
+    act(() => result.current.setPaused(false));
+    act(() => vi.advanceTimersByTime(121_000));
+    expect(done).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("0 minutes never closes and shows no countdown", () => {
+    vi.useFakeTimers();
+    const done = vi.fn();
+    const { result } = renderHook(() => useAutoClose(0, done));
+    act(() => vi.advanceTimersByTime(3_600_000));
+    expect(result.current.remaining).toBeNull();
+    expect(done).not.toHaveBeenCalled();
   });
 });

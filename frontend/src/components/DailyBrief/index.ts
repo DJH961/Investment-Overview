@@ -1,1 +1,1 @@
-export { DailyBrief, eventLabel, type DailyBriefProps } from "./DailyBrief";
+export { DailyBrief, type DailyBriefProps } from "./DailyBrief";

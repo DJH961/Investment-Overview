@@ -24,6 +24,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the ledger rows added meanwhile; for longer gaps an honest "N sessions passed" with the
   dates; over a weekend a single line on the euro. Every figure is the server's. Dismiss
   removes it at once and it stays gone (it comes back only if the dismissal fails).
+  Compact layout: one header line (the window, "closes in m:ss", ×) and one row of
+  figures with hairlines (two columns on phones): the session move, the currency since
+  your last visit (EUR: currency effect with the rate then → now; USD: investing power
+  of the regular euro amount) and the top three movers each way as chips. It closes
+  itself after `brief_autoclose_minutes` (default 3, 0 = never), paused while you
+  point at or focus it. Ledger rows are no longer listed (you added them yourself).
 - **Market clock in the hero.** Where the intraday sparkline used to sit: "Open since
   15:30 · closes in 3 h 12 min" or "Closed · opens in 2 h 14 min" (weekday and time when
   more than a day away), in your time zone, one line on phones. When it reaches zero it

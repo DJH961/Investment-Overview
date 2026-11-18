@@ -53,9 +53,34 @@ function pickBrief(): BriefMode {
 type Obj = Record<string, unknown>;
 const field = (o: unknown, k: string): unknown => (o && typeof o === "object" ? (o as Obj)[k] : undefined);
 
+/**
+ * The currency since the last look (7.0 contract), added until the recorder writes
+ * it: the euro rose 1.0712 → 1.0765, so the dollar holdings lost a little in euros
+ * (EUR view) and the regular €1,000 buys $5.30 more (USD view, investing power).
+ * A recorded value always wins.
+ */
+function withCurrencyEffect(base: Obj): Obj {
+  if (!base.due || "currency_effect_since" in base || "investing_power_since" in base) return base;
+  const since = typeof base.last_ack_at === "string" ? base.last_ack_at : null;
+  if (!since) return base;
+  const rates = { rate_then: "1.0712", rate_now: "1.0765", since };
+  return {
+    ...base,
+    currency_effect_since: { EUR: { amount: "-1187.42", pct: "-0.0049", ...rates }, USD: null },
+    investing_power_since: {
+      amount_eur: "1000",
+      amount_usd_now: "1076.50",
+      amount_usd_then: "1071.20",
+      net: "5.30",
+      pct: "0.004948",
+      ...rates,
+    },
+  };
+}
+
 /** The recorded Brief, reshaped to the chosen kind with figures copied from the overview (as the server does). */
 function briefFor(mode: BriefMode, data: Fixtures, recorded: unknown): unknown {
-  const base = (recorded ?? {}) as Obj;
+  const base = withCurrencyEffect((recorded ?? {}) as Obj);
   if (mode === "off") return { ...base, due: false, kind: null, events: [], events_total: 0 };
   if (mode === "sessions") return base;
   const both = data["GET /api/overview/both"];

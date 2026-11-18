@@ -7,9 +7,9 @@ type S = components["schemas"];
 
 /**
  * The currency effect on the portfolio over the whole window since the last
- * acknowledgement, per currency view (server-computed; contract agreed for 7.0,
- * optional until the backend field lands). EUR view: money in euros; USD view: the
- * investing-power equivalent in dollars. `pct` is a fraction; rates are EUR/USD.
+ * acknowledgement (server-computed; contract agreed for 7.0, optional until the
+ * backend field lands). The EUR view shows `currency_effect_since.EUR` (euros).
+ * `pct` is a fraction; rates are EUR/USD.
  */
 export interface BriefCurrencyEffectDto {
   amount: string;
@@ -19,12 +19,30 @@ export interface BriefCurrencyEffectDto {
   since: string;
 }
 
+/**
+ * The USD view's counterpart (the app's convention, as the Overview's currency box):
+ * what the regular euro amount buys in dollars now vs at the window start. `net` is
+ * dollars (now − then), `pct` a fraction; all server figures, never converted here.
+ */
+export interface BriefInvestingPowerDto {
+  amount_eur: string;
+  amount_usd_now: string;
+  amount_usd_then: string;
+  net: string;
+  pct: string;
+  rate_then: string;
+  rate_now: string;
+  since: string;
+}
+
 export type BriefDto = S["BriefOut"] & {
   currency_effect_since?: { EUR?: BriefCurrencyEffectDto | null; USD?: BriefCurrencyEffectDto | null } | null;
+  investing_power_since?: BriefInvestingPowerDto | null;
 };
 export type BriefMoveDto = S["BriefMove"];
 export type BriefFxMoveDto = S["BriefFxMove"];
 export type BriefEventDto = S["BriefEvent"];
+export type BriefMoverDto = S["Mover"];
 export type BriefAckDto = S["BriefAckOut"];
 
 export const BRIEF_KEY = ["brief"] as const;
