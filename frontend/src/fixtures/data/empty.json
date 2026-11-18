@@ -3497,11 +3497,13 @@
   "fx_move": null,
   "investing_power_since": null,
   "kind": null,
-  "last_ack_at": "2026-06-30T18:15:00+00:00",
+  "last_ack_at": null,
+  "last_seen_at": null,
   "move": null,
   "now": "2026-06-30T18:15:00+00:00",
   "sessions": [],
-  "sessions_passed": 0
+  "sessions_passed": 0,
+  "visit_from": null
  },
  "GET /api/calculator/both": {
   "EUR": {
@@ -14081,6 +14083,26 @@
    {
     "choices": [],
     "danger": null,
+    "default": 5,
+    "env_bound": null,
+    "env_var": null,
+    "help": "The Daily Brief covers what happened while you were away. Leaving the app (or its tab) for at least this long, then coming back, counts as a new visit; shorter breaks, like flicking to another tab, do not.",
+    "key": "brief_visit_gap_minutes",
+    "label": "New visit after being away (minutes)",
+    "level": "user",
+    "max": "120",
+    "min": "1",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "display",
+    "since": "7.0",
+    "type": "int",
+    "unit": "min"
+   },
+   {
+    "choices": [],
+    "danger": null,
     "default": 365,
     "env_bound": null,
     "env_var": null,
@@ -15326,6 +15348,15 @@
     "source": "default",
     "stored_invalid": false,
     "value": 3
+   },
+   "brief_visit_gap_minutes": {
+    "default": 5,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": 5
    },
    "chart_pref.analytics_lookback": {
     "default": 365,

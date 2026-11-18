@@ -1,10 +1,10 @@
-"""The Daily Brief's window: which NYSE sessions passed since the last acknowledgement.
+"""The Daily Brief's window: NYSE sessions passed since the owner last had the app open.
 
 Pure calendar logic (no I/O). A *boundary* is a regular-session open or close from the
 NYSE calendar (holidays skipped, half-days close 13:00 ET). The window is
-``(last_ack, now]``:
+``(previous_seen, now] (the last heartbeat of the previous visit)``:
 
-* no marker yet (first visit) or ``now <= last_ack``: no Brief;
+* no previous visit yet (first visit) or ``now <= previous_seen``: no Brief;
 * one session touched: ``session`` (the figures are sent);
 * several: ``sessions`` ("N sessions passed", no figures);
 * no boundary, but the currency market reopened (Sunday 17:00 ET): ``fx_reopen``;
@@ -28,7 +28,7 @@ from investment_dashboard.domain.late_data import Holding, value_at_rate
 from investment_dashboard.domain.session_fx import fx_buying_power_split
 
 _ET = ZoneInfo("America/New_York")
-#: Exchange days scanned at most; an older acknowledgement only sees the newest part.
+#: Exchange days scanned at most; an older visit only sees the newest part.
 MAX_SCAN_DAYS = 3700
 _SUNDAY = 6
 _FOREX_REOPEN = time(17, 0)
@@ -96,11 +96,11 @@ def _fx_reopen_in(start: datetime, end: datetime) -> bool:
     return False
 
 
-def brief_window(last_ack: datetime | None, now: datetime) -> BriefWindow | None:
-    """The Brief's window since ``last_ack``, or ``None`` when there is nothing to show."""
-    if last_ack is None:
+def brief_window(previous_seen: datetime | None, now: datetime) -> BriefWindow | None:
+    """The Brief's window since ``previous_seen``, or ``None`` when there is nothing to show."""
+    if previous_seen is None:
         return None
-    start, end = _utc(last_ack), _utc(now)
+    start, end = _utc(previous_seen), _utc(now)
     if end <= start:
         return None
     boundaries = session_boundaries(start, end)

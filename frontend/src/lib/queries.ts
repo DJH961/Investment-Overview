@@ -89,9 +89,19 @@ export const persister: Persister = {
 };
 
 if (typeof document !== "undefined") {
+  // Back on the tab: an absence of a few minutes starts a new visit server-side (the
+  // Daily Brief's window), so ask for the Brief again right now; that read carries the
+  // "visible" signal. `pageshow` covers a bfcache restore (iOS Safari), where
+  // `visibilitychange` may not fire. Nothing here relies on a "hidden" event: a tab that
+  // never says goodbye just stops sending the signal, which counts as "not seen".
+  const refetchBriefIfVisible = () => {
+    if (document.visibilityState === "visible") void queryClient.invalidateQueries({ queryKey: ["brief"] });
+  };
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushPersist();
+    refetchBriefIfVisible();
   });
+  window.addEventListener("pageshow", refetchBriefIfVisible);
   window.addEventListener("pagehide", flushPersist);
 }
 

@@ -223,6 +223,11 @@ async function request<T>(path: string, options: RequestOptions): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (options.background && method === "GET") headers["X-Background-Refetch"] = "1";
+  // Tells the server the owner has the tab open (the Daily Brief's "last visit"):
+  // background tabs keep polling, so only a visible tab's reads count.
+  if (method === "GET" && typeof document !== "undefined" && document.visibilityState === "visible") {
+    headers["X-Visible"] = "1";
+  }
   const conditional = method === "GET" && isBothUrl(path);
   const remembered = conditional ? bothCache.get(path) : undefined;
   if (remembered) headers["If-None-Match"] = remembered.etag;

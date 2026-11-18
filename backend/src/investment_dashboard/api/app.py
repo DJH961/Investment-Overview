@@ -139,7 +139,9 @@ def _mount_frontend(app: FastAPI, dist: Path, *, docs: bool = True) -> None:
 #: event bumps the cache unless only presentation settings (currency, theme) changed.
 #: ``/api/graphs/range`` is deliberately NOT here: the remembered range is part of the
 #: cached overview payload (``default_range``), so changing it must drop the cache.
-_CACHE_NEUTRAL_WRITES = frozenset({"/api/settings/values", "/api/brief/ack"}) | READ_ONLY_POSTS
+_CACHE_NEUTRAL_WRITES = (
+    frozenset({"/api/settings/values", "/api/brief/ack", "/api/brief/visit"}) | READ_ONLY_POSTS
+)
 #: Sign-in, sign-out and passkey ceremonies touch no report data.
 _CACHE_NEUTRAL_PREFIXES = ("/api/auth/",)
 

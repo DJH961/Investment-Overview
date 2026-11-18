@@ -19,11 +19,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **Daily Brief: the currency since your last visit.** `GET /api/brief` now carries,
-  for the whole window since you last dismissed it, the euro view's currency effect on
+  for the whole time you were away, the euro view's currency effect on
   the portfolio (`currency_effect_since`: the current book at today's rate minus the
   same book at the rate when you last looked) and the dollar view's investing power
   (`investing_power_since`: what your regular euro amount buys in dollars now versus
-  then). The rate at your last visit is recorded when you dismiss the Brief.
+  then). The rate at the start of your absence is the intraday rate stored then.
+- **Daily Brief covers your absence, not your last dismissal.** The window is when you
+  were away (`visit_from` to the moment you came back): the page counts as open only
+  while its tab is visible (reads carry `X-Visible: 1`), and a break of at least the new
+  Display setting "New visit after being away" (default 5 min, 1 to 120) starts a new
+  visit. Sessions that pass while you watch never brief you; dismissing only hides the
+  card for the visit. The Brief refetches when the tab comes back (also on iOS page
+  restore). `PUT`/`DELETE /api/brief/visit` set or clear the window by hand (debugging).
 - **Setting "Daily Brief closes after (minutes, 0 = never)"** under Display (default 3,
   0 to 60).
 - **Daily Brief on the Overview.** When a NYSE open or close has passed since you last
@@ -55,6 +62,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not gated).
 
 ### Fixed
+- **Daily Brief numbers add up.** The session's move is the hero's headline (the estimate
+  while it says est.), Market + Currency sum to it in the euro view and Market is the
+  whole move in the dollar view (the Brief used to mix the official and the estimated
+  figures). The fixtures' Brief now shows a real absence.
 - **Live ticks keep a pending fund's day move FX-inclusive.** The tick recomputed an
   estimated fund's day move from the price alone, dropping the currency part the server
   includes; it now keeps the server's figure until the refetch.

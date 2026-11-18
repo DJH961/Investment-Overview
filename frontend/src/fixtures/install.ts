@@ -61,19 +61,23 @@ const field = (o: unknown, k: string): unknown => (o && typeof o === "object" ? 
  */
 function withCurrencyEffect(base: Obj): Obj {
   if (!base.due || "currency_effect_since" in base || "investing_power_since" in base) return base;
-  const since = typeof base.last_ack_at === "string" ? base.last_ack_at : null;
+  const first = (base.boundaries as { at?: string }[] | undefined)?.[0]?.at;
+  const since = typeof base.last_ack_at === "string" ? base.last_ack_at : (first ?? null);
   if (!since) return base;
   const rates = { rate_then: "1.0712", rate_now: "1.0765", since };
   return {
     ...base,
     currency_effect_since: { EUR: { amount: "-1187.42", pct: "-0.0049", ...rates }, USD: null },
     investing_power_since: {
-      amount_eur: "1000",
-      amount_usd_now: "1076.50",
-      amount_usd_then: "1071.20",
-      net: "5.30",
-      pct: "0.004948",
-      ...rates,
+      EUR: null,
+      USD: {
+        amount_eur: "1000",
+        amount_usd_now: "1076.50",
+        amount_usd_then: "1071.20",
+        net: "5.30",
+        pct: "0.004948",
+        ...rates,
+      },
     },
   };
 }
@@ -91,16 +95,25 @@ function briefFor(mode: BriefMode, data: Fixtures, recorded: unknown): unknown {
         const o = field(both, c);
         const k = field(o, "kpis");
         const split = field(o, "day_split");
+        // As the server does: the headline is the hero's (the split's Total, the estimate
+        // while estimating); Market = Total - Currency (euro view, market open), the
+        // dollar view has no currency leg.
+        const estimated = Boolean(field(split, "estimated"));
+        const est = estimated ? field(k, "estimate") : undefined;
+        const total = Number(field(split, "price_move") ?? field(k, "daily_move"));
+        const fx = c === "EUR" && field(split, "currency_move") != null ? Number(field(split, "currency_move")) : null;
+        const overnight = Boolean(field(split, "overnight"));
+        const market = fx !== null && !overnight ? total - fx : total;
         return [
           c,
           {
             session_date: field(k, "daily_growth_as_of") ?? (base.sessions as string[] | undefined)?.at(-1),
-            day_move: field(k, "daily_move"),
-            day_move_pct: field(k, "daily_growth_pct"),
-            price_move: field(split, "price_move"),
-            currency_move: field(split, "currency_move"),
-            currency_overnight: Boolean(field(split, "overnight")),
-            estimated: Boolean(field(split, "estimated")),
+            day_move: String(total),
+            day_move_pct: est ? field(est, "daily_growth_pct") : field(k, "daily_growth_pct"),
+            price_move: String(market),
+            currency_move: fx === null ? null : String(fx),
+            currency_overnight: overnight,
+            estimated,
             movers: field(o, "movers"),
           },
         ];
