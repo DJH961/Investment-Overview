@@ -8,7 +8,7 @@ import { Percent } from "../Percent";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { formatDayLabel, formatDayTime, formatNumber, formatWeekdayTime } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
-import { toNum } from "../../lib/queries/portfolio";
+import { toNum, useOverview } from "../../lib/queries/portfolio";
 import {
   useAckBrief,
   useBrief,
@@ -52,9 +52,16 @@ function Fact({ label, value, note, testId, wide = false }: { label: ReactNode; 
 }
 
 function SessionFact({ move, currency }: { move: BriefMoveDto; currency: ReportingCurrency }) {
-  // The euro view splits the move into the market and the dollar; the dollar view has
-  // no currency leg, so that part is left out.
+  // The euro view splits the move into the market and the currency; the dollar view has
+  // no currency leg, so it shows the book's value then → now instead.
   const fx = toNum(move.currency_move ?? null);
+  const kpis = useOverview(currency).data?.kpis;
+  const total = toNum(kpis?.total_value ?? null);
+  const dayMove = toNum(move.day_move ?? null);
+  // The Overview's value is the book after that session only when it is the same session.
+  const sameDay = !kpis?.daily_growth_as_of || kpis.daily_growth_as_of === move.session_date;
+  const now = sameDay ? total : null;
+  const start = now !== null && dayMove !== null ? now - dayMove : null;
   return (
     <Fact
       testId="brief-session"
@@ -73,19 +80,29 @@ function SessionFact({ move, currency }: { move: BriefMoveDto; currency: Reporti
         </span>
       }
       note={
-        <span className="daily-brief__parts" data-testid="brief-split">
-          <span className="daily-brief__pair">
-            <span className="daily-brief__key">Market</span>
-            <Money amount={toNum(move.price_move ?? null)} currency={currency} signed colored />
-          </span>
-          {/* The dollar book has no currency leg: the part is simply absent there. */}
-          {currency === "EUR" && fx !== null && (
+        currency === "EUR" ? (
+          <span className="daily-brief__parts" data-testid="brief-split">
             <span className="daily-brief__pair">
-              <span className="daily-brief__key">Currency</span>
-              <Money amount={fx} currency={currency} signed colored />
+              <span className="daily-brief__key">Market</span>
+              <Money amount={toNum(move.price_move ?? null)} currency={currency} signed colored />
             </span>
-          )}
-        </span>
+            {fx !== null && (
+              <span className="daily-brief__pair">
+                <span className="daily-brief__key">Currency</span>
+                <Money amount={fx} currency={currency} signed colored />
+              </span>
+            )}
+          </span>
+        ) : (
+          // The dollar view: the headline is the whole move, so "Market" would repeat it;
+          // the line says where the book stood instead (server values, one subtraction).
+          start !== null &&
+          now !== null && (
+            <span className="daily-brief__line" data-testid="brief-value-path">
+              <Money amount={start} currency={currency} digits={0} /> → <Money amount={now} currency={currency} digits={0} />
+            </span>
+          )
+        )
       }
     />
   );
