@@ -80,6 +80,12 @@ other doc.
   reactive wakeup deliver its result), and actually use its work — **or** do not spawn a
   subagent at all. Never spawn a subagent only to do the same work yourself in parallel
   or kill the subagent before it finishes.
+- **One subagent layer:** one main session plus as many subagents as needed, and no
+  deeper layer (a subagent never starts its own subagents), except short Haiku lookups
+  the subagent waits for. Split big work into independent subagents with their own
+  worktree and disjoint files, started in parallel, or run big lanes as their own
+  sessions. Every brief repeats the real-data and server rules and names the
+  subagent's own scratch folder.
 
 ## 💱 Currency rule
 

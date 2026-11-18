@@ -15,10 +15,12 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> Pushes 1 to 3 shipped (6.13.1 to 6.15.0), then 6.16.0 and 6.17.0. Every
-> decision is settled (§9, §9a, §9b). Push 4, release 7.0, can start
-> without asking. **Push 4 lane A (the v5 cutover) is landing in 7.0**; the
-> owner's manual steps are in [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
+> **Status (2026-11-18): push 4 shipped as 7.0.0** (v5 cutover, Daily Brief,
+> market clock, Currency page first part, P12, holding page, the push 3
+> leftovers and the visual overhaul). Pushes 1 to 3 shipped as 6.13.1 to
+> 6.15.0, then 6.16.0 and 6.17.x. Next: push 5 (7.1); do not start it until
+> the owner approves. The owner's post-cutover steps are in
+> [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
 
 ---
 
@@ -1398,6 +1400,7 @@ Same rules as §9a: built in the push named, detail settled at its start.
 |---|---|---|
 | P17 | **A fair "% of return" in the Risk contribution table.** Today each row divides its P&L by the window's start value; on "All" that is only the first deposit, so the shares look huge. Show each holding's share of the total P&L instead, ideally built from its lots (each lot's gain over its own holding time, then averaged by size). Detail settled at the start of the push; never fed into an aggregate. | 5 (7.1), with tax lots (§6.1) |
 | P18 | **The Overview counts uninvested brokerage cash.** Since #413 the Risk curve counts cash sitting in a brokerage account outside a money-market fund (B-017); the Overview total does not yet. Every brokerage the owner uses sweeps into a settlement fund, so for him the amount is zero today; this is consistency, not a visible change. Money maths: golden tests and a list of figures that move. | 5 (7.1) |
+| P19 | **Stop writing the frozen currency legs.** The cutover could not drop `net_eur` / `net_usd` / `fx_rate_to_eur` on cashflow legs or the EUR snapshot columns (`PositionSnapshot`, `IntradayValue`): a few fallbacks still read them and the EUR columns are `NOT NULL`. Its own money change: move the last readers onto `net_native` + that date's FX (or native USD + the per-instant rate), golden tests that the figures do not move, then a migration (with a working downgrade) that drops or nulls the columns. | Before push 8 (7.4) |
 
 ---
 
