@@ -43,7 +43,7 @@
 
     @include m.desktop {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+      grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
       align-items: end;
       gap: var(--space-6);
       padding-bottom: var(--space-5);
@@ -155,7 +155,7 @@
   }
 
   &__stat--key &__stat-value {
-    font-size: clamp(var(--font-size-md), 11cqi, var(--font-size-xl));
+    font-size: clamp(var(--font-size-sm), 10cqi, var(--font-size-xl));
   }
 
   &__stat--minor &__stat-value {
