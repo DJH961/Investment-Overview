@@ -24,10 +24,15 @@ export function CurrencyLifetime({ data }: CurrencyLifetimeProps) {
   const repat = toNum(life.repatriation_value_eur);
   const fxShare = fxPnl !== null && repat ? fxPnl / repat : null;
   const split = data.currency.return_split;
-  const change = toNum(life.rate_change_pct);
-  // A stronger euro (EUR/USD up) is a headwind for a euro investor holding dollars.
-  const favour = change === null ? "flat" : signOf(-change);
-  const pp = toNum(split?.currency_effect_pp);
+  // P12: in the USD view the currency effect on a dollar return is 0 by definition, so
+  // the two middle tiles say what matters to a euro investor looking at dollars: the
+  // dollar's move against the euro, and how far the euro return sits from the dollar
+  // one (both server figures). Same tiles, same lines in both views: no height jump.
+  const usdView = data.ccy === "USD";
+  const change = usdView ? toNum(split?.usd_vs_eur_pct) : toNum(life.rate_change_pct);
+  // A stronger euro (EUR/USD up) - a weaker dollar - is a headwind for a euro investor holding dollars.
+  const favour = change === null ? "flat" : signOf(usdView ? change : -change);
+  const pp = usdView ? toNum(split?.eur_minus_usd_pp) : toNum(split?.currency_effect_pp);
   return (
     <Card title="Currency effect (lifetime)" collapsibleId="overview.currency-lifetime" className="currency-lifetime">
       <dl className="currency-lifetime__grid">
@@ -36,8 +41,8 @@ export function CurrencyLifetime({ data }: CurrencyLifetimeProps) {
           <dd className="currency-lifetime__value">{formatNumber(toNum(life.current_rate), 4)}</dd>
           <dd className="currency-lifetime__sub">avg in {formatNumber(toNum(life.avg_invest_rate), 4)}</dd>
         </div>
-        <div className="currency-lifetime__stat">
-          <dt className="currency-lifetime__label">Euro since buying</dt>
+        <div className="currency-lifetime__stat" data-testid="lifetime-rate-move">
+          <dt className="currency-lifetime__label">{usdView ? "Dollar vs euro since buying" : "Euro since buying"}</dt>
           <dd className={clsx("currency-lifetime__value", `currency-lifetime__value--${favour}`)}>
             <Percent ratio={change} signed />
           </dd>
@@ -45,13 +50,13 @@ export function CurrencyLifetime({ data }: CurrencyLifetimeProps) {
             {favour === "pos" ? "tailwind" : favour === "neg" ? "headwind" : "no effect"}
           </dd>
         </div>
-        <div className="currency-lifetime__stat">
-          <dt className="currency-lifetime__label">FX effect on return</dt>
-          <dd className={clsx("currency-lifetime__value", pp !== null && `currency-lifetime__value--${signOf(pp)}`)}>
+        <div className="currency-lifetime__stat" data-testid="lifetime-fx-gap">
+          <dt className="currency-lifetime__label">{usdView ? "In euros vs dollars" : "FX effect on return"}</dt>
+          <dd className={clsx("currency-lifetime__value", `currency-lifetime__value--${pp === null ? "flat" : signOf(pp)}`)}>
             {formatPp(pp)}
           </dd>
           <dd className="currency-lifetime__sub">
-            investment <Percent ratio={toNum(split?.investment_return)} signed /> · EUR{" "}
+            {usdView ? "USD" : "investment"} <Percent ratio={toNum(split?.investment_return)} signed /> · EUR{" "}
             <Percent ratio={toNum(split?.total_return_eur)} signed />
           </dd>
         </div>
