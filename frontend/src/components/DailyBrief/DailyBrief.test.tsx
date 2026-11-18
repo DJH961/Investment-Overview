@@ -140,7 +140,8 @@ describe("DailyBrief", () => {
     expect(screen.getByTestId("brief-window-move")).toHaveTextContent("While you were away");
     expect(screen.getByTestId("brief-rates")).toHaveTextContent("EUR/USD 1.1590 → 1.1641");
     expect(screen.queryByTestId("brief-currency-effect")).toBeNull();
-    expect(screen.getByTestId("brief-split")).toHaveTextContent("Market +€14,000.20 · Currency -€2,019.70");
+    expect(screen.getByTestId("brief-split")).toHaveTextContent("Market+€14,000.20Currency-€2,019.70");
+    expect(screen.getByTestId("brief-value-path")).toHaveTextContent("€1,469,107 → €1,481,087");
     expect(screen.queryByTestId("brief-flows")).toBeNull();
     expect(screen.queryByText(/sessions passed/)).toBeNull();
     expect(screen.getByTestId("brief-movers-up")).toHaveTextContent("WIN1");
@@ -153,12 +154,14 @@ describe("DailyBrief", () => {
     expect(await screen.findByTestId("brief-value-path")).toHaveTextContent("US$1,469,107 → US$1,481,087");
     expect(screen.getByTestId("brief-window-move")).not.toHaveTextContent("Market");
     expect(screen.getByTestId("brief-currency-effect")).toHaveTextContent("Investing power");
+    expect(screen.queryByTestId("brief-flows")).toBeNull();
   });
 
-  it("deposits show only when the window had net flows", async () => {
+  it("net flows are never shown (nothing is added while he is away)", async () => {
     stub(() => withWindow("500"));
     mount("EUR");
-    expect(await screen.findByTestId("brief-flows")).toHaveTextContent("Deposits€500.00");
+    await screen.findByTestId("brief-figure");
+    expect(screen.getByTestId("brief-window-move").closest("dl")).not.toHaveTextContent(/Deposit|Withdraw|counted as growth/);
   });
 
   it("one session: the server's move, market vs currency, and the movers", async () => {

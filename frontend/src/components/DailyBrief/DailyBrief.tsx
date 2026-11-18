@@ -41,9 +41,9 @@ export function formatRemaining(ms: number): string {
 const rate = (v: string) => formatNumber(toNum(v), 4);
 
 /** One figure of the brief: an eyebrow label, the figure, an optional small line under it. */
-function Fact({ label, value, note, testId, wide = false }: { label: ReactNode; value: ReactNode; note?: ReactNode; testId?: string; wide?: boolean }) {
+function Fact({ label, value, note, testId, wide = false, lead = false }: { label: ReactNode; value: ReactNode; note?: ReactNode; testId?: string; wide?: boolean; lead?: boolean }) {
   return (
-    <div className={wide ? "daily-brief__fact daily-brief__fact--wide" : "daily-brief__fact"} data-testid={testId}>
+    <div className={["daily-brief__fact", wide && "daily-brief__fact--wide", lead && "daily-brief__fact--lead"].filter(Boolean).join(" ")} data-testid={testId}>
       <dt className="daily-brief__label">{label}</dt>
       <dd className="daily-brief__value">{value}</dd>
       {note && <dd className="daily-brief__note">{note}</dd>}
@@ -124,7 +124,7 @@ export interface BriefWindowMove {
   pct: string | null;
   price_move: string | null;
   currency_move: string | null;
-  net_flows: string | null;
+  net_flows?: string | null; // never shown: nothing is added while he is away
   estimated: boolean;
   start_basis?: "intraday" | "close";
   movers?: BriefMoveDto["movers"];
@@ -133,28 +133,15 @@ type WindowByCurrency = { EUR: BriefWindowMove | null; USD: BriefWindowMove | nu
 const windowOf = (b: BriefDto, currency: ReportingCurrency): BriefWindowMove | null =>
   (b as BriefDto & { window_move?: WindowByCurrency }).window_move?.[currency] ?? null;
 
-/** A custom time frame (several sessions away): the same figure row as one session. */
-function WindowFact({ brief, w, currency }: { brief: BriefDto; w: BriefWindowMove; currency: ReportingCurrency }) {
-  // The window's currency part and the "currency effect since" slot are one figure: its rates live here.
-  const eff = brief.currency_effect_since?.EUR ?? null;
-  const move = toNum(w.move);
-  const fx = toNum(w.currency_move);
-  // Shown to the cent, Market + Currency add up to the headline as displayed.
-  const cents = (v: number) => Math.round(v * 100) / 100;
-  const market = move !== null && fx !== null ? cents(cents(move) - cents(fx)) : toNum(w.price_move);
-  const flows = toNum(w.net_flows);
+/** A custom time frame (several sessions away): the move as the headline, the book then → now under it. */
+function WindowFact({ w, currency }: { w: BriefWindowMove; currency: ReportingCurrency }) {
   const start = toNum(w.start_value);
   const end = toNum(w.end_value);
-  const deposits =
-    flows !== null && flows !== 0 ? (
-      <span className="daily-brief__pair" data-testid="brief-flows">
-        <span className="daily-brief__key">{flows > 0 ? "Deposits" : "Withdrawals"}</span>
-        <Money amount={Math.abs(flows)} currency={currency} />
-      </span>
-    ) : null;
   return (
     <Fact
       testId="brief-window-move"
+      wide
+      lead
       label={
         <>
           While you were away
@@ -163,39 +150,55 @@ function WindowFact({ brief, w, currency }: { brief: BriefDto; w: BriefWindowMov
       }
       value={
         <span className="daily-brief__figure" data-testid="brief-figure">
-          <Money amount={move} currency={currency} signed colored />
+          <Money amount={toNum(w.move)} currency={currency} signed colored />
           <DeltaBadge value={toNum(w.pct)} />
         </span>
       }
       note={
-        currency === "EUR" ? (
-          <>
-            <span className="daily-brief__line" data-testid="brief-split" data-ccy-specific="">
-              <span className="daily-brief__key">Market</span> <Money amount={market} currency={currency} signed colored />
-              {fx !== null && (
-                <>
-                  {" · "}
-                  <span className="daily-brief__key">Currency</span> <Money amount={fx} currency={currency} signed colored />
-                </>
-              )}
-            </span>
-            {eff && (
-              <span className="daily-brief__line" data-testid="brief-rates">
-                EUR/USD {rate(eff.rate_then)} → {rate(eff.rate_now)}
-              </span>
-            )}
-            {deposits && <span className="daily-brief__line">{deposits}</span>}
-          </>
-        ) : (
-          <>
-            {start !== null && end !== null && (
-              <span className="daily-brief__line" data-testid="brief-value-path" data-ccy-specific="">
-                <Money amount={start} currency={currency} digits={0} /> → <Money amount={end} currency={currency} digits={0} />
-              </span>
-            )}
-            {deposits && <span className="daily-brief__line">{deposits}</span>}
-          </>
+        start !== null &&
+        end !== null && (
+          <span className="daily-brief__line" data-testid="brief-value-path" data-ccy-specific="">
+            <Money amount={start} currency={currency} digits={0} /> → <Money amount={end} currency={currency} digits={0} />
+          </span>
         )
+      }
+    />
+  );
+}
+
+/** EUR view: what moved the window, as a tiny ledger (Market + Currency = the headline), the rates, the flows. */
+function WindowMovedFact({ brief, w }: { brief: BriefDto; w: BriefWindowMove }) {
+  const eff = brief.currency_effect_since?.EUR ?? null;
+  const move = toNum(w.move);
+  const fx = toNum(w.currency_move);
+  // Shown to the cent, Market + Currency add up to the headline as displayed.
+  const cents = (v: number) => Math.round(v * 100) / 100;
+  const market = move !== null && fx !== null ? cents(cents(move) - cents(fx)) : toNum(w.price_move);
+  return (
+    <Fact
+      testId="brief-moved"
+      wide
+      label="What moved it"
+      value={
+        <span className="daily-brief__ledger" data-testid="brief-split" data-ccy-specific="">
+          <span className="daily-brief__key">Market</span>
+          <Money amount={market} currency="EUR" signed colored />
+          {fx !== null && (
+            <>
+              <span className="daily-brief__key">Currency</span>
+              <Money amount={fx} currency="EUR" signed colored />
+            </>
+          )}
+        </span>
+      }
+      note={
+        <>
+          {eff && (
+            <span className="daily-brief__line" data-testid="brief-rates">
+              EUR/USD {rate(eff.rate_then)} → {rate(eff.rate_now)}
+            </span>
+          )}
+        </>
       }
     />
   );
@@ -471,8 +474,7 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
   const since = sinceIso ? (win ? formatDayTime(sinceIso, timeZone) : sinceLabel(sinceIso, b.now, timeZone)) : null;
   const span = kind === "fx" ? "weekend" : n === 1 ? "1 session" : `${n} sessions`;
   // One slot for the currency since the last look, shown when the server sends either side.
-  // With the window's figure on screen (EUR) the same currency effect sits under it, not twice.
-  const showCurrency = Boolean(b.currency_effect_since?.EUR || b.investing_power_since?.USD) && !(win && currency === "EUR");
+  const showCurrency = Boolean(b.currency_effect_since?.EUR || b.investing_power_since?.USD);
 
   return (
     <section ref={card} className="daily-brief u-enter" aria-label="Daily brief">
@@ -501,10 +503,12 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
       </header>
       <dl className="daily-brief__facts">
         {kind === "session" && move && <SessionFact move={move} currency={currency} />}
-        {kind === "sessions" && win && <WindowFact brief={b} w={win} currency={currency} />}
+        {kind === "sessions" && win && <WindowFact w={win} currency={currency} />}
+        {win && currency === "EUR" && <WindowMovedFact brief={b} w={win} />}
+        {win && currency === "USD" && <CurrencySinceFact brief={b} currency={currency} />}
         {kind === "sessions" && !win && <SessionsFact brief={b} />}
         {kind === "fx" && <FxReopenFact brief={b} currency={currency} />}
-        {showCurrency && <CurrencySinceFact brief={b} currency={currency} />}
+        {!win && showCurrency && <CurrencySinceFact brief={b} currency={currency} />}
         {kind === "session" && move && <MoversFact movers={move.movers} />}
         {win && <MoversFact movers={win.movers} />}
       </dl>
