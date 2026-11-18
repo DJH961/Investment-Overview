@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import type { ReactNode } from "react";
 import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
@@ -21,7 +22,7 @@ export interface KpiGridProps {
 /** Copy for the info buttons (NiceGUI `ui/copy/tooltips.py` wording, shortened). */
 const STRIP_TIPS = {
   expense:
-    "Weighted average yearly fund fee (TER) across your holdings, and roughly what that costs per year at today's value.",
+    "Weighted average yearly fund fee (TER) across your holdings.",
   dividendReturn: "All dividends received since you started, as a share of the money you invested.",
   yield12:
     "Dividends received in the last 12 months as a share of today's portfolio value: your current income yield.",
@@ -89,6 +90,41 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
 
   const expense = toNum(k?.weighted_expense_ratio);
   const ttm = toNum(k?.dividends_ttm);
+  // The money notes show under the figure from tablet up; on phones the strip is one compact
+  // row, so the same note rides in the (i) instead.
+  const withNote = (text: string, note: ReactNode) =>
+    note ? (
+      <span className="kpi-grid__tip">
+        <span>{text}</span>
+        <span>{note}</span>
+      </span>
+    ) : (
+      text
+    );
+  const expenseTip = withNote(
+    STRIP_TIPS.expense,
+    k?.annual_expense_cost != null ? (
+      <>
+        About <Money amount={toNum(k.annual_expense_cost)} currency={currency} digits={0} /> a year.
+      </>
+    ) : null,
+  );
+  const returnTip = withNote(
+    STRIP_TIPS.dividendReturn,
+    k?.dividend_income != null ? (
+      <>
+        <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} /> received so far.
+      </>
+    ) : null,
+  );
+  const yieldTip = withNote(
+    STRIP_TIPS.yield12,
+    ttm !== null ? (
+      <>
+        <Money amount={ttm} currency={currency} digits={0} /> paid in the last 12 months.
+      </>
+    ) : null,
+  );
 
   return (
     <div className="kpi-grid">
@@ -168,8 +204,11 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
         <dl className="kpi-grid__strip">
           <div className="kpi-grid__stat">
             <dt className="kpi-grid__stat-label">
-              Expense ratio
-              <InfoTip label="Expense ratio" content={STRIP_TIPS.expense} />
+              <span className="kpi-grid__stat-long">Expense ratio</span>
+              <span className="kpi-grid__stat-short" aria-hidden>
+                Expense
+              </span>
+              <InfoTip label="Expense ratio" content={expenseTip} />
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={expense} />
@@ -183,8 +222,11 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           </div>
           <div className="kpi-grid__stat">
             <dt className="kpi-grid__stat-label">
-              Dividend return
-              <InfoTip label="Dividend return" content={STRIP_TIPS.dividendReturn} />
+              <span className="kpi-grid__stat-long">Dividend return</span>
+              <span className="kpi-grid__stat-short" aria-hidden>
+                Div. return
+              </span>
+              <InfoTip label="Dividend return" content={returnTip} />
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={toNum(k.dividend_yield_pct)} />
@@ -197,8 +239,11 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           </div>
           <div className="kpi-grid__stat">
             <dt className="kpi-grid__stat-label">
-              Dividend yield, 12 mo
-              <InfoTip label="Dividend yield, 12 months" content={STRIP_TIPS.yield12} />
+              <span className="kpi-grid__stat-long">Dividend yield, 12 mo</span>
+              <span className="kpi-grid__stat-short" aria-hidden>
+                Yield 12 mo
+              </span>
+              <InfoTip label="Dividend yield, 12 months" content={yieldTip} />
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={toNum(k.dividend_yield_ttm_pct)} />

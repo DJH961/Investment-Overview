@@ -1,5 +1,52 @@
 @use "../../styles/mixins" as m;
 
+@mixin compact-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-auto-rows: minmax(var(--control-height-sm), auto);
+  align-items: center;
+  gap: var(--space-1) 0;
+
+  & > .overview-hero__move,
+  & > .overview-hero__official {
+    grid-column: 1 / -1;
+  }
+
+  & > .overview-hero__move {
+    grid-row: 1;
+  }
+
+  & > .overview-hero__usd {
+    grid-column: 1;
+    grid-row: 2;
+    margin-left: 0;
+    padding-right: var(--space-2);
+    gap: var(--space-1);
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+
+  & > .day-split,
+  & > .overview-hero__fx {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    padding-left: var(--space-2);
+    border-left: var(--border-width) solid var(--color-border-strong);
+  }
+
+  // "in today's total" is the tooltip's job here: one line beside the other currency.
+  & > .overview-hero__fx .overview-hero__muted {
+    display: none;
+  }
+
+  & > .overview-hero__official {
+    grid-row: 3;
+  }
+}
+
 .overview-hero {
   display: flex;
   flex-direction: column;
@@ -225,41 +272,17 @@
     min-height: var(--control-height-sm);
 
     // Phone: fixed rows instead of free wrapping, so EUR (with the ☾/☀ split) and
-    // USD (without) have the same shape: the move on top; the split or FX line
-    // beside the other currency's move; the official book (estimating) under them.
+    // USD (without) have the same shape: the move on top; then the OTHER currency's
+    // move first, left-aligned (it is the one item both views have), followed by the
+    // split / FX line when there is one, behind a hairline; the official book
+    // (estimating) under them. Nothing floats right, so USD never looks half empty.
     @include m.phone {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      grid-auto-rows: minmax(var(--control-height-sm), auto);
-      align-items: center;
-      gap: var(--space-1) var(--space-3);
+      @include compact-facts;
+    }
 
-      & > .overview-hero__move,
-      & > .overview-hero__official {
-        grid-column: 1 / -1;
-      }
-
-      & > .overview-hero__move {
-        grid-row: 1;
-      }
-
-      & > .day-split,
-      & > .overview-hero__fx {
-        grid-column: 1;
-        grid-row: 2;
-        min-width: 0;
-      }
-
-      & > .overview-hero__usd {
-        grid-column: 2;
-        grid-row: 2;
-        justify-self: end;
-        margin-left: 0;
-      }
-
-      & > .overview-hero__official {
-        grid-row: 3;
-      }
+    // The narrow desktop column (sidebar + side stats) has the phone's width: same rows.
+    @media (min-width: m.$bp-desktop) and (max-width: #{m.$bp-wide - 1px}) {
+      @include compact-facts;
     }
   }
 

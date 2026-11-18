@@ -100,7 +100,7 @@ describe("ValueChartCard", () => {
   it("1D: one short line however many funds are estimated, without naming them", () => {
     graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX", "FSKAX"] };
     render(<ValueChartCard currency="EUR" defaultRange="1d" marketOpen />);
-    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent(/^NAVs estimated from ETF twins$/);
+    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent(/^NAVs estimated$/);
   });
 
   it("the fund -> ETF twin mapping is in the tooltip", async () => {
@@ -116,7 +116,7 @@ describe("ValueChartCard", () => {
   it("1W: same short line; the tooltip says only the latest session is estimated", async () => {
     graphData = { ...day, funds_estimated: true, estimated_funds: ["FXAIX"] };
     render(<ValueChartCard currency="EUR" defaultRange="1w" marketOpen />);
-    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent(/^NAVs estimated from ETF twins$/);
+    expect(screen.getByTestId("funds-estimated-note")).toHaveTextContent(/^NAVs estimated$/);
     fireEvent.focus(screen.getByRole("button", { name: "About estimated NAVs" }));
     expect(await screen.findByRole("tooltip")).toHaveTextContent("latest session only");
   });
