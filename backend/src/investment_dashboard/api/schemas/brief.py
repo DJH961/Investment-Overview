@@ -71,6 +71,45 @@ class BriefFxMove(ApiModel):
     anchor_kind: Literal["prev_close", "overnight", "session_open"] | None = None
 
 
+class BriefCurrencyEffect(ApiModel):
+    """EUR view: the EUR/USD rate's effect on the portfolio over the whole window.
+
+    The current book valued at ``rate_now`` minus the same book at ``rate_then``
+    (holdings held constant, only the rate moves: the Overview currency box's
+    revaluation). USD holdings move by ``usd x (1/rate_now - 1/rate_then)``; EUR
+    holdings do not move. Euros.
+    """
+
+    amount: DecStr
+    #: ``amount`` / the same book at ``rate_then``, in euros.
+    pct: DecStr = Field(description=_FRAC)
+    #: EUR/USD (USD per 1 EUR) at ``since`` and now.
+    rate_then: DecStr
+    rate_now: DecStr
+    #: The window's start (the last acknowledgement, UTC ISO).
+    since: str
+
+
+class BriefInvestingPower(ApiModel):
+    """USD view: the regular euro amount in dollars now versus at the window's start.
+
+    The Overview's ``investing_power_usd`` maths over the whole window: the fixed
+    ``amount_eur`` buys ``amount_eur x rate`` dollars; ``net`` = now - then (USD).
+    """
+
+    amount_eur: DecStr
+    amount_usd_now: DecStr
+    amount_usd_then: DecStr
+    net: DecStr
+    #: ``net / amount_usd_then`` (= ``rate_now / rate_then - 1``).
+    pct: DecStr = Field(description=_FRAC)
+    #: EUR/USD (USD per 1 EUR) at ``since`` and now.
+    rate_then: DecStr
+    rate_now: DecStr
+    #: The window's start (the last acknowledgement, UTC ISO).
+    since: str
+
+
 class BriefOut(ApiModel):
     """The Daily Brief. ``due`` false: show nothing (no "up to date" chrome)."""
 
@@ -89,6 +128,12 @@ class BriefOut(ApiModel):
     move: ByCurrency[BriefMove] | None = None
     #: ``kind == "fx_reopen"`` only: the rate line, per currency view.
     fx_move: ByCurrency[BriefFxMove] | None = None
+    #: Each view's currency line since ``last_ack_at``, as the Overview's currency box
+    #: does it. EUR side: the currency effect on the book (the USD side is always
+    #: null). Null when the window is empty or no rate is known at its start.
+    currency_effect_since: ByCurrency[BriefCurrencyEffect | None] | None = None
+    #: USD side: investing power on the regular amount (the EUR side is always null).
+    investing_power_since: ByCurrency[BriefInvestingPower | None] | None = None
     #: Ledger rows created since ``last_ack_at`` (newest first, at most 20).
     events: list[BriefEvent] = []  # noqa: RUF012
     events_total: int = 0

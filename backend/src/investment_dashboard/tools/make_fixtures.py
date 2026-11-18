@@ -56,6 +56,9 @@ FX_PREV_CLOSE = D("1.1620")
 FX_ECB_TODAY = D("1.1650")
 FX_SESSION_OPEN = D("1.1662")
 FX_LIVE_NOW = D("1.1641")
+#: The live rate when the owner last looked (the Brief's "since" rate): the euro
+#: has gained since, so the Brief shows a currency effect in both views.
+FX_LAST_VISIT = D("1.1590")
 #: Today's moves per instrument (fraction of yesterday's close): blue and orange both show.
 DAY_MOVES = {
     "FAKEL": D("0.0085"),
@@ -634,7 +637,9 @@ def seed_full(session: Any) -> None:
     session.add_all(rows)
     session.flush()
     # The owner last opened the app yesterday before the open: the Brief has a window.
-    brief_service._store(session, _dt.datetime(2026, 6, 29, 11, 0, tzinfo=_dt.UTC))
+    brief_service._store(
+        session, _dt.datetime(2026, 6, 29, 11, 0, tzinfo=_dt.UTC), rate=FX_LAST_VISIT
+    )
     _seed_open_session(session, inst, today)
 
 

@@ -13,8 +13,8 @@ from investment_dashboard.api import brief as brief_api
 from investment_dashboard.db import ledger_session_scope
 from investment_dashboard.models import Transaction
 from investment_dashboard.models.transaction import TransactionSource
-from investment_dashboard.repositories import accounts_repo
-from investment_dashboard.services import app_config_service, brief_service, read_cache
+from investment_dashboard.repositories import accounts_repo, fx_repo
+from investment_dashboard.services import app_config_service, brief_service, fx_service, read_cache
 
 #: Wed 28 Oct 2026, 11:00 ET (EDT): a session is open.
 NOW = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)
@@ -93,6 +93,91 @@ def test_ack_leaves_the_other_cached_reads_alone(api_client: TestClient) -> None
     assert api_client.post("/api/brief/ack", json={}).status_code == 200
     assert read_cache.generations() == before_gens
     assert read_cache.size() == before_size
+
+
+def _seed_cash(currency: str, amount: str) -> None:
+    with ledger_session_scope() as session:
+        acct = accounts_repo.create_account(
+            session,
+            broker="fidelity",
+            account_label=f"Cash {currency}",
+            native_currency=currency,
+            account_type="cash",
+        )
+        session.add(
+            Transaction(
+                account_id=acct.id,
+                date=date(2026, 10, 1),
+                kind="deposit",
+                source=TransactionSource.MANUAL,
+                net_native=Decimal(amount),
+                created_at=datetime(2026, 10, 1, 14, 0),
+            )
+        )
+        fx_repo.upsert_rates(session, {date(2026, 10, 1): Decimal("1.1600")})
+    read_cache.invalidate()
+
+
+@pytest.fixture
+def live_spot() -> Iterator[Decimal]:
+    rate = Decimal("1.1650")
+    fx_service.set_live_spot("USD", rate, observed_on=NOW.date(), observed_at=NOW)
+    yield rate
+    fx_service.clear_live_spot()
+
+
+def test_currency_effect_since_the_last_visit(api_client: TestClient, live_spot: Decimal) -> None:
+    _seed_cash("USD", "10000")
+    _seed_cash("EUR", "2000")
+    with ledger_session_scope() as session:
+        brief_service._store(session, BEFORE_OPEN, rate=Decimal("1.1600"))
+    read_cache.invalidate(read_cache.BRIEF)
+    brief = api_client.get("/api/brief").json()
+    effect, power = brief["currency_effect_since"], brief["investing_power_since"]
+    assert effect is not None
+    assert power is not None
+    # Each view its own line: EUR = currency effect, USD = investing power.
+    assert effect["USD"] is None
+    assert power["EUR"] is None
+    eur, usd = effect["EUR"], power["USD"]
+    for side in (eur, usd):
+        assert datetime.fromisoformat(side["since"]) == BEFORE_OPEN
+        assert Decimal(side["rate_then"]) == Decimal("1.1600")
+    rate_now = Decimal(eur["rate_now"])
+    assert rate_now > 0
+    assert Decimal(usd["rate_now"]) == rate_now
+    # EUR: the dollars revalued at two instants; the euros do not move.
+    expected_eur = Decimal("10000") / rate_now - Decimal("10000") / Decimal("1.1600")
+    assert abs(Decimal(eur["amount"]) - expected_eur) < Decimal("1e-12")
+    base_eur = Decimal("10000") / Decimal("1.1600") + Decimal("2000")
+    assert abs(Decimal(eur["pct"]) - expected_eur / base_eur) < Decimal("1e-12")
+    # USD: the regular amount (default EUR 100) in dollars, then vs now.
+    amount = Decimal(usd["amount_eur"])
+    assert amount == Decimal("100")
+    assert Decimal(usd["amount_usd_then"]) == amount * Decimal("1.1600")
+    assert Decimal(usd["amount_usd_now"]) == amount * rate_now
+    assert Decimal(usd["net"]) == amount * (rate_now - Decimal("1.1600"))
+
+
+def test_currency_effect_since_is_null_without_a_rate_then(
+    api_client: TestClient, live_spot: Decimal
+) -> None:
+    _seed_cash("USD", "10000")
+    _set_marker(BEFORE_OPEN)  # no rate recorded with it, no intraday sample there
+    brief = api_client.get("/api/brief").json()
+    assert brief["due"] is True
+    assert brief["currency_effect_since"] is None
+    assert brief["investing_power_since"] is None
+
+
+def test_ack_records_the_live_rate_with_the_marker(
+    api_client: TestClient, live_spot: Decimal
+) -> None:
+    _set_marker(BEFORE_OPEN)
+    api_client.post("/api/brief/ack", json={"seen_at": NOW.isoformat()})
+    with ledger_session_scope() as session:
+        assert brief_service.rate_at(session, NOW) == live_spot
+        assert brief_service.stored_rate_at(session, BEFORE_OPEN) is None
 
 
 def test_new_ledger_rows_show_up_as_events(api_client: TestClient) -> None:

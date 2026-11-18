@@ -3490,10 +3490,12 @@
  "GET /api/auth/passkeys": [],
  "GET /api/brief": {
   "boundaries": [],
+  "currency_effect_since": null,
   "due": false,
   "events": [],
   "events_total": 0,
   "fx_move": null,
+  "investing_power_since": null,
   "kind": null,
   "last_ack_at": "2026-06-30T18:15:00+00:00",
   "move": null,
@@ -14056,6 +14058,26 @@
    {
     "choices": [],
     "danger": null,
+    "default": 3,
+    "env_bound": null,
+    "env_var": null,
+    "help": "How long the Daily Brief above the Overview stays open before it closes itself and counts as seen. 0 keeps it open until you close it.",
+    "key": "brief_autoclose_minutes",
+    "label": "Daily Brief closes after (minutes, 0 = never)",
+    "level": "user",
+    "max": "60",
+    "min": "0",
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "display",
+    "since": "7.0",
+    "type": "int",
+    "unit": "min"
+   },
+   {
+    "choices": [],
+    "danger": null,
     "default": 365,
     "env_bound": null,
     "env_var": null,
@@ -15292,6 +15314,15 @@
     "source": "default",
     "stored_invalid": false,
     "value": 7
+   },
+   "brief_autoclose_minutes": {
+    "default": 3,
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": 3
    },
    "chart_pref.analytics_lookback": {
     "default": 365,

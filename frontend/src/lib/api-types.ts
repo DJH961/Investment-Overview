@@ -1896,6 +1896,30 @@ export interface components {
             session_date: string;
         };
         /**
+         * BriefCurrencyEffect
+         * @description EUR view: the EUR/USD rate's effect on the portfolio over the whole window.
+         *
+         *     The current book valued at ``rate_now`` minus the same book at ``rate_then``
+         *     (holdings held constant, only the rate moves: the Overview currency box's
+         *     revaluation). USD holdings move by ``usd x (1/rate_now - 1/rate_then)``; EUR
+         *     holdings do not move. Euros.
+         */
+        BriefCurrencyEffect: {
+            /** Amount */
+            amount: string;
+            /**
+             * Pct
+             * @description fraction, 0.01 = 1%
+             */
+            pct: string;
+            /** Rate Now */
+            rate_now: string;
+            /** Rate Then */
+            rate_then: string;
+            /** Since */
+            since: string;
+        };
+        /**
          * BriefEvent
          * @description A ledger row created since the last acknowledgement (``transactions.created_at``).
          */
@@ -1927,6 +1951,34 @@ export interface components {
             pct?: string | null;
             /** Spot Display */
             spot_display?: string | null;
+        };
+        /**
+         * BriefInvestingPower
+         * @description USD view: the regular euro amount in dollars now versus at the window's start.
+         *
+         *     The Overview's ``investing_power_usd`` maths over the whole window: the fixed
+         *     ``amount_eur`` buys ``amount_eur x rate`` dollars; ``net`` = now - then (USD).
+         */
+        BriefInvestingPower: {
+            /** Amount Eur */
+            amount_eur: string;
+            /** Amount Usd Now */
+            amount_usd_now: string;
+            /** Amount Usd Then */
+            amount_usd_then: string;
+            /** Net */
+            net: string;
+            /**
+             * Pct
+             * @description fraction, 0.01 = 1%
+             */
+            pct: string;
+            /** Rate Now */
+            rate_now: string;
+            /** Rate Then */
+            rate_then: string;
+            /** Since */
+            since: string;
         };
         /**
          * BriefMove
@@ -1972,6 +2024,7 @@ export interface components {
              * @default []
              */
             boundaries: components["schemas"]["BriefBoundary"][];
+            currency_effect_since?: components["schemas"]["ByCurrency_Union_BriefCurrencyEffect__NoneType__"] | null;
             /** Due */
             due: boolean;
             /**
@@ -1985,6 +2038,7 @@ export interface components {
              */
             events_total: number;
             fx_move?: components["schemas"]["ByCurrency_BriefFxMove_"] | null;
+            investing_power_since?: components["schemas"]["ByCurrency_Union_BriefInvestingPower__NoneType__"] | null;
             /** Kind */
             kind?: ("session" | "sessions" | "fx_reopen") | null;
             /** Last Ack At */
@@ -2165,6 +2219,20 @@ export interface components {
         ByCurrency_PeriodsOut_: {
             EUR: components["schemas"]["PeriodsOut"];
             USD: components["schemas"]["PeriodsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[Union[BriefCurrencyEffect, NoneType]] */
+        ByCurrency_Union_BriefCurrencyEffect__NoneType__: {
+            EUR: components["schemas"]["BriefCurrencyEffect"] | null;
+            USD: components["schemas"]["BriefCurrencyEffect"] | null;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[Union[BriefInvestingPower, NoneType]] */
+        ByCurrency_Union_BriefInvestingPower__NoneType__: {
+            EUR: components["schemas"]["BriefInvestingPower"] | null;
+            USD: components["schemas"]["BriefInvestingPower"] | null;
             /** Detail */
             detail?: string | null;
         };

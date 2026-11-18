@@ -18,6 +18,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Daily Brief: the currency since your last visit.** `GET /api/brief` now carries,
+  for the whole window since you last dismissed it, the euro view's currency effect on
+  the portfolio (`currency_effect_since`: the current book at today's rate minus the
+  same book at the rate when you last looked) and the dollar view's investing power
+  (`investing_power_since`: what your regular euro amount buys in dollars now versus
+  then). The rate at your last visit is recorded when you dismiss the Brief.
+- **Setting "Daily Brief closes after (minutes, 0 = never)"** under Display (default 3,
+  0 to 60).
 - **Daily Brief on the Overview.** When a NYSE open or close has passed since you last
   dismissed it, a card above the portfolio value says what happened: for one session the
   day's move (market and currency apart in the euro view), the biggest mover each way and
