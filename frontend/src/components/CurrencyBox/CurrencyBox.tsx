@@ -252,7 +252,7 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
 }
 
 /**
- * The daily "Currency · EUR ↔ USD" box (NiceGUI `_currency_box_html`): spot pair
+ * The daily "Currency" box (the first stat names the pair) (NiceGUI `_currency_box_html`): spot pair
  * with provenance stamp, the regime-aware move and since-open/close stat, the
  * weekend freeze, and the currency effect (EUR) / investing power (USD) split
  * into market hours and overnight.
@@ -269,7 +269,7 @@ export function CurrencyBox({ data, footer, collapsibleId = "overview.currency" 
       className="currency-box"
       title={
         <span className="currency-box__title" data-truncate-ok>
-          Currency<span className="currency-box__pair"> · EUR ↔ USD</span>
+          Currency
         </span>
       }
       collapsibleId={collapsibleId}

@@ -26,14 +26,6 @@
     }
   }
 
-  // A narrow card (the Overview side column) drops the pair from the title rather than
-  // cutting it: the rate rows below name the pair anyway.
-  &__pair {
-    @container currency-box (max-width: 26rem) {
-      display: none;
-    }
-  }
-
   &__header-badges {
     display: inline-flex;
     flex-wrap: nowrap;

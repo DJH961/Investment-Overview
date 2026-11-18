@@ -46,7 +46,7 @@ afterEach(() => localStorage.clear());
 describe("CurrencyBox", () => {
   it("open market (EUR): rate, live stamp, today and since-open, live leg first", () => {
     const { container } = render(<CurrencyBox data={overview("EUR", {})} />);
-    expect(screen.getByRole("button", { name: "Currency · EUR ↔ USD" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Currency" })).toBeInTheDocument();
     expect(screen.getByText("USD/EUR")).toBeInTheDocument();
     expect(screen.getByText("0.9259")).toBeInTheDocument();
     expect(screen.getByText(/as of 14:31/)).toBeInTheDocument();

@@ -173,9 +173,15 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    // Never narrower than its own text: a Day line "-0.53% sun -0.40%" claims its width from the
+    // weight bar instead of running left into the Value column.
     min-width: 0;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+
+    @include m.tablet-up {
+      min-width: max-content;
+    }
   }
 
   &__main {

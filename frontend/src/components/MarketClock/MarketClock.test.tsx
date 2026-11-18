@@ -34,6 +34,20 @@ describe("formatCountdown", () => {
 });
 
 describe("clockView", () => {
+  it("counts to the server instant, whatever the display zone (US close 22:00 CET)", () => {
+    const f: ClockFreshness = { market_state: "open", next_close_at: "2026-11-18T21:00:00Z", next_open_at: null };
+    const now = new Date("2026-11-18T18:14:00Z");
+    for (const tz of ["UTC", "Europe/Berlin", "America/New_York"]) {
+      expect(clockView(f, now, tz).next).toBe("closes in 2 h 46 min");
+    }
+  });
+
+  it("across a DST change the countdown is still the real elapsed time", () => {
+    // US spring-forward 2026-03-08: close 16:00 EDT = 20:00Z, now 09:30 EST... = 14:30Z the same day.
+    const f: ClockFreshness = { market_state: "open", next_close_at: "2026-03-08T20:00:00Z", next_open_at: null };
+    expect(clockView(f, new Date("2026-03-08T14:30:00Z"), "America/New_York").next).toBe("closes in 5 h 30 min");
+  });
+
   it("open: since the open, counting to the close", () => {
     const v = clockView(open, new Date("2026-06-30T16:48:00Z"), "UTC");
     expect(v.state).toBe("Open");

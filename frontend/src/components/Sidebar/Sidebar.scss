@@ -42,7 +42,11 @@
   }
 
   &__brand-text {
-    @include m.truncate;
+    // Two lines ("Investment" over "Overview"): the slot beside the collapse button is ~139 px.
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
     // The wordmark in the UI sans, medium: the display serif at 14-16 px rendered
     // thin and blotchy on Windows (caption optical size + tight tracking) and read as
     // a broken fallback. 14 px medium fits the 139 px brand slot (semibold or 16 px
@@ -53,6 +57,11 @@
     letter-spacing: -0.01em;
     line-height: var(--line-height-tight);
     -webkit-font-smoothing: antialiased;
+  }
+
+  &__brand-line {
+    display: block;
+    white-space: nowrap;
   }
 
   &__toggle {

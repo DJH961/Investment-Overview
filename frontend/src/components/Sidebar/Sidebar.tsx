@@ -87,7 +87,10 @@ export function Sidebar({ collapsed, onToggle, summary }: SidebarProps) {
     <aside className={clsx("sidebar", "u-ink", collapsed && "sidebar--rail")}>
       <div className="sidebar__brand">
         <BrandMark className="sidebar__logo" size={32} />
-        <span className="sidebar__brand-text">Investment Overview</span>
+        <span className="sidebar__brand-text">
+          <span className="sidebar__brand-line">Investment</span>{" "}
+          <span className="sidebar__brand-line">Overview</span>
+        </span>
         {!collapsed && toggle}
       </div>
       {!collapsed && <Pocket summary={summary} />}
