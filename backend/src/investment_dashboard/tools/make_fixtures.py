@@ -638,19 +638,25 @@ def seed_full(session: Any) -> None:
     add(retirement, seen, "interest", "5.42", created_at=_dt.datetime(2026, 6, 29, 21, 32))
     session.add_all(rows)
     session.flush()
-    # The owner last had the app open yesterday just after the close (the start of
-    # the absence): the Brief has today's session as its window, and the
-    # rate then is the intraday sample stored 5 minutes before that heartbeat.
-    previous_seen = _dt.datetime(2026, 6, 29, 21, 0, tzinfo=_dt.UTC)
+    # The owner last had the app open on Thursday just after the close (three sessions
+    # ago): the Brief's window is the absence since, and the rate then is the intraday
+    # sample stored 5 minutes before that last visible read. The sample carries the
+    # intraday-priced holdings' value as of that Thursday's close.
+    from investment_dashboard.services import intraday_snapshots_service, positions_service
+
+    previous_seen = _dt.datetime(2026, 6, 25, 21, 0, tzinfo=_dt.UTC)
     brief_service._store(session, brief_service.FROM_KEY, previous_seen)
     brief_service._store(session, brief_service.START_KEY, FROZEN_NOW)
     brief_service._store(session, brief_service.SEEN_KEY, FROZEN_NOW)
+    then = positions_service.compute_positions(session, as_of=previous_seen.date())
+    usd_then = intraday_snapshots_service.market_value_usd(then, FX_LAST_VISIT)
+    assert usd_then is not None
     intraday_repo.insert_sample(
         session,
         (previous_seen - _dt.timedelta(minutes=5)).replace(tzinfo=None),
-        D("1000000"),
+        usd_then / FX_LAST_VISIT,
         fx_eur_usd=FX_LAST_VISIT,
-        market_value_usd=D("1000000") * FX_LAST_VISIT,
+        market_value_usd=usd_then,
     )
     _seed_open_session(session, inst, today)
 

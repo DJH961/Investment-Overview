@@ -150,7 +150,7 @@ def ack(session: Session, *, seen_at: datetime | None, now: datetime) -> datetim
     return target
 
 
-def _live_rate(now: datetime) -> Decimal | None:
+def live_rate(now: datetime) -> Decimal | None:
     """The live EUR/USD spot (USD per 1 EUR) active at ``now``, via the FX service."""
     from investment_dashboard.services import fx_service  # noqa: PLC0415
 
@@ -214,7 +214,7 @@ def fx_since(
     if sampled is not None:
         rate_now = sampled
     elif rate_now is None or rate_now <= 0:
-        rate_now = _live_rate(now)
+        rate_now = live_rate(now)
     if rate_then is None or rate_now is None:
         return None
     book = metrics_service.book_holdings(session, intraday_snapshots_service.last_session_date(now))

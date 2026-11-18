@@ -23,7 +23,7 @@ from decimal import Decimal
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from investment_dashboard.domain import market_hours
+from investment_dashboard.domain import market_hours, periods
 from investment_dashboard.domain.late_data import Holding, value_at_rate
 from investment_dashboard.domain.session_fx import fx_buying_power_split
 
@@ -186,3 +186,71 @@ def investing_power_since(
     then = amount_eur * rate_then
     now = amount_eur * rate_now
     return InvestingPowerSince(amount_eur, then, now, split.total_usd, split.total_usd / then)
+
+
+@dataclass(frozen=True)
+class WindowFigures:
+    """The book's move over the Brief's window, in one reporting currency."""
+
+    #: ``end - start - net_flows``: the book's own gain, deposits and withdrawals out.
+    move: Decimal
+    #: The period-growth definition (:func:`periods.growth_after_flows`): the move over
+    #: the money at work, ``start + net_flows``; ``None`` when that is not positive.
+    pct: Decimal | None
+    #: The market part. EUR view: ``move - currency_move``; USD view (no currency leg): ``move``.
+    price_move: Decimal
+    currency_move: Decimal | None
+
+
+def window_figures(
+    *,
+    start_value: Decimal,
+    end_value: Decimal,
+    net_flows: Decimal,
+    currency_move: Decimal | None,
+) -> WindowFigures:
+    """The window's move, its percentage and its split: ``price + currency == move``.
+
+    ``net_flows`` is the money put INTO the book inside the window (deposits positive,
+    withdrawals negative, the app's cashflow definition). ``currency_move`` is the rate's
+    effect on the start book in the euro view (:func:`currency_effect_since`) and
+    ``None`` in the dollar view, where the market is the whole move.
+    """
+    move = periods.move_after_flows(start_value, end_value, net_flows)
+    pct = periods.growth_after_flows(start_value, end_value, net_flows)
+    price = move if currency_move is None else move - currency_move
+    return WindowFigures(move, pct, price, currency_move)
+
+
+def holding_window_move(
+    *,
+    view: Literal["EUR", "USD"],
+    native_currency: str,
+    shares: Decimal,
+    price_start: Decimal,
+    price_end: Decimal,
+    rate_then: Decimal | None,
+    rate_now: Decimal | None,
+) -> tuple[Decimal, Decimal] | None:
+    """One holding's ``(move, pct)`` over the window in the reporting currency ``view``.
+
+    The shares held at the window's start are valued at the start price and at the end
+    price, each in ``view`` at that instant's rate (a holding in the view's own
+    currency needs no rate and is never converted; the other of EUR/USD needs both
+    rates). ``None`` when a needed rate is missing, the currency is neither EUR nor
+    USD, or the start value is not positive.
+    """
+    ccy = native_currency.upper()
+    if ccy == view:
+        value_then, value_now = shares * price_start, shares * price_end
+    elif {ccy, view} == {"EUR", "USD"} and rate_then and rate_now:
+        if view == "EUR":  # USD holding seen in euros
+            value_then, value_now = shares * price_start / rate_then, shares * price_end / rate_now
+        else:  # EUR holding seen in dollars
+            value_then, value_now = shares * price_start * rate_then, shares * price_end * rate_now
+    else:
+        return None
+    if value_then <= 0:
+        return None
+    move = value_now - value_then
+    return move, move / value_then

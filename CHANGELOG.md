@@ -62,6 +62,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not gated).
 
 ### Fixed
+- **Daily Brief shows the whole absence, also over several sessions.** `GET /api/brief`
+  carries `window_move` (per currency, for one session and for several): the book's value
+  at the start of your absence (an intraday sample when one exists, else the last official
+  close), the value now (the hero's headline), money put in meanwhile, the move net of it,
+  its percentage (the period-growth definition), the market and currency parts (euro view)
+  and the top three up and down holdings by the shares held at the start.
 - **Daily Brief numbers add up.** The session's move is the hero's headline (the estimate
   while it says est.), Market + Currency sum to it in the euro view and Market is the
   whole move in the dollar view (the Brief used to mix the official and the estimated
