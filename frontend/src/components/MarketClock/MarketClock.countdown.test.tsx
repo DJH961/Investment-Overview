@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MarketClock, type ClockFreshness } from "./MarketClock";
+import { MarketClock, firstFullHour, type ClockFreshness } from "./MarketClock";
 
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
@@ -125,5 +125,42 @@ describe("MarketClock countdown", () => {
     expect(onBoundary).not.toHaveBeenCalled();
     expect(root()).toHaveTextContent("Open");
     expect(root().textContent).not.toMatch(/-/);
+  });
+});
+
+describe("firstFullHour (progress bar notches)", () => {
+  it("lands on the full hours of the wall clock, not the open + n hours", () => {
+    // 15:30 in Berlin (CET) -> the first notch is 16:00 Berlin = 15:00Z.
+    expect(new Date(firstFullHour(Date.parse("2026-11-17T14:30:00Z"), "Europe/Berlin")).toISOString()).toBe("2026-11-17T15:00:00.000Z");
+    // A half-hour zone: 14:30Z is 20:00 in Kolkata, already a full hour there.
+    expect(new Date(firstFullHour(Date.parse("2026-11-17T14:30:00Z"), "Asia/Kolkata")).toISOString()).toBe("2026-11-17T14:30:00.000Z");
+  });
+});
+
+describe("MarketClock on a half day (Black Friday 2026: closes 13:00 ET = 18:00Z)", () => {
+  const halfDay: ClockFreshness = {
+    market_state: "open",
+    next_close_at: "2026-11-27T18:00:00+00:00",
+    next_open_at: "2026-11-30T14:30:00+00:00",
+    session_opened_at: "2026-11-27T14:30:00+00:00",
+  };
+  it("counts to the early close, not to 16:00", () => {
+    render(<MarketClock freshness={halfDay} now={new Date("2026-11-27T17:30:00Z")} />);
+    expect(digits()).toBe("00:30:00");
+    expect(root()).toHaveTextContent("14:30 18:00");
+    // Full UTC hours inside 14:30-18:00: 15, 16, 17.
+    expect(root().querySelectorAll(".market-clock__tick")).toHaveLength(3);
+  });
+  it("after the early close, the overnight bar starts at the real close", () => {
+    const after: ClockFreshness = {
+      market_state: "closed",
+      next_close_at: "2026-11-30T21:00:00+00:00",
+      next_open_at: "2026-11-30T14:30:00+00:00",
+      last_close_at: "2026-11-27T18:00:00+00:00",
+    };
+    render(<MarketClock freshness={after} now={new Date("2026-11-27T19:00:00Z")} />);
+    expect(root()).toHaveTextContent("Until the opening bell");
+    // One hour into the 68.5 h wait from the real 18:00Z close (not a 17.5 h guess).
+    expect(root().querySelector<HTMLElement>(".market-clock__fill")?.style.width).toBe("1.46%");
   });
 });

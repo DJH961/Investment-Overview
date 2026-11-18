@@ -47,11 +47,10 @@
   &__title {
     @include m.truncate;
     padding: 0 var(--space-2);
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
+    // Sentence case, like every other title in the app (no tracked-out caps label).
+    color: var(--color-text);
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
 }
 

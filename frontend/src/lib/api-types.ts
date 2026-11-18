@@ -3103,6 +3103,8 @@ export interface components {
              * @default false
              */
             historical: boolean;
+            /** Last Close At */
+            last_close_at?: string | null;
             /** Last Price Update At */
             last_price_update_at?: string | null;
             /**

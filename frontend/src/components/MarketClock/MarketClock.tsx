@@ -8,6 +8,8 @@ import "./MarketClock.scss";
 type FreshnessDto = NonNullable<OverviewDto["freshness"]>;
 export type ClockFreshness = Pick<FreshnessDto, "market_state" | "next_open_at" | "next_close_at"> & {
   session_opened_at?: string | null;
+  /** The last close before now (half-days and holidays included); the overnight bar starts here. */
+  last_close_at?: string | null;
 };
 
 export interface MarketClockProps {
@@ -25,6 +27,15 @@ export interface MarketClockProps {
 const SECOND = 1000;
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
+
+/** The first instant at or after `ms` that is a full hour on the wall clock of `timeZone`. */
+export function firstFullHour(ms: number, timeZone?: string): number {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone, minute: "numeric", second: "numeric" }).formatToParts(new Date(ms));
+  const min = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  const sec = Number(parts.find((p) => p.type === "second")?.value ?? 0);
+  const past = min * MINUTE + sec * 1000 + (ms % 1000);
+  return past === 0 ? ms : ms - past + HOUR;
+}
 const DAY = 24 * HOUR;
 /** After the boundary passed, "the bell has rung" is said for this long while the refetch lands. */
 const JUST_PASSED = 5 * MINUTE;
@@ -124,8 +135,14 @@ export function trackSpan(f: ClockFreshness): { start: number; end: number } | n
     const opened = f.session_opened_at ? parseInstant(f.session_opened_at).getTime() : Number.NaN;
     start = Number.isNaN(opened) ? at - SESSION : opened;
   } else {
-    const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: NY }).format(at);
-    start = at - OVERNIGHT - (weekday === "Mon" ? 2 * DAY : 0);
+    // The server's real last close (13:00 ET after a half-day, the day before a holiday);
+    // an estimate only for older payloads without it.
+    const closed = f.last_close_at ? parseInstant(f.last_close_at).getTime() : Number.NaN;
+    if (!Number.isNaN(closed)) start = closed;
+    else {
+      const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: NY }).format(at);
+      start = at - OVERNIGHT - (weekday === "Mon" ? 2 * DAY : 0);
+    }
   }
   return at > start ? { start, end: at } : null;
 }
@@ -211,10 +228,12 @@ export function useClockModel(freshness: ClockFreshness | null | undefined, onBo
   const parts = remaining != null ? splitCountdown(remaining) : rung ? splitCountdown(0) : null;
   const progress = trackProgress(freshness, now);
   const span = trackSpan(freshness);
-  // Hour notches along a session (none on the long overnight / weekend wait).
+  // Notches on the full hours of the owner's clock (16:00, 17:00 … for a 15:30 open),
+  // none on the long overnight / weekend wait.
   const ticks: number[] = [];
   if (span && span.end - span.start <= 8 * HOUR)
-    for (let t = span.start + HOUR; t < span.end - 1000; t += HOUR) ticks.push((t - span.start) / (span.end - span.start));
+    for (let t = firstFullHour(span.start, timeZone); t < span.end - 1000; t += HOUR)
+      if (t > span.start + 1000) ticks.push((t - span.start) / (span.end - span.start));
   const bell = open ? "closing" : "opening";
   const label = rung ? `The ${bell} bell has rung` : `Until the ${bell} bell`;
   const soon = remaining != null && remaining <= SOON;

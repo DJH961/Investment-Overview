@@ -307,6 +307,9 @@ class Freshness(ApiModel):
     next_close_at: str | None = None
     #: While open: when this session opened; null while shut.
     session_opened_at: str | None = None
+    #: The most recent session close at or before now (13:00 ET after a half-day; the
+    #: session before a holiday or weekend). The overnight countdown runs from here.
+    last_close_at: str | None = None
 
 
 class DailyCaption(ApiModel):

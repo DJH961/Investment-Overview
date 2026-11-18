@@ -4193,6 +4193,17 @@
             "title": "Historical",
             "type": "boolean"
           },
+          "last_close_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Close At"
+          },
           "last_price_update_at": {
             "anyOf": [
               {

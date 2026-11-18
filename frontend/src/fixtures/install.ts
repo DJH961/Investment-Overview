@@ -126,7 +126,10 @@ function briefFor(mode: BriefMode, data: Fixtures, recorded: unknown): unknown {
       }),
     );
     const sessions = (base.sessions as string[] | undefined)?.slice(-1) ?? [];
-    return { ...base, kind: "session", sessions, sessions_passed: 1, move };
+    // Away since the evening before that session (the recorded absence spans three).
+    const day = dayNumber(sessions[0] ?? ANCHOR);
+    const visitFrom = `${new Date((day - 1) * 86_400_000).toISOString().slice(0, 10)}T21:00:00+00:00`;
+    return { ...base, kind: "session", sessions, sessions_passed: 1, move, visit_from: visitFrom, window_move: null };
   }
   const fx = Object.fromEntries(
     sides.map((c) => {

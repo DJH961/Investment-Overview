@@ -12882,6 +12882,7 @@
    "freshness": {
     "feed_stalled_since": null,
     "historical": false,
+    "last_close_at": "2026-06-29T20:00:00+00:00",
     "last_price_update_at": null,
     "market_state": "open",
     "next_close_at": "2026-06-30T20:00:00+00:00",
@@ -13025,6 +13026,7 @@
    "freshness": {
     "feed_stalled_since": null,
     "historical": false,
+    "last_close_at": "2026-06-29T20:00:00+00:00",
     "last_price_update_at": null,
     "market_state": "open",
     "next_close_at": "2026-06-30T20:00:00+00:00",
