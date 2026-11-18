@@ -109,35 +109,55 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // Phone: a three-column mini grid. Each stat is one column, label over value over
-  // its note, and the three rows line up across the columns (subgrid), whatever
-  // wraps, in EUR and in USD.
+  // Phone: a ruled statement list, one stat per row. The label (and its ⓘ) sits
+  // left on one line; the figure is right-aligned with its money note directly
+  // under it, so nothing wraps or floats at 360 px, in EUR or USD.
   @include m.phone {
     &__strip {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      grid-template-rows: auto auto auto;
-      gap: var(--space-1) var(--space-3);
-      padding: var(--space-3) var(--card-pad-x) var(--space-4);
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding: var(--space-1) var(--card-pad-x);
     }
 
     &__stat {
       display: grid;
-      grid-row: span 3;
-      grid-template-rows: subgrid;
-      align-items: start;
-      gap: var(--space-1) 0;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "label value"
+        "label sub";
+      align-items: center;
+      column-gap: var(--space-4);
+      row-gap: 0;
       min-width: 0;
+      padding: var(--space-3) 0;
+      border-top: var(--border-width) solid var(--color-border);
+
+      &:first-child {
+        border-top: 0;
+      }
     }
 
     &__stat-label {
-      align-self: end;
+      grid-area: label;
+      flex-wrap: nowrap;
       gap: var(--space-1);
-      font-size: var(--font-size-xs);
+      min-width: 0;
+      font-size: var(--font-size-sm);
+      white-space: nowrap;
     }
 
     &__stat-value {
+      grid-area: value;
+      justify-self: end;
       font-size: var(--font-size-md);
+      font-weight: var(--font-weight-semibold);
+    }
+
+    &__stat-sub {
+      grid-area: sub;
+      justify-self: end;
+      white-space: nowrap;
     }
   }
 }
