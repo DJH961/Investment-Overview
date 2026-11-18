@@ -43,14 +43,15 @@
 
   &__brand-text {
     @include m.truncate;
-    font-family: var(--font-display);
-    font-size: var(--font-size-sm);
-
-    @include m.xl {
-      font-size: var(--font-size-md);
-    }
-    font-weight: var(--font-weight-medium);
-    letter-spacing: var(--tracking-tight);
+    // The wordmark in the UI sans, semibold: the display serif at 14-16 px rendered
+    // thin and blotchy on Windows (caption optical size + tight tracking) and read as
+    // a broken fallback. The serif stays for the big figures, where it is crisp.
+    font-family: var(--font-sans);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.01em;
+    line-height: var(--line-height-tight);
+    -webkit-font-smoothing: antialiased;
   }
 
   &__toggle {

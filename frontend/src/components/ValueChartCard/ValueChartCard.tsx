@@ -260,6 +260,12 @@ export function ValueChartCard({
         <>
           <Chart
             headerExtra={split}
+            // On the legend row, right-aligned: no extra line under the chart.
+            legendExtra={
+              (shown === "1d" || shown === "1w") && g?.funds_estimated ? (
+                <EstimatedNote funds={g.estimated_funds} week={shown === "1w"} />
+              ) : undefined
+            }
             nowMarker={nowMarker}
             series={series}
             range={range}
@@ -288,9 +294,6 @@ export function ValueChartCard({
             emptyMessage="No history for this range yet."
             ariaLabel="Portfolio value over time"
           />
-          {(shown === "1d" || shown === "1w") && g?.funds_estimated && (
-            <EstimatedNote funds={g.estimated_funds} week={shown === "1w"} />
-          )}
           {(shown === "1d" || shown === "1w") && (g?.data_gaps?.length ?? 0) > 0 && (
             <p className="value-chart-card__note" data-testid="data-gaps-note">
               No market data from the price provider{" "}

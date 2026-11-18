@@ -30,13 +30,6 @@
     }
   }
 
-  // "Investment … · Currency … pp": the currency clause is EUR-only, so the line
-  // keeps two lines of room in every view (no jump on a currency switch).
-  &__growth {
-    display: block;
-    min-height: calc(2em * var(--line-height-base));
-  }
-
   // "Need VT history": a note, not a figure.
   &__verdict {
     font-size: var(--font-size-md);
@@ -110,19 +103,41 @@
   }
 
   &__stat-sub {
+    margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
   }
 
-  // Phone: each stat's money note always takes its own line, so a longer US$ note
-  // cannot wrap one currency's strip taller than the other's.
+  // Phone: a three-column mini grid. Each stat is one column, label over value over
+  // its note, and the three rows line up across the columns (subgrid), whatever
+  // wraps, in EUR and in USD.
   @include m.phone {
-    &__stat-value {
-      flex-wrap: wrap;
+    &__strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: auto auto auto;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-3) var(--card-pad-x) var(--space-4);
     }
 
-    &__stat-sub {
-      flex-basis: 100%;
+    &__stat {
+      display: grid;
+      grid-row: span 3;
+      grid-template-rows: subgrid;
+      align-items: start;
+      gap: var(--space-1) 0;
+      min-width: 0;
+    }
+
+    &__stat-label {
+      align-self: end;
+      gap: var(--space-1);
+      font-size: var(--font-size-xs);
+    }
+
+    &__stat-value {
+      font-size: var(--font-size-md);
     }
   }
 }

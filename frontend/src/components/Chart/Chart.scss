@@ -364,6 +364,14 @@
     font-size: var(--font-size-xs);
   }
 
+  // A short note (e.g. NAVs estimated) at the right end of the legend row.
+  &__legend-extra {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+    min-width: 0;
+  }
+
   // Legend chips: a hairline pill, the swatch matching the series line style.
   &__legend-item {
     display: inline-flex;

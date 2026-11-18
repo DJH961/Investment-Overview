@@ -3,7 +3,6 @@ import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
-import { formatPercent, formatPp } from "../../lib/format";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
@@ -78,22 +77,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     ) : undefined;
   const v = data?.market_verdict;
 
-  // The lifetime return split, under the tile it explains. The GROWTH figure is the
-  // tile's own value and shows in every currency — never hide in one view a number
-  // the other shows. The currency clause is gated on the VALUE, not on the currency
-  // name: a dollar return has no exchange-rate leg, so the server reports an effect
-  // of 0 and the clause simply does not apply. Gating on the figure rather than on
-  // "is this EUR" keeps the two views structurally identical (the Overview currency
-  // test asserts that) and still works for a EUR-native holding viewed in USD.
-  const split = data?.currency?.return_split;
-  const effect = toNum(split?.currency_effect_pp ?? null);
-  const growthSplit = split ? (
-    <span className="kpi-grid__growth" data-testid="hero-split">
-      Investment {formatPercent(toNum(split.investment_return), { signed: true })}
-      {effect !== null && Math.abs(effect) >= 0.00005 && <> · Currency {formatPp(effect)}</>}
-    </span>
-  ) : undefined;
-
   // The day Total, from the server (`day_split.price_move`; the field name is
   // historical): always the headline change, live while the market is open and
   // frozen at the close afterwards. `currency_move` is the exchange-rate figure:
@@ -144,7 +127,6 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           loading={loading}
           value={pct(k?.total_growth_compounded)}
           secondary={pct2(k2?.total_growth_compounded)}
-          hint={growthSplit}
         />
         <KpiTile
           label="Vs market"
@@ -191,13 +173,13 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={expense} />
-              {k.annual_expense_cost != null && (
-                <span className="kpi-grid__stat-sub">
-                  ≈ <Money amount={toNum(k.annual_expense_cost)} currency={currency} digits={0} />
-                  /yr
-                </span>
-              )}
             </dd>
+            {k.annual_expense_cost != null && (
+              <dd className="kpi-grid__stat-sub">
+                ≈ <Money amount={toNum(k.annual_expense_cost)} currency={currency} digits={0} />
+                /yr
+              </dd>
+            )}
           </div>
           <div className="kpi-grid__stat">
             <dt className="kpi-grid__stat-label">
@@ -206,12 +188,12 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={toNum(k.dividend_yield_pct)} />
-              {k.dividend_income != null && (
-                <span className="kpi-grid__stat-sub">
-                  <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} /> received
-                </span>
-              )}
             </dd>
+            {k.dividend_income != null && (
+              <dd className="kpi-grid__stat-sub">
+                <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} /> received
+              </dd>
+            )}
           </div>
           <div className="kpi-grid__stat">
             <dt className="kpi-grid__stat-label">
@@ -220,12 +202,12 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
             </dt>
             <dd className="kpi-grid__stat-value">
               <Percent ratio={toNum(k.dividend_yield_ttm_pct)} />
-              {ttm !== null && (
-                <span className="kpi-grid__stat-sub">
-                  <Money amount={ttm} currency={currency} digits={0} /> paid
-                </span>
-              )}
             </dd>
+            {ttm !== null && (
+              <dd className="kpi-grid__stat-sub">
+                <Money amount={ttm} currency={currency} digits={0} /> paid
+              </dd>
+            )}
           </div>
         </dl>
       )}

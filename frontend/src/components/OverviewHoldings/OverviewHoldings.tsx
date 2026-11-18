@@ -203,10 +203,10 @@ function TwinSubRow({
       </span>
       <span className="overview-holdings__cell overview-holdings__twin-day">
         <span className="overview-holdings__twin-num">
-          ≈<Percent ratio={toNum(twin.est_today_pct ?? null)} signed colored />
+          ≈<Money amount={toNum(twin.est_today_move ?? null)} currency={ccy} signed colored />
         </span>
         <span className="overview-holdings__twin-num overview-holdings__twin-sub">
-          ≈<Money amount={toNum(twin.est_today_move ?? null)} currency={ccy} signed colored />
+          ≈<Percent ratio={toNum(twin.est_today_pct ?? null)} signed colored />
         </span>
       </span>
       {/* Every other row reports money and percent since buying; so does this one. */}
@@ -307,25 +307,25 @@ function Row({
         title={staleMove ?? undefined}
       >
         {/*
-          Two lines in every currency, so EUR and USD rows have one shape: the day's
-          Total %, then (EUR, the row has a split) its ☀ day part, or else the Total in
-          money. The ☾ night part is the same for every dollar holding, so the card
-          says it once in its header instead of on every row (server figures only).
+          One shape in every currency: the day's Total in money on top, its % under
+          it, and (EUR, the row has a split) the ☀ day part beside that %. Nothing is
+          dropped for looks: money AND % in EUR and USD alike. The ☾ night part is the
+          same for every dollar holding, so the card says it once in its header
+          instead of on every row (server figures only).
         */}
         <span className="overview-holdings__main">
-          <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
+          <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
         </span>
-        {hasSplit(row, ccy) && !stale ? (
-          <span className="overview-holdings__sub overview-holdings__sun" data-testid="holding-day-split" title="☀ Day: prices and currency while the US market is open">
-            <Sun className="overview-holdings__sun-icon" aria-hidden />
-            <span className="overview-holdings__sr">Session</span>
-            <Percent ratio={toNum(row.day_session_pct ?? null)} signed colored />
-          </span>
-        ) : (
-          <span className="overview-holdings__sub">
-            <Money amount={toNum(row.today_move)} currency={ccy} signed colored={!stale} />
-          </span>
-        )}
+        <span className="overview-holdings__sub overview-holdings__day-sub">
+          <Percent ratio={toNum(row.today_pct)} signed colored={!stale} />
+          {hasSplit(row, ccy) && !stale && (
+            <span className="overview-holdings__sun" data-testid="holding-day-split" title="☀ Day: prices and currency while the US market is open">
+              <Sun className="overview-holdings__sun-icon" aria-hidden />
+              <span className="overview-holdings__sr">Session</span>
+              <Percent ratio={toNum(row.day_session_pct ?? null)} signed colored />
+            </span>
+          )}
+        </span>
         {staleMove && <span className="overview-holdings__sr">{staleMove}</span>}
       </span>
       <span className="overview-holdings__cell overview-holdings__total">

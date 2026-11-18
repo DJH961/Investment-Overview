@@ -1,25 +1,38 @@
 @use "../../styles/mixins" as m;
 
 .currency-box {
+  // Title and the Live / closed pill always share ONE line (no wrap, no jump): the
+  // title gives way first (smaller in a narrow card, then an ellipsis).
+  & > .card__header {
+    flex-wrap: nowrap;
+  }
+
+  & > .card__header > :first-child {
+    min-width: 0;
+  }
+
   &__title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    @container currency-box (max-width: 26rem) {
+      font-size: var(--font-size-md);
+    }
+
     @include m.phone {
       font-size: var(--font-size-sm);
-      white-space: nowrap;
     }
   }
 
   &__header-badges {
     display: inline-flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: flex-end;
-    gap: var(--space-1) var(--space-2);
+    gap: var(--space-1);
     margin-left: auto;
-
-    @include m.phone {
-      flex-wrap: nowrap;
-      gap: var(--space-1);
-    }
   }
 
   &__stamp,
@@ -200,7 +213,9 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // The lead: what the rate did since yesterday, as the card's biggest figure.
+  // The lead: what the rate did since yesterday, as the card's biggest figure. It
+  // comes first at every width (left column when wide), so the headline value sits
+  // right under the card title instead of floating beside the rate list.
   &__effect {
     display: flex;
     flex-direction: column;
@@ -211,7 +226,6 @@
     border-bottom: var(--border-width) solid var(--color-border);
 
     @container currency-box (min-width: 34rem) {
-      order: 0;
       padding-bottom: 0;
       border-bottom: 0;
     }
@@ -220,7 +234,7 @@
   &__effect-head {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: 2px;
   }
 
   &__effect-title {

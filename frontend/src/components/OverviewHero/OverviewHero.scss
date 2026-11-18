@@ -213,15 +213,15 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // The change row and the price time, together while they fit. One flex line
-  // that wraps: `space-between` pushes the stamps to the right-hand edge while
-  // both share it, and leaves them at the left edge on their own wrapped line.
-  &__line {
+  // Everything under the big value on one wrapping row across the full width:
+  // move, ☀/☾ split, FX, official; the other currency's move ends it on the right.
+  // The height is reserved in every view (no jump on EUR/USD).
+  &__facts {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-1) var(--space-4);
+    align-items: center;
+    gap: var(--space-2) var(--space-5);
+    min-height: var(--control-height-sm);
   }
 
   // The day's move on one line: badge, money, which day, the other currency.
@@ -261,15 +261,6 @@
   &__stamps {
     // Never the reason the line wraps: it yields its own width first.
     flex: 0 1 auto;
-  }
-
-  // Reserved for the ☀ + ☾ = total line in every view (no jump on EUR/USD).
-  &__split {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-1) var(--space-4);
-    min-height: var(--control-height-sm);
   }
 
   &__fx {
