@@ -92,6 +92,34 @@ class BriefCurrencyEffect(ApiModel):
     since: str
 
 
+class BriefWindowMove(ApiModel):
+    """The book's move over the whole window (``visit_from`` to now) in one currency.
+
+    ``move = end_value - start_value - net_flows``; ``pct`` is the period-growth
+    definition ``move / (start_value + net_flows)``. EUR view: ``price_move +
+    currency_move == move`` (the currency part is the rate's effect on the start
+    book); USD view: ``currency_move`` is null and ``price_move == move``.
+    """
+
+    start_at: str
+    end_at: str
+    #: ``intraday``: a stored sample at most 30 minutes before ``start_at``;
+    #: ``close``: the last official close at or before it.
+    start_basis: Literal["intraday", "close"]
+    start_value: DecStr
+    #: The hero's headline book now (the estimate while the hero estimates).
+    end_value: DecStr
+    #: Money put into the book inside the window (deposits minus withdrawals).
+    net_flows: DecStr
+    move: DecStr
+    pct: DecStr | None = Field(default=None, description=_FRAC)
+    price_move: DecStr
+    currency_move: DecStr | None = None
+    estimated: bool = False
+    #: Top three up and down holdings by percentage over the window.
+    movers: Movers
+
+
 class BriefInvestingPower(ApiModel):
     """USD view: the regular euro amount in dollars now versus at the window's start.
 
@@ -135,6 +163,9 @@ class BriefOut(ApiModel):
     move: ByCurrency[BriefMove] | None = None
     #: ``kind == "fx_reopen"`` only: the rate line, per currency view.
     fx_move: ByCurrency[BriefFxMove] | None = None
+    #: ``session`` and ``sessions`` kinds: the book's move over the whole window, per
+    #: currency (null when the window has no start value).
+    window_move: ByCurrency[BriefWindowMove | None] | None = None
     #: Each view's currency line since the previous visit, as the Overview's currency box
     #: does it. EUR side: the currency effect on the book (the USD side is always
     #: null). Null when the window is empty or no rate is known at its start.

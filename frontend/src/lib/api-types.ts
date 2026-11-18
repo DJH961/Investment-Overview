@@ -2084,11 +2084,55 @@ export interface components {
             sessions_passed: number;
             /** Visit From */
             visit_from?: string | null;
+            window_move?: components["schemas"]["ByCurrency_Union_BriefWindowMove__NoneType__"] | null;
         };
         /** BriefVisitIn */
         BriefVisitIn: {
             /** Visit From */
             visit_from: string;
+        };
+        /**
+         * BriefWindowMove
+         * @description The book's move over the whole window (``visit_from`` to now) in one currency.
+         *
+         *     ``move = end_value - start_value - net_flows``; ``pct`` is the period-growth
+         *     definition ``move / (start_value + net_flows)``. EUR view: ``price_move +
+         *     currency_move == move`` (the currency part is the rate's effect on the start
+         *     book); USD view: ``currency_move`` is null and ``price_move == move``.
+         */
+        BriefWindowMove: {
+            /** Currency Move */
+            currency_move?: string | null;
+            /** End At */
+            end_at: string;
+            /** End Value */
+            end_value: string;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            /** Move */
+            move: string;
+            movers: components["schemas"]["Movers"];
+            /** Net Flows */
+            net_flows: string;
+            /**
+             * Pct
+             * @description fraction, 0.01 = 1%
+             */
+            pct?: string | null;
+            /** Price Move */
+            price_move: string;
+            /** Start At */
+            start_at: string;
+            /**
+             * Start Basis
+             * @enum {string}
+             */
+            start_basis: "intraday" | "close";
+            /** Start Value */
+            start_value: string;
         };
         /** Bucket */
         Bucket: {
@@ -2266,6 +2310,13 @@ export interface components {
         ByCurrency_Union_BriefInvestingPower__NoneType__: {
             EUR: components["schemas"]["BriefInvestingPower"] | null;
             USD: components["schemas"]["BriefInvestingPower"] | null;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[Union[BriefWindowMove, NoneType]] */
+        ByCurrency_Union_BriefWindowMove__NoneType__: {
+            EUR: components["schemas"]["BriefWindowMove"] | null;
+            USD: components["schemas"]["BriefWindowMove"] | null;
             /** Detail */
             detail?: string | null;
         };

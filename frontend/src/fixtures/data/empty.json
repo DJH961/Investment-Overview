@@ -3503,7 +3503,8 @@
   "now": "2026-06-30T18:15:00+00:00",
   "sessions": [],
   "sessions_passed": 0,
-  "visit_from": null
+  "visit_from": null,
+  "window_move": null
  },
  "GET /api/calculator/both": {
   "EUR": {

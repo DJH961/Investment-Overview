@@ -381,3 +381,216 @@ def test_delete_visit_goes_back_to_automatic(api_client: TestClient) -> None:
     assert gone.json()["due"] is False
     assert gone.json()["visit_from"] is None
     assert _visit() is None
+
+
+def _seed_deposit(currency: str, amount: str, on: date) -> None:
+    """A deposit into the (already seeded) cash account of ``currency``."""
+    with ledger_session_scope() as session:
+        acct = next(
+            a for a in accounts_repo.list_accounts(session) if a.native_currency == currency
+        )
+        session.add(
+            Transaction(
+                account_id=acct.id,
+                date=on,
+                kind="deposit",
+                source=TransactionSource.MANUAL,
+                net_native=Decimal(amount),
+                created_at=datetime(on.year, on.month, on.day, 14, 0),
+            )
+        )
+    read_cache.invalidate()
+
+
+def _window_book(api_client: TestClient, *, deposit: bool) -> tuple[dict, dict]:
+    _seed_cash("USD", "10000")
+    _seed_cash("EUR", "2000")
+    if deposit:
+        _seed_deposit("USD", "500", date(2026, 10, 28))  # inside the window
+    _set_marker(BEFORE_OPEN)
+    brief = api_client.get("/api/brief").json()
+    overview = api_client.get("/api/overview/both").json()
+    return brief, overview
+
+
+def test_window_move_golden_with_a_rate_change_and_a_deposit(
+    api_client: TestClient, live_spot: Decimal
+) -> None:
+    brief, overview = _window_book(api_client, deposit=True)
+    assert brief["kind"] == "session"
+    win = brief["window_move"]
+    assert win is not None
+    rate_then, rate_now = Decimal("1.1600"), live_spot
+    for ccy in ("EUR", "USD"):
+        w = win[ccy]
+        assert datetime.fromisoformat(w["start_at"]) == BEFORE_OPEN
+        assert datetime.fromisoformat(w["end_at"]) == NOW
+        assert w["start_basis"] == "close"
+        # End value = the hero's headline; the move is net of the 500 USD deposit.
+        kpis = overview[ccy]["kpis"]
+        end = Decimal((kpis["estimate"] or kpis)["total_value"])
+        assert Decimal(w["end_value"]) == end
+        move = end - Decimal(w["start_value"]) - Decimal(w["net_flows"])
+        assert Decimal(w["move"]) == move
+        base = Decimal(w["start_value"]) + Decimal(w["net_flows"])
+        assert Decimal(w["pct"]) == move / base
+    eur, usd = win["EUR"], win["USD"]
+    # Start book: 10,000 USD + 2,000 EUR at the settled 1.1600, by hand.
+    assert Decimal(eur["start_value"]) == Decimal("10000") / rate_then + Decimal("2000")
+    assert Decimal(usd["start_value"]) == Decimal("10000") + Decimal("2000") * rate_then
+    # The deposit: 500 USD in dollars, 500 USD at that date's rate in euros.
+    assert Decimal(usd["net_flows"]) == Decimal("500")
+    assert abs(Decimal(eur["net_flows"]) - Decimal("500") / rate_then) < Decimal("0.0001")
+    # EUR: price + currency == move; the currency part is the rate's effect on the start
+    # book (the golden -36.99866805 EUR of the currency box for 10,000 USD).
+    expected_currency = Decimal("10000") / rate_now - Decimal("10000") / rate_then
+    assert round(expected_currency, 8) == Decimal("-36.99866805")
+    assert abs(Decimal(eur["currency_move"]) - expected_currency) < Decimal("1e-12")
+    assert Decimal(eur["price_move"]) + Decimal(eur["currency_move"]) == Decimal(eur["move"])
+    # USD: no currency leg, the market is the whole move.
+    assert usd["currency_move"] is None
+    assert usd["price_move"] == usd["move"]
+
+
+def test_window_move_without_a_deposit_has_zero_flows(
+    api_client: TestClient, live_spot: Decimal
+) -> None:
+    brief, _ = _window_book(api_client, deposit=False)
+    win = brief["window_move"]
+    assert Decimal(win["EUR"]["net_flows"]) == 0
+    assert Decimal(win["USD"]["net_flows"]) == 0
+    assert win["EUR"]["movers"]["winners"] == []
+
+
+def test_several_sessions_away_still_get_the_window_move(
+    api_client: TestClient, live_spot: Decimal
+) -> None:
+    _seed_cash("USD", "10000")
+    _set_marker(datetime(2026, 10, 26, 21, 0, tzinfo=UTC))  # Mon evening: two sessions
+    brief = api_client.get("/api/brief").json()
+    assert brief["kind"] == "sessions"
+    assert brief["move"] is None
+    win = brief["window_move"]
+    assert win is not None
+    assert Decimal(win["USD"]["start_value"]) == Decimal("10000")
+    assert Decimal(win["EUR"]["start_value"]) == Decimal("10000") / Decimal("1.1600")
+
+
+def test_window_move_is_the_whole_window_even_when_only_a_session_boundary_passed(
+    api_client: TestClient,
+) -> None:
+    _seed_cash("USD", "10000")
+    _set_marker(BEFORE_OPEN)
+    win = api_client.get("/api/brief").json()["window_move"]
+    assert win is not None
+    assert win["EUR"]["start_basis"] == "close"
+
+
+def test_long_window_movers_use_the_shares_held_at_the_start(  # noqa: PLR0915
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 16-day absence across two weekends, a deposit, a buy and a sell inside it.
+
+    Movers are the shares held when the window opened, at the start and the current
+    price: a holding opened inside the window (C) shows no fake move, a holding sold
+    inside it (B) is left out (it is not held any more, so there is no end value).
+    """
+    from investment_dashboard.repositories import instruments_repo, prices_repo
+
+    left = datetime(2026, 10, 13, 21, 0, tzinfo=UTC)  # Tue after the close
+    back = datetime(2026, 10, 29, 15, 0, tzinfo=UTC)  # Thu, the open has passed
+    _at(monkeypatch, back)
+    with ledger_session_scope() as session:
+        acct = accounts_repo.create_account(
+            session,
+            broker="fidelity",
+            account_label="Main",
+            native_currency="USD",
+            account_type="brokerage",
+        )
+        a = instruments_repo.get_or_create(
+            session, symbol="AAA", asset_class="etf", native_currency="USD"
+        )
+        b = instruments_repo.get_or_create(
+            session, symbol="BBB", asset_class="etf", native_currency="USD"
+        )
+        c = instruments_repo.get_or_create(
+            session, symbol="CCC", asset_class="etf", native_currency="USD"
+        )
+        oct1, oct13, oct20, oct21, oct22, oct29 = (
+            date(2026, 10, d) for d in (1, 13, 20, 21, 22, 29)
+        )
+        prices_repo.upsert_closes(
+            session, a.id, {oct1: Decimal("100"), oct13: Decimal("100"), oct29: Decimal("110")}
+        )
+        prices_repo.upsert_closes(
+            session,
+            b.id,
+            {oct1: Decimal("50"), oct13: Decimal("50"), oct22: Decimal("60"), oct29: Decimal("70")},
+        )
+        prices_repo.upsert_closes(session, c.id, {oct21: Decimal("40"), oct29: Decimal("44")})
+        fx_repo.upsert_rates(session, {oct1: Decimal("1.1600")})
+
+        def add(
+            on: date, kind: str, net: str, inst: object = None, qty: str = "", px: str = ""
+        ) -> None:
+            session.add(
+                Transaction(
+                    account_id=acct.id,
+                    date=on,
+                    kind=kind,
+                    source=TransactionSource.MANUAL,
+                    instrument_id=getattr(inst, "id", None),
+                    quantity=Decimal(qty) if qty else None,
+                    price_native=Decimal(px) if px else None,
+                    net_native=Decimal(net),
+                    created_at=datetime(on.year, on.month, on.day, 14, 0),
+                )
+            )
+
+        add(oct1, "deposit", "10000")
+        add(oct1, "buy", "-1000", a, "10", "100")
+        add(oct1, "buy", "-500", b, "10", "50")
+        add(oct20, "deposit", "2000")  # inside the window: money in, not a gain
+        add(oct21, "buy", "-200", c, "5", "40")  # opened inside the window
+        add(oct22, "sell", "600", b, "-10", "60")  # sold inside the window
+    read_cache.invalidate()
+    with ledger_session_scope() as session:
+        app_config_service.set_value(session, brief_service.FROM_KEY, left.isoformat())
+        app_config_service.set_value(session, brief_service.START_KEY, back.isoformat())
+        app_config_service.set_value(session, brief_service.SEEN_KEY, back.isoformat())
+    fx_service.set_live_spot("USD", Decimal("1.1650"), observed_on=back.date(), observed_at=back)
+    try:
+        brief = api_client.get("/api/brief").json()
+    finally:
+        fx_service.clear_live_spot()
+    assert brief["kind"] == "sessions"
+    assert brief["sessions_passed"] >= 10
+    win = brief["window_move"]
+    usd, eur = win["USD"], win["EUR"]
+    assert usd["start_basis"] == "close"
+    # Start book on Tue 13 Oct: AAA 1,000 + BBB 500 (brokerage cash is not in the book).
+    assert Decimal(usd["start_value"]) == Decimal("1500")
+    assert Decimal(eur["start_value"]) == Decimal("1500") / Decimal("1.1600")
+    # Only the 2,000 deposit is money in (the buy and the sell stay inside the book).
+    assert Decimal(usd["net_flows"]) == Decimal("2000")
+    assert abs(Decimal(eur["net_flows"]) - Decimal("2000") / Decimal("1.1600")) < Decimal("0.0001")
+    for side in (usd, eur):
+        assert side["movers"]["eligible_count"] == 1
+        assert [m["symbol"] for m in side["movers"]["winners"]] == ["AAA"]
+        assert side["movers"]["losers"] == []
+        assert side["movers"]["basis_date"] == "2026-10-13"
+    # USD: 10 shares, 100 -> 110 on the native price.
+    top = usd["movers"]["winners"][0]
+    assert Decimal(top["move"]) == Decimal("100")
+    assert Decimal(top["pct"]) == Decimal("0.1")
+    # EUR: the dollar holding is revalued at the rate of each instant. The rate now is
+    # recovered from the currency part of the 1,500 USD start book.
+    rate_then = Decimal("1.1600")
+    rate_now = Decimal("1500") / (Decimal(eur["currency_move"]) + Decimal("1500") / rate_then)
+    eur_top = eur["movers"]["winners"][0]
+    expected = (Decimal("1100") / rate_now) / (Decimal("1000") / rate_then) - 1
+    assert abs(Decimal(eur_top["pct"]) - expected) < Decimal("1e-18")
+    assert abs(
+        Decimal(eur_top["move"]) - (Decimal("1100") / rate_now - Decimal("1000") / rate_then)
+    ) < Decimal("1e-18")

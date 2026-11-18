@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from investment_dashboard.domain import brief as brief_domain
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import brief_service
+from investment_dashboard.services import brief_service, brief_window_service
 
 CURRENCIES = ("EUR", "USD")
 MAX_EVENTS = 20
@@ -168,6 +168,80 @@ def _fx_since(
     }
 
 
+def _mover_dict(row: brief_window_service.MoverRow) -> dict[str, Any]:
+    return {
+        "symbol": row.symbol,
+        "name": row.name,
+        "move": dec(row.move),
+        "pct": dec(row.pct),
+        "reason": "window",
+        "twin": None,
+    }
+
+
+def _window_move(
+    session: Session, overview_both: Any, since: datetime, now: datetime
+) -> dict[str, Any] | None:
+    """The whole window's move per currency, end value = the hero's headline book."""
+    inputs = brief_window_service.collect(session, start_at=since, now=now)
+    if inputs is None:
+        return None
+    rate_now = _live_rate(overview_both)
+    if rate_now is None:
+        rate_now = brief_service.live_rate(now)
+    effect = (
+        brief_domain.currency_effect_since(
+            inputs.book, rate_then=inputs.rate_then, rate_now=rate_now
+        )
+        if rate_now is not None
+        else None
+    )
+    out: dict[str, Any] = {}
+    for ccy in CURRENCIES:
+        overview = _get(overview_both, ccy)
+        kpis = _get(overview, "kpis")
+        estimate = _get(kpis, "estimate")
+        end = _dec(_get(estimate, "total_value") if estimate else _get(kpis, "total_value"))
+        usd = ccy == "USD"
+        start = inputs.start_usd if usd else inputs.start_eur
+        flows = inputs.flows_usd if usd else inputs.flows_eur
+        if end is None or start <= 0:
+            out[ccy] = None
+            continue
+        line = None if usd or effect is None else effect["EUR"]
+        figures = brief_domain.window_figures(
+            start_value=start,
+            end_value=end,
+            net_flows=flows,
+            currency_move=line.amount if line is not None else None,
+        )
+        eligible, winners, losers = brief_window_service.movers(
+            inputs.legs, view="USD" if usd else "EUR", rate_then=inputs.rate_then, rate_now=rate_now
+        )
+        out[ccy] = {
+            "start_at": _iso(inputs.start_at),
+            "end_at": _iso(inputs.end_at),
+            "start_basis": inputs.start_basis,
+            "start_value": dec(start),
+            "end_value": dec(end),
+            "net_flows": dec(flows),
+            "move": dec(figures.move),
+            "pct": dec(figures.pct),
+            "price_move": dec(figures.price_move),
+            "currency_move": dec(figures.currency_move),
+            "estimated": estimate is not None,
+            "movers": {
+                "basis_date": inputs.start_date.isoformat(),
+                "eligible_count": eligible,
+                "winners": [_mover_dict(r) for r in winners],
+                "losers": [_mover_dict(r) for r in losers],
+            },
+        }
+    if all(v is None for v in out.values()):
+        return None
+    return out
+
+
 def build(session: Session, *, overview_both: Any, now: datetime) -> dict[str, Any]:
     """The Brief for the owner's last absence ``(visit_from, visit_start]``; ``due`` false when none."""
     now = now.astimezone(UTC) if now.tzinfo is not None else now.replace(tzinfo=UTC)
@@ -203,6 +277,8 @@ def build(session: Session, *, overview_both: Any, now: datetime) -> dict[str, A
     if overview_both is not None:
         # Only on the full build (the probe has no overview and is never returned due).
         out.update(_fx_since(session, overview_both, since, came_back))
+        if window.kind in ("session", "sessions"):
+            out["window_move"] = _window_move(session, overview_both, since, now)
     events, total = _events(session, since)
     out["events"] = events
     out["events_total"] = total

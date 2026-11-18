@@ -1314,6 +1314,16 @@
               }
             ],
             "title": "Visit From"
+          },
+          "window_move": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ByCurrency_Union_BriefWindowMove__NoneType__"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1334,6 +1344,98 @@
           "visit_from"
         ],
         "title": "BriefVisitIn",
+        "type": "object"
+      },
+      "BriefWindowMove": {
+        "description": "The book's move over the whole window (``visit_from`` to now) in one currency.\n\n``move = end_value - start_value - net_flows``; ``pct`` is the period-growth\ndefinition ``move / (start_value + net_flows)``. EUR view: ``price_move +\ncurrency_move == move`` (the currency part is the rate's effect on the start\nbook); USD view: ``currency_move`` is null and ``price_move == move``.",
+        "properties": {
+          "currency_move": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Move"
+          },
+          "end_at": {
+            "title": "End At",
+            "type": "string"
+          },
+          "end_value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "End Value",
+            "type": "string"
+          },
+          "estimated": {
+            "default": false,
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "move": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Move",
+            "type": "string"
+          },
+          "movers": {
+            "$ref": "#/components/schemas/Movers"
+          },
+          "net_flows": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Net Flows",
+            "type": "string"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fraction, 0.01 = 1%",
+            "title": "Pct"
+          },
+          "price_move": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Price Move",
+            "type": "string"
+          },
+          "start_at": {
+            "title": "Start At",
+            "type": "string"
+          },
+          "start_basis": {
+            "enum": [
+              "intraday",
+              "close"
+            ],
+            "title": "Start Basis",
+            "type": "string"
+          },
+          "start_value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_at",
+          "end_at",
+          "start_basis",
+          "start_value",
+          "end_value",
+          "net_flows",
+          "move",
+          "price_move",
+          "movers"
+        ],
+        "title": "BriefWindowMove",
         "type": "object"
       },
       "Bucket": {
@@ -1911,6 +2013,47 @@
           "USD"
         ],
         "title": "ByCurrency[Union[BriefInvestingPower, NoneType]]",
+        "type": "object"
+      },
+      "ByCurrency_Union_BriefWindowMove__NoneType__": {
+        "properties": {
+          "EUR": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefWindowMove"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "USD": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefWindowMove"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[Union[BriefWindowMove, NoneType]]",
         "type": "object"
       },
       "CalcCategoryOut": {

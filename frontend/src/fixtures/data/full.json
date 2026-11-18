@@ -6064,6 +6064,26 @@
  "GET /api/brief": {
   "boundaries": [
    {
+    "at": "2026-06-26T13:30:00+00:00",
+    "kind": "open",
+    "session_date": "2026-06-26"
+   },
+   {
+    "at": "2026-06-26T20:00:00+00:00",
+    "kind": "close",
+    "session_date": "2026-06-26"
+   },
+   {
+    "at": "2026-06-29T13:30:00+00:00",
+    "kind": "open",
+    "session_date": "2026-06-29"
+   },
+   {
+    "at": "2026-06-29T20:00:00+00:00",
+    "kind": "close",
+    "session_date": "2026-06-29"
+   },
+   {
     "at": "2026-06-30T13:30:00+00:00",
     "kind": "open",
     "session_date": "2026-06-30"
@@ -6075,7 +6095,7 @@
     "pct": "-0.004297454518392515799873182306",
     "rate_now": "1.16410000",
     "rate_then": "1.15900000",
-    "since": "2026-06-29T21:00:00+00:00"
+    "since": "2026-06-25T21:00:00+00:00"
    },
    "USD": null,
    "detail": null
@@ -6109,120 +6129,147 @@
     "pct": "0.004400345125107851596203623814",
     "rate_now": "1.16410000",
     "rate_then": "1.15900000",
-    "since": "2026-06-29T21:00:00+00:00"
+    "since": "2026-06-25T21:00:00+00:00"
    },
    "detail": null
   },
-  "kind": "session",
+  "kind": "sessions",
   "last_ack_at": null,
   "last_seen_at": "2026-06-30T18:15:00+00:00",
-  "move": {
+  "move": null,
+  "now": "2026-06-30T18:15:00+00:00",
+  "sessions": [
+   "2026-06-26",
+   "2026-06-29",
+   "2026-06-30"
+  ],
+  "sessions_passed": 3,
+  "visit_from": "2026-06-25T21:00:00+00:00",
+  "window_move": {
    "EUR": {
-    "currency_move": "-2255.303386917781019589211709",
-    "currency_overnight": false,
-    "day_move": "8010.002206436363828462960962",
-    "day_move_pct": "0.006335563932459453500233257280",
+    "currency_move": "-5399.439778702848201208441",
+    "end_at": "2026-06-30T18:15:00+00:00",
+    "end_value": "1272301.909261172164172697040",
     "estimated": true,
+    "move": "15514.94567641083362927350014",
     "movers": {
-     "basis_date": "2026-06-30",
-     "eligible_count": 5,
+     "basis_date": "2026-06-25",
+     "eligible_count": 6,
      "losers": [
       {
-       "move": "-424.77",
+       "move": "-244.59500000000000",
+       "name": "Fake Europa Dividend Aktie",
+       "pct": "-0.009938053093569718645162138324",
+       "reason": "window",
+       "symbol": "FAKEU.DE",
+       "twin": null
+      },
+      {
+       "move": "-658.77012169284443525046363",
        "name": "Fake Aggregate Bond ETF",
-       "pct": "-0.005297657275325987100603628774",
-       "reason": "total",
+       "pct": "-0.008192113894218337926653389549",
+       "reason": "window",
        "symbol": "FAKEB",
        "twin": null
       },
       {
-       "move": "-152.02",
-       "name": "Fake Europa Dividend Aktie",
-       "pct": "-0.006199991488368480315078004494",
-       "reason": "percent",
-       "symbol": "FAKEU.DE",
+       "move": "-0.000000024959607302712090103713194",
+       "name": "Fake Micro Cap Dust",
+       "pct": "-0.004381066918649600549780946819",
+       "reason": "window",
+       "symbol": "FAKET",
        "twin": null
       }
      ],
      "winners": [
       {
-       "move": "6593.93",
-       "name": "Fakeland Total World All-Capitalisation Diversified Index Exchange Traded Fund Accumulating Class USD Hedged (Synthetic Fixture Holding With An Absurdly Long Name)",
-       "pct": "0.006680696971613115203281917611",
-       "reason": "total",
-       "symbol": "FAKEL",
+       "move": "1720.1746899310616970054446",
+       "name": "Fake Institutional NAV Index Fund",
+       "pct": "0.01478333669170289433027224064",
+       "reason": "window",
+       "symbol": "FAKENX",
        "twin": null
       },
       {
-       "move": "1202.58",
-       "name": "Fake Growth Corp",
-       "pct": "0.02215273184165816766098572312",
-       "reason": "percent",
-       "symbol": "FAKEG",
+       "move": "13530.8567803579312920571195",
+       "name": "Fakeland Total World All-Capitalisation Diversified Index Exchange Traded Fund Accumulating Class USD Hedged (Synthetic Fixture Holding With An Absurdly Long Name)",
+       "pct": "0.01380592938486497525089971349",
+       "reason": "window",
+       "symbol": "FAKEL",
        "twin": null
       }
      ]
     },
-    "price_move": "10265.30559335414484805217267",
-    "session_date": "2026-06-30"
+    "net_flows": "-273.5972461273666092943201377",
+    "pct": "0.01234492887494409551326421757",
+    "price_move": "20914.38545511368183048194114",
+    "start_at": "2026-06-25T21:00:00+00:00",
+    "start_basis": "intraday",
+    "start_value": "1257060.560830888697152717860"
    },
    "USD": {
     "currency_move": null,
-    "currency_overnight": false,
-    "day_move": "11979.45657332751631343662464",
-    "day_move_pct": "0.008154242662457874199330064519",
+    "end_at": "2026-06-30T18:15:00+00:00",
+    "end_value": "1481086.652570930516313436625",
     "estimated": true,
+    "move": "24471.382567930516313436625",
     "movers": {
-     "basis_date": "2026-06-30",
-     "eligible_count": 5,
+     "basis_date": "2026-06-25",
+     "eligible_count": 6,
      "losers": [
       {
-       "move": "-326.10",
-       "name": "Fake Aggregate Bond ETF",
-       "pct": "-0.003500002439076576233917972744",
-       "reason": "total",
-       "symbol": "FAKEB",
+       "move": "-159.2120256500000000000000",
+       "name": "Fake Europa Dividend Aktie",
+       "pct": "-0.005581438831945219564135673186",
+       "reason": "window",
+       "symbol": "FAKEU.DE",
        "twin": null
       },
       {
-       "move": "-125.48",
-       "name": "Fake Europa Dividend Aktie",
-       "pct": "-0.004403967376600471544563085225",
-       "reason": "percent",
-       "symbol": "FAKEU.DE",
+       "move": "-356.75700000000000",
+       "name": "Fake Aggregate Bond ETF",
+       "pct": "-0.003827816897549238291990690911",
+       "reason": "window",
+       "symbol": "FAKEB",
        "twin": null
       }
      ],
      "winners": [
       {
-       "move": "9748.72",
+       "move": "2595.88640000000000",
+       "name": "Fake Institutional NAV Index Fund",
+       "pct": "0.01924873360035490879194988310",
+       "reason": "window",
+       "symbol": "FAKENX",
+       "twin": null
+      },
+      {
+       "move": "20749.65677100000000",
        "name": "Fakeland Total World All-Capitalisation Diversified Index Exchange Traded Fund Accumulating Class USD Hedged (Synthetic Fixture Holding With An Absurdly Long Name)",
-       "pct": "0.008499999436019644929552908994",
-       "reason": "total",
+       "pct": "0.01826702536403910068125311173",
+       "reason": "window",
        "symbol": "FAKEL",
        "twin": null
       },
       {
-       "move": "1513.93",
+       "move": "155.51250000000000",
        "name": "Fake Growth Corp",
-       "pct": "0.02399999581486598362663810693",
-       "reason": "percent",
+       "pct": "0.002413335082899427673540557286",
+       "reason": "window",
        "symbol": "FAKEG",
        "twin": null
       }
      ]
     },
-    "price_move": "11979.45657332751631343662464",
-    "session_date": "2026-06-30"
+    "net_flows": "-317.920000",
+    "pct": "0.01680016890656385594990840198",
+    "price_move": "24471.382567930516313436625",
+    "start_at": "2026-06-25T21:00:00+00:00",
+    "start_basis": "intraday",
+    "start_value": "1456933.19000300000000"
    },
    "detail": null
-  },
-  "now": "2026-06-30T18:15:00+00:00",
-  "sessions": [
-   "2026-06-30"
-  ],
-  "sessions_passed": 1,
-  "visit_from": "2026-06-29T21:00:00+00:00"
+  }
  },
  "GET /api/calculator/both": {
   "EUR": {
@@ -9366,8 +9413,8 @@
    "now_point": null,
    "points": [
     {
-     "t": "2026-06-29T20:55:00+00:00",
-     "v": "1118292.598967297762478485370"
+     "t": "2026-06-25T20:55:00+00:00",
+     "v": "1256512.283359919360833197563"
     },
     {
      "t": "2026-06-30T13:30:00+00:00",
@@ -9605,7 +9652,7 @@
    "range": "1w",
    "reference": "1249732.918873896998671387196",
    "secondary": {
-    "anchor_t": "2026-06-29T20:55:00+00:00",
+    "anchor_t": "2026-06-25T20:55:00+00:00",
     "ccy": "USD",
     "growth": {
      "mode": "reference",
@@ -9613,8 +9660,8 @@
     },
     "points": [
      {
-      "t": "2026-06-29T20:55:00+00:00",
-      "v": "1296456.000000000000000000000"
+      "t": "2026-06-25T20:55:00+00:00",
+      "v": "1456933.190003000000000000000"
      },
      {
       "t": "2026-06-30T13:30:00+00:00",
@@ -9849,7 +9896,7 @@
       "v": "1481086.652570477516313436625"
      }
     ],
-    "scale": "1.159317338947990543735224586"
+    "scale": "1.159505728115251094170424017"
    },
    "session_date": "2026-06-30",
    "sessions": [
@@ -9903,8 +9950,8 @@
    "now_point": null,
    "points": [
     {
-     "t": "2026-06-29T20:55:00+00:00",
-     "v": "1296456.000000000000000000000"
+     "t": "2026-06-25T20:55:00+00:00",
+     "v": "1456933.190003000000000000000"
     },
     {
      "t": "2026-06-30T13:30:00+00:00",
@@ -10142,7 +10189,7 @@
    "range": "1w",
    "reference": "1458916.964033766500000000000",
    "secondary": {
-    "anchor_t": "2026-06-29T20:55:00+00:00",
+    "anchor_t": "2026-06-25T20:55:00+00:00",
     "ccy": "EUR",
     "growth": {
      "mode": "reference",
@@ -10150,8 +10197,8 @@
     },
     "points": [
      {
-      "t": "2026-06-29T20:55:00+00:00",
-      "v": "1118292.598967297762478485370"
+      "t": "2026-06-25T20:55:00+00:00",
+      "v": "1256512.283359919360833197563"
      },
      {
       "t": "2026-06-30T13:30:00+00:00",
@@ -10386,7 +10433,7 @@
       "v": "1272301.909260783022346393458"
      }
     ],
-    "scale": "0.8625765926242755345946837918"
+    "scale": "0.8624364466275437458414376103"
    },
    "session_date": "2026-06-30",
    "sessions": [

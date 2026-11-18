@@ -921,6 +921,35 @@ def sample_fx_at(
     return None
 
 
+@dataclass(frozen=True)
+class SampleAt:
+    """A stored intraday sample: the intraday-priced holdings' value and the rate then."""
+
+    market_eur: Decimal
+    #: Native-USD market component (FX-free); ``None`` for a legacy row without it.
+    market_usd: Decimal | None
+    fx_eur_usd: Decimal
+
+
+def sample_at(
+    session: Session, at: datetime, *, max_age: timedelta = timedelta(minutes=30)
+) -> SampleAt | None:
+    """The newest stored intraday sample in ``[at - max_age, at]`` that carries a rate.
+
+    ``None`` when none lies that close. Only the sample's own columns are read (the
+    market component in EUR and native USD, and the per-instant rate). No network.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    end = _to_naive_utc(at)
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, end - max_age, end)
+    for row in reversed(rows):
+        if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
+            return SampleAt(_row_eur(row), row.market_value_usd, row.fx_eur_usd)
+    return None
+
+
 def day_open_rate(session: Session, *, now: datetime | None = None) -> Decimal | None:
     """The open rate the DAY RULE splits on (A = previous close rate -> this rate).
 
