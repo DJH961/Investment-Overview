@@ -35,6 +35,25 @@
     padding-bottom: var(--space-5);
   }
 
+  // Desktop: the total and its three key figures on one row (hairline between).
+  // Below desktop the key three sit under the total.
+  &__stat-top {
+    display: flex;
+    flex-direction: column;
+
+    @include m.desktop {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+      align-items: end;
+      gap: var(--space-6);
+      padding-bottom: var(--space-5);
+
+      & > .holdings-page__stat--lead {
+        padding-bottom: 0;
+      }
+    }
+  }
+
   &__stat-group {
     display: grid;
     margin: 0;
@@ -42,22 +61,29 @@
     border-top: var(--border-width) solid var(--color-border);
 
     &--key {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       padding: var(--space-5) 0;
       row-gap: var(--space-5);
 
-      @include m.tablet-only {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+      @include m.desktop {
+        padding: 0 0 0 var(--space-6);
+        border-top: 0;
+        border-left: var(--border-width) solid var(--color-border);
       }
 
+      // Phone: three figures in 110 px columns would shrink the money too far, so
+      // each is a row: label (and its note) left, figure right.
       @include m.phone {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: var(--space-3);
+        padding: var(--space-4) 0;
       }
     }
 
-    // The quiet band runs to the panel edges, on a sunken tone.
+    // The quiet band runs to the panel edges, on a sunken tone: ten tiles, 5 x 2
+    // (row 1 return, income, cost, currency; row 2 position facts), 2 x 5 on phones.
     &--minor {
-      grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       margin: 0 calc(-1 * var(--space-6));
       padding: var(--space-4) var(--space-6);
       row-gap: var(--space-4);
@@ -67,6 +93,33 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         margin: 0 calc(-1 * var(--space-4));
         padding: var(--space-4);
+      }
+    }
+  }
+
+  @include m.phone {
+    &__stat--key {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "label value"
+        "hint value";
+      align-items: center;
+      column-gap: var(--space-3);
+      row-gap: 0;
+      container-type: normal;
+
+      & > .holdings-page__stat-label {
+        grid-area: label;
+      }
+
+      & > .holdings-page__stat-value {
+        grid-area: value;
+        font-size: var(--font-size-lg);
+      }
+
+      & > .holdings-page__stat-hint {
+        grid-area: hint;
       }
     }
   }
@@ -96,7 +149,8 @@
   }
 
   &__stat--lead &__stat-value {
-    @include m.display(clamp(var(--font-size-2xl), 13cqi, var(--font-size-hero)));
+    // A touch smaller than the Overview hero: the table is this page's subject.
+    @include m.display(clamp(var(--font-size-2xl), 12cqi, var(--font-size-display)));
     font-weight: var(--font-weight-figure);
   }
 
