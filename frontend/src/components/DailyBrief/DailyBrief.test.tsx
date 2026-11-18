@@ -111,10 +111,12 @@ describe("DailyBrief", () => {
     expect(screen.getByTestId("brief-movers")).toHaveTextContent("BBB");
   });
 
-  it("the USD view has no currency leg and says so (same lines)", async () => {
+  it("the USD view has no currency part at all", async () => {
     stub(() => session);
     mount("USD");
-    expect(await screen.findByTestId("brief-split")).toHaveTextContent("none in USD");
+    const split = await screen.findByTestId("brief-split");
+    expect(split).not.toHaveTextContent("Currency");
+    expect(split).not.toHaveTextContent("none");
     expect(screen.getByTestId("brief-figure")).toHaveTextContent("1,400.00");
   });
 
@@ -182,13 +184,14 @@ describe("DailyBrief", () => {
     rate_now: "1.0765",
     since,
   };
-  const withEffect: BriefDto = { ...session, currency_effect_since: { EUR: effect, USD: null }, investing_power_since: power };
+  // lib/queries/brief.ts still intersects the old flat type; the wire shape is ByCurrency.
+  const withEffect = { ...session, currency_effect_since: { EUR: effect, USD: null }, investing_power_since: { EUR: null, USD: power } } as unknown as BriefDto;
 
   it("EUR view: the currency effect since the last look, with the rates", async () => {
     stub(() => withEffect);
     mount("EUR");
     const slot = await screen.findByTestId("brief-currency-effect");
-    expect(slot).toHaveTextContent("Currency effect since Mon 11:00");
+    expect(slot).toHaveTextContent("Currency effect");
     expect(slot).toHaveTextContent("-€1,187.42");
     expect(slot).toHaveTextContent("EUR/USD 1.0712 → 1.0765");
     expect(slot).not.toHaveTextContent("Investing power");
@@ -198,9 +201,10 @@ describe("DailyBrief", () => {
     stub(() => withEffect);
     mount("USD");
     const slot = await screen.findByTestId("brief-currency-effect");
-    expect(slot).toHaveTextContent("Investing power since Mon 11:00");
+    expect(slot).toHaveTextContent("Investing power");
     expect(slot).toHaveTextContent("+US$5.30");
-    expect(slot).toHaveTextContent("Regular €1,000 buys US$1,076.50 (was US$1,071.20)");
+    expect(slot).toHaveTextContent("€1,000 → US$1,076.50 (was US$1,071.20)");
+    expect(slot).toHaveTextContent("EUR/USD 1.0712 → 1.0765");
     expect(slot).not.toHaveTextContent("1,187.42");
   });
 
@@ -213,7 +217,7 @@ describe("DailyBrief", () => {
     const c = mount("EUR");
     expect(await screen.findByTestId("brief-currency-effect")).toHaveTextContent("–");
     c.unmount();
-    stub(() => session);
+    stub(() => ({ ...session, currency_effect_since: null, investing_power_since: null }));
     mount("EUR");
     await screen.findByTestId("brief-figure");
     expect(screen.queryByTestId("brief-currency-effect")).toBeNull();
