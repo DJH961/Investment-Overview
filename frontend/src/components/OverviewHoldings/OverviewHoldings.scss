@@ -487,10 +487,11 @@
     }
   }
 
-  // "+€966.93  +0.10%": the day's money and % on one line when a split follows.
-  &__day-line {
+  // Under the day's money: its % and, in EUR, the ☀ day part, one quiet line.
+  &__day-sub {
     display: inline-flex;
-    align-items: baseline;
+    align-items: center;
+    justify-content: flex-end;
     gap: var(--space-2);
   }
 

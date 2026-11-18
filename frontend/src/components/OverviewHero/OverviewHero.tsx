@@ -194,43 +194,20 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
             />
           </span>
         </div>
-        {est && (
-          <p className="overview-hero__official" data-testid="hero-official">
-            <span className="overview-hero__muted">Official</span>
-            <Money amount={toNum(k.total_value)} currency={currency} />
-            <span className="overview-hero__official-change" data-testid="hero-official-change">
-              <span className="overview-hero__official-money">
-                <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
-                {" · "}
-              </span>
-              <Percent ratio={toNum(officialPct ?? null)} signed />
-            </span>
-          </p>
-        )}
         {/*
-          The change row and the price time share a line when there is room for both,
-          and the stamps fall to their own line when there is not — flex wrap decides
-          from the actual content, so no width has to be guessed. `space-between`
-          holds the stamps right while they share the line and lets them sit at the
-          left edge once they wrap, which is where they read best on a phone.
+          Everything under the big value on ONE wrapping row, using the full width:
+          the day's move (badge, money, day pill), its ☀ + ☾ split, the overnight FX,
+          the official book while estimating, and the other currency's move pushed to
+          the right edge. Flex wrap decides from the real content where a phone breaks
+          the row. The row's height is reserved in every view, so switching EUR/USD
+          (USD has no currency leg) never moves the page.
         */}
-        <div className="overview-hero__line">
+        <div className="overview-hero__facts">
           <div className="overview-hero__move">
             <DeltaBadge value={toNum(headPct)} />
             <Money amount={toNum(headMove)} currency={currency} signed colored />
             <span className={clsx("overview-hero__day", lastSession && "overview-hero__day--last")}>{dayLabel}</span>
           </div>
-        </div>
-        {/*
-          Market shut and the currency moved since the close: the headline above already
-          includes the overnight part, so say how it splits (same line as the graph header).
-        */}
-        {/*
-          The split is the one place on the screen that shows ☀ + ☾ = total (the KPI tile
-          and the graph header no longer repeat it). Its line is reserved in every view,
-          so switching EUR/USD (USD has no currency leg) never moves the page.
-        */}
-        <div className="overview-hero__split">
           {secPct != null && (
             <span className="overview-hero__muted overview-hero__usd">
               {usdFlat ? (
@@ -265,6 +242,19 @@ export function OverviewHero({ data, currency, loading, now, aside, embedded = f
               )}
               <span className="overview-hero__muted">in today&apos;s total</span>
             </span>
+          )}
+          {est && (
+            <p className="overview-hero__official" data-testid="hero-official">
+              <span className="overview-hero__muted">Official</span>
+              <Money amount={toNum(k.total_value)} currency={currency} />
+              <span className="overview-hero__official-change" data-testid="hero-official-change">
+                <span className="overview-hero__official-money">
+                  <Money amount={toNum(officialMove ?? null)} currency={currency} signed />
+                  {" · "}
+                </span>
+                <Percent ratio={toNum(officialPct ?? null)} signed />
+              </span>
+            </p>
           )}
         </div>
         {data.total_value_complete === false && (

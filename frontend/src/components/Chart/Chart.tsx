@@ -151,6 +151,8 @@ export interface ChartProps {
   rangeLabel?: (range: string) => string;
   /** Extra content in the header row, left of the range control (growth, reload). */
   headerExtra?: ReactNode;
+  /** A note at the right end of the legend row (same line as the series chips). */
+  legendExtra?: ReactNode;
   xMode?: ChartXMode;
   /** Colours the primary series green/red and draws a ▲/▼ end marker. */
   trend?: ChartTrend;
@@ -267,6 +269,7 @@ export function Chart({
   tooltipTimeFormat,
   rangeLabel,
   headerExtra,
+  legendExtra,
   xMode = "date",
   trend,
   busy = false,
@@ -770,9 +773,9 @@ export function Chart({
             </span>
           ))}
         </output>
-      ) : all.length > 1 ? (
+      ) : all.length > 1 || legendExtra ? (
         <ul className="chart__legend">
-          {all.map((s) => {
+          {(all.length > 1 ? all : []).map((s) => {
             const swatch = <span className={clsx("chart__swatch", `chart__swatch--${s.toneCls}`)} aria-hidden />;
             return (
               <li key={s.id} className={clsx("chart__legend-item", s.hidden && "chart__legend-item--off")}>
@@ -795,6 +798,7 @@ export function Chart({
               </li>
             );
           })}
+          {legendExtra && <li className="chart__legend-extra">{legendExtra}</li>}
         </ul>
       ) : compact ? (
         // Same height as the readout, so scrubbing never moves the page.
