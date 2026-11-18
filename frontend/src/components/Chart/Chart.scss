@@ -353,8 +353,9 @@
 
   &__legend {
     display: flex;
-    // One line at every width: the chips and the right-hand note never stack.
-    flex-wrap: nowrap;
+    // Wraps for long legends (Projection, Risk); the Overview's two chips and its short
+    // "NAVs estimated" note fit on one line down to 360 px, so they never stack there.
+    flex-wrap: wrap;
     align-items: center;
     min-height: var(--control-height-sm);
     gap: var(--space-2);
