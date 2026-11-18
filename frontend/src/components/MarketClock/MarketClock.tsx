@@ -16,6 +16,10 @@ export interface MarketClockProps {
   onBoundary?: () => void;
   /** Fixed clock (tests): no ticking. */
   now?: Date;
+  /** "full": the desktop statement. "near": the compact phone band, only in the last 15 min to a bell (and 5 after). "sheet": the statement inside the phone sheet. */
+  variant?: "full" | "near" | "sheet";
+  /** Ask for fresh instants at zero (default). Off for a second instance of the same clock. */
+  fire?: boolean;
 }
 
 const SECOND = 1000;
@@ -109,7 +113,7 @@ export function clockView(f: ClockFreshness, now: Date, timeZone?: string): Cloc
  * out the weekend, Fri 16:00 to Mon 09:30). Only an approximation of the start: the
  * server sends the next instants only.
  */
-export function trackProgress(f: ClockFreshness, now: Date): number | null {
+export function trackSpan(f: ClockFreshness): { start: number; end: number } | null {
   const open = f.market_state === "open";
   const target = open ? f.next_close_at : f.next_open_at;
   if (!target) return null;
@@ -123,9 +127,13 @@ export function trackProgress(f: ClockFreshness, now: Date): number | null {
     const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: NY }).format(at);
     start = at - OVERNIGHT - (weekday === "Mon" ? 2 * DAY : 0);
   }
-  const span = at - start;
-  if (span <= 0) return null;
-  return Math.min(1, Math.max(0, (now.getTime() - start) / span));
+  return at > start ? { start, end: at } : null;
+}
+
+export function trackProgress(f: ClockFreshness, now: Date): number | null {
+  const s = trackSpan(f);
+  if (!s) return null;
+  return Math.min(1, Math.max(0, (now.getTime() - s.start) / (s.end - s.start)));
 }
 
 /**
@@ -174,7 +182,7 @@ function usePrefersStill(): boolean {
  * the countdown reaches zero it asks once for fresh instants; a target already in the
  * past at mount (stale data) never triggers a refetch loop and never shows a negative.
  */
-export function MarketClock({ freshness, onBoundary, now: fixed }: MarketClockProps) {
+export function useClockModel(freshness: ClockFreshness | null | undefined, onBoundary: (() => void) | undefined, fixed: Date | undefined, fire: boolean) {
   const timeZone = useTimeZone();
   const still = usePrefersStill();
   const open = freshness?.market_state === "open";
@@ -193,15 +201,20 @@ export function MarketClock({ freshness, onBoundary, now: fixed }: MarketClockPr
     }
     if (armed.current === target && fired.current !== target) {
       fired.current = target;
-      onBoundary?.();
+      if (fire) onBoundary?.();
     }
-  }, [target, counting, onBoundary]);
+  }, [target, counting, onBoundary, fire]);
   if (!view || !freshness) return null;
 
   const rung = view.next === "closing now" || view.next === "opening now";
   const remaining = view.remaining;
   const parts = remaining != null ? splitCountdown(remaining) : rung ? splitCountdown(0) : null;
   const progress = trackProgress(freshness, now);
+  const span = trackSpan(freshness);
+  // Hour notches along a session (none on the long overnight / weekend wait).
+  const ticks: number[] = [];
+  if (span && span.end - span.start <= 8 * HOUR)
+    for (let t = span.start + HOUR; t < span.end - 1000; t += HOUR) ticks.push((t - span.start) / (span.end - span.start));
   const bell = open ? "closing" : "opening";
   const label = rung ? `The ${bell} bell has rung` : `Until the ${bell} bell`;
   const soon = remaining != null && remaining <= SOON;
@@ -216,6 +229,28 @@ export function MarketClock({ freshness, onBoundary, now: fixed }: MarketClockPr
     .filter(Boolean)
     .join(" ");
 
+  return { view, open, remaining, parts, progress, span, ticks, rung, label, soon, last, bellTime, sentence, still, now, timeZone };
+}
+
+/** The compact "Open · 1 h 46 m" text: minutes only, never seconds (the quiet phone chip). */
+export function formatChipSpan(ms: number): string {
+  const mins = Math.max(1, Math.ceil(ms / MINUTE));
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  if (d > 0) return h ? `${d} d ${h} h` : `${d} d`;
+  if (h > 0) return `${h} h ${m} m`;
+  return `${m} m`;
+}
+
+/** True while the compact phone band shows: the last 15 minutes to a bell and 5 minutes after it rang. */
+export const NEAR_WINDOW = 15 * MINUTE;
+
+export function MarketClock({ freshness, onBoundary, now: fixed, variant = "full", fire = true }: MarketClockProps) {
+  const model = useClockModel(freshness, onBoundary, fixed, fire);
+  if (!model) return null;
+  const { view, open, remaining, parts, progress, span, ticks, rung, label, soon, last, bellTime, sentence, still, timeZone } = model;
+  if (variant === "near" && !(parts && (rung || (remaining != null && remaining <= NEAR_WINDOW)))) return null;
   return (
     <section
       className={clsx(
@@ -225,6 +260,7 @@ export function MarketClock({ freshness, onBoundary, now: fixed }: MarketClockPr
         last && !still && "market-clock--last",
         !parts && "market-clock--bare",
         parts && parts.days > 0 && "market-clock--days",
+        variant !== "full" && `market-clock--${variant}`,
       )}
       data-testid="market-clock"
       aria-label="Market clock"
@@ -236,7 +272,6 @@ export function MarketClock({ freshness, onBoundary, now: fixed }: MarketClockPr
         <div className="market-clock__head">
           <span className="market-clock__label">{parts ? label : view.state}</span>
           <span className="market-clock__state">{parts ? view.state : null}</span>
-          {bellTime && parts && <span className="market-clock__bell market-clock__bell--head">{bellTime} <span className="market-clock__zone">your time</span></span>}
         </div>
         {parts && (
           <div className="market-clock__digits" data-testid="market-clock-digits">
@@ -251,20 +286,7 @@ export function MarketClock({ freshness, onBoundary, now: fixed }: MarketClockPr
             <span className="market-clock__time">{parts.clock}</span>
           </div>
         )}
-        {progress != null && (
-          <div className="market-clock__track" data-testid="market-clock-track">
-            <span className="market-clock__fill" style={{ width: `${(progress * 100).toFixed(2)}%` }} />
-            <span className="market-clock__now" style={{ left: `${(progress * 100).toFixed(2)}%` }} />
-          </div>
-        )}
-        <div className="market-clock__foot">
-          {view.since && <span className="market-clock__since">{view.since}</span>}
-          {bellTime && parts && (
-            <span className="market-clock__bell market-clock__bell--foot">
-              {bellTime} <span className="market-clock__zone">your time</span>
-            </span>
-          )}
-        </div>
+{progress != null && span && (          <div className="market-clock__bar" data-testid="market-clock-track">            <div className="market-clock__track">              <span className="market-clock__fill" style={{ width: `${(progress * 100).toFixed(2)}%` }} />              {ticks.map((t) => (                <span key={t} className="market-clock__tick" style={{ left: `${(t * 100).toFixed(3)}%` }} />              ))}            </div>            <div className="market-clock__ends">              <span>{open ? formatTime(new Date(span.start), timeZone) : "Last close"}</span>              <span>{bellTime}</span>            </div>          </div>        )}
       </div>
     </section>
   );
