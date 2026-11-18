@@ -58,6 +58,10 @@ function stub(brief: () => BriefDto, ack: { status: number; gate?: Promise<void>
         const body = ack.status === 200 ? { last_ack_at: "2026-06-30T18:15:00+00:00" } : { detail: "boom" };
         return new Response(JSON.stringify(body), { status: ack.status, headers: { "Content-Type": "application/json" } });
       }
+      if (url.includes("/api/overview/both")) {
+        const k = { total_value: "1481087.40", daily_growth_as_of: "2026-06-30" };
+        return new Response(JSON.stringify({ EUR: { kpis: k }, USD: { kpis: k } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       return new Response(JSON.stringify(brief()), { status: 200, headers: { "Content-Type": "application/json" } });
     }),
   );
@@ -111,12 +115,14 @@ describe("DailyBrief", () => {
     expect(screen.getByTestId("brief-movers")).toHaveTextContent("BBB");
   });
 
-  it("the USD view has no currency part at all", async () => {
+  it("the USD view has no Market or currency part: it shows the value then → now", async () => {
     stub(() => session);
     mount("USD");
-    const split = await screen.findByTestId("brief-split");
-    expect(split).not.toHaveTextContent("Currency");
-    expect(split).not.toHaveTextContent("none");
+    const path = await screen.findByTestId("brief-value-path");
+    expect(path).toHaveTextContent("US$1,479,687 → US$1,481,087");
+    const split = screen.queryByTestId("brief-split");
+    expect(split).toBeNull();
+    expect(screen.getByTestId("brief-session")).not.toHaveTextContent("Market");
     expect(screen.getByTestId("brief-figure")).toHaveTextContent("1,400.00");
   });
 
