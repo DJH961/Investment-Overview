@@ -83,7 +83,7 @@ describe("Currency page", () => {
     state.both = { EUR: { ...cur.EUR, stats: [] }, USD: { ...cur.USD, stats: [] } };
     mount();
     expect(tiles()).toHaveLength(0);
-    expect(screen.getByLabelText("Currency views")).toBeTruthy();
+    expect(screen.getByTestId("today-buys")).toBeInTheDocument();
   });
 
   it("EUR and USD have one shape: same tiles and same Today rows", () => {
@@ -107,7 +107,8 @@ describe("Currency page", () => {
 
   it("unknown ?view= falls back to Today", () => {
     mount("/currency?view=nonsense");
-    expect(screen.getByLabelText("Currency views")).toBeTruthy();
+    // One view only: no view switch is shown (it returns with a second view).
+    expect(screen.queryByLabelText("Currency views")).toBeNull();
     expect(screen.getByTestId("today-buys")).toBeInTheDocument();
   });
 

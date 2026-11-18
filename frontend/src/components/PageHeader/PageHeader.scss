@@ -24,8 +24,18 @@
     // The page's name in the display serif: the one place the type itself sets the tone.
     @include m.display(var(--font-size-3xl));
 
-    @include m.phone {
-      @include m.visually-hidden;
+    // On phones the top bar names the page, so the big title steps aside, except where
+    // the title is the subject itself (a holding's ticker), which the top bar does not say.
+    &:not(.page-header__title--always) {
+      @include m.phone {
+        @include m.visually-hidden;
+      }
+    }
+
+    &--always {
+      @include m.phone {
+        font-size: var(--font-size-2xl);
+      }
     }
   }
 

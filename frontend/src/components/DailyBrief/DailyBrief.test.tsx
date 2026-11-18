@@ -14,6 +14,15 @@ afterEach(() => vi.unstubAllGlobals());
 
 const recorded = (full as Record<string, unknown>)["GET /api/brief"] as BriefDto;
 
+/** A three-session window (the recorded fixture is a single session). */
+const multi: BriefDto = {
+  ...recorded,
+  kind: "sessions",
+  sessions: ["2026-06-26", "2026-06-29", "2026-06-30"],
+  sessions_passed: 3,
+  move: null,
+};
+
 const move = (ccy: "EUR" | "USD") => ({
   session_date: "2026-06-30",
   day_move: ccy === "EUR" ? "1234.5" : "1400",
@@ -97,9 +106,9 @@ describe("DailyBrief", () => {
   });
 
   it("a multi-session window says how many sessions passed, with no totals", async () => {
-    stub(() => recorded);
+    stub(() => multi);
     mount();
-    expect(await screen.findByText(`${recorded.sessions_passed} sessions passed`)).toBeInTheDocument();
+    expect(await screen.findByText(`${multi.sessions_passed} sessions passed`)).toBeInTheDocument();
     expect(screen.queryByTestId("brief-figure")).toBeNull();
     // The owner's own ledger rows are not news to him (owner): the card does not list them.
     expect(screen.queryByTestId("brief-events")).toBeNull();
@@ -155,9 +164,9 @@ describe("DailyBrief", () => {
   });
 
   it("the header names the window", async () => {
-    stub(() => recorded);
+    stub(() => multi);
     mount();
-    expect(await screen.findByTestId("brief-window")).toHaveTextContent(`· ${recorded.sessions_passed} sessions`);
+    expect(await screen.findByTestId("brief-window")).toHaveTextContent(`· ${multi.sessions_passed} sessions`);
   });
 
   it("movers: up to three each way, arrow and sign on every chip", async () => {

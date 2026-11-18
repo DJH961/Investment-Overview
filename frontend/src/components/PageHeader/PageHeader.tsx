@@ -8,17 +8,19 @@ export interface PageHeaderProps {
   /** Right-aligned actions (buttons, tabs). */
   actions?: ReactNode;
   className?: string;
+  /** Keep the title visible on phones too (when the top bar does not already say it). */
+  titleOnPhone?: boolean;
 }
 
 /**
  * Page title row. On phones the title is visually hidden (the top bar already
  * shows it) but stays the page's h1 for screen readers; subtitle and actions stay.
  */
-export function PageHeader({ title, subtitle, actions, className }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, actions, className, titleOnPhone = false }: PageHeaderProps) {
   return (
     <header className={clsx("page-header", !subtitle && !actions && "page-header--bare", className)}>
       <div className="page-header__text">
-        <h1 className="page-header__title">{title}</h1>
+        <h1 className={clsx("page-header__title", titleOnPhone && "page-header__title--always")}>{title}</h1>
         {subtitle && <p className="page-header__subtitle">{subtitle}</p>}
       </div>
       {actions && <div className="page-header__actions">{actions}</div>}

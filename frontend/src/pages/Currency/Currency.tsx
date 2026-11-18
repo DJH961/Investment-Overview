@@ -100,7 +100,7 @@ function TodayFigures({ cur }: { cur: CurrencyDto }) {
           <div className="currency-page__row" data-testid="today-range">
             <dt className="currency-page__row-label">Today's range{cur.today.pair ? ` (${cur.today.pair})` : ""}</dt>
             <dd className="currency-page__row-value">
-              {range.low_display} to {range.high_display}
+              {formatNumber(toNum(range.low_display), 4)} to {formatNumber(toNum(range.high_display), 4)}
             </dd>
           </div>
         ) : null}
@@ -191,7 +191,7 @@ export function Currency() {
           {stats.length > 0 ? (
             <StatStrip label="Currency at a glance" items={stats.map((s) => statItem(s, cur.ccy))} />
           ) : null}
-          <SegmentedControl block ariaLabel="Currency views" options={[...VIEWS]} value={view} onChange={setView} />
+          {VIEWS.length > 1 && <SegmentedControl block ariaLabel="Currency views" options={[...VIEWS]} value={view} onChange={setView} />}
           {view === "today" ? (
             <div className="currency-page__panel">
               <CurrencyBox

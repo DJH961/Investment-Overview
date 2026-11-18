@@ -56,8 +56,13 @@ function SessionFact({ move, currency }: { move: BriefMoveDto; currency: Reporti
   // no currency leg, so it shows the book's value then → now instead.
   const fx = toNum(move.currency_move ?? null);
   const kpis = useOverview(currency).data?.kpis;
-  const total = toNum(kpis?.total_value ?? null);
+  // The hero's headline book: the estimate while estimating, else the official total.
+  const total = toNum((move.estimated ? kpis?.estimate?.total_value : null) ?? kpis?.total_value ?? null);
   const dayMove = toNum(move.day_move ?? null);
+  // Shown to the cent, Market + Currency must add up to the headline as displayed:
+  // Market = rounded headline − rounded currency part (a display subtraction only).
+  const cents = (v: number) => Math.round(v * 100) / 100;
+  const market = dayMove !== null && fx !== null ? cents(cents(dayMove) - cents(fx)) : toNum(move.price_move ?? null);
   // The Overview's value is the book after that session only when it is the same session.
   const sameDay = !kpis?.daily_growth_as_of || kpis.daily_growth_as_of === move.session_date;
   const now = sameDay ? total : null;
@@ -81,10 +86,10 @@ function SessionFact({ move, currency }: { move: BriefMoveDto; currency: Reporti
       }
       note={
         currency === "EUR" ? (
-          <span className="daily-brief__parts" data-testid="brief-split">
+          <span className="daily-brief__parts" data-testid="brief-split" data-ccy-specific="">
             <span className="daily-brief__pair">
               <span className="daily-brief__key">Market</span>
-              <Money amount={toNum(move.price_move ?? null)} currency={currency} signed colored />
+              <Money amount={market} currency={currency} signed colored />
             </span>
             {fx !== null && (
               <span className="daily-brief__pair">
@@ -98,7 +103,7 @@ function SessionFact({ move, currency }: { move: BriefMoveDto; currency: Reporti
           // the line says where the book stood instead (server values, one subtraction).
           start !== null &&
           now !== null && (
-            <span className="daily-brief__line" data-testid="brief-value-path">
+            <span className="daily-brief__line" data-testid="brief-value-path" data-ccy-specific="">
               <Money amount={start} currency={currency} digits={0} /> → <Money amount={now} currency={currency} digits={0} />
             </span>
           )
@@ -372,7 +377,7 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
   const n = Math.max(b.sessions_passed, b.sessions.length);
   const icon = kind === "session" ? <Newspaper aria-hidden /> : kind === "fx" ? <Repeat aria-hidden /> : <CalendarRange aria-hidden />;
   // "Since" is the previous visit (the server's marker), as the currency slot's rates use it.
-  const sinceIso = b.currency_effect_since?.EUR?.since ?? b.investing_power_since?.USD?.since ?? b.last_ack_at;
+  const sinceIso = b.visit_from ?? b.currency_effect_since?.EUR?.since ?? b.investing_power_since?.USD?.since ?? null;
   const since = sinceIso ? sinceLabel(sinceIso, b.now, timeZone) : null;
   const span = kind === "fx" ? "weekend" : n === 1 ? "1 session" : `${n} sessions`;
   // One slot for the currency since the last look, shown when the server sends either side.

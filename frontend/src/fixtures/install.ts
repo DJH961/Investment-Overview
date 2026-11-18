@@ -86,7 +86,13 @@ function withCurrencyEffect(base: Obj): Obj {
 function briefFor(mode: BriefMode, data: Fixtures, recorded: unknown): unknown {
   const base = withCurrencyEffect((recorded ?? {}) as Obj);
   if (mode === "off") return { ...base, due: false, kind: null, events: [], events_total: 0 };
-  if (mode === "sessions") return base;
+  if (mode === "sessions") {
+    // The recorded window is one session: widen it to three for this mode.
+    const last = (base.sessions as string[] | undefined)?.at(-1) ?? ANCHOR;
+    const day = dayNumber(last);
+    const iso = (n: number) => new Date(n * 86_400_000).toISOString().slice(0, 10);
+    return { ...base, kind: "sessions", sessions: [iso(day - 4), iso(day - 1), last] /* Fri, Mon, Tue of the recorded week */, sessions_passed: 3, move: null, visit_from: `${iso(day - 5)}T21:00:00+00:00` };
+  }
   const both = data["GET /api/overview/both"];
   const sides = ["EUR", "USD"] as const;
   if (mode === "session") {
@@ -140,11 +146,31 @@ function dayNumber(iso: string): number {
   return Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
 }
 
+/** New York's UTC offset in hours on a calendar day (−4 in summer, −5 in winter). */
+function newYorkOffset(day: number): number {
+  const noon = new Date(day * 86_400_000 + 12 * 3_600_000);
+  const name = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", timeZoneName: "shortOffset" })
+    .formatToParts(noon)
+    .find((p) => p.type === "timeZoneName")?.value;
+  const m = /GMT([+-]\d+)/.exec(name ?? "");
+  return m ? Number(m[1]) : -5;
+}
+
+/**
+ * Moves every date to today and every instant by the same days PLUS New York's DST
+ * difference, so recorded market hours (an EDT June day) stay at 09:30–16:00 New York
+ * time on a winter day too (the clock, the 1D graph and the brief boundaries line up).
+ */
 function shiftDates(text: string, days: number): string {
   if (days === 0) return text;
-  return text.replace(/\d{4}-\d{2}-\d{2}/g, (iso) => {
-    const shifted = new Date((dayNumber(iso) + days) * 86_400_000);
-    return shifted.toISOString().slice(0, 10);
+  const anchor = dayNumber(ANCHOR);
+  const dstHours = newYorkOffset(anchor) - newYorkOffset(anchor + days);
+  return text.replace(/(\d{4}-\d{2}-\d{2})(T\d{2}:\d{2}:\d{2})?/g, (_all, iso: string, time?: string) => {
+    if (!time || dstHours === 0) {
+      return new Date((dayNumber(iso) + days) * 86_400_000).toISOString().slice(0, 10) + (time ?? "");
+    }
+    const at = new Date(`${iso}${time}Z`).getTime() + (days * 24 + dstHours) * 3_600_000;
+    return new Date(at).toISOString().slice(0, 19);
   });
 }
 

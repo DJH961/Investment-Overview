@@ -212,6 +212,7 @@ export function Holding() {
       <BackLink />
       <PageHeader
         title={row.symbol}
+        titleOnPhone
         subtitle={`${row.name} · ${row.account} · ${row.category} · ${row.native_currency}`}
         actions={<Flags row={row} />}
       />
