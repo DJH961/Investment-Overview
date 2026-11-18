@@ -80,3 +80,34 @@ export function useAckBrief() {
     onError: (_e, _v, ctx) => rollback(qc, ctx),
   });
 }
+
+/**
+ * The test override of "last here" (Health card). `visit_from` is the instant the Brief
+ * measures from (null: automatic); `last_seen_at` is the stored real visit.
+ * TODO: switch to api-types once the backend's BriefOut carries these fields.
+ */
+export type BriefVisitDto = BriefDto & { visit_from?: string | null; last_seen_at?: string | null };
+
+/** Both visit routes answer with the same payload as GET /api/brief: put it straight in the cache. */
+function useVisitMutation<V = void>(call: (v: V) => Promise<BriefVisitDto>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: call,
+    onSuccess: (data) => {
+      if (data && typeof data === "object") qc.setQueryData(BRIEF_KEY, data);
+      return qc.invalidateQueries({ queryKey: BRIEF_KEY });
+    },
+  });
+}
+
+/** PUT /api/brief/visit: pretend the last visit was at `visitFrom` (ISO instant with offset). */
+export function useSetBriefVisit() {
+  return useVisitMutation((visitFrom: string) =>
+    api<BriefVisitDto>("/api/brief/visit", { method: "PUT", body: { visit_from: visitFrom } }),
+  );
+}
+
+/** DELETE /api/brief/visit: back to the real, automatic last visit. */
+export function useClearBriefVisit() {
+  return useVisitMutation(() => api<BriefVisitDto>("/api/brief/visit", { method: "DELETE" }));
+}

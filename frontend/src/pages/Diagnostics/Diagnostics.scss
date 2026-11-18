@@ -758,3 +758,50 @@
     gap: var(--space-2);
   }
 }
+
+.briefvisit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+
+  &__lead {
+    margin: 0;
+    color: var(--color-fg-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__facts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-1) var(--space-4);
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__label {
+    color: var(--color-muted);
+  }
+
+  &__value {
+    margin: 0;
+  }
+
+  &__form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  &__input {
+    flex: 0 1 14rem;
+    min-width: 0;
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--color-neg);
+    font-size: var(--font-size-sm);
+  }
+}

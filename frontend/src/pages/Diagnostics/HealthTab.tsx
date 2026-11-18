@@ -13,6 +13,7 @@ import { useDismissProblem, useJobCatalogue, type CheckAction, type JobInfo } fr
 import { useDiagnostics, useRefreshStatus, useStartRefresh, type DiagnosticsData } from "../../lib/queries/manage";
 import { errorMessage } from "../../lib/queries/settings";
 import { RunJob } from "./RunJob";
+import { BriefVisitCard } from "./BriefVisitCard";
 import { ShareCountsCard } from "./ShareCountsCard";
 
 type Check = DiagnosticsData["checks"][number];
@@ -212,6 +213,7 @@ export function HealthTab() {
         <DataTable caption="Data providers" columns={providerColumns} rows={d.providers} rowKey={(p) => p.name} />
       </Card>
       <ShareCountsCard />
+      <BriefVisitCard />
       <Card title={`Provider log (${d.provider_log.length})`} collapsibleId="diagnostics.provider-log" defaultOpen={false}>
         {d.provider_log.length === 0 ? (
           <p className="diagnostics__muted">No provider calls recorded since the server started.</p>
