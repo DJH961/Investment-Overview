@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react";
+import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { formatTime, formatWeekdayTime, parseInstant } from "../../lib/format";
 import type { OverviewDto } from "../../lib/queries/portfolio";
@@ -18,10 +18,18 @@ export interface MarketClockProps {
   now?: Date;
 }
 
+const SECOND = 1000;
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
-/** After the boundary passed, "now" is said for this long while the refetch lands. */
+const DAY = 24 * HOUR;
+/** After the boundary passed, "the bell has rung" is said for this long while the refetch lands. */
 const JUST_PASSED = 5 * MINUTE;
+/** A regular NYSE session (09:30-16:00) and the wait overnight (16:00-09:30). */
+const SESSION = 6.5 * HOUR;
+const OVERNIGHT = 17.5 * HOUR;
+/** Under this long to a bell the digits take the accent colour. */
+const SOON = HOUR;
+const NY = "America/New_York";
 
 /** "3 h 12 min", "12 min", "45 s": rounded up, so it never says 0 before the moment. */
 export function formatCountdown(ms: number): string {
@@ -33,10 +41,37 @@ export function formatCountdown(ms: number): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
+/** The same span in words for a screen reader: "1 hour 46 minutes", "2 days 19 hours". */
+function spoken(ms: number): string {
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  if (ms < MINUTE) return plural(Math.max(1, Math.ceil(ms / SECOND)), "second");
+  const mins = Math.ceil(ms / MINUTE);
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  const parts = d > 0 ? [plural(d, "day"), h ? plural(h, "hour") : ""] : [h ? plural(h, "hour") : "", m ? plural(m, "minute") : ""];
+  return parts.filter(Boolean).join(" ");
+}
+
+export interface CountdownParts {
+  days: number;
+  /** "HH:MM:SS", zero padded. */
+  clock: string;
+}
+
+/** Whole seconds, rounded up (never 0 before the moment), as days + HH:MM:SS. Never negative. */
+export function splitCountdown(ms: number): CountdownParts {
+  const total = Math.max(0, Math.ceil(ms / SECOND));
+  const days = Math.floor(total / 86_400);
+  const rest = total - days * 86_400;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return { days, clock: `${p(Math.floor(rest / 3600))}:${p(Math.floor((rest % 3600) / 60))}:${p(rest % 60)}` };
+}
+
 export interface ClockView {
   /** "Open", "Closed", "Holiday". */
   state: string;
-  /** "since 15:30" (open, desktop only), else null. */
+  /** "since 15:30" (open), else null. */
   since: string | null;
   /** "closes in 3 h 12 min", "opens Mon 15:30", "closing now"; null when the instant is unknown or stale. */
   next: string | null;
@@ -69,9 +104,35 @@ export function clockView(f: ClockFreshness, now: Date, timeZone?: string): Cloc
 }
 
 /**
- * The current time, re-read once a second in the last two minutes, else every 15 s,
- * landing on the boundary itself; once past it, one last tick ends the "now" phrase.
- * Nothing ticks for a target long gone (stale data) or a fixed clock.
+ * How far along the track is (0..1). Open: from the session's open to the close. Closed:
+ * from the previous close to the next open (overnight is 17.5 h; a Monday open waits
+ * out the weekend, Fri 16:00 to Mon 09:30). Only an approximation of the start: the
+ * server sends the next instants only.
+ */
+export function trackProgress(f: ClockFreshness, now: Date): number | null {
+  const open = f.market_state === "open";
+  const target = open ? f.next_close_at : f.next_open_at;
+  if (!target) return null;
+  const at = parseInstant(target).getTime();
+  if (Number.isNaN(at)) return null;
+  let start: number;
+  if (open) {
+    const opened = f.session_opened_at ? parseInstant(f.session_opened_at).getTime() : Number.NaN;
+    start = Number.isNaN(opened) ? at - SESSION : opened;
+  } else {
+    const weekday = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: NY }).format(at);
+    start = at - OVERNIGHT - (weekday === "Mon" ? 2 * DAY : 0);
+  }
+  const span = at - start;
+  if (span <= 0) return null;
+  return Math.min(1, Math.max(0, (now.getTime() - start) / span));
+}
+
+/**
+ * The current time, re-read on every whole second of the countdown (so the digits flip in
+ * step with the bell, not with an arbitrary phase); once past the boundary one last tick
+ * ends the "bell has rung" phrase. Nothing ticks for a target long gone (stale data) or a
+ * fixed clock. Only this component re-renders.
  */
 function useNow(fixed: Date | undefined, target: string | null): Date {
   const [now, setNow] = useState(() => fixed ?? new Date());
@@ -81,24 +142,41 @@ function useNow(fixed: Date | undefined, target: string | null): Date {
     if (Number.isNaN(at)) return;
     const remaining = at - now.getTime();
     let wait: number;
-    if (remaining > 0) wait = Math.min(remaining <= 2 * MINUTE ? 1000 : 15_000, remaining);
+    if (remaining > 0) wait = remaining % SECOND || SECOND;
     else if (-remaining < JUST_PASSED) wait = JUST_PASSED + remaining;
     else return;
-    const id = window.setTimeout(() => setNow(new Date()), Math.max(50, wait));
+    const id = window.setTimeout(() => setNow(new Date()), Math.max(20, wait));
     return () => window.clearTimeout(id);
   }, [fixed, target, now]);
   return fixed ?? now;
 }
 
+/** True when the visitor asked the system for less motion. */
+function usePrefersStill(): boolean {
+  const [still, setStill] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!mq) return;
+    const on = () => setStill(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  return still;
+}
+
 /**
- * The market clock (plan P13) in the Overview hero: "Open since 15:30 · closes in
- * 3 h 12 min" or "Closed · opens in 2 h 14 min", in the owner's time zone. Pure
- * presentation of the server's next open / close (NYSE calendar, half-days included).
- * When a countdown reaches zero it asks once for fresh instants; a target already in
- * the past at mount (stale data) never triggers a refetch loop. One line on phones.
+ * The market countdown (plan P13), the statement piece of the Overview hero: a big
+ * HH:MM:SS to the next bell (NYSE calendar, half-days and holidays from the server),
+ * a session track (elapsed part of the trading day, or the wait overnight / over the
+ * weekend) and the bell's time in the owner's zone. Under an hour the digits take the
+ * accent colour; in the last minute the seconds breathe (not with reduced motion).
+ * The ticking part is hidden from screen readers, which get one still sentence. When
+ * the countdown reaches zero it asks once for fresh instants; a target already in the
+ * past at mount (stale data) never triggers a refetch loop and never shows a negative.
  */
 export function MarketClock({ freshness, onBoundary, now: fixed }: MarketClockProps) {
   const timeZone = useTimeZone();
+  const still = usePrefersStill();
   const open = freshness?.market_state === "open";
   const now = useNow(fixed, (open ? freshness?.next_close_at : freshness?.next_open_at) ?? null);
   const view = freshness ? clockView(freshness, now, timeZone) : null;
@@ -118,22 +196,76 @@ export function MarketClock({ freshness, onBoundary, now: fixed }: MarketClockPr
       onBoundary?.();
     }
   }, [target, counting, onBoundary]);
-  if (!view) return null;
+  if (!view || !freshness) return null;
+
+  const rung = view.next === "closing now" || view.next === "opening now";
+  const remaining = view.remaining;
+  const parts = remaining != null ? splitCountdown(remaining) : rung ? splitCountdown(0) : null;
+  const progress = trackProgress(freshness, now);
+  const bell = open ? "closing" : "opening";
+  const label = rung ? `The ${bell} bell has rung` : `Until the ${bell} bell`;
+  const soon = remaining != null && remaining <= SOON;
+  const last = remaining != null && remaining <= MINUTE;
+  const at = view.target ? parseInstant(view.target).getTime() : Number.NaN;
+  const bellTime =
+    Number.isNaN(at) ? null : remaining != null && remaining >= DAY ? formatWeekdayTime(at, timeZone) : formatTime(new Date(at), timeZone);
+  const sentence = [
+    `Market ${view.state.toLowerCase()}.`,
+    remaining != null && bellTime ? `${open ? "Closes" : "Opens"} at ${bellTime}, in ${spoken(remaining)}.` : view.next ? `${view.next}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <p className="market-clock" data-testid="market-clock" aria-live="off">
-      <span className="market-clock__line">
-        <Clock className="market-clock__icon" aria-hidden />
-        <span className="market-clock__state">{view.state}</span>
-        {view.since && <span className="market-clock__since">{view.since}</span>}
-        {view.next && (
-          <>
-            <span className="market-clock__sep" aria-hidden>
-              ·
-            </span>
-            <span className="market-clock__next">{view.next}</span>
-          </>
+    <section
+      className={clsx(
+        "market-clock",
+        open ? "market-clock--open" : "market-clock--shut",
+        soon && "market-clock--soon",
+        last && !still && "market-clock--last",
+        !parts && "market-clock--bare",
+        parts && parts.days > 0 && "market-clock--days",
+      )}
+      data-testid="market-clock"
+      aria-label="Market clock"
+    >
+      <p className="market-clock__sr" aria-live="off">
+        {sentence}
+      </p>
+      <div className="market-clock__visual" aria-hidden>
+        <div className="market-clock__head">
+          <span className="market-clock__label">{parts ? label : view.state}</span>
+          <span className="market-clock__state">{parts ? view.state : null}</span>
+          {bellTime && parts && <span className="market-clock__bell market-clock__bell--head">{bellTime} <span className="market-clock__zone">your time</span></span>}
+        </div>
+        {parts && (
+          <div className="market-clock__digits" data-testid="market-clock-digits">
+            {parts.days > 0 && (
+              <span className="market-clock__days">
+                {parts.days}
+                <abbr className="market-clock__unit" title="days">
+                  d
+                </abbr>
+              </span>
+            )}
+            <span className="market-clock__time">{parts.clock}</span>
+          </div>
         )}
-      </span>
-    </p>
+        {progress != null && (
+          <div className="market-clock__track" data-testid="market-clock-track">
+            <span className="market-clock__fill" style={{ width: `${(progress * 100).toFixed(2)}%` }} />
+            <span className="market-clock__now" style={{ left: `${(progress * 100).toFixed(2)}%` }} />
+          </div>
+        )}
+        <div className="market-clock__foot">
+          {view.since && <span className="market-clock__since">{view.since}</span>}
+          {bellTime && parts && (
+            <span className="market-clock__bell market-clock__bell--foot">
+              {bellTime} <span className="market-clock__zone">your time</span>
+            </span>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }

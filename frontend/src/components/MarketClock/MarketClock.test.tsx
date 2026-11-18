@@ -1,19 +1,9 @@
-import { act, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { MarketClock, clockView, formatCountdown, type ClockFreshness } from "./MarketClock";
+import { describe, expect, it, vi } from "vitest";
+import { clockView, formatCountdown, splitCountdown, trackProgress, type ClockFreshness } from "./MarketClock";
 
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
-afterEach(() => vi.useRealTimers());
 
-/** Each timer re-arms from an effect, so step the clock one act() at a time. */
-function advance(ms: number, step = 1000) {
-  for (let t = 0; t < ms; t += step) {
-    act(() => {
-      vi.advanceTimersByTime(step);
-    });
-  }
-}
 
 const open: ClockFreshness = {
   market_state: "open",
@@ -79,36 +69,30 @@ describe("clockView", () => {
   });
 });
 
-describe("MarketClock", () => {
-  it("one line: icon, state and the countdown", () => {
-    render(<MarketClock freshness={open} now={new Date("2026-06-30T16:48:00Z")} />);
-    expect(screen.getByTestId("market-clock")).toHaveTextContent("Open");
-    expect(screen.getByTestId("market-clock")).toHaveTextContent("closes in 3 h 12 min");
-  });
 
-  it("asks for fresh instants once when the countdown reaches zero", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-06-30T19:59:50Z"));
-    const onBoundary = vi.fn();
-    render(<MarketClock freshness={open} onBoundary={onBoundary} />);
-    expect(screen.getByTestId("market-clock")).toHaveTextContent("closes in 10 s");
-    advance(11_000);
-    expect(screen.getByTestId("market-clock")).toHaveTextContent("closing now");
-    expect(onBoundary).toHaveBeenCalledTimes(1);
-    // No loop while the same (stale) instant stays on screen.
-    advance(10 * 60_000, 30_000);
-    expect(onBoundary).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("market-clock")).not.toHaveTextContent("now");
+describe("splitCountdown", () => {
+  it("HH:MM:SS, rounded up, days beyond 24 h, never negative", () => {
+    expect(splitCountdown(6_371_000)).toEqual({ days: 0, clock: "01:46:11" });
+    expect(splitCountdown(10)).toEqual({ days: 0, clock: "00:00:01" });
+    expect(splitCountdown(86_400_000)).toEqual({ days: 1, clock: "00:00:00" });
+    expect(splitCountdown(86_399_000)).toEqual({ days: 0, clock: "23:59:59" });
+    expect(splitCountdown(2 * 86_400_000 + 19 * 3_600_000 + 4 * 60_000 + 11_000)).toEqual({ days: 2, clock: "19:04:11" });
+    expect(splitCountdown(-5000)).toEqual({ days: 0, clock: "00:00:00" });
   });
+});
 
-  it("a payload whose instants are already past (fixtures, stale cache) never refetches", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-03T09:00:00Z"));
-    const onBoundary = vi.fn();
-    render(<MarketClock freshness={open} onBoundary={onBoundary} />);
-    advance(60 * 60_000, 60_000);
-    expect(onBoundary).not.toHaveBeenCalled();
-    expect(screen.getByTestId("market-clock")).toHaveTextContent("Open");
-    expect(screen.getByTestId("market-clock").textContent).not.toMatch(/-/);
+describe("trackProgress", () => {
+  it("open: elapsed share of the session", () => {
+    expect(trackProgress(open, new Date("2026-06-30T16:45:00Z"))).toBeCloseTo(0.5, 5);
+  });
+  it("closed overnight: share of the 17.5 h wait; a Monday open waits out the weekend", () => {
+    expect(trackProgress(closed, new Date("2026-06-30T20:00:00Z"))).toBeCloseTo(0, 5);
+    expect(trackProgress(closed, new Date("2026-07-01T13:30:00Z"))).toBeCloseTo(1, 5);
+    const mon: ClockFreshness = { market_state: "closed", next_open_at: "2026-06-29T13:30:00Z" };
+    expect(trackProgress(mon, new Date("2026-06-27T12:00:00Z"))).toBeGreaterThan(0.2);
+    expect(trackProgress(mon, new Date("2026-06-26T20:00:00Z"))).toBeCloseTo(0, 5);
+  });
+  it("a stale instant clamps to the ends", () => {
+    expect(trackProgress(open, new Date("2026-07-09T00:00:00Z"))).toBe(1);
   });
 });

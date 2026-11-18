@@ -52,7 +52,7 @@ describe("OverviewHero", () => {
     );
     const clock = screen.getByTestId("market-clock");
     expect(clock).toHaveTextContent("Closed");
-    expect(clock).toHaveTextContent("opens in 5 h 30 min");
+    expect(clock).toHaveTextContent("05:30:00");
     expect(container.querySelector(".overview-hero__aside [data-testid='today-block']")).toContainElement(clock);
   });
   it("shows the live corner stamp and the incomplete-total note", () => {

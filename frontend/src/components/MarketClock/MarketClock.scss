@@ -1,40 +1,224 @@
-// The market clock: one quiet line, an icon and the state word carry the meaning
-// (never a colour). Never wraps; where the line is short (phones, the hero's
-// right column) the "since 15:30" part steps aside so the countdown stays whole.
+@use "../../styles/mixins" as m;
+
+// The market countdown: the hero's statement piece. Big serif HH:MM:SS (tabular, so
+// the seconds never jiggle the layout), a slim session track, the bell's time. The
+// type scales with the block's own width (container query), so it fills the desktop
+// aside and the phone band alike without wrapping. Colour is never the only signal:
+// the label says which bell, the state is a word.
 .market-clock {
   container: market-clock / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
   margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
 
-  &__line {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    min-width: 0;
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
+  // Desktop: the aside is already a framed column; the clock leads it unboxed.
+  @include m.desktop {
+    padding: 0 0 var(--space-1);
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  // Visually hidden sentence for screen readers (never ticks).
+  &__sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
     white-space: nowrap;
   }
 
-  &__icon {
-    flex: none;
-    width: var(--icon-sm);
-    height: var(--icon-sm);
+  &__visual {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
   }
 
-  &__state {
+  &__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    white-space: nowrap;
+  }
+
+  &__label {
+    overflow: hidden;
     color: var(--color-fg);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
+    text-overflow: ellipsis;
   }
 
-  &__since {
-    @container market-clock (max-width: 24rem) {
+  // "Open" / "Closed" / "Holiday": a word, with a small outline chip.
+  &__state {
+    flex: none;
+    padding: 1px var(--space-2);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+
+    &:empty {
       display: none;
     }
   }
 
-  &__next {
-    overflow: hidden;
-    text-overflow: ellipsis;
+  &__digits {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    color: var(--color-fg);
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums lining-nums;
+    font-weight: var(--font-weight-figure);
+    letter-spacing: var(--tracking-tight);
+    line-height: 1;
+    white-space: nowrap;
+    transition: color var(--duration-slow) var(--ease-standard);
+  }
+
+  &__time {
+    font-size: clamp(1.875rem, 21cqw, 3.5rem);
+  }
+
+  // "2 d" before the clock face, from a day out (weekends, holidays).
+  &__days {
+    color: var(--color-muted);
+    font-size: clamp(1.25rem, 10cqw, 1.75rem);
+  }
+
+  &__unit {
+    margin-left: 2px;
+    text-decoration: none;
+  }
+
+  &__track {
+    position: relative;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--color-border-strong);
+  }
+
+  &__fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    background: var(--color-accent);
+    transition: width var(--duration-slow) var(--ease-standard);
+  }
+
+  // The now-marker: a ring on the head of the filled part.
+  &__now {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--color-accent);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    transform: translate(-50%, -50%);
+  }
+
+  &__foot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__bell {
+    margin-left: auto;
+    color: var(--color-fg);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+
+  // Phones / tablets: the bell's time sits under the track. Desktop: up in the head
+  // (the aside is short on height), where it replaces the state chip and the foot.
+  &__bell--head {
+    display: none;
+  }
+
+  @include m.desktop {
+    &__bell--head {
+      display: inline;
+    }
+
+    &__bell--foot,
+    &__state {
+      display: none;
+    }
+
+    &__foot {
+      display: none;
+    }
+
+    &__time {
+      font-size: clamp(1.875rem, 22cqw, 3.5rem);
+    }
+  }
+
+  &__zone {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-regular);
+  }
+
+  // Under an hour to a bell: the digits take the accent colour (a quiet "get ready").
+  &--soon &__time {
+    color: var(--color-accent);
+  }
+
+  // Last minute: the seconds breathe once a second. Off with reduced motion.
+  &--last &__time {
+    animation: market-clock-breathe 1s ease-in-out infinite;
+  }
+
+  // A day or more out ("2 d 19:04:11"): the face is a little smaller to leave room for the days.
+  &--days &__time {
+    font-size: clamp(1.75rem, 17cqw, 2.75rem);
+  }
+
+  // No instant from the server (or stale data): just the state word, no digits or track.
+  &--bare {
+    padding-block: var(--space-2);
+  }
+
+  &--bare &__label {
+    color: var(--color-muted);
+  }
+
+  @include m.reduced-motion {
+    &__fill,
+    &__digits {
+      transition: none;
+    }
+  }
+}
+
+@keyframes market-clock-breathe {
+  50% {
+    opacity: 0.72;
   }
 }
