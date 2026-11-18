@@ -12,7 +12,7 @@ vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 
 afterEach(() => vi.unstubAllGlobals());
 
-const recorded = (full as unknown as Record<string, BriefDto>)["GET /api/brief"];
+const recorded = (full as Record<string, unknown>)["GET /api/brief"] as BriefDto;
 
 const move = (ccy: "EUR" | "USD") => ({
   session_date: "2026-06-30",

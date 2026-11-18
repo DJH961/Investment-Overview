@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
-from investment_dashboard.api.deps import SessionDep
+from investment_dashboard.api.deps import SessionDep, visit_heartbeat
 from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.api.schemas.overview import OverviewResponse
 from investment_dashboard.readmodels import overview as overview_readmodel
@@ -29,7 +29,11 @@ def _overview_both(session: Session) -> ByCurrency[OverviewResponse]:
     )
 
 
-@router.get("/overview/both", response_model=ByCurrency[OverviewResponse])
+@router.get(
+    "/overview/both",
+    response_model=ByCurrency[OverviewResponse],
+    dependencies=[Depends(visit_heartbeat)],
+)
 @conditional_both("overview")
 def get_overview_both(
     request: Request, response: Response, session: SessionDep

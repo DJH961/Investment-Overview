@@ -94,6 +94,8 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("POST", "/api/settings/import"): ("settings imported", "settings import rejected"),
     ("POST", "/api/brief/ack"): ("brief acknowledged", "brief ack failed"),
+    ("PUT", "/api/brief/visit"): ("brief visit start set", "brief visit start refused"),
+    ("DELETE", "/api/brief/visit"): ("brief visit start cleared", "brief visit clear failed"),
     ("POST", "/api/maintenance/jobs/{job_id}"): ("repair job started", "repair job refused"),
     ("PATCH", "/api/instruments/{instrument_id}"): (
         "instrument settings changed",

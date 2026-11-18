@@ -943,7 +943,7 @@
         "type": "object"
       },
       "BriefEvent": {
-        "description": "A ledger row created since the last acknowledgement (``transactions.created_at``).",
+        "description": "A ledger row created since the previous visit (``transactions.created_at``).",
         "properties": {
           "created_at": {
             "title": "Created At",
@@ -1266,6 +1266,17 @@
             ],
             "title": "Last Ack At"
           },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
           "move": {
             "anyOf": [
               {
@@ -1292,6 +1303,17 @@
             "default": 0,
             "title": "Sessions Passed",
             "type": "integer"
+          },
+          "visit_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visit From"
           }
         },
         "required": [
@@ -1299,6 +1321,19 @@
           "now"
         ],
         "title": "BriefOut",
+        "type": "object"
+      },
+      "BriefVisitIn": {
+        "properties": {
+          "visit_from": {
+            "title": "Visit From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visit_from"
+        ],
+        "title": "BriefVisitIn",
         "type": "object"
       },
       "Bucket": {
@@ -15335,6 +15370,68 @@
           }
         },
         "summary": "Ack Brief",
+        "tags": [
+          "brief"
+        ]
+      }
+    },
+    "/api/brief/visit": {
+      "delete": {
+        "description": "Back to automatic: the next absence rolls the window as normal.",
+        "operationId": "clear_visit_api_brief_visit_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Clear Visit",
+        "tags": [
+          "brief"
+        ]
+      },
+      "put": {
+        "description": "Debug: set the current visit's window start by hand; the visit continues.",
+        "operationId": "set_visit_api_brief_visit_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefVisitIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Visit",
         "tags": [
           "brief"
         ]

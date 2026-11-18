@@ -1,7 +1,8 @@
 """The Daily Brief payload (``BriefOut``), shaped from the cached Overview.
 
-Every figure is COPIED from the Overview payload of that currency (never recomputed,
-never converted), so the Brief cannot disagree with the hero. Session figures come from
+Every figure is taken from the Overview payload of that currency (never converted;
+the session's market part is its Total minus the currency part, so the parts sum to the
+headline), so the Brief cannot disagree with the hero. Session figures come from
 ``kpis.daily_move`` / ``daily_growth_pct`` / ``day_split`` / ``movers``; the weekend rate
 line from ``currency.today``.
 
@@ -41,17 +42,48 @@ def _iso(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat()
 
 
-def _move(overview: Any, session_date: str) -> dict[str, Any]:
+def _dec(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        out = Decimal(str(value))
+    except InvalidOperation:
+        return None
+    return out if out.is_finite() else None
+
+
+def _move(overview: Any, session_date: str, ccy: str) -> dict[str, Any]:
+    """The session's move on the hero's basis, its parts summing to the headline.
+
+    ``day_move`` is the headline day Total the hero shows: ``day_split.price_move`` (the
+    estimated book's when ``estimated``, the official one otherwise; the field's name is
+    historical, it is the whole Total). ``price_move`` is its market part and
+    ``currency_move`` the rate's part, so ``price_move + currency_move == day_move``.
+    Only the euro view has a currency leg (the dollar book is valued in its own
+    currency: ``currency_move`` null, the market is the whole move), and while the
+    market is shut the currency since the close is beside the Total, not in it.
+    """
     kpis = _get(overview, "kpis")
     split = _get(overview, "day_split")
+    estimated = bool(_get(split, "estimated"))
+    overnight = bool(_get(split, "overnight"))
+    estimate = _get(kpis, "estimate") if estimated else None
+    total = _dec(_get(split, "price_move"))
+    if total is None:
+        total = _dec(_get(estimate, "daily_move") if estimate else _get(kpis, "daily_move"))
+    pct = _get(estimate, "daily_growth_pct") if estimate else _get(kpis, "daily_growth_pct")
+    currency = _dec(_get(split, "currency_move")) if ccy == "EUR" else None
+    market = total
+    if total is not None and currency is not None and not overnight:
+        market = total - currency
     return {
         "session_date": _get(kpis, "daily_growth_as_of") or session_date,
-        "day_move": _get(kpis, "daily_move"),
-        "day_move_pct": _get(kpis, "daily_growth_pct"),
-        "price_move": _get(split, "price_move"),
-        "currency_move": _get(split, "currency_move"),
-        "currency_overnight": bool(_get(split, "overnight")),
-        "estimated": bool(_get(split, "estimated")),
+        "day_move": dec(total),
+        "day_move_pct": pct,
+        "price_move": dec(market),
+        "currency_move": dec(currency),
+        "currency_overnight": overnight,
+        "estimated": estimated,
         "movers": _get(overview, "movers"),
     }
 
@@ -137,18 +169,25 @@ def _fx_since(
 
 
 def build(session: Session, *, overview_both: Any, now: datetime) -> dict[str, Any]:
-    """The Brief for the window since the stored marker; ``due`` false when none."""
+    """The Brief for the owner's last absence ``(visit_from, visit_start]``; ``due`` false when none."""
     now = now.astimezone(UTC) if now.tzinfo is not None else now.replace(tzinfo=UTC)
     last_ack = brief_service.get_last_ack(session)
-    window = brief_domain.brief_window(last_ack, now)
+    visit = brief_service.get_visit(session)
+    seen = brief_service.get_last_seen(session)
+    window = brief_domain.brief_window(visit[0], visit[1]) if visit is not None else None
+    if window is not None and last_ack is not None and last_ack >= window.end:
+        window = None  # dismissed during this visit: hidden until the next one
     out: dict[str, Any] = {
         "due": window is not None,
         "last_ack_at": _iso(last_ack) if last_ack is not None else None,
         "now": _iso(now),
+        "visit_from": _iso(visit[0]) if visit is not None else None,
+        "last_seen_at": _iso(seen) if seen is not None else None,
     }
-    if window is None or last_ack is None:
+    if window is None or visit is None:
         out["due"] = False
         return out
+    since, came_back = visit
     out["kind"] = window.kind
     out["boundaries"] = [
         {"at": _iso(b.at), "kind": b.kind, "session_date": b.session_date.isoformat()}
@@ -158,13 +197,13 @@ def build(session: Session, *, overview_both: Any, now: datetime) -> dict[str, A
     out["sessions_passed"] = window.sessions_passed
     if window.kind == "session":
         day = window.sessions[0].isoformat()
-        out["move"] = {c: _move(_get(overview_both, c), day) for c in CURRENCIES}
+        out["move"] = {c: _move(_get(overview_both, c), day, c) for c in CURRENCIES}
     elif window.kind == "fx_reopen":
         out["fx_move"] = {c: _fx_move(_get(overview_both, c)) for c in CURRENCIES}
     if overview_both is not None:
         # Only on the full build (the probe has no overview and is never returned due).
-        out.update(_fx_since(session, overview_both, last_ack, now))
-    events, total = _events(session, last_ack)
+        out.update(_fx_since(session, overview_both, since, came_back))
+    events, total = _events(session, since)
     out["events"] = events
     out["events_total"] = total
     return out
