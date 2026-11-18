@@ -135,15 +135,14 @@ const windowOf = (b: BriefDto, currency: ReportingCurrency): BriefWindowMove | n
 
 /** A custom time frame (several sessions away): the same figure row as one session. */
 function WindowFact({ brief, w, currency }: { brief: BriefDto; w: BriefWindowMove; currency: ReportingCurrency }) {
+  // The window's currency part and the "currency effect since" slot are one figure: its rates live here.
+  const eff = brief.currency_effect_since?.EUR ?? null;
   const move = toNum(w.move);
   const fx = toNum(w.currency_move);
   // Shown to the cent, Market + Currency add up to the headline as displayed.
   const cents = (v: number) => Math.round(v * 100) / 100;
   const market = move !== null && fx !== null ? cents(cents(move) - cents(fx)) : toNum(w.price_move);
   const flows = toNum(w.net_flows);
-  const first = brief.sessions[0];
-  const last = brief.sessions[brief.sessions.length - 1];
-  const days = first && last && first !== last ? `${formatDayLabel(first)} – ${formatDayLabel(last)}` : first ? formatDayLabel(first) : null;
   const start = toNum(w.start_value);
   const end = toNum(w.end_value);
   const deposits =
@@ -158,7 +157,7 @@ function WindowFact({ brief, w, currency }: { brief: BriefDto; w: BriefWindowMov
       testId="brief-window-move"
       label={
         <>
-          {days ?? "Time away"}
+          While you were away
           {w.estimated && <span className="daily-brief__est"> ≈ est.</span>}
         </>
       }
@@ -170,19 +169,23 @@ function WindowFact({ brief, w, currency }: { brief: BriefDto; w: BriefWindowMov
       }
       note={
         currency === "EUR" ? (
-          <span className="daily-brief__parts" data-testid="brief-split" data-ccy-specific="">
-            <span className="daily-brief__pair">
-              <span className="daily-brief__key">Market</span>
-              <Money amount={market} currency={currency} signed colored />
+          <>
+            <span className="daily-brief__line" data-testid="brief-split" data-ccy-specific="">
+              <span className="daily-brief__key">Market</span> <Money amount={market} currency={currency} signed colored />
+              {fx !== null && (
+                <>
+                  {" · "}
+                  <span className="daily-brief__key">Currency</span> <Money amount={fx} currency={currency} signed colored />
+                </>
+              )}
             </span>
-            {fx !== null && (
-              <span className="daily-brief__pair">
-                <span className="daily-brief__key">Currency</span>
-                <Money amount={fx} currency={currency} signed colored />
+            {eff && (
+              <span className="daily-brief__line" data-testid="brief-rates">
+                EUR/USD {rate(eff.rate_then)} → {rate(eff.rate_now)}
               </span>
             )}
-            {deposits}
-          </span>
+            {deposits && <span className="daily-brief__line">{deposits}</span>}
+          </>
         ) : (
           <>
             {start !== null && end !== null && (
@@ -464,10 +467,12 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
   const icon = kind === "session" ? <Newspaper aria-hidden /> : kind === "fx" ? <Repeat aria-hidden /> : <CalendarRange aria-hidden />;
   // "Since" is the previous visit (the server's marker), as the currency slot's rates use it.
   const sinceIso = b.visit_from ?? b.currency_effect_since?.EUR?.since ?? b.investing_power_since?.USD?.since ?? null;
-  const since = sinceIso ? sinceLabel(sinceIso, b.now, timeZone) : null;
+  // A window of several sessions names the start's date too.
+  const since = sinceIso ? (win ? formatDayTime(sinceIso, timeZone) : sinceLabel(sinceIso, b.now, timeZone)) : null;
   const span = kind === "fx" ? "weekend" : n === 1 ? "1 session" : `${n} sessions`;
   // One slot for the currency since the last look, shown when the server sends either side.
-  const showCurrency = Boolean(b.currency_effect_since?.EUR || b.investing_power_since?.USD);
+  // With the window's figure on screen (EUR) the same currency effect sits under it, not twice.
+  const showCurrency = Boolean(b.currency_effect_since?.EUR || b.investing_power_since?.USD) && !(win && currency === "EUR");
 
   return (
     <section ref={card} className="daily-brief u-enter" aria-label="Daily brief">
@@ -475,7 +480,17 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
         <span className="daily-brief__icon">{icon}</span>
         <h2 className="daily-brief__title">Daily brief</h2>
         <p className="daily-brief__window" data-testid="brief-window">
-          {since ? `Since you last looked · ${since}` : "Since you last looked"} · {span}
+          {win && since ? (
+            <>
+              <span className="daily-brief__long">Since you last looked · {since}</span>
+              <span className="daily-brief__short">Since {since}</span>
+            </>
+          ) : since ? (
+            `Since you last looked · ${since}`
+          ) : (
+            "Since you last looked"
+          )}{" "}
+          · {span}
         </p>
         {remaining !== null && (
           <span className="daily-brief__timer" data-testid="brief-timer" title="Pauses while you point at or focus the brief">

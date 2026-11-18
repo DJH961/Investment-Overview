@@ -137,8 +137,10 @@ describe("DailyBrief", () => {
     stub(() => withWindow(null));
     mount("EUR");
     expect(await screen.findByTestId("brief-figure")).toHaveTextContent("+€11,980.50");
-    expect(screen.getByTestId("brief-window-move")).toHaveTextContent("Fri 26/06 – Tue 30/06");
-    expect(screen.getByTestId("brief-split")).toHaveTextContent("Market+€14,000.20Currency-€2,019.70");
+    expect(screen.getByTestId("brief-window-move")).toHaveTextContent("While you were away");
+    expect(screen.getByTestId("brief-rates")).toHaveTextContent("EUR/USD 1.1590 → 1.1641");
+    expect(screen.queryByTestId("brief-currency-effect")).toBeNull();
+    expect(screen.getByTestId("brief-split")).toHaveTextContent("Market +€14,000.20 · Currency -€2,019.70");
     expect(screen.queryByTestId("brief-flows")).toBeNull();
     expect(screen.queryByText(/sessions passed/)).toBeNull();
     expect(screen.getByTestId("brief-movers-up")).toHaveTextContent("WIN1");
@@ -150,6 +152,7 @@ describe("DailyBrief", () => {
     mount("USD");
     expect(await screen.findByTestId("brief-value-path")).toHaveTextContent("US$1,469,107 → US$1,481,087");
     expect(screen.getByTestId("brief-window-move")).not.toHaveTextContent("Market");
+    expect(screen.getByTestId("brief-currency-effect")).toHaveTextContent("Investing power");
   });
 
   it("deposits show only when the window had net flows", async () => {
