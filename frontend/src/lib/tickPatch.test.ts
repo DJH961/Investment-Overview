@@ -334,13 +334,29 @@ describe("applyTick twin estimates", () => {
     const usd = h.USD.holdings[0];
     expect(usd.twin.est_price).toBe("103");
     expect(Number(usd.twin.est_value)).toBeCloseTo(1030, 9);
-    expect(Number(usd.twin.est_today_move)).toBeCloseTo(30, 9);
+    // The day move is the server's (FX-inclusive): never recomputed as price only.
+    expect(usd.twin.est_today_move).toBe("0");
     expect(usd.twin.est_today_pct).toBe("0.03");
     expect(usd.twin.at).toBe("2026-11-04T14:02:00Z");
     const eur = h.EUR.holdings[0];
     expect(Number(eur.twin.est_value)).toBeCloseTo(824, 9); // 1030 / 1.25
-    expect(Number(eur.twin.est_today_move)).toBeCloseTo(24, 9);
+    expect(eur.twin.est_today_move).toBe("0");
     expect(eur.twin.est_today_pct).toBe("0.0301");
+  });
+
+  it("keeps the server's FX-inclusive est_today_move on a tick (no price-only overwrite)", () => {
+    const qc = seedTwin();
+    const h0 = qc.getQueryData<any>(["holdings", "both"]);
+    // Server figures: in EUR the move includes the dollar's slide since the close.
+    h0.EUR.holdings[0] = { ...h0.EUR.holdings[0], twin: { ...twin, est_today_move: "-7.25" } };
+    h0.USD.holdings[0] = { ...h0.USD.holdings[0], twin: { ...twin, est_today_move: "30" } };
+    qc.setQueryData(["holdings", "both"], { ...h0 });
+    applyTick(qc, estTick);
+    const h = qc.getQueryData<any>(["holdings", "both"]);
+    // A price-only recompute would give 24 in EUR (30 / 1.25) and drop the currency leg.
+    expect(h.EUR.holdings[0].twin.est_today_move).toBe("-7.25");
+    expect(h.USD.holdings[0].twin.est_today_move).toBe("30");
+    expect(Number(h.EUR.holdings[0].twin.est_value)).toBeCloseTo(824, 9);
   });
 
   it("a stale-NAV price keeps the server's day move (no zeroing)", () => {

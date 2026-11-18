@@ -5,7 +5,9 @@ exports[`write -> invalidated keys > accountWrite 1`] = `
   "accounts",
   "allocations/both",
   "analytics/both",
+  "brief",
   "calculator/inputs",
+  "currency/both",
   "deposits/both",
   "deposits/dividends",
   "graphs/1d",
@@ -23,6 +25,7 @@ exports[`write -> invalidated keys > fxConversionWrite 1`] = `
 [
   "analytics/both",
   "calculator/inputs",
+  "currency/both",
   "deposits/both",
   "deposits/dividends",
   "fx-conversions",
@@ -39,7 +42,9 @@ exports[`write -> invalidated keys > importWrite 1`] = `
   "accounts",
   "allocations/both",
   "analytics/both",
+  "brief",
   "calculator/inputs",
+  "currency/both",
   "deposits/both",
   "deposits/dividends",
   "diagnostics/status",
@@ -75,7 +80,9 @@ exports[`write -> invalidated keys > refresh 1`] = `
 [
   "allocations/both",
   "analytics/both",
+  "brief",
   "calculator/inputs",
+  "currency/both",
   "deposits/both",
   "deposits/dividends",
   "diagnostics/status",
@@ -90,6 +97,8 @@ exports[`write -> invalidated keys > refresh 1`] = `
 exports[`write -> invalidated keys > tick 1`] = `
 [
   "allocations/both",
+  "brief",
+  "currency/both",
   "graphs/1d",
   "holdings/both",
   "holdings/history",
@@ -102,7 +111,9 @@ exports[`write -> invalidated keys > transactionWrite 1`] = `
 [
   "allocations/both",
   "analytics/both",
+  "brief",
   "calculator/inputs",
+  "currency/both",
   "deposits/both",
   "deposits/dividends",
   "diagnostics/status",

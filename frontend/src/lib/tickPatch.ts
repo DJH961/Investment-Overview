@@ -214,14 +214,19 @@ function patchRow(row: HoldingRowDto, side: Ccy, fx: number | null, p: TickPrice
   return next;
 }
 
-/** A pending twin's estimate: value = shares x est price x rate; the % is the server's. */
+/**
+ * A pending twin's estimate: value = shares x est price x rate (one instant); the %
+ * is the server's. The day move is the server's too and is NOT recomputed here: it
+ * folds in the currency since the previous close (and freezes at the close rate),
+ * which a price-only `shares x (est - prev NAV)` would drop. The tick's refetch
+ * brings the new figure.
+ */
 function patchTwin(row: HoldingRowDto, side: Ccy, fx: number | null, e: TickEstimateDto): HoldingRowDto {
   const twin = row.twin;
   if (!twin || !twin.pending) return row;
   const estPx = Number(e.est_px);
-  const prevNav = Number(e.prev_nav);
   const shares = Number(row.shares);
-  if (!Number.isFinite(estPx) || !Number.isFinite(prevNav) || !Number.isFinite(shares)) return row;
+  if (!Number.isFinite(estPx) || !Number.isFinite(shares)) return row;
   const factor = nativeFactor(row.native_currency, side, fx);
   if (factor === null) return row;
   const pct = decimal(e.pct?.[side]);
@@ -231,7 +236,6 @@ function patchTwin(row: HoldingRowDto, side: Ccy, fx: number | null, e: TickEsti
       ...twin,
       est_price: e.est_px,
       est_value: String(shares * estPx * factor),
-      est_today_move: String(shares * (estPx - prevNav) * factor),
       est_today_pct: pct ?? twin.est_today_pct,
       at: e.at,
     },

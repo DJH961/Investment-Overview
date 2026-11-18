@@ -70,8 +70,12 @@ describe("Currency page", () => {
   });
 
   it("shows the tailwind or headwind word, not only colour", () => {
-    mount();
+    // The fixture's EUR view is all headwinds; its USD view carries the tailwind.
+    const eur = mount();
     expect(screen.getAllByText("Headwind").length).toBeGreaterThan(0);
+    eur.unmount();
+    state.ccy = "USD";
+    mount();
     expect(screen.getByText("Tailwind")).toBeInTheDocument();
   });
 
