@@ -4,7 +4,24 @@ import type { components } from "../api-types";
 import { applyOptimistic, byRoot, rollback, type OptimisticContext } from "./optimistic";
 
 type S = components["schemas"];
-export type BriefDto = S["BriefOut"];
+
+/**
+ * The currency effect on the portfolio over the whole window since the last
+ * acknowledgement, per currency view (server-computed; contract agreed for 7.0,
+ * optional until the backend field lands). EUR view: money in euros; USD view: the
+ * investing-power equivalent in dollars. `pct` is a fraction; rates are EUR/USD.
+ */
+export interface BriefCurrencyEffectDto {
+  amount: string;
+  pct: string;
+  rate_then: string;
+  rate_now: string;
+  since: string;
+}
+
+export type BriefDto = S["BriefOut"] & {
+  currency_effect_since?: { EUR?: BriefCurrencyEffectDto | null; USD?: BriefCurrencyEffectDto | null } | null;
+};
 export type BriefMoveDto = S["BriefMove"];
 export type BriefFxMoveDto = S["BriefFxMove"];
 export type BriefEventDto = S["BriefEvent"];
