@@ -15,13 +15,15 @@
   padding: var(--space-3) var(--space-4) var(--space-4);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-2);
+  --market-clock-bg: var(--color-surface-2);
+  background: var(--market-clock-bg);
 
   // Desktop: the aside is already a framed column; the clock leads it unboxed.
   @include m.desktop {
     padding: 0 0 var(--space-1);
     border: 0;
     border-radius: 0;
+    --market-clock-bg: var(--color-surface);
     background: none;
   }
 
@@ -106,9 +108,19 @@
     text-decoration: none;
   }
 
+  // A progress bar, not a slider: a quiet track, the elapsed part filled solid, thin
+  // hour notches cut through it, the two bell times at its ends. No thumb, no hover.
+  &__bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
   &__track {
     position: relative;
-    height: 6px;
+    overflow: hidden;
+    height: 10px;
     border-radius: var(--radius-full);
     background: var(--color-border-strong);
   }
@@ -116,62 +128,39 @@
   &__fill {
     position: absolute;
     inset: 0 auto 0 0;
-    border-radius: inherit;
     background: var(--color-accent);
     transition: width var(--duration-slow) var(--ease-standard);
   }
 
-  // The now-marker: a ring on the head of the filled part.
-  &__now {
+  &__tick {
     position: absolute;
-    top: 50%;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--color-accent);
-    border-radius: var(--radius-full);
-    background: var(--color-surface);
-    transform: translate(-50%, -50%);
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    margin-left: -1px;
+    background: var(--market-clock-bg);
   }
 
-  &__foot {
+  &__ends {
     display: flex;
-    align-items: baseline;
     justify-content: space-between;
     gap: var(--space-2);
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-
-    &:empty {
-      display: none;
-    }
   }
 
-  &__bell {
-    margin-left: auto;
+  // The bell being counted to is the one that matters.
+  &__ends > :last-child {
     color: var(--color-fg);
-    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
   }
 
-  // Phones / tablets: the bell's time sits under the track. Desktop: up in the head
-  // (the aside is short on height), where it replaces the state chip and the foot.
-  &__bell--head {
-    display: none;
-  }
-
+  // Desktop: the aside is short on height, so the state chip steps aside (the label
+  // already names the bell).
   @include m.desktop {
-    &__bell--head {
-      display: inline;
-    }
-
-    &__bell--foot,
     &__state {
-      display: none;
-    }
-
-    &__foot {
       display: none;
     }
 
@@ -180,10 +169,6 @@
     }
   }
 
-  &__zone {
-    color: var(--color-muted);
-    font-weight: var(--font-weight-regular);
-  }
 
   // Under an hour to a bell: the digits take the accent colour (a quiet "get ready").
   &--soon &__time {
@@ -198,6 +183,68 @@
   // A day or more out ("2 d 19:04:11"): the face is a little smaller to leave room for the days.
   &--days &__time {
     font-size: clamp(1.75rem, 17cqw, 2.75rem);
+  }
+
+  // The sheet (phone): the statement without its own frame, a size up.
+  &--sheet {
+    --market-clock-bg: var(--color-surface);
+    padding: var(--space-1) 0 var(--space-2);
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  &--sheet &__time {
+    font-size: clamp(2.5rem, 24cqw, 4.5rem);
+  }
+
+  &--sheet.market-clock--days &__time {
+    font-size: clamp(2rem, 17cqw, 3.25rem);
+  }
+
+  // The last-15-minutes band on a phone's hero: one tight row (digits, then the label),
+  // a thin progress line under it; no state chip, no hour notches, no end labels.
+  &--near {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  &--near &__visual {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: var(--space-3);
+    row-gap: var(--space-2);
+  }
+
+  &--near &__digits {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  &--near &__head {
+    grid-column: 2;
+    grid-row: 1;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  &--near &__bar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  &--near &__time {
+    font-size: 2.25rem;
+  }
+
+  &--near &__track {
+    height: 6px;
+  }
+
+  &--near &__state,
+  &--near &__ends,
+  &--near &__tick {
+    display: none;
   }
 
   // No instant from the server (or stale data): just the state word, no digits or track.

@@ -6,7 +6,8 @@ import { DeltaBadge } from "../DeltaBadge";
 import { InfoTip } from "../InfoTip";
 import { useFitWidth } from "../KpiTile/useFitWidth";
 import { Money } from "../Money";
-import { MarketClock } from "../MarketClock";
+import { MarketChip, MarketClock, SessionLine } from "../MarketClock";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
 import { latestInstant, lastSessionLabel, PriceStamps, type PriceTime, type StampOptions } from "../Freshness";
@@ -98,7 +99,13 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
   // The big figure shrinks to fit the card (seven-figure USD / de-DE values at 360 px).
   const valuesRef = useRef<HTMLDivElement>(null);
   useFitWidth(valuesRef, loading || !data);
-  const clock = data && !loading ? <MarketClock freshness={data.freshness} now={now} onBoundary={onClockBoundary} /> : null;
+  // Phones: no standing clock band. A quiet chip in the corner opens the full clock; the
+  // compact band shows by itself only in the last 15 minutes to a bell (and 5 after).
+  const phone = useMediaQuery("(max-width: 767px)");
+  const clock =
+    data && !loading ? (
+      <MarketClock freshness={data.freshness} now={now} onBoundary={onClockBoundary} variant={phone ? "near" : "full"} />
+    ) : null;
   const asideNode =
     typeof aside === "function" ? aside(clock) : aside ? (
       <>
@@ -165,6 +172,7 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
   const fetched = f ? latestInstant(f.last_price_update_at, f.price_observed_at) : null;
   return (
     <section className={cls} aria-label="Portfolio value">
+      {phone && <SessionLine freshness={f} now={now} />}
       <div className="overview-hero__main">
         <div className="overview-hero__head">
           {/* The "≈ est." chip sits with the label, never competing with the figure's width. */}
@@ -180,7 +188,9 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
               </span>
             )}
           </span>
-          {live && (
+          {phone && f ? (
+            <MarketChip freshness={f} live={live} currency={currency} now={now} />
+          ) : live && (
             <span className="overview-hero__corner overview-hero__corner--live">
               <span className="overview-hero__dot" aria-hidden />
               Live

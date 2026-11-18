@@ -33,7 +33,9 @@ describe("MarketClock countdown", () => {
     render(<MarketClock freshness={open} now={new Date("2026-06-30T18:13:49Z")} />);
     expect(root()).toHaveTextContent("Until the closing bell");
     expect(digits()).toBe("01:46:11");
-    expect(root()).toHaveTextContent("20:00 your time");
+    expect(root()).toHaveTextContent("13:30 20:00");
+    expect(root().querySelectorAll(".market-clock__tick")).toHaveLength(6);
+    expect(root().querySelector(".market-clock__now")).toBeNull();
     expect(root().querySelector(".market-clock__visual")).toHaveAttribute("aria-hidden", "true");
     const sr = root().querySelector(".market-clock__sr");
     expect(sr).toHaveAttribute("aria-live", "off");
@@ -44,7 +46,8 @@ describe("MarketClock countdown", () => {
     render(<MarketClock freshness={closed} now={new Date("2026-06-28T18:55:49Z")} />);
     expect(root()).toHaveTextContent("Until the opening bell");
     expect(digits()).toBe("2d18:34:11");
-    expect(root()).toHaveTextContent("Wed 13:30 your time");
+    expect(root()).toHaveTextContent("Last close Wed 13:30");
+    expect(root().querySelectorAll(".market-clock__tick")).toHaveLength(0);
   });
 
   it("ticks every second, in step with the bell", () => {
