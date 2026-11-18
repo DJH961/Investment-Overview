@@ -267,7 +267,11 @@ export function CurrencyBox({ data, footer, collapsibleId = "overview.currency" 
   return (
     <Card
       className="currency-box"
-      title={<span className="currency-box__title">Currency · EUR ↔ USD</span>}
+      title={
+        <span className="currency-box__title" data-truncate-ok>
+          Currency<span className="currency-box__pair"> · EUR ↔ USD</span>
+        </span>
+      }
       collapsibleId={collapsibleId}
       actions={
         <HeaderStamp

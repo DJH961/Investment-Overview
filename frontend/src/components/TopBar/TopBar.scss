@@ -282,8 +282,13 @@
       white-space: normal;
     }
 
+    // The value and the day % may stack in a very narrow block (seven-figure USD at
+    // 360 px); each figure stays whole.
     .top-bar__mini {
       flex-shrink: 0;
+      flex-wrap: wrap;
+      max-width: 100%;
+      white-space: normal;
     }
 
     .top-bar__freshness {

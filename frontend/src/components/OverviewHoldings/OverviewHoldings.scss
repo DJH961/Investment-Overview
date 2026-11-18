@@ -11,6 +11,10 @@
     grid-template-columns: minmax(0, 1fr) auto auto;
     column-gap: var(--space-4);
     margin: 0;
+
+    @include m.phone {
+      column-gap: var(--space-3);
+    }
     padding: 0;
     list-style: none;
 
@@ -575,9 +579,24 @@
       grid-row: 2;
     }
 
+    // The price time wraps under the name rather than losing its day or (NAV).
     &__row &__asof {
       grid-column: 1;
       grid-row: 3;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+    }
+
+    // The twin line's "≈ FAKEL" needs the narrow first column whole: the dashed
+    // connector and the indent step aside (italic and "≈" still mark the estimate).
+    &__twin-who {
+      gap: 0;
+      margin-left: 0;
+    }
+
+    &__twin-link {
+      display: none;
     }
 
     &__row &__value,

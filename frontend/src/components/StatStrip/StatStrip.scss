@@ -22,6 +22,7 @@
     flex-direction: column;
     gap: var(--space-1);
     min-width: 0;
+    container-type: inline-size;
     padding: var(--space-4) var(--space-5);
     border-top: var(--border-width) solid var(--color-border);
     border-left: var(--border-width) solid var(--color-border);
@@ -40,6 +41,8 @@
     @include m.figure(var(--font-size-xl));
     margin: 0;
     overflow-wrap: anywhere;
+    // A long money figure shrinks with its cell before it could break or spill.
+    font-size: clamp(var(--font-size-md), 11cqi, var(--font-size-xl));
 
     @include m.phone {
       font-size: var(--font-size-lg);
