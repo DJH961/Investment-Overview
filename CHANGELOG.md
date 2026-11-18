@@ -17,7 +17,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Daily Brief on the Overview.** When a NYSE open or close has passed since you last
+  dismissed it, a card above the portfolio value says what happened: for one session the
+  day's move (market and currency apart in the euro view), the biggest mover each way and
+  the ledger rows added meanwhile; for longer gaps an honest "N sessions passed" with the
+  dates; over a weekend a single line on the euro. Every figure is the server's. Dismiss
+  removes it at once and it stays gone (it comes back only if the dismissal fails).
+- **Market clock in the hero.** Where the intraday sparkline used to sit: "Open since
+  15:30 · closes in 3 h 12 min" or "Closed · opens in 2 h 14 min" (weekday and time when
+  more than a day away), in your time zone, one line on phones. When it reaches zero it
+  fetches the next open/close once; old instants never show a negative time.
+- **USD view: a currency figure that means something.** The lifetime currency card shows,
+  in dollars, the dollar's move against the euro since you bought and how far the euro
+  return sits from the dollar one (in percentage points), instead of a currency effect
+  that is always 0. Same tiles in both views, so a switch does not move the page.
+- **Currency page link** at the foot of the Overview's currency card.
+- **Fixture mode:** `?brief=session|sessions|fx|off` shows each kind of Daily Brief.
+
 ### Fixed
+- **Live ticks keep a pending fund's day move FX-inclusive.** The tick recomputed an
+  estimated fund's day move from the price alone, dropping the currency part the server
+  includes; it now keeps the server's figure until the refetch.
 - **Projection in real terms adds up.** With "real terms" on, the projected growth and the
   money paid in are now both in today's money (each contribution adjusted for inflation at
   its own date), so start + paid in + growth = the end value. Before, the nominal payments
