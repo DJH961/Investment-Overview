@@ -3,7 +3,7 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import { api } from "./api";
 import { reopenLiveStream } from "./live";
 import { forgetPasskeyId, lastPasskeyId, markSignedOut, rememberPasskeyDevice, rememberPasskeyId } from "./passkeyHint";
-import { clearClientData } from "./queries";
+import { clearClientData, markSignedIn } from "./queries";
 
 export {
   clearSignedOutFlag,
@@ -22,6 +22,7 @@ export interface PasskeyInfo {
 
 export async function login(password: string): Promise<void> {
   await api<void>("/api/auth/login", { method: "POST", body: { password }, skipAuthRedirect: true });
+  markSignedIn();
   reopenLiveStream();
 }
 
@@ -57,6 +58,7 @@ export async function passkeyLogin(autofill = false): Promise<void> {
   await api<void>("/api/auth/passkey/login/verify", { method: "POST", body: credential, skipAuthRedirect: true });
   rememberPasskeyId(credential.id);
   rememberPasskeyDevice();
+  markSignedIn();
   reopenLiveStream();
 }
 

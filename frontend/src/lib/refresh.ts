@@ -1,4 +1,4 @@
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useToast } from "../components/Toast";
 import { ApiError, api } from "./api";
@@ -204,20 +204,23 @@ export function deriveUpdateMode(input: {
   refresh: Pick<RefreshState, "running" | "explicit" | "historical">;
   /** A page's own query is fetching (it also publishes this to the shell). */
   pageRefreshing: boolean;
+  /** `background`: app-started reads (`foreground` is unused here: a first load stays quiet too). */
   activity: ReadActivity;
+  /** Every query in flight, with or without a cached copy. */
+  fetching?: number;
 }): UpdateMode {
-  const { refresh, pageRefreshing, activity } = input;
-  const owner = activity.foreground > 0;
+  const { refresh, pageRefreshing, activity, fetching = 0 } = input;
   // A historic download has real progress to show, so it keeps the bar even when nobody clicked.
   if (refresh.running) return refresh.explicit || refresh.historical ? "loud" : "quiet";
-  if (owner) return "loud";
-  if (activity.background > 0) return "quiet";
-  // A page says it is fetching but no request is in flight (paused, queued): keep the old spin.
-  return pageRefreshing ? "loud" : "idle";
+  // Everything else (a tick, a cache restore, a stale refetch after login, a first load whose
+  // skeletons already say "loading") only spins the icon: never the disabled button or the bar.
+  if (activity.background > 0 || fetching > 0 || pageRefreshing) return "quiet";
+  return "idle";
 }
 
 export function useUpdateMode(pageRefreshing: boolean): UpdateMode {
   const refresh = useRefreshState();
-  const activity = useReadActivity();
-  return deriveUpdateMode({ refresh, pageRefreshing, activity });
+  const reads = useReadActivity();
+  const fetching = useIsFetching({ predicate: (q) => q.queryKey[0] !== "auth" });
+  return deriveUpdateMode({ refresh, pageRefreshing, activity: { background: reads.background, foreground: 0 }, fetching });
 }
