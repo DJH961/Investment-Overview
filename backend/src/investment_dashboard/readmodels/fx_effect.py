@@ -130,7 +130,7 @@ def compute_eur_fx_effect(
 
     if market_open:
         # Live leg = market hours (session open -> now); frozen leg = last overnight.
-        leg = _eur_move(intraday_snapshots_service.session_open_fx(session, now=now))
+        leg = _eur_move(intraday_snapshots_service.day_open_rate(session, now=now))
         if leg is None:
             return EurFxEffect(net_eur, regime, net_eur, None)
         return EurFxEffect(net_eur, regime, leg, net_eur - leg)
@@ -164,11 +164,9 @@ def compute_investing_power(
     regime = fx_box_regime(now)
     market_open = regime.market_open
 
+    # Anchored at the previous close in every regime, exactly like the EUR effect and the
+    # Currency page's "buys": the two views and two pages must measure the same move.
     prev_fx = prior_fx(session, metrics, now)
-    if regime.session_view and not market_open:
-        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
-        if open_fx is not None and open_fx > 0:
-            prev_fx = open_fx
     if prev_fx is None or live_fx <= 0 or prev_fx <= 0:
         return None
     net_usd = amount_eur * (live_fx - prev_fx)
@@ -179,7 +177,7 @@ def compute_investing_power(
         return InvestingPower(net_usd, regime, None, None)
 
     if market_open:
-        open_fx = intraday_snapshots_service.session_open_fx(session, now=now)
+        open_fx = intraday_snapshots_service.day_open_rate(session, now=now)
         split = fx_buying_power_split(
             market_open=True,
             amount_eur=amount_eur,

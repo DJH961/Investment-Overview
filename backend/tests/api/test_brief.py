@@ -279,15 +279,53 @@ def test_currency_effect_since_the_last_visit(api_client: TestClient, live_spot:
     assert Decimal(usd["net"]) == amount * (rate_now - Decimal("1.1600"))
 
 
-def test_currency_effect_since_is_null_without_a_rate_then(
+def test_currency_effect_since_an_overnight_absence_uses_the_last_sample(
+    api_client: TestClient, live_spot: Decimal
+) -> None:
+    """Left after the close, back at the next open: no sample lies within 30 min of the
+    departure, yet the swing overnight must still show (the session's last rate is then)."""
+    _seed_cash("USD", "10000")
+    _seed_cash("EUR", "2000")
+    _seed_sample(BEFORE_OPEN - timedelta(hours=2), Decimal("1.1600"))  # the close, 20:00 UTC
+    _set_marker(BEFORE_OPEN)
+    brief = api_client.get("/api/brief").json()
+    assert brief["due"] is True
+    effect, power = brief["currency_effect_since"], brief["investing_power_since"]
+    assert effect is not None
+    assert power is not None
+    assert Decimal(effect["EUR"]["rate_then"]) == Decimal("1.1600")
+    assert Decimal(power["USD"]["rate_then"]) == Decimal("1.1600")
+
+
+def test_currency_effect_since_falls_back_to_the_settled_rate_without_a_sample(
     api_client: TestClient, live_spot: Decimal
 ) -> None:
     _seed_cash("USD", "10000")
-    _set_marker(BEFORE_OPEN)  # no rate recorded with it, no intraday sample there
+    _set_marker(BEFORE_OPEN)  # no intraday sample anywhere: the settled close rate stands in
     brief = api_client.get("/api/brief").json()
     assert brief["due"] is True
-    assert brief["currency_effect_since"] is None
-    assert brief["investing_power_since"] is None
+    assert Decimal(brief["currency_effect_since"]["EUR"]["rate_then"]) == Decimal("1.1600")
+
+
+def test_brief_currency_figures_all_end_at_the_same_rate(
+    api_client: TestClient, live_spot: Decimal
+) -> None:
+    """The EUR currency line, the investing power and the window's currency part agree.
+
+    A stored sample at the visit start (rate 1.18) must not make one figure end at 1.18
+    while the window's currency part ends at the hero's live rate.
+    """
+    _seed_cash("USD", "10000")
+    _seed_cash("EUR", "2000")
+    _seed_sample(BEFORE_OPEN - timedelta(minutes=5), Decimal("1.1600"))
+    _seed_sample(NOW - timedelta(minutes=2), Decimal("1.1800"))
+    _set_marker(BEFORE_OPEN)
+    brief = api_client.get("/api/brief").json()
+    effect = brief["currency_effect_since"]["EUR"]
+    power = brief["investing_power_since"]["USD"]
+    assert Decimal(effect["rate_now"]) == live_spot
+    assert Decimal(power["rate_now"]) == live_spot
+    assert Decimal(brief["window_move"]["EUR"]["currency_move"]) == Decimal(effect["amount"])
 
 
 def test_ack_hides_only_this_visit(api_client: TestClient) -> None:
