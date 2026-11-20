@@ -32,11 +32,12 @@ function NavList({ group, collapsed, compact = false }: { group: NavGroup; colla
   return (
     <ul className={clsx("sidebar__list", compact && "sidebar__list--compact")}>
       {NAV_ITEMS.filter((i) => i.group === group).map((item) => (
-        <li key={item.to}>
+        <li key={item.to} className="sidebar__item">
           <NavLink
             to={item.to}
-            title={collapsed ? item.label : undefined}
-            aria-label={collapsed ? item.label : undefined}
+            // The foot's links can turn into an icon row on a short window: they keep a name.
+            title={collapsed || compact ? item.label : undefined}
+            aria-label={collapsed || compact ? item.label : undefined}
             className={({ isActive }) => clsx("sidebar__link", isActive && "sidebar__link--active")}
           >
             <item.icon className="sidebar__icon" aria-hidden />
@@ -95,11 +96,18 @@ export function Sidebar({ collapsed, onToggle, summary }: SidebarProps) {
           <span className="sidebar__brand-line">Investment</span>{" "}
           <span className="sidebar__brand-line">Overview</span>
         </span>
+        {/* The version, quietly, on the name's line at the far right (owner, 7.0.1). */}
+        {APP_VERSION && !collapsed && (
+          <span className="sidebar__version" title={`Investment Overview ${APP_VERSION}`}>
+            {APP_VERSION}
+          </span>
+        )}
       </div>
       {!collapsed && <Pocket summary={summary} />}
       <nav className="sidebar__nav" aria-label="Primary">
         {MAIN_GROUPS.map((group) => (
-          <div className="sidebar__group" key={group}>
+          // Each group takes a share of the spare height in proportion to its rows.
+          <div className="sidebar__group" key={group} style={{ flexGrow: NAV_ITEMS.filter((i) => i.group === group).length }}>
             <p className="sidebar__group-title">{group}</p>
             <NavList group={group} collapsed={collapsed} />
           </div>
@@ -107,7 +115,6 @@ export function Sidebar({ collapsed, onToggle, summary }: SidebarProps) {
       </nav>
       <nav className="sidebar__foot" aria-label="System">
         <NavList group="System" collapsed={collapsed} compact />
-        {APP_VERSION && <p className="sidebar__meta">Investment Overview {APP_VERSION}</p>}
         {toggle && <div className="sidebar__footer">{toggle}</div>}
       </nav>
     </aside>

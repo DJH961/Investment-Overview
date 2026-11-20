@@ -42,9 +42,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Phone:** the Currency card is back to the v6 shape; the market chip says "Open for 2h 10m" /
   "Closed for 14h 5m" when it fits; the KPI strip puts its second figure underneath; a holding's
   price time gets its own line; less space under the top bar on every page.
-- **Sidebar:** each row and the space between rows grow with the window's height and shrink on
-  short windows, so the menu fits from 700 px up without scrolling; the fold button stays in one
+- **Sidebar:** the menu fills the window's height. Rows, icons and labels grow on tall windows
+  (up to 52 px rows) and never shrink below a comfortable 32 px click target; spare height goes
+  between the sections. On laptop-height windows the group titles become thin dividers, and under
+  760 px Health, Settings and Help become one row of icons, so nothing scrolls from 700 px up. The
+  version sits quietly beside the app name instead of at the bottom; the fold button stays in one
   place; the summary card no longer says "incl. overnight".
+- **KPI tiles line up:** every figure and every line under it sits at the same height across a
+  row ("Vs market" no longer uses a smaller, lower slot). The strip drops "received" and "paid".
 - **Less space under every page title** (the title's own margin doubled the page gap).
 - **Total growth** shows its investment and currency parts on separate lines in both views.
 - **Asset classes** each have their own colour (cash and mutual funds no longer look alike); the
@@ -54,9 +59,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - **Overview: today first.** Top movers and today's currency effect sit side by side above
   Holdings (on a phone: currency, then movers, as in v6); Holdings takes the full width; the
-  allocation and the lifetime currency card follow below. Both today cards are compact: winners
-  over losers with tight rows; the currency card leads with its figure, shows market hours and
-  overnight as one line each, and fills the height beside Top movers.
+  allocation and the lifetime currency card follow below. Both today cards are compact and fill
+  the row together: winners over losers with tight rows (tighter on phones too); the currency card
+  leads with its effect (title left, figure right), shows market hours and overnight as one line
+  each, and spreads its three figures across the width. One column at every width.
 
 ## [7.0.0] — 2026-11-18
 

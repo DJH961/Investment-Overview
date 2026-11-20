@@ -85,13 +85,13 @@
     }
   }
 
-  // Vs market: "You" and the benchmark on their own lines, values aligned.
+  // Vs market: "You" and the benchmark on their own lines, values aligned. It sits in the
+  // tile's second-line slot with no extra gap, so its lines match Total growth's beside it.
   &__vs {
     display: grid;
     grid-template-columns: auto auto;
     justify-content: start;
-    gap: 2px var(--space-3);
-    margin-top: var(--space-1);
+    gap: 0 var(--space-3);
     font-variant-numeric: tabular-nums;
   }
 

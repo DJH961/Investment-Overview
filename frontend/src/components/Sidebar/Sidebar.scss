@@ -171,13 +171,18 @@
     }
   }
 
+  // The groups fill the nav's whole height (owner, 7.0.1): each takes a share of the spare
+  // height in proportion to its rows (flex-grow set in Sidebar.tsx); its rows stretch from
+  // the small to the large control size, and what is left after that sits under the group
+  // as the gap before the next one. A short window keeps every row at the small size.
   &__group {
-    flex-shrink: 0;
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
 
     & + & {
-      margin-top: clamp(var(--space-1), calc(2.4vh - 8px), var(--space-6));
+      margin-top: clamp(var(--space-2), calc(2vh - 12px), var(--space-5));
 
-      // Short windows: the gaps go to their minimum first, so every row still fits.
       @media (max-height: 800px) {
         margin-top: var(--space-1);
       }
@@ -192,27 +197,46 @@
 
   &__list {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    gap: clamp(2px, calc(0.8vh - 4px), var(--space-2));
+    gap: clamp(2px, calc(2.4vh - 22px), var(--space-4));
+    margin: 0;
+    padding: 0;
+    list-style: none;
 
     @media (max-height: 800px) {
       gap: 0;
     }
   }
 
+  &__item {
+    display: flex;
+    flex: 1 1 0;
+    // Never smaller than a comfortable click target, even on a short window.
+    min-height: 32px;
+    max-height: max(var(--control-height-lg), 3.6vh);
+  }
+
+  // The foot (Health, Settings, Help) has no spare height to share: a fixed row that
+  // follows the window's height a little.
+  &__list--compact &__item {
+    flex: none;
+    height: clamp(32px, calc(6.8vh - 38px), var(--control-height));
+    max-height: none;
+  }
+
   // Rows sit on the ink; the open page is a lit row with an accent bar on its edge
-  // (shape, weight and position say "here", not the hue alone). The row's height follows
-  // the window's height, between the small and the large control size.
+  // (shape, weight and position say "here", not the hue alone). The row fills its item.
   &__link {
     position: relative;
     display: flex;
+    flex: 1 1 auto;
     align-items: center;
     gap: var(--space-3);
-    height: clamp(var(--control-height-sm), calc(6.8vh - 34px), var(--control-height-lg));
     padding: 0 var(--space-3);
     border-radius: var(--radius-sm);
     color: var(--color-muted);
-    font-size: var(--font-size-sm);
+    font-size: clamp(var(--font-size-sm), calc(0.62rem + 0.45vh), var(--font-size-lg));
     font-weight: var(--font-weight-medium);
     text-decoration: none;
     transition:
@@ -265,10 +289,11 @@
     }
   }
 
+  // Icons and labels grow with the window's height, like the rows (owner, 7.0.1).
   &__icon {
     flex-shrink: 0;
-    width: var(--icon-md);
-    height: var(--icon-md);
+    width: clamp(var(--icon-md), 1.9vh, 28px);
+    height: clamp(var(--icon-md), 1.9vh, 28px);
   }
 
   // The foot: System pages in a denser list over a hairline, then the version.
@@ -282,8 +307,12 @@
   }
 
   &__list--compact &__link {
-    height: clamp(var(--control-height-sm), calc(6.8vh - 38px), var(--control-height));
-    font-size: var(--font-size-sm);
+    font-size: clamp(var(--font-size-sm), calc(0.6rem + 0.4vh), var(--font-size-md));
+  }
+
+  &__list--compact &__icon {
+    width: clamp(var(--icon-md), 1.7vh, var(--icon-lg));
+    height: clamp(var(--icon-md), 1.7vh, var(--icon-lg));
   }
 
   // The fold toggle: always the last row of the foot, centred on the rail's icon column, so it never moves
@@ -295,22 +324,15 @@
     margin-left: calc(-1 * var(--sidebar-pad-x));
   }
 
-  &__meta {
-    display: none;
-    margin: 0;
-    padding: 0 var(--space-3);
+  // The app version on the brand row, top right: small and faint, read only when looked for.
+  &__version {
+    flex-shrink: 0;
+    align-self: center;
+    margin-left: auto;
     color: var(--color-faint);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
-
-    // Only where there is room to spare: a big, tall window.
-    @media (min-width: 1440px) and (min-height: 861px) {
-      display: block;
-    }
-  }
-
-  &--rail &__meta {
-    display: none;
+    line-height: var(--line-height-tight);
   }
 
   // Large monitors: roomier rows and type (the width grows with --sidebar-width).
@@ -318,20 +340,12 @@
     --sidebar-pad-x: var(--space-4);
     padding: var(--space-5) var(--sidebar-pad-x);
 
-    &__link {
-      font-size: var(--font-size-md);
-    }
   }
 
   @include m.xxl {
     &__link {
       gap: var(--space-4);
       padding: 0 var(--space-4);
-    }
-
-    &__icon {
-      width: var(--icon-lg);
-      height: var(--icon-lg);
     }
   }
 
@@ -362,9 +376,9 @@
 
   }
 
-  // Windows under 760 px (a 720p laptop): group titles become thin dividers (like the rail) and the pocket
-  // drops its day line, so every item still fits without a scroll.
-  @media (max-height: 760px) {
+  // Windows up to 860 px high (laptops): group titles become thin dividers (like the rail) and the
+  // pocket drops its day line, so every row keeps a comfortable height and still fits.
+  @media (max-height: 860px) {
     &__pocket-day {
       display: none;
     }
@@ -375,6 +389,34 @@
       padding: 0;
       background: var(--color-border);
       font-size: 0;
+    }
+  }
+
+  // Under 760 px (a 768 px laptop screen): Health, Settings and Help become one row of icons
+  // (each keeps its name as a tooltip and label), so the main rows need not shrink.
+  @media (max-height: 760px) {
+    &:not(&--rail) &__list--compact {
+      flex-direction: row;
+      justify-content: space-around;
+    }
+
+    &:not(&--rail) &__list--compact &__item {
+      flex: 0 0 auto;
+      width: var(--control-height);
+      height: var(--control-height);
+    }
+
+    &:not(&--rail) &__list--compact &__link {
+      justify-content: center;
+      padding: 0;
+
+      &::before {
+        display: none;
+      }
+    }
+
+    &:not(&--rail) &__list--compact &__label {
+      display: none;
     }
   }
 

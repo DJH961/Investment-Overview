@@ -77,9 +77,9 @@
     color: var(--color-fg);
   }
 
-  // The card lays out by its OWN width (it sits in a 300-380px side column on a wide
-  // desktop and spans the page below that): narrow = lead figure over a ruled list,
-  // medium = lead figure over a three-figure row, wide = two calm zones side by side.
+  // The card lays out by its OWN width: narrow (phone, v6 shape) = three figures over the
+  // effect; from 26rem = the effect first (title left, figure right), its two legs, then
+  // the three figures spread across the width. One column at every width (owner, 7.0.1).
   container: currency-box / inline-size;
 
   &__body {
@@ -90,15 +90,8 @@
     gap: var(--space-5);
     min-width: 0;
 
-    @container currency-box (min-width: 34rem) {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: var(--space-7);
-      align-items: start;
-
-      &--single {
-        grid-template-columns: minmax(0, 1fr);
-      }
+    @container currency-box (min-width: 26rem) {
+      gap: var(--space-4);
     }
   }
 
@@ -109,66 +102,38 @@
     min-width: 0;
   }
 
-  // The three figures. Narrow: a ruled list, label and note left, figure right.
+  // The three figures in one row. Narrow: as in v6, the spot column a little wider for
+  // "as of 14:35". From 26rem: first left, middle centred, last right, so the row spans the
+  // card and its right edge lines up with the amounts above.
   &__stats {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.85fr);
+    gap: var(--space-2);
     margin: 0;
 
-    @container currency-box (max-width: 33.99rem) {
-      display: grid;
-      // As in v6: the spot column gets a little more room for "as of 14:35".
-      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.85fr);
-      gap: var(--space-2);
-    }
-
-    @container currency-box (min-width: 26rem) and (max-width: 33.99rem) {
+    @container currency-box (min-width: 26rem) {
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: var(--space-4);
+      padding-top: var(--space-4);
+      border-top: var(--border-width) solid var(--color-border);
     }
   }
 
   &__stat {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "label value"
-      "meta value";
-    column-gap: var(--space-4);
-    row-gap: var(--space-1);
-    align-items: center;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
     min-width: 0;
-    padding: var(--space-3) 0;
-    border-top: var(--border-width) solid var(--color-border);
 
-    &:first-child {
-      border-top: 0;
-      padding-top: 0;
-    }
+    @container currency-box (min-width: 26rem) {
+      &:nth-child(2) {
+        align-items: center;
+        text-align: center;
+      }
 
-    > .currency-box__label {
-      grid-area: label;
-    }
-
-    > .currency-box__value {
-      grid-area: value;
-      text-align: right;
-    }
-
-    > .currency-box__meta {
-      grid-area: meta;
-      min-width: 0;
-    }
-
-    @container currency-box (max-width: 33.99rem) {
-      display: flex;
-      flex-direction: column;
-      align-items: stretch;
-      padding: 0;
-      border-top: 0;
-
-      > .currency-box__value {
-        text-align: left;
+      &:nth-child(3) {
+        align-items: flex-end;
+        text-align: right;
       }
     }
   }
@@ -247,32 +212,25 @@
     padding-top: var(--space-3);
     border-top: var(--border-width) solid var(--color-border);
 
+    // From 26rem the effect leads; the figures row below draws the rule. It takes any
+    // spare height and spreads it evenly between its lines, so beside a taller Top movers
+    // card nothing pools in one place.
     @container currency-box (min-width: 26rem) {
+      flex: 1 1 auto;
+      justify-content: space-between;
       order: -1;
       padding-top: 0;
-      padding-bottom: var(--space-5);
+      padding-bottom: var(--space-1);
       border-top: 0;
-      border-bottom: var(--border-width) solid var(--color-border);
-    }
-
-    @container currency-box (min-width: 34rem) {
-      padding-bottom: 0;
-      border-bottom: 0;
     }
   }
 
+  // Title left, figure right on one line at every width (no empty right half).
   &__effect-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-2);
-
-    @container currency-box (min-width: 26rem) {
-      flex-direction: column;
-      align-items: stretch;
-      justify-content: flex-start;
-      gap: 2px;
-    }
   }
 
   &__effect-title {
@@ -286,8 +244,7 @@
     overflow-wrap: anywhere;
 
     @container currency-box (min-width: 26rem) {
-      flex-shrink: 1;
-      font-size: var(--font-size-3xl);
+      font-size: var(--font-size-2xl);
     }
   }
 }

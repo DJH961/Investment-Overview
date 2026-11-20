@@ -199,7 +199,8 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           tooltip={KPI_TIPS.vsMarket}
           loading={loading}
           value={<VsMarket verdict={v} />}
-          hint={
+          // The second-line slot, like every other tile: the lines align across the row.
+          secondary={
             v && v.portfolio_return != null && v.benchmark_return != null ? (
               // One comparison per line, aligned: "You +76.86%" over "VT +79.06%".
               <span className="kpi-grid__vs">
@@ -263,7 +264,7 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
             </dd>
             {k.dividend_income != null && (
               <dd className="kpi-grid__stat-sub">
-                <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} /> received
+                <Money amount={toNum(k.dividend_income)} currency={currency} digits={0} />
               </dd>
             )}
           </div>
@@ -280,7 +281,7 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
             </dd>
             {ttm !== null && (
               <dd className="kpi-grid__stat-sub">
-                <Money amount={ttm} currency={currency} digits={0} /> paid
+                <Money amount={ttm} currency={currency} digits={0} />
               </dd>
             )}
           </div>
