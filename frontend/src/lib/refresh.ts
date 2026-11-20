@@ -4,12 +4,15 @@ import { useToast } from "../components/Toast";
 import { ApiError, api } from "./api";
 import type { components } from "./api-types";
 import { markStaleAndRefetch } from "./queries/invalidation";
+import { useReadActivity, type ReadActivity } from "./updateActivity";
 
 type RefreshStatusDto = components["schemas"]["RefreshStatus"];
 
 /** What the app knows about the server's price refresh (fed by SSE, the POST and polling). */
 export interface RefreshState {
   running: boolean;
+  /** The owner asked for this run (refresh button, pull-to-refresh): louder feedback than a scheduled one. */
+  explicit: boolean;
   source: string | null;
   /** A historic download (determinate progress) rather than a quote round. */
   historical: boolean;
@@ -26,6 +29,7 @@ export interface RefreshState {
 
 export const IDLE_REFRESH: RefreshState = {
   running: false,
+  explicit: false,
   source: null,
   historical: false,
   done: 0,
@@ -75,6 +79,7 @@ export function invalidateReports(queryClient: QueryClient): void {
 function fromStatus(s: RefreshStatusDto): Partial<RefreshState> {
   return {
     running: s.running,
+    ...(s.running ? {} : { explicit: false }),
     source: s.source ?? null,
     historical: s.historical,
     done: s.progress_done,
@@ -105,6 +110,7 @@ export function applyRefreshEvent(queryClient: QueryClient, ev: Record<string, u
       const last = str(ev.last_update_at);
       setRefreshState({
         running: false,
+        explicit: false,
         historical: false,
         done: 0,
         total: 0,
@@ -145,7 +151,7 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
 
   const start = useCallback(() => {
     if (getRefreshState().running) return;
-    setRefreshState({ running: true, source: "manual", historical: false, done: 0, total: 0, label: null });
+    setRefreshState({ running: true, explicit: true, source: "manual", historical: false, done: 0, total: 0, label: null });
     // The POST only starts the job; a bounded wait keeps a dead connection from
     // leaving the bar spinning forever.
     api<RefreshStatusDto>("/api/refresh?force=true", { method: "POST", timeoutMs: 30_000 })
@@ -156,7 +162,7 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
           toast({ title: "A refresh is already running", description: "The new prices appear when it finishes." });
           return;
         }
-        setRefreshState({ running: false });
+        setRefreshState({ running: false, explicit: false });
         toast({
           title: "Couldn't start a refresh",
           description: err instanceof Error ? err.message : undefined,
@@ -184,4 +190,34 @@ export function useServerRefresh(): { start: () => void; state: RefreshState } {
   }, [current.running, queryClient]);
 
   return { start, state: current };
+}
+
+/**
+ * How loudly the app reports an update. "loud": the owner asked (refresh button,
+ * pull-to-refresh) or a page they just opened is loading: progress bar, status chip,
+ * spinning icon. "quiet": the app is updating by itself (a tick, a scheduled pull, a
+ * background refetch): only the refresh icon spins and "Updating…" shows beside it.
+ */
+export type UpdateMode = "idle" | "quiet" | "loud";
+
+export function deriveUpdateMode(input: {
+  refresh: Pick<RefreshState, "running" | "explicit" | "historical">;
+  /** A page's own query is fetching (it also publishes this to the shell). */
+  pageRefreshing: boolean;
+  activity: ReadActivity;
+}): UpdateMode {
+  const { refresh, pageRefreshing, activity } = input;
+  const owner = activity.foreground > 0;
+  // A historic download has real progress to show, so it keeps the bar even when nobody clicked.
+  if (refresh.running) return refresh.explicit || refresh.historical ? "loud" : "quiet";
+  if (owner) return "loud";
+  if (activity.background > 0) return "quiet";
+  // A page says it is fetching but no request is in flight (paused, queued): keep the old spin.
+  return pageRefreshing ? "loud" : "idle";
+}
+
+export function useUpdateMode(pageRefreshing: boolean): UpdateMode {
+  const refresh = useRefreshState();
+  const activity = useReadActivity();
+  return deriveUpdateMode({ refresh, pageRefreshing, activity });
 }

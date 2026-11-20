@@ -238,7 +238,11 @@ describe("describeFreshness", () => {
     expect(noDate.label).toBe("Closed · prices as of Fri 20:00");
   });
   it("shows Updating… and history progress", () => {
-    expect(describeFreshness({ ...base, refresh_running: true }, opts).label).toBe("Updating…");
+    expect(describeFreshness({ ...base, refresh_running: true, historical: true, progress_total: 0 }, opts).label).toBe("Updating…");
+    // A run nobody clicked (scheduled, or another device) stays out of the chip: the icon spins instead.
+    expect(describeFreshness({ ...base, refresh_running: true }, opts).label).not.toBe("Updating…");
+    expect(describeFreshness(base, { ...opts, refresh: { ...IDLE_REFRESH, running: true } }).label).not.toBe("Updating…");
+    expect(describeFreshness(base, { ...opts, refresh: { ...IDLE_REFRESH, running: true, explicit: true } }).label).toBe("Updating…");
     const hist = { ...IDLE_REFRESH, running: true, historical: true, done: 3, total: 10 };
     expect(describeFreshness(base, { ...opts, refresh: hist })).toEqual({
       status: "updating",
