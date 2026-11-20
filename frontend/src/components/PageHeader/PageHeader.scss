@@ -6,7 +6,7 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-5);
 
   @include m.phone {
     margin-bottom: var(--space-4);

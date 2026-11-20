@@ -58,14 +58,14 @@
   &__content {
     max-width: var(--content-max-width);
     margin: 0 auto;
-    padding: var(--space-7) var(--space-6) var(--space-8);
+    padding: var(--space-5) var(--space-6) var(--space-8);
 
     @include m.xl {
-      padding: var(--space-7) var(--space-7) var(--space-8);
+      padding: var(--space-5) var(--space-7) var(--space-8);
     }
 
     @include m.phone {
-      padding: var(--space-4) calc(var(--space-4) + var(--safe-right)) calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6))
+      padding: var(--space-2) calc(var(--space-4) + var(--safe-right)) calc(var(--tabbar-height) + var(--safe-bottom) + var(--space-6))
         calc(var(--space-4) + var(--safe-left));
     }
   }
