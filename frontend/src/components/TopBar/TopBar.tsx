@@ -250,7 +250,11 @@ export function TopBar({
           items={accountItems}
         />
         {/* Desktop: Sign out is the right-most action (owner, 7.0.1). */}
-        {!compact && <IconButton label="Sign out" icon={<LogOut aria-hidden />} onClick={onLogout} />}
+        {/* From desktop width up only (TopBar.scss): on a tablet the account menu's Sign out
+            is enough, and the extra button would squeeze the page title. */}
+        {!compact && (
+          <IconButton className="top-bar__signout" label="Sign out" icon={<LogOut aria-hidden />} onClick={onLogout} />
+        )}
       </div>
     </header>
   );

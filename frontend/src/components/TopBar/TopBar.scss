@@ -180,6 +180,15 @@
     flex-shrink: 0;
   }
 
+  // The separate Sign out button: desktop only (the account menu has it everywhere).
+  &__actions &__signout {
+    display: none;
+
+    @include m.desktop {
+      display: inline-grid;
+    }
+  }
+
   &__health {
     position: relative;
     display: inline-grid;
