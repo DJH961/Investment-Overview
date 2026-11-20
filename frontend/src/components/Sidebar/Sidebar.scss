@@ -150,14 +150,13 @@
 
   // Fits without scrolling (denser rows on short screens below). If a very
   // short window still overflows, it scrolls without showing a scroll bar.
-  // The groups share the spare height (space-evenly): a tall screen breathes, a short one packs tight and
-  // only then scrolls.
+  // Sized by the window's height (owner, 7.0.1): on a tall screen every row is taller and the
+  // rows and groups sit further apart; on a short one both tighten, so it fits without a scroll.
   &__nav {
     display: flex;
     flex: 1;
     flex-direction: column;
-    justify-content: space-evenly;
-    gap: var(--space-1);
+    justify-content: flex-start;
     min-height: 0;
     overflow-y: auto;
     scrollbar-width: none;
@@ -174,6 +173,15 @@
 
   &__group {
     flex-shrink: 0;
+
+    & + & {
+      margin-top: clamp(var(--space-1), calc(2.4vh - 8px), var(--space-6));
+
+      // Short windows: the gaps go to their minimum first, so every row still fits.
+      @media (max-height: 800px) {
+        margin-top: var(--space-1);
+      }
+    }
   }
 
   &__group-title {
@@ -185,17 +193,22 @@
   &__list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: clamp(2px, calc(0.8vh - 4px), var(--space-2));
+
+    @media (max-height: 800px) {
+      gap: 0;
+    }
   }
 
   // Rows sit on the ink; the open page is a lit row with an accent bar on its edge
-  // (shape, weight and position say "here", not the hue alone).
+  // (shape, weight and position say "here", not the hue alone). The row's height follows
+  // the window's height, between the small and the large control size.
   &__link {
     position: relative;
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    height: var(--sidebar-item-height);
+    height: clamp(var(--control-height-sm), calc(6.8vh - 34px), var(--control-height-lg));
     padding: 0 var(--space-3);
     border-radius: var(--radius-sm);
     color: var(--color-muted);
@@ -269,7 +282,7 @@
   }
 
   &__list--compact &__link {
-    height: var(--control-height);
+    height: clamp(var(--control-height-sm), calc(6.8vh - 38px), var(--control-height));
     font-size: var(--font-size-sm);
   }
 
@@ -313,7 +326,6 @@
   @include m.xxl {
     &__link {
       gap: var(--space-4);
-      height: var(--control-height-lg);
       padding: 0 var(--space-4);
     }
 
@@ -348,10 +360,6 @@
       padding: var(--space-1) var(--space-3);
     }
 
-    &__link,
-    &__list--compact &__link {
-      height: var(--control-height-sm);
-    }
   }
 
   // Windows under 760 px (a 720p laptop): group titles become thin dividers (like the rail) and the pocket

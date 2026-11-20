@@ -1,6 +1,17 @@
 @use "../../styles/mixins" as m;
 
 .currency-box {
+  // Beside Top movers the row sets the height: the card fills it, and any spare height goes
+  // between the lead and the three figures instead of pooling at the bottom (owner, 7.0.1).
+  display: flex;
+  flex-direction: column;
+
+  & > .card__body:not([hidden]) {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
   // Title and the Live / closed pill always share ONE line (no wrap, no jump): the
   // title gives way first (smaller in a narrow card, then an ellipsis).
   & > .card__header {
@@ -73,7 +84,9 @@
 
   &__body {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
+    justify-content: space-between;
     gap: var(--space-5);
     min-width: 0;
 
@@ -109,7 +122,7 @@
       gap: var(--space-2);
     }
 
-    @container currency-box (min-width: 480px) and (max-width: 33.99rem) {
+    @container currency-box (min-width: 26rem) and (max-width: 33.99rem) {
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: var(--space-4);
     }
@@ -169,11 +182,11 @@
     margin: 0;
     white-space: nowrap;
 
-    @container currency-box (max-width: 479px) {
+    @container currency-box (max-width: 25.99rem) {
       font-size: var(--font-size-md);
     }
 
-    @container currency-box (min-width: 480px) {
+    @container currency-box (min-width: 26rem) {
       font-size: var(--font-size-xl);
     }
   }
@@ -234,7 +247,7 @@
     padding-top: var(--space-3);
     border-top: var(--border-width) solid var(--color-border);
 
-    @container currency-box (min-width: 480px) {
+    @container currency-box (min-width: 26rem) {
       order: -1;
       padding-top: 0;
       padding-bottom: var(--space-5);
@@ -254,7 +267,7 @@
     justify-content: space-between;
     gap: var(--space-2);
 
-    @container currency-box (min-width: 480px) {
+    @container currency-box (min-width: 26rem) {
       flex-direction: column;
       align-items: stretch;
       justify-content: flex-start;
@@ -272,7 +285,7 @@
     font-weight: var(--font-weight-figure);
     overflow-wrap: anywhere;
 
-    @container currency-box (min-width: 480px) {
+    @container currency-box (min-width: 26rem) {
       flex-shrink: 1;
       font-size: var(--font-size-3xl);
     }

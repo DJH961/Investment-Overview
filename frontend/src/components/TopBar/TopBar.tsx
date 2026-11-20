@@ -209,9 +209,7 @@ export function TopBar({
         {/* First, so it is the quickest action to reach. */}
         <span className="top-bar__refresh">
           {quietUpdating && !refreshing && (
-            <span className="top-bar__quiet" role="status">
-              Updating…
-            </span>
+            <output className="top-bar__quiet">Updating…</output>
           )}
           <IconButton
             label="Refresh data"

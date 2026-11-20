@@ -153,44 +153,6 @@ function WindowFact({ w, currency }: { w: BriefWindowMove; currency: ReportingCu
   );
 }
 
-/** EUR view: what moved the window, as a tiny ledger (Market + Currency = the headline), the rates, the flows. */
-function WindowMovedFact({ brief, w }: { brief: BriefDto; w: BriefWindowMove }) {
-  const eff = brief.currency_effect_since?.EUR ?? null;
-  const move = toNum(w.move);
-  const fx = toNum(w.currency_move);
-  // Shown to the cent, Market + Currency add up to the headline as displayed.
-  const cents = (v: number) => Math.round(v * 100) / 100;
-  const market = move !== null && fx !== null ? cents(cents(move) - cents(fx)) : toNum(w.price_move);
-  return (
-    <Fact
-      testId="brief-moved"
-      wide
-      label="What moved it"
-      value={
-        <span className="daily-brief__ledger" data-testid="brief-split" data-ccy-specific="">
-          <span className="daily-brief__key">Market</span>
-          <Money amount={market} currency="EUR" signed colored />
-          {fx !== null && (
-            <>
-              <span className="daily-brief__key">Currency</span>
-              <Money amount={fx} currency="EUR" signed colored />
-            </>
-          )}
-        </span>
-      }
-      note={
-        <>
-          {eff && (
-            <span className="daily-brief__line" data-testid="brief-rates">
-              EUR/USD {rate(eff.rate_then)} → {rate(eff.rate_now)}
-            </span>
-          )}
-        </>
-      }
-    />
-  );
-}
-
 function SessionsFact({ brief }: { brief: BriefDto }) {
   const n = Math.max(brief.sessions_passed, brief.sessions.length);
   return (
@@ -491,11 +453,11 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
       <dl className="daily-brief__facts">
         {kind === "session" && move && <SessionFact move={move} currency={currency} />}
         {kind === "sessions" && win && <WindowFact w={win} currency={currency} />}
-        {win && currency === "EUR" && <WindowMovedFact brief={b} w={win} />}
-        {win && currency === "USD" && <CurrencySinceFact brief={b} currency={currency} />}
         {kind === "sessions" && !win && <SessionsFact brief={b} />}
         {kind === "fx" && <FxReopenFact brief={b} currency={currency} />}
-        {!win && showCurrency && <CurrencySinceFact brief={b} currency={currency} />}
+        {/* The currency since the last look, in every Brief (owner, 7.0.1): the currency
+            market trades whenever stocks do, so it always has something to say. */}
+        {(win || showCurrency) && <CurrencySinceFact brief={b} currency={currency} />}
         {kind === "session" && move && <MoversFact movers={move.movers} />}
         {win && <MoversFact movers={win.movers} />}
       </dl>
