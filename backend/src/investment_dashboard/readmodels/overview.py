@@ -275,7 +275,7 @@ def _today_fx_view(
     elif regime.single_overnight:
         anchor, anchor_kind = prev_fx, "overnight"
     else:
-        anchor = intraday_snapshots_service.session_open_fx(session, now=now)
+        anchor = intraday_snapshots_service.day_open_rate(session, now=now)
         anchor_kind = "session_open"
     if regime.forex_frozen:
         label_kind = "yesterday" if (local_today - session_date).days <= 1 else "weekday"
@@ -290,7 +290,7 @@ def _today_fx_view(
     missing = anchor is None or anchor <= 0
     if regime.session_view:
         if regime.market_open:
-            since_anchor = intraday_snapshots_service.session_open_fx(session, now=now)
+            since_anchor = intraday_snapshots_service.day_open_rate(session, now=now)
             since_kind = "open"
         else:
             since_anchor = intraday_snapshots_service.session_close_fx(session, now=now)

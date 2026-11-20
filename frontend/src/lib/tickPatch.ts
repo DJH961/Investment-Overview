@@ -97,6 +97,73 @@ export function patchOverviewFromEvent(queryClient: QueryClient, ev: TickLike): 
   }
 }
 
+/** The rate-only fields of a currency "today" block (the rest is the server's, see below). */
+interface TodayLike {
+  spot?: string | null;
+  spot_display?: string | null;
+  investing_power_usd?: { amount_eur?: string | null; amount_usd?: string | null } | null;
+}
+
+/**
+ * The rate on screen, same tick everywhere: the box's spot / display rate and what the
+ * regular euro amount buys. Single-instant maths only (`amount x rate`, `1 / rate`).
+ * The currency effect, investing power nets and their market-hours / overnight legs are
+ * the server's (they need the day's anchors) and stay as sent until the refetch that
+ * follows the tick brings the new ones; they are never blanked or recomputed here.
+ */
+function patchToday<T extends TodayLike>(today: T, side: Ccy, fx: string): T {
+  const rate = Number(fx);
+  if (!Number.isFinite(rate) || rate <= 0) return today;
+  const ip = today.investing_power_usd;
+  const amount = ip ? Number(ip.amount_eur) : NaN;
+  return {
+    ...today,
+    spot: fx,
+    spot_display: side === "USD" ? fx : String(1 / rate),
+    ...(ip && Number.isFinite(amount) ? { investing_power_usd: { ...ip, amount_usd: String(amount * rate) } } : {}),
+  };
+}
+
+/** The rate and what the regular amount buys, in both the Overview and the Currency page caches. */
+export function patchCurrencyFromEvent(queryClient: QueryClient, ev: TickLike): void {
+  const fx = decimal(ev.fx_eur_usd);
+  if (!fx) return; // no rate in this event: keep what the server sent
+  for (const [key, data] of queryClient.getQueriesData<Both<OverviewDto>>({ queryKey: ["overview", "both"] })) {
+    if (!data || typeof data !== "object") continue;
+    const next = { ...data };
+    for (const side of SIDES) {
+      const dto = data[side];
+      const today = dto?.currency?.today;
+      if (!dto || !today) continue;
+      next[side] = { ...dto, currency: { ...dto.currency, today: patchToday(today, side, fx) } };
+    }
+    queryClient.setQueryData<Both<OverviewDto>>(key, next);
+  }
+  type CurrencyLike = {
+    today?: TodayLike;
+    buys?: { amount_eur?: string | null; usd_now?: string } | null;
+    stats?: Array<{ key: string; value?: string | null }>;
+  };
+  for (const [key, data] of queryClient.getQueriesData<Both<CurrencyLike>>({ queryKey: ["currency", "both"] })) {
+    if (!data || typeof data !== "object") continue;
+    const next = { ...data };
+    for (const side of SIDES) {
+      const cur = data[side];
+      if (!cur) continue;
+      const amount = cur.buys ? Number(cur.buys.amount_eur) : NaN;
+      next[side] = {
+        ...cur,
+        ...(cur.today ? { today: patchToday(cur.today, side, fx) } : {}),
+        ...(cur.buys && Number.isFinite(amount)
+          ? { buys: { ...cur.buys, usd_now: String(amount * Number(fx)) } }
+          : {}),
+        ...(cur.stats ? { stats: cur.stats.map((s) => (s.key === "rate_now" ? { ...s, value: fx } : s)) } : {}),
+      };
+    }
+    queryClient.setQueryData<Both<CurrencyLike>>(key, next);
+  }
+}
+
 const INTRADAY_RANGES = ["1d", "1w"];
 const DAILY_RANGES = ["1m", "3m", "6m", "ytd", "1y", "all"];
 
@@ -287,7 +354,8 @@ export function patchHoldingsPrices(
 /** Everything one tick changes on screen without a request. */
 export function applyTick(queryClient: QueryClient, ev: TickLike): void {
   patchOverviewFromEvent(queryClient, ev);
-  const point = ev.point as TickPointDto | null | undefined;
+  patchCurrencyFromEvent(queryClient, ev);
+  const point =ev.point as TickPointDto | null | undefined;
   if (point && typeof point === "object") {
     const now = ev.now_point;
     patchGraphPoint(queryClient, point, now === null ? null : now && typeof now === "object" ? (now as TickNowPoint) : undefined);

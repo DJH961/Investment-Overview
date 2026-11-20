@@ -162,7 +162,9 @@ def test_investing_power_market_open(session: Session) -> None:
     assert power.overnight_usd == power.net_usd - power.market_hours_usd
 
 
-def test_investing_power_closed_reanchors_to_open(session: Session) -> None:
+def test_investing_power_closed_anchors_at_previous_close_like_the_eur_effect(
+    session: Session,
+) -> None:
     amount = D("500")
     power = fx_effect.compute_investing_power(
         session,
@@ -172,8 +174,9 @@ def test_investing_power_closed_reanchors_to_open(session: Session) -> None:
         now=AFTER_CLOSE,  # type: ignore[arg-type]
     )
     assert power is not None
-    assert power.net_usd == amount * (LIVE - OPEN)
+    assert power.net_usd == amount * (LIVE - PREV)
     assert power.overnight_usd == amount * (LIVE - CLOSE)
+    assert power.market_hours_usd == amount * (CLOSE - PREV)
 
 
 def test_investing_power_none_without_anchor_or_swing(session: Session) -> None:
