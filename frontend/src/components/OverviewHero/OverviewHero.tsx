@@ -173,7 +173,7 @@ export function OverviewHero({ data, currency, loading, now, aside, onClockBound
   return (
     <section className={cls} aria-label="Portfolio value">
       <div className="overview-hero__main">
-        <div className="overview-hero__head">
+        <div className={clsx("overview-hero__head", est && "overview-hero__head--est")}>
           {/* The "≈ est." chip sits with the label, never competing with the figure's width. */}
           <span className="overview-hero__label-line">
             <span className="overview-hero__label">Portfolio value</span>

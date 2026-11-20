@@ -16,7 +16,7 @@ export interface MarketChipProps {
 }
 
 /**
- * The phone's quiet market chip in the hero's corner: "● Open · 1 h 46 m" (minutes,
+ * The phone's quiet market chip in the hero's corner: "● Open for 1h 46m" (minutes,
  * no seconds). A button: tapping opens a bottom sheet with the full statement clock
  * (seconds, session progress bar) and the day's Low / High / Prev close. It never asks
  * for fresh instants itself (the hero's compact band does that).
@@ -27,7 +27,7 @@ export function MarketChip({ freshness, live = false, currency, now }: MarketChi
   if (!model || !freshness) return null;
   const { view, remaining, rung, sentence, progress } = model;
   const span = remaining != null ? formatChipSpan(remaining) : rung ? "bell rang" : null;
-  const text = span ? `${view.state} · ${span}` : view.state;
+  const text = remaining != null ? `${view.state} for ${span}` : span ? `${view.state} · ${span}` : view.state;
   // The chip is the session's progress bar: its fill is the share of the session (or of
   // the overnight wait) already gone.
   const fill = progress != null ? `${(Math.min(1, Math.max(0, progress)) * 100).toFixed(1)}%` : null;

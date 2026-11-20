@@ -1,3 +1,5 @@
+@use "../../styles/mixins" as m;
+
 // The phone's market chip: a small pill in the hero's corner. A word, not a colour,
 // says open or closed; the dot only keeps the "prices are live" meaning.
 .market-chip {
@@ -53,6 +55,28 @@
   &--live &__dot {
     background: var(--color-pos);
     box-shadow: 0 0 0 3px var(--color-pos-soft);
+  }
+
+  // Room check: the hero head row (label, "≈ est." chip, this chip). "Open for 2h 10m" shows when it fits; only a
+  // row with truly no room falls back to the dot (the accessible name and the sheet still say everything).
+  @container hero-head (max-width: 17rem) {
+    justify-content: center;
+    min-width: 32px;
+
+    &__text {
+      @include m.visually-hidden;
+    }
+  }
+
+  @container hero-head (max-width: 19.5rem) {
+    .overview-hero__head--est & {
+      justify-content: center;
+      min-width: 32px;
+    }
+
+    .overview-hero__head--est &__text {
+      @include m.visually-hidden;
+    }
   }
 
   &:focus-visible {

@@ -16,10 +16,10 @@ const open: ClockFreshness = {
 
 describe("formatChipSpan", () => {
   it("minutes resolution, never seconds", () => {
-    expect(formatChipSpan(106 * 60_000)).toBe("1 h 46 m");
-    expect(formatChipSpan(5 * 60_000 + 1)).toBe("6 m");
-    expect(formatChipSpan(20_000)).toBe("1 m");
-    expect(formatChipSpan(50 * 3_600_000)).toBe("2 d 2 h");
+    expect(formatChipSpan(106 * 60_000)).toBe("1h 46m");
+    expect(formatChipSpan(5 * 60_000 + 1)).toBe("6m");
+    expect(formatChipSpan(20_000)).toBe("1m");
+    expect(formatChipSpan(50 * 3_600_000)).toBe("2d 2h");
   });
 });
 
@@ -32,7 +32,7 @@ describe("MarketChip", () => {
       </QueryClientProvider>,
     );
     const btn = screen.getByRole("button", { name: /Market open\. Closes at 20:00, in 1 hour 47 minutes\. Show the market clock/ });
-    expect(btn).toHaveTextContent("Open · 1 h 47 m");
+    expect(btn).toHaveTextContent("Open for 1h 47m");
     await userEvent.click(btn);
     expect(await screen.findByTestId("market-clock-digits")).toHaveTextContent("01:46:11");
   });
