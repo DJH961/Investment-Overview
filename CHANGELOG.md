@@ -17,7 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [7.0.1] — 2026-11-20
+## [7.0.1] — 2026-11-21
 
 ### Fixed
 - **The currency figures agree everywhere.** The hero, the Currency card, investing power,
@@ -32,7 +32,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Quiet background updates.** Updates you did not ask for only spin the refresh icon and show
   "Updating…" beside it; the progress bar stays for your own refresh. New chart samples no
   longer reset the hover.
-- **Top bar:** refresh is the first button; a Sign out button on desktop.
+- **Top bar:** refresh is the first button; Sign out is the right-most button on desktop.
 - **Faster restarts and logins:** the saved page copy now includes the charts, is tied to the
   app version, expires after 24 hours and is refreshed quietly at once on restore. An expired
   session no longer wipes it (only Sign out does), and a login shows the saved page straight
@@ -46,10 +46,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (up to 52 px rows) and never shrink below a comfortable 32 px click target; spare height goes
   between the sections. On laptop-height windows the group titles become thin dividers, and under
   760 px Health, Settings and Help become one row of icons, so nothing scrolls from 700 px up. The
-  version sits quietly beside the app name instead of at the bottom; the fold button stays in one
-  place; the summary card no longer says "incl. overnight".
+  version sits quietly beside the app name instead of at the bottom; the fold button sits at the
+  bottom right; the summary card no longer says "incl. overnight".
 - **KPI tiles line up:** every figure and every line under it sits at the same height across a
-  row ("Vs market" no longer uses a smaller, lower slot). The strip drops "received" and "paid".
+  row ("Vs market" no longer uses a smaller, lower slot). The strip drops "received" and "paid"
+  and spreads its three figures across the full width.
 - **Less space under every page title** (the title's own margin doubled the page gap).
 - **Total growth** shows its investment and currency parts on separate lines in both views.
 - **Asset classes** each have their own colour (cash and mutual funds no longer look alike); the

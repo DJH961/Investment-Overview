@@ -315,13 +315,15 @@
     height: clamp(var(--icon-md), 1.7vh, var(--icon-lg));
   }
 
-  // The fold toggle: always the last row of the foot, centred on the rail's icon column, so it never moves
-  // between the open and collapsed states.
+  // The fold toggle: the last row of the foot, at its right edge (owner, 7.0.1); centred in the rail.
   &__footer {
     display: flex;
+    justify-content: flex-end;
+  }
+
+  // The rail is one icon wide: the toggle sits centred in it.
+  &--rail &__footer {
     justify-content: center;
-    width: var(--sidebar-rail-width);
-    margin-left: calc(-1 * var(--sidebar-pad-x));
   }
 
   // The app version on the brand row, top right: small and faint, read only when looked for.

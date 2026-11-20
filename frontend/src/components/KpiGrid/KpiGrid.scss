@@ -54,6 +54,7 @@
   &__strip {
     display: flex;
     flex-wrap: wrap;
+    justify-content: space-between;
     gap: var(--space-2) var(--space-6);
     margin: 0;
     padding: var(--space-3) var(--card-pad-x);

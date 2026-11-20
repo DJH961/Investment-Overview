@@ -244,12 +244,13 @@ export function TopBar({
           />
         )}
         {!compact && <IconButton label={`Theme: ${theme}`} icon={<ThemeIcon aria-hidden />} onClick={cycleTheme} />}
-        {!compact && <IconButton label="Sign out" icon={<LogOut aria-hidden />} onClick={onLogout} />}
         <Menu
           heading={compact ? "Account" : undefined}
           trigger={<IconButton label="Account and sign out" icon={<UserRound aria-hidden />} />}
           items={accountItems}
         />
+        {/* Desktop: Sign out is the right-most action (owner, 7.0.1). */}
+        {!compact && <IconButton label="Sign out" icon={<LogOut aria-hidden />} onClick={onLogout} />}
       </div>
     </header>
   );

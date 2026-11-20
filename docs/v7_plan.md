@@ -7,8 +7,8 @@
 >
 > Reworked 2026-11-10 after the code audit: fix rounds first (§7a), the
 > Currency tab redesigned (§5), the work grouped into ten pushes with a
-> clear cut before the model features (§8), accepted additions in §9a.
-> Additions from the owner's 2026-11-15 list are in §9b.
+> clear cut before the model features (§8). Every later addition is folded
+> into the push it belongs to (§8, "What each push contains").
 > Reworked 2026-11-16: 7.0 pulls in the easy wins (Currency page first
 > part, USD-view currency figure, a light holding page) and the push 3
 > leftovers; see §8, "Why 7.0 is a real release".
@@ -19,7 +19,7 @@
 > the multi-session window, the market countdown, P12, holding page, the push 3
 > leftovers and the visual overhaul). The Currency page is built but hidden until
 > 7.2 (`SHOW_CURRENCY_PAGE` in `frontend/src/lib/features.ts`). Pushes 1 to 3 shipped as 6.13.1 to
-> 6.15.0, then 6.16.0 and 6.17.x. **7.0.1** (2026-11-20) is the owner's fix list
+> 6.15.0, then 6.16.0 and 6.17.x. **7.0.1** (2026-11-21) is the owner's fix list
 > after 7.0: currency figures agree everywhere, Overview "today first", quiet
 > background updates. Next: push 5 (7.1); do not start it until
 > the owner approves. The owner's post-cutover steps are in
@@ -1127,10 +1127,10 @@ afterwards, planned in detail when v7 is done.
 | 2 | 6.x "Fit" | Frontend fixes: fix rounds 2 and 4 (every clipping finding, decimal comma, lost work, visible advanced settings, the five §7 patches), the fixture mode and the screenshot run. | 1–2 | Screenshot run green at six widths in both themes |
 | 3 | 6.x "Ready" | Fix round 5 (speed, scheduler, activity lines), the frozen-leg reads moved to the derived path (B-008), the second audit pass and its fixes, **ledger completeness checks (P7)**. | 1–2 | No high or medium finding open; Data Health reports a missing dividend in a test ledger |
 | 4 | **7.0** | **The cutover** (v5 removed, B-014, B-022, plus the API leftovers B-029 and B-031), the **Daily Brief** (§3.1) and the **market clock** (P13). Pulled in (reworked 2026-11-16): **the Currency page, first part** (the always-visible strip and the Today sub-tab, §5), **the USD-view currency figure** (P12), **a light holding page** (route with Details, Transactions and Dividends tabs, §7), and the push 3 leftovers (see below). | 3 | No v5 code on `main`; the Brief's trigger passes its table of cases; a dismissed card stays gone; the Currency page's "today" equals the Overview card; a holding has a URL |
-| 5 | **7.1** | **Holding deep-dive** (§7), on the 7.0 holding page: the Performance tab, one shared holding row, per-holding 1D/1W, ETF-twin view, tranches in USD with the long-term countdown (P3), per-holding stored value series (P16), and looking up instruments you do not hold (P20). | 2 | Holdings' 1D lines sum to the portfolio line; tranche shares sum to the position |
+| 5 | **7.1** | **Holding deep-dive** (§7), on the 7.0 holding page: the Performance tab, one shared holding row, per-holding 1D/1W, ETF-twin view, tranches in USD with the long-term countdown (P3), per-holding stored value series (P16), a fair "% of return" in Risk (P17), uninvested brokerage cash in the Overview total (P18), and looking up instruments you do not hold (P20). | 2 | Holdings' 1D lines sum to the portfolio line; tranche shares sum to the position |
 | 6 | **7.2** | **Currency tab, the rest** (§5): Effect, Rate, What if, and the constant-currency chart on Today; currency as an allocation dimension; the Projection rate band (P5); the currency effect trend (P11). | 2 | Daily parts sum to every period; lifetime equals the lifetime card |
 | 7 | **7.3** | **Conversions** (§5.1): clear matching, pinning, costs and timing, currency-generic naming (C1), the Conversions sub-tab, the "Invest this month" flow (P6), scheduled auto-invest transactions (P14) and smart import matching (P15). | 2–3 | Every USD deposit declares how it was paid for; cost golden values match the hand calculation |
-| 8 | **7.4** | **One rate everywhere** (§5.1): the cash pool, holding EUR cost from the pool rate, the tranche EUR column, dollars back to euros, realised versus unrealised, currency effect on cash and idle dollars. | 2 | Holdings plus pool equal EUR invested on the real ledger; realised plus unrealised equals the lifetime effect |
+| 8 | **7.4** | **One rate everywhere** (§5.1): first stop writing the frozen currency legs (P19), then the cash pool, holding EUR cost from the pool rate, the tranche EUR column, dollars back to euros, realised versus unrealised, currency effect on cash and idle dollars. | 2 | Holdings plus pool equal EUR invested on the real ledger; realised plus unrealised equals the lifetime effect |
 | 9 | **7.5** | **Tax information** (§6.2, P1–P3): realised gains by holding period, wash sales, sell planner, the loss list, the tax year page, the 1099 check, the withholding column. | 2 | Short/long-term totals match a hand-worked ledger, including a reinvested-dividend wash sale |
 | 10 | **7.6** | **The finish:** month and year recaps with the real euro return (P8, P10), one channel for facts (P9), instrument metadata from the price provider with sector and country allocation, the hand-written risk explanations (§4.5). | 1–2 | A recap's figures equal the Periods page; an alert fires in a test and is off by default |
 | | | **— the cut: v7 is complete here —** | | |
@@ -1141,6 +1141,67 @@ afterwards, planned in detail when v7 is done.
 **Count:** ten pushes to a complete v7, about 16 to 19 full sessions. The
 first three are fixes on v6 (shipped as 6.13.1, 6.14.0 and 6.15.0, then
 6.16.0 and 6.17.0); 7.0 arrives with push 4.
+
+### What each push contains
+
+Every item below is part of its push; the detail is settled at the start of
+that push. The P numbers are labels other notes refer to.
+
+**Push 5 — 7.1, holding deep-dive** (on the 7.0 holding page, §7 and §6.1)
+
+- The Performance tab, one shared holding row, per-holding 1D/1W, the ETF-twin view.
+- Tax lots (tranches) in USD (§6.1), with the **holding-period countdown** in the tranche tab: "long-term in 23 days" (P3, first half).
+- **Per-holding stored value series** (P16). Store each holding's daily (and intraday) value next to the portfolio total, so a new transaction late in the week recomputes only that holding from the trade date instead of rebuilding the whole portfolio history, and so the deep-dive's per-holding 1D/1W lines read stored points. The safe part (an import no longer re-downloads cached prices) shipped in 6.17.0.
+- **A fair "% of return" in the Risk contribution table** (P17), built on the tax lots. Today each row divides its P&L by the window's start value; on "All" that is only the first deposit, so the shares look huge. Show each holding's share of the total P&L instead, ideally built from its lots (each lot's gain over its own holding time, then averaged by size). Detail settled at the start of the push; never fed into an aggregate.
+- **The Overview counts uninvested brokerage cash** (P18). Since #413 the Risk curve counts cash sitting in a brokerage account outside a money-market fund (B-017); the Overview total does not yet. Every brokerage the owner uses sweeps into a settlement fund, so for him the amount is zero today; this is consistency, not a visible change. Money maths: golden tests and a list of figures that move.
+- **Look up any instrument, held or not** (P20), added 2026-11-20. Search a ticker or name and open the same holding page as for an owned position: price graph (every range, 1D intraday included), day move, key facts and the currency view, but no Transactions, Dividends or tranche tabs and no "your position" figures. Typical use: checking how a stock you don't own is doing. Built on the 7.1 holding page (one page, a "not held" mode); prices come through the same provider and caches as held instruments, fetched on demand and not added to the portfolio or its totals. Only listed instruments the price provider knows can be shown; a company that is not publicly traded has no price to look up. Optional: a short watchlist later.
+
+**Push 6 — 7.2, the Currency tab, the rest** (§5)
+
+- The Effect, Rate and What if sub-tabs, the constant-currency chart on Today, currency as an allocation dimension.
+- **FX outlook** (P5). Sensitivity, the rate slider and the Projection rate band. Now part of the Currency tab design (§5, "What if").
+- **Currency effect trend** (P11). Stocks drift up over the long run; a currency can trend either way for years. The Effect sub-tab gains a trend view of the currency effect: rolling 3, 6 and 12-month effect (pp and euros), the direction and length of the current run ("the dollar has cost you for 5 months running"), and where today's rate sits against your average buy rate and break-even, as a line over time. Plain facts, no forecast. Built from the same daily parts as the bridge, so it always adds up to the period figures.
+
+**Push 7 — 7.3, conversions** (§5.1)
+
+- Clear matching, pinning, costs and timing, the Conversions sub-tab, currency-generic naming (C1, §9a).
+- **"Invest this month" flow** (P6). One guided path: euros to invest, the conversion (real rate, spread shown), the deposit, the buys from the target allocation, then "check against the import" once the broker file is in. Reuses the calculator, the conversion form and the allocation plan.
+- **Scheduled transactions (auto-invest)** (P14). A recurring buy is set up once (instrument, amount or shares, day of month, account). On each due date the app adds an *expected* transaction valued at that day's close, marked "scheduled, not yet confirmed"; the owner edits only the deviations. When the broker file is imported later, the matching import row **replaces** the expected one (the import's numbers win) and it becomes confirmed. Expected rows count in values and graphs but are flagged in Transactions and in Data Health until confirmed.
+- **Smart import matching** (P15). An import row that is almost identical to an existing transaction (same account, instrument and type; date within one business day; amount and shares within a small tolerance, e.g. 0.5 % or a few cents) is not a new row: the preview shows it as "update" with the old and new figures, and confirming takes the newer import's numbers. Exact duplicates stay skipped as today. Needed by P14, useful on its own.
+
+**Push 8 — 7.4, one rate everywhere** (§5.1)
+
+- **Stop writing the frozen currency legs** (P19), first; it has no other dependency and may start as early as push 5. The cutover could not drop `net_eur` / `net_usd` / `fx_rate_to_eur` on cashflow legs or the EUR snapshot columns (`PositionSnapshot`, `IntradayValue`): a few fallbacks still read them and the EUR columns are `NOT NULL`. Its own money change: move the last readers onto `net_native` + that date's FX (or native USD + the per-instant rate), golden tests that the figures do not move, then a migration (with a working downgrade) that drops or nulls the columns.
+- Then the cash pool, holding EUR cost from the pool rate, the tranche EUR column, dollars back to euros, realised versus unrealised, the currency effect on cash and idle dollars.
+
+**Push 9 — 7.5, tax information** (§6.2, shown as decided in C3, §9a)
+
+- Realised gains by holding period, wash sales, the sell planner, the withholding column.
+- The loss list (P3, second half): tranches with an unrealised loss, short or long, with the wash-sale window marked.
+- **Tax year page (USD)** (P1). Per calendar year, collected from the ledger: dividends, money-market and interest income, capital-gain distributions, realised short- and long-term gains, wash-sale adjustments, withholding paid, fees. Year to date for the running year. EUR-native instruments translated at each transaction's own date. CSV export. Headed "information from your ledger, not tax advice; your broker's 1099 is what counts".
+- **1099 check** (P2). You type in the totals from the broker's 1099; the page shows where the ledger differs.
+
+**Push 10 — 7.6, the finish**
+
+- **Month and year recaps** (P8). The Brief's deterministic maths over a month or a year: contributed, market effect, currency effect, dividends, conversion cost. A card on the first visit of a new month or year, and always available on Periods.
+- **Real euro return** (P10). Periods and the recaps show the EUR return after euro-area inflation, from the public HICP series.
+- **One channel for facts** (P9). Email or web push, off by default, only for facts: backup failed, price feed stalled, ledger gap found, a tranche turned long-term.
+- Instrument metadata from the price provider with sector and country allocation; the hand-written risk explanations (§4.5).
+
+**Already shipped:** ledger completeness checks (P7, 6.15.0 and 7.0), the market
+clock (P13, 7.0), the USD-view currency figure (P12, 7.0) and the day rule (D1,
+6.17.2: last night's move, the session and tonight's move each count once,
+rolling over at the 09:30 ET open). P4 (a flag on non-US funds) was dropped: the
+owner holds none.
+
+### Which pushes can run at the same time
+
+Pushes 5 (7.1), 6 (7.2) and 7 (7.3) do not depend on each other and can start
+together as separate PRs; P19 can run beside them. If 7.2 and 7.3 run together,
+one adds the empty Currency sub-tab shell first so the other merges cleanly.
+Then: push 8 (7.4) needs push 7 and P19; push 9 (7.5) needs push 5's tax lots;
+push 10's recaps need pushes 6 and 7 (its metadata and risk-explanation half
+can run any time).
 
 ### Why 7.0 is a real release (reworked 2026-11-16)
 
@@ -1302,7 +1363,7 @@ a v5-parity exception.
 
 ## 9. Decisions (settled 2026-11-09 and 2026-11-10)
 
-Everything in this table is settled. Open proposals are in §9a. New
+Everything in this table is settled. Every accepted addition is listed under its push in §8. New
 questions that come up while building go there, with a recommendation, and
 get settled before the release that needs them.
 
@@ -1326,32 +1387,15 @@ get settled before the release that needs them.
 | 17 | Currency tab (§5) | It extends the currency-effect cards: effect per period and over time, and inside versus outside market hours for any period; not only rate charts |
 | 18 | Size of v7 (§8) | Ten pushes, releases 7.0 to 7.6; the model features are a separate push after the cut; the assistant is "maybe later" |
 | 19 | News (§4.3) | Its own page when it ships, not folded into the deep-dive |
-| 20 | Additions (§9a) | P1–P3 and P5–P10 accepted, P4 dropped; C1 and C4 yes, C2 no, C3 as a middle ground: tax figures calculated in USD; USD view shows dollars only, EUR view shows their euro worth where it makes sense |
+| 20 | Additions (§8, per push; changes in §9a) | P1–P3 and P5–P10 accepted, P4 dropped; C1 and C4 yes, C2 no, C3 as a middle ground: tax figures calculated in USD; USD view shows dollars only, EUR view shows their euro worth where it makes sense |
 | 21 | Currency tab stats (§5) | A KPI strip that is always visible, plus a strip per sub-tab, as well as the panels |
 | 16 | Scope (§1) | Investing accounts only. No other account types, no net worth, no FBAR. Tax-relevant information is welcome, without guarantees; it is not a tax app |
 
 ---
 
-## 9a. Additions accepted 2026-11-10
+## 9a. Changes decided 2026-11-10
 
-Accepted by the owner, inside the scope of decision 16. Each is built in
-the push named; the detail is settled at the start of that push.
-
-| # | Addition | Push |
-|---|---|---|
-| P1 | **Tax year page (USD).** Per calendar year, collected from the ledger: dividends, money-market and interest income, capital-gain distributions, realised short- and long-term gains, wash-sale adjustments, withholding paid, fees. Year to date for the running year. EUR-native instruments translated at each transaction's own date. CSV export. Headed "information from your ledger, not tax advice; your broker's 1099 is what counts". | 9 (7.5) |
-| P2 | **1099 check.** You type in the totals from the broker's 1099; the page shows where the ledger differs. | 9 (7.5) |
-| P3 | **Holding-period countdown and loss list.** In the tranche tab: "long-term in 23 days". In the tax pages: tranches with an unrealised loss, short or long, with the wash-sale window marked. | 5 (7.1) and 9 (7.5) |
-| P5 | **FX outlook.** Sensitivity, the rate slider and the Projection rate band. Now part of the Currency tab design (§5, "What if"). | 6 (7.2) |
-| P6 | **"Invest this month" flow.** One guided path: euros to invest, the conversion (real rate, spread shown), the deposit, the buys from the target allocation, then "check against the import" once the broker file is in. Reuses the calculator, the conversion form and the allocation plan. | 7 (7.3) |
-| P7 | **Ledger completeness checks.** Data Health reports a dividend or split the price provider shows that the ledger does not have, the days since the last import, and optionally a share-count check against numbers you type from a statement. | 3 |
-| P8 | **Month and year recaps.** The Brief's deterministic maths over a month or a year: contributed, market effect, currency effect, dividends, conversion cost. A card on the first visit of a new month or year, and always available on Periods. | 10 (7.6) |
-| P9 | **One channel for facts.** Email or web push, off by default, only for facts: backup failed, price feed stalled, ledger gap found, a tranche turned long-term. | 10 (7.6) |
-| P10 | **Real euro return.** Periods and the recaps show the EUR return after euro-area inflation, from the public HICP series. | 10 (7.6) |
-
-P4 (a flag on non-US funds) was dropped: the owner holds none.
-
-**Changes:**
+Decided with the owner on 2026-11-10; they shape pushes 7 to 9.
 
 | # | Change | Decided |
 |---|---|---|
@@ -1387,32 +1431,6 @@ the tax pages (tranches, sell planner, tax year, 1099 check):
   **"Taxable gain"** (its euro worth, dollars beside it) and **"Your gain
   in euros"**. Seeing the two together is the point: it shows when you
   would owe tax on a sale that made you nothing in euros.
-
-## 9b. Additions accepted 2026-11-15
-
-From the owner's pre-v7 list (the bug fixes on that list shipped in 6.17.0).
-Same rules as §9a: built in the push named, detail settled at its start.
-
-| # | Addition | Push |
-|---|---|---|
-| P11 | **Currency effect trend.** Stocks drift up over the long run; a currency can trend either way for years. The Effect sub-tab gains a trend view of the currency effect: rolling 3, 6 and 12-month effect (pp and euros), the direction and length of the current run ("the dollar has cost you for 5 months running"), and where today's rate sits against your average buy rate and break-even, as a line over time. Plain facts, no forecast. Built from the same daily parts as the bridge, so it always adds up to the period figures. | 6 (7.2) |
-| P12 | **A useful currency figure in the USD view.** In USD the currency effect on the return is zero by definition (everything is already dollars), so the card shows 0 and wastes the space. In the USD view replace it with figures that mean something to a euro investor looking at dollars: the dollar's move against the euro over the period (%), and "your holdings are worth X % more/less in euros than in dollars since you bought" (the EUR-minus-USD return gap, computed server-side from the two FX-aware returns, never `usd / fx`). Hide mode shows the percentages. | 4 (7.0), moved from 6 (7.2) on 2026-11-16 |
-| P13 | **Market clock.** In the top bar or the hero: "Opens in 2 h 14 min" while closed (weekends, holidays and half-days from the existing NYSE calendar), "Open since 15:30 · closes in 3 h" while open, in the owner's time zone. Pure presentation from `domain/market_hours.py`; the server sends the next open/close instants so the browser only counts down. | 4 (7.0), with the Brief |
-| P14 | **Scheduled transactions (auto-invest).** A recurring buy is set up once (instrument, amount or shares, day of month, account). On each due date the app adds an *expected* transaction valued at that day's close, marked "scheduled, not yet confirmed"; the owner edits only the deviations. When the broker file is imported later, the matching import row **replaces** the expected one (the import's numbers win) and it becomes confirmed. Expected rows count in values and graphs but are flagged in Transactions and in Data Health until confirmed. | 7 (7.3), with P6 |
-| P15 | **Smart import matching.** An import row that is almost identical to an existing transaction (same account, instrument and type; date within one business day; amount and shares within a small tolerance, e.g. 0.5 % or a few cents) is not a new row: the preview shows it as "update" with the old and new figures, and confirming takes the newer import's numbers. Exact duplicates stay skipped as today. Needed by P14, useful on its own. | 7 (7.3), with P14 |
-| D1 | **The day rule (decided 2026-11-16, shipped in 6.17.2; supersedes the 2026-11-15 keep-moving rule).** With A = last night's currency move (previous close to the 09:30 open), B = the session's price move, C = the currency's move during market hours and D = tonight's currency move (close to now): while the market is open the Total is A+B+C (live), ☀ day = B+C, ☾ night = A. After the close the Total stays frozen at A+B+C (close prices × the 16:00 ET close rate against the previous close at its 16:00 rate), ☀ = B+C, and ☾ = D is shown beside it but **not added in**, like a broker's "after hours". Everything rolls over at the 09:30 ET open, where D becomes the new day's A, so each move counts once. The portfolio value stays live. Periods keep the ECB rate per day. The split shows in the EUR view only. | done |
-| P16 | **Per-holding stored value series.** Store each holding's daily (and intraday) value next to the portfolio total, so a new transaction late in the week recomputes only that holding from the trade date instead of rebuilding the whole portfolio history, and so the deep-dive's per-holding 1D/1W lines read stored points. The safe part (an import no longer re-downloads cached prices) shipped in 6.17.0. | 5 (7.1); the holding page it sits on ships in 4 (7.0) |
-
-## 9c. Additions accepted 2026-11-17 (P20 added 2026-11-20)
-
-| # | Addition | Push |
-|---|---|---|
-| P17 | **A fair "% of return" in the Risk contribution table.** Today each row divides its P&L by the window's start value; on "All" that is only the first deposit, so the shares look huge. Show each holding's share of the total P&L instead, ideally built from its lots (each lot's gain over its own holding time, then averaged by size). Detail settled at the start of the push; never fed into an aggregate. | 5 (7.1), with tax lots (§6.1) |
-| P18 | **The Overview counts uninvested brokerage cash.** Since #413 the Risk curve counts cash sitting in a brokerage account outside a money-market fund (B-017); the Overview total does not yet. Every brokerage the owner uses sweeps into a settlement fund, so for him the amount is zero today; this is consistency, not a visible change. Money maths: golden tests and a list of figures that move. | 5 (7.1) |
-| P20 | **Look up any instrument, held or not** (owner, 2026-11-20). Search a ticker or name and open the same holding page as for an owned position: price graph (every range, 1D intraday included), day move, key facts and the currency view, but no Transactions, Dividends or tranche tabs and no "your position" figures. Typical use: checking how a stock you don't own is doing. Built on the 7.1 holding page (one page, a "not held" mode); prices come through the same provider and caches as held instruments, fetched on demand and not added to the portfolio or its totals. Only listed instruments the price provider knows can be shown; a company that is not publicly traded has no price to look up. Optional: a short watchlist later. | 5 (7.1), on the holding page |
-| P19 | **Stop writing the frozen currency legs.** The cutover could not drop `net_eur` / `net_usd` / `fx_rate_to_eur` on cashflow legs or the EUR snapshot columns (`PositionSnapshot`, `IntradayValue`): a few fallbacks still read them and the EUR columns are `NOT NULL`. Its own money change: move the last readers onto `net_native` + that date's FX (or native USD + the per-instant rate), golden tests that the figures do not move, then a migration (with a working downgrade) that drops or nulls the columns. | Before push 8 (7.4) |
-
----
 
 ## 10. What v7 deliberately does not build
 
