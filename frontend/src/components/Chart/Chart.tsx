@@ -334,8 +334,12 @@ export function Chart({
   }, [series]);
 
   const { all, prepared, times, values } = model;
-  const dataKey = `${range ?? ""}|${times.length}|${times[0] ?? ""}|${times[times.length - 1] ?? ""}`;
-  const cursor = cursorState && cursorState.key === dataKey ? cursorState.i : null;
+  // Identifies the chart the scrub belongs to: the range, the first sample and which series
+  // are drawn. Deliberately NOT the length or last time, so a live sample appended at the
+  // end keeps the hover where it is (indexes of earlier samples do not move).
+  const dataKey = `${range ?? ""}|${times[0] ?? ""}|${prepared.map((s) => s.id).join(",")}`;
+  const cursor =
+    cursorState && cursorState.key === dataKey && cursorState.i < times.length ? cursorState.i : null;
   const setCursor = useCallback(
     (i: number | null) => setCursorState(i === null ? null : { i, key: dataKey }),
     [dataKey],
