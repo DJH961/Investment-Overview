@@ -57,7 +57,10 @@ export function describeFreshness(
 ): FreshnessView {
   const { live, refresh } = opts;
   const stamp = { timeZone: opts.timeZone, now: opts.now };
-  if (refresh.running || freshness.refresh_running) {
+  // Quiet by default: a run nobody asked for (scheduled, another device) only spins the
+  // top-bar icon. The chip says "Updating…" for the owner's own refresh and for a historic
+  // download, which has real progress to show.
+  if ((refresh.running && (refresh.explicit || refresh.historical)) || (!refresh.running && freshness.refresh_running && freshness.historical)) {
     return updatingView(
       refresh.running
         ? refresh

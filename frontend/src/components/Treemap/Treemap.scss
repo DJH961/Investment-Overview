@@ -32,6 +32,12 @@
       padding: var(--space-1);
     }
 
+    // The asset class's colour (the same one the Overview's asset-class bar uses), as a stripe on the tile's edge.
+    &--accent {
+      box-shadow: inset var(--space-1) 0 0 var(--treemap-accent);
+      padding-left: calc(var(--space-2) + var(--space-1));
+    }
+
     &:hover,
     &:focus-visible {
       filter: brightness(1.25);

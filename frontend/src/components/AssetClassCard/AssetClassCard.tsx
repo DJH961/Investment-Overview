@@ -14,17 +14,19 @@ export interface AssetClassCardProps {
 }
 
 /**
- * One fixed look per asset class, so a class keeps its colour whatever else is held.
- * Mutual funds and cash get the pair that stays furthest apart for a protan viewer
- * (teal hatched vs solid gold): cash is often a thin sliver, where hatching hides
- * the colour, so it is always solid. Pairs are in tokens.cvd.test.ts.
+ * One fixed look per asset class, so a class keeps its colour whatever else is held
+ * (the Allocation treemap's Fund view stripes its tiles with the same colours).
+ * ETFs, mutual funds and cash are three solid, clearly different colours (violet/blue,
+ * gold, dark teal): cash is often a thin sliver, where hatching hides the colour.
+ * Stocks take the light teal and are hatched, the one pair (cash) that sits closer
+ * for a protan viewer in the dark theme. Pairs are in tokens.cvd.test.ts.
  */
-const CLASS_LOOK: Record<string, { color: number; hatched: boolean }> = {
+export const ASSET_CLASS_LOOK: Record<string, { color: number; hatched: boolean }> = {
   etf: { color: 1, hatched: false },
-  mutual_fund: { color: 2, hatched: true },
-  cash: { color: 3, hatched: false },
-  stock: { color: 6, hatched: false },
-  savings: { color: 5, hatched: true },
+  mutual_fund: { color: 3, hatched: false },
+  cash: { color: 5, hatched: false },
+  stock: { color: 6, hatched: true },
+  savings: { color: 2, hatched: true },
   unknown: { color: 4, hatched: true },
 };
 
@@ -37,7 +39,7 @@ export function AssetClassCard({ currency }: AssetClassCardProps) {
         id: b.label,
         label: assetClassLabel(b.label),
         actual: toNum(b.pct) ?? 0,
-        ...CLASS_LOOK[b.label],
+        ...ASSET_CLASS_LOOK[b.label],
       })),
     [allocations.data],
   );

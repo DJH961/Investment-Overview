@@ -4,6 +4,8 @@
 // (with its live / paused / last tag) left and the amount right, then a long bar
 // under them. Stacking the bar under its text is what keeps it long and readable in
 // a 300 px side column, where four columns in one line left a stub of a track.
+// From 24rem (a half-width desktop card) the track is long enough beside its text, so each
+// leg is one line (name · bar · amount): the card stays short (owner, 7.0.1).
 .diverging-bar {
   display: flex;
   flex-direction: column;
@@ -11,6 +13,11 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  container: diverging-bar / inline-size;
+
+  @container diverging-bar (min-width: 24rem) {
+    gap: var(--space-2);
+  }
 
   &__row {
     display: grid;
@@ -20,6 +27,27 @@
     row-gap: var(--space-2);
     min-width: 0;
     font-size: var(--font-size-sm);
+
+    @container diverging-bar (min-width: 24rem) {
+      grid-template-columns: 8.5rem minmax(0, 1fr) 5.5rem;
+      grid-template-areas: "label track value";
+      align-items: center;
+    }
+  }
+
+  @container diverging-bar (min-width: 24rem) {
+    &__label {
+      grid-area: label;
+      flex-wrap: nowrap;
+    }
+
+    &__value {
+      grid-area: value;
+    }
+
+    &__track {
+      grid-area: track;
+    }
   }
 
   &__label {
@@ -48,6 +76,10 @@
   &__track {
     position: relative;
     grid-column: 1 / -1;
+
+    @container diverging-bar (min-width: 24rem) {
+      grid-column: auto;
+    }
     height: var(--space-3);
     background: var(--color-surface-2);
     border-radius: 4px;

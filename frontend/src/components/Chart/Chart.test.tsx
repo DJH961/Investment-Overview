@@ -52,6 +52,28 @@ describe("Chart", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  it("a live sample appended at the end keeps the hover and the chart in place", () => {
+    const { rerender, container } = render(<Chart series={series} {...props} />);
+    const svg = screen.getByRole("img");
+    fireEvent.pointerMove(svg, { clientX: 0 });
+    fireEvent.keyDown(svg, { key: "ArrowRight" });
+    expect(screen.getByRole("status")).toHaveTextContent("T2000");
+    const grown = series.map((s) => (s.id === "a" ? { ...s, points: [...s.points, { t: 6000, v: 140 }] } : s));
+    rerender(<Chart series={grown} {...props} />);
+    // Same scrub position and the same SVG element (no remount).
+    expect(screen.getByRole("status")).toHaveTextContent("T2000");
+    expect(screen.getByRole("img")).toBe(svg);
+    expect(container.querySelectorAll('[data-series="a"] .chart__line')).toHaveLength(2);
+  });
+
+  it("a different range drops the hover", () => {
+    const { rerender } = render(<Chart series={series} range="1d" {...props} />);
+    fireEvent.pointerMove(screen.getByRole("img"), { clientX: 0 });
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    rerender(<Chart series={series} range="1w" {...props} />);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("shows the empty message", () => {
     render(<Chart series={[]} {...props} emptyMessage="Nothing here" />);
     expect(screen.getByText("Nothing here")).toBeInTheDocument();

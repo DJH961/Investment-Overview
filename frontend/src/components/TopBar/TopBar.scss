@@ -242,6 +242,27 @@
     background: var(--color-neg);
   }
 
+  // The refresh button; the quiet "Updating…" hangs to its left (out of flow), so the
+  // buttons never shift when it comes and goes.
+  &__refresh {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+  }
+
+  &__quiet {
+    position: absolute;
+    top: 50%;
+    right: 100%;
+    margin-right: var(--space-1);
+    transform: translateY(-50%);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
   &__spin {
     animation: top-bar-spin 0.9s linear infinite;
   }
@@ -253,6 +274,11 @@
 
     .top-bar__actions {
       gap: 0;
+    }
+
+    // No room beside the icon on a phone: the spin shows it, a screen reader still hears it.
+    .top-bar__quiet {
+      @include m.visually-hidden;
     }
 
     // Phone: the title block takes what the actions leave and truncates inside

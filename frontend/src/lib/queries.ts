@@ -2,6 +2,7 @@ import { QueryClient, useQuery } from "@tanstack/react-query";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import type { PersistedClient, Persister } from "@tanstack/react-query-persist-client";
 import { ApiError, addAuthLostListener, api } from "./api";
+import { APP_VERSION } from "./appVersion";
 import { forgetPasskeyDevice } from "./passkeyHint";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -49,8 +50,18 @@ function setSignedInHint(on: boolean): void {
   }
 }
 
+/** Reading `window.localStorage` itself can throw (blocked storage, some private modes). */
+function safeStorage(): Storage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+// Without storage the sync persister is a no-op: the app behaves as before the cache existed.
 const storagePersister = createSyncStoragePersister({
-  storage: typeof window === "undefined" ? undefined : window.localStorage,
+  storage: safeStorage(),
   key: QUERY_CACHE_KEY,
   throttleTime: 0,
 });
@@ -64,22 +75,54 @@ export const PERSIST_IDLE_MS = 60_000;
  * or after a quiet minute, never per tick (F-083).
  */
 let pendingClient: PersistedClient | null = null;
+
+/**
+ * Saving is paused while nobody is signed in (session expired, signed out): a 401 turns the
+ * queries that were on screen into errors, and writing that state would shrink the saved
+ * copy. An expired session keeps the saved copy so the next login paints at once; only an
+ * explicit sign out deletes it. Resumed when the auth probe says "authenticated".
+ */
+let persistPaused = false;
+
+export function pausePersist(): void {
+  persistPaused = true;
+  pendingClient = null;
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = undefined;
+}
+
+export function resumePersist(): void {
+  persistPaused = false;
+}
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function flushPersist(): void {
+  if (persistPaused) return;
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = undefined;
   const client = pendingClient;
   pendingClient = null;
-  if (client) void storagePersister.persistClient(client);
+  if (!client) return;
+  try {
+    void storagePersister.persistClient(client);
+  } catch {
+    /* quota or blocked storage: the cache is only an optimisation */
+  }
 }
 
 export const persister: Persister = {
   persistClient: (client) => {
+    if (persistPaused) return;
     pendingClient = client;
     idleTimer ??= setTimeout(flushPersist, PERSIST_IDLE_MS);
   },
-  restoreClient: () => storagePersister.restoreClient(),
+  restoreClient: async () => {
+    try {
+      return await storagePersister.restoreClient();
+    } catch {
+      return undefined;
+    }
+  },
   removeClient: () => {
     pendingClient = null;
     if (idleTimer) clearTimeout(idleTimer);
@@ -108,10 +151,11 @@ if (typeof document !== "undefined") {
 /**
  * Forget every cached server answer: the in-memory query cache, the persisted
  * copy in localStorage and any `iv.*` sessionStorage entries. UI preferences
- * (theme, currency, sidebar) stay. Called on logout and on any 401, so
- * holdings and transactions do not stay readable on a shared or lost device.
+ * (theme, currency, sidebar) stay. Called on an explicit sign out only (a 401 keeps
+ * the saved copy, see `onAuthLost`), so nothing stays readable on a shared device.
  */
 export function clearClientData(): void {
+  pausePersist();
   queryClient.clear();
   try {
     void persister.removeClient();
@@ -132,19 +176,72 @@ export function clearClientData(): void {
   }
 }
 
-addAuthLostListener(clearClientData);
+/**
+ * A 401 / expired session: the saved copy stays (it never leaves this browser and is shown
+ * only after the next successful login); only saving is paused and the "signed in" hint drops,
+ * so nothing is shown before the server has confirmed the session.
+ */
+export function onAuthLost(): void {
+  pausePersist();
+  setSignedInHint(false);
+}
 
-// Persist report data for instant/offline opens, but never auth state: a
-// restored `authenticated: false` would bounce a logged-in user to /login.
+/** A login just succeeded: show the cached app at once (no wait for the auth probe) and save again. */
+export function markSignedIn(): void {
+  setSignedInHint(true);
+  resumePersist();
+  // Queries that failed with the 401 still hold their cached data: put them back to "success"
+  // so pages show it (and no "Offline" chip) while the fresh answer loads.
+  for (const q of queryClient.getQueryCache().getAll()) {
+    if (q.state.status === "error" && q.state.data !== undefined) {
+      q.setState({ status: "success", error: null, errorUpdateCount: 0, fetchFailureCount: 0, fetchFailureReason: null });
+    }
+  }
+}
+
+addAuthLostListener(onAuthLost);
+
+/**
+ * Only read-only report answers are saved (an allow-list, so a new query never leaks into
+ * storage by accident): the Overview, holdings, chart ranges, periods, allocations, the
+ * currency page and the brief. Never auth (a restored `authenticated: false` would bounce a
+ * signed-in user to /login), settings, accounts, transactions or anything else.
+ */
+export const PERSISTED_ROOTS: readonly string[] = [
+  "overview",
+  "holdings",
+  "graphs",
+  "periods",
+  "allocations",
+  "currency",
+  "brief",
+];
+
+/** How long a saved copy may be used (older ones are dropped on restore). */
+export const PERSIST_MAX_AGE = DAY;
+
+export function shouldPersistQuery(query: { queryKey: readonly unknown[]; state: { status: string; data?: unknown } }): boolean {
+  return (query.state.status === "success" || query.state.data !== undefined) && PERSISTED_ROOTS.includes(String(query.queryKey[0]));
+}
+
 export const persistOptions = {
   persister,
-  maxAge: DAY,
-  dehydrateOptions: {
-    shouldDehydrateQuery: (query: { queryKey: readonly unknown[]; state: { status: string } }) =>
-      // Graph series are the biggest entries and refetch quickly: they stay out of the saved copy.
-      query.state.status === "success" && query.queryKey[0] !== "auth" && query.queryKey[0] !== "graphs",
-  },
+  maxAge: PERSIST_MAX_AGE,
+  // A new release drops the old copy (its shapes may differ).
+  buster: APP_VERSION,
+  dehydrateOptions: { shouldDehydrateQuery: shouldPersistQuery },
 };
+
+/**
+ * Restored data is a starting picture, not the truth: mark it stale and refetch what is on
+ * screen at once. `hydrate` never replaces a query that already holds newer data (a live
+ * tick that landed first), so the order is: restore, then live data wins.
+ */
+export function onCacheRestored(client: QueryClient = queryClient): void {
+  void client.invalidateQueries({
+    predicate: (q) => q.state.fetchStatus === "idle" && PERSISTED_ROOTS.includes(String(q.queryKey[0])),
+  });
+}
 
 // Endpoint hooks live in lib/queries/*. Reports fetch one `/both` entry per report and pick the
 // currency with `select`, so EUR and USD never have separate cache entries.
@@ -160,6 +257,7 @@ export const authMeQuery = () => ({
   queryFn: async ({ signal }: { signal: AbortSignal }) => {
     const me = await api<AuthMe>("/api/auth/me", { signal, skipAuthRedirect: true });
     setSignedInHint(me.authenticated);
+    if (me.authenticated) resumePersist();
     // Signed in with no passkeys registered: nothing to auto-offer at login.
     if (me.authenticated && me.passkeys === 0) forgetPasskeyDevice();
     return me;

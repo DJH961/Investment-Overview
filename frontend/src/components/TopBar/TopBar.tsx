@@ -35,6 +35,11 @@ export interface TopBarProps {
   /** Server refresh; always available (disabled only while one runs). */
   onRefresh: () => void;
   refreshing?: boolean;
+  /**
+   * The app is updating by itself (a tick, a scheduled pull): only the refresh icon
+   * spins and "Updating…" shows beside it; nothing else on the bar changes.
+   */
+  quietUpdating?: boolean;
   onLogout: () => void;
   /** Data-health badge. On phone it only shows when something is wrong. */
   health?: HealthSummary;
@@ -105,6 +110,7 @@ export function TopBar({
   compact = false,
   onRefresh,
   refreshing = false,
+  quietUpdating = false,
   onLogout,
   health,
   privacyToggle,
@@ -200,6 +206,19 @@ export function TopBar({
         </div>
       )}
       <div className="top-bar__actions">
+        {/* First, so it is the quickest action to reach. */}
+        <span className="top-bar__refresh">
+          {quietUpdating && !refreshing && (
+            <output className="top-bar__quiet">Updating…</output>
+          )}
+          <IconButton
+            label="Refresh data"
+            icon={<RefreshCw aria-hidden className={clsx((refreshing || quietUpdating) && "top-bar__spin")} />}
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-busy={refreshing || quietUpdating || undefined}
+          />
+        </span>
         {showHealth && <HealthBadge health={health} />}
         {privacyToggle}
         {compact ? (
@@ -224,19 +243,14 @@ export function TopBar({
             onChange={setCurrency}
           />
         )}
-        <IconButton
-          label="Refresh data"
-          icon={<RefreshCw aria-hidden className={clsx(refreshing && "top-bar__spin")} />}
-          onClick={onRefresh}
-          disabled={refreshing}
-          aria-busy={refreshing || undefined}
-        />
         {!compact && <IconButton label={`Theme: ${theme}`} icon={<ThemeIcon aria-hidden />} onClick={cycleTheme} />}
         <Menu
           heading={compact ? "Account" : undefined}
           trigger={<IconButton label="Account and sign out" icon={<UserRound aria-hidden />} />}
           items={accountItems}
         />
+        {/* Desktop: Sign out is the right-most action (owner, 7.0.1). */}
+        {!compact && <IconButton label="Sign out" icon={<LogOut aria-hidden />} onClick={onLogout} />}
       </div>
     </header>
   );

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { ASSET_CLASS_LOOK } from "../AssetClassCard";
 import { Card } from "../Card";
 import { EmptyState } from "../EmptyState";
 import { ErrorState } from "../ErrorState";
@@ -42,6 +43,7 @@ export function AllocationCard({ currency, height }: AllocationCardProps) {
           label: h.symbol,
           value,
           tone: toneOf(t),
+          accent: ASSET_CLASS_LOOK[h.asset_class]?.color,
           detail: t === null ? undefined : formatPercent(t, { signed: true }),
         };
       });

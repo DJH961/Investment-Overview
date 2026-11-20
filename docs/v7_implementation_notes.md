@@ -231,7 +231,7 @@ B-031.
 ## Push 4 — 7.0: cutover, Daily Brief and the easy wins
 
 > **Done: shipped as 7.0.0 (2026-11-18).** The frozen currency legs could
-> not stop being written in the cutover; that is now plan §9c P19.
+> not stop being written in the cutover; that is now plan §8, push 8 (P19).
 
 Three sessions (plan §8). Session 1: lanes A and B, which do not touch
 each other. Session 2: write the Brief, Currency and P12 endpoint shapes

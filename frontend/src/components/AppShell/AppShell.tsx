@@ -12,7 +12,7 @@ import { useSignOut } from "../../lib/useSignOut";
 import { NAV_ITEMS, titleFor } from "../../lib/nav";
 import { prefetchKeyData } from "../../lib/prefetch";
 import { usePrefs } from "../../lib/prefs";
-import { useServerRefresh } from "../../lib/refresh";
+import { useServerRefresh, useUpdateMode } from "../../lib/refresh";
 import { useShell } from "../../lib/shell";
 import { PULL_THRESHOLD, usePullToRefresh } from "../../lib/usePullToRefresh";
 import { useShortcuts } from "../../lib/useShortcuts";
@@ -86,10 +86,12 @@ export function AppShell() {
   // The top-bar refresh is always a real server pull (prices, FX, intraday sample).
   const server = useServerRefresh();
   const refresh = server.state;
+  const updateMode = useUpdateMode(pageRefreshing);
   // One chip for every view (the same server freshness everywhere); a page's own
   // status wins only while that page cannot load its data (offline / failed).
   const globalFreshness = useGlobalFreshness(currency, PREFETCH_DELAY_MS);
-  const freshness = refresh.running
+  const loudRefresh = refresh.running && updateMode !== "quiet";
+  const freshness = loudRefresh
     ? updatingView(refresh)
     : pageFreshness.status !== "stale" && globalFreshness
       ? globalFreshness
@@ -107,7 +109,8 @@ export function AppShell() {
   }, [startRefresh, toast]);
   const health = useShellHealth();
   const { hide, toggle: toggleHide } = useHideAmounts();
-  const refreshing = refresh.running || pageRefreshing;
+  // Quiet updates never disable the button or draw the bar; everything else is as before.
+  const refreshing = (refresh.running || pageRefreshing) && updateMode !== "quiet";
   const determinate = refresh.historical && refresh.total > 0;
   const [userRail, setUserRail] = useState(readRail);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -146,7 +149,7 @@ export function AppShell() {
     <div className={clsx("app-shell", phone && "app-shell--phone", rail && "app-shell--rail")}>
       {!phone && <Sidebar collapsed={rail} onToggle={desktop ? toggleRail : undefined} summary={summary} />}
       <div className="app-shell__main">
-        {refresh.running && (
+        {loudRefresh && (
           <div
             className={clsx("app-shell__progress", !determinate && "app-shell__progress--indeterminate")}
             role="progressbar"
@@ -167,6 +170,7 @@ export function AppShell() {
           compact={phone}
           onRefresh={onRefresh}
           refreshing={refreshing}
+          quietUpdating={updateMode === "quiet"}
           onLogout={logout}
           health={health}
           summary={summary}

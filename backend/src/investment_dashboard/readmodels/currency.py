@@ -21,7 +21,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import session_fx
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import (
     intraday_snapshots_service,
@@ -83,24 +82,21 @@ def _buys(session: Session, today: dict[str, Any], *, now: datetime) -> dict[str
     spot, prev = _d(today.get("spot")), _d(today.get("prev"))
     if spot is None or spot <= 0:
         return None
-    market_open = bool(today["regime"]["market_open"])
-    # The owner's own regular amount, the same setting the Overview card values.
-    amount = investing_power_service.get_amount_eur(session)
-    split = session_fx.fx_buying_power_split(
-        market_open=market_open,
-        amount_eur=amount,
-        live_fx=spot,
-        prev_fx=prev,
-        session_close_fx=intraday_snapshots_service.session_close_fx(session, now=now),
-        session_open_fx=intraday_snapshots_service.session_open_fx(session, now=now),
-    )
+    # One source: the Overview card's own investing-power figures (``today`` is copied from
+    # the Overview payload), never re-derived here from other anchors. The owner's regular
+    # amount is the same setting the card values.
+    card = today.get("investing_power_usd") or {}
+    amount = _d(card.get("amount_eur")) or investing_power_service.get_amount_eur(session)
+    net = _d(card.get("net"))
+    if net is None and prev is not None and prev > 0:
+        net = amount * (spot - prev)  # no card (no swing / no anchor): the whole move only
     return {
         "amount_eur": dec(amount),
         "usd_now": dec(amount * spot),
         "usd_prev": dec(amount * prev) if prev is not None and prev > 0 else None,
-        "change_usd": dec(split.total_usd),
-        "market_hours_usd": dec(split.market_hours_usd),
-        "overnight_usd": dec(split.overnight_usd),
+        "change_usd": dec(net),
+        "market_hours_usd": dec(_d(card.get("market_hours"))),
+        "overnight_usd": dec(_d(card.get("overnight"))),
     }
 
 

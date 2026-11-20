@@ -170,6 +170,37 @@ def rate_at(session: Session, moment: datetime) -> Decimal | None:
     return intraday_snapshots_service.sample_fx_at(session, _utc(moment))
 
 
+#: How far back the newest stored rate may lie to stand for the rate when the owner left
+#: (samples exist only while the market trades; the table keeps a week).
+RATE_THEN_MAX_AGE = timedelta(days=7)
+
+
+def rate_then_at(session: Session, moment: datetime) -> Decimal | None:
+    """EUR/USD when the owner left (``moment``), never missing just because it was night.
+
+    Intraday samples exist only while the US market trades, so an absence that began
+    after the close has no sample within half an hour. The rate then is the newest
+    stored sample at or before ``moment`` (the session's closing rate), else the settled
+    rate of the last close at or before it: the same two bases the Brief's window uses
+    for its start (``brief_window_service.collect``), so the figures cannot disagree.
+    """
+    from investment_dashboard.services import (  # noqa: PLC0415
+        brief_window_service,
+        fx_service,
+        intraday_snapshots_service,
+    )
+
+    moment = _utc(moment)
+    sampled = intraday_snapshots_service.sample_fx_at(session, moment, max_age=RATE_THEN_MAX_AGE)
+    if sampled is not None:
+        return sampled
+    day = brief_window_service.start_close_date(moment)
+    if day is None:
+        return None
+    settled = fx_service.get_settled_rate(session, day)
+    return settled if settled is not None and settled > 0 else None
+
+
 @dataclass(frozen=True)
 class FxSince:
     """The window's currency lines with the two rates they were measured between.
@@ -195,7 +226,8 @@ def fx_since(
     at the rate at ``since`` (:func:`rate_at`): holdings held constant, only the rate
     moves. USD view: the Overview's investing power on the regular amount
     (``investing_power_service.get_amount_eur``) from the rate at ``since`` to now.
-    ``rate_now`` is the rate at ``now`` (the visit's start), else the passed live rate. ``None`` when the window is empty or
+    ``rate_now`` is the passed live rate (the hero's), else the spot, else the sample at
+    ``now``; ``rate_then`` is :func:`rate_then_at`. ``None`` when the window is empty or
     either rate is missing.
     """
     from investment_dashboard.services import (  # noqa: PLC0415
@@ -207,14 +239,12 @@ def fx_since(
     since, now = _utc(since), _utc(now)
     if now <= since:
         return None
-    rate_then = rate_at(session, since)
-    # The rate when the owner came back (the intraday sample at ``now``, the visit's
-    # start); without one, the live rate the caller passed (or the spot).
-    sampled = rate_at(session, now)
-    if sampled is not None:
-        rate_now = sampled
-    elif rate_now is None or rate_now <= 0:
-        rate_now = live_rate(now)
+    rate_then = rate_then_at(session, since)
+    # Ends where the hero ends: the live rate the caller passed (the Overview's), the same
+    # one the window's own currency part uses, so the Brief's figures never end at two
+    # different rates. Without it, the spot, else the sample at ``now``.
+    if rate_now is None or rate_now <= 0:
+        rate_now = live_rate(now) or rate_at(session, now)
     if rate_then is None or rate_now is None:
         return None
     book = metrics_service.book_holdings(session, intraday_snapshots_service.last_session_date(now))

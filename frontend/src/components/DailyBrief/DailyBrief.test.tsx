@@ -134,14 +134,14 @@ describe("DailyBrief", () => {
   const withWindow = (flows: string | null) =>
     ({ ...multi, window_move: { EUR: windowOf(flows), USD: { ...windowOf(flows), currency_move: null } } }) as unknown as BriefDto;
 
-  it("several sessions with a window move: headline, split that adds up, movers", async () => {
+  it("several sessions with a window move: headline, the currency briefing, movers", async () => {
     stub(() => withWindow(null));
     mount("EUR");
     expect(await screen.findByTestId("brief-figure")).toHaveTextContent("+€11,980.50");
     expect(screen.getByTestId("brief-window-move")).toHaveTextContent("While you were away");
-    expect(screen.getByTestId("brief-rates")).toHaveTextContent("EUR/USD 1.1590 → 1.1641");
-    expect(screen.queryByTestId("brief-currency-effect")).toBeNull();
-    expect(screen.getByTestId("brief-split")).toHaveTextContent("Market+€14,000.20Currency-€2,019.70");
+    // 7.0.1: the currency briefing in every Brief, no "What moved it" ledger.
+    expect(screen.getByTestId("brief-currency-effect")).toBeInTheDocument();
+    expect(screen.queryByTestId("brief-moved")).toBeNull();
     expect(screen.getByTestId("brief-value-path")).toHaveTextContent("€1,469,107 → €1,481,087");
     expect(screen.queryByTestId("brief-flows")).toBeNull();
     expect(screen.queryByText(/sessions passed/)).toBeNull();

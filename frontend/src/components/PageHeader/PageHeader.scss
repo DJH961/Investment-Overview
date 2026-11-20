@@ -6,15 +6,9 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-6);
-
-  @include m.phone {
-    margin-bottom: var(--space-4);
-
-    &--bare {
-      margin-bottom: 0;
-    }
-  }
+  // No margin of its own: every page spaces its parts with --page-gap, and a margin here
+  // doubled the gap under the title (owner, 7.0.1: too much white space at the top).
+  margin-bottom: 0;
 
   &__text {
     min-width: 0;

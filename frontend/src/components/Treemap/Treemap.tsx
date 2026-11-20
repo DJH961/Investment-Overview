@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { useHideAmounts } from "../../lib/hideAmounts";
 import "./Treemap.scss";
 
@@ -12,6 +12,8 @@ export interface TreemapItem {
   tone?: "pos" | "neg" | "neutral";
   /** Secondary text shown under the label when it fits. */
   detail?: string;
+  /** Fixed series colour 1-6 (`--chart-n`) shown as a stripe on the tile: the same thing keeps the same colour elsewhere (asset classes). */
+  accent?: number;
 }
 
 export interface TreemapRect {
@@ -180,9 +182,16 @@ export function Treemap({
               "treemap__cell",
               `treemap__cell--${item.tone ?? "neutral"}`,
               compact && "treemap__cell--compact",
+              item.accent && "treemap__cell--accent",
             )}
             data-testid={`cell-${r.id}`}
-            style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
+            style={{
+              left: r.x,
+              top: r.y,
+              width: r.w,
+              height: r.h,
+              ...(item.accent ? ({ "--treemap-accent": `var(--chart-${item.accent})` } as CSSProperties) : {}),
+            }}
             aria-label={[
               item.label,
               ...(hide ? [] : [valueFormat(item.value)]),
