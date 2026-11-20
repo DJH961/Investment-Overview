@@ -4,6 +4,7 @@ import { InfoTip } from "../InfoTip";
 import { KpiTile } from "../KpiTile";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
+import { formatPp } from "../../lib/format";
 import { toNum, type OverviewDto } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import "./KpiGrid.scss";
@@ -77,6 +78,26 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
       </span>
     ) : undefined;
   const v = data?.market_verdict;
+
+  // Total growth in EUR = the investment's own (USD) return + what the currency did, both server figures
+  // (`currency.return_split`, never computed here). The currency share is always shown, so the tile explains
+  // why EUR growth differs from the dollar figure. The USD view keeps its plain "in EUR" line.
+  const split = data?.currency?.return_split;
+  const fxPp = toNum(split?.currency_effect_pp ?? null);
+  const investment = toNum(split?.investment_return ?? null);
+  const growthSecondary =
+    currency === "EUR" && fxPp !== null ? (
+      <span className="kpi-grid__growth-split" data-testid="growth-split">
+        <span>
+          Investment <Percent ratio={investment ?? toNum(k2?.total_growth_compounded)} signed />
+        </span>
+        <span>
+          Currency {formatPp(fxPp)}
+        </span>
+      </span>
+    ) : (
+      pct2(k2?.total_growth_compounded)
+    );
 
   // The day Total, from the server (`day_split.price_move`; the field name is
   // historical): always the headline change, live while the market is open and
@@ -162,7 +183,7 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
           tooltip={KPI_TIPS.totalGrowth}
           loading={loading}
           value={pct(k?.total_growth_compounded)}
-          secondary={pct2(k2?.total_growth_compounded)}
+          secondary={growthSecondary}
         />
         <KpiTile
           label="Vs market"

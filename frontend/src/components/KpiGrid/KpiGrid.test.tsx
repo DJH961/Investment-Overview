@@ -106,14 +106,20 @@ describe("KpiGrid", () => {
       currency: { return_split: { investment_return: "0.3", currency_effect_pp: effect } },
     }) as unknown as OverviewDto;
 
-  it("shows no Investment / Currency line under Total growth (owner, pass 4)", () => {
-    // Investment equals the USD figure already on the tile, so the line only repeated it.
-    for (const ccy of ["EUR", "USD"] as const) {
-      const { unmount } = render(<KpiGrid data={withSplit("-0.012")} currency={ccy} loading={false} />);
-      expect(screen.queryByTestId("hero-split")).toBeNull();
-      expect(screen.getByText("Total growth")).toBeInTheDocument();
-      unmount();
-    }
+  it("EUR Total growth always shows the currency's share (server pp), in hide mode too", () => {
+    const { unmount } = render(<KpiGrid data={withSplit("-0.012")} currency="EUR" loading={false} />);
+    const line = screen.getByTestId("growth-split");
+    expect(line).toHaveTextContent("Investment");
+    expect(line).toHaveTextContent("Currency -1.20 pp");
+    unmount();
+    setHideAmounts(true);
+    render(<KpiGrid data={withSplit("-0.012")} currency="EUR" loading={false} />);
+    expect(screen.getByTestId("growth-split")).toHaveTextContent("Currency -1.20 pp");
+  });
+
+  it("USD Total growth keeps its plain line (no currency leg in dollars)", () => {
+    render(<KpiGrid data={withSplit("-0.012")} currency="USD" loading={false} />);
+    expect(screen.queryByTestId("growth-split")).toBeNull();
   });
 
   it("reports the year once: no second, unlike YTD figure under the XIRR tile", () => {
