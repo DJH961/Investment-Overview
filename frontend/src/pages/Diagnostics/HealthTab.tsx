@@ -205,6 +205,7 @@ export function HealthTab() {
       )}
 
       <RefreshCard />
+      <BriefVisitCard />
 
       <Card title="All checks" flush collapsibleId="diagnostics.checks">
         <DataTable caption="Health checks" columns={checkColumns} rows={[...d.checks].sort(bySeverity)} rowKey={(c) => c.id} />
@@ -213,7 +214,6 @@ export function HealthTab() {
         <DataTable caption="Data providers" columns={providerColumns} rows={d.providers} rowKey={(p) => p.name} />
       </Card>
       <ShareCountsCard />
-      <BriefVisitCard />
       <Card title={`Provider log (${d.provider_log.length})`} collapsibleId="diagnostics.provider-log" defaultOpen={false}>
         {d.provider_log.length === 0 ? (
           <p className="diagnostics__muted">No provider calls recorded since the server started.</p>

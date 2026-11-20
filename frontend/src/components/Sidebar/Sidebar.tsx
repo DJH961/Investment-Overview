@@ -22,6 +22,9 @@ export interface SidebarProps {
   summary?: ShellSummary;
 }
 
+/** The "incl. overnight" suffix is dropped here: it moved the line break between the USD and EUR cards. */
+const OVERNIGHT_SUFFIX = " · incl. overnight";
+
 /** The groups in the main list; System sits at the foot of the spine. */
 const MAIN_GROUPS = NAV_GROUPS.filter((g) => g !== "System");
 
@@ -60,7 +63,7 @@ function Pocket({ summary }: { summary?: ShellSummary }) {
         <span className="sidebar__pocket-move">
           <DeltaBadge value={summary.pct} />
           <Money amount={summary.move} currency={summary.currency} signed colored className="sidebar__pocket-money" />
-          <span className="sidebar__pocket-day">{summary.dayLabel}</span>
+          <span className="sidebar__pocket-day">{summary.dayLabel.replace(OVERNIGHT_SUFFIX, "")}</span>
         </span>
       )}
     </Link>
@@ -71,13 +74,14 @@ function Pocket({ summary }: { summary?: ShellSummary }) {
  * The navigation spine: light in the light theme, deep ink in the dark (`.u-ink`), grouped by what the owner
  * is doing (Portfolio, Dig in, Manage), the System pages at its foot, and the
  * portfolio at a glance at its head. Collapses to an icon rail (tablet, or by choice).
- * Sized to fit without a scroll bar; short windows get denser rows (Sidebar.scss).
+ * Sized to fit without a scroll bar; the nav groups share the spare height and short windows get denser rows
+ * (Sidebar.scss). The fold toggle sits in the same spot (foot, rail-centred) open or collapsed.
  */
 export function Sidebar({ collapsed, onToggle, summary }: SidebarProps) {
   const toggle = onToggle && (
     <IconButton
       className="sidebar__toggle"
-      size={collapsed ? "md" : "sm"}
+      size="md"
       label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       icon={collapsed ? <PanelLeftOpen aria-hidden /> : <PanelLeftClose aria-hidden />}
       onClick={onToggle}
@@ -91,7 +95,6 @@ export function Sidebar({ collapsed, onToggle, summary }: SidebarProps) {
           <span className="sidebar__brand-line">Investment</span>{" "}
           <span className="sidebar__brand-line">Overview</span>
         </span>
-        {!collapsed && toggle}
       </div>
       {!collapsed && <Pocket summary={summary} />}
       <nav className="sidebar__nav" aria-label="Primary">
@@ -105,7 +108,7 @@ export function Sidebar({ collapsed, onToggle, summary }: SidebarProps) {
       <nav className="sidebar__foot" aria-label="System">
         <NavList group="System" collapsed={collapsed} compact />
         {APP_VERSION && <p className="sidebar__meta">Investment Overview {APP_VERSION}</p>}
-        {collapsed && toggle && <div className="sidebar__footer">{toggle}</div>}
+        {toggle && <div className="sidebar__footer">{toggle}</div>}
       </nav>
     </aside>
   );

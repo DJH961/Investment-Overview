@@ -119,9 +119,8 @@ export function BriefVisitCard() {
   return (
     <Card
       title="Daily Brief: last visit"
-      subtitle="Test the brief from another starting point"
+      subtitle="Set the time the Daily Brief counts changes from (for testing)"
       collapsibleId="diagnostics.brief-visit"
-      defaultOpen={false}
     >
       {q.isError && !q.data ? (
         <ErrorState onRetry={() => void q.refetch()} />

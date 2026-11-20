@@ -11,6 +11,12 @@
     grid-template-columns: minmax(0, 1fr) auto auto;
     column-gap: var(--space-4);
     margin: 0;
+    // If the columns ever need more than the card offers, the header row and the rows (one grid) scroll
+    // sideways TOGETHER instead of the figures sliding away from their headings.
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
 
     @include m.phone {
       column-gap: var(--space-3);
@@ -586,13 +592,12 @@
       grid-row: 2;
     }
 
-    // The price time wraps under the name rather than losing its day or (NAV).
+    // The price time gets its own full-width line under the row ("Mon 22:00 (NAV)" on one line, never a
+    // three-line stack in the narrow name column); the figures keep their two lines above it.
     &__row &__asof {
-      grid-column: 1;
+      grid-column: 1 / -1;
       grid-row: 3;
-      overflow: visible;
-      text-overflow: clip;
-      white-space: normal;
+      white-space: nowrap;
     }
 
     // The twin line's "≈ FAKEL" needs the narrow first column whole: the dashed
@@ -608,7 +613,7 @@
 
     &__row &__value,
     &__row &__day {
-      grid-row: 2 / span 2;
+      grid-row: 2;
     }
   }
 }

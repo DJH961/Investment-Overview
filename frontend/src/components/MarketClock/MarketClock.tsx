@@ -251,15 +251,15 @@ export function useClockModel(freshness: ClockFreshness | null | undefined, onBo
   return { view, open, remaining, parts, progress, span, ticks, rung, label, soon, last, bellTime, sentence, still, now, timeZone };
 }
 
-/** The compact "Open · 1 h 46 m" text: minutes only, never seconds (the quiet phone chip). */
+/** The compact "Open for 1h 46m" text (state, then the time until it changes): minutes only, never seconds (the quiet phone chip). */
 export function formatChipSpan(ms: number): string {
   const mins = Math.max(1, Math.ceil(ms / MINUTE));
   const d = Math.floor(mins / 1440);
   const h = Math.floor((mins % 1440) / 60);
   const m = mins % 60;
-  if (d > 0) return h ? `${d} d ${h} h` : `${d} d`;
-  if (h > 0) return `${h} h ${m} m`;
-  return `${m} m`;
+  if (d > 0) return h ? `${d}d ${h}h` : `${d}d`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 }
 
 /** True while the compact phone band shows: the last 15 minutes to a bell and 5 minutes after it rang. */

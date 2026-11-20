@@ -456,7 +456,7 @@ export function OverviewHoldings({ currency, movers }: OverviewHoldingsProps) {
         <Skeleton height="8rem" />
       ) : (
         <>
-          <ul className="overview-holdings__list" id={listId}>
+          <ul className="overview-holdings__list" id={listId} data-scrollable>
             <li className="overview-holdings__head" aria-hidden>
               <span>Holding</span>
               <span className="overview-holdings__head-weight">Weight</span>

@@ -75,6 +75,16 @@
     color: var(--color-muted);
   }
 
+  // Total growth in EUR: "Investment +27.04%" over "Currency −10.02 pp", one fact per line.
+  &__growth-split {
+    display: flex;
+    flex-direction: column;
+
+    & > span {
+      @include m.truncate;
+    }
+  }
+
   // Vs market: "You" and the benchmark on their own lines, values aligned.
   &__vs {
     display: grid;
@@ -143,7 +153,7 @@
       align-items: flex-start;
       gap: 0;
       min-width: 0;
-      padding: 0 var(--space-3);
+      padding: 0 var(--space-2);
       border-left: var(--border-width) solid var(--color-border);
 
       &:first-child {
@@ -173,8 +183,13 @@
       font-weight: var(--font-weight-semibold);
     }
 
+    // The money note sits under the figure in small type (one line, ellipsis if a column is narrow).
     &__stat-sub {
-      display: none;
+      display: block;
+      max-width: 100%;
+      font-size: var(--font-size-2xs);
+      line-height: var(--line-height-tight);
+      overflow-wrap: anywhere;
     }
   }
 }

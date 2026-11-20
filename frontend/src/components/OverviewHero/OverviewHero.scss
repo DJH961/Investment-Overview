@@ -114,6 +114,9 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
+    // The phone's market chip asks this row how much room it has (MarketChip.scss): "Open for 2h 10m" when
+    // there is room, only its dot when there is not.
+    container: hero-head / inline-size;
   }
 
   &__label {

@@ -102,8 +102,14 @@
     flex-direction: column;
     margin: 0;
 
-    @container currency-box (min-width: 480px) and (max-width: 33.99rem) {
+    @container currency-box (max-width: 33.99rem) {
       display: grid;
+      // As in v6: the spot column gets a little more room for "as of 14:35".
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.85fr);
+      gap: var(--space-2);
+    }
+
+    @container currency-box (min-width: 480px) and (max-width: 33.99rem) {
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: var(--space-4);
     }
@@ -141,7 +147,7 @@
       min-width: 0;
     }
 
-    @container currency-box (min-width: 480px) and (max-width: 33.99rem) {
+    @container currency-box (max-width: 33.99rem) {
       display: flex;
       flex-direction: column;
       align-items: stretch;
@@ -162,6 +168,10 @@
     @include m.figure(var(--font-size-lg));
     margin: 0;
     white-space: nowrap;
+
+    @container currency-box (max-width: 479px) {
+      font-size: var(--font-size-md);
+    }
 
     @container currency-box (min-width: 480px) {
       font-size: var(--font-size-xl);
@@ -213,17 +223,24 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // The lead: what the rate did since yesterday, as the card's biggest figure. It
-  // comes first at every width (left column when wide), so the headline value sits
-  // right under the card title instead of floating beside the rate list.
+  // The lead: what the rate did since yesterday. Narrow (phone, v6 shape): under the three figures, the title
+  // on the left and the figure on the right of one line. Wider: first, as the card's biggest figure (left
+  // column when wide), so the headline value sits right under the card title.
   &__effect {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
     min-width: 0;
-    order: -1;
-    padding-bottom: var(--space-5);
-    border-bottom: var(--border-width) solid var(--color-border);
+    padding-top: var(--space-3);
+    border-top: var(--border-width) solid var(--color-border);
+
+    @container currency-box (min-width: 480px) {
+      order: -1;
+      padding-top: 0;
+      padding-bottom: var(--space-5);
+      border-top: 0;
+      border-bottom: var(--border-width) solid var(--color-border);
+    }
 
     @container currency-box (min-width: 34rem) {
       padding-bottom: 0;
@@ -233,8 +250,16 @@
 
   &__effect-head {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+
+    @container currency-box (min-width: 480px) {
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      gap: 2px;
+    }
   }
 
   &__effect-title {
@@ -242,11 +267,13 @@
   }
 
   &__effect-net {
-    @include m.display(var(--font-size-2xl));
+    @include m.display(var(--font-size-xl));
+    flex-shrink: 0;
     font-weight: var(--font-weight-figure);
     overflow-wrap: anywhere;
 
     @container currency-box (min-width: 480px) {
+      flex-shrink: 1;
       font-size: var(--font-size-3xl);
     }
   }

@@ -46,7 +46,8 @@ function renderCard() {
 }
 
 async function openCard() {
-  fireEvent.click(await screen.findByRole("button", { name: /Daily Brief: last visit/ }));
+  // Open by default now (the owner could not find it collapsed): just wait for the card.
+  await screen.findByRole("button", { name: /Daily Brief: last visit/ });
 }
 
 describe("wall time helpers", () => {
