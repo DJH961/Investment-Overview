@@ -33,13 +33,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "Updating…" beside it; the progress bar stays for your own refresh. New chart samples no
   longer reset the hover.
 - **Top bar:** refresh is the first button; a Sign out button on desktop.
-- **Faster restarts:** the saved page copy now includes the charts, is tied to the app version,
-  expires after 24 hours and is refreshed at once on restore.
+- **Faster restarts and logins:** the saved page copy now includes the charts, is tied to the
+  app version, expires after 24 hours and is refreshed quietly at once on restore. An expired
+  session no longer wipes it (only Sign out does), and a login shows the saved page straight
+  away instead of several seconds of placeholders.
+- **The Daily Brief always shows the currency.** Every Brief carries the currency briefing
+  (effect since you last looked, with both rates); the "What moved it" block is gone.
 - **Phone:** the Currency card is back to the v6 shape; the market chip says "Open for 2h 10m" /
   "Closed for 14h 5m" when it fits; the KPI strip puts its second figure underneath; a holding's
   price time gets its own line; less space under the top bar on every page.
-- **Sidebar:** the menu uses the screen's height (no scrolling on short screens, air on tall
-  ones); the fold button stays in one place; the summary card no longer says "incl. overnight".
+- **Sidebar:** each row and the space between rows grow with the window's height and shrink on
+  short windows, so the menu fits from 700 px up without scrolling; the fold button stays in one
+  place; the summary card no longer says "incl. overnight".
+- **Less space under every page title** (the title's own margin doubled the page gap).
 - **Total growth** shows its investment and currency parts on separate lines in both views.
 - **Asset classes** each have their own colour (cash and mutual funds no longer look alike); the
   treemap's Fund view marks each tile with its class colour.
@@ -48,7 +54,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - **Overview: today first.** Top movers and today's currency effect sit side by side above
   Holdings (on a phone: currency, then movers, as in v6); Holdings takes the full width; the
-  allocation and the lifetime currency card follow below.
+  allocation and the lifetime currency card follow below. Both today cards are compact: winners
+  over losers with tight rows; the currency card leads with its figure, shows market hours and
+  overnight as one line each, and fills the height beside Top movers.
 
 ## [7.0.0] — 2026-11-18
 

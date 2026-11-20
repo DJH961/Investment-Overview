@@ -122,7 +122,7 @@ describe("KpiGrid", () => {
     d.currency.return_split.eur_minus_usd_pp = "-0.012";
     render(<KpiGrid data={d as unknown as OverviewDto} currency="USD" loading={false} />);
     const line = screen.getByTestId("growth-split");
-    expect(line).toHaveTextContent("In EUR");
+    expect(line).toHaveTextContent(/in EUR/);
     expect(line).toHaveTextContent("Currency -1.20 pp");
   });
 

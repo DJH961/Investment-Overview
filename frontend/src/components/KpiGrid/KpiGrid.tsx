@@ -91,7 +91,16 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
     fxPp !== null && firstLine !== null ? (
       <span className="kpi-grid__growth-split" data-testid="growth-split">
         <span>
-          {usdView ? "In EUR" : "Investment"} <Percent ratio={firstLine} signed />
+          {/* Worded like the other tiles' second line ("+8.10% in EUR"). */}
+          {usdView ? (
+            <>
+              <Percent ratio={firstLine} signed /> in EUR
+            </>
+          ) : (
+            <>
+              Investment <Percent ratio={firstLine} signed />
+            </>
+          )}
         </span>
         <span>Currency {formatPp(fxPp)}</span>
       </span>
