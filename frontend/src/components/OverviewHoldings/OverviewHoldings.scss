@@ -11,6 +11,12 @@
     grid-template-columns: minmax(0, 1fr) auto auto;
     column-gap: var(--space-4);
     margin: 0;
+    // If the columns ever need more than the card offers, the header row and the rows (one grid) scroll
+    // sideways TOGETHER instead of the figures sliding away from their headings.
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
 
     @include m.phone {
       column-gap: var(--space-3);
