@@ -117,9 +117,13 @@ describe("KpiGrid", () => {
     expect(screen.getByTestId("growth-split")).toHaveTextContent("Currency -1.20 pp");
   });
 
-  it("USD Total growth keeps its plain line (no currency leg in dollars)", () => {
-    render(<KpiGrid data={withSplit("-0.012")} currency="USD" loading={false} />);
-    expect(screen.queryByTestId("growth-split")).toBeNull();
+  it("USD Total growth has the same two lines: EUR growth and the euro-vs-dollar gap", () => {
+    const d = withSplit("-0.012") as unknown as { currency: { return_split: Record<string, string> } };
+    d.currency.return_split.eur_minus_usd_pp = "-0.012";
+    render(<KpiGrid data={d as unknown as OverviewDto} currency="USD" loading={false} />);
+    const line = screen.getByTestId("growth-split");
+    expect(line).toHaveTextContent("In EUR");
+    expect(line).toHaveTextContent("Currency -1.20 pp");
   });
 
   it("reports the year once: no second, unlike YTD figure under the XIRR tile", () => {

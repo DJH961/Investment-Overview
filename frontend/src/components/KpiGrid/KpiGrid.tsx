@@ -81,19 +81,19 @@ export function KpiGrid({ data, currency, loading }: KpiGridProps) {
 
   // Total growth in EUR = the investment's own (USD) return + what the currency did, both server figures
   // (`currency.return_split`, never computed here). The currency share is always shown, so the tile explains
-  // why EUR growth differs from the dollar figure. The USD view keeps its plain "in EUR" line.
+  // why EUR growth differs from the dollar figure. The USD view has the same two lines (the EUR growth next to
+  // the same currency gap, `eur_minus_usd_pp`), so a currency switch never changes the tile's shape.
   const split = data?.currency?.return_split;
-  const fxPp = toNum(split?.currency_effect_pp ?? null);
-  const investment = toNum(split?.investment_return ?? null);
+  const usdView = currency === "USD";
+  const fxPp = toNum((usdView ? split?.eur_minus_usd_pp : split?.currency_effect_pp) ?? null);
+  const firstLine = usdView ? toNum(k2?.total_growth_compounded) : (toNum(split?.investment_return ?? null) ?? toNum(k2?.total_growth_compounded));
   const growthSecondary =
-    currency === "EUR" && fxPp !== null ? (
+    fxPp !== null && firstLine !== null ? (
       <span className="kpi-grid__growth-split" data-testid="growth-split">
         <span>
-          Investment <Percent ratio={investment ?? toNum(k2?.total_growth_compounded)} signed />
+          {usdView ? "In EUR" : "Investment"} <Percent ratio={firstLine} signed />
         </span>
-        <span>
-          Currency {formatPp(fxPp)}
-        </span>
+        <span>Currency {formatPp(fxPp)}</span>
       </span>
     ) : (
       pct2(k2?.total_growth_compounded)
