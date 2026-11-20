@@ -19,7 +19,9 @@
 > the multi-session window, the market countdown, P12, holding page, the push 3
 > leftovers and the visual overhaul). The Currency page is built but hidden until
 > 7.2 (`SHOW_CURRENCY_PAGE` in `frontend/src/lib/features.ts`). Pushes 1 to 3 shipped as 6.13.1 to
-> 6.15.0, then 6.16.0 and 6.17.x. Next: push 5 (7.1); do not start it until
+> 6.15.0, then 6.16.0 and 6.17.x. **7.0.1** (2026-11-20) is the owner's fix list
+> after 7.0: currency figures agree everywhere, Overview "today first", quiet
+> background updates. Next: push 5 (7.1); do not start it until
 > the owner approves. The owner's post-cutover steps are in
 > [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
 
