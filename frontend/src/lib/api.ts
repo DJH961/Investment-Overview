@@ -10,6 +10,7 @@
 
 import { markReachable, markUnreachable } from "./network";
 import { isRidingOutOutage } from "./serverStatus";
+import { trackRead } from "./updateActivity";
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
@@ -207,13 +208,18 @@ export async function api<T = unknown>(path: string, inOptions: RequestOptions =
   const options: RequestOptions =
     inOptions.background === undefined && backgroundDepth > 0 ? { ...inOptions, background: true } : inOptions;
   if ((options.method ?? "GET") !== "GET" || options.rideOut === false) return request<T>(path, options);
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await request<T>(path, options);
-    } catch (err) {
-      if (!isNetworkError(err) || !isRidingOutOutage() || options.signal?.aborted) throw err;
-      await sleep(Math.min(5000, 1000 * 2 ** attempt), options.signal);
+  const settled = trackRead(options.background === true);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await request<T>(path, options);
+      } catch (err) {
+        if (!isNetworkError(err) || !isRidingOutOutage() || options.signal?.aborted) throw err;
+        await sleep(Math.min(5000, 1000 * 2 ** attempt), options.signal);
+      }
     }
+  } finally {
+    settled();
   }
 }
 

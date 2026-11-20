@@ -51,6 +51,17 @@ describe("AppShell", () => {
     expect(screen.queryByRole("navigation", { name: "Main tabs" })).not.toBeInTheDocument();
     expect(screen.getByText("page body")).toBeInTheDocument();
   });
+  it("a scheduled refresh is quiet (icon only), an explicit one draws the bar", () => {
+    mockViewport(1280);
+    renderShell();
+    act(() => setRefreshState({ running: true, explicit: false, source: "scheduled" }));
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.getByText("Updating…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh data" })).toBeEnabled();
+    act(() => setRefreshState({ explicit: true }));
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh data" })).toBeDisabled();
+  });
   it("shows the bottom tab bar on a phone and no sidebar", () => {
     mockViewport(390);
     renderShell();

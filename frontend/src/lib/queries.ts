@@ -2,6 +2,7 @@ import { QueryClient, useQuery } from "@tanstack/react-query";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import type { PersistedClient, Persister } from "@tanstack/react-query-persist-client";
 import { ApiError, addAuthLostListener, api } from "./api";
+import { APP_VERSION } from "./appVersion";
 import { forgetPasskeyDevice } from "./passkeyHint";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -49,8 +50,18 @@ function setSignedInHint(on: boolean): void {
   }
 }
 
+/** Reading `window.localStorage` itself can throw (blocked storage, some private modes). */
+function safeStorage(): Storage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+// Without storage the sync persister is a no-op: the app behaves as before the cache existed.
 const storagePersister = createSyncStoragePersister({
-  storage: typeof window === "undefined" ? undefined : window.localStorage,
+  storage: safeStorage(),
   key: QUERY_CACHE_KEY,
   throttleTime: 0,
 });
@@ -71,7 +82,12 @@ export function flushPersist(): void {
   idleTimer = undefined;
   const client = pendingClient;
   pendingClient = null;
-  if (client) void storagePersister.persistClient(client);
+  if (!client) return;
+  try {
+    void storagePersister.persistClient(client);
+  } catch {
+    /* quota or blocked storage: the cache is only an optimisation */
+  }
 }
 
 export const persister: Persister = {
@@ -79,7 +95,13 @@ export const persister: Persister = {
     pendingClient = client;
     idleTimer ??= setTimeout(flushPersist, PERSIST_IDLE_MS);
   },
-  restoreClient: () => storagePersister.restoreClient(),
+  restoreClient: async () => {
+    try {
+      return await storagePersister.restoreClient();
+    } catch {
+      return undefined;
+    }
+  },
   removeClient: () => {
     pendingClient = null;
     if (idleTimer) clearTimeout(idleTimer);
@@ -134,17 +156,47 @@ export function clearClientData(): void {
 
 addAuthLostListener(clearClientData);
 
-// Persist report data for instant/offline opens, but never auth state: a
-// restored `authenticated: false` would bounce a logged-in user to /login.
+/**
+ * Only read-only report answers are saved (an allow-list, so a new query never leaks into
+ * storage by accident): the Overview, holdings, chart ranges, periods, allocations, the
+ * currency page and the brief. Never auth (a restored `authenticated: false` would bounce a
+ * signed-in user to /login), settings, accounts, transactions or anything else.
+ */
+export const PERSISTED_ROOTS: readonly string[] = [
+  "overview",
+  "holdings",
+  "graphs",
+  "periods",
+  "allocations",
+  "currency",
+  "brief",
+];
+
+/** How long a saved copy may be used (older ones are dropped on restore). */
+export const PERSIST_MAX_AGE = DAY;
+
+export function shouldPersistQuery(query: { queryKey: readonly unknown[]; state: { status: string } }): boolean {
+  return query.state.status === "success" && PERSISTED_ROOTS.includes(String(query.queryKey[0]));
+}
+
 export const persistOptions = {
   persister,
-  maxAge: DAY,
-  dehydrateOptions: {
-    shouldDehydrateQuery: (query: { queryKey: readonly unknown[]; state: { status: string } }) =>
-      // Graph series are the biggest entries and refetch quickly: they stay out of the saved copy.
-      query.state.status === "success" && query.queryKey[0] !== "auth" && query.queryKey[0] !== "graphs",
-  },
+  maxAge: PERSIST_MAX_AGE,
+  // A new release drops the old copy (its shapes may differ).
+  buster: APP_VERSION,
+  dehydrateOptions: { shouldDehydrateQuery: shouldPersistQuery },
 };
+
+/**
+ * Restored data is a starting picture, not the truth: mark it stale and refetch what is on
+ * screen at once. `hydrate` never replaces a query that already holds newer data (a live
+ * tick that landed first), so the order is: restore, then live data wins.
+ */
+export function onCacheRestored(client: QueryClient = queryClient): void {
+  void client.invalidateQueries({
+    predicate: (q) => q.state.fetchStatus === "idle" && PERSISTED_ROOTS.includes(String(q.queryKey[0])),
+  });
+}
 
 // Endpoint hooks live in lib/queries/*. Reports fetch one `/both` entry per report and pick the
 // currency with `select`, so EUR and USD never have separate cache entries.
