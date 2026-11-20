@@ -17,6 +17,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.0.1] — 2026-11-20
+
+### Fixed
+- **The currency figures agree everywhere.** The hero, the Currency card, investing power,
+  the Currency page and the Daily Brief now measure the same move from the same rates: every
+  "since the open" figure uses the session's open rate with its ECB fallback (a missing or
+  late sample no longer drops the market-hours part), investing power is anchored at the
+  previous close like the EUR effect, and the Currency page's "buys" row copies the card. A
+  live tick updates the rate in every view and in both currencies, and never blanks a value.
+- **The Daily Brief shows the currency move after a night away.** The rate when you left falls
+  back to the session's closing sample, else the settled rate, instead of needing a sample
+  within half an hour; all of the Brief's currency figures end at the hero's live rate.
+- **Quiet background updates.** Updates you did not ask for only spin the refresh icon and show
+  "Updating…" beside it; the progress bar stays for your own refresh. New chart samples no
+  longer reset the hover.
+- **Top bar:** refresh is the first button; a Sign out button on desktop.
+- **Faster restarts:** the saved page copy now includes the charts, is tied to the app version,
+  expires after 24 hours and is refreshed at once on restore.
+- **Phone:** the Currency card is back to the v6 shape; the market chip says "Open for 2h 10m" /
+  "Closed for 14h 5m" when it fits; the KPI strip puts its second figure underneath; a holding's
+  price time gets its own line; less space under the top bar on every page.
+- **Sidebar:** the menu uses the screen's height (no scrolling on short screens, air on tall
+  ones); the fold button stays in one place; the summary card no longer says "incl. overnight".
+- **Total growth** shows its investment and currency parts on separate lines in both views.
+- **Asset classes** each have their own colour (cash and mutual funds no longer look alike); the
+  treemap's Fund view marks each tile with its class colour.
+- **Daily Brief: last visit** is easier to find in Health & Repair (open, near the top).
+
+### Changed
+- **Overview: today first.** Top movers and today's currency effect sit side by side above
+  Holdings (on a phone: currency, then movers, as in v6); Holdings takes the full width; the
+  allocation and the lifetime currency card follow below.
+
 ## [7.0.0] — 2026-11-18
 
 v7's first release: the v5 desktop app is gone, the Overview gets a Daily Brief and a
