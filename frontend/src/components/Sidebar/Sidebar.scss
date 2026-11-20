@@ -10,7 +10,8 @@
   flex-direction: column;
   gap: var(--space-4);
   width: var(--sidebar-width);
-  padding: var(--space-4) var(--space-3);
+  --sidebar-pad-x: var(--space-3);
+  padding: var(--space-4) var(--sidebar-pad-x);
   background: var(--color-bg);
   border-right: var(--border-width) solid var(--color-border);
   transition: width var(--duration-base) var(--ease-standard);
@@ -18,7 +19,8 @@
   &--rail {
     align-items: stretch;
     width: var(--sidebar-rail-width);
-    padding: var(--space-4) var(--space-2);
+    --sidebar-pad-x: var(--space-2);
+    padding: var(--space-4) var(--sidebar-pad-x);
   }
 
   &__brand {
@@ -66,7 +68,6 @@
 
   &__toggle {
     flex-shrink: 0;
-    margin-left: auto;
     color: var(--color-muted);
   }
 
@@ -149,8 +150,14 @@
 
   // Fits without scrolling (denser rows on short screens below). If a very
   // short window still overflows, it scrolls without showing a scroll bar.
+  // The groups share the spare height (space-evenly): a tall screen breathes, a short one packs tight and
+  // only then scrolls.
   &__nav {
+    display: flex;
     flex: 1;
+    flex-direction: column;
+    justify-content: space-evenly;
+    gap: var(--space-1);
     min-height: 0;
     overflow-y: auto;
     scrollbar-width: none;
@@ -166,9 +173,7 @@
   }
 
   &__group {
-    & + & {
-      margin-top: var(--space-4);
-    }
+    flex-shrink: 0;
   }
 
   &__group-title {
@@ -268,9 +273,13 @@
     font-size: var(--font-size-sm);
   }
 
+  // The fold toggle: always the last row of the foot, centred on the rail's icon column, so it never moves
+  // between the open and collapsed states.
   &__footer {
     display: flex;
     justify-content: center;
+    width: var(--sidebar-rail-width);
+    margin-left: calc(-1 * var(--sidebar-pad-x));
   }
 
   &__meta {
@@ -293,7 +302,8 @@
 
   // Large monitors: roomier rows and type (the width grows with --sidebar-width).
   @include m.xl {
-    padding: var(--space-5) var(--space-4);
+    --sidebar-pad-x: var(--space-4);
+    padding: var(--space-5) var(--sidebar-pad-x);
 
     &__link {
       font-size: var(--font-size-md);
@@ -323,8 +333,15 @@
       padding: var(--space-3);
     }
 
-    &__group + &__group {
-      margin-top: var(--space-1);
+    // The fold toggle shrinks a step (same spot, same size in both states).
+    &__toggle {
+      width: var(--control-height-sm);
+      height: var(--control-height-sm);
+    }
+
+    &__foot {
+      gap: var(--space-1);
+      padding-top: var(--space-2);
     }
 
     &__group-title {
@@ -337,18 +354,26 @@
     }
   }
 
-  // Very short windows: group titles become thin dividers (like the rail).
-  @include m.very-short {
-    &__pocket-move {
+  // Windows under 760 px (a 720p laptop): group titles become thin dividers (like the rail) and the pocket
+  // drops its day line, so every item still fits without a scroll.
+  @media (max-height: 760px) {
+    &__pocket-day {
       display: none;
     }
 
     &__group-title {
       height: var(--border-width);
-      margin: var(--space-2);
+      margin: var(--space-1) var(--space-2);
       padding: 0;
       background: var(--color-border);
       font-size: 0;
+    }
+  }
+
+  // Very short windows: the pocket keeps only its value.
+  @include m.very-short {
+    &__pocket-move {
+      display: none;
     }
   }
 }
