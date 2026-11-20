@@ -125,3 +125,38 @@ describe("TopBar summary on a phone", () => {
     expect(screen.getByLabelText("Portfolio summary, estimated")).toHaveTextContent("≈");
   });
 });
+
+describe("TopBar update states", () => {
+  it("quiet update: the icon spins and Updating… shows; the button stays usable", () => {
+    renderBar({ compact: false, quietUpdating: true });
+    expect(screen.getByText("Updating…")).toHaveClass("top-bar__quiet");
+    const refresh = screen.getByRole("button", { name: "Refresh data" });
+    expect(refresh).toBeEnabled();
+    expect(refresh.querySelector(".top-bar__spin")).not.toBeNull();
+  });
+
+  it("an explicit (loud) refresh spins and disables but adds no text", () => {
+    renderBar({ compact: false, refreshing: true });
+    expect(screen.queryByText("Updating…")).toBeNull();
+    expect(screen.getByRole("button", { name: "Refresh data" })).toBeDisabled();
+  });
+
+  it("idle shows nothing extra", () => {
+    renderBar({ compact: false });
+    expect(screen.queryByText("Updating…")).toBeNull();
+    expect(document.querySelector(".top-bar__spin")).toBeNull();
+  });
+
+  it("desktop: refresh is the first action and a Sign out icon button sits in the bar", () => {
+    const { onLogout } = renderBar({ compact: false, health: { severity: "ok", count: 0 } });
+    const first = document.querySelector(".top-bar__actions")?.querySelector("button, a");
+    expect(first).toHaveAttribute("aria-label", "Refresh data");
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(onLogout).toHaveBeenCalledOnce();
+  });
+
+  it("phone has no Sign out icon button (it stays in the account menu)", () => {
+    renderBar();
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  });
+});
