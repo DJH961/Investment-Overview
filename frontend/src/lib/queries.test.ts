@@ -12,6 +12,8 @@ import {
   persistOptions,
   persister,
   queryClient,
+  resumePersist,
+  markSignedIn,
 } from "./queries";
 
 function seed() {
@@ -22,6 +24,7 @@ function seed() {
 }
 
 beforeEach(() => {
+  resumePersist();
   localStorage.clear();
   sessionStorage.clear();
   queryClient.clear();
@@ -38,13 +41,20 @@ describe("clearClientData", () => {
     expect(localStorage.getItem("iv.theme")).toBe("dark");
   });
 
-  it("runs on any 401 from the API", async () => {
+  it("a 401 keeps the saved copy and pauses saving; the next login resumes it", async () => {
     seed();
     setUnauthorizedHandler(vi.fn());
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "no" }), { status: 401 })));
     await expect(api("/api/holdings")).rejects.toBeInstanceOf(ApiError);
-    expect(queryClient.getQueryData(["holdings", "EUR"])).toBeUndefined();
-    expect(localStorage.getItem(QUERY_CACHE_KEY)).toBeNull();
+    expect(localStorage.getItem(QUERY_CACHE_KEY)).not.toBeNull();
+    // Saving is paused: an error-shrunk cache must not overwrite the good copy.
+    persister.persistClient({ timestamp: 9, buster: "", clientState: { mutations: [], queries: [] } });
+    flushPersist();
+    expect(JSON.parse(localStorage.getItem(QUERY_CACHE_KEY) ?? "null")?.timestamp).toBeUndefined();
+    resumePersist();
+    persister.persistClient({ timestamp: 9, buster: "", clientState: { mutations: [], queries: [] } });
+    flushPersist();
+    await vi.waitFor(() => expect(JSON.parse(localStorage.getItem(QUERY_CACHE_KEY) ?? "null")?.timestamp).toBe(9));
   });
 });
 
@@ -73,6 +83,16 @@ describe("persistence", () => {
 });
 
 describe("cache restore", () => {
+  it("login puts queries that failed with the 401 back to success, keeping their data", () => {
+    queryClient.setQueryData(["overview", "both"], "cached");
+    queryClient.getQueryCache().find({ queryKey: ["overview", "both"] })?.setState({ status: "error", error: new Error("401") });
+    markSignedIn();
+    const s = queryClient.getQueryState(["overview", "both"]);
+    expect(s?.status).toBe("success");
+    expect(s?.data).toBe("cached");
+    expect(localStorage.getItem("iv.signed-in")).toBe("1");
+  });
+
   it("is tied to the app version and a 24 h max age", () => {
     expect(persistOptions.buster).toBe(APP_VERSION);
     expect(persistOptions.maxAge).toBe(PERSIST_MAX_AGE);

@@ -27,8 +27,13 @@ describe("deriveUpdateMode", () => {
     expect(deriveUpdateMode({ refresh: { running: true, explicit: true, historical: false }, pageRefreshing: false, activity: none })).toBe("loud");
   });
 
-  it("a read the owner started (navigation, click) is loud even beside background ones", () => {
-    expect(deriveUpdateMode({ refresh: idle, pageRefreshing: true, activity: { background: 1, foreground: 1 } })).toBe("loud");
+  it("a first load with nothing cached stays quiet (skeletons already say loading)", () => {
+    expect(deriveUpdateMode({ refresh: idle, pageRefreshing: true, activity: { background: 1, foreground: 1 } })).toBe("quiet");
+  });
+
+  it("a refetch behind cached data (restore, login, stale) is quiet, never loud", () => {
+    expect(deriveUpdateMode({ refresh: idle, pageRefreshing: true, activity: none, fetching: 3 })).toBe("quiet");
+    expect(deriveUpdateMode({ refresh: idle, pageRefreshing: false, activity: none, fetching: 0 })).toBe("idle");
   });
 });
 

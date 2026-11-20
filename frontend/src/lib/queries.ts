@@ -75,9 +75,29 @@ export const PERSIST_IDLE_MS = 60_000;
  * or after a quiet minute, never per tick (F-083).
  */
 let pendingClient: PersistedClient | null = null;
+
+/**
+ * Saving is paused while nobody is signed in (session expired, signed out): a 401 turns the
+ * queries that were on screen into errors, and writing that state would shrink the saved
+ * copy. An expired session keeps the saved copy so the next login paints at once; only an
+ * explicit sign out deletes it. Resumed when the auth probe says "authenticated".
+ */
+let persistPaused = false;
+
+export function pausePersist(): void {
+  persistPaused = true;
+  pendingClient = null;
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = undefined;
+}
+
+export function resumePersist(): void {
+  persistPaused = false;
+}
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function flushPersist(): void {
+  if (persistPaused) return;
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = undefined;
   const client = pendingClient;
@@ -92,6 +112,7 @@ export function flushPersist(): void {
 
 export const persister: Persister = {
   persistClient: (client) => {
+    if (persistPaused) return;
     pendingClient = client;
     idleTimer ??= setTimeout(flushPersist, PERSIST_IDLE_MS);
   },
@@ -130,10 +151,11 @@ if (typeof document !== "undefined") {
 /**
  * Forget every cached server answer: the in-memory query cache, the persisted
  * copy in localStorage and any `iv.*` sessionStorage entries. UI preferences
- * (theme, currency, sidebar) stay. Called on logout and on any 401, so
- * holdings and transactions do not stay readable on a shared or lost device.
+ * (theme, currency, sidebar) stay. Called on an explicit sign out only (a 401 keeps
+ * the saved copy, see `onAuthLost`), so nothing stays readable on a shared device.
  */
 export function clearClientData(): void {
+  pausePersist();
   queryClient.clear();
   try {
     void persister.removeClient();
@@ -154,7 +176,30 @@ export function clearClientData(): void {
   }
 }
 
-addAuthLostListener(clearClientData);
+/**
+ * A 401 / expired session: the saved copy stays (it never leaves this browser and is shown
+ * only after the next successful login); only saving is paused and the "signed in" hint drops,
+ * so nothing is shown before the server has confirmed the session.
+ */
+export function onAuthLost(): void {
+  pausePersist();
+  setSignedInHint(false);
+}
+
+/** A login just succeeded: show the cached app at once (no wait for the auth probe) and save again. */
+export function markSignedIn(): void {
+  setSignedInHint(true);
+  resumePersist();
+  // Queries that failed with the 401 still hold their cached data: put them back to "success"
+  // so pages show it (and no "Offline" chip) while the fresh answer loads.
+  for (const q of queryClient.getQueryCache().getAll()) {
+    if (q.state.status === "error" && q.state.data !== undefined) {
+      q.setState({ status: "success", error: null, errorUpdateCount: 0, fetchFailureCount: 0, fetchFailureReason: null });
+    }
+  }
+}
+
+addAuthLostListener(onAuthLost);
 
 /**
  * Only read-only report answers are saved (an allow-list, so a new query never leaks into
@@ -175,8 +220,8 @@ export const PERSISTED_ROOTS: readonly string[] = [
 /** How long a saved copy may be used (older ones are dropped on restore). */
 export const PERSIST_MAX_AGE = DAY;
 
-export function shouldPersistQuery(query: { queryKey: readonly unknown[]; state: { status: string } }): boolean {
-  return query.state.status === "success" && PERSISTED_ROOTS.includes(String(query.queryKey[0]));
+export function shouldPersistQuery(query: { queryKey: readonly unknown[]; state: { status: string; data?: unknown } }): boolean {
+  return (query.state.status === "success" || query.state.data !== undefined) && PERSISTED_ROOTS.includes(String(query.queryKey[0]));
 }
 
 export const persistOptions = {
@@ -212,6 +257,7 @@ export const authMeQuery = () => ({
   queryFn: async ({ signal }: { signal: AbortSignal }) => {
     const me = await api<AuthMe>("/api/auth/me", { signal, skipAuthRedirect: true });
     setSignedInHint(me.authenticated);
+    if (me.authenticated) resumePersist();
     // Signed in with no passkeys registered: nothing to auto-offer at login.
     if (me.authenticated && me.passkeys === 0) forgetPasskeyDevice();
     return me;
