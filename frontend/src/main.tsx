@@ -8,7 +8,7 @@ import { App } from "./App";
 import { ToastProvider } from "./components/Toast";
 import { PrefsProvider } from "./lib/prefs";
 import { startLive } from "./lib/live";
-import { persistOptions, queryClient } from "./lib/queries";
+import { onCacheRestored, persistOptions, queryClient } from "./lib/queries";
 import { registerServiceWorker } from "./pwa/register";
 import { ShellProvider } from "./lib/shell";
 import "./styles/index.scss";
@@ -27,7 +27,7 @@ const router = createBrowserRouter([{ path: "*", element: <App /> }]);
 
 createRoot(root).render(
   <StrictMode>
-    <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
+    <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions} onSuccess={() => onCacheRestored()}>
       <PrefsProvider>
         <ToastProvider>
           <ShellProvider>
