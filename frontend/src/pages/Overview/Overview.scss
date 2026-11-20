@@ -1,15 +1,15 @@
 @use "../../styles/mixins" as m;
 
 // Page composition only; each section styles itself in its own component.
+// Today first, details lower (owner, 7.0.1):
 //
 //   [ Brief (v7) ]
 //   [ STAGE: value · today's move · today panel ]
 //   [ STAGE: the chart                          ]
 //   [ KPI panel                                 ]
-//   [ Holdings (main)   ][ Currency        ]   wide screens; stacked below
-//   [ Allocation        ][ Top movers      ]
-//   [                   ][ Asset classes   ]
-//   [                   ][ Lifetime FX     ]
+//   [ Top movers          ][ Currency today     ]   tablet up; phone: currency, then movers
+//   [ Holdings, full width                      ]
+//   [ Allocation + classes ][ Lifetime FX       ]   wide; stacked below
 .overview-page {
   display: flex;
   flex-direction: column;
@@ -32,13 +32,33 @@
     border-top: var(--border-width) solid var(--color-border);
   }
 
-  // Below wide: one column, Holdings first, then the side cards, Allocation last.
-  &__row {
+  // Today: phone stacks currency then movers (the v6 order).
+  &__today {
     display: flex;
     flex-direction: column;
     gap: var(--page-gap);
+    min-width: 0;
   }
 
+  &__today-currency,
+  &__today-movers {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+
+    > * {
+      flex: 1 1 auto;
+    }
+  }
+
+  &__details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-gap);
+    min-width: 0;
+  }
+
+  &__main,
   &__side {
     display: flex;
     flex-direction: column;
@@ -46,34 +66,37 @@
     min-width: 0;
   }
 
-  // Below wide the main column dissolves into the row so Allocation can come last.
-  &__main {
-    display: contents;
-  }
-
-  &__alloc {
-    order: 1;
-    min-width: 0;
-  }
-
-  // Wide: Holdings (natural height) + Allocation on the left, the four side cards on
-  // the right. The treemap's height (set in Overview.tsx) closes the gap between them.
-  @include m.wide {
-    &__row {
+  // Tablet up: the two today cards side by side, equal height, movers on the left.
+  @include m.tablet-up {
+    &__today {
       display: grid;
-      align-items: start;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      align-items: stretch;
+    }
+
+    &__today-movers {
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    &__today-currency {
+      grid-column: 2;
+      grid-row: 1;
+    }
+  }
+
+  // Wide: Allocation (treemap + asset classes) beside the lifetime currency card.
+  // Both columns end level: the treemap grows when the side is taller (Overview.tsx),
+  // the lifetime card stretches when the treemap is already at its minimum.
+  @include m.wide {
+    &__details {
+      display: grid;
+      align-items: stretch;
       grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     }
 
-    &__main {
-      display: flex;
-      flex-direction: column;
-      gap: var(--page-gap);
-      min-width: 0;
-    }
-
-    &__alloc {
-      order: 0;
+    &__side > * {
+      flex: 1 1 auto;
     }
   }
 }

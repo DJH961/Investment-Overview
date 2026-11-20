@@ -54,9 +54,9 @@ const MIN_TREEMAP = 224;
 const MAX_TREEMAP = 520;
 
 /**
- * Wide screens: the main column (Holdings, then Allocation) and the side column end
- * level. Holdings keeps its natural height; the treemap takes what is left, within
- * a sensible range. Narrower screens keep the treemap's own default height.
+ * Wide screens: the details row's main column (Allocation, then asset classes) and
+ * the side column (lifetime currency) end level. The treemap takes what is left,
+ * within a sensible range. Narrower screens keep the treemap's own default height.
  */
 function useTreemapHeight(active: boolean) {
   const wide = useMediaQuery(WIDE_QUERY);
@@ -75,10 +75,9 @@ function useTreemapHeight(active: boolean) {
       const alloc = colMain.querySelector<HTMLElement>(".allocation-card");
       if (!map || !alloc) return;
       const kids = Array.from(colMain.children) as HTMLElement[];
-      const slot = alloc.parentElement;
       const chrome = alloc.offsetHeight - map.offsetHeight;
       const gap = Number.parseFloat(getComputedStyle(colMain).rowGap) || 0;
-      const others = kids.filter((k) => k !== slot).reduce((a, k) => a + k.offsetHeight, 0);
+      const others = kids.filter((k) => k !== alloc).reduce((a, k) => a + k.offsetHeight, 0);
       const room = colSide.offsetHeight - others - gap * (kids.length - 1) - chrome;
       const next = Math.min(MAX_TREEMAP, Math.max(MIN_TREEMAP, Math.round(room)));
       setHeight((h) => (h === next ? h : next));
@@ -183,20 +182,12 @@ export function Overview() {
       <KpiGrid data={data} currency={currency} loading={loading} />
 
       {/*
-        Holdings, the key content, owns the main column; today's currency and the
-        movers and lifetime FX sit beside it (wide screens). Allocation
-        sits under Holdings; its treemap absorbs the height difference so both columns
-        end level. Narrower, everything stacks, Holdings first.
+        Today first, details lower (owner, 7.0.1). Today: currency effect and top
+        movers, side by side from tablet up (movers left); on a phone currency
+        comes first, as in v6. Then Holdings at full width, then the details row.
       */}
-      <div className="overview-page__row overview-page__row--main">
-        <div ref={mainCol} className="overview-page__main">
-          <OverviewHoldings currency={currency} movers={data?.movers} />
-          <div className="overview-page__alloc">
-            <AllocationCard currency={currency} height={treemapHeight} />
-          </div>
-          <AssetClassCard currency={currency} />
-        </div>
-        <div ref={sideCol} className="overview-page__side">
+      <section className="overview-page__today" aria-label="Today">
+        <div className="overview-page__today-currency">
           {data ? (
             <CurrencyBox
               data={data}
@@ -211,7 +202,24 @@ export function Overview() {
           ) : (
             <Skeleton height="12rem" />
           )}
+        </div>
+        <div className="overview-page__today-movers">
           <MoversCard movers={data?.movers} currency={currency} loading={loading} lastSession={data?.last_session} />
+        </div>
+      </section>
+
+      <OverviewHoldings currency={currency} movers={data?.movers} />
+
+      {/*
+        Details: Allocation (treemap, asset classes under it) beside the lifetime
+        currency card on wide screens; the treemap closes the height difference.
+      */}
+      <div className="overview-page__details">
+        <div ref={mainCol} className="overview-page__main">
+          <AllocationCard currency={currency} height={treemapHeight} />
+          <AssetClassCard currency={currency} />
+        </div>
+        <div ref={sideCol} className="overview-page__side">
           {data ? <CurrencyLifetime data={data} /> : <Skeleton height="9rem" />}
         </div>
       </div>
