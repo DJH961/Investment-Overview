@@ -15,6 +15,13 @@
   border-bottom: var(--border-width) solid var(--color-border);
   backdrop-filter: saturate(1.4) blur(14px);
 
+  // Tablet (640-1023px): tighten chrome slightly so single-word titles like
+  // "Transactions" keep enough room beside the summary pill and actions.
+  @include m.tablet-only {
+    gap: var(--space-3);
+    padding-inline: var(--space-4);
+  }
+
   &__title-block {
     display: flex;
     flex: 1 1 auto;
@@ -173,11 +180,22 @@
     }
   }
 
+  // Desktop lookup: the free room between the summary and the actions; shrinks first.
+  &__lookup {
+    flex: 0 1 18rem;
+    min-width: 10rem;
+    margin-left: auto;
+  }
+
   &__actions {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     flex-shrink: 0;
+
+    @include m.tablet-only {
+      gap: var(--space-1);
+    }
   }
 
   &__health {

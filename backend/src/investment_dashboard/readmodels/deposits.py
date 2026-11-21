@@ -19,7 +19,12 @@ from investment_dashboard.readmodels.queries.deposits_query import (
     list_deposit_records,
 )
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import cashflows, fx_conversion_service, fx_service
+from investment_dashboard.services import (
+    cashflows,
+    fx_conversion_service,
+    fx_service,
+    positions_service,
+)
 from investment_dashboard.services.metrics_service import compute_portfolio_metrics
 
 ZERO = Decimal(0)
@@ -246,6 +251,31 @@ def _dividend_payment(
     return row, amt, amt_o
 
 
+def _ratio(part: Decimal, whole: Decimal | None) -> Decimal | None:
+    return part / whole if whole is not None and whole > 0 else None
+
+
+def _holding_values(session: Session, *, ccy: str, as_of: date) -> dict[str, Decimal]:
+    """Current value per symbol in ``ccy`` at one instant (for the per-holding yield).
+
+    EUR uses each position's EUR value; USD uses the native dollars of a USD
+    account and converts any other currency at ``as_of``'s rate (one instant, a
+    valuation, never a converted return). A value that cannot be priced is left out.
+    """
+    fx = fx_service.get_rate_eur_to_quote(session, as_of, quote="USD") if ccy == "USD" else None
+    out: dict[str, Decimal] = {}
+    for p in positions_service.compute_positions(session, as_of=as_of):
+        if ccy == "EUR":
+            value: Decimal | None = p.current_value_eur
+        elif p.account.native_currency.upper() == "USD":
+            value = p.current_value_native
+        else:
+            value = p.current_value_eur * fx if fx else None
+        if value:
+            out[p.instrument.symbol] = out.get(p.instrument.symbol, ZERO) + value
+    return out
+
+
 def build_dividends(
     session: Session, *, ccy: str, context: ReadModelContext | None = None
 ) -> dict[str, Any]:
@@ -311,11 +341,13 @@ def build_dividends(
                 "lifetime_other": ZERO,
                 "ttm_other": ZERO,
                 "last_date": t.date,
+                "by_year": defaultdict(lambda: ZERO),
             },
         )
         h["count"] += 1
         h["lifetime"] += amt or ZERO
         h["lifetime_other"] += amt_o or ZERO
+        h["by_year"][y] += amt or ZERO
         if in_ttm:
             h["ttm"] += amt or ZERO
             h["ttm_other"] += amt_o or ZERO
@@ -323,6 +355,7 @@ def build_dividends(
 
     metrics = compute_portfolio_metrics(session, as_of=ctx.as_of) if txns else None
     by_holding = sorted(holding.values(), key=lambda h: (-h["lifetime"], h["symbol"]))
+    values = _holding_values(session, ccy=ccy, as_of=ctx.as_of) if holding else {}
     return {
         "ccy": ccy,
         "other_ccy": other,
@@ -354,6 +387,12 @@ def build_dividends(
                 "lifetime_other": dec(h["lifetime_other"]),
                 "ttm_other": dec(h["ttm_other"]),
                 "last_date": h["last_date"].isoformat(),
+                "by_year": [
+                    {"year": y, "amount": dec(h["by_year"][y])}
+                    for y in sorted(h["by_year"], reverse=True)
+                ],
+                "last_12m": dec(h["ttm"]),
+                "yield_ttm": dec(_ratio(h["ttm"], values.get(h["symbol"]))),
             }
             for h in by_holding
         ],

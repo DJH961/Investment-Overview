@@ -17,7 +17,19 @@ import { SegmentedControl } from "../SegmentedControl";
 import { Skeleton } from "../Skeleton";
 import "./Chart.scss";
 
-export type ChartTone = "primary" | "benchmark" | "muted";
+/** `invested`: a dashed muted guide line; `estimate`: the dashed twin-estimate line. */
+export type ChartTone = "primary" | "benchmark" | "muted" | "invested" | "estimate";
+
+/**
+ * A point mark on the plot: a trade (▲ buy / ▼ sell, the shape carries the meaning) or
+ * a small dot (a NAV print). Not part of the scrub; its label is its accessible name.
+ */
+export interface ChartMarker {
+  t: string | number;
+  v: number;
+  shape: "buy" | "sell" | "dot";
+  label: string;
+}
 
 /**
  * x axis layout: evenly spaced dates (default), clock-aligned intraday ticks, or
@@ -137,6 +149,10 @@ export interface ChartProps {
   series: ChartSeries[];
   referenceLine?: ChartReferenceLine;
   nowMarker?: ChartNowMarker;
+  /** Trade or NAV marks drawn over the lines (part of the y range). */
+  markers?: ChartMarker[];
+  /** One extra tooltip / readout line for the scrubbed time (e.g. the gap between two lines). */
+  tooltipExtra?: (t: number) => string | null;
   range?: string;
   onRangeChange?: (range: string) => void;
   ranges?: string[];
@@ -161,6 +177,11 @@ export interface ChartProps {
   /** Right-axis tick labels for a scaled `axis: "right"` series (true values in its currency). */
   /** Right-axis labels; `step` is the tick spacing (in right-axis units). */
   rightAxisFormat?: (v: number, step?: number) => string;
+  /**
+   * A right axis with no line of its own: the left ticks × `scale`, in another unit (the
+   * twin chart's "≈ fund estimate" beside the twin's price). Shown on phones too (inset).
+   */
+  rightAxis?: { scale: number; format: (v: number) => string };
   /** Makes legend entries toggle buttons. */
   onToggleSeries?: (id: string) => void;
   /** Exchange sessions for `xMode="session"` (falls back to `date` when empty). */
@@ -186,6 +207,33 @@ const COMPACT_WIDTH = 520;
 const TWO_AXIS_WIDTH = 720;
 /** Right gutter kept on a two-currency chart whether or not the right labels are drawn, so the plot never moves. */
 const RIGHT_GUTTER = 64;
+
+/**
+ * A clock tick pushed inward at an edge can run into its neighbour ("19:00 20:00"): the
+ * edge label then gives way, the neighbour already says the hour.
+ */
+export function crowdsPrevious(
+  ticks: number[],
+  i: number,
+  x: (t: number) => number,
+  w: (t: number) => number,
+  left: number,
+  right: number,
+): boolean {
+  if (i === 0 || i !== ticks.length - 1) return false;
+  const xi = x(ticks[i]);
+  const wi = w(ticks[i]);
+  const start = timeAnchor(xi, wi, left, right) === "end" ? xi - wi : xi - wi / 2;
+  const prev = ticks[i - 1];
+  return start < x(prev) + w(prev) / 2 + 8;
+}
+
+/** A clock tick near a plot edge is anchored inward, so its label never runs off the card. */
+export function timeAnchor(x: number, w: number, left: number, right: number): "start" | "middle" | "end" {
+  if (x + w / 2 > right) return "end";
+  if (x - w / 2 < left) return "start";
+  return "middle";
+}
 
 /** Estimated pixel width of an axis label. */
 export function labelWidth(text: string): number {
@@ -261,6 +309,8 @@ export function Chart({
   series,
   referenceLine,
   nowMarker,
+  markers,
+  tooltipExtra,
   range,
   onRangeChange,
   ranges,
@@ -274,6 +324,7 @@ export function Chart({
   trend,
   busy = false,
   rightAxisFormat,
+  rightAxis,
   onToggleSeries,
   sessions,
   height = 280,
@@ -349,7 +400,15 @@ export function Chart({
   // nothing floats over them.
   const compact = width < COMPACT_WIDTH;
   const rightSeries = rightAxisFormat ? prepared.find((s) => s.axis === "right") : undefined;
-  const rightScale = rightSeries?.scale && Number.isFinite(rightSeries.scale) ? rightSeries.scale : 1;
+  const rightFmt = rightSeries ? rightAxisFormat : rightAxis?.format;
+  const hasRight = !!rightSeries || !!rightAxis;
+  const rightScale = rightSeries
+    ? rightSeries.scale && Number.isFinite(rightSeries.scale)
+      ? rightSeries.scale
+      : 1
+    : rightAxis && Number.isFinite(rightAxis.scale)
+      ? rightAxis.scale
+      : 1;
   const bounds = useMemo(() => {
     if (!values.length) return null;
     const nowOk = nowMarker && Number.isFinite(nowMarker.v);
@@ -358,6 +417,7 @@ export function Chart({
     // Room for the marker: a small gutter after the last point, never the night.
     const tMax = nowOk ? tLast + Math.max(tLast - tMin, 1) * NOW_GUTTER : tLast;
     const ref = [
+      ...(markers ?? []).map((m) => m.v).filter((v) => Number.isFinite(v)),
       ...(referenceLine && Number.isFinite(referenceLine.value) ? [referenceLine.value] : []),
       ...(nowOk ? [nowMarker.v] : []),
     ];
@@ -371,7 +431,7 @@ export function Chart({
     lo -= pad;
     hi += pad;
     return { lo, hi, tMin, tMax };
-  }, [values, times, referenceLine, nowMarker]);
+  }, [values, times, referenceLine, nowMarker, markers]);
   const nowX = bounds && nowMarker ? bounds.tMin + (bounds.tMax - bounds.tMin) * (1 - NOW_GUTTER / 2.5) : null;
 
   // Margins fit the widest tick label, so labels are never clipped and the plot
@@ -380,18 +440,18 @@ export function Chart({
   const yStep = yTicks.length > 1 ? Math.abs(yTicks[1] - yTicks[0]) : undefined;
   const leftW = Math.max(0, ...yTicks.map((v) => labelWidth(valueFormat(v, yStep))));
   const rightW =
-    rightSeries && rightAxisFormat
-      ? Math.max(0, ...yTicks.map((v) => labelWidth(rightAxisFormat(v * rightScale, yStep && yStep * rightScale))))
+    hasRight && rightFmt
+      ? Math.max(0, ...yTicks.map((v) => labelWidth(rightFmt(v * rightScale, yStep && yStep * rightScale))))
       : 0;
   // The gutter is reserved by the width alone, so the plot is the same size with or
   // without the right labels (and across currencies and ranges).
-  const showRightAxis = !!rightSeries && !!rightAxisFormat && width >= TWO_AXIS_WIDTH;
+  const showRightAxis = hasRight && !!rightFmt && (width >= TWO_AXIS_WIDTH || !!rightAxis);
   const PAD = compact
     ? { top: 18, right: 2, bottom: 24, left: 2 }
     : {
         ...BASE_PAD,
         left: leftW + LABEL_GAP,
-        right: rightSeries ? Math.max(RIGHT_GUTTER, rightW + LABEL_GAP) : BASE_PAD.right,
+        right: hasRight ? Math.max(RIGHT_GUTTER, rightW + LABEL_GAP) : BASE_PAD.right,
       };
   const innerW = Math.max(width - PAD.left - PAD.right, 10);
   const innerH = Math.max(height - PAD.top - PAD.bottom, 10);
@@ -513,7 +573,7 @@ export function Chart({
     ? [...primarySeries.pts].reverse().find((p) => p.y !== null && p.raw !== null)
     : undefined;
   let endPill: { x: number; y: number; w: number; text: string } | null = null;
-  if (!compact && !nowMarker && !rightSeries && primarySeries && lastRaw && lastRaw.y !== null && lastRaw.raw !== null) {
+  if (!compact && !nowMarker && !hasRight && primarySeries && lastRaw && lastRaw.y !== null && lastRaw.raw !== null) {
     const text = (primarySeries.valueFormat ?? valueFormat)(lastRaw.raw);
     const w = labelWidth(text) + 24;
     const ex = scales.x(lastRaw.x);
@@ -541,6 +601,7 @@ export function Chart({
             : [];
         })
       : [];
+  const tipExtra = cursorT !== null && tooltipExtra ? tooltipExtra(cursorT) : null;
   const tipOnLeft = cursorX !== null && cursorX > width * 0.6;
 
   return (
@@ -583,18 +644,18 @@ export function Chart({
               >
                 {valueFormat(v, yStep)}
               </text>
-              {showRightAxis && rightSeries && rightAxisFormat && (
+              {showRightAxis && rightFmt && (
                 <text
                   className={clsx(
                     "chart__axis-label",
                     compact ? "chart__axis-label--inset chart__axis-label--inset-end" : "chart__axis-label--right",
-                    `chart__axis-label--${rightSeries.toneCls}`,
+                    `chart__axis-label--${rightSeries?.toneCls ?? "estimate"}`,
                   )}
                   x={compact ? width - PAD.right - 2 : width - PAD.right + 8}
                   y={compact ? scales.y(v) - 4 : scales.y(v)}
                   dy={compact ? undefined : "0.32em"}
                 >
-                  {rightAxisFormat(v * rightScale, yStep && yStep * rightScale)}
+                  {rightFmt(v * rightScale, yStep && yStep * rightScale)}
                 </text>
               )}
             </g>
@@ -606,14 +667,14 @@ export function Chart({
             y1={PAD.top + innerH}
             y2={PAD.top + innerH}
           />
-          {xTicks.map((t, i) => (
+          {xTicks.map((t, i) => xMode === "time" && crowdsPrevious(xTicks, i, scales.x, (v) => labelWidth(timeFormat(v)), PAD.left, width - PAD.right) ? null : (
             <text
               key={t}
               className="chart__axis-label chart__axis-label--x"
               x={scales.x(t)}
               y={height - 6}
               textAnchor={
-                xMode === "time" ? "middle" : i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"
+                xMode === "time" ? timeAnchor(scales.x(t), labelWidth(timeFormat(t)), PAD.left, width - PAD.right) : i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"
               }
             >
               {timeFormat(t)}
@@ -694,6 +755,28 @@ export function Chart({
               </g>
             );
           })}
+          {markers && markers.length > 0 && (
+            <g className="chart__marks" data-markers>
+              {markers.map((m, k) => {
+                const mt = toTime(m.t);
+                if (!Number.isFinite(mt) || !Number.isFinite(m.v)) return null;
+                const mx = scales.x(mt);
+                const my = scales.y(m.v);
+                return (
+                  <g key={`${k}-${mt}`} className={clsx("chart__mark", `chart__mark--${m.shape}`)} data-mark={m.shape}>
+                    <title>{m.label}</title>
+                    {m.shape === "dot" ? (
+                      <circle cx={mx} cy={my} r={3.5} />
+                    ) : m.shape === "buy" ? (
+                      <path d={`M${mx - 5},${my + 9} L${mx + 5},${my + 9} L${mx},${my + 2} Z`} />
+                    ) : (
+                      <path d={`M${mx - 5},${my - 9} L${mx + 5},${my - 9} L${mx},${my - 2} Z`} />
+                    )}
+                  </g>
+                );
+              })}
+            </g>
+          )}
           {endPt && (
             <path
               className="chart__end-marker"
@@ -763,6 +846,7 @@ export function Chart({
                 <span className="chart__tooltip-value">{r.value}</span>
               </div>
             ))}
+            {tipExtra && <div className="chart__tooltip-extra">{tipExtra}</div>}
           </output>
         )}
       </div>
@@ -776,6 +860,7 @@ export function Chart({
               <span className="chart__readout-value">{r.value}</span>
             </span>
           ))}
+          {tipExtra && <span className="chart__readout-item chart__readout-extra">{tipExtra}</span>}
         </output>
       ) : all.length > 1 || legendExtra ? (
         <ul className="chart__legend">

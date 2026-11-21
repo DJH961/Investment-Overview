@@ -46,6 +46,11 @@
     width: 100%;
   }
 
+  // LinkButton: a router link dressed as a button.
+  &--link {
+    text-decoration: none;
+  }
+
   // Ink, not colour: the one strong action on a screen reads by weight.
   &--primary {
     background: var(--color-ink);

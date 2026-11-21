@@ -796,3 +796,78 @@
     gap: var(--space-3);
   }
 }
+
+// 7.1: the desktop peek toggle leads the Holding cell (turns when open).
+.holdings-page {
+  &__lookup {
+    max-width: none;
+  }
+
+  &__holding-cell {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  &__peek-toggle {
+    color: var(--color-muted);
+    transition: transform var(--duration-fast) var(--ease-standard);
+
+    &--open {
+      color: var(--color-fg);
+      transform: rotate(180deg);
+    }
+  }
+}
+
+// 7.1: the opened peek fills the visible width (not the scrolled table width) whatever the
+// horizontal scroll.
+.holdings-page {
+  @include m.tablet-up {
+    &__table {
+      container-type: inline-size;
+    }
+
+    &__table .data-table__expanded-inner {
+      position: sticky;
+      left: 0;
+      width: 100cqw;
+    }
+  }
+}
+
+// 7.1: the phone row head is a container; a full-size invisible button toggles the peek
+// and the day split (with its (i)) sits above it, so no button is nested in another.
+.holdings-page {
+  &__item-head {
+    position: relative;
+  }
+
+  &__item-toggle {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-raised);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  &__item-split {
+    position: relative;
+    z-index: calc(var(--z-raised) + 1);
+  }
+
+  // The (i) gets a phone-sized tap area without growing the line. The box grows up, down
+  // and to the left only (never past the row's right edge), the icon stays at that edge.
+  &__item-split .info-tip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    margin-block: calc((var(--tap-min) - var(--icon-md)) / -2);
+    margin-inline: calc(var(--icon-md) - var(--tap-min)) 0;
+  }
+}

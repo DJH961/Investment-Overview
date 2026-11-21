@@ -199,11 +199,20 @@ export function Risk() {
       cell: (r) => money(r.absolute_pnl, true),
     },
     {
-      key: "pct",
-      header: "% of return",
+      // P17 (7.1): the share of the window's P&L ("–" when the total is near zero) and the
+      // row's own money-weighted return, both from the server.
+      key: "share",
+      header: "Share of P&L",
       align: "right",
-      sortValue: (r) => toNum(r.pct_of_total_return),
-      cell: (r) => <Percent ratio={toNum(r.pct_of_total_return)} />,
+      sortValue: (r) => toNum(r.share_of_pnl ?? null),
+      cell: (r) => <Percent ratio={toNum(r.share_of_pnl ?? null)} />,
+    },
+    {
+      key: "own",
+      header: "Own return",
+      align: "right",
+      sortValue: (r) => toNum(r.own_return ?? null),
+      cell: (r) => <Percent ratio={toNum(r.own_return ?? null)} signed colored />,
     },
   ];
 

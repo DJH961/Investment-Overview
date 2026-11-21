@@ -34,6 +34,10 @@
 
   &__label {
     @include m.eyebrow;
+    display: flex;
+    align-items: center;
+    // The (i) never touches the words.
+    gap: var(--space-1);
     overflow-wrap: anywhere;
   }
 
@@ -54,5 +58,21 @@
     color: var(--color-muted);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
+  }
+
+  &--phone-3 {
+    @include m.phone {
+      .stat-strip__list {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .stat-strip__item {
+        padding: var(--space-3);
+      }
+
+      .stat-strip__value {
+        font-size: var(--font-size-md);
+      }
+    }
   }
 }

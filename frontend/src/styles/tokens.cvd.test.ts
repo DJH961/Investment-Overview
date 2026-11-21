@@ -52,6 +52,15 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--color-estimate", b: "--color-neg", why: "twin badge/connector vs down-day estimated figures" },
   { a: "--color-estimate", b: "--color-warn", why: "twin badge vs stale-value / bad-history pills" },
   { a: "--color-estimate", b: "--color-fg", why: "twin badge/connector vs the row's primary text" },
+  // Holding page › Tranches (7.1): the status badges side by side, next to the Gain column.
+  // Short-term is neutral (no hue); Long-term shares the gain blue on purpose (tick + word).
+  { a: "--color-lot-long", b: "--color-lot-soon", why: "tranche badges: Long-term vs Long-term in N d" },
+  { a: "--color-lot-long", b: "--color-neg", why: "Long-term badge next to a loss in the Gain column" },
+  { a: "--color-lot-soon", b: "--color-pos", why: "Long-term in N d badge next to a gain" },
+  { a: "--color-lot-soon", b: "--color-neg", why: "Long-term in N d badge next to a loss" },
+  // Holding page › Twin (7.1): twin line (chart-1), dashed fund estimate, NAV dots (chart-3).
+  { a: "--chart-estimate", b: "--chart-1", why: "twin chart: fund estimate vs twin line" },
+  { a: "--chart-estimate", b: "--chart-3", why: "twin chart: fund estimate vs NAV points" },
 ];
 
 /** Charts with 3+ untoned series (n2..n4) are rare; they get the lower bar plus dashes. */
@@ -64,7 +73,15 @@ export const RARE_PAIRS: { a: string; b: string }[] = [
 /** Text colours: >= 4.5:1 on surface and bg for normal vision, >= 3:1 as a protan sees it. */
 const TEXT_TOKENS = ["--color-pos", "--color-neg", "--color-warn", "--color-faint"];
 /** Lines / marks: >= 3:1 on surface and bg, in normal vision and as a protan sees it. */
-const MARK_TOKENS = [...SERIES, "--color-muted", "--color-estimate", "--color-accent"];
+const MARK_TOKENS = [
+  ...SERIES,
+  "--color-muted",
+  "--color-estimate",
+  "--color-accent",
+  "--chart-estimate",
+  "--color-lot-long",
+  "--color-lot-soon",
+];
 
 const here = dirname(fileURLToPath(import.meta.url));
 const scss = readFileSync(join(here, "tokens.scss"), "utf8");

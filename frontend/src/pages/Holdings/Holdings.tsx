@@ -1,7 +1,7 @@
 import clsx from "clsx";
-import { Inbox, Search } from "lucide-react";
+import { ChevronDown, Inbox, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { type Column, DataTable } from "../../components/DataTable";
@@ -9,12 +9,15 @@ import { hasSplit, HoldingDaySplit } from "../../components/DaySplit";
 import { EmptyState } from "../../components/EmptyState";
 import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick } from "../../components/Freshness";
 import { ErrorState } from "../../components/ErrorState";
+import { HoldingIdentity } from "../../components/HoldingIdentity";
+import { HoldingPeek } from "../../components/HoldingPeek";
+import { IconButton } from "../../components/IconButton";
 import { Input } from "../../components/Input";
+import { LookupSearch } from "../../components/LookupSearch";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
 import { Select } from "../../components/Select";
-import { Sheet } from "../../components/Sheet";
 import { Skeleton } from "../../components/Skeleton";
 import { formatAxisDate, formatDate, formatMoney, formatQuantity } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
@@ -26,11 +29,11 @@ import {
 import { toNum } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
 import { useShellStatus } from "../../lib/shell";
-import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
+import { DESKTOP_QUERY, PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { HoldingMobileRow } from "./HoldingMobileRow";
 import { GroupSummary } from "./GroupSummary";
-import { EstChip, Flags, HoldingDetails, HoldingDrawerChart, RowStamp, TwinBlock, TwinLine, WeightCell, tintClass } from "./HoldingParts";
+import { EstChip, RowStamp, WeightCell, tintClass } from "./HoldingParts";
 import { HoldingsKpis } from "./HoldingsKpis";
 import "./Holdings.scss";
 
@@ -71,23 +74,6 @@ function sortNumber(row: HoldingRowDto, key: SortKey): number {
 }
 
 
-function HoldingDrawer({ row, ccy, onClose }: { row: HoldingRowDto | null; ccy: string; onClose: () => void }) {
-  return (
-    <Sheet open={row !== null} onOpenChange={(o) => !o && onClose()} title={row ? `${row.symbol} · ${row.name}` : ""}>
-      {row && (
-        <div className="holdings-page__drawer">
-          <p className="holdings-page__muted">
-            {row.account} · {row.category} · {row.native_currency}
-          </p>
-          <HoldingDrawerChart row={row} />
-          <HoldingDetails row={row} ccy={ccy} />
-          <TwinBlock row={row} ccy={ccy} />
-        </div>
-      )}
-    </Sheet>
-  );
-}
-
 /** Empty-state way out: the Import page. */
 function ImportButton() {
   const navigate = useNavigate();
@@ -122,17 +108,17 @@ function FlagNotice({ rows }: { rows: HoldingRowDto[] }) {
 export function Holdings() {
   const { currency } = usePrefs();
   const isPhone = useMediaQuery(PHONE_QUERY);
+  // The top bar carries the lookup box only on desktop; phones and tablets get it here.
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const [groupBy, setGroupBy] = usePersistentState<HoldingsGroupBy>("holdings.group", "none", oneOf(GROUP_OPTIONS));
   const query = useHoldings(currency, groupBy);
   const [search, setSearch] = useState("");
   const [categoryPref, setCategory] = usePersistentState<string>("holdings.category", ALL);
   const [sortKey, setSortKey] = usePersistentState<SortKey>("holdings.sort", "value", oneOf(SORT_OPTIONS));
-  // Keep the id, not the row object, so the open sheet follows ticks and currency switches.
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  // The desktop row whose peek is open (by id, so it follows ticks and re-sorts).
+  const [peekId, setPeekId] = useState<number | null>(null);
 
   const data = query.data;
-  const selected =
-    selectedId === null ? null : ((data?.holdings ?? []).find((h) => h.instrument_id === selectedId) ?? null);
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
   const timeZone = useTimeZone();
   // The price time is said once (page header + top bar); a row says its own only when it differs.
@@ -196,20 +182,29 @@ export function Holdings() {
         header: "Holding",
         primary: true,
         sortValue: (r) => r.symbol,
-        cell: (r) => (
-          <span className="holdings-page__holding">
-            <span className="holdings-page__symbol">
-              <Link to={`/holdings/${r.instrument_id}`} className="holdings-page__open" aria-label={`Open ${r.symbol}`}>
-                {r.symbol}
-              </Link>
-              <Flags row={r} />
+        cell: (r) => {
+          // The peek toggle leads the cell (the symbol still links straight to the page).
+          const open = peekId === r.instrument_id;
+          return (
+            <span className="holdings-page__holding-cell">
+              <IconButton
+                size="sm"
+                label={open ? `Close ${r.symbol} summary` : `Show ${r.symbol} summary`}
+                aria-expanded={open}
+                aria-controls={open ? `holding-peek-${r.instrument_id}` : undefined}
+                className={clsx("holdings-page__peek-toggle", open && "holdings-page__peek-toggle--open")}
+                icon={<ChevronDown aria-hidden />}
+                onClick={() => setPeekId(open ? null : r.instrument_id)}
+              />
+              <HoldingIdentity
+                row={r}
+                nameLines={1}
+                live={r.market_open && marks.staleMove(r) === null}
+                className="holdings-page__holding"
+              />
             </span>
-            <span className="holdings-page__holding-name" title={r.name}>
-              {r.name}
-            </span>
-            <TwinLine row={r} />
-          </span>
-        ),
+          );
+        },
       },
       {
         key: "category",
@@ -405,7 +400,7 @@ export function Holdings() {
         cell: (r) => <Percent ratio={toNum(r.ytd_growth)} signed colored />,
       },
     ],
-    [currency, maxWeight, stamps, marks],
+    [currency, maxWeight, stamps, marks, peekId],
   );
 
   if (query.isError && !data) {
@@ -439,6 +434,11 @@ export function Holdings() {
       rows={list}
       rowKey={(r) => String(r.instrument_id)}
       rowClassName={tintClass}
+      renderExpanded={(r) =>
+        peekId === r.instrument_id ? (
+          <HoldingPeek id={`holding-peek-${r.instrument_id}`} row={r} layout="panel" />
+        ) : null
+      }
       defaultSort={{ key: "value", direction: "desc" }}
       emptyMessage="No holdings match your filters."
     />
@@ -453,7 +453,6 @@ export function Holdings() {
           stamp={stamps.rowPrice(r)}
           tick={marks.tick(r)}
           staleMove={marks.staleMove(r)}
-          onOpenChart={(row) => setSelectedId(row.instrument_id)}
         />
       ))}
     </ul>
@@ -465,6 +464,8 @@ export function Holdings() {
         title="Holdings"
         subtitle="Every position in full detail"
       />
+      {/* Phone: look up any instrument here, full width (desktop: in the top bar). */}
+      {!isDesktop && <LookupSearch className="holdings-page__lookup" />}
 
       <HoldingsKpis data={data} currency={currency} />
       <FlagNotice rows={data?.holdings ?? []} />
@@ -543,7 +544,6 @@ export function Holdings() {
       ) : (
         table(rows, "All holdings")
       )}
-      <HoldingDrawer row={selected} ccy={currency} onClose={() => setSelectedId(null)} />
     </div>
   );
 }

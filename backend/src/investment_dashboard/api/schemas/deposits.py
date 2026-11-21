@@ -88,6 +88,11 @@ class DividendYearOut(ApiModel):
     interest_other: DecStr
 
 
+class DividendHoldingYearOut(ApiModel):
+    year: int
+    amount: DecStr
+
+
 class DividendHoldingOut(ApiModel):
     symbol: str
     name: str
@@ -97,6 +102,17 @@ class DividendHoldingOut(ApiModel):
     lifetime_other: DecStr
     ttm_other: DecStr
     last_date: str
+    by_year: list[DividendHoldingYearOut] = Field(
+        default_factory=list,
+        description="Dividends per year, newest first, each at its own date's rate",
+    )
+    last_12m: DecStr | None = Field(
+        default=None, description="Dividends dated in the last 12 months (equals ttm)"
+    )
+    yield_ttm: DecStr | None = Field(
+        default=None,
+        description="last_12m / the holding's current value, fraction; null when not held",
+    )
 
 
 class DividendsOut(ApiModel):

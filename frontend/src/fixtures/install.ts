@@ -16,6 +16,8 @@
  * the tab, as the server would; any `?brief=` brings it back.
  */
 
+import { v71Answer, v71Extend } from "./v71";
+
 type Fixtures = Record<string, unknown>;
 
 /** The day the fixtures were recorded; every date is shifted to the browser's today. */
@@ -271,7 +273,14 @@ export async function installFixtures(): Promise<void> {
       const body = findBody(data, method, url.pathname + url.search);
       return body === undefined ? json({}) : respond(body);
     }
-    const body = findBody(data, "GET", url.pathname + url.search);
+    // 7.1 endpoints are synthesised until the recorder writes them (see ./v71).
+    const made = v71Answer(url, data);
+    if (made !== undefined) {
+      const status = (made as { __status?: number }).__status;
+      return status ? json({ detail: "Fixture answer" }, status) : respond(made);
+    }
+    const recorded = findBody(data, "GET", url.pathname + url.search);
+    const body = recorded === undefined ? undefined : v71Extend(url.pathname, recorded, data);
     if (body === undefined || (typeof body === "object" && body !== null && "__status" in body)) {
       return json({ detail: "No fixture for this endpoint." }, 404);
     }
