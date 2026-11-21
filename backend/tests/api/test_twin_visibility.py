@@ -31,7 +31,7 @@ from investment_dashboard.repositories import (
     instrument_overrides_repo,
     instruments_repo,
     prices_repo,
-    twin_prices_repo,
+    symbol_prices_repo,
 )
 
 D = Decimal
@@ -145,7 +145,7 @@ def _seed(
         s.add_all(rows)
         s.flush()
         with cache_write_session(s) as cache:
-            twin_prices_repo.upsert_prices(cache, "TWN", TWIN_ROWS)
+            symbol_prices_repo.upsert_prices(cache, "TWN", TWIN_ROWS)
 
 
 def _fund_row(page: dict) -> dict:
@@ -510,7 +510,7 @@ def test_divergence_money_uses_the_last_sessions_own_rate_not_now(api_db: Path) 
         )
         s.flush()
         with cache_write_session(s) as cache:
-            twin_prices_repo.upsert_prices(
+            symbol_prices_repo.upsert_prices(
                 cache,
                 "TWN",
                 {
@@ -616,7 +616,7 @@ def test_divergence_money_sums_every_account_not_just_the_merged_one(api_db: Pat
         )
         s.flush()
         with cache_write_session(s) as cache:
-            twin_prices_repo.upsert_prices(
+            symbol_prices_repo.upsert_prices(
                 cache,
                 "TWN",
                 {

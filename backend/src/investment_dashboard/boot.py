@@ -710,6 +710,44 @@ def _reconcile_intraday_value_schema() -> None:
             continue
         seen.add(id(engine))
         _ensure_intraday_value_schema(engine)
+        _carry_twin_prices_over(engine)
+
+
+def _carry_twin_prices_over(engine: object) -> None:
+    """Move a legacy ``intraday_twin_prices`` table into ``intraday_symbol_prices``.
+
+    Migration 0024 renames the table, but in a split-DB layout the cache file is
+    never migrated (``create_all`` only adds the new, empty table), so the twins'
+    400 days of session closes would be stranded. Copy them over as ``twin`` rows
+    and drop the old table. Idempotent and best-effort (pure cache).
+    """
+    from sqlalchemy import text  # noqa: PLC0415
+    from sqlalchemy.engine import Engine  # noqa: PLC0415
+
+    from investment_dashboard.models import IntradaySymbolPrice  # noqa: PLC0415
+
+    if not isinstance(engine, Engine):  # pragma: no cover - defensive
+        return
+    try:
+        with engine.begin() as conn:
+            legacy = conn.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='intraday_twin_prices'"
+            ).fetchall()
+            if not legacy:
+                return
+        IntradaySymbolPrice.__table__.create(engine, checkfirst=True)  # type: ignore[attr-defined]
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT OR IGNORE INTO intraday_symbol_prices "
+                    "(symbol, kind, captured_at, price_native) "
+                    "SELECT symbol, 'twin', captured_at, price_native FROM intraday_twin_prices"
+                )
+            )
+            conn.execute(text("DROP TABLE intraday_twin_prices"))
+        log.info("Moved intraday_twin_prices into intraday_symbol_prices (cache reconcile)")
+    except Exception:  # pragma: no cover - defensive: never block boot
+        log.warning("Could not carry the twin prices over; continuing", exc_info=True)
 
 
 def _ensure_intraday_value_schema(engine: object) -> None:

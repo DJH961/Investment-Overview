@@ -25,7 +25,7 @@ from investment_dashboard.repositories import (
     instruments_repo,
     intraday_repo,
     prices_repo,
-    twin_prices_repo,
+    symbol_prices_repo,
 )
 from investment_dashboard.services import (
     app_config_service,
@@ -92,7 +92,7 @@ def _seed(session: Session, *, official_nav: Decimal | None, twin: str | None = 
     prices_repo.upsert_closes(session, fund.id, closes)
     if twin:
         instrument_overrides_repo.upsert(session, fund.id, intraday_twin=twin)
-        twin_prices_repo.upsert_prices(session, twin, TWIN_ROWS)
+        symbol_prices_repo.upsert_prices(session, twin, TWIN_ROWS)
     for at in (OPEN, datetime(2024, 6, 3, 15, 0), MID):
         intraday_repo.insert_sample(session, at, D("1000"), fx_eur_usd=FX)
     session.flush()
@@ -433,7 +433,7 @@ def test_prune_keeps_closes_for_400_days_and_drops_old_bars(session: Session) ->
     old_day = date(2024, 1, 10)  # a Wednesday, ~5 months back
     ancient_day = date(2022, 12, 14)  # more than 400 days back
     old_bar = datetime(2024, 1, 10, 15, 0)
-    twin_prices_repo.upsert_prices(
+    symbol_prices_repo.upsert_prices(
         session,
         "TWN",
         {
@@ -446,7 +446,7 @@ def test_prune_keeps_closes_for_400_days_and_drops_old_bars(session: Session) ->
     )
     session.flush()
     iss.prune_twin_prices(session, now=now)
-    left = twin_prices_repo.prices_in_range(
+    left = symbol_prices_repo.prices_in_range(
         session, ["TWN"], datetime(2020, 1, 1), datetime(2030, 1, 1)
     )["TWN"]
     assert set(left) == {_close_instant(old_day), CLOSE, MID}
@@ -460,10 +460,10 @@ def test_prune_keeps_a_close_row_the_reader_would_accept_off_the_nominal_instant
     now = datetime(2024, 6, 3, 22, 0, tzinfo=UTC)
     old_day = date(2024, 1, 10)
     near_close = _close_instant(old_day) - timedelta(minutes=3)  # 3 min early, never exact
-    twin_prices_repo.upsert_prices(session, "TWN", {near_close: D("100")})
+    symbol_prices_repo.upsert_prices(session, "TWN", {near_close: D("100")})
     session.flush()
     iss.prune_twin_prices(session, now=now)
-    left = twin_prices_repo.prices_in_range(
+    left = symbol_prices_repo.prices_in_range(
         session, ["TWN"], datetime(2020, 1, 1), datetime(2030, 1, 1)
     )["TWN"]
     assert left == {near_close: D("100")}
@@ -473,10 +473,10 @@ def test_prune_keeps_the_true_close_row_on_an_early_close_day(session: Session) 
     """Same as above, but for a half-day session (issue #4 + #5 together)."""
     now = datetime(2024, 3, 1, 22, 0, tzinfo=UTC)
     true_close = datetime(2023, 11, 24, 18, 0)  # Black Friday, 13:00 ET close
-    twin_prices_repo.upsert_prices(session, "TWN", {true_close: D("150")})
+    symbol_prices_repo.upsert_prices(session, "TWN", {true_close: D("150")})
     session.flush()
     iss.prune_twin_prices(session, now=now)
-    left = twin_prices_repo.prices_in_range(
+    left = symbol_prices_repo.prices_in_range(
         session, ["TWN"], datetime(2020, 1, 1), datetime(2030, 1, 1)
     )["TWN"]
     assert left == {true_close: D("150")}
@@ -555,7 +555,7 @@ def test_refresh_twin_prices_captures_the_settled_close_after_the_bell(
     # today's), which would store the true close through a different path and
     # mask the bug this test targets.
     app_config_service.set_value(session, f"{iss._TWIN_YEAR_PREFIX}TWN", "1")
-    twin_prices_repo.upsert_prices(
+    symbol_prices_repo.upsert_prices(
         session,
         "TWN",
         {
@@ -573,7 +573,7 @@ def test_refresh_twin_prices_captures_the_settled_close_after_the_bell(
     after_close = datetime(2024, 6, 3, 20, 30, tzinfo=UTC)  # 16:30 ET, market shut
     iss.refresh_twin_prices(session, now=after_close, fetcher=fake_fetch_closes)
 
-    rows = twin_prices_repo.prices_in_range(
+    rows = symbol_prices_repo.prices_in_range(
         session, ["TWN"], datetime(2024, 6, 3, 0, 0), datetime(2024, 6, 4, 0, 0)
     )["TWN"]
     assert rows.get(datetime(2024, 6, 3, 20, 0)) == D("105")
@@ -599,7 +599,7 @@ def test_year_backfill_runs_once_per_twin_and_stores_session_closes(session: Ses
     assert written == 2
     assert len(calls) == 1
     assert calls[0][1] == MON - timedelta(days=365)
-    stored = twin_prices_repo.prices_in_range(
+    stored = symbol_prices_repo.prices_in_range(
         session, ["TWN"], datetime(2024, 5, 28), datetime(2024, 5, 31)
     )
     assert stored["TWN"][_close_instant(date(2024, 5, 29))] == D("98")
@@ -653,7 +653,7 @@ def test_year_backfill_redoes_a_done_twin_whose_history_has_gone_stale(session: 
     # Stored history stops 10 trading sessions before DURING's last completed
     # session -- well past the staleness threshold.
     stale_day = iss._trading_days_before(iss.last_session_date(DURING), 10)
-    twin_prices_repo.upsert_prices(session, "TWN", {_close_instant(stale_day): D("100")})
+    symbol_prices_repo.upsert_prices(session, "TWN", {_close_instant(stale_day): D("100")})
     session.flush()
     calls: list[int] = []
 
@@ -675,7 +675,7 @@ def test_year_backfill_leaves_a_fresh_done_twin_alone(session: Session) -> None:
         if iss.is_us_market_open(DURING)
         else iss.last_session_date(DURING)
     )
-    twin_prices_repo.upsert_prices(session, "TWN", {_close_instant(last_done): D("100")})
+    symbol_prices_repo.upsert_prices(session, "TWN", {_close_instant(last_done): D("100")})
     session.flush()
     calls: list[int] = []
 

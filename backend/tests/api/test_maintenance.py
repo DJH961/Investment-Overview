@@ -323,11 +323,11 @@ def test_twins_clear_job_needs_confirm_and_deletes_every_stored_row(
     from decimal import Decimal
 
     from investment_dashboard.db import cache_write_session, ledger_session_scope
-    from investment_dashboard.repositories import twin_prices_repo
+    from investment_dashboard.repositories import symbol_prices_repo
 
     _as(monkeypatch, "session")
     with ledger_session_scope() as s, cache_write_session(s) as cache:
-        twin_prices_repo.upsert_prices(
+        symbol_prices_repo.upsert_prices(
             cache,
             "TWN",
             {
@@ -347,7 +347,7 @@ def test_twins_clear_job_needs_confirm_and_deletes_every_stored_row(
         from investment_dashboard.db import cache_read_session
 
         with cache_read_session(s) as cache:
-            left = twin_prices_repo.prices_in_range(
+            left = symbol_prices_repo.prices_in_range(
                 cache, ["TWN"], datetime(2020, 1, 1), datetime(2030, 1, 1)
             )
     assert left == {"TWN": {}}
@@ -413,7 +413,7 @@ def test_twin_health_reports_estimating_and_divergence(api_db: Path) -> None:
         fx_repo,
         instrument_overrides_repo,
         prices_repo,
-        twin_prices_repo,
+        symbol_prices_repo,
     )
     from investment_dashboard.services import twin_health_service
 
@@ -451,7 +451,7 @@ def test_twin_health_reports_estimating_and_divergence(api_db: Path) -> None:
         )
         s.flush()
         with cache_write_session(s) as cache:
-            twin_prices_repo.upsert_prices(
+            symbol_prices_repo.upsert_prices(
                 cache,
                 "TWN",
                 {
