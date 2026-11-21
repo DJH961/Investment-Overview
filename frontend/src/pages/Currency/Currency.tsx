@@ -1,24 +1,34 @@
-import { ArrowDownRight, ArrowUpRight, Euro, Minus } from "lucide-react";
-import { useCallback, type ReactNode } from "react";
+import { ChevronLeft, Euro } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, Navigate, useLocation, useParams } from "react-router";
+import { CurrencySectionSlot, serverStatItem, type StatMeta } from "../../components/CurrencySection";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
-import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { RateChart } from "../../components/RateChart";
+import { SectionBar } from "../../components/SectionBar";
+import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
-import { StatStrip, type StatItem } from "../../components/StatStrip";
-import { formatDate, formatNumber, formatPp } from "../../lib/format";
+import { StatStrip } from "../../components/StatStrip";
+import { formatDate } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
-import { toNum } from "../../lib/queries/portfolio";
-import { useCurrency, type CurrencyStatDto } from "../../lib/queries/currency";
+import { useCurrency } from "../../lib/queries/currency";
+import { RATE_RANGE_LABELS, RATE_RANGES, type RateRange } from "../../lib/queries/currencyRate";
 import { useShellStatus } from "../../lib/shell";
+import { CurrencyRangeContext, useCurrencyRangeState, type CurrencyRangeState } from "./range";
+import { CURRENCY_SECTIONS, findSubPage, type CurrencySectionDef, type CurrencySubPage } from "./sections";
 import "./Currency.scss";
 
-const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> = {
+/** The always-visible strip's words. The server sends the figures (`/api/currency/both` stats). */
+export const STRIP_LABELS: Record<string, StatMeta> = {
   rate_now: { label: "EUR/USD now", tip: "How many dollars one euro buys at the latest rate." },
   effect_today: {
     label: "Effect today",
     tip: "What the exchange rate added to or took from your portfolio value since the last close.",
+  },
+  effect_ytd: {
+    label: "Effect this year",
+    tip: "What exchange-rate moves added to or took from your portfolio since 1 January, with the gap between your euro and dollar returns.",
   },
   investing_power_today: {
     label: "Investing power today",
@@ -27,6 +37,10 @@ const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> 
   lifetime_effect: {
     label: "Effect, lifetime",
     tip: "What exchange-rate moves have added to or taken from your result since you started.",
+  },
+  dollar_trend: {
+    label: "Dollar trend",
+    tip: "Whether the dollar is above or below its 200-day average, and whether this month's move is a usual one. It describes; it does not predict.",
   },
   avg_rate_vs_now: {
     label: "Your average rate",
@@ -40,52 +54,25 @@ const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> 
   },
 };
 
-const KIND_WORD = { tailwind: "Tailwind", headwind: "Headwind", neutral: "Neutral" } as const;
-const KIND_ICON = { tailwind: ArrowUpRight, headwind: ArrowDownRight, neutral: Minus } as const;
-
-function figure(unit: string | null | undefined, value: string | null | undefined, ccy: string | null | undefined, fallbackCcy: string): ReactNode {
-  const n = toNum(value ?? null);
-  if (unit === "rate") return formatNumber(n, 4);
-  if (unit === "fraction") return formatPp(n);
-  // Whole units: cents on a currency effect are noise (and crowd a phone row).
-  return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored digits={0} />;
-}
-
-function statItem(s: CurrencyStatDto, fallbackCcy: string): StatItem {
-  const meta = LABELS[s.key] ?? { label: s.key, tip: "" };
-  const kind = s.kind ?? null;
-  const Icon = kind ? KIND_ICON[kind] : null;
-  const secondary = s.secondary
-    ? figure(s.secondary_unit, s.secondary, s.secondary_currency ?? s.currency, fallbackCcy)
-    : null;
-  const hasNote = Boolean(kind || secondary);
-  return {
-    key: s.key,
-    label: meta.label,
-    tip: meta.tip || undefined,
-    value: figure(s.unit, s.value, s.currency, fallbackCcy),
-    note: hasNote ? (
-      <span className="currency-page__note">
-        {kind && Icon ? (
-          <span className={`currency-page__kind currency-page__kind--${kind}`}>
-            <Icon aria-hidden className="currency-page__kind-icon" />
-            {KIND_WORD[kind]}
-          </span>
-        ) : null}
-        {secondary ? (
-          <span>
-            {meta.noteLead ? `${meta.noteLead} ` : ""}
-            {secondary}
-          </span>
-        ) : null}
-      </span>
-    ) : undefined,
-  };
-}
+/** On the chart already, in its quote: never repeated in the strip. */
+const ON_THE_CHART = new Set(["rate_now", "avg_rate_vs_now"]);
 
 export function Currency() {
+  const { sub } = useParams();
+  const rangeState = useCurrencyRangeState();
+  const found = findSubPage(sub);
+  if (sub && !found) return <Navigate to="/currency" replace />;
+  return (
+    <CurrencyRangeContext.Provider value={rangeState}>
+      {found ? <CurrencySubPageView section={found.section} page={found.page} range={rangeState} /> : <CurrencyMain range={rangeState} />}
+    </CurrencyRangeContext.Provider>
+  );
+}
+
+function CurrencyMain({ range }: { range: CurrencyRangeState }) {
   const { currency } = usePrefs();
   const q = useCurrency(currency);
+  const location = useLocation();
 
   const { refetch: qRefetch } = q;
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
@@ -96,9 +83,28 @@ export function Currency() {
     q.isFetching,
   );
 
+  // Sections mount as they scroll near; a jump mounts every one up to its target, so the
+  // target's title lands where it should and does not move as the ones above load.
+  const [forcedUpTo, setForcedUpTo] = useState(-1);
+  const forceUpTo = useCallback((id: string) => {
+    const i = CURRENCY_SECTIONS.findIndex((s) => s.id === id);
+    setForcedUpTo((cur) => Math.max(cur, i));
+  }, []);
+  // A link to /currency#dollar lands on its section (mounted with every one above it).
+  const hash = location.hash.replace(/^#/, "");
+  const hashIndex = CURRENCY_SECTIONS.findIndex((s) => s.id === hash);
+  const forcedIndex = Math.max(forcedUpTo, hashIndex);
   const cur = q.data;
+  const ready = Boolean(cur);
+  useEffect(() => {
+    if (!ready || hashIndex < 0) return;
+    const frame = window.requestAnimationFrame(() => document.getElementById(hash)?.scrollIntoView?.({ block: "start" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [ready, hash, hashIndex]);
+
   const stats = cur?.stats ?? [];
   const noData = cur && stats.length === 0 && !cur.buys && !cur.rate_range && !cur.today.spot;
+  const items = useMemo(() => CURRENCY_SECTIONS.map(({ id, label }) => ({ id, label })), []);
 
   return (
     <div className="currency-page">
@@ -107,8 +113,8 @@ export function Currency() {
         <ErrorState title="Currency could not be loaded" onRetry={refetch} />
       ) : !cur ? (
         <div className="currency-page__stack" aria-busy="true">
+          <Skeleton height="20rem" />
           <Skeleton height="6rem" />
-          <Skeleton height="14rem" />
         </div>
       ) : noData ? (
         <EmptyState
@@ -118,20 +124,64 @@ export function Currency() {
         />
       ) : (
         <div className="currency-page__stack">
+          <SectionBar items={items} label="Currency sections" onSelect={forceUpTo} />
           {/* The page leads with the rate; the strip follows. Today's split stays on the
               Overview's Currency card: this page shows only views the Overview has not. */}
-          <RateChart currency={currency} />
+          <RateChart currency={currency} range={range.range} onRangeChange={range.setRange} />
           {stats.length > 0 ? (
             <StatStrip
               className="stat-strip--rows"
               label="Currency at a glance"
               // The rate and your average are on the chart above, in its quote.
-              items={stats.filter((s) => s.key !== "rate_now" && s.key !== "avg_rate_vs_now").map((s) => statItem(s, cur.ccy))}
+              items={stats.filter((s) => !ON_THE_CHART.has(s.key)).map((s) => serverStatItem(s, STRIP_LABELS[s.key], cur.ccy))}
             />
           ) : null}
+          {CURRENCY_SECTIONS.map((s, i) => (
+            <CurrencySectionSlot key={s.id} id={s.id} label={s.label} force={i <= forcedIndex}>
+              {() => <s.Component id={s.id} label={s.label} currency={currency} range={range.range} />}
+            </CurrencySectionSlot>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
+/** `/currency/<sub>`: a section's full list, with a way back to its place on the page. */
+function CurrencySubPageView({
+  section,
+  page,
+  range,
+}: {
+  section: CurrencySectionDef;
+  page: CurrencySubPage;
+  range: CurrencyRangeState;
+}) {
+  const { currency } = usePrefs();
+  useShellStatus("closed", page.label);
+  const back = `/currency?range=${range.range}#${section.id}`;
+  return (
+    <div className="currency-page currency-page--sub">
+      <Link to={back} className="currency-page__back">
+        <ChevronLeft aria-hidden size={16} />
+        Currency · {section.label}
+      </Link>
+      <PageHeader
+        title={page.label}
+        titleOnPhone
+        actions={
+          page.ranged ? (
+            <SegmentedControl
+              ariaLabel="Range"
+              size="sm"
+              options={RATE_RANGES.map((r) => ({ value: r, label: RATE_RANGE_LABELS[r] }))}
+              value={range.range}
+              onChange={(r) => range.setRange(r as RateRange)}
+            />
+          ) : undefined
+        }
+      />
+      <page.Component currency={currency} range={range.range} />
+    </div>
+  );
+}

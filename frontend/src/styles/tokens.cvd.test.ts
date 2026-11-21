@@ -61,6 +61,30 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   // Holding page › Twin (7.1): twin line (chart-1), dashed fund estimate, NAV dots (chart-3).
   { a: "--chart-estimate", b: "--chart-1", why: "twin chart: fund estimate vs twin line" },
   { a: "--chart-estimate", b: "--chart-3", why: "twin chart: fund estimate vs NAV points" },
+  // Currency page › rate chart (7.2): the rate line (chart-1), the dashed 200-day average
+  // (benchmark, chart-3) and the dashed "your average" reference (muted).
+  { a: "--chart-1", b: "--chart-3", why: "rate chart: rate line vs 200-day average" },
+  { a: "--chart-1", b: "--color-muted", why: "rate chart: rate line vs your average rate" },
+  { a: "--chart-3", b: "--color-muted", why: "rate chart: 200-day average vs your average rate" },
+  // Conversion markers on the rate chart: a neutral ink ring (kind = null), ▲ pos above /
+  // ▼ neg below the reference (7.3), each outlined in ink, over the three lines above.
+  { a: "--color-fg", b: "--chart-1", why: "rate chart: conversion marker / outline vs rate line" },
+  { a: "--color-fg", b: "--chart-3", why: "rate chart: conversion marker / outline vs 200-day average" },
+  // Not listed: the ink ring vs the muted "your average" line (19.6 protan, dark). The ring
+  // sits on the rate line at the conversion's rate, and a ring never reads as a dashed line.
+  { a: "--color-pos", b: "--color-neg", why: "rate chart: conversion above vs below the reference" },
+  { a: "--color-pos", b: "--color-fg", why: "rate chart: above-reference marker vs neutral marker" },
+  { a: "--color-neg", b: "--color-fg", why: "rate chart: below-reference marker vs neutral marker" },
+  { a: "--color-pos", b: "--chart-3", why: "rate chart: above-reference marker vs 200-day average" },
+  { a: "--color-neg", b: "--chart-3", why: "rate chart: below-reference marker vs 200-day average" },
+  // Impact › constant-currency chart (7.2): actual value (chart-1), the dashed value at a
+  // frozen rate (ink, fg) and the gold hatched gap band (chart-3) between them, beside the
+  // blue/orange effect figures (pos/neg).
+  { a: "--chart-3", b: "--color-pos", why: "constant-currency chart: band hatch vs a positive effect figure" },
+  { a: "--chart-3", b: "--color-neg", why: "constant-currency chart: band hatch vs a negative effect figure" },
+  { a: "--chart-3", b: "--chart-1", why: "constant-currency chart: band hatch vs actual value line" },
+  { a: "--chart-3", b: "--color-fg", why: "constant-currency chart: band hatch vs frozen-rate line" },
+  { a: "--chart-1", b: "--color-fg", why: "constant-currency chart: actual value vs frozen-rate line" },
 ];
 
 /** Charts with 3+ untoned series (n2..n4) are rare; they get the lower bar plus dashes. */
