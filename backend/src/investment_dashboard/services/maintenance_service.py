@@ -175,6 +175,17 @@ def _reload_graphs(params: dict[str, Any]) -> dict[str, Any]:
         return dict(iss.reload_graphs(session))
 
 
+def _backfill_holding_intraday(params: dict[str, Any]) -> dict[str, Any]:
+    from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+    from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
+
+    raw_iid = params.get("instrument_id")
+    iid = int(raw_iid) if raw_iid is not None else None
+    force = bool(params.get("force"))
+    with ledger_session_scope() as session:
+        return dict(iss.backfill_holding_intraday_prices(session, instrument_id=iid, force=force))
+
+
 def _clear_intraday(params: dict[str, Any]) -> dict[str, Any]:
     from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
     from investment_dashboard.services import intraday_snapshots_service as iss  # noqa: PLC0415
@@ -359,6 +370,19 @@ JOBS: tuple[JobSpec, ...] = (
         _reload_graphs,
         heavy=True,
         params=(ParamSpec("which", "enum", "Which graph", default="all", choices=_WHICH),),
+    ),
+    JobSpec(
+        "graphs.backfill_holdings",
+        "Backfill 1W per-holding intraday bars",
+        "graphs",
+        "Download missing 1 Week intraday price bars for held stocks and ETFs into "
+        "the per-holding price cache without altering the stored portfolio 1D / 1W curve.",
+        _backfill_holding_intraday,
+        heavy=True,
+        params=(
+            ParamSpec("instrument_id", "int", "Instrument (empty = all held stocks/ETFs)"),
+            ParamSpec("force", "bool", "Re-download days already covered", default=False),
+        ),
     ),
     JobSpec(
         "graphs.clear_intraday",

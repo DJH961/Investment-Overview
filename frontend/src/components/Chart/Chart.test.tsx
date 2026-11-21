@@ -1,6 +1,15 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { Chart, fitLabel, freeLabelY, segments, sessionLayout, timeTicks, type ChartSeries } from "./Chart";
+import {
+  Chart,
+  fitLabel,
+  freeLabelY,
+  isReferenceInSoftBounds,
+  segments,
+  sessionLayout,
+  timeTicks,
+  type ChartSeries,
+} from "./Chart";
 
 const series: ChartSeries[] = [
   {
@@ -117,6 +126,96 @@ describe("Chart", () => {
   it("draws no reference line by default", () => {
     const { container } = render(<Chart {...props} series={[series[0]]} />);
     expect(container.querySelector("[data-reference]")).toBeNull();
+  });
+
+  describe("softBounds reference line", () => {
+    const tightSeries: ChartSeries = {
+      id: "price",
+      label: "Price",
+      tone: "primary",
+      points: [
+        { t: 1000, v: 100 },
+        { t: 2000, v: 110 },
+        { t: 3000, v: 130 },
+      ],
+    };
+
+    const yTicksOf = (container: HTMLElement) =>
+      [...container.querySelectorAll(".chart__axis-label--y")].map((n) => Number(n.textContent?.slice(1)));
+
+    it("excludes a far-below reference from y ticks and renders a pinned edge cue", () => {
+      const { container } = render(
+        <Chart
+          {...props}
+          series={[tightSeries]}
+          referenceLine={{ value: 40, label: "Avg cost", softBounds: true, formattedValue: "€40.00" }}
+        />,
+      );
+      expect(Math.min(...yTicksOf(container))).toBeGreaterThanOrEqual(95);
+      expect(container.querySelector(".chart__reference-line")).toBeNull();
+      const cue = container.querySelector('[data-reference="offscale"]');
+      expect(cue).not.toBeNull();
+      expect(cue).toHaveTextContent("↓ Avg cost €40.00");
+    });
+
+    it("excludes a far-above reference from y ticks and renders an upward edge cue", () => {
+      const { container } = render(
+        <Chart
+          {...props}
+          series={[tightSeries]}
+          referenceLine={{ value: 300, label: "Avg cost", softBounds: true }}
+        />,
+      );
+      expect(Math.max(...yTicksOf(container))).toBeLessThanOrEqual(140);
+      expect(container.querySelector(".chart__reference-line")).toBeNull();
+      const cue = container.querySelector('[data-reference="offscale"]');
+      expect(cue).not.toBeNull();
+      expect(cue).toHaveTextContent("↑ Avg cost V300");
+    });
+
+    it("keeps a nearby reference inside y bounds and draws the dashed line", () => {
+      const { container } = render(
+        <Chart
+          {...props}
+          series={[tightSeries]}
+          referenceLine={{ value: 90, label: "Avg cost", softBounds: true }}
+        />,
+      );
+      expect(Math.min(...yTicksOf(container))).toBeLessThanOrEqual(95);
+      expect(container.querySelector(".chart__reference-line")).not.toBeNull();
+      expect(container.querySelector('[data-reference="offscale"]')).toBeNull();
+      expect(screen.getByText("Avg cost")).toBeInTheDocument();
+    });
+
+    it("strict mode never expands y bounds, showing edge cue outside data bounds and line inside", () => {
+      const { container, rerender } = render(
+        <Chart
+          {...props}
+          series={[tightSeries]}
+          referenceLine={{ value: 90, label: "Avg cost", softBounds: "strict" }}
+        />,
+      );
+      expect(Math.min(...yTicksOf(container))).toBeGreaterThanOrEqual(95);
+      expect(container.querySelector(".chart__reference-line")).toBeNull();
+      expect(container.querySelector('[data-reference="offscale"]')).toHaveTextContent("↓ Avg cost V90");
+
+      rerender(
+        <Chart
+          {...props}
+          series={[tightSeries]}
+          referenceLine={{ value: 115, label: "Avg cost", softBounds: "strict" }}
+        />,
+      );
+      expect(container.querySelector(".chart__reference-line")).not.toBeNull();
+      expect(container.querySelector('[data-reference="offscale"]')).toBeNull();
+    });
+
+    it("isReferenceInSoftBounds uses span and 1% floor", () => {
+      expect(isReferenceInSoftBounds(90, 100, 130)).toBe(true);
+      expect(isReferenceInSoftBounds(40, 100, 130)).toBe(false);
+      expect(isReferenceInSoftBounds(99, 100, 100)).toBe(true);
+      expect(isReferenceInSoftBounds(98, 100, 100)).toBe(false);
+    });
   });
 
   it("places intraday ticks on round clock times", () => {

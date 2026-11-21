@@ -837,6 +837,36 @@ def _check_intraday_graph(session: Session) -> HealthItem:
     )
 
 
+def _check_holding_intraday(session: Session) -> HealthItem:
+    """Held stocks/ETFs missing per-holding 1W intraday bars (``intraday_symbol_prices``)."""
+    from investment_dashboard.services import intraday_snapshots_service  # noqa: PLC0415
+
+    coverage = intraday_snapshots_service.assess_holding_intraday_coverage(session)
+    if not coverage.has_gaps:
+        return HealthItem(
+            key="holding_intraday_graph",
+            title="Per-holding 1W intraday bars",
+            severity="ok",
+            count=0,
+            detail="Every held stock and ETF has 1 Week intraday price bars.",
+        )
+
+    missing = list(coverage.missing_symbols)
+    return HealthItem(
+        key="holding_intraday_graph",
+        title="Per-holding 1W intraday bars",
+        severity="warning",
+        count=len(missing),
+        detail=(
+            f"{len(missing)} held stock(s)/ETF(s) are missing 1 Week intraday bars "
+            "(leaving per-holding 1W charts or list peeks empty even when the "
+            "portfolio 1W line is cached). Run 'Backfill 1W holding bars' to "
+            "fill them without altering the portfolio curve."
+        ),
+        examples=_examples(missing),
+    )
+
+
 def _check_price_feed(session: Session) -> HealthItem:
     """Stretches where the provider served frozen quotes (in the last 7 days).
 
@@ -975,6 +1005,7 @@ def check_health(session: Session) -> HealthReport:
         _check_share_counts(session),
         _check_import_age(session),
         _check_intraday_graph(session),
+        _check_holding_intraday(session),
         _check_price_feed(session),
         _check_providers(),
     ]

@@ -105,6 +105,7 @@ export function HealthTab() {
     {
       key: "sev",
       header: "Status",
+      phone: "headline",
       cell: (c) => <span className={`diagnostics__sev diagnostics__sev--${c.count ? c.severity : "ok"}`}>{c.count === 0 ? "OK" : (SEVERITY_LABEL[c.severity] ?? c.severity)}</span>,
       sortValue: (c) => (c.count ? (RANK[c.severity] ?? 9) : 9),
     },
@@ -114,8 +115,8 @@ export function HealthTab() {
   ];
   const providerColumns: Column<Provider>[] = [
     { key: "name", header: "Provider", primary: true, cell: (p) => p.name },
-    { key: "status", header: "Status", cell: (p) => p.status ?? "unknown" },
-    { key: "fetch", header: "Last fetch", cell: (p) => formatDateTime(p.last_fetch_at) },
+    { key: "status", header: "Status", phone: "headline", cell: (p) => p.status ?? "unknown" },
+    { key: "fetch", header: "Last fetch", phone: "sub", cell: (p) => formatDateTime(p.last_fetch_at) },
     {
       key: "symbols",
       header: "Last symbols",
@@ -152,7 +153,9 @@ export function HealthTab() {
             {attention.map((c) => (
               <li key={c.id} className={`diagnostics__issue diagnostics__issue--${c.severity}`}>
                 <div className="diagnostics__issue-head">
-                  <SevIcon severity={c.severity} />
+                  <span className="diagnostics__issue-icon">
+                    <SevIcon severity={c.severity} />
+                  </span>
                   <strong className="diagnostics__issue-title">{c.title}</strong>
                   <span className="diagnostics__count">{c.count}</span>
                 </div>

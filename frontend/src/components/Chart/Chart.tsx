@@ -128,10 +128,25 @@ export interface ChartSeries {
   hidden?: boolean;
 }
 
-/** A horizontal guide at a fixed value (e.g. cost basis). It is part of the y range. */
+/**
+ * A horizontal guide at a fixed value (e.g. cost basis).
+ * `softBounds`:
+ * - `false` / omitted: always include `value` in y-axis bounds.
+ * - `true`: include `value` only if near the plotted data; otherwise show a pinned edge cue.
+ * - `"strict"`: never expand y-axis bounds to reach `value`; draw the line only if it already fits.
+ */
 export interface ChartReferenceLine {
   value: number;
   label?: string;
+  softBounds?: boolean | "strict";
+  /** Display string for the off-scale edge cue (defaults to `valueFormat(value)`). */
+  formattedValue?: string;
+}
+
+/** Whether `refValue` sits close enough to `[dataLo, dataHi]` not to flatten the curve. */
+export function isReferenceInSoftBounds(refValue: number, dataLo: number, dataHi: number): boolean {
+  const span = Math.max(dataHi - dataLo, Math.abs(dataHi) * 0.01, 1e-6);
+  return refValue >= dataLo - span * 1.5 && refValue <= dataHi + span * 1.5;
 }
 
 /**
@@ -416,13 +431,20 @@ export function Chart({
     const tLast = times[times.length - 1];
     // Room for the marker: a small gutter after the last point, never the night.
     const tMax = nowOk ? tLast + Math.max(tLast - tMin, 1) * NOW_GUTTER : tLast;
-    const ref = [
+    const dataRefs = [
       ...(markers ?? []).map((m) => m.v).filter((v) => Number.isFinite(v)),
-      ...(referenceLine && Number.isFinite(referenceLine.value) ? [referenceLine.value] : []),
       ...(nowOk ? [nowMarker.v] : []),
     ];
-    let lo = Math.min(...values, ...ref);
-    let hi = Math.max(...values, ...ref);
+    const dataLo = Math.min(...values, ...dataRefs);
+    const dataHi = Math.max(...values, ...dataRefs);
+    const refOk = referenceLine != null && Number.isFinite(referenceLine.value);
+    const includeRef =
+      refOk &&
+      (referenceLine.softBounds === true
+        ? isReferenceInSoftBounds(referenceLine.value, dataLo, dataHi)
+        : referenceLine.softBounds !== "strict");
+    let lo = includeRef ? Math.min(dataLo, referenceLine.value) : dataLo;
+    let hi = includeRef ? Math.max(dataHi, referenceLine.value) : dataHi;
     if (lo === hi) {
       lo -= Math.abs(lo) * 0.01 || 1;
       hi += Math.abs(hi) * 0.01 || 1;
@@ -430,7 +452,14 @@ export function Chart({
     const pad = (hi - lo) * 0.08;
     lo -= pad;
     hi += pad;
-    return { lo, hi, tMin, tMax };
+    const refOffScale: "above" | "below" | null = !refOk
+      ? null
+      : referenceLine.value > hi
+        ? "above"
+        : referenceLine.value < lo
+          ? "below"
+          : null;
+    return { lo, hi, tMin, tMax, refOffScale };
   }, [values, times, referenceLine, nowMarker, markers]);
   const nowX = bounds && nowMarker ? bounds.tMin + (bounds.tMax - bounds.tMin) * (1 - NOW_GUTTER / 2.5) : null;
 
@@ -458,13 +487,13 @@ export function Chart({
 
   const scales = useMemo(() => {
     if (!bounds) return null;
-    const { lo, hi, tMin, tMax } = bounds;
+    const { lo, hi, tMin, tMax, refOffScale } = bounds;
     const layout = xMode === "session" && sessions?.length ? sessionLayout(sessions, PAD.left, innerW) : null;
     const x = layout
       ? layout.x
       : (t: number) => PAD.left + (tMax === tMin ? innerW / 2 : ((t - tMin) / (tMax - tMin)) * innerW);
     const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo)) * innerH;
-    return { x, y, lo, hi, tMin, tMax, layout };
+    return { x, y, lo, hi, tMin, tMax, refOffScale, layout };
   }, [bounds, innerW, innerH, PAD.left, PAD.top, xMode, sessions]);
 
   const setFromClientX = useCallback(
@@ -579,8 +608,23 @@ export function Chart({
     const ex = scales.x(lastRaw.x);
     const ey = scales.y(lastRaw.y);
     const px = Math.min(Math.max(ex - w, PAD.left), width - PAD.right - w);
-    const py = ey + 30 <= PAD.top + innerH ? ey + 12 : ey - 30;
+    const topLimit = scales.refOffScale === "above" ? PAD.top + 22 : PAD.top;
+    const bottomLimit = PAD.top + innerH - (scales.refOffScale === "below" ? 24 : 0);
+    let py = ey + 30 <= bottomLimit ? ey + 12 : ey - 30;
+    if (py < topLimit && ey + 30 <= PAD.top + innerH) py = ey + 12;
     endPill = { x: px, y: py, w, text };
+  }
+  let offScalePill: { x: number; y: number; w: number; text: string } | null = null;
+  if (referenceLine && Number.isFinite(referenceLine.value) && scales.refOffScale) {
+    const dir = scales.refOffScale;
+    const text = `${dir === "above" ? "↑" : "↓"} ${referenceLine.label ? `${referenceLine.label} ` : ""}${referenceLine.formattedValue ?? valueFormat(referenceLine.value)}`;
+    const w = Math.min(Math.max(innerW - 4, 40), labelWidth(text) + 14);
+    const anchorY = dir === "above" ? PAD.top + 14 : PAD.top + innerH - 7;
+    const textY =
+      compact && showRightAxis
+        ? freeLabelY(anchorY, dir === "above" ? [0, 18, 36] : [0, -18, -36], insetTickYs)
+        : anchorY;
+    offScalePill = { x: width - PAD.right - 4 - w, y: textY - 13, w, text };
   }
   const cursorT = cursor !== null ? (times[cursor] ?? null) : null;
   const cursorX = cursorT !== null ? scales.x(cursorT) : null;
@@ -695,7 +739,7 @@ export function Chart({
               </text>
             </g>
           ))}
-          {referenceLine && Number.isFinite(referenceLine.value) && (
+          {referenceLine && Number.isFinite(referenceLine.value) && scales.refOffScale === null && (
             <g className="chart__reference" data-reference>
               <line
                 className="chart__reference-line"
@@ -815,6 +859,20 @@ export function Chart({
               <circle className="chart__end-pill-dot" cx={endPill.x + 9} cy={endPill.y + 9} r={3} />
               <text className="chart__end-pill-text" x={endPill.x + 16} y={endPill.y + 9} dy="0.34em">
                 {endPill.text}
+              </text>
+            </g>
+          )}
+          {offScalePill && (
+            <g className="chart__reference chart__reference--offscale" data-reference="offscale" pointerEvents="none">
+              <rect className="chart__reference-pill" x={offScalePill.x} y={offScalePill.y} width={offScalePill.w} height={18} rx={9} />
+              <text
+                className="chart__reference-label"
+                x={offScalePill.x + offScalePill.w - 7}
+                y={offScalePill.y + 9}
+                dy="0.34em"
+                textAnchor="end"
+              >
+                {offScalePill.text}
               </text>
             </g>
           )}

@@ -372,18 +372,22 @@ export function Risk() {
               rowKey={(r) => String(r.instrument_id)}
               defaultSort={{ key: "pnl", direction: "desc" }}
               emptyMessage="No attribution data."
+              footer={
+                d.attribution.length > 0
+                  ? {
+                      ariaLabel: "Attribution total",
+                      phoneKeys: ["start", "end", "net"],
+                      cells: {
+                        symbol: "Total",
+                        start: money(d.attribution_total.start_value),
+                        end: money(d.attribution_total.end_value),
+                        net: money(d.attribution_total.net_contribution),
+                        pnl: money(d.attribution_total.absolute_pnl, true),
+                      },
+                    }
+                  : undefined
+              }
             />
-            {d.attribution.length > 0 ? (
-              <dl className="risk-page__total" aria-label="Attribution total">
-                <dt className="risk-page__total-label">Total</dt>
-                <dd className="risk-page__total-values">
-                  <span>Start {money(d.attribution_total.start_value)}</span>
-                  <span>End {money(d.attribution_total.end_value)}</span>
-                  <span>Net added {money(d.attribution_total.net_contribution)}</span>
-                  <strong>P&amp;L {money(d.attribution_total.absolute_pnl, true)}</strong>
-                </dd>
-              </dl>
-            ) : null}
             <p className="risk-page__note">{glossaryText("attribution")}</p>
           </Card>
         </div>

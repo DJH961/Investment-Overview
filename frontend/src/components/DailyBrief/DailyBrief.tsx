@@ -414,13 +414,23 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
 
   const move = b.move?.[currency] ?? null;
   const kind = b.kind === "session" && move ? "session" : b.kind === "fx_reopen" ? "fx" : "sessions";
-  const win = kind === "sessions" ? windowOf(b, currency) : null;
+  const rawWin = windowOf(b, currency);
+  const win =
+    kind === "sessions"
+      ? rawWin
+      : kind === "session" && rawWin?.start_basis === "intraday"
+        ? rawWin
+        : null;
   const n = Math.max(b.sessions_passed, b.sessions.length);
   const icon = kind === "session" ? <Newspaper aria-hidden /> : kind === "fx" ? <Repeat aria-hidden /> : <CalendarRange aria-hidden />;
   // "Since" is the previous visit (the server's marker), as the currency slot's rates use it.
   const sinceIso = b.visit_from ?? b.currency_effect_since?.EUR?.since ?? b.investing_power_since?.USD?.since ?? null;
   // A window of several sessions names the start's date too.
-  const since = sinceIso ? (win ? formatDayTime(sinceIso, timeZone) : sinceLabel(sinceIso, b.now, timeZone)) : null;
+  const since = sinceIso
+    ? kind === "sessions" && win
+      ? formatDayTime(sinceIso, timeZone)
+      : sinceLabel(sinceIso, b.now, timeZone)
+    : null;
   const span = kind === "fx" ? "weekend" : n === 1 ? "1 session" : `${n} sessions`;
   // One slot for the currency since the last look, shown when the server sends either side.
   const showCurrency = Boolean(b.currency_effect_since?.EUR || b.investing_power_since?.USD);
@@ -451,15 +461,19 @@ function BriefCard({ brief: b, currency }: { brief: BriefDto; currency: Reportin
         <IconButton className="daily-brief__dismiss" label="Dismiss the brief" size="sm" icon={<X aria-hidden />} onClick={dismiss} />
       </header>
       <dl className="daily-brief__facts">
-        {kind === "session" && move && <SessionFact move={move} currency={currency} />}
-        {kind === "sessions" && win && <WindowFact w={win} currency={currency} />}
-        {kind === "sessions" && !win && <SessionsFact brief={b} />}
-        {kind === "fx" && <FxReopenFact brief={b} currency={currency} />}
+        {win ? (
+          <WindowFact w={win} currency={currency} />
+        ) : (
+          <>
+            {kind === "session" && move && <SessionFact move={move} currency={currency} />}
+            {kind === "sessions" && <SessionsFact brief={b} />}
+            {kind === "fx" && <FxReopenFact brief={b} currency={currency} />}
+          </>
+        )}
         {/* The currency since the last look, in every Brief (owner, 7.0.1): the currency
             market trades whenever stocks do, so it always has something to say. */}
         {(win || showCurrency) && <CurrencySinceFact brief={b} currency={currency} />}
-        {kind === "session" && move && <MoversFact movers={move.movers} />}
-        {win && <MoversFact movers={win.movers} />}
+        {win ? <MoversFact movers={win.movers} /> : kind === "session" && move && <MoversFact movers={move.movers} />}
       </dl>
     </section>
   );

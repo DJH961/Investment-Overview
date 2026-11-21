@@ -13,6 +13,7 @@ from investment_dashboard.api.schemas.holdings import (
     HistoryRange,
     HoldingHistoryResponse,
     HoldingPeekResponse,
+    HoldingPeeksResponse,
     HoldingsResponse,
     HoldingTwinResponse,
     TwinRange,
@@ -46,6 +47,16 @@ def _holdings_both(session: Session, group_by: GroupBy = "none") -> ByCurrency[H
             for c in ("EUR", "USD")
         }
     )
+
+
+@cached_read
+def _holdings_peeks(session: Session) -> HoldingPeeksResponse:
+    return HoldingPeeksResponse.model_validate({"peeks": holding_peek.build_all(session)})
+
+
+@router.get("/holdings/peeks", response_model=HoldingPeeksResponse)
+def get_holding_peeks(session: SessionDep) -> HoldingPeeksResponse:
+    return _holdings_peeks(session=session)
 
 
 @router.get("/holdings/{instrument_id}/history", response_model=HoldingHistoryResponse)
@@ -85,3 +96,4 @@ def get_holding_peek(session: SessionDep, instrument_id: int) -> HoldingPeekResp
 
 
 register_warmer(lambda session: _holdings_both(session=session, group_by="none"))
+register_warmer(lambda session: _holdings_peeks(session=session))

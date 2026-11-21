@@ -75,3 +75,85 @@ describe("DataTable phone markup", () => {
     expect(screen.getByRole("columnheader", { name: "Source" })).toHaveClass("data-table__th--phone-hidden");
   });
 });
+
+describe("DataTable footer", () => {
+  it("renders a footer row inside the table aligned with columns and respects phoneKeys", () => {
+    const cols: Column<Row>[] = [
+      { key: "name", header: "Name", primary: true, cell: (r) => r.name },
+      { key: "start", header: "Start", align: "right", phone: "hide", group: "Val", cell: (r) => r.value },
+      { key: "hidden", header: "Secret", align: "right", phone: "hide", cell: () => "x" },
+      { key: "value", header: "Total", align: "right", phone: "headline", cell: (r) => r.value },
+      { key: "extra", header: "Extra", align: "right", cell: () => "10%" },
+    ];
+    render(
+      <DataTable
+        caption="Summary"
+        columns={cols}
+        rows={rows.slice(0, 1)}
+        rowKey={(r) => r.id}
+        footer={{
+          ariaLabel: "Summary total",
+          phoneKeys: ["start"],
+          cells: {
+            name: "Total",
+            start: "€100.00",
+            hidden: "skip",
+            value: "+€20.00",
+          },
+        }}
+      />,
+    );
+
+    const table = screen.getByRole("table", { name: "Summary" });
+    const foot = within(table).getByLabelText("Summary total");
+    expect(foot.tagName).toBe("TFOOT");
+
+    const rowHeader = within(foot).getByRole("rowheader", { name: "Total" });
+    expect(rowHeader).toHaveAttribute("scope", "row");
+    expect(rowHeader).toHaveClass("data-table__foot-cell--primary", "data-table__foot-cell--emphasis");
+
+    const cells = within(foot).getAllByRole("cell");
+    // start: phone: "hide", but listed in phoneKeys -> shown with label and group-start
+    expect(cells[0]).toHaveClass("data-table__foot-cell--right", "data-table__foot-cell--group-start");
+    expect(cells[0]).not.toHaveClass("data-table__foot-cell--phone-hidden");
+    expect(cells[0].querySelector(".data-table__label")?.textContent).toBe("Start");
+    expect(cells[0].querySelector(".data-table__value--nowrap")?.textContent).toBe("€100.00");
+
+    // hidden: phone: "hide", not in phoneKeys -> hidden on phones
+    expect(cells[1]).toHaveClass("data-table__foot-cell--phone-hidden");
+
+    // headline cell: no label, right-aligned, emphasized
+    expect(cells[2]).toHaveClass("data-table__foot-cell--headline", "data-table__foot-cell--emphasis");
+    expect(cells[2].querySelector(".data-table__label")).toBeNull();
+    expect(cells[2].querySelector(".data-table__value")?.textContent).toBe("+€20.00");
+
+    // omitted footer cell: marked empty so phones skip it cleanly without a label
+    expect(cells[3]).toHaveClass("data-table__foot-cell--empty");
+    expect(cells[3].querySelector(".data-table__label")).toBeNull();
+  });
+
+  it("omits the footer when rows are empty or loading", () => {
+    const { rerender } = render(
+      <DataTable
+        caption="Empty"
+        columns={columns}
+        rows={[]}
+        rowKey={(r: Row) => r.id}
+        footer={{ ariaLabel: "Summary total", cells: { name: "Total", value: 0 } }}
+      />,
+    );
+    expect(screen.queryByLabelText("Summary total")).not.toBeInTheDocument();
+
+    rerender(
+      <DataTable
+        caption="Loading"
+        columns={columns}
+        rows={rows}
+        loading
+        rowKey={(r) => r.id}
+        footer={{ ariaLabel: "Summary total", cells: { name: "Total", value: 60 } }}
+      />,
+    );
+    expect(screen.queryByLabelText("Summary total")).not.toBeInTheDocument();
+  });
+});

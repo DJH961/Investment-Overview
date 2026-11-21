@@ -52,6 +52,15 @@ export function groupSpans<Row>(columns: Column<Row>[]): GroupSpan[] {
   return out;
 }
 
+export interface DataTableFooter {
+  /** Accessible label on the `<tfoot>` element (e.g. "Attribution total"). */
+  ariaLabel?: string;
+  /** Map from column `key` to footer cell content. */
+  cells: Record<string, ReactNode>;
+  /** Columns with `phone: "hide"` normally hide on phones; include their keys here if the footer should still show them in the mobile summary. */
+  phoneKeys?: string[];
+}
+
 export interface DataTableProps<Row> {
   columns: Column<Row>[];
   rows: Row[];
@@ -70,6 +79,8 @@ export interface DataTableProps<Row> {
   renderExpanded?: (row: Row) => ReactNode | null;
   /** Opens a row (e.g. a transaction edit); the row gets a pointer and Enter opens it too. */
   onRowClick?: (row: Row) => void;
+  /** Optional summary row rendered inside `<tfoot>`, aligned with the body columns. */
+  footer?: DataTableFooter;
 }
 
 type Direction = "asc" | "desc";
@@ -108,6 +119,7 @@ export function DataTable<Row>({
   rowClassName,
   renderExpanded,
   onRowClick,
+  footer,
 }: DataTableProps<Row>) {
   const [sort, setSort] = useState<{ key: string; direction: Direction } | undefined>(defaultSort);
 
@@ -262,6 +274,58 @@ export function DataTable<Row>({
               );
             })}
         </tbody>
+        {!loading && footer && sorted.length > 0 && (
+          <tfoot className="data-table__foot" aria-label={footer.ariaLabel}>
+            <tr className="data-table__foot-row">
+              {columns.map((col, i) => {
+                const content = footer.cells[col.key] ?? null;
+                const empty = isEmptyCell(content);
+                const showOnPhone = col.phone !== "hide" || Boolean(footer.phoneKeys?.includes(col.key));
+                const role = col.primary ? "primary" : col.phone === "hide" && showOnPhone ? "show" : (col.phone ?? "show");
+                const labeled = !empty && role === "show" && Boolean(col.header);
+                const cls = clsx(
+                  "data-table__foot-cell",
+                  col.align === "right" && "data-table__foot-cell--right",
+                  col.primary && "data-table__foot-cell--primary",
+                  role === "headline" && "data-table__foot-cell--headline",
+                  role === "sub" && "data-table__foot-cell--sub",
+                  !showOnPhone && "data-table__foot-cell--phone-hidden",
+                  empty && "data-table__foot-cell--empty",
+                  groupStart(i) && "data-table__foot-cell--group-start",
+                  (col.emphasis || col.primary || role === "headline") && "data-table__foot-cell--emphasis",
+                );
+                const inner = (
+                  <>
+                    {labeled && (
+                      <span className="data-table__label" aria-hidden>
+                        {col.header}
+                      </span>
+                    )}
+                    {!empty && (
+                      <span
+                        className={clsx(
+                          "data-table__value",
+                          (col.nowrap ?? col.align === "right") && "data-table__value--nowrap",
+                        )}
+                      >
+                        {content}
+                      </span>
+                    )}
+                  </>
+                );
+                return col.primary ? (
+                  <th key={col.key} scope="row" className={cls}>
+                    {inner}
+                  </th>
+                ) : (
+                  <td key={col.key} className={cls}>
+                    {inner}
+                  </td>
+                );
+              })}
+            </tr>
+          </tfoot>
+        )}
       </table>
       {!loading && sorted.length === 0 && <p className="data-table__empty">{emptyMessage}</p>}
     </div>

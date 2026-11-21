@@ -211,6 +211,22 @@ DEFS: tuple[SettingDef, ...] = (
         choices=GRAPH_RANGE_KEYS,
     ),
     SettingDef(
+        "display.holding_chart_cost_scale",
+        SettingType.ENUM,
+        "auto",
+        "display",
+        "Holding chart cost / invested scale",
+        help=(
+            "How holding charts scale when average cost (Price mode) or money invested "
+            "(Value mode) sits far outside the plotted range. 'Auto' keeps the y-axis "
+            "zoomed to the curve if cost/invested would flatten it (showing an edge cue "
+            "or legend toggle instead); 'Always' always includes it on the axis; "
+            "'Data only' scales strictly to the curve."
+        ),
+        choices=("auto", "always", "never"),
+        since="7.1",
+    ),
+    SettingDef(
         "display.mover_badges",
         SettingType.BOOL,
         False,

@@ -3,7 +3,21 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[], phone: false }));
+const defaultPoints = [
+  { t: "2026-10-29", v: "95", value_eur: "950", value_usd: "1020", invested_eur: "800", invested_usd: "860" },
+  { t: "2026-10-30", v: "100", value_eur: "1000", value_usd: "1080", invested_eur: "800", invested_usd: "860" },
+];
+
+const state = vi.hoisted(() => ({
+  rows: [] as Record<string, unknown>[],
+  phone: false,
+  costScale: "auto" as "auto" | "always" | "never",
+  avgPrice: "80",
+  points: [
+    { t: "2026-10-29", v: "95", value_eur: "950", value_usd: "1020", invested_eur: "800", invested_usd: "860" },
+    { t: "2026-10-30", v: "100", value_eur: "1000", value_usd: "1080", invested_eur: "800", invested_usd: "860" },
+  ],
+}));
 
 const base = {
   name: "World ETF",
@@ -153,6 +167,13 @@ vi.mock("../../lib/queries/holdings", async (orig) => ({
   ...(await orig<typeof import("../../lib/queries/holdings")>()),
   useHoldings: () => ({ data: holdings, isPending: false, isError: false, refetch: vi.fn() }),
 }));
+vi.mock("../../lib/displayPrefs", async (orig) => {
+  const actual = await orig<typeof import("../../lib/displayPrefs")>();
+  return {
+    ...actual,
+    useDisplayPrefs: () => ({ ...actual.DEFAULT_DISPLAY_PREFS, holdingChartCostScale: state.costScale }),
+  };
+});
 vi.mock("../../lib/queries/holding-detail", async (orig) => ({
   ...(await orig<typeof import("../../lib/queries/holding-detail")>()),
   useHoldingHistoryV2: (id: number, range: string, mode: string) => ({
@@ -164,12 +185,9 @@ vi.mock("../../lib/queries/holding-detail", async (orig) => ({
       mode,
       x_mode: "date",
       sessions: [],
-      points: [
-        { t: "2026-10-29", v: "95", value_eur: "950", value_usd: "1020", invested_eur: "800", invested_usd: "860" },
-        { t: "2026-10-30", v: "100", value_eur: "1000", value_usd: "1080", invested_eur: "800", invested_usd: "860" },
-      ],
+      points: state.points,
       trades: [],
-      avg_price_native: "80",
+      avg_price_native: state.avgPrice,
       period: { change_eur: "50", change_usd: "60", return_eur: "0.05", return_usd: "0.06", bought_eur: "0", bought_usd: "0", dividends_eur: "0", dividends_usd: "0" },
     },
     isPending: false,
@@ -199,11 +217,11 @@ function Where() {
   return <output data-testid="where">{loc.pathname}</output>;
 }
 
-function renderAt(path: string) {
+function renderAt(entry: string | { pathname: string; state?: unknown }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/holdings/:id/:tab?" element={<Holding />} />
         </Routes>
@@ -218,6 +236,9 @@ const rangeNames = () => screen.getAllByRole("radio").map((r) => r.textContent);
 beforeEach(() => {
   localStorage.clear();
   state.phone = false;
+  state.costScale = "auto";
+  state.avgPrice = "80";
+  state.points = defaultPoints;
   state.rows = [tx(1, "VWCE"), tx(2, "VWCE", "sell", { net_native: "60", quantity: "-2", price_native: "30" }), tx(3, "VWRL")];
 });
 
@@ -287,6 +308,81 @@ describe("Holding page", () => {
     renderAt("/holdings/99");
     expect(screen.getByText("We can't find this holding")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Holdings" })).toHaveAttribute("href", "/holdings");
+  });
+
+  describe("back link origin", () => {
+    it("defaults to Holdings when opened directly without state", () => {
+      renderAt("/holdings/1");
+      expect(screen.getByRole("link", { name: "Holdings" })).toHaveAttribute("href", "/holdings");
+    });
+
+    it("returns to Overview when opened from Overview and keeps it across tabs and redirects", () => {
+      renderAt({ pathname: "/holdings/1/details", state: { from: { to: "/overview", label: "Overview" } } });
+      expect(screen.getByTestId("where")).toHaveTextContent(/^\/holdings\/1$/);
+      expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
+      fireEvent.mouseDown(screen.getByRole("tab", { name: /Transactions/ }));
+      expect(screen.getByTestId("where")).toHaveTextContent("/holdings/1/transactions");
+      expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
+    });
+  });
+
+  describe("chart cost scaling", () => {
+    it("auto: hides flattening Invested on 1W by default and shows it when legend is toggled", () => {
+      const { container } = renderAt("/holdings/1");
+      fireEvent.click(screen.getByRole("radio", { name: "1W" }));
+      expect(container.querySelector('[data-series="invested"]')).toBeNull();
+      const toggle = screen.getByRole("button", { name: "Invested" });
+      expect(toggle).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute("aria-pressed", "true");
+      expect(container.querySelector('[data-series="invested"]')).not.toBeNull();
+    });
+
+    it("auto: keeps Invested visible on 1W when it sits close to Value", () => {
+      state.points = [
+        { t: "2026-10-29", v: "95", value_eur: "950", value_usd: "1020", invested_eur: "940", invested_usd: "1010" },
+        { t: "2026-10-30", v: "100", value_eur: "1000", value_usd: "1080", invested_eur: "940", invested_usd: "1010" },
+      ];
+      const { container } = renderAt("/holdings/1");
+      fireEvent.click(screen.getByRole("radio", { name: "1W" }));
+      expect(container.querySelector('[data-series="invested"]')).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Invested" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("auto: shows off-scale Avg cost cue in Price mode when far from the price range", () => {
+      const { container } = renderAt("/holdings/1");
+      fireEvent.click(screen.getByRole("radio", { name: "Price" }));
+      expect(container.querySelector(".chart__reference-line")).toBeNull();
+      expect(container.querySelector('[data-reference="offscale"]')).toHaveTextContent("↓ Avg cost €80.00");
+    });
+
+    it("always: keeps far-below Invested and Avg cost on-scale", () => {
+      state.costScale = "always";
+      const { container } = renderAt("/holdings/1");
+      expect(container.querySelector('[data-series="invested"]')).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Invested" })).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(screen.getByRole("radio", { name: "Price" }));
+      expect(container.querySelector(".chart__reference-line")).not.toBeNull();
+      expect(container.querySelector('[data-reference="offscale"]')).toBeNull();
+    });
+
+    it("never: hides even nearby Invested outside Value bounds and keeps nearby Avg cost off-scale", () => {
+      state.costScale = "never";
+      state.avgPrice = "92";
+      state.points = [
+        { t: "2026-10-29", v: "95", value_eur: "950", value_usd: "1020", invested_eur: "940", invested_usd: "1010" },
+        { t: "2026-10-30", v: "100", value_eur: "1000", value_usd: "1080", invested_eur: "940", invested_usd: "1010" },
+      ];
+      const { container } = renderAt("/holdings/1");
+      expect(container.querySelector('[data-series="invested"]')).toBeNull();
+      const toggle = screen.getByRole("button", { name: "Invested" });
+      expect(toggle).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(toggle);
+      expect(container.querySelector('[data-series="invested"]')).not.toBeNull();
+      fireEvent.click(screen.getByRole("radio", { name: "Price" }));
+      expect(container.querySelector(".chart__reference-line")).toBeNull();
+      expect(container.querySelector('[data-reference="offscale"]')).toHaveTextContent("↓ Avg cost €92.00");
+    });
   });
 
   describe("Tranches", () => {

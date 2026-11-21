@@ -2,7 +2,36 @@ import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 
-export function BackLink({ to = "/holdings", label = "Holdings" }: { to?: string; label?: string }) {
+export interface BackTarget {
+  to: string;
+  label: string;
+}
+
+export interface HoldingRouteState {
+  from?: BackTarget;
+}
+
+export function backTargetFromState(
+  state: unknown,
+  fallback: BackTarget = { to: "/holdings", label: "Holdings" },
+): BackTarget {
+  if (state && typeof state === "object" && "from" in state) {
+    const from = (state as HoldingRouteState).from;
+    if (
+      from &&
+      typeof from.to === "string" &&
+      from.to.startsWith("/") &&
+      !from.to.startsWith("//") &&
+      typeof from.label === "string" &&
+      from.label.trim() !== ""
+    ) {
+      return { to: from.to, label: from.label };
+    }
+  }
+  return fallback;
+}
+
+export function BackLink({ to = "/holdings", label = "Holdings" }: Partial<BackTarget>) {
   return (
     <Link to={to} className="holding-page__back">
       <ChevronLeft aria-hidden size={16} />
@@ -22,8 +51,8 @@ export interface HoldingHeaderProps {
   value: ReactNode;
   /** Today's move under / beside it. */
   today?: ReactNode;
-  /** Back link target and label (Holdings, or Back for a lookup). */
-  back?: { to: string; label: string };
+  /** Back link target and label (Holdings, Overview, or another origin). */
+  back?: BackTarget;
 }
 
 /**

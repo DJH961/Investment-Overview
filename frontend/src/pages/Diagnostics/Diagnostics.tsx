@@ -1,4 +1,5 @@
 import { Download } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { PageHeader } from "../../components/PageHeader";
 import { SegmentedControl } from "../../components/SegmentedControl";
@@ -33,6 +34,13 @@ export function Diagnostics() {
   const [remembered, setRemembered] = usePersistentState<TabId>("diagnostics.tab", "health", isTab);
   const fromUrl = params.get("tab");
   const tab: TabId = isTab(fromUrl) ? fromUrl : remembered;
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const active = tabsRef.current?.querySelector<HTMLElement>('[aria-checked="true"], [data-state="on"]');
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }, [tab]);
   const select = (id: TabId) => {
     setRemembered(id);
     if (fromUrl) {
@@ -54,7 +62,7 @@ export function Diagnostics() {
       />
       {/* The shared segmented control: arrow keys and the finger-sized phone targets come with it.
           On a very narrow phone the six sections may scroll sideways rather than squash. */}
-      <div className="diagnostics__tabs" data-scrollable>
+      <div ref={tabsRef} className="diagnostics__tabs" data-scrollable>
         <SegmentedControl
           className="diagnostics__segmented"
           ariaLabel="Health & Repair sections"

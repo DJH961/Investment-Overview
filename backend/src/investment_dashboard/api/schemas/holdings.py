@@ -474,3 +474,9 @@ class HoldingPeekResponse(ApiModel):
     tranches: PeekTranches
     last_trade: PeekTrade | None = None
     last_dividend: PeekDividend | None = None
+
+
+class HoldingPeeksResponse(ApiModel):
+    """Batch peek payload for every currently held instrument."""
+
+    peeks: dict[int, HoldingPeekResponse]

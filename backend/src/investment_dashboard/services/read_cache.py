@@ -86,8 +86,10 @@ def invalidate(*deps: str) -> None:
 #: Events that never change a cached read (restart notices).
 _NEUTRAL_EVENTS = frozenset({"server"})
 #: Settings no server read depends on (every /both route answers both currencies;
-#: the theme is client-only). Switching them must not throw the cache away.
-PRESENTATION_SETTINGS = frozenset({"display_currency", "theme"})
+#: the theme and chart scaling preference are client-only). Switching them must not throw the cache away.
+PRESENTATION_SETTINGS = frozenset(
+    {"display_currency", "theme", "display.holding_chart_cost_scale"}
+)
 
 
 def invalidate_for_event(

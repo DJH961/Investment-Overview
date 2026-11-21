@@ -56,12 +56,45 @@ def test_catalogue(api_client: TestClient) -> None:
     assert {
         "prices.refresh",
         "fx.refresh_live",
+        "graphs.backfill_holdings",
         "cache.reset",
         "backup.now",
     } <= ids
+    backfill = next(j for j in data["jobs"] if j["id"] == "graphs.backfill_holdings")
+    assert backfill["group"] == "graphs"
+    assert backfill["heavy"] is True
+    assert backfill["danger"] == "none"
+    assert [p["name"] for p in backfill["params"]] == ["instrument_id", "force"]
     reset = next(j for j in data["jobs"] if j["id"] == "cache.reset")
     assert reset["danger"] == "typed"
     assert reset["confirm_word"] == "RESET"
+
+
+def test_backfill_holdings_job_runs_with_params(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from investment_dashboard.services import intraday_snapshots_service as iss
+
+    _as(monkeypatch, "session")
+    seen: dict[str, object] = {}
+
+    def fake_backfill(
+        _session: object, *, instrument_id: int | None = None, force: bool = False
+    ) -> dict[str, object]:
+        seen["instrument_id"] = instrument_id
+        seen["force"] = force
+        return {"symbols": 1, "days": 5, "rows_written": 42, "missing": []}
+
+    monkeypatch.setattr(iss, "backfill_holding_intraday_prices", fake_backfill)
+    run = api_client.post(
+        "/api/maintenance/jobs/graphs.backfill_holdings",
+        json={"params": {"instrument_id": 7, "force": True}},
+    )
+    assert run.status_code == 202, run.text
+    done = _wait(api_client, run.json()["id"])
+    assert done["status"] == "succeeded"
+    assert seen == {"instrument_id": 7, "force": True}
+    assert done["result"] == {"symbols": 1, "days": 5, "rows_written": 42, "missing": []}
 
 
 def test_fx_refresh_live_job_backfills_live_spot(

@@ -70,7 +70,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from itertools import pairwise
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import OperationalError
@@ -1025,24 +1025,62 @@ class SampleAt:
     #: Native-USD market component (FX-free); ``None`` for a legacy row without it.
     market_usd: Decimal | None
     fx_eur_usd: Decimal
+    captured_at: datetime | None = None
+
+
+def _sample_from_rows(rows: list[IntradayValue], *, earliest: bool = False) -> SampleAt | None:
+    seq = rows if earliest else reversed(rows)
+    for row in seq:
+        if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
+            return SampleAt(
+                _row_eur(row),
+                row.market_value_usd,
+                row.fx_eur_usd,
+                captured_at=row.captured_at,
+            )
+    return None
 
 
 def sample_at(
     session: Session, at: datetime, *, max_age: timedelta = timedelta(minutes=30)
 ) -> SampleAt | None:
-    """The newest stored intraday sample in ``[at - max_age, at]`` that carries a rate.
+    """The newest stored intraday sample near ``at`` that carries a rate.
 
-    ``None`` when none lies that close. Only the sample's own columns are read (the
-    market component in EUR and native USD, and the per-instant rate). No network.
+    First searches ``[at - max_age, at]`` for the newest sample with a valid
+    ``fx_eur_usd``. When none lies that close and ``at`` sits inside a trading
+    session (or within ``max_age`` after its close), falls back to the newest
+    earlier sample within that same session (``[open, at]``), or — if ``at`` is
+    just after the open before the first sample landed — the earliest sample in
+    ``(at, min(close, at + 5 min)]`` within that session. Never crosses into an
+    earlier session. No network.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
 
     end = _to_naive_utc(at)
     with cache_read_session(session) as cache:
         rows = intraday_repo.list_in_range(cache, end - max_age, end)
-    for row in reversed(rows):
-        if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
-            return SampleAt(_row_eur(row), row.market_value_usd, row.fx_eur_usd)
+        found = _sample_from_rows(rows)
+        if found is not None:
+            return found
+        day = session_date_of(end)
+        if not _is_trading_day(day):
+            return None
+        open_utc = _session_open_utc(day)
+        close_utc = _session_close_utc(day)
+        if not (open_utc <= end <= close_utc + max_age):
+            return None
+        session_rows = intraday_repo.list_in_range(cache, open_utc, end)
+        found = _sample_from_rows(session_rows)
+        if found is not None:
+            return found
+        lookahead_end = min(close_utc, end + timedelta(minutes=5))
+        if lookahead_end > end:
+            after_rows = [
+                r
+                for r in intraday_repo.list_in_range(cache, end, lookahead_end)
+                if r.captured_at > end
+            ]
+            return _sample_from_rows(after_rows, earliest=True)
     return None
 
 
@@ -2123,6 +2161,218 @@ def assess_graph_coverage(session: Session, *, now: datetime | None = None) -> G
     return GraphCoverage(day_below_target=day_below_target, week_days_below_target=tuple(week_gaps))
 
 
+@dataclass(frozen=True)
+class HoldingIntradayCoverage:
+    """Read-only verdict on per-holding 1W intraday bar coverage (``kind="holding"``)."""
+
+    missing_symbols: tuple[str, ...]
+    missing_days_by_symbol: dict[str, tuple[date, ...]]
+
+    @property
+    def has_gaps(self) -> bool:
+        return bool(self.missing_symbols)
+
+
+def _holding_intraday_gaps(
+    session: Session, *, now: datetime, only_symbol: str | None = None
+) -> tuple[dict[str, list[date]], dict[str, list[date]]]:
+    """Return ``(held_days_by_symbol, missing_days_by_symbol)`` over the 1W sessions."""
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
+
+    now_naive = _to_naive_utc(now)
+    sessions = recent_trading_sessions(now)
+    if not sessions:
+        return {}, {}
+    anchor = sessions[-1]
+    held_days_by_symbol: dict[str, list[date]] = {}
+    for day in sessions:
+        for p in _priced_intraday_positions(session, day):
+            sym = p.instrument.symbol
+            if only_symbol is not None and sym != only_symbol:
+                continue
+            days_for_sym = held_days_by_symbol.setdefault(sym, [])
+            if day not in days_for_sym:
+                days_for_sym.append(day)
+    if not held_days_by_symbol:
+        return {}, {}
+
+    week_start = _session_start_utc(sessions[0])
+    window_end = min(now_naive, _session_start_utc(anchor + timedelta(days=1)))
+    anchor_open_ended = now_naive <= _session_close_utc(anchor)
+    with cache_read_session(session) as cache:
+        stored = symbol_prices_repo.prices_in_range(
+            cache,
+            sorted(held_days_by_symbol),
+            week_start,
+            window_end,
+            kind=symbol_prices_repo.KIND_HOLDING,
+        )
+        anchor_has_portfolio = (
+            len(intraday_repo.list_in_range(cache, _session_start_utc(anchor), window_end)) >= 2
+            if anchor_open_ended
+            else False
+        )
+
+    missing_by_symbol: dict[str, list[date]] = {}
+    for sym, held_days in sorted(held_days_by_symbol.items()):
+        sym_prices = stored.get(sym, {})
+        for day in held_days:
+            is_finished = (day != anchor) or (now_naive > _session_close_utc(day))
+            if not is_finished and not anchor_has_portfolio:
+                continue
+            day_start = _session_start_utc(day)
+            day_end = _session_start_utc(day + timedelta(days=1))
+            symbol_times = sorted(t for t in sym_prices if day_start <= t < day_end)
+            if not _week_day_is_covered(day, anchor, now, symbol_times):
+                missing_by_symbol.setdefault(sym, []).append(day)
+    return held_days_by_symbol, missing_by_symbol
+
+
+def assess_holding_intraday_coverage(
+    session: Session, *, now: datetime | None = None
+) -> HoldingIntradayCoverage:
+    """Report which held stocks/ETFs lack 1W per-holding bars — read-only, no network."""
+    now = now or datetime.now(UTC)
+    _held, missing = _holding_intraday_gaps(session, now=now)
+    by_symbol = {sym: tuple(days) for sym, days in sorted(missing.items())}
+    return HoldingIntradayCoverage(
+        missing_symbols=tuple(by_symbol),
+        missing_days_by_symbol=by_symbol,
+    )
+
+
+def _resolve_intraday_symbol(session: Session, instrument_id: int) -> str:
+    """Validate ``instrument_id`` is an existing intraday-priced instrument and return its symbol."""
+    from investment_dashboard.db import config_read_session  # noqa: PLC0415
+    from investment_dashboard.errors import NotFoundError, ValidationError  # noqa: PLC0415
+    from investment_dashboard.repositories import (  # noqa: PLC0415
+        instrument_overrides_repo,
+        instruments_repo,
+    )
+    from investment_dashboard.services.instrument_enrichment_service import (  # noqa: PLC0415
+        effective_instrument,
+    )
+
+    instr = instruments_repo.get_instrument(session, instrument_id)
+    if instr is None:
+        raise NotFoundError(f"instrument {instrument_id} not found")
+    with config_read_session(session) as cfg:
+        overrides = instrument_overrides_repo.get_override_map(cfg, [instr.id])
+    eff = effective_instrument(instr, overrides.get(instr.id))
+    if (eff.asset_class or instr.asset_class) in _NAV_ASSET_CLASSES:
+        raise ValidationError("A NAV or cash instrument has no intraday price bars.")
+    return instr.symbol
+
+
+def _fetch_holding_bars(
+    session: Session,
+    *,
+    needed_by_symbol: dict[str, list[date]],
+    days_to_fetch: list[date],
+    interval: str,
+    today: date,
+    now_naive: datetime,
+    fetcher: object | None,
+) -> dict[str, dict[datetime, Decimal]]:
+    from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
+    from investment_dashboard.services import prices_service  # noqa: PLC0415
+
+    fetch = prices_service.via_provider_symbols(
+        session, fetcher or yfinance_client.fetch_intraday_closes_range
+    )
+    target_symbols = sorted(needed_by_symbol)
+    rows_to_store: dict[str, dict[datetime, Decimal]] = {}
+    for wanted_interval, run_days in _interval_runs(days_to_fetch, interval, today):
+        run_days_set = set(run_days)
+        run_symbols = sorted(
+            sym for sym in target_symbols if any(d in run_days_set for d in needed_by_symbol[sym])
+        )
+        run_bars, _used_width = _fetch_run_with_fallback(
+            fetch, run_symbols, run_days, wanted_interval
+        )
+        for sym in run_symbols:
+            sym_wanted = set(needed_by_symbol[sym]) & run_days_set
+            for t, price in (run_bars.get(sym) or {}).items():
+                if price is None or price <= 0:
+                    continue
+                t_naive = _to_naive_utc(t)
+                d = session_date_of(t_naive)
+                if d in sym_wanted and (
+                    _session_open_utc(d) <= t_naive <= min(_session_close_utc(d), now_naive)
+                ):
+                    rows_to_store.setdefault(sym, {})[t_naive] = price
+    return rows_to_store
+
+
+def backfill_holding_intraday_prices(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    instrument_id: int | None = None,
+    force: bool = False,
+    fetcher: object | None = None,
+    interval: str | None = None,
+) -> dict[str, Any]:
+    """Fetch and store missing 1W per-holding intraday bars (``kind="holding"``).
+
+    Writes only to ``intraday_symbol_prices`` (``KIND_HOLDING``); never deletes or
+    alters existing ``intraday_value`` portfolio samples.
+    """
+    from investment_dashboard.activity_log import activity  # noqa: PLC0415
+    from investment_dashboard.db import cache_write_session  # noqa: PLC0415
+
+    now = now or datetime.now(UTC)
+    now_naive = _to_naive_utc(now)
+    today = exchange_today(now)
+    sessions = recent_trading_sessions(now)
+    interval = interval or desired_reload_interval(session)
+    only_symbol = (
+        _resolve_intraday_symbol(session, instrument_id) if instrument_id is not None else None
+    )
+    if not sessions:
+        return {"symbols": 0, "days": 0, "rows_written": 0, "missing": []}
+
+    held_days_by_symbol, missing_by_symbol = _holding_intraday_gaps(
+        session, now=now, only_symbol=only_symbol
+    )
+    needed_by_symbol = held_days_by_symbol if force else missing_by_symbol
+    target_symbols = sorted(needed_by_symbol)
+    days_to_fetch = sorted({d for days in needed_by_symbol.values() for d in days})
+    if not target_symbols or not days_to_fetch:
+        return {"symbols": 0, "days": 0, "rows_written": 0, "missing": []}
+
+    rows_to_store = _fetch_holding_bars(
+        session,
+        needed_by_symbol=needed_by_symbol,
+        days_to_fetch=days_to_fetch,
+        interval=interval,
+        today=today,
+        now_naive=now_naive,
+        fetcher=fetcher,
+    )
+    written = 0
+    with cache_write_session(session) as cache:
+        if rows_to_store:
+            written = _store_holding_prices(cache, rows_to_store)
+        _prune_holding_prices(cache, week_window_start_utc(now))
+
+    missing_symbols = [sym for sym in target_symbols if not rows_to_store.get(sym)]
+    activity("market_data").info(
+        "holding intraday backfill: %d symbol(s), %d day(s), %d row(s) written%s",
+        len(target_symbols),
+        len(days_to_fetch),
+        written,
+        f"; missing {', '.join(missing_symbols)}" if missing_symbols else "",
+    )
+    return {
+        "symbols": len(target_symbols),
+        "days": len(days_to_fetch),
+        "rows_written": written,
+        "missing": missing_symbols,
+    }
+
+
 def backfill_graphs(*, now: datetime | None = None) -> GraphCoverage:
     """Top up the live "1 Day" + "1 Week" graphs to target — every auto-update.
 
@@ -2151,6 +2401,7 @@ def backfill_graphs(*, now: datetime | None = None) -> GraphCoverage:
         with ledger_session_scope() as session:
             reconstruct_last_session(session, now=now)
             week_series_with_fx(session, now=now, force=True)
+            backfill_holding_intraday_prices(session, now=now, force=False)
             coverage = assess_graph_coverage(session, now=now)
         if coverage.has_gaps:
             log.info(
@@ -2497,6 +2748,9 @@ def reload_week_graph(
         fx_fallback_fetcher=fx_fallback_fetcher,
         interval=interval,
     )
+    backfill_holding_intraday_prices(
+        session, now=now, force=False, fetcher=fetcher, interval=interval
+    )
     return len(samples)
 
 
@@ -2537,6 +2791,9 @@ def reload_graphs(
         fx_fetcher=fx_fetcher,
         fx_fallback_fetcher=fx_fallback_fetcher,
         interval=interval,
+    )
+    backfill_holding_intraday_prices(
+        session, now=now, force=False, fetcher=fetcher, interval=interval
     )
     try:
         today = exchange_today()
@@ -2715,6 +2972,60 @@ def _fund_plans(session: Session, *, session_date: date, strict: bool) -> _Plans
     return _Plans(plan, has_twin_data)
 
 
+def _effective_fund_plan(session: Session, plans: _Plans, *, strict: bool) -> list[_FundPlan]:
+    if not strict and not estimates_enabled(session):
+        # Estimates off (``twin.estimates_enabled``): a fund whose NAV has not posted
+        # stays flat at its previous NAV, exactly like the headline (official only).
+        return [
+            replace(
+                f,
+                twin_prev_close=None,
+                twin_close=None,
+                twin_at=lambda _at: None,
+                session_rows={},
+            )
+            if f.pending
+            else f
+            for f in plans.funds
+        ]
+    return plans.funds
+
+
+def fund_prices_at(session: Session, *, session_date: date, at: datetime) -> dict[int, Decimal]:
+    """Per-instrument native price of drifting NAV funds at ``at``.
+
+    Uses the same :func:`_fund_plans` + :func:`domain.late_data.fund_value_at`
+    model as :func:`late_nav_sleeve` (respecting :func:`estimates_enabled`) so
+    the Daily Brief's window movers match the 1D graph's start value. Read-only.
+    """
+    from investment_dashboard.domain.late_data import (  # noqa: PLC0415
+        fund_value_at,
+        session_fraction,
+    )
+
+    plans = _fund_plans(session, session_date=session_date, strict=False)
+    if plans is None:
+        return {}
+    plan = _effective_fund_plan(session, plans, strict=False)
+    at_naive = _to_naive_utc(at)
+    open_at = _session_open_utc(session_date)
+    close_at = _session_close_utc(session_date)
+    fraction = session_fraction(at_naive, open_at, close_at)
+    out: dict[int, Decimal] = {}
+    for f in plan:
+        price = fund_value_at(
+            prev_value=f.prev_nav,
+            official_value=f.official,
+            twin_at=f.twin_at(at_naive) or f.twin_prev_close,
+            twin_close=f.twin_close,
+            twin_prev_close=f.twin_prev_close,
+            fraction=fraction,
+        )
+        if price > 0:
+            out[f.position.instrument.id] = price
+    return out
+
+
 def late_nav_sleeve(
     session: Session,
     *,
@@ -2747,22 +3058,7 @@ def late_nav_sleeve(
         return LateNavSleeve(components={})
     if strict and not plans.has_twin_data:
         return LateNavSleeve(components={})
-    plan = plans.funds
-    if not strict and not estimates_enabled(session):
-        # Estimates off (``twin.estimates_enabled``): a fund whose NAV has not posted
-        # stays flat at its previous NAV, exactly like the headline (official only).
-        plan = [
-            replace(
-                f,
-                twin_prev_close=None,
-                twin_close=None,
-                twin_at=lambda _at: None,
-                session_rows={},
-            )
-            if f.pending
-            else f
-            for f in plan
-        ]
+    plan = _effective_fund_plan(session, plans, strict=strict)
     estimated = {f.position.instrument.symbol for f in plan if f.pending}
     open_at = _session_open_utc(session_date)
     close_at = _session_close_utc(session_date)

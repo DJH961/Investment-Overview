@@ -35,6 +35,7 @@ from investment_dashboard.services import (
     intraday_snapshots_service,
     metrics_service,
     positions_service,
+    symbol_prices_service,
 )
 
 ZERO = Decimal(0)
@@ -92,17 +93,122 @@ def start_close_date(start_at: datetime) -> date | None:
     return None
 
 
-def _legs(session: Session, start_date: date, end_date: date) -> list[HoldingLeg]:
-    """Holdings at the start close with their start and current native prices."""
+def _intraday_start_lookups(
+    session: Session,
+    positions: list[Any],
+    *,
+    start_date: date,
+    sample_session: date,
+    sample_at_ts: datetime,
+) -> tuple[dict[str, Decimal], dict[int, Decimal], dict[int, Decimal]]:
+    fallback_prices = (
+        {
+            p.instrument.id: p.current_price_native
+            for p in positions_service.compute_positions(session, as_of=start_date)
+            if p.current_price_native is not None and p.current_price_native > 0
+        }
+        if sample_session != start_date
+        else {}
+    )
+    intraday_symbols = sorted(
+        {
+            p.instrument.symbol
+            for p in positions
+            if p.shares > 0 and intraday_snapshots_service.is_intraday_priced(p)
+        }
+    )
+    holding_prices: dict[str, Decimal] = {}
+    for row in symbol_prices_service.prices(
+        session,
+        intraday_symbols,
+        intraday_snapshots_service._session_start_utc(sample_session),
+        sample_at_ts,
+        kind=symbol_prices_service.KIND_HOLDING,
+    ):
+        if row.price_native > 0:
+            holding_prices[row.symbol] = row.price_native
+    fund_prices = intraday_snapshots_service.fund_prices_at(
+        session, session_date=sample_session, at=sample_at_ts
+    )
+    return holding_prices, fund_prices, fallback_prices
+
+
+def _intraday_leg_start_price(
+    p: Any,
+    *,
+    same_session: bool,
+    holding_prices: dict[str, Decimal],
+    fund_prices: dict[int, Decimal],
+    fallback_prices: dict[int, Decimal],
+) -> Decimal | None:
+    price: Decimal | None = None
+    if intraday_snapshots_service.is_intraday_priced(p):
+        price = holding_prices.get(p.instrument.symbol)
+    elif intraday_snapshots_service.is_drifting_nav(p):
+        price = fund_prices.get(p.instrument.id)
+    if price is not None and price > 0:
+        return price
+    return p.current_price_native if same_session else fallback_prices.get(p.instrument.id)
+
+
+def _legs(
+    session: Session,
+    start_date: date,
+    end_date: date,
+    *,
+    now: datetime,
+    basis: Literal["intraday", "close"],
+    sample_session: date | None = None,
+    sample_at_ts: datetime | None = None,
+    start_positions: list[Any] | None = None,
+) -> list[HoldingLeg]:
+    """Holdings at the window's start with their start and current native prices."""
     end_prices: dict[int, Decimal] = {}
     for p in positions_service.compute_positions(session, as_of=end_date):
         if p.current_price_native is not None and p.current_price_native > 0:
             end_prices.setdefault(p.instrument.id, p.current_price_native)
+    for iid, est in intraday_snapshots_service.twin_estimates(session, now=now).items():
+        if est.est_px > 0:
+            end_prices[iid] = est.est_px
+
+    intraday = basis == "intraday" and sample_session is not None and sample_at_ts is not None
+    if intraday:
+        assert sample_session is not None
+        assert sample_at_ts is not None
+        positions = (
+            start_positions
+            if start_positions is not None
+            else positions_service.compute_positions(session, as_of=sample_session)
+        )
+        holding_prices, fund_prices, fallback_prices = _intraday_start_lookups(
+            session,
+            positions,
+            start_date=start_date,
+            sample_session=sample_session,
+            sample_at_ts=sample_at_ts,
+        )
+    else:
+        positions = positions_service.compute_positions(session, as_of=start_date)
+        holding_prices, fund_prices, fallback_prices = {}, {}, {}
+
+    same_session = sample_session == start_date
     by_instrument: dict[int, HoldingLeg] = {}
-    for p in positions_service.compute_positions(session, as_of=start_date):
-        price = p.current_price_native
+    for p in positions:
+        if p.shares <= 0:
+            continue
+        price = (
+            _intraday_leg_start_price(
+                p,
+                same_session=same_session,
+                holding_prices=holding_prices,
+                fund_prices=fund_prices,
+                fallback_prices=fallback_prices,
+            )
+            if intraday
+            else p.current_price_native
+        )
         end = end_prices.get(p.instrument.id)
-        if price is None or price <= 0 or end is None or p.shares <= 0:
+        if price is None or price <= 0 or end is None:
             continue
         held = by_instrument.get(p.instrument.id)
         shares = p.shares + (held.shares if held is not None else ZERO)
@@ -125,35 +231,62 @@ def collect(session: Session, *, start_at: datetime, now: datetime) -> WindowInp
     if start_date is None or now <= start_at:
         return None
     end_date = market_hours.exchange_today(now)
-    book = metrics_service.book_holdings(session, start_date)
-    if not book:
-        return None
     sample = intraday_snapshots_service.sample_at(session, start_at)
     basis: Literal["intraday", "close"] = "close"
+    sample_session: date | None = None
+    sample_at_ts: datetime | None = None
+    start_positions: list[Any] | None = None
     if sample is not None and sample.market_usd is not None:
-        positions = positions_service.compute_positions(session, as_of=start_date)
-        base = metrics_service.book_holdings(
+        sample_at_ts = sample.captured_at or start_at.replace(tzinfo=None)
+        sample_session = intraday_snapshots_service.session_date_of(sample_at_ts)
+        start_positions = positions_service.compute_positions(session, as_of=sample_session)
+        book = metrics_service.book_holdings(session, sample_session, positions=start_positions)
+        if not book:
+            return None
+        sleeve = intraday_snapshots_service.late_nav_sleeve(
             session,
-            start_date,
-            positions=[
-                p for p in positions if not intraday_snapshots_service.is_intraday_priced(p)
-            ],
+            session_date=sample_session,
+            times=[sample_at_ts],
+            rate=sample.fx_eur_usd,
+            sample_fx={sample_at_ts: sample.fx_eur_usd},
+            strict=False,
         )
-        base_eur, base_usd = value_at_rate(base, sample.fx_eur_usd)
-        start_eur = sample.market_eur + base_eur
-        start_usd = sample.market_usd + base_usd
+        if sample_at_ts in sleeve.components and sample_at_ts in sleeve.usd:
+            nav_eur = sleeve.components[sample_at_ts][0]
+            nav_usd = sleeve.usd[sample_at_ts]
+            flat_positions = [
+                p
+                for p in start_positions
+                if not intraday_snapshots_service.is_intraday_priced(p)
+                and not intraday_snapshots_service.is_drifting_nav(p)
+            ]
+        else:
+            nav_eur = ZERO
+            nav_usd = ZERO
+            flat_positions = [
+                p for p in start_positions if not intraday_snapshots_service.is_intraday_priced(p)
+            ]
+        flat_book = metrics_service.book_holdings(session, sample_session, positions=flat_positions)
+        base_eur, base_usd = value_at_rate(flat_book, sample.fx_eur_usd)
+        start_eur = sample.market_eur + nav_eur + base_eur
+        start_usd = sample.market_usd + nav_usd + base_usd
         rate_then = sample.fx_eur_usd
         basis = "intraday"
+        flows_after_date = sample_session
     else:
+        book = metrics_service.book_holdings(session, start_date)
+        if not book:
+            return None
         settled = fx_service.get_settled_rate(session, start_date)
         if settled is None or settled <= 0:
             return None
         start_eur, start_usd = value_at_rate(book, settled)
         rate_then = settled
+        flows_after_date = start_date
     flows_eur = flows_usd = ZERO
-    if end_date > start_date:
+    if end_date > flows_after_date:
         flows_eur, flows_usd = metrics_service.session_external_flows(
-            session, start_date, end_date, eur_to_usd=fx_service.get_rates(session)
+            session, flows_after_date, end_date, eur_to_usd=fx_service.get_rates(session)
         )
     return WindowInputs(
         start_at=start_at,
@@ -166,7 +299,16 @@ def collect(session: Session, *, start_at: datetime, now: datetime) -> WindowInp
         flows_usd=flows_usd,
         rate_then=rate_then,
         book=book,
-        legs=_legs(session, start_date, max(end_date, start_date)),
+        legs=_legs(
+            session,
+            start_date,
+            max(end_date, start_date),
+            now=now,
+            basis=basis,
+            sample_session=sample_session,
+            sample_at_ts=sample_at_ts,
+            start_positions=start_positions,
+        ),
     )
 
 
