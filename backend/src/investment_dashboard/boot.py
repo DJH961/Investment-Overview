@@ -835,6 +835,34 @@ def _refresh_fx() -> bool:
     return True
 
 
+def _backfill_fx_history() -> bool:
+    """Backfill the long EUR/USD history (since 1999) for the Currency page chart.
+
+    A separate floor from :func:`_earliest_needed_date`: the ledger never needs
+    these years, only the chart, MA200 and "dollar cheaper than today" percentiles
+    do. Idempotent and cheap once done (it skips stored years without a request).
+    """
+    try:
+        from investment_dashboard.db import cache_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import fx_service  # noqa: PLC0415
+
+        with cache_session_scope() as session:
+            fx_service.backfill_long_history(session)
+    except Exception:
+        log.warning("FX history backfill failed; continuing", exc_info=True)
+        return False
+    return True
+
+
+def start_fx_history_backfill() -> None:
+    """Run :func:`_backfill_fx_history` on a daemon thread (never blocks startup)."""
+    import threading  # noqa: PLC0415
+
+    threading.Thread(
+        target=_backfill_fx_history, name="inv-dashboard-fx-history", daemon=True
+    ).start()
+
+
 def _refresh_prices() -> bool:
     try:
         from investment_dashboard.db import (  # noqa: PLC0415
@@ -1175,6 +1203,8 @@ def run_server_boot_sequence() -> None:
         fx_service.seed_live_spot_from_cache()
     except Exception:
         log.debug("Could not seed live FX spot on server boot", exc_info=True)
+    # Long ECB history for the Currency page chart (v7.2): background, best effort.
+    start_fx_history_backfill()
 
 
 def run_deferred_network_refresh(*, show_progress: bool = True) -> None:

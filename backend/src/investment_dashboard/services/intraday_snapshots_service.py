@@ -856,6 +856,22 @@ def day_series_with_fx(
     return [(r.captured_at, _row_eur(r), r.fx_eur_usd) for r in rows]
 
 
+def fx_samples_between(
+    session: Session, start: datetime, end: datetime
+) -> list[tuple[datetime, Decimal]]:
+    """Stored ``[(captured_at_utc, fx_eur_usd)]`` in ``[start, end]`` (naive UTC), oldest first.
+
+    Cache read only (no network); samples without a positive rate are skipped.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, start, end)
+    return [
+        (r.captured_at, r.fx_eur_usd) for r in rows if r.fx_eur_usd is not None and r.fx_eur_usd > 0
+    ]
+
+
 def session_close_fx(session: Session, *, now: datetime | None = None) -> Decimal | None:
     """The EUR→USD rate (USD per 1 EUR) struck at the most recent session's close.
 
