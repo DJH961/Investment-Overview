@@ -32,21 +32,43 @@ export function tabTitle(
 export const BASE_TITLE = "Investment Overview";
 
 /**
- * Keeps `document.title` current from the cached overview; back to the neutral title on
- * unmount (sign-out). The neutral title is a constant on purpose: capturing `document.title`
- * at mount captured the figures whenever the shell remounted, and sign-out then put them back.
+ * Keeps `document.title` current from the cached overview while the app is visible and focused.
+ * When the user switches away, the neutral title protects the portfolio figures from showing
+ * in the browser's background tab. The neutral title is a constant on purpose: capturing
+ * `document.title` at mount could capture figures whenever the shell remounted.
  */
 export function useTabTitle(currency: ReportingCurrency): void {
   const { hide } = useHideAmounts();
   // Reads the shared cache only (no request of its own); updates when a tick patches it.
   const kpis = useQuery({ ...overviewQuery(currency), enabled: false }).data?.kpis;
-  useEffect(
-    () => () => {
-      document.title = BASE_TITLE;
-    },
-    [],
-  );
   useEffect(() => {
-    document.title = tabTitle(kpis, currency, hide, BASE_TITLE);
+    // `hasFocus` catches switching to another window as well as another browser tab. Keep a
+    // local focus bit too: blur must hide the figures immediately, even before the browser's
+    // focus state has caught up with the event.
+    let focused = document.hasFocus();
+    const syncTitle = () => {
+      const privateView = document.visibilityState === "visible" && focused && document.hasFocus();
+      document.title = privateView ? tabTitle(kpis, currency, hide, BASE_TITLE) : BASE_TITLE;
+    };
+    const onFocus = () => {
+      focused = true;
+      syncTitle();
+    };
+    const onBlur = () => {
+      focused = false;
+      syncTitle();
+    };
+
+    document.addEventListener("visibilitychange", syncTitle);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    syncTitle();
+
+    return () => {
+      document.removeEventListener("visibilitychange", syncTitle);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+      document.title = BASE_TITLE;
+    };
   }, [kpis, currency, hide]);
 }

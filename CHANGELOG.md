@@ -17,6 +17,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.1.2] — 2026-11-21
+
+### Fixed
+- Background refreshes now use the spinning refresh icon without visible status text, so the first-login update cannot overlap the instrument search.
+- The browser tab title hides portfolio figures whenever the app loses focus or becomes hidden, and restores them only while the app is visible and focused.
+
 ## [7.1.1] — 2026-11-21
 
 ### Added

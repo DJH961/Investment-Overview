@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setHideAmounts } from "./format";
 import { tabTitle, useTabTitle } from "./useTabTitle";
 import type { OverviewDto } from "./queries/portfolio";
@@ -9,7 +9,16 @@ import type { OverviewDto } from "./queries/portfolio";
 const kpis = (extra: Record<string, unknown> = {}) =>
   ({ total_value: "123400", daily_growth_pct: "0.0042", ...extra }) as unknown as OverviewDto["kpis"];
 
-afterEach(() => setHideAmounts(false));
+beforeEach(() => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(document, "visibilityState");
+  setHideAmounts(false);
+});
 
 describe("tabTitle", () => {
   it("official book: compact total, arrow and absolute percent", () => {
@@ -42,6 +51,38 @@ describe("useTabTitle", () => {
     unmount();
     expect(document.title).toBe("Investment Overview");
   });
+
+  it("hides portfolio figures when the page is hidden or loses focus, then restores them", () => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.title = "Investment Overview";
+    const amountTitle = tabTitle(kpis(), "EUR", false, "Investment Overview");
+    const qc = new QueryClient();
+    const one = { kpis: kpis(), secondary_ccy: "USD" };
+    qc.setQueryData(["overview", "both"], { EUR: one, USD: one });
+    function Probe() {
+      useTabTitle("EUR");
+      return null;
+    }
+    const wrap = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+    const { unmount } = render(<Probe />, { wrapper: wrap });
+    expect(document.title).toBe("Investment Overview");
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(document.title).toBe(amountTitle);
+
+    window.dispatchEvent(new Event("blur"));
+    expect(document.title).toBe("Investment Overview");
+    window.dispatchEvent(new Event("focus"));
+    expect(document.title).toBe(amountTitle);
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(document.title).toBe("Investment Overview");
+    unmount();
+    expect(document.title).toBe("Investment Overview");
+  });
+
   it("a remount never captures figures as the neutral title (sign-out leak)", () => {
     document.title = "€999k ▲1.00%"; // left over from a previous shell mount
     const qc = new QueryClient();
