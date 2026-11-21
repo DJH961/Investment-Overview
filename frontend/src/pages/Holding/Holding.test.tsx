@@ -310,7 +310,7 @@ describe("Holding page", () => {
       state.phone = true;
       renderAt("/holdings/1/tranches");
       expect(screen.queryByRole("table")).toBeNull();
-      expect(screen.getByText("Long-term in 37 d")).toBeInTheDocument();
+      expect(screen.getByText("Long in 37 d")).toBeInTheDocument();
     });
   });
 

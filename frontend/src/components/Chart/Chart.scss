@@ -1,4 +1,5 @@
 @use "sass:map";
+@use "../../styles/mixins" as m;
 
 .chart {
   display: flex;
@@ -528,5 +529,16 @@
 
   &__readout-extra {
     color: var(--color-muted);
+  }
+
+  // Phone: a control at the legend's end (the holding page's Value | Price) stays on its row.
+  @include m.phone {
+    &__legend {
+      gap: var(--space-1);
+    }
+
+    &__legend-extra {
+      padding-left: var(--space-1);
+    }
   }
 }

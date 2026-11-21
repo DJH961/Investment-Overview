@@ -334,7 +334,11 @@ function twin(row: Row, twinRow: Row | undefined, range: string): Obj | { __stat
       twin_points: live.map((p) => ({ t: p.t, price_native: s(p.v) })),
       estimate_points:
         range === "1d" ? live.filter((p) => p.t.startsWith(ANCHOR)).map((p) => ({ t: p.t, price_native: s((prevNav * p.v) / prevTwin) })) : [],
-      nav_points: navDays.map((n) => ({ t: `${iso(n)}T${SESSION_CLOSE}${UTC}`, nav_native: s(closeOn(fSeed, fLast, n, 0.0004)) })),
+      // Each session's NAV tracks the twin's close, a few basis points off (the tracking gap).
+      nav_points: navDays.map((n, i) => ({
+        t: `${iso(n)}T${SESSION_CLOSE}${UTC}`,
+        nav_native: s(((closeOn(tSeed, tLast, n) * prevNav) / prevTwin) * (1 + [0.0004, -0.0003, 0.0007, 0.0002, -0.0005][i % 5])),
+      })),
       rebased: null,
     };
   }

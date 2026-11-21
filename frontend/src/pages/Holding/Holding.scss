@@ -124,8 +124,13 @@
     min-width: 0;
     max-width: 16rem;
 
+    @include m.phone {
+      max-width: 7rem;
+    }
+
     &--fixed {
       flex-shrink: 0;
+      max-width: none;
     }
   }
 
