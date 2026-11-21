@@ -3,12 +3,12 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[] }));
+const state = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[], phone: false }));
 
 const base = {
   name: "World ETF",
   category: "Equity",
-  asset_class: "equity",
+  asset_class: "etf",
   account: "A",
   native_currency: "EUR",
   shares: "10",
@@ -19,10 +19,23 @@ const base = {
   value: "1000",
   price_native: "100",
   avg_price_native: "80",
+  capital_gain: "200",
+  cost_basis: "800",
+  total_return: "212.5",
+  dividends: "12.5",
+  xirr: "0.08",
   today_pct: "0.01",
   today_move: "10",
   value_warning: false,
   price_data_warning: false,
+};
+
+const twin = {
+  symbol: "VOO",
+  tier: "manual",
+  pending: true,
+  at_close: false,
+  est_today_pct: "0.0042",
 };
 
 const holdings = {
@@ -34,10 +47,12 @@ const holdings = {
     { ...base, instrument_id: 1, symbol: "VWCE" },
     { ...base, instrument_id: 2, symbol: "VWRL", name: "Other ETF" },
     { ...base, instrument_id: 3, symbol: "VT", name: "Third ETF" },
+    { ...base, instrument_id: 4, symbol: "FXAIX", name: "Index Fund", price_type: "nav", asset_class: "mutual_fund", twin },
+    { ...base, instrument_id: 5, symbol: "FNOTW", name: "Fund Without Twin", price_type: "nav", asset_class: "mutual_fund" },
   ],
 };
 
-const tx = (id: number, symbol: string, kind = "buy") => ({
+const tx = (id: number, symbol: string, kind = "buy", over: Record<string, unknown> = {}) => ({
   id,
   symbol,
   kind,
@@ -47,20 +62,122 @@ const tx = (id: number, symbol: string, kind = "buy") => ({
   quantity: "2",
   price_native: "50",
   net_native: "-100",
+  ...over,
 });
 
 const dividends = {
+  as_of: "2026-10-30",
   rows: [
     { id: 1, symbol: "VWCE", kind: "cash", account: "A", currency: "EUR", date: "2026-06-01", amount: "12.5" },
     { id: 2, symbol: "VWRL", kind: "cash", account: "A", currency: "EUR", date: "2026-06-02", amount: "99" },
   ],
-  by_holding: [{ symbol: "VWCE", count: 1, lifetime: "12.5", ttm: "12.5", last_date: "2026-06-01", name: "World ETF" }],
+  by_holding: [
+    {
+      symbol: "VWCE",
+      count: 1,
+      lifetime: "12.5",
+      ttm: "12.5",
+      last_12m: "12.5",
+      yield_ttm: "0.0125",
+      by_year: [{ year: 2026, amount: "12.5" }],
+      last_date: "2026-06-01",
+      name: "World ETF",
+    },
+  ],
 };
 
+const lot = (id: number, status: string, days: number | null, over: Record<string, unknown> = {}) => ({
+  id,
+  account_id: 1,
+  account_name: "A",
+  acquired_on: "2025-01-10",
+  source: "buy",
+  quantity_bought: "4",
+  quantity_left: "4",
+  cost_per_share_native: "70",
+  cost_native: "280",
+  age_days: 400,
+  long_term_on: "2026-01-11",
+  days_to_long_term: days,
+  status,
+  gain_native: "120",
+  gain_pct: "0.43",
+  ...over,
+});
+
+const tranches = {
+  instrument_id: 1,
+  symbol: "VWCE",
+  currency: "EUR",
+  method: "fifo_view",
+  as_of: "2026-10-30",
+  price_native: "100",
+  rows: [
+    lot(1, "long", null),
+    lot(2, "soon", 37),
+    lot(3, "short", 200),
+    lot(4, "long", null, { source: "reinvest", quantity_bought: "0.5", quantity_left: "0.5" }),
+    lot(5, "short", 120, { source: "reinvest", quantity_bought: "0.5", quantity_left: "0.5" }),
+  ],
+  groups: [
+    {
+      account_id: 1,
+      source: "reinvest",
+      count: 2,
+      quantity_left: "1",
+      cost_native: "70",
+      avg_cost_per_share_native: "70",
+      gain_native: "30",
+      gain_pct: "0.43",
+      long_count: 1,
+      short_count: 1,
+      row_ids: [4, 5],
+    },
+  ],
+  totals: {
+    quantity_left: "13",
+    position_quantity: "13",
+    matches_position: true,
+    long_quantity: "4.5",
+    short_quantity: "8.5",
+    fully_sold_count: 2,
+  },
+};
+
+vi.mock("../../lib/useMediaQuery", async (orig) => ({
+  ...(await orig<typeof import("../../lib/useMediaQuery")>()),
+  useMediaQuery: () => state.phone,
+  useIsPhone: () => state.phone,
+}));
 vi.mock("../../lib/queries/holdings", async (orig) => ({
   ...(await orig<typeof import("../../lib/queries/holdings")>()),
-  useHoldingHistory: () => ({ data: { instrument_id: 1, symbol: "VWCE", range: "1y", ccy: "EUR", points: [{ t: "2026-10-29", v: "95" }, { t: "2026-10-30", v: "100" }] }, isPending: false, isError: false }),
   useHoldings: () => ({ data: holdings, isPending: false, isError: false, refetch: vi.fn() }),
+}));
+vi.mock("../../lib/queries/holding-detail", async (orig) => ({
+  ...(await orig<typeof import("../../lib/queries/holding-detail")>()),
+  useHoldingHistoryV2: (id: number, range: string, mode: string) => ({
+    data: {
+      instrument_id: id,
+      symbol: "VWCE",
+      ccy: "EUR",
+      range,
+      mode,
+      x_mode: "date",
+      sessions: [],
+      points: [
+        { t: "2026-10-29", v: "95", value_eur: "950", value_usd: "1020", invested_eur: "800", invested_usd: "860" },
+        { t: "2026-10-30", v: "100", value_eur: "1000", value_usd: "1080", invested_eur: "800", invested_usd: "860" },
+      ],
+      trades: [],
+      avg_price_native: "80",
+      period: { change_eur: "50", change_usd: "60", return_eur: "0.05", return_usd: "0.06", bought_eur: "0", bought_usd: "0", dividends_eur: "0", dividends_usd: "0" },
+    },
+    isPending: false,
+    isFetching: false,
+    isError: false,
+  }),
+  useHoldingTranches: () => ({ data: tranches, isPending: false, isError: false, refetch: vi.fn() }),
+  useHoldingTwin: () => ({ data: undefined, isPending: true, isFetching: true, isError: false }),
 }));
 vi.mock("../../lib/queries/activity", () => ({
   useDividends: () => ({ data: dividends, isPending: false, isError: false, refetch: vi.fn() }),
@@ -96,34 +213,74 @@ function renderAt(path: string) {
   );
 }
 
+const rangeNames = () => screen.getAllByRole("radio").map((r) => r.textContent);
+
 beforeEach(() => {
   localStorage.clear();
-  state.rows = [tx(1, "VWCE"), tx(2, "VWCE", "sell"), tx(3, "VWRL")];
+  state.phone = false;
+  state.rows = [tx(1, "VWCE"), tx(2, "VWCE", "sell", { net_native: "60", quantity: "-2", price_native: "30" }), tx(3, "VWRL")];
 });
 
 describe("Holding page", () => {
-  it("opens on Details", () => {
+  it("opens on Performance: symbol and name on one line, tiles, chart and key facts", () => {
     renderAt("/holdings/1");
-    expect(screen.getByRole("heading", { name: "VWCE" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByLabelText("VWCE price against cost basis")).toBeInTheDocument();
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1).toHaveTextContent("VWCE");
+    expect(h1).toHaveTextContent("World ETF");
+    expect(h1).toHaveAttribute("title", "VWCE · World ETF");
+    expect(screen.getByRole("tab", { name: "Performance" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Unrealised gain")).toBeInTheDocument();
+    expect(screen.getByText("XIRR")).toBeInTheDocument();
+    expect(screen.getByLabelText("VWCE value against money invested")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Key facts" })).toBeInTheDocument();
+    expect(screen.getByText(/This range:/)).toBeInTheDocument();
+    // Four tabs for a stock: no Twin.
+    expect(screen.getAllByRole("tab").map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual([
+      "Performance",
+      "Tranches",
+      "Transactions",
+      "Dividends",
+    ]);
   });
 
-  it("selects the tab named in the URL", () => {
+  it("redirects the old Details tab to Performance", () => {
+    renderAt("/holdings/1/details");
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/holdings\/1$/);
+    expect(screen.getByRole("tab", { name: "Performance" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("redirects an unknown tab to Performance", () => {
+    renderAt("/holdings/1/nonsense");
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/holdings\/1$/);
+  });
+
+  it("selects the tab named in the URL and switching a tab changes the URL", () => {
     renderAt("/holdings/1/dividends");
     expect(screen.getByRole("tab", { name: /Dividends/ })).toHaveAttribute("aria-selected", "true");
-  });
-
-  it("switching a tab changes the URL", () => {
-    renderAt("/holdings/1");
     fireEvent.mouseDown(screen.getByRole("tab", { name: /Transactions/ }));
     expect(screen.getByTestId("where")).toHaveTextContent("/holdings/1/transactions");
   });
 
-  it("redirects an unknown tab to Details", () => {
-    renderAt("/holdings/1/nonsense");
-    expect(screen.getByTestId("where")).toHaveTextContent(/^\/holdings\/1$/);
-    expect(screen.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+  it("a stock offers every range, 1D and 1W included", () => {
+    renderAt("/holdings/1");
+    expect(rangeNames()).toEqual(expect.arrayContaining(["1D", "1W", "1M", "All"]));
+  });
+
+  it("a NAV fund hides 1D / 1W and gets the Twin tab after Performance", () => {
+    renderAt("/holdings/4");
+    const ranges = rangeNames();
+    expect(ranges).not.toContain("1D");
+    expect(ranges).not.toContain("1W");
+    expect(ranges).toContain("1M");
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)[1]).toBe("Twin");
+  });
+
+  it("a NAV fund without a twin has no Twin tab and says it has no intraday price", () => {
+    renderAt("/holdings/5");
+    expect(screen.queryByRole("tab", { name: "Twin" })).toBeNull();
+    expect(screen.getByText(/No intraday price for this fund/)).toBeInTheDocument();
+    renderAt("/holdings/5/twin");
+    expect(screen.getAllByTestId("where").at(-1)).toHaveTextContent(/^\/holdings\/5$/);
   });
 
   it("says so for an unknown holding", () => {
@@ -132,29 +289,84 @@ describe("Holding page", () => {
     expect(screen.getByRole("link", { name: "Back to Holdings" })).toHaveAttribute("href", "/holdings");
   });
 
-  it("lists only this holding's transactions", async () => {
-    renderAt("/holdings/1/transactions");
-    const table = await screen.findByRole("table", { name: "Transactions for VWCE" });
-    expect(within(table).getAllByRole("row")).toHaveLength(3); // header + 2
-    expect(within(table).getByText("Sell")).toBeInTheDocument();
+  describe("Tranches", () => {
+    it("badges carry a word for every status, reinvests fold into one group row", () => {
+      renderAt("/holdings/1/tranches");
+      const table = screen.getByRole("table", { name: "Tranches of VWCE" });
+      expect(within(table).getAllByText("Long-term")).toHaveLength(1);
+      expect(within(table).getByText("Long-term in 37 d")).toBeInTheDocument();
+      expect(within(table).getByText("Short-term · 200 d left")).toBeInTheDocument();
+      // The two reinvests sit behind one group row until opened.
+      const toggle = within(table).getByRole("button", { name: /2 reinvested/ });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(within(table).queryByText("Short-term · 120 d left")).toBeNull();
+      fireEvent.click(toggle);
+      expect(within(table).getByText("Short-term · 120 d left")).toBeInTheDocument();
+      expect(screen.getByText(/= position/)).toBeInTheDocument();
+      expect(screen.getByText("2 fully sold")).toBeInTheDocument();
+    });
+
+    it("phone: one two-line card per tranche", () => {
+      state.phone = true;
+      renderAt("/holdings/1/tranches");
+      expect(screen.queryByRole("table")).toBeNull();
+      expect(screen.getByText("Long-term in 37 d")).toBeInTheDocument();
+    });
   });
 
-  it("says when there are no transactions", async () => {
-    state.rows = [tx(3, "VWRL")];
-    renderAt("/holdings/1/transactions");
-    expect(await screen.findByText("No transactions for VWCE yet.")).toBeInTheDocument();
+  describe("Transactions", () => {
+    it("desktop: only this holding's rows, grouped by year with the net bought", async () => {
+      renderAt("/holdings/1/transactions");
+      const table = await screen.findByRole("table", { name: "Transactions for VWCE" });
+      expect(within(table).getByText("2026")).toBeInTheDocument();
+      expect(within(table).getByText(/net bought/)).toHaveTextContent("net bought €40.00");
+      expect(within(table).getByText("Sell")).toBeInTheDocument();
+      expect(within(table).getAllByRole("button", { name: /^Edit / })).toHaveLength(2);
+    });
+
+    it("phone: every row two lines, kind and amount, then date · account and shares @ price", async () => {
+      state.phone = true;
+      renderAt("/holdings/1/transactions");
+      const list = await screen.findByRole("list", { name: "Transactions for VWCE" });
+      const rows = within(list).getAllByRole("button");
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toHaveTextContent("Buy");
+      expect(rows[0]).toHaveTextContent("2 sh @ €50.00");
+      expect(rows[0]).toHaveTextContent(/A$|· A/);
+      expect(within(list).getByText(/net bought/)).toBeInTheDocument();
+    });
+
+    it("filter chips count each kind and filter the list", async () => {
+      renderAt("/holdings/1/transactions");
+      await screen.findByRole("table", { name: "Transactions for VWCE" });
+      expect(screen.getByRole("button", { name: "All 2" })).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(screen.getByRole("button", { name: "Sells 1" }));
+      expect(screen.getAllByRole("button", { name: /^Edit / })).toHaveLength(1);
+      fireEvent.click(screen.getByRole("button", { name: "Dividends 0" }));
+      expect(screen.getByText("No dividends for VWCE.")).toBeInTheDocument();
+    });
+
+    it("says when there are no transactions", async () => {
+      state.rows = [tx(3, "VWRL")];
+      renderAt("/holdings/1/transactions");
+      expect(await screen.findByText("No transactions for VWCE yet.")).toBeInTheDocument();
+    });
   });
 
-  it("lists only this holding's dividends with its lifetime total", () => {
-    renderAt("/holdings/1/dividends");
-    const table = screen.getByRole("table", { name: "Dividends from VWCE" });
-    expect(within(table).getAllByRole("row")).toHaveLength(2); // header + 1
-    expect(screen.getByText(/Lifetime from VWCE/)).toHaveTextContent("12.50");
-    expect(screen.queryByText(/99\.00/)).toBeNull();
-  });
+  describe("Dividends", () => {
+    it("tiles, a bar per year and only this holding's payments", () => {
+      renderAt("/holdings/1/dividends");
+      expect(screen.getByText("Lifetime")).toBeInTheDocument();
+      expect(screen.getByText("Yield (TTM)")).toBeInTheDocument();
+      expect(screen.getByLabelText("Dividends per year")).toHaveTextContent("ytd");
+      const list = screen.getByRole("list", { name: "Dividends from VWCE" });
+      expect(within(list).getAllByText("Dividend")).toHaveLength(1);
+      expect(screen.queryByText(/99\.00/)).toBeNull();
+    });
 
-  it("says when a holding paid no dividends", () => {
-    renderAt("/holdings/3/dividends");
-    expect(screen.getByText("No dividends from VT yet.")).toBeInTheDocument();
+    it("says when a holding paid no dividends", () => {
+      renderAt("/holdings/3/dividends");
+      expect(screen.getByText("No dividends from VT yet.")).toBeInTheDocument();
+    });
   });
 });
