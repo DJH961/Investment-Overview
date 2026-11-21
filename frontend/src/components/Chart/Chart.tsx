@@ -208,6 +208,26 @@ const TWO_AXIS_WIDTH = 720;
 /** Right gutter kept on a two-currency chart whether or not the right labels are drawn, so the plot never moves. */
 const RIGHT_GUTTER = 64;
 
+/**
+ * A clock tick pushed inward at an edge can run into its neighbour ("19:00 20:00"): the
+ * edge label then gives way, the neighbour already says the hour.
+ */
+export function crowdsPrevious(
+  ticks: number[],
+  i: number,
+  x: (t: number) => number,
+  w: (t: number) => number,
+  left: number,
+  right: number,
+): boolean {
+  if (i === 0 || i !== ticks.length - 1) return false;
+  const xi = x(ticks[i]);
+  const wi = w(ticks[i]);
+  const start = timeAnchor(xi, wi, left, right) === "end" ? xi - wi : xi - wi / 2;
+  const prev = ticks[i - 1];
+  return start < x(prev) + w(prev) / 2 + 8;
+}
+
 /** A clock tick near a plot edge is anchored inward, so its label never runs off the card. */
 export function timeAnchor(x: number, w: number, left: number, right: number): "start" | "middle" | "end" {
   if (x + w / 2 > right) return "end";
@@ -647,7 +667,7 @@ export function Chart({
             y1={PAD.top + innerH}
             y2={PAD.top + innerH}
           />
-          {xTicks.map((t, i) => (
+          {xTicks.map((t, i) => xMode === "time" && crowdsPrevious(xTicks, i, scales.x, (v) => labelWidth(timeFormat(v)), PAD.left, width - PAD.right) ? null : (
             <text
               key={t}
               className="chart__axis-label chart__axis-label--x"
