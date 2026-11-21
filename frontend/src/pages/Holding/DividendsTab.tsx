@@ -104,6 +104,7 @@ export function DividendsTab({
   return (
     <div className="holding-page__panel">
       <StatStrip
+        phoneColumns={3}
         label={`Dividends from ${row.symbol}`}
         items={[
           { key: "life", label: "Lifetime", value: <Money amount={toNum(totals?.lifetime ?? null)} currency={ccy} /> },

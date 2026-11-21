@@ -52,7 +52,8 @@ export function HoldingChips({ row }: { row: HoldingRowDto }) {
           {type}
         </Chip>
       )}
-      <HoldingPills row={row} live={row.market_open && !row.daily_is_stale} />
+      {/* No "live" here: the top bar already says so, and the chips stay on one line. */}
+      <HoldingPills row={row} />
     </>
   );
 }
