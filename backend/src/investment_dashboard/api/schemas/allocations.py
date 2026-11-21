@@ -104,6 +104,11 @@ class AllocationsResponse(ApiModel):
     drift_by_category: list[CategoryDriftRow] = Field(default_factory=list)
     current_by_category: list[Bucket]
     current_by_asset_class: list[Bucket]
+    #: v7.2: share by trading currency (the instrument's quote currency, ``label`` =
+    #: ISO code). A world fund priced in dollars is not purely dollar exposure.
+    current_by_currency: list[Bucket] = Field(default_factory=list)
+    #: The plain-language caveat to print with ``current_by_currency``.
+    currency_note: str | None = None
 
 
 class TargetItemIn(ApiModel):
