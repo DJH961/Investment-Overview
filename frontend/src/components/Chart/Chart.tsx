@@ -208,6 +208,13 @@ const TWO_AXIS_WIDTH = 720;
 /** Right gutter kept on a two-currency chart whether or not the right labels are drawn, so the plot never moves. */
 const RIGHT_GUTTER = 64;
 
+/** A clock tick near a plot edge is anchored inward, so its label never runs off the card. */
+export function timeAnchor(x: number, w: number, left: number, right: number): "start" | "middle" | "end" {
+  if (x + w / 2 > right) return "end";
+  if (x - w / 2 < left) return "start";
+  return "middle";
+}
+
 /** Estimated pixel width of an axis label. */
 export function labelWidth(text: string): number {
   return Math.ceil(text.length * CHAR_W);
@@ -647,7 +654,7 @@ export function Chart({
               x={scales.x(t)}
               y={height - 6}
               textAnchor={
-                xMode === "time" ? "middle" : i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"
+                xMode === "time" ? timeAnchor(scales.x(t), labelWidth(timeFormat(t)), PAD.left, width - PAD.right) : i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"
               }
             >
               {timeFormat(t)}

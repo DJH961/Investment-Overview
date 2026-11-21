@@ -836,3 +836,33 @@
     }
   }
 }
+
+// 7.1: the phone row head is a container; a full-size invisible button toggles the peek
+// and the day split (with its (i)) sits above it, so no button is nested in another.
+.holdings-page {
+  &__item-head {
+    position: relative;
+  }
+
+  &__item-toggle {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-raised);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  &__item-split {
+    position: relative;
+    z-index: calc(var(--z-raised) + 1);
+  }
+
+  // The (i) gets a phone-sized tap area without growing the line.
+  &__item-split .info-tip {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    margin: calc((var(--tap-min) - var(--icon-md)) / -2);
+  }
+}

@@ -481,9 +481,10 @@
     }
   }
 
-  // The right axis read as the twin estimate (twin chart, 1D).
+  // The right axis read as the twin estimate (twin chart, 1D): secondary text, never a
+  // red-family hue (red reads as a loss, and a protan sees it dark).
   &__axis-label--estimate {
-    fill: var(--chart-estimate);
+    fill: var(--color-muted);
   }
 
   &__marker--invested {
