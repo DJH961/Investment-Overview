@@ -1,52 +1,18 @@
 /**
- * Look up any instrument (7.1, docs/v7_1_contract.md › Lookup). Typed by hand from the
- * contract until `api-types.ts` is regenerated. Nothing here touches the ledger: the
- * server keeps lookups in a short in-memory cache only.
+ * Look up any instrument (7.1, docs/v7_1_contract.md › Lookup). Nothing here touches
+ * the ledger: the server keeps lookups in a short in-memory cache only.
  */
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
-import type { ChartSessionDto, HoldingRange } from "./holding-detail";
+import type { components } from "../api-types";
+import type { HoldingRange } from "./holding-detail";
 
-type DecStr = string;
-
-export interface LookupResultDto {
-  symbol: string;
-  name: string;
-  exchange: string | null;
-  type: string | null;
-  currency: string | null;
-  held_instrument_id: number | null;
-}
-
-export interface LookupSearchDto {
-  results: LookupResultDto[];
-}
-
-export interface LookupQuoteDto {
-  symbol: string;
-  name: string;
-  exchange: string | null;
-  type: string | null;
-  currency: string;
-  price_native: DecStr | null;
-  day_change_native: DecStr | null;
-  day_pct: DecStr | null;
-  captured_at: string | null;
-  week52_low: DecStr | null;
-  week52_high: DecStr | null;
-  /** EUR → USD (dollars per euro) at the quote's instant. */
-  fx_eur_usd: DecStr | null;
-}
-
-export interface LookupHistoryDto {
-  symbol: string;
-  currency: string;
-  range: HoldingRange;
-  x_mode: "date" | "time";
-  sessions: ChartSessionDto[];
-  /** Each point carries its own EUR/USD rate: one instant, one rate. */
-  points: { t: string; price_native: DecStr | null; fx_eur_usd: DecStr | null }[];
-}
+type S = components["schemas"];
+export type LookupResultDto = S["LookupHit"];
+export type LookupSearchDto = S["LookupSearchResponse"];
+export type LookupQuoteDto = S["LookupQuote"];
+/** Each point carries its own EUR/USD rate (dollars per euro): one instant, one rate. */
+export type LookupHistoryDto = S["LookupHistory"];
 
 export function useLookupSearch(q: string) {
   const query = q.trim();

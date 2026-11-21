@@ -38,7 +38,7 @@ export function convertAt(price: number | null, native: string, target: string, 
 
 function PriceChart({ symbol, quote }: { symbol: string; quote: LookupQuoteDto }) {
   const [range, setRange] = useState<HoldingRange>("1y");
-  const native = quote.currency;
+  const native = quote.currency ?? "USD";
   const convertible = native === "USD" || native === "EUR";
   const options = convertible ? (native === "USD" ? ["USD", "EUR"] : ["EUR", "USD"]) : [native];
   const [shown, setShown] = useState(native);
@@ -90,7 +90,8 @@ function Details({ quote }: { quote: LookupQuoteDto }) {
   const price = toNum(quote.price_native);
   // Where today's price sits in the 52-week range (a position on a bar, display only).
   const at = low !== null && high !== null && price !== null && high > low ? Math.min(1, Math.max(0, (price - low) / (high - low))) : null;
-  const money = (v: number | null) => formatMoney(v, quote.currency, { unmasked: true });
+  const ccy = quote.currency ?? "USD";
+  const money = (v: number | null) => formatMoney(v, ccy, { unmasked: true });
   return (
     <section className="holding-page__section" aria-labelledby="lookup-details">
       <h2 id="lookup-details" className="holding-page__section-title">
@@ -103,7 +104,7 @@ function Details({ quote }: { quote: LookupQuoteDto }) {
         </div>
         <div className="holding-page__fact">
           <dt className="holding-page__fact-key">Currency</dt>
-          <dd className="holding-page__fact-value">{quote.currency}</dd>
+          <dd className="holding-page__fact-value">{ccy}</dd>
         </div>
         <div className="holding-page__fact">
           <dt className="holding-page__fact-key">Type</dt>
@@ -159,6 +160,7 @@ export function Lookup() {
     );
   }
   const d = quote.data;
+  const ccy = d.currency ?? "USD";
   const items: TabItem<LookupTab>[] = [
     { value: "performance", label: "Performance", content: active === "performance" ? <PriceChart symbol={symbol} quote={d} /> : null },
     { value: "details", label: "Details", content: active === "details" ? <Details quote={d} /> : null },
@@ -167,7 +169,7 @@ export function Lookup() {
     <div className="holding-page">
       <HoldingHeader
         symbol={d.symbol}
-        name={d.name}
+        name={d.name ?? d.symbol}
         back={back}
         chips={
           <>
@@ -180,7 +182,7 @@ export function Lookup() {
               </Chip>
             )}
             <Chip size="sm" outline>
-              {d.currency}
+              {ccy}
             </Chip>
             {d.type && (
               <Chip size="sm" outline>
@@ -190,10 +192,10 @@ export function Lookup() {
             {d.captured_at && <span className="holding-page__muted lookup-page__stamp">Price {formatStamp(d.captured_at)}</span>}
           </>
         }
-        value={formatMoney(toNum(d.price_native), d.currency, { unmasked: true })}
+        value={formatMoney(toNum(d.price_native), ccy, { unmasked: true })}
         today={
           <>
-            <span>{formatMoney(toNum(d.day_change_native), d.currency, { unmasked: true, signed: true })}</span>
+            <span>{formatMoney(toNum(d.day_change_native), ccy, { unmasked: true, signed: true })}</span>
             <Percent ratio={toNum(d.day_pct)} signed colored />
           </>
         }

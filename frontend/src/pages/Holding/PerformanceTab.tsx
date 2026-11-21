@@ -263,7 +263,13 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
         tooltipTimeFormat={tooltipFormat(safeRange, xMode)}
         height={240}
         ariaLabel={mode === "price" ? `${row.symbol} price against average cost` : `${row.symbol} value against money invested`}
-        emptyMessage={history.isError ? "Could not load the history." : "No history for this range yet."}
+        emptyMessage={
+          history.isError
+            ? "Could not load the history."
+            : safeRange === "1d" || safeRange === "1w"
+              ? "No intraday prices stored yet."
+              : "No history for this range yet."
+        }
       />
       <div className="holding-page__range-row">
         <RangeSummary data={history.data} ccy={ccy} />

@@ -22,7 +22,6 @@ import { usePersistentState } from "../../lib/usePersistentState";
 import { type AnalyticsOut, toNum, useAnalytics } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
 import { Maybe } from "../Periods/Maybe";
-import type { AttributionExtra } from "../../lib/queries/holding-detail";
 import "./Risk.scss";
 
 const LOOKBACKS = [
@@ -36,8 +35,7 @@ const LOOKBACKS = [
   { value: "0", label: "All" },
 ] as const;
 
-// share_of_pnl / own_return: 7.1 contract additions, typed by hand until api-types is regenerated.
-type AttrRow = AnalyticsOut["attribution"][number] & AttributionExtra;
+type AttrRow = AnalyticsOut["attribution"][number];
 type Kind = "pct" | "ratio";
 type Tone = "none" | "sign";
 

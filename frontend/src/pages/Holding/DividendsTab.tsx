@@ -10,7 +10,6 @@ import { StatStrip } from "../../components/StatStrip";
 import { formatDate, formatMoney } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 import type { DividendRowDto, DividendsDto } from "../../lib/queries/activity";
-import type { DividendHoldingExtra } from "../../lib/queries/holding-detail";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import type { TransactionOut } from "../../lib/queries/ledger";
 import { toNum } from "../../lib/queries/portfolio";
@@ -18,7 +17,7 @@ import { formatPrice, formatQuantity } from "../Transactions/numbers";
 import { kindLook } from "./holdingFormat";
 import { KindTag, TwoLineRow, YearLine } from "./TwoLineRow";
 
-type Totals = DividendsDto["by_holding"][number] & DividendHoldingExtra;
+type Totals = DividendsDto["by_holding"][number];
 
 /** One bar per year (the current one dashed, "ytd"); heights share the largest year's scale. */
 export function DividendBars({ years, ccy, currentYear }: { years: { year: number; amount: string }[]; ccy: string; currentYear: number }) {

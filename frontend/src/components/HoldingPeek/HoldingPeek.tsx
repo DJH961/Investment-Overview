@@ -6,7 +6,8 @@ import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
 import { Sparkline } from "../Sparkline";
-import { formatDate, formatPp, formatQuantity } from "../../lib/format";
+import { formatDate, formatMoney, formatPp, formatQuantity } from "../../lib/format";
+import { usePrefs } from "../../lib/prefs";
 import { type HoldingPeekDto, useHoldingPeek } from "../../lib/queries/holding-detail";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
@@ -43,7 +44,7 @@ function tranchesText(p: HoldingPeekDto): string {
   const t = p.tranches;
   const base = `${t.open_count} open`;
   const days = t.next_long_term_days;
-  return days !== null && days >= 0 && days <= SOON_DAYS ? `${base} · long-term in ${days} d` : base;
+  return days != null && days >= 0 && days <= SOON_DAYS ? `${base} · long-term in ${days} d` : base;
 }
 
 function TradeFact({ p }: { p: HoldingPeekDto }) {
@@ -54,6 +55,7 @@ function TradeFact({ p }: { p: HoldingPeekDto }) {
     <>
       {TRADE_LABEL[t.kind] ?? t.kind}
       {qty !== null && ` ${formatQuantity(Math.abs(qty), Number.isInteger(qty) ? 0 : 4)} sh`}
+      {t.price_native != null && ` @ ${formatMoney(toNum(t.price_native), p.currency, { unmasked: true })}`}
       <span className="holding-peek__muted"> · {formatDate(t.date)}</span>
     </>
   );
@@ -64,14 +66,21 @@ function DividendFact({ p }: { p: HoldingPeekDto }) {
   if (!d) return <span className="holding-peek__muted">None yet</span>;
   return (
     <>
-      <Money amount={toNum(d.amount)} currency={d.currency} />
+      <Money amount={toNum(d.amount_native ?? null)} currency={p.currency} />
+      {d.reinvested && (
+        <span className="holding-peek__muted">
+          {" "}
+          reinvested{d.reinvested_quantity != null && ` · ${formatQuantity(toNum(d.reinvested_quantity), 4)} sh`}
+        </span>
+      )}
       <span className="holding-peek__muted"> · {formatDate(d.date)}</span>
     </>
   );
 }
 
-function TwinFact({ p }: { p: HoldingPeekDto }) {
-  const t = p.twin;
+/** The twin line comes from the holdings row (the peek does not repeat it). */
+function TwinFact({ row }: { row: HoldingRowDto }) {
+  const t = row.twin;
   if (!t) return null;
   if (t.pending) {
     return (
@@ -93,7 +102,18 @@ function TwinFact({ p }: { p: HoldingPeekDto }) {
 }
 
 function Week({ p, wide }: { p: HoldingPeekDto; wide: boolean }) {
-  const values = p.week.points.map((pt) => toNum(pt.value_native));
+  const { currency } = usePrefs();
+  if (!p.week) {
+    // NAV funds: one price a day, no week of intraday values.
+    return (
+      <div className="holding-peek__week">
+        <span className="holding-peek__key">Past week</span>
+        <span className="holding-peek__muted">One NAV a day: see the holding page</span>
+      </div>
+    );
+  }
+  const values = p.week.points.map((pt) => toNum(pt.value_native ?? null));
+  const ret = currency === "EUR" ? p.week.return_eur : p.week.return_usd;
   return (
     <div className="holding-peek__week">
       <span className="holding-peek__key">Past week</span>
@@ -104,7 +124,7 @@ function Week({ p, wide }: { p: HoldingPeekDto; wide: boolean }) {
         ariaLabel="Value over the past week"
         className="holding-peek__spark"
       />
-      <Percent ratio={toNum(p.week.change_pct)} signed colored className="holding-peek__week-pct" />
+      <Percent ratio={toNum(ret ?? null)} signed colored className="holding-peek__week-pct" />
     </div>
   );
 }
@@ -146,9 +166,9 @@ export function HoldingPeek({ row, layout, id }: HoldingPeekProps) {
     p && (
       <dl className="holding-peek__facts">
         {which !== "activity" && <Fact label="Tranches">{tranchesText(p)}</Fact>}
-        {which !== "activity" && p.twin && (
+        {which !== "activity" && row.twin && (
           <Fact label="Twin">
-            <TwinFact p={p} />
+            <TwinFact row={row} />
           </Fact>
         )}
         {which !== "lots" && (

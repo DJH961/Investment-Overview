@@ -210,7 +210,7 @@ function intraday(seed: number, last: number, days: number[]): { t: string; v: n
   return pts;
 }
 
-const sessionsOf = (days: number[]) => days.map((n) => ({ open: `${iso(n)}T${SESSION_OPEN}${UTC}`, close: `${iso(n)}T${SESSION_CLOSE}${UTC}` }));
+const sessionsOf = (days: number[]) => days.map((n) => ({ date: iso(n), open: `${iso(n)}T${SESSION_OPEN}${UTC}`, close: `${iso(n)}T${SESSION_CLOSE}${UTC}` }));
 
 function seedOf(symbol: string): number {
   return [...symbol].reduce((a, c) => a + c.charCodeAt(0), 0) % 17;
@@ -373,12 +373,17 @@ function peek(row: Row, data: Obj, accountId: number): Obj {
   const lastTrade = trades[trades.length - 1];
   const divs = (data["GET /api/deposits/dividends/both"] as { USD?: { rows?: Obj[] } } | undefined)?.USD?.rows ?? [];
   const lastDiv = divs.filter((d) => d.symbol === row.symbol).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const nav = row.price_type === "nav" || row.is_money_market;
+  const ret = v0 > 0 ? s(Number(points[points.length - 1]?.value_native) / v0 - 1) : null;
   return {
-    week: { points, change_pct: v0 > 0 ? s(Number(points[points.length - 1]?.value_native) / v0 - 1) : null },
+    instrument_id: row.instrument_id,
+    currency: row.native_currency,
+    week: nav ? null : { points, currency: row.native_currency, return_eur: ret, return_usd: ret },
     tranches: { open_count: lots.rows.length, next_long_term_on: next?.long_term_on ?? null, next_long_term_days: next?.days_to_long_term ?? null },
-    last_trade: lastTrade ? { date: lastTrade.date, kind: lastTrade.kind, quantity: s(lastTrade.qty, 4) } : null,
-    last_dividend: lastDiv ? { date: lastDiv.date, amount: lastDiv.amount_native, currency: lastDiv.currency } : null,
-    twin: row.twin ?? null,
+    last_trade: lastTrade ? { date: lastTrade.date, kind: lastTrade.kind, quantity: s(lastTrade.qty, 4), price_native: s(lastTrade.price) } : null,
+    last_dividend: lastDiv
+      ? { date: lastDiv.date, reinvested: lastDiv.kind === "reinvest", amount_native: lastDiv.amount_native, reinvested_quantity: null }
+      : null,
   };
 }
 
