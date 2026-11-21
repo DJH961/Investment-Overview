@@ -20,6 +20,7 @@ import { type ProjectionOut, type ProjectionRequest, toNum, useCalculatorInputs,
 import { useShellStatus } from "../../lib/shell";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { Maybe } from "../Periods/Maybe";
+import { RateBand } from "./RateBand";
 import "./Projection.scss";
 
 interface Form {
@@ -344,6 +345,7 @@ export function Projection() {
                 />
               </Card>
               </div>
+              {out.rate_band ? <RateBand band={out.rate_band} endLabel={endLabel} /> : null}
               {toNum(out.inputs.target) ? (
                 <Card title="Goal">
                     <p className="projection-page__note">

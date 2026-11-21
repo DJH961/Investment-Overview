@@ -409,6 +409,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/currency/dollar/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dollar Both */
+        get: operations["get_dollar_both_api_currency_dollar_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/currency/effect/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Currency Effect Both */
+        get: operations["get_currency_effect_both_api_currency_effect_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/currency/rate-history": {
         parameters: {
             query?: never;
@@ -418,6 +452,23 @@ export interface paths {
         };
         /** Get Rate History */
         get: operations["get_rate_history_api_currency_rate_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/currency/scenarios/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scenarios Both */
+        get: operations["get_scenarios_both_api_currency_scenarios_both_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1844,10 +1895,14 @@ export interface components {
              * @enum {string}
              */
             ccy: "EUR" | "USD";
+            /** Currency Note */
+            currency_note?: string | null;
             /** Current By Asset Class */
             current_by_asset_class: components["schemas"]["Bucket"][];
             /** Current By Category */
             current_by_category: components["schemas"]["Bucket"][];
+            /** Current By Currency */
+            current_by_currency?: components["schemas"]["Bucket"][];
             /** Drift */
             drift: components["schemas"]["DriftRow"][];
             /** Drift By Category */
@@ -2396,6 +2451,13 @@ export interface components {
             /** Detail */
             detail?: string | null;
         };
+        /** ByCurrency[CurrencyEffectOut] */
+        ByCurrency_CurrencyEffectOut_: {
+            EUR: components["schemas"]["CurrencyEffectOut"];
+            USD: components["schemas"]["CurrencyEffectOut"];
+            /** Detail */
+            detail?: string | null;
+        };
         /** ByCurrency[CurrencyOut] */
         ByCurrency_CurrencyOut_: {
             EUR: components["schemas"]["CurrencyOut"];
@@ -2414,6 +2476,13 @@ export interface components {
         ByCurrency_DividendsOut_: {
             EUR: components["schemas"]["DividendsOut"];
             USD: components["schemas"]["DividendsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[DollarOut] */
+        ByCurrency_DollarOut_: {
+            EUR: components["schemas"]["DollarOut"];
+            USD: components["schemas"]["DollarOut"];
             /** Detail */
             detail?: string | null;
         };
@@ -2442,6 +2511,13 @@ export interface components {
         ByCurrency_PeriodsOut_: {
             EUR: components["schemas"]["PeriodsOut"];
             USD: components["schemas"]["PeriodsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
+        /** ByCurrency[ScenariosOut] */
+        ByCurrency_ScenariosOut_: {
+            EUR: components["schemas"]["ScenariosOut"];
+            USD: components["schemas"]["ScenariosOut"];
             /** Detail */
             detail?: string | null;
         };
@@ -2744,6 +2820,56 @@ export interface components {
             /** Usd Prev */
             usd_prev?: string | null;
         };
+        /** CurrencyEffectOut */
+        CurrencyEffectOut: {
+            /** As Of */
+            as_of: string;
+            bridge?: components["schemas"]["EffectBridge"] | null;
+            buys?: components["schemas"]["EffectBuys"] | null;
+            /**
+             * Ccy
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /** End On */
+            end_on?: string | null;
+            /** Explainer */
+            explainer?: string | null;
+            /** Generated At */
+            generated_at: string;
+            /**
+             * Granularity
+             * @enum {string}
+             */
+            granularity: "intraday" | "daily" | "weekly";
+            /** Grid */
+            grid?: components["schemas"]["EffectGridRow"][];
+            headline: components["schemas"]["EffectHeadline"];
+            /** Holdings */
+            holdings?: components["schemas"]["HoldingEffect"][];
+            /** Months */
+            months?: components["schemas"]["EffectBar"][];
+            /** Range */
+            range: string;
+            records?: components["schemas"]["EffectRecords"];
+            /** Rolling */
+            rolling?: components["schemas"]["EffectRollingPoint"][];
+            /**
+             * Rolling Window Days
+             * @default 252
+             */
+            rolling_window_days: number;
+            run?: components["schemas"]["EffectRun"] | null;
+            /** Series */
+            series?: components["schemas"]["EffectPoint"][];
+            session_split?: components["schemas"]["SessionSplit"] | null;
+            /** Start On */
+            start_on?: string | null;
+            /** Stats */
+            stats?: components["schemas"]["EffectStat"][];
+            /** Years */
+            years?: components["schemas"]["EffectBar"][];
+        };
         /** CurrencyLifetime */
         CurrencyLifetime: {
             /** Avg Invest Rate */
@@ -2825,19 +2951,25 @@ export interface components {
         CurrencyStat: {
             /** Currency */
             currency?: ("EUR" | "USD") | null;
+            /** Direction */
+            direction?: ("dollar_up" | "dollar_down" | "sideways") | null;
             /**
              * Key
              * @enum {string}
              */
-            key: "rate_now" | "effect_today" | "investing_power_today" | "lifetime_effect" | "avg_rate_vs_now" | "one_cent";
+            key: "rate_now" | "effect_today" | "investing_power_today" | "lifetime_effect" | "avg_rate_vs_now" | "one_cent" | "effect_this_year" | "effect_lifetime" | "dollar_trend";
             /** Kind */
             kind?: ("tailwind" | "headwind" | "neutral") | null;
+            /** Normal */
+            normal?: ("normal" | "large" | "unusual") | null;
             /** Secondary */
             secondary?: string | null;
             /** Secondary Currency */
             secondary_currency?: ("EUR" | "USD") | null;
             /** Secondary Unit */
             secondary_unit?: ("rate" | "fraction" | "money") | null;
+            /** Since */
+            since?: string | null;
             /**
              * Unit
              * @enum {string}
@@ -2888,6 +3020,34 @@ export interface components {
             date: string;
             /** Portfolio Value */
             portfolio_value: string | null;
+        };
+        /**
+         * Cushion
+         * @description Does the dollar cushion or amplify your swings? (``domain.risk`` on both series).
+         */
+        Cushion: {
+            /** Dollar Rose Share */
+            dollar_rose_share?: string | null;
+            /**
+             * Down Days
+             * @default 0
+             */
+            down_days: number;
+            /**
+             * Down Days Dollar Rose
+             * @default 0
+             */
+            down_days_dollar_rose: number;
+            /** Max Drawdown Eur */
+            max_drawdown_eur?: string | null;
+            /** Max Drawdown Usd */
+            max_drawdown_usd?: string | null;
+            /** Since */
+            since: string;
+            /** Volatility Eur */
+            volatility_eur?: string | null;
+            /** Volatility Usd */
+            volatility_usd?: string | null;
         };
         /**
          * DailyCaption
@@ -3223,6 +3383,172 @@ export interface components {
              */
             yield_ttm?: string | null;
         };
+        /**
+         * DollarMa200
+         * @description Today's rate against its 200-day average, and that average's slope.
+         */
+        DollarMa200: {
+            /** Distance Pct */
+            distance_pct: string;
+            ma200: components["schemas"]["RateValue"];
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "above" | "below";
+            /**
+             * Slope
+             * @enum {string}
+             */
+            slope: "rising" | "falling" | "flat";
+            /** Slope Days */
+            slope_days: number;
+            /** Slope Pct */
+            slope_pct: string;
+        };
+        /** DollarOut */
+        DollarOut: {
+            /** As Of */
+            as_of?: string | null;
+            /**
+             * Caption
+             * @default Exchange rates wander and tend to revert over years; this page describes, it does not predict.
+             */
+            caption: string;
+            /**
+             * Ccy
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /** Generated At */
+            generated_at: string;
+            next_euro?: components["schemas"]["NextEuro"] | null;
+            position?: components["schemas"]["DollarPosition"];
+            quote: components["schemas"]["DollarQuote"];
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            /** Rolling */
+            rolling?: components["schemas"]["RollingSeries"][];
+            /** Stats */
+            stats?: components["schemas"]["DollarStat"][];
+            trend?: components["schemas"]["DollarTrend"];
+        };
+        /**
+         * DollarPosition
+         * @description The dollar position card (IBKR "Forex P&L" style).
+         */
+        DollarPosition: {
+            avg_rate?: components["schemas"]["RateValue"] | null;
+            breakeven?: components["schemas"]["RateValue"] | null;
+            change?: components["schemas"]["RateChange"] | null;
+            /** Exposure Share */
+            exposure_share?: string | null;
+            /** Exposure Usd */
+            exposure_usd?: string | null;
+            /** Exposure Value */
+            exposure_value?: string | null;
+            /** Fx Gain Eur */
+            fx_gain_eur?: string | null;
+            rate_now?: components["schemas"]["RateValue"] | null;
+            today?: components["schemas"]["RateChange"] | null;
+        };
+        /**
+         * DollarQuote
+         * @description Which quote this side shows: ``inverse`` + ``USD/EUR`` (EUR), ``rate`` + ``EUR/USD`` (USD).
+         */
+        DollarQuote: {
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "rate" | "inverse";
+            /**
+             * Pair
+             * @enum {string}
+             */
+            pair: "USD/EUR" | "EUR/USD";
+        };
+        /**
+         * DollarRegime
+         * @description The dollar's regime with hysteresis (``domain.fx_trend.regime``).
+         */
+        DollarRegime: {
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "dollar_up" | "dollar_down" | "sideways";
+            /** Since */
+            since: string;
+            /** Since Change Pct */
+            since_change_pct: string;
+        };
+        /**
+         * DollarRun
+         * @description "The dollar fell in 5 of the last 6 months" (calendar months, last ECB day each).
+         */
+        DollarRun: {
+            /** Count */
+            count: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "rose" | "fell";
+            /** Of */
+            of: number;
+            /**
+             * Unit
+             * @default month
+             * @constant
+             */
+            unit: "month";
+        };
+        /** DollarStat */
+        DollarStat: {
+            /** Currency */
+            currency?: ("EUR" | "USD") | null;
+            /** Date */
+            date?: string | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "percentile_since_start" | "percentile_y5" | "percentile_y10" | "percentile_since_1999" | "week52_low" | "week52_high" | "low_since_start" | "high_since_start" | "avg_rate_holding" | "share_above_avg" | "rate_volatility";
+            /** Secondary */
+            secondary?: string | null;
+            /** Secondary Currency */
+            secondary_currency?: ("EUR" | "USD") | null;
+            /** Secondary Display */
+            secondary_display?: string | null;
+            /** Secondary Unit */
+            secondary_unit?: ("rate" | "fraction" | "money") | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "rate" | "fraction" | "money";
+            /** Value */
+            value: string;
+            /** Value Display */
+            value_display?: string | null;
+        };
+        /** DollarTrend */
+        DollarTrend: {
+            /** Above Entry Share */
+            above_entry_share?: string | null;
+            long_run?: components["schemas"]["LongRun"] | null;
+            ma200?: components["schemas"]["DollarMa200"] | null;
+            normal_month?: components["schemas"]["NormalRange"] | null;
+            normal_year?: components["schemas"]["NormalRange"] | null;
+            percentiles?: components["schemas"]["RatePercentiles"];
+            regime?: components["schemas"]["DollarRegime"] | null;
+            run?: components["schemas"]["DollarRun"] | null;
+            week52?: components["schemas"]["Week52"] | null;
+        };
         /** DriftRow */
         DriftRow: {
             /** Asset Class */
@@ -3259,6 +3585,209 @@ export interface components {
              * @description Target weight (fraction, 0.01 = 1%)
              */
             target_pct: string;
+        };
+        /**
+         * EffectBar
+         * @description One month (``YYYY-MM``) or year (``YYYY``) of the currency effect.
+         */
+        EffectBar: {
+            /** Currency */
+            currency: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Label */
+            label: string;
+        };
+        /**
+         * EffectBridge
+         * @description ``start + deposits + market + currency == end`` exactly, in ``ccy``.
+         */
+        EffectBridge: {
+            /** Currency */
+            currency: string;
+            /** Deposits */
+            deposits: string;
+            /** End */
+            end: string;
+            /** End On */
+            end_on: string;
+            /** Market */
+            market: string;
+            /** Start */
+            start: string;
+            /** Start On */
+            start_on: string;
+        };
+        /**
+         * EffectBuys
+         * @description "€1,000 buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``).
+         */
+        EffectBuys: {
+            /** Amount Eur */
+            amount_eur: string;
+            /** Change Usd */
+            change_usd?: string | null;
+            /** Market Hours Usd */
+            market_hours_usd?: string | null;
+            /** Overnight Usd */
+            overnight_usd?: string | null;
+            /** Usd Now */
+            usd_now: string;
+            /** Usd Prev */
+            usd_prev?: string | null;
+        };
+        /**
+         * EffectGridRow
+         * @description One year of the month x year grid: 12 cells (Jan..Dec), null = no data.
+         */
+        EffectGridRow: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Months */
+            months: (string | null)[];
+            /** Total */
+            total: string;
+            /** Year */
+            year: number;
+        };
+        /**
+         * EffectHeadline
+         * @description EUR return, USD return, the effect between them and the effect in money.
+         */
+        EffectHeadline: {
+            /** Currency Share */
+            currency_share?: string | null;
+            /** Effect */
+            effect: string;
+            /** Effect Pp */
+            effect_pp?: string | null;
+            /** Eur Return */
+            eur_return?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Market */
+            market: string;
+            /**
+             * Return Basis
+             * @enum {string}
+             */
+            return_basis: "periods" | "daily_chain" | "day";
+            /** Usd Return */
+            usd_return?: string | null;
+        };
+        /**
+         * EffectPoint
+         * @description One point of the constant-currency chart.
+         *
+         *     ``constant_currency = value - currency``: the actual value minus the currency
+         *     effect accumulated since the range start (each rate move counted only for the
+         *     money held when it happened). The gap between the two lines is ``currency``.
+         */
+        EffectPoint: {
+            /** Constant Currency */
+            constant_currency: string;
+            /** Currency */
+            currency: string;
+            /** T */
+            t: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * EffectRecord
+         * @description A record: a day (ISO date), month (``YYYY-MM``) or year (``YYYY``).
+         */
+        EffectRecord: {
+            /** Currency */
+            currency: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * EffectRecords
+         * @description Best / worst currency day, month and year of the range, plus lifetime figures.
+         */
+        EffectRecords: {
+            /** Average Monthly Contribution */
+            average_monthly_contribution?: string | null;
+            best_day?: components["schemas"]["EffectRecord"] | null;
+            best_month?: components["schemas"]["EffectRecord"] | null;
+            best_year?: components["schemas"]["EffectRecord"] | null;
+            /** Lifetime Effect */
+            lifetime_effect?: string | null;
+            /** Lifetime Months Of Contributions */
+            lifetime_months_of_contributions?: string | null;
+            worst_day?: components["schemas"]["EffectRecord"] | null;
+            worst_month?: components["schemas"]["EffectRecord"] | null;
+            worst_year?: components["schemas"]["EffectRecord"] | null;
+        };
+        /**
+         * EffectRollingPoint
+         * @description Currency effect summed over the ``rolling_window_days`` business days to ``t``.
+         */
+        EffectRollingPoint: {
+            /** Currency */
+            currency: string;
+            /** T */
+            t: string;
+        };
+        /**
+         * EffectRun
+         * @description The current streak of same-sign months (lifetime), e.g. "helped 7 months running".
+         */
+        EffectRun: {
+            /** Currency */
+            currency: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind";
+            /** Months */
+            months: number;
+            /** Since */
+            since: string;
+            /** Statement */
+            statement: string;
+        };
+        /**
+         * EffectStat
+         * @description One Impact tile (same shape as the strip's ``CurrencyStat``).
+         */
+        EffectStat: {
+            /** Currency */
+            currency?: ("EUR" | "USD") | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "eur_return" | "usd_return" | "effect_pp" | "effect" | "currency_share" | "best_month" | "worst_month" | "tailwind_share" | "longest_tailwind" | "longest_headwind" | "typical_day" | "largest_day" | "months_of_contributions" | "inside_hours" | "outside_hours" | "rate_range_today" | "buys_now";
+            /** Kind */
+            kind?: ("tailwind" | "headwind" | "neutral") | null;
+            /** Label */
+            label?: string | null;
+            /** Secondary */
+            secondary?: string | null;
+            /** Secondary Currency */
+            secondary_currency?: ("EUR" | "USD") | null;
+            /** Secondary Unit */
+            secondary_unit?: ("rate" | "fraction" | "money" | "count") | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "rate" | "fraction" | "money" | "count";
+            /** Value */
+            value: string;
         };
         /**
          * EstimateFund
@@ -3768,6 +4297,33 @@ export interface components {
              * @description Trade date (daily) or that session's close instant (1d / 1w)
              */
             t: string;
+        };
+        /**
+         * HoldingEffect
+         * @description One holding's change over the range, three ways, in ``ccy``.
+         *
+         *     ``price + dividends + currency == total``. ``price``: the change in value not
+         *     explained by flows or the rate (the holding's market move); ``dividends``:
+         *     paid in the range, each at its own date's rate; ``currency``: each day's
+         *     holding revalued from the previous day's rate to that day's.
+         */
+        HoldingEffect: {
+            /** Currency */
+            currency: string;
+            /** Dividends */
+            dividends: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Name */
+            name?: string | null;
+            /** Native Ccy */
+            native_ccy: string;
+            /** Price */
+            price: string;
+            /** Symbol */
+            symbol: string;
+            /** Total */
+            total: string;
         };
         /**
          * HoldingGroup
@@ -4981,6 +5537,17 @@ export interface components {
             /** Sources */
             sources: string[];
         };
+        /**
+         * LongRun
+         * @description Distance from the mean since 1999 (ECB history).
+         */
+        LongRun: {
+            /** Distance Inverse Pct */
+            distance_inverse_pct: string;
+            mean: components["schemas"]["RateValue"];
+            /** Since */
+            since: string;
+        };
         /** LookupHistory */
         LookupHistory: {
             /** Currency */
@@ -5144,6 +5711,50 @@ export interface components {
             losers: components["schemas"]["Mover"][];
             /** Winners */
             winners: components["schemas"]["Mover"][];
+        };
+        /**
+         * NextEuro
+         * @description "€1,000 buys $X now; $Y a year ago" (a euro notional at one rate each).
+         */
+        NextEuro: {
+            /** Amount Eur */
+            amount_eur: string;
+            /** Better Than Share */
+            better_than_share?: string | null;
+            /** Change Pct */
+            change_pct?: string | null;
+            /** Usd Now */
+            usd_now: string;
+            /** Usd Year Ago */
+            usd_year_ago?: string | null;
+            /** Year Ago Date */
+            year_ago_date?: string | null;
+        };
+        /**
+         * NormalRange
+         * @description How today's trailing move compares with every move of the same length.
+         */
+        NormalRange: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "normal" | "large" | "unusual";
+            /** Move Pct */
+            move_pct: string;
+            /** Normal Limit Pct */
+            normal_limit_pct: string;
+            /** Percentile */
+            percentile: string;
+            /** Typical Move Pct */
+            typical_move_pct: string;
+            /**
+             * Window
+             * @enum {string}
+             */
+            window: "month" | "year";
+            /** Window Days */
+            window_days: number;
         };
         /** OkResponse */
         OkResponse: {
@@ -5747,6 +6358,7 @@ export interface components {
             monthly: boolean;
             /** Points */
             points: components["schemas"]["ProjectionPointOut"][];
+            rate_band?: components["schemas"]["ProjectionRateBandOut"] | null;
             /** Real */
             real: boolean;
             /** Required Contribution */
@@ -5776,6 +6388,47 @@ export interface components {
             pessimistic_real: string | null;
             /** Years */
             years: string | null;
+        };
+        /**
+         * ProjectionRateBandOut
+         * @description P5: the dollar wallet, simulated at its own USD XIRR, valued in euros at each rate.
+         *
+         *     A single-instant valuation at an *assumed* future rate (no return is converted):
+         *     ``final_usd / usd_per_eur``. ``rows`` run from today's rate - 15 % to + 15 %;
+         *     ``low``/``high`` are the EUR values at the ends for the expected scenario.
+         */
+        ProjectionRateBandOut: {
+            /**
+             * Ccy
+             * @default EUR
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /** Expected High */
+            expected_high?: string | null;
+            /** Expected Low */
+            expected_low?: string | null;
+            final_usd: components["schemas"]["ProjectionFinalOut"];
+            /** Rows */
+            rows?: components["schemas"]["ProjectionRateRowOut"][];
+            /** Usd Per Eur Now */
+            usd_per_eur_now: string;
+        };
+        /**
+         * ProjectionRateRowOut
+         * @description The projected dollar wallet's final value converted at one assumed rate.
+         */
+        ProjectionRateRowOut: {
+            /** Expected */
+            expected: string | null;
+            /** Optimistic */
+            optimistic: string | null;
+            /** Pessimistic */
+            pessimistic: string | null;
+            /** Shift Pct */
+            shift_pct: string;
+            /** Usd Per Eur */
+            usd_per_eur: string;
         };
         /**
          * ProjectionRequest
@@ -6107,6 +6760,133 @@ export interface components {
              */
             usd_vs_eur_pct?: string | null;
         };
+        /** RollingPoint */
+        RollingPoint: {
+            /** Inverse Pct */
+            inverse_pct: string;
+            /** Rate Pct */
+            rate_pct: string;
+            /** T */
+            t: string;
+        };
+        /** RollingSeries */
+        RollingSeries: {
+            /** Normal Limit Pct */
+            normal_limit_pct?: string | null;
+            /** Points */
+            points?: components["schemas"]["RollingPoint"][];
+            /** Typical Move Pct */
+            typical_move_pct?: string | null;
+            /**
+             * Window
+             * @enum {string}
+             */
+            window: "1m" | "3m" | "1y";
+            /** Window Days */
+            window_days: number;
+        };
+        /** ScenarioMark */
+        ScenarioMark: {
+            /** Date */
+            date?: string | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "average" | "breakeven" | "today" | "historic_low" | "historic_high";
+            /** Rate */
+            rate: string;
+            /** Rate Display */
+            rate_display: string;
+            /** Row Index */
+            row_index: number;
+        };
+        /**
+         * ScenarioRow
+         * @description The book valued at one EUR/USD ``rate`` (a single-instant valuation).
+         */
+        ScenarioRow: {
+            /** Gain */
+            gain?: string | null;
+            /** Rate */
+            rate: string;
+            /** Rate Display */
+            rate_display: string;
+            /** To Breakeven */
+            to_breakeven?: string | null;
+            /** To Breakeven Pct */
+            to_breakeven_pct?: string | null;
+            /** Value */
+            value: string;
+        };
+        /** ScenarioStat */
+        ScenarioStat: {
+            /** Currency */
+            currency?: ("EUR" | "USD") | null;
+            /** Date */
+            date?: string | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "one_cent" | "breakeven" | "value_at_low" | "value_at_high" | "volatility" | "deepest_fall" | "dollar_rose_on_down_days";
+            /** Secondary */
+            secondary?: string | null;
+            /** Secondary Currency */
+            secondary_currency?: ("EUR" | "USD") | null;
+            /** Secondary Display */
+            secondary_display?: string | null;
+            /** Secondary Unit */
+            secondary_unit?: ("rate" | "fraction" | "money") | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "rate" | "fraction" | "money";
+            /** Value */
+            value: string;
+            /** Value Display */
+            value_display?: string | null;
+        };
+        /** ScenariosOut */
+        ScenariosOut: {
+            /** As Of */
+            as_of?: string | null;
+            avg_rate?: components["schemas"]["RateValue"] | null;
+            breakeven?: components["schemas"]["RateValue"] | null;
+            /**
+             * Caption
+             * @default Exchange rates wander and tend to revert over years; this page describes, it does not predict.
+             */
+            caption: string;
+            /**
+             * Ccy
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            cushion?: components["schemas"]["Cushion"] | null;
+            /** Generated At */
+            generated_at: string;
+            /** Marks */
+            marks?: components["schemas"]["ScenarioMark"][];
+            /** Max Rate */
+            max_rate: string;
+            /** Min Rate */
+            min_rate: string;
+            quote: components["schemas"]["DollarQuote"];
+            rate_now?: components["schemas"]["RateValue"] | null;
+            /** Rows */
+            rows?: components["schemas"]["ScenarioRow"][];
+            sensitivity?: components["schemas"]["Sensitivity"] | null;
+            /** Stats */
+            stats?: components["schemas"]["ScenarioStat"][];
+            /** Step */
+            step: string;
+            /** Stress */
+            stress?: components["schemas"]["StressRow"][];
+            /** Value Now */
+            value_now?: string | null;
+        };
         /** SchedulerJob */
         SchedulerJob: {
             /** Last Failed */
@@ -6173,6 +6953,43 @@ export interface components {
             usd_per_eur: string | null;
             /** Xirr Available */
             xirr_available: boolean;
+        };
+        /**
+         * Sensitivity
+         * @description "1 ct = €X": the book at ``rate`` and at ``rate + 0.01`` (one instant).
+         */
+        Sensitivity: {
+            /** Change */
+            change: string;
+            /** Rate */
+            rate: string;
+            /** Value At Rate */
+            value_at_rate: string;
+            /** Value At Rate Plus */
+            value_at_rate_plus: string;
+        };
+        /**
+         * SessionSplit
+         * @description The range's currency effect inside vs outside US market hours.
+         *
+         *     Only days with recorded session open/close rates are split
+         *     (``covered_currency``); earlier days are ``uncovered_currency``.
+         *     ``inside + outside == covered_currency`` exactly;
+         *     ``covered_currency + uncovered_currency`` = the range's currency effect.
+         */
+        SessionSplit: {
+            /** Available From */
+            available_from?: string | null;
+            /** Covered Currency */
+            covered_currency: string;
+            /** Inside */
+            inside: string;
+            /** Note */
+            note?: string | null;
+            /** Outside */
+            outside: string;
+            /** Uncovered Currency */
+            uncovered_currency: string;
         };
         /** SettingField */
         SettingField: {
@@ -6537,6 +7354,22 @@ export interface components {
             instrument_id: number;
             /** Splits */
             splits: components["schemas"]["SplitPoint"][];
+        };
+        /**
+         * StressRow
+         * @description The book at EUR/USD moved by ``shift_pct`` from today's rate.
+         */
+        StressRow: {
+            /** Change */
+            change: string;
+            /** Rate */
+            rate: string;
+            /** Rate Display */
+            rate_display: string;
+            /** Shift Pct */
+            shift_pct: string;
+            /** Value */
+            value: string;
         };
         /** SystemInfo */
         SystemInfo: {
@@ -7531,6 +8364,15 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** Week52 */
+        Week52: {
+            /** From High Inverse Pct */
+            from_high_inverse_pct: string;
+            /** From Low Inverse Pct */
+            from_low_inverse_pct: string;
+            high: components["schemas"]["RateHistoryPoint"];
+            low: components["schemas"]["RateHistoryPoint"];
+        };
     };
     responses: never;
     parameters: never;
@@ -8342,6 +9184,68 @@ export interface operations {
             };
         };
     };
+    get_dollar_both_api_currency_dollar_both_get: {
+        parameters: {
+            query?: {
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_DollarOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_currency_effect_both_api_currency_effect_both_get: {
+        parameters: {
+            query?: {
+                range?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_CurrencyEffectOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_rate_history_api_currency_rate_history_get: {
         parameters: {
             query?: {
@@ -8369,6 +9273,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scenarios_both_api_currency_scenarios_both_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_ScenariosOut_"];
                 };
             };
         };

@@ -50,6 +50,21 @@
     border-top: var(--border-width) dashed var(--color-muted);
   }
 
+  &__keys {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-4);
+  }
+
+  // Same as the plot's neutral conversion ring (Chart `__mark--conversion`).
+  &__mark-swatch {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid var(--color-fg);
+    border-radius: var(--radius-full);
+  }
+
   &__figs {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

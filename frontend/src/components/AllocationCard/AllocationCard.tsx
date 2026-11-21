@@ -7,14 +7,14 @@ import { SegmentedControl } from "../SegmentedControl";
 import { Skeleton } from "../Skeleton";
 import { Treemap, type TreemapItem } from "../Treemap";
 import { formatMoney, formatPercent } from "../../lib/format";
-import { toNum, useHoldings } from "../../lib/queries/portfolio";
+import { toNum, useAllocations, useHoldings } from "../../lib/queries/portfolio";
 import type { ReportingCurrency } from "../../lib/prefs";
 import { usePersistentState } from "../../lib/usePersistentState";
 import "./AllocationCard.scss";
 
-export type AllocationView = "category" | "fund";
+export type AllocationView = "category" | "fund" | "currency";
 
-const isView = (v: unknown): v is AllocationView => v === "category" || v === "fund";
+const isView = (v: unknown): v is AllocationView => v === "category" || v === "fund" || v === "currency";
 
 export interface AllocationCardProps {
   /** Reporting currency. */
@@ -26,12 +26,29 @@ export interface AllocationCardProps {
 const toneOf = (t: number | null): TreemapItem["tone"] =>
   t === null || t === 0 ? "neutral" : t > 0 ? "pos" : "neg";
 
-/** Overview treemap: categories (the default) or holdings by value, tinted by today's move. */
+/** Overview treemap: categories (the default), holdings by value, or the trading currency. */
 export function AllocationCard({ currency, height }: AllocationCardProps) {
   const [view, setView] = usePersistentState<AllocationView>("overview.allocView", "category", isView);
   // Category view reads the server's per-group day %, which live ticks keep current.
   const holdings = useHoldings(currency, view === "category" ? "category" : "none");
+  // Currency view (v7.2): the server's share by trading currency (the Allocations payload,
+  // already loaded for the asset-class card under this one).
+  const allocations = useAllocations(currency);
+  const byCurrency = view === "currency";
+  const source = byCurrency ? allocations : holdings;
   const items = useMemo(() => {
+    if (view === "currency") {
+      return (allocations.data?.current_by_currency ?? [])
+        .map((b) => ({ b, value: toNum(b.value) ?? 0 }))
+        .filter((x) => x.value > 0)
+        .map(({ b, value }) => ({
+          id: b.label,
+          label: b.label,
+          value,
+          tone: "neutral" as const,
+          detail: formatPercent(toNum(b.pct), { digits: 1 }),
+        }));
+    }
     const held = (holdings.data?.holdings ?? [])
       .map((h) => ({ h, value: toNum(h.value) ?? 0 }))
       .filter((x) => x.value > 0);
@@ -63,7 +80,8 @@ export function AllocationCard({ currency, height }: AllocationCardProps) {
           detail: t === null ? undefined : formatPercent(t, { signed: true }),
         };
       });
-  }, [holdings.data, view]);
+  }, [holdings.data, allocations.data, view]);
+  const note = byCurrency ? allocations.data?.currency_note : null;
 
   return (
     <Card
@@ -77,29 +95,41 @@ export function AllocationCard({ currency, height }: AllocationCardProps) {
           options={[
             { value: "category", label: "Category" },
             { value: "fund", label: "Fund" },
+            { value: "currency", label: "Currency" },
           ]}
           value={view}
           onChange={setView}
         />
       }
     >
-      {holdings.isError && !holdings.data ? (
-        <ErrorState message={holdings.error.message} onRetry={() => void holdings.refetch()} />
-      ) : holdings.isPending ? (
+      {source.isError && !source.data ? (
+        <ErrorState message={source.error.message} onRetry={() => void source.refetch()} />
+      ) : source.isPending ? (
         <Skeleton height="12rem" />
       ) : items.length === 0 ? (
         <EmptyState
           title="Nothing to map yet"
-          description={view === "category" ? "No categories with a value. Try the Fund view." : "No holdings with a value."}
+          description={
+            view === "category"
+              ? "No categories with a value. Try the Fund view."
+              : view === "currency"
+                ? "No holdings with a trading currency yet."
+                : "No holdings with a value."
+          }
         />
       ) : (
-        <Treemap
-          items={items}
-          height={height}
-          valueFormat={(v) => formatMoney(v, currency, { compact: true })}
-          detailLabel="Today"
-          ariaLabel={view === "category" ? "Categories by value" : "Holdings by value"}
-        />
+        <>
+          <Treemap
+            items={items}
+            height={height}
+            valueFormat={(v) => formatMoney(v, currency, { compact: true })}
+            detailLabel={byCurrency ? "Share" : "Today"}
+            ariaLabel={
+              view === "category" ? "Categories by value" : byCurrency ? "Holdings by trading currency" : "Holdings by value"
+            }
+          />
+          {note ? <p className="allocation-card__note">{note}</p> : null}
+        </>
       )}
     </Card>
   );
