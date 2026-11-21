@@ -30,8 +30,7 @@
     }
 
     @include m.phone {
-      margin-inline: calc(-1 * var(--space-4));
-      padding-inline: var(--space-4) var(--space-7);
+      padding-right: var(--space-7);
       -webkit-overflow-scrolling: touch;
       // The right edge fades, so a cut tab reads as "scroll for more" (as the holding tabs do).
       mask-image: linear-gradient(to right, var(--color-fg) calc(100% - var(--space-7)), transparent);
