@@ -127,19 +127,12 @@ describe("TopBar summary on a phone", () => {
 });
 
 describe("TopBar update states", () => {
-  it("quiet update: the icon spins and Updating… shows; the button stays usable", () => {
+  it("quiet update: the icon spins without visible text; the button stays usable", () => {
     renderBar({ compact: false, quietUpdating: true });
-    expect(screen.getByText("Updating…")).toHaveClass("top-bar__quiet");
-    const refresh = screen.getByRole("button", { name: "Refresh data" });
+    expect(screen.queryByText("Updating…")).toBeNull();
+    const refresh = screen.getByRole("button", { name: "Updating prices" });
     expect(refresh).toBeEnabled();
     expect(refresh.querySelector(".top-bar__spin")).not.toBeNull();
-  });
-
-  it("keeps the quiet update label slot reserved while idle", () => {
-    renderBar({ compact: false });
-    const slot = document.querySelector(".top-bar__quiet");
-    expect(slot).toBeInTheDocument();
-    expect(slot).toBeEmptyDOMElement();
   });
 
   it("an explicit (loud) refresh spins and disables but adds no text", () => {

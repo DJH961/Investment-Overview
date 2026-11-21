@@ -39,7 +39,7 @@ export interface TopBarProps {
   refreshing?: boolean;
   /**
    * The app is updating by itself (a tick, a scheduled pull): only the refresh icon
-   * spins and "Updating…" shows beside it; nothing else on the bar changes.
+   * spins; the button's accessible name announces the state.
    */
   quietUpdating?: boolean;
   onLogout: () => void;
@@ -215,9 +215,8 @@ export function TopBar({
       <div className="top-bar__actions">
         {/* First, so it is the quickest action to reach. */}
         <span className="top-bar__refresh">
-          <output className="top-bar__quiet">{quietUpdating && !refreshing ? "Updating…" : ""}</output>
           <IconButton
-            label="Refresh data"
+            label={quietUpdating && !refreshing ? "Updating prices" : "Refresh data"}
             icon={<RefreshCw aria-hidden className={clsx((refreshing || quietUpdating) && "top-bar__spin")} />}
             onClick={onRefresh}
             disabled={refreshing}
