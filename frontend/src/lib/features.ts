@@ -3,4 +3,4 @@
  * link from the Overview card, and the route redirects to the Overview. The page code and its
  * tests stay. Returns in 7.2 (plan §5): flip this one constant.
  */
-export const SHOW_CURRENCY_PAGE = false;
+export const SHOW_CURRENCY_PAGE = true;

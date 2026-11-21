@@ -7,6 +7,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
+import { RateChart } from "../../components/RateChart";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { StatStrip, type StatItem } from "../../components/StatStrip";
@@ -189,8 +190,14 @@ export function Currency() {
       ) : (
         <div className="currency-page__stack">
           {stats.length > 0 ? (
-            <StatStrip label="Currency at a glance" items={stats.map((s) => statItem(s, cur.ccy))} />
+            <StatStrip
+              className="stat-strip--compact"
+              label="Currency at a glance"
+              // The rate itself is the chart's headline right below.
+              items={stats.filter((s) => s.key !== "rate_now").map((s) => statItem(s, cur.ccy))}
+            />
           ) : null}
+          <RateChart />
           {VIEWS.length > 1 && <SegmentedControl block ariaLabel="Currency views" options={[...VIEWS]} value={view} onChange={setView} />}
           {view === "today" ? (
             <div className="currency-page__panel">

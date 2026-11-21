@@ -49,6 +49,26 @@
     }
   }
 
+  // Compact on phones (the Currency page: the chart below must start above the fold).
+  &--compact &__item {
+    @include m.phone {
+      gap: 0;
+      padding: var(--space-2) var(--space-3);
+    }
+  }
+
+  &--compact &__value {
+    @include m.phone {
+      font-size: var(--font-size-md);
+    }
+  }
+
+  &--compact &__note {
+    @include m.phone {
+      font-size: var(--font-size-2xs);
+    }
+  }
+
   &__note {
     margin: 0;
     color: var(--color-muted);
