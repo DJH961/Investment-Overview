@@ -168,7 +168,8 @@ export function Holding() {
         items={items}
         value={active}
         ariaLabel="Holding views"
-        className={tabs.length > 4 ? "holding-page__tabs holding-page__tabs--five" : "holding-page__tabs"}
+        // Four tabs fit a 360 px phone; a NAV fund's fifth (Twin) scrolls sideways.
+        fit={tabs.length <= 4}
         // Replace, not push: Back leaves the holding instead of stepping through its tabs.
         onChange={(t) => navigate(tabPath(id, t), { replace: true })}
       />

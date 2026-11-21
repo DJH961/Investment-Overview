@@ -6,7 +6,7 @@ import { ErrorState } from "../../components/ErrorState";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { Skeleton } from "../../components/Skeleton";
-import { formatDate, formatMoney, formatQuantity } from "../../lib/format";
+import { formatDate, formatMoney } from "../../lib/format";
 import {
   type HoldingTranchesDto,
   type TrancheGroupDto,
@@ -16,12 +16,11 @@ import {
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
 import { useIsPhone } from "../../lib/useMediaQuery";
+import { formatQuantity as formatShares } from "../Transactions/numbers";
 import { formatAge } from "./holdingFormat";
 
-const qty = (v: string | null | undefined): string => {
-  const n = toNum(v ?? null);
-  return formatQuantity(n, n !== null && Number.isInteger(n) ? 0 : 4);
-};
+/** As many decimals as the server sent (trailing zeros dropped, at most 6). */
+const qty = (v: string | null | undefined): string => formatShares(v);
 
 /** Status badge: always an icon and a word (P3: "soon" = long-term within 60 days). */
 export function TrancheBadge({ row }: { row: Pick<TrancheRowDto, "status" | "days_to_long_term"> }) {
@@ -64,7 +63,7 @@ function LotRow({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; nes
       </td>
       <td className="holding-page__lot-td holding-page__lot-td--right">
         {qty(r.quantity_left)} / {qty(r.quantity_bought)}
-        {sold > 0 && <span className="holding-page__lot-sub">{qty(String(sold))} sold</span>}
+        {sold > 0 && <span className="holding-page__lot-sub">{formatShares(String(Math.round(sold * 1e6) / 1e6))} sold</span>}
       </td>
       <td className="holding-page__lot-td holding-page__lot-td--right">
         {formatMoney(toNum(r.cost_per_share_native), ccy)}
@@ -148,13 +147,13 @@ function GroupRow({
   );
 }
 
-function LotCard({ r, ccy }: { r: TrancheRowDto; ccy: string }) {
+function LotCard({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; nested?: boolean }) {
   return (
     <li className="holding-page__row-item">
       <div className="holding-page__row">
         <span className="holding-page__row-lead">
           {formatDate(r.acquired_on)}
-          {r.source === "reinvest" && <span className="holding-page__muted"> · reinvested</span>}
+          {r.source === "reinvest" && !nested && <span className="holding-page__muted"> · reinvested</span>}
         </span>
         <span className="holding-page__row-amount">
           <Money amount={toNum(r.gain_native)} currency={ccy} signed colored />
@@ -199,7 +198,7 @@ function GroupCard({ g, members, ccy }: { g: TrancheGroupDto; members: TrancheRo
       {open && (
         <ul id={id} className="holding-page__rows holding-page__rows--nested">
           {members.map((r) => (
-            <LotCard key={r.id} r={r} ccy={ccy} />
+            <LotCard key={r.id} r={r} ccy={ccy} nested />
           ))}
         </ul>
       )}

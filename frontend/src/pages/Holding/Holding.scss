@@ -119,6 +119,10 @@
 
   &__chip {
     max-width: 16rem;
+
+    @include m.phone {
+      max-width: 9rem;
+    }
   }
 
   // Phone: one sticky line once the header has scrolled away (desktop: never).
@@ -375,6 +379,7 @@
       background: transparent;
       color: inherit;
       font: inherit;
+      font-size: var(--font-size-sm);
       cursor: pointer;
 
       &:hover {
@@ -455,6 +460,11 @@
     margin: 0;
     padding: 0;
     border: 0;
+
+    @include m.phone {
+      flex-wrap: nowrap;
+      gap: var(--space-1);
+    }
   }
 
   &__filter {
@@ -473,6 +483,8 @@
 
     @include m.phone {
       min-height: var(--tap-min);
+      padding: 0 var(--space-2);
+      font-size: var(--font-size-xs);
     }
 
     &--on {

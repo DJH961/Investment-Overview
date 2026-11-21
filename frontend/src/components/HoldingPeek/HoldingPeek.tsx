@@ -132,20 +132,23 @@ function Week({ p, wide }: { p: HoldingPeekDto; wide: boolean }) {
 function Actions({ row, layout }: { row: HoldingRowDto; layout: HoldingPeekProps["layout"] }) {
   const size = layout === "phone" ? "lg" : "sm";
   const base = `/holdings/${row.instrument_id}`;
+  // Phone: words only, so the three fit one row at 360 px.
+  const icon = (node: ReactNode) => (layout === "phone" ? undefined : node);
   return (
     <div className="holding-peek__actions">
-      <LinkButton to={base} variant="primary" size={size} className="holding-peek__open">
+      <LinkButton to={base} variant="primary" size={size} className="holding-peek__action holding-peek__open">
         {layout === "phone" ? `Open ${row.symbol}` : "Open deep dive"}
         <ArrowRight aria-hidden size={16} />
       </LinkButton>
-      <LinkButton to={`${base}/tranches`} variant="secondary" size={size} leftIcon={<Layers aria-hidden size={16} />}>
+      <LinkButton to={`${base}/tranches`} variant="secondary" size={size} className="holding-peek__action" leftIcon={icon(<Layers aria-hidden size={16} />)}>
         Tranches
       </LinkButton>
       <LinkButton
         to={`${base}/transactions`}
         variant="secondary"
         size={size}
-        leftIcon={<ListOrdered aria-hidden size={16} />}
+        className="holding-peek__action"
+        leftIcon={icon(<ListOrdered aria-hidden size={16} />)}
       >
         Activity
       </LinkButton>

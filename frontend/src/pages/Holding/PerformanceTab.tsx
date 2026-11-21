@@ -272,8 +272,8 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
         }
       />
       <div className="holding-page__range-row">
-        <RangeSummary data={history.data} ccy={ccy} />
         {isPhone && modeSwitch}
+        <RangeSummary data={history.data} ccy={ccy} />
       </div>
       {isNavFund(row) && !row.twin && (
         <p className="holding-page__note">No intraday price for this fund: it publishes one NAV a day.</p>
