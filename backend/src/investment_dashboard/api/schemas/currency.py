@@ -16,6 +16,19 @@ from investment_dashboard.api.schemas.common import ApiModel, DecStr
 from investment_dashboard.api.schemas.overview import CurrencyLifetime, CurrencyToday, ReturnSplit
 
 #: Strip tiles shipped in 7.0. 7.2 adds keys; a tile without data is not sent.
+#:
+#: 7.2 additions (the Impact section's day-by-day definition, the same figures as
+#: ``/currency/effect/both``):
+#:
+#: * ``effect_this_year``: YTD currency effect in money, secondary = YTD pp;
+#: * ``effect_lifetime``: lifetime currency effect summed day by day (the All
+#:   range), secondary = lifetime pp. ``lifetime_effect`` keeps its 7.0 meaning
+#:   (the Overview card's average-buy-rate figure);
+#: * ``dollar_trend``: the dollar's change since its regime started (fraction),
+#:   with ``direction`` and ``normal``.
+#:
+#: In the USD view ``effect_today`` is the currency part of the day move on the
+#: non-USD holdings (the Overview's ``day_split.currency_move``).
 StatKey = Literal[
     "rate_now",
     "effect_today",
@@ -23,6 +36,9 @@ StatKey = Literal[
     "lifetime_effect",
     "avg_rate_vs_now",
     "one_cent",
+    "effect_this_year",
+    "effect_lifetime",
+    "dollar_trend",
 ]
 StatUnit = Literal["rate", "fraction", "money"]
 
@@ -40,6 +56,12 @@ class CurrencyStat(ApiModel):
     secondary_currency: Ccy | None = None
     #: Tailwind / headwind word for the side's reader; null when it does not apply.
     kind: Literal["tailwind", "headwind", "neutral"] | None = None
+    #: ``dollar_trend`` only: the dollar's regime (``domain/fx_trend.regime``).
+    direction: Literal["dollar_up", "dollar_down", "sideways"] | None = None
+    #: ``dollar_trend`` only: how unusual the recent move is.
+    normal: Literal["normal", "large", "unusual"] | None = None
+    #: ``dollar_trend`` only: ISO date the regime started.
+    since: str | None = None
 
 
 class CurrencyRateRange(ApiModel):

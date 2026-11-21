@@ -69,6 +69,7 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "currency",
     # v7.2
     "currency_rate",
+    "currency_effect",
     # B6 live
     "stream",
     "live",

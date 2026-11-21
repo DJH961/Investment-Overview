@@ -409,6 +409,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/currency/effect/both": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Currency Effect Both */
+        get: operations["get_currency_effect_both_api_currency_effect_both_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/currency/rate-history": {
         parameters: {
             query?: never;
@@ -2379,6 +2396,13 @@ export interface components {
             /** Detail */
             detail?: string | null;
         };
+        /** ByCurrency[CurrencyEffectOut] */
+        ByCurrency_CurrencyEffectOut_: {
+            EUR: components["schemas"]["CurrencyEffectOut"];
+            USD: components["schemas"]["CurrencyEffectOut"];
+            /** Detail */
+            detail?: string | null;
+        };
         /** ByCurrency[CurrencyOut] */
         ByCurrency_CurrencyOut_: {
             EUR: components["schemas"]["CurrencyOut"];
@@ -2727,6 +2751,56 @@ export interface components {
             /** Usd Prev */
             usd_prev?: string | null;
         };
+        /** CurrencyEffectOut */
+        CurrencyEffectOut: {
+            /** As Of */
+            as_of: string;
+            bridge?: components["schemas"]["EffectBridge"] | null;
+            buys?: components["schemas"]["EffectBuys"] | null;
+            /**
+             * Ccy
+             * @enum {string}
+             */
+            ccy: "EUR" | "USD";
+            /** End On */
+            end_on?: string | null;
+            /** Explainer */
+            explainer?: string | null;
+            /** Generated At */
+            generated_at: string;
+            /**
+             * Granularity
+             * @enum {string}
+             */
+            granularity: "intraday" | "daily" | "weekly";
+            /** Grid */
+            grid?: components["schemas"]["EffectGridRow"][];
+            headline: components["schemas"]["EffectHeadline"];
+            /** Holdings */
+            holdings?: components["schemas"]["HoldingEffect"][];
+            /** Months */
+            months?: components["schemas"]["EffectBar"][];
+            /** Range */
+            range: string;
+            records?: components["schemas"]["EffectRecords"];
+            /** Rolling */
+            rolling?: components["schemas"]["EffectRollingPoint"][];
+            /**
+             * Rolling Window Days
+             * @default 252
+             */
+            rolling_window_days: number;
+            run?: components["schemas"]["EffectRun"] | null;
+            /** Series */
+            series?: components["schemas"]["EffectPoint"][];
+            session_split?: components["schemas"]["SessionSplit"] | null;
+            /** Start On */
+            start_on?: string | null;
+            /** Stats */
+            stats?: components["schemas"]["EffectStat"][];
+            /** Years */
+            years?: components["schemas"]["EffectBar"][];
+        };
         /** CurrencyLifetime */
         CurrencyLifetime: {
             /** Avg Invest Rate */
@@ -2808,19 +2882,25 @@ export interface components {
         CurrencyStat: {
             /** Currency */
             currency?: ("EUR" | "USD") | null;
+            /** Direction */
+            direction?: ("dollar_up" | "dollar_down" | "sideways") | null;
             /**
              * Key
              * @enum {string}
              */
-            key: "rate_now" | "effect_today" | "investing_power_today" | "lifetime_effect" | "avg_rate_vs_now" | "one_cent";
+            key: "rate_now" | "effect_today" | "investing_power_today" | "lifetime_effect" | "avg_rate_vs_now" | "one_cent" | "effect_this_year" | "effect_lifetime" | "dollar_trend";
             /** Kind */
             kind?: ("tailwind" | "headwind" | "neutral") | null;
+            /** Normal */
+            normal?: ("normal" | "large" | "unusual") | null;
             /** Secondary */
             secondary?: string | null;
             /** Secondary Currency */
             secondary_currency?: ("EUR" | "USD") | null;
             /** Secondary Unit */
             secondary_unit?: ("rate" | "fraction" | "money") | null;
+            /** Since */
+            since?: string | null;
             /**
              * Unit
              * @enum {string}
@@ -3242,6 +3322,209 @@ export interface components {
              * @description Target weight (fraction, 0.01 = 1%)
              */
             target_pct: string;
+        };
+        /**
+         * EffectBar
+         * @description One month (``YYYY-MM``) or year (``YYYY``) of the currency effect.
+         */
+        EffectBar: {
+            /** Currency */
+            currency: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Label */
+            label: string;
+        };
+        /**
+         * EffectBridge
+         * @description ``start + deposits + market + currency == end`` exactly, in ``ccy``.
+         */
+        EffectBridge: {
+            /** Currency */
+            currency: string;
+            /** Deposits */
+            deposits: string;
+            /** End */
+            end: string;
+            /** End On */
+            end_on: string;
+            /** Market */
+            market: string;
+            /** Start */
+            start: string;
+            /** Start On */
+            start_on: string;
+        };
+        /**
+         * EffectBuys
+         * @description "€1,000 buys $X; yesterday $Y" (``domain/session_fx.fx_buying_power_split``).
+         */
+        EffectBuys: {
+            /** Amount Eur */
+            amount_eur: string;
+            /** Change Usd */
+            change_usd?: string | null;
+            /** Market Hours Usd */
+            market_hours_usd?: string | null;
+            /** Overnight Usd */
+            overnight_usd?: string | null;
+            /** Usd Now */
+            usd_now: string;
+            /** Usd Prev */
+            usd_prev?: string | null;
+        };
+        /**
+         * EffectGridRow
+         * @description One year of the month x year grid: 12 cells (Jan..Dec), null = no data.
+         */
+        EffectGridRow: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Months */
+            months: (string | null)[];
+            /** Total */
+            total: string;
+            /** Year */
+            year: number;
+        };
+        /**
+         * EffectHeadline
+         * @description EUR return, USD return, the effect between them and the effect in money.
+         */
+        EffectHeadline: {
+            /** Currency Share */
+            currency_share?: string | null;
+            /** Effect */
+            effect: string;
+            /** Effect Pp */
+            effect_pp?: string | null;
+            /** Eur Return */
+            eur_return?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Market */
+            market: string;
+            /**
+             * Return Basis
+             * @enum {string}
+             */
+            return_basis: "periods" | "daily_chain" | "day";
+            /** Usd Return */
+            usd_return?: string | null;
+        };
+        /**
+         * EffectPoint
+         * @description One point of the constant-currency chart.
+         *
+         *     ``constant_currency = value - currency``: the actual value minus the currency
+         *     effect accumulated since the range start (each rate move counted only for the
+         *     money held when it happened). The gap between the two lines is ``currency``.
+         */
+        EffectPoint: {
+            /** Constant Currency */
+            constant_currency: string;
+            /** Currency */
+            currency: string;
+            /** T */
+            t: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * EffectRecord
+         * @description A record: a day (ISO date), month (``YYYY-MM``) or year (``YYYY``).
+         */
+        EffectRecord: {
+            /** Currency */
+            currency: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * EffectRecords
+         * @description Best / worst currency day, month and year of the range, plus lifetime figures.
+         */
+        EffectRecords: {
+            /** Average Monthly Contribution */
+            average_monthly_contribution?: string | null;
+            best_day?: components["schemas"]["EffectRecord"] | null;
+            best_month?: components["schemas"]["EffectRecord"] | null;
+            best_year?: components["schemas"]["EffectRecord"] | null;
+            /** Lifetime Effect */
+            lifetime_effect?: string | null;
+            /** Lifetime Months Of Contributions */
+            lifetime_months_of_contributions?: string | null;
+            worst_day?: components["schemas"]["EffectRecord"] | null;
+            worst_month?: components["schemas"]["EffectRecord"] | null;
+            worst_year?: components["schemas"]["EffectRecord"] | null;
+        };
+        /**
+         * EffectRollingPoint
+         * @description Currency effect summed over the ``rolling_window_days`` business days to ``t``.
+         */
+        EffectRollingPoint: {
+            /** Currency */
+            currency: string;
+            /** T */
+            t: string;
+        };
+        /**
+         * EffectRun
+         * @description The current streak of same-sign months (lifetime), e.g. "helped 7 months running".
+         */
+        EffectRun: {
+            /** Currency */
+            currency: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind";
+            /** Months */
+            months: number;
+            /** Since */
+            since: string;
+            /** Statement */
+            statement: string;
+        };
+        /**
+         * EffectStat
+         * @description One Impact tile (same shape as the strip's ``CurrencyStat``).
+         */
+        EffectStat: {
+            /** Currency */
+            currency?: ("EUR" | "USD") | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "eur_return" | "usd_return" | "effect_pp" | "effect" | "currency_share" | "best_month" | "worst_month" | "tailwind_share" | "longest_tailwind" | "longest_headwind" | "typical_day" | "largest_day" | "months_of_contributions" | "inside_hours" | "outside_hours" | "rate_range_today" | "buys_now";
+            /** Kind */
+            kind?: ("tailwind" | "headwind" | "neutral") | null;
+            /** Label */
+            label?: string | null;
+            /** Secondary */
+            secondary?: string | null;
+            /** Secondary Currency */
+            secondary_currency?: ("EUR" | "USD") | null;
+            /** Secondary Unit */
+            secondary_unit?: ("rate" | "fraction" | "money" | "count") | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "rate" | "fraction" | "money" | "count";
+            /** Value */
+            value: string;
         };
         /**
          * EstimateFund
@@ -3751,6 +4034,33 @@ export interface components {
              * @description Trade date (daily) or that session's close instant (1d / 1w)
              */
             t: string;
+        };
+        /**
+         * HoldingEffect
+         * @description One holding's change over the range, three ways, in ``ccy``.
+         *
+         *     ``price + dividends + currency == total``. ``price``: the change in value not
+         *     explained by flows or the rate (the holding's market move); ``dividends``:
+         *     paid in the range, each at its own date's rate; ``currency``: each day's
+         *     holding revalued from the previous day's rate to that day's.
+         */
+        HoldingEffect: {
+            /** Currency */
+            currency: string;
+            /** Dividends */
+            dividends: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Name */
+            name?: string | null;
+            /** Native Ccy */
+            native_ccy: string;
+            /** Price */
+            price: string;
+            /** Symbol */
+            symbol: string;
+            /** Total */
+            total: string;
         };
         /**
          * HoldingGroup
@@ -6147,6 +6457,29 @@ export interface components {
             /** Xirr Available */
             xirr_available: boolean;
         };
+        /**
+         * SessionSplit
+         * @description The range's currency effect inside vs outside US market hours.
+         *
+         *     Only days with recorded session open/close rates are split
+         *     (``covered_currency``); earlier days are ``uncovered_currency``.
+         *     ``inside + outside == covered_currency`` exactly;
+         *     ``covered_currency + uncovered_currency`` = the range's currency effect.
+         */
+        SessionSplit: {
+            /** Available From */
+            available_from?: string | null;
+            /** Covered Currency */
+            covered_currency: string;
+            /** Inside */
+            inside: string;
+            /** Note */
+            note?: string | null;
+            /** Outside */
+            outside: string;
+            /** Uncovered Currency */
+            uncovered_currency: string;
+        };
         /** SettingField */
         SettingField: {
             /** Choices */
@@ -8311,6 +8644,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ByCurrency_CurrencyOut_"];
+                };
+            };
+        };
+    };
+    get_currency_effect_both_api_currency_effect_both_get: {
+        parameters: {
+            query?: {
+                range?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_CurrencyEffectOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
