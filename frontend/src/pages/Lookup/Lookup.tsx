@@ -7,11 +7,11 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { formatStamp } from "../../components/Freshness";
 import { Percent } from "../../components/Percent";
-import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { type TabItem, Tabs } from "../../components/Tabs";
 import { ApiError } from "../../lib/api";
 import { formatMoney } from "../../lib/format";
+import { usePrefs } from "../../lib/prefs";
 import { HOLDING_RANGES, type HoldingRange } from "../../lib/queries/holding-detail";
 import { type LookupHistoryDto, type LookupQuoteDto, useLookupHistory, useLookupQuote } from "../../lib/queries/lookup";
 import { toNum } from "../../lib/queries/portfolio";
@@ -39,9 +39,9 @@ export function convertAt(price: number | null, native: string, target: string, 
 function PriceChart({ symbol, quote }: { symbol: string; quote: LookupQuoteDto }) {
   const [range, setRange] = useState<HoldingRange>("1y");
   const native = quote.currency ?? "USD";
-  const convertible = native === "USD" || native === "EUR";
-  const options = convertible ? (native === "USD" ? ["USD", "EUR"] : ["EUR", "USD"]) : [native];
-  const [shown, setShown] = useState(native);
+  // Follows the app's EUR / USD switch; other currencies stay native.
+  const { currency } = usePrefs();
+  const shown = native === "USD" || native === "EUR" ? currency : native;
   const q = useLookupHistory(symbol, range);
   const data: LookupHistoryDto | undefined = q.data;
   const points = useMemo(
@@ -61,11 +61,6 @@ function PriceChart({ symbol, quote }: { symbol: string; quote: LookupQuoteDto }
         ranges={HOLDING_RANGES}
         rangeLabel={rangeLabel}
         onRangeChange={(r) => setRange(r as HoldingRange)}
-        headerExtra={
-          options.length > 1 ? (
-            <SegmentedControl ariaLabel="Price in" size="sm" options={options.map((o) => ({ value: o, label: o }))} value={shown} onChange={setShown} />
-          ) : undefined
-        }
         xMode={chartXMode(data?.x_mode, sessions)}
         sessions={sessions}
         loading={q.isPending}
@@ -171,11 +166,13 @@ export function Lookup() {
         symbol={d.symbol}
         name={d.name ?? d.symbol}
         back={back}
+        pills={
+          <Chip size="sm" tone="accent">
+            Not held
+          </Chip>
+        }
         chips={
           <>
-            <Chip size="sm" tone="accent">
-              Not held
-            </Chip>
             {d.exchange && (
               <Chip size="sm" outline>
                 {d.exchange}
@@ -189,7 +186,6 @@ export function Lookup() {
                 {d.type}
               </Chip>
             )}
-            {d.captured_at && <span className="holding-page__muted lookup-page__stamp">Price {formatStamp(d.captured_at)}</span>}
           </>
         }
         value={formatMoney(toNum(d.price_native), ccy, { unmasked: true })}
@@ -197,6 +193,7 @@ export function Lookup() {
           <>
             <span>{formatMoney(toNum(d.day_change_native), ccy, { unmasked: true, signed: true })}</span>
             <Percent ratio={toNum(d.day_pct)} signed colored />
+            {d.captured_at && <span className="holding-page__muted lookup-page__stamp">{formatStamp(d.captured_at)}</span>}
           </>
         }
       />

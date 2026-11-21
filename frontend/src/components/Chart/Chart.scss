@@ -1,4 +1,5 @@
 @use "sass:map";
+@use "../../styles/mixins" as m;
 
 .chart {
   display: flex;
@@ -480,6 +481,11 @@
     }
   }
 
+  // The right axis read as the twin estimate (twin chart, 1D).
+  &__axis-label--estimate {
+    fill: var(--chart-estimate);
+  }
+
   &__marker--invested {
     fill: var(--color-muted);
   }
@@ -523,5 +529,21 @@
 
   &__readout-extra {
     color: var(--color-muted);
+  }
+
+  // Phone: a control at the legend's end (the holding page's Value | Price) stays on its row.
+  @include m.phone {
+    &__legend {
+      gap: var(--space-1);
+    }
+
+    &__legend-item {
+      gap: var(--space-1);
+      padding: 0 var(--space-2);
+    }
+
+    &__legend-extra {
+      padding-left: 0;
+    }
   }
 }

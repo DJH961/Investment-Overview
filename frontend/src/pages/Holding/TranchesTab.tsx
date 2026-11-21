@@ -23,14 +23,21 @@ import { formatAge } from "./holdingFormat";
 const qty = (v: string | null | undefined): string => formatShares(v);
 
 /** Status badge: always an icon and a word (P3: "soon" = long-term within 60 days). */
-export function TrancheBadge({ row }: { row: Pick<TrancheRowDto, "status" | "days_to_long_term"> }) {
+export function TrancheBadge({
+  row,
+  compact = false,
+}: {
+  row: Pick<TrancheRowDto, "status" | "days_to_long_term">;
+  /** Phone cards: shorter words (still an icon and a word). */
+  compact?: boolean;
+}) {
   const days = row.days_to_long_term;
   const look =
     row.status === "long"
       ? { icon: <CircleCheck aria-hidden size={14} className="holding-page__lot-icon holding-page__lot-icon--long" />, text: "Long-term" }
       : row.status === "soon"
-        ? { icon: <Hourglass aria-hidden size={14} className="holding-page__lot-icon holding-page__lot-icon--soon" />, text: `Long-term in ${days ?? "–"} d` }
-        : { icon: <Clock aria-hidden size={14} className="holding-page__lot-icon" />, text: `Short-term · ${days ?? "–"} d left` };
+        ? { icon: <Hourglass aria-hidden size={14} className="holding-page__lot-icon holding-page__lot-icon--soon" />, text: compact ? `Long in ${days ?? "–"} d` : `Long-term in ${days ?? "–"} d` }
+        : { icon: <Clock aria-hidden size={14} className="holding-page__lot-icon" />, text: compact ? `Short · ${days ?? "–"} d` : `Short-term · ${days ?? "–"} d left` };
   return (
     <span className={clsx("holding-page__lot-badge", `holding-page__lot-badge--${row.status}`)}>
       {look.icon}
@@ -42,13 +49,13 @@ export function TrancheBadge({ row }: { row: Pick<TrancheRowDto, "status" | "day
 function Gain({ amount, pct, ccy }: { amount: string | null; pct: string | null; ccy: string }) {
   return (
     <span className="holding-page__lot-gain">
-      <Money amount={toNum(amount)} currency={ccy} signed colored />
+      <Money amount={toNum(amount)} currency={ccy} signed colored digits={0} />
       <Percent ratio={toNum(pct)} signed className="holding-page__lot-pct" />
     </span>
   );
 }
 
-function LotRow({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; nested?: boolean }) {
+function LotRow({ r, ccy, nested = false, accounts }: { r: TrancheRowDto; ccy: string; nested?: boolean; accounts: boolean }) {
   const sold = (toNum(r.quantity_bought) ?? 0) - (toNum(r.quantity_left) ?? 0);
   return (
     <tr className={clsx("holding-page__lot", nested && "holding-page__lot--nested")}>
@@ -58,9 +65,11 @@ function LotRow({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; nes
           <span className="holding-page__muted"> · {r.source === "reinvest" ? "reinvested" : "moved in"}</span>
         )}
       </td>
-      <td className="holding-page__lot-td holding-page__lot-td--account" title={r.account_name}>
-        <span className="holding-page__clip">{r.account_name}</span>
-      </td>
+      {accounts && (
+        <td className="holding-page__lot-td holding-page__lot-td--account" title={r.account_name}>
+          <span className="holding-page__clip">{r.account_name}</span>
+        </td>
+      )}
       <td className="holding-page__lot-td holding-page__lot-td--right">
         {qty(r.quantity_left)} / {qty(r.quantity_bought)}
         {sold > 0 && <span className="holding-page__lot-sub">{formatShares(String(Math.round(sold * 1e6) / 1e6))} sold</span>}
@@ -69,7 +78,7 @@ function LotRow({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; nes
         {formatMoney(toNum(r.cost_per_share_native), ccy)}
       </td>
       <td className="holding-page__lot-td holding-page__lot-td--right">
-        <Money amount={toNum(r.cost_native)} currency={ccy} />
+        <Money amount={toNum(r.cost_native)} currency={ccy} digits={0} />
       </td>
       <td className="holding-page__lot-td holding-page__lot-td--right">{formatAge(r.age_days)}</td>
       <td className="holding-page__lot-td">
@@ -87,11 +96,13 @@ function GroupRow({
   members,
   ccy,
   account,
+  accounts,
 }: {
   g: TrancheGroupDto;
   members: TrancheRowDto[];
   ccy: string;
   account: string;
+  accounts: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const id = `lot-group-${g.account_id}`;
@@ -110,16 +121,18 @@ function GroupRow({
             {g.count} reinvested · {qty(g.quantity_left)} sh
           </button>
         </td>
-        <td className="holding-page__lot-td holding-page__lot-td--account" title={account}>
-          <span className="holding-page__clip">{account}</span>
-        </td>
+        {accounts && (
+          <td className="holding-page__lot-td holding-page__lot-td--account" title={account}>
+            <span className="holding-page__clip">{account}</span>
+          </td>
+        )}
         <td className="holding-page__lot-td holding-page__lot-td--right">{qty(g.quantity_left)}</td>
         <td className="holding-page__lot-td holding-page__lot-td--right">
           {formatMoney(toNum(g.avg_cost_per_share_native), ccy)}
           <span className="holding-page__lot-sub">average</span>
         </td>
         <td className="holding-page__lot-td holding-page__lot-td--right">
-          <Money amount={toNum(g.cost_native)} currency={ccy} />
+          <Money amount={toNum(g.cost_native)} currency={ccy} digits={0} />
         </td>
         <td className="holding-page__lot-td holding-page__lot-td--right">–</td>
         <td className="holding-page__lot-td holding-page__muted">
@@ -131,12 +144,12 @@ function GroupRow({
       </tr>
       {open && (
         <tr id={id} className="holding-page__lot-nest" aria-label={`Reinvested dividends in ${account}`}>
-          <td colSpan={8} className="holding-page__lot-nest-cell" aria-label={`${g.count} reinvested tranches`}>
+          <td colSpan={accounts ? 8 : 7} className="holding-page__lot-nest-cell" aria-label={`${g.count} reinvested tranches`}>
             <table className="holding-page__lots holding-page__lots--nested">
               <caption className="holding-page__sr">Reinvested dividends in {account}</caption>
               <tbody>
                 {members.map((r) => (
-                  <LotRow key={r.id} r={r} ccy={ccy} nested />
+                  <LotRow key={r.id} r={r} ccy={ccy} nested accounts={accounts} />
                 ))}
               </tbody>
             </table>
@@ -159,10 +172,12 @@ function LotCard({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; ne
           <Money amount={toNum(r.gain_native)} currency={ccy} signed colored />
         </span>
         <span className="holding-page__row-meta">
-          {qty(r.quantity_left)} / {qty(r.quantity_bought)} sh · {formatMoney(toNum(r.cost_per_share_native), ccy)}
+          {/* "x / y" only when some were sold; otherwise just the shares. */}
+          {toNum(r.quantity_left) === toNum(r.quantity_bought) ? qty(r.quantity_left) : `${qty(r.quantity_left)} / ${qty(r.quantity_bought)}`} sh ·{" "}
+          {formatMoney(toNum(r.cost_per_share_native), ccy)}
         </span>
         <span className="holding-page__row-detail">
-          <TrancheBadge row={r} />
+          <TrancheBadge row={r} compact />
         </span>
       </div>
     </li>
@@ -245,6 +260,9 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
   const loose = d.rows.filter((r) => !grouped.has(r.id));
   const accountOf = (id: number) => d.rows.find((r) => r.account_id === id)?.account_name ?? "";
   const members = (g: TrancheGroupDto) => g.row_ids.flatMap((id) => byId.get(id) ?? []);
+  const accounts = new Set(d.rows.map((r) => r.account_id)).size > 1;
+  const heads = ["Bought", ...(accounts ? ["Account"] : []), "Shares left / bought", "Cost / sh", "Cost", "Age", "Status", "Gain vs today"];
+  const right = new Set(["Shares left / bought", "Cost / sh", "Cost", "Age", "Gain vs today"]);
   return (
     <div className="holding-page__panel">
       <p className="holding-page__note">
@@ -266,26 +284,20 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
             <caption className="holding-page__sr">Tranches of {row.symbol}</caption>
             <thead>
               <tr>
-                {["Bought", "Account", "Shares left / bought", "Cost / sh", "Cost", "Age", "Status", "Gain vs today"].map(
-                  (h, i) => (
-                    <th
-                      key={h}
-                      scope="col"
-                      className={clsx("holding-page__lot-th", [2, 3, 4, 5, 7].includes(i) && "holding-page__lot-th--right")}
-                    >
-                      {h}
-                    </th>
-                  ),
-                )}
+                {heads.map((h) => (
+                  <th key={h} scope="col" className={clsx("holding-page__lot-th", right.has(h) && "holding-page__lot-th--right")}>
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {loose.map((r) => (
-                <LotRow key={r.id} r={r} ccy={ccy} />
+                <LotRow key={r.id} r={r} ccy={ccy} accounts={accounts} />
               ))}
               {d.groups.map((g) => (
                 <Fragment key={`g${g.account_id}`}>
-                  <GroupRow g={g} members={members(g)} ccy={ccy} account={accountOf(g.account_id)} />
+                  <GroupRow g={g} members={members(g)} ccy={ccy} account={accountOf(g.account_id)} accounts={accounts} />
                 </Fragment>
               ))}
             </tbody>

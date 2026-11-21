@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "../../components/Button";
 import { Chart, type ChartMarker, type ChartSeries } from "../../components/Chart";
 import { formatStamp } from "../../components/Freshness";
@@ -32,8 +32,10 @@ const pp = (v: string | null | undefined): string => {
 interface Built {
   series: ChartSeries[];
   markers: ChartMarker[];
-  /** Right-axis labels in the fund's currency (1d / 1w: the fund sits on the twin's scale). */
-  right?: (v: number) => string;
+  /** 1D: the right axis reads the twin line as the fund's estimate (no second line). */
+  rightAxis?: { scale: number; format: (v: number) => string };
+  /** The legend under the chart (one series is never listed by the chart itself). */
+  legend?: ReactNode;
   value: (v: number) => string;
   extra?: (t: number) => string | null;
 }
@@ -57,31 +59,49 @@ function build(d: HoldingTwinDto, fundSymbol: string, ccy: string): Built {
   }
   const twin = d.twin_points.map((p) => ({ t: p.t, v: toNum(p.price_native) }));
   const firstTwin = twin.find((p) => p.v !== null)?.v ?? null;
-  // The fund rides on the twin's scale from the first point, so both start together; the
-  // right axis and the tooltip show the fund's own prices (Chart `scale`: display only).
+  // ONE line, the twin's own price. On 1D the fund's estimate is that line times a fixed
+  // factor (prev NAV / twin prev close), so it gets the right axis instead of a second,
+  // identical line; NAV prints are dots on the same scale (display mapping only).
   const firstFund = toNum(d.estimate_points[0]?.price_native ?? d.nav_points[0]?.nav_native ?? null);
   const scale = firstTwin && firstFund ? firstFund / firstTwin : 1;
+  const estimating = d.estimate_points.length > 0;
   const series: ChartSeries[] = [{ id: "twin", label: d.twin_symbol, tone: "primary", points: twin }];
-  if (d.estimate_points.length) {
-    series.push({
-      id: "estimate",
-      label: `≈ ${fundSymbol} from ${d.twin_symbol}`,
-      tone: "estimate",
-      scale,
-      axis: "right",
-      valueFormat: money,
-      points: d.estimate_points.map((p) => ({ t: p.t, v: toNum(p.price_native) })),
-    });
-  }
   const markers: ChartMarker[] = d.nav_points.flatMap((p) => {
     const nav = toNum(p.nav_native);
     return nav === null ? [] : [{ t: p.t, v: nav / scale, shape: "dot" as const, label: `${fundSymbol} NAV ${money(nav)} (${formatDate(p.t)})` }];
   });
+  const legend = (
+    <span className="holding-page__legend">
+      <span className="holding-page__legend-item">
+        <span className="holding-page__line-swatch" aria-hidden />
+        {d.twin_symbol}
+        {estimating && " (left)"}
+      </span>
+      {estimating && (
+        <span className="holding-page__legend-item">
+          <span className="holding-page__axis-swatch" aria-hidden />≈ {fundSymbol} estimate (right)
+        </span>
+      )}
+      {markers.length > 0 && (
+        <span className="holding-page__legend-item">
+          <span className="holding-page__nav-dot" aria-hidden />
+          NAV at the close
+        </span>
+      )}
+    </span>
+  );
   return {
     series,
     markers,
     value: (v) => formatMoney(v, ccy, { unmasked: true }),
-    right: d.estimate_points.length ? (v) => money(v) : undefined,
+    rightAxis: estimating ? { scale, format: money } : undefined,
+    legend,
+    extra: estimating
+      ? (t) => {
+          const v = twin.find((p) => Date.parse(p.t) === t)?.v;
+          return v == null ? null : `≈ ${fundSymbol} ${money(v * scale)}`;
+        }
+      : undefined,
   };
 }
 
@@ -104,8 +124,8 @@ function ChangeTwin({ row }: { row: HoldingRowDto }) {
           onChange={(e) => setValue(e.target.value)}
         />
       </span>
-      <Button type="submit" variant="secondary" loading={update.isPending}>
-        Change twin
+      <Button type="submit" variant="secondary" loading={update.isPending} className="holding-page__twin-save">
+        Save
       </Button>
       {update.isSuccess && <output className="holding-page__note">Saved. The estimate uses it from the next tick.</output>}
       {(errors.intraday_twin ?? errors._form) && (
@@ -139,14 +159,11 @@ export function TwinTab({ row }: { row: HoldingRowDto }) {
           loading={q.isPending}
           busy={q.isFetching && !q.isPending}
           valueFormat={built?.value ?? ((v) => String(v))}
-          rightAxisFormat={built?.right}
+          rightAxis={built?.rightAxis}
           tooltipExtra={built?.extra}
           timeFormat={axisFormat(range, d?.x_mode)}
           tooltipTimeFormat={tooltipFormat(range, d?.x_mode)}
-          legendExtra={range === "1d" || range === "1w" ? <span className="holding-page__legend-nav">
-                <span className="holding-page__nav-dot" aria-hidden />
-                NAV at the close
-              </span> : undefined}
+          legendExtra={built?.legend}
           height={240}
           ariaLabel={`${row.symbol} against its twin ETF`}
           emptyMessage={q.isError ? "Could not load the twin history." : "No twin prices for this range yet."}

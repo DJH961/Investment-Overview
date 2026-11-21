@@ -41,6 +41,8 @@ vi.mock("../../lib/queries/lookup", async (orig) => ({
   }),
 }));
 
+vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
+
 import { convertAt, Lookup } from "./Lookup";
 
 function renderAt(path: string) {
@@ -61,7 +63,9 @@ describe("Lookup (not held)", () => {
     expect(screen.getByText("Not held")).toBeInTheDocument();
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Performance", "Details"]);
     for (const tab of ["Tranches", "Transactions", "Dividends", "Twin"]) expect(screen.queryByRole("tab", { name: tab })).toBeNull();
-    expect(screen.getByRole("radio", { name: "EUR" })).toBeInTheDocument();
+    // Follows the app's EUR / USD switch (EUR here): no local currency switch.
+    expect(screen.queryByRole("radio", { name: "EUR" })).toBeNull();
+    expect(screen.getByText(/Each point in EUR/)).toBeInTheDocument();
     expect(screen.queryByText("Unrealised gain")).toBeNull();
   });
 

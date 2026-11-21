@@ -252,8 +252,9 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
         ranges={ranges}
         rangeLabel={rangeLabel}
         onRangeChange={(r) => setRange(r as HoldingRange)}
-        // Phone: the switch sits beside the range figure, under the chart.
         headerExtra={isPhone ? undefined : modeSwitch}
+        // Phone: the switch sits at the end of the legend row (legend left, switch right).
+        legendExtra={isPhone ? modeSwitch : undefined}
         xMode={chartXMode(xMode, sessions)}
         sessions={sessions}
         loading={history.isPending}
@@ -272,7 +273,6 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
         }
       />
       <div className="holding-page__range-row">
-        {isPhone && modeSwitch}
         <RangeSummary data={history.data} ccy={ccy} />
       </div>
       {isNavFund(row) && !row.twin && (

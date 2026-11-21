@@ -177,6 +177,11 @@ export interface ChartProps {
   /** Right-axis tick labels for a scaled `axis: "right"` series (true values in its currency). */
   /** Right-axis labels; `step` is the tick spacing (in right-axis units). */
   rightAxisFormat?: (v: number, step?: number) => string;
+  /**
+   * A right axis with no line of its own: the left ticks × `scale`, in another unit (the
+   * twin chart's "≈ fund estimate" beside the twin's price). Shown on phones too (inset).
+   */
+  rightAxis?: { scale: number; format: (v: number) => string };
   /** Makes legend entries toggle buttons. */
   onToggleSeries?: (id: string) => void;
   /** Exchange sessions for `xMode="session"` (falls back to `date` when empty). */
@@ -292,6 +297,7 @@ export function Chart({
   trend,
   busy = false,
   rightAxisFormat,
+  rightAxis,
   onToggleSeries,
   sessions,
   height = 280,
@@ -367,7 +373,15 @@ export function Chart({
   // nothing floats over them.
   const compact = width < COMPACT_WIDTH;
   const rightSeries = rightAxisFormat ? prepared.find((s) => s.axis === "right") : undefined;
-  const rightScale = rightSeries?.scale && Number.isFinite(rightSeries.scale) ? rightSeries.scale : 1;
+  const rightFmt = rightSeries ? rightAxisFormat : rightAxis?.format;
+  const hasRight = !!rightSeries || !!rightAxis;
+  const rightScale = rightSeries
+    ? rightSeries.scale && Number.isFinite(rightSeries.scale)
+      ? rightSeries.scale
+      : 1
+    : rightAxis && Number.isFinite(rightAxis.scale)
+      ? rightAxis.scale
+      : 1;
   const bounds = useMemo(() => {
     if (!values.length) return null;
     const nowOk = nowMarker && Number.isFinite(nowMarker.v);
@@ -399,18 +413,18 @@ export function Chart({
   const yStep = yTicks.length > 1 ? Math.abs(yTicks[1] - yTicks[0]) : undefined;
   const leftW = Math.max(0, ...yTicks.map((v) => labelWidth(valueFormat(v, yStep))));
   const rightW =
-    rightSeries && rightAxisFormat
-      ? Math.max(0, ...yTicks.map((v) => labelWidth(rightAxisFormat(v * rightScale, yStep && yStep * rightScale))))
+    hasRight && rightFmt
+      ? Math.max(0, ...yTicks.map((v) => labelWidth(rightFmt(v * rightScale, yStep && yStep * rightScale))))
       : 0;
   // The gutter is reserved by the width alone, so the plot is the same size with or
   // without the right labels (and across currencies and ranges).
-  const showRightAxis = !!rightSeries && !!rightAxisFormat && width >= TWO_AXIS_WIDTH;
+  const showRightAxis = hasRight && !!rightFmt && (width >= TWO_AXIS_WIDTH || !!rightAxis);
   const PAD = compact
     ? { top: 18, right: 2, bottom: 24, left: 2 }
     : {
         ...BASE_PAD,
         left: leftW + LABEL_GAP,
-        right: rightSeries ? Math.max(RIGHT_GUTTER, rightW + LABEL_GAP) : BASE_PAD.right,
+        right: hasRight ? Math.max(RIGHT_GUTTER, rightW + LABEL_GAP) : BASE_PAD.right,
       };
   const innerW = Math.max(width - PAD.left - PAD.right, 10);
   const innerH = Math.max(height - PAD.top - PAD.bottom, 10);
@@ -532,7 +546,7 @@ export function Chart({
     ? [...primarySeries.pts].reverse().find((p) => p.y !== null && p.raw !== null)
     : undefined;
   let endPill: { x: number; y: number; w: number; text: string } | null = null;
-  if (!compact && !nowMarker && !rightSeries && primarySeries && lastRaw && lastRaw.y !== null && lastRaw.raw !== null) {
+  if (!compact && !nowMarker && !hasRight && primarySeries && lastRaw && lastRaw.y !== null && lastRaw.raw !== null) {
     const text = (primarySeries.valueFormat ?? valueFormat)(lastRaw.raw);
     const w = labelWidth(text) + 24;
     const ex = scales.x(lastRaw.x);
@@ -603,18 +617,18 @@ export function Chart({
               >
                 {valueFormat(v, yStep)}
               </text>
-              {showRightAxis && rightSeries && rightAxisFormat && (
+              {showRightAxis && rightFmt && (
                 <text
                   className={clsx(
                     "chart__axis-label",
                     compact ? "chart__axis-label--inset chart__axis-label--inset-end" : "chart__axis-label--right",
-                    `chart__axis-label--${rightSeries.toneCls}`,
+                    `chart__axis-label--${rightSeries?.toneCls ?? "estimate"}`,
                   )}
                   x={compact ? width - PAD.right - 2 : width - PAD.right + 8}
                   y={compact ? scales.y(v) - 4 : scales.y(v)}
                   dy={compact ? undefined : "0.32em"}
                 >
-                  {rightAxisFormat(v * rightScale, yStep && yStep * rightScale)}
+                  {rightFmt(v * rightScale, yStep && yStep * rightScale)}
                 </text>
               )}
             </g>

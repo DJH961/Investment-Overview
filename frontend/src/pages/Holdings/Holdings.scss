@@ -797,8 +797,19 @@
   }
 }
 
-// 7.1: the desktop peek toggle at the row end (turns when open).
+// 7.1: the desktop peek toggle leads the Holding cell (turns when open).
 .holdings-page {
+  &__lookup {
+    max-width: none;
+  }
+
+  &__holding-cell {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
   &__peek-toggle {
     color: var(--color-muted);
     transition: transform var(--duration-fast) var(--ease-standard);
@@ -810,25 +821,12 @@
   }
 }
 
-// 7.1: on desktop the peek toggle stays in view at the row end, and the opened peek fills
-// the visible width (not the scrolled table width) whatever the horizontal scroll.
+// 7.1: the opened peek fills the visible width (not the scrolled table width) whatever the
+// horizontal scroll.
 .holdings-page {
   @include m.tablet-up {
     &__table {
       container-type: inline-size;
-    }
-
-    &__table .data-table__th:last-child,
-    &__table .data-table__td:last-child {
-      position: sticky;
-      right: 0;
-      z-index: var(--z-raised);
-      background-color: var(--color-surface);
-      box-shadow: inset var(--border-width) 0 0 var(--color-border);
-    }
-
-    &__table .data-table__row:hover .data-table__td:last-child {
-      background-color: var(--color-surface-2);
     }
 
     &__table .data-table__expanded-inner {

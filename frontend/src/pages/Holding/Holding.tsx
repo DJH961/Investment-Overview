@@ -13,6 +13,7 @@ import { usePrefs } from "../../lib/prefs";
 import { useDividends } from "../../lib/queries/activity";
 import { type HoldingRowDto, useHoldings } from "../../lib/queries/holdings";
 import { type TransactionFilters, transactionsQuery } from "../../lib/queries/ledger";
+import { useHoldingTranches } from "../../lib/queries/holding-detail";
 import { toNum } from "../../lib/queries/portfolio";
 import { DividendsTab } from "./DividendsTab";
 import { BackLink, HoldingHeader } from "./HoldingHeader";
@@ -41,19 +42,17 @@ export function HoldingChips({ row }: { row: HoldingRowDto }) {
       <Chip size="sm" outline title={row.account} className="holding-page__chip">
         {row.account}
       </Chip>
-      <Chip size="sm" outline className="holding-page__chip">
+      <Chip size="sm" outline className="holding-page__chip holding-page__chip--fixed">
         {row.category}
       </Chip>
-      <Chip size="sm" outline>
+      <Chip size="sm" outline className="holding-page__chip holding-page__chip--fixed">
         {row.native_currency}
       </Chip>
       {type && (
-        <Chip size="sm" outline>
+        <Chip size="sm" outline className="holding-page__chip holding-page__chip--fixed">
           {type}
         </Chip>
       )}
-      {/* No "live" here: the top bar already says so, and the chips stay on one line. */}
-      <HoldingPills row={row} />
     </>
   );
 }
@@ -76,6 +75,8 @@ export function Holding() {
     offset: 0,
   };
   const txQuery = useQuery({ ...transactionsQuery(filters), enabled: symbol !== "" });
+  // For the Tranches tab's count (open tranches); the tab reuses the same query.
+  const lots = useHoldingTranches(row ? row.instrument_id : null);
   // A list we already hold, filtered again here: the server's symbol filter is a prefix match.
   const txns = (txQuery.data?.rows ?? []).filter((t) => t.symbol === symbol);
   const divCount = (dividends.data?.rows ?? []).filter((d) => d.symbol === symbol).length;
@@ -122,7 +123,7 @@ export function Holding() {
   const content: Record<TabKey, { label: string; badge?: number; node: React.ReactNode }> = {
     performance: { label: "Performance", node: <PerformanceTab row={row} ccy={currency} /> },
     twin: { label: "Twin", node: <TwinTab row={row} /> },
-    tranches: { label: "Tranches", node: <TranchesTab row={row} /> },
+    tranches: { label: "Tranches", badge: lots.data ? lots.data.rows.length : undefined, node: <TranchesTab row={row} /> },
     transactions: {
       label: "Transactions",
       badge: txQuery.data ? txns.length : undefined,
@@ -158,6 +159,7 @@ export function Holding() {
         symbol={row.symbol}
         name={row.name}
         chips={<HoldingChips row={row} />}
+        pills={<HoldingPills row={row} live={row.market_open && !row.daily_is_stale} />}
         value={<Money amount={toNum(row.value)} currency={currency} />}
         today={
           <>

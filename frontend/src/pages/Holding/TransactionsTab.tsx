@@ -36,7 +36,9 @@ const LABEL: Record<TxFilter, string> = { all: "All", buys: "Buys", sells: "Sell
 export function txDetail(t: TransactionOut): string {
   const q = num(t.quantity);
   const price = num(t.price_native);
-  if (t.kind === "dividend_cash") return price === null ? "" : `${formatPrice(t.price_native, t.currency)} / sh`;
+  // Dividends say how they were paid: cash (with the per-share amount when stored) or the shares bought.
+  if (t.kind === "dividend_cash") return price === null ? "Cash" : `Cash · ${formatPrice(t.price_native, t.currency)} / sh`;
+  if (t.kind === "dividend_reinvest") return q === null ? "Reinvested" : `Reinvested · ${formatQuantity(t.quantity?.replace(/^-/, ""))} sh`;
   if (q === null) return "";
   const shares = `${formatQuantity(t.quantity?.replace(/^-/, ""))} sh`;
   return price === null ? shares : `${shares} @ ${formatPrice(t.price_native, t.currency)}`;
@@ -46,16 +48,25 @@ export function txDetail(t: TransactionOut): string {
  * The year line's net: what went into the holding that year (buys minus sells, a plain
  * sum of the server's net amounts, per currency). Dividends are not part of it.
  */
-export function yearNet(rows: TransactionOut[]): { currency: string; bought: number }[] {
-  const out = new Map<string, number>();
+export function yearNet(rows: TransactionOut[]): { currency: string; bought: number | null; dividends: number | null }[] {
+  const out = new Map<string, { bought: number | null; dividends: number | null }>();
+  const slot = (c: string) => out.get(c) ?? out.set(c, { bought: null, dividends: null }).get(c)!;
   for (const r of rows) {
-    if (r.kind !== "buy" && r.kind !== "sell") continue;
-    const n = num(r.net_native);
-    if (n === null) continue;
-    // Buys are stored as cash out (negative): money put in is its opposite.
-    out.set(r.currency, (out.get(r.currency) ?? 0) - n);
+    if (r.kind === "buy" || r.kind === "sell") {
+      const n = num(r.net_native);
+      if (n === null) continue;
+      // Buys are stored as cash out (negative): money put in is its opposite.
+      const s = slot(r.currency);
+      s.bought = (s.bought ?? 0) - n;
+    } else if (isDividend(r.kind)) {
+      // A reinvested dividend nets to nothing in cash; its gross is what was paid.
+      const n = num(r.kind === "dividend_reinvest" ? (r.gross_native ?? r.net_native) : r.net_native);
+      if (n === null) continue;
+      const s = slot(r.currency);
+      s.dividends = (s.dividends ?? 0) + Math.abs(n);
+    }
   }
-  return [...out].map(([currency, bought]) => ({ currency, bought }));
+  return [...out].map(([currency, v]) => ({ currency, ...v }));
 }
 
 function YearSummary({ rows }: { rows: TransactionOut[] }) {
@@ -66,8 +77,18 @@ function YearSummary({ rows }: { rows: TransactionOut[] }) {
       {nets.map((n, i) => (
         <span key={n.currency}>
           {i > 0 && " · "}
-          {n.bought >= 0 ? "net bought " : "net sold "}
-          <Money amount={Math.abs(n.bought)} currency={n.currency} />
+          {n.bought !== null && (
+            <>
+              {n.bought >= 0 ? "net bought " : "net sold "}
+              <Money amount={Math.abs(n.bought)} currency={n.currency} />
+            </>
+          )}
+          {n.bought !== null && n.dividends !== null && " · "}
+          {n.dividends !== null && (
+            <>
+              dividends <Money amount={n.dividends} currency={n.currency} />
+            </>
+          )}
         </span>
       ))}
     </>
@@ -156,7 +177,7 @@ export function TransactionsTab({
     <div className="holding-page__panel">
       <fieldset className="holding-page__filters">
         <legend className="holding-page__sr">Show</legend>
-        {(Object.keys(MATCH) as TxFilter[]).map((f) => (
+        {(Object.keys(MATCH) as TxFilter[]).filter((f) => f === "all" || counts[f] > 0).map((f) => (
           <button
             key={f}
             type="button"

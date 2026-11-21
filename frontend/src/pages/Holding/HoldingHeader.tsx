@@ -14,8 +14,10 @@ export function BackLink({ to = "/holdings", label = "Holdings" }: { to?: string
 export interface HoldingHeaderProps {
   symbol: string;
   name: string;
-  /** Meta chips: account, category, currency, type, flags. */
+  /** Meta chips: account, category, currency, type (one line; the account truncates). */
   chips: ReactNode;
+  /** Status pills on the symbol line: live, NAV / CASH, ≈ est., warnings, Not held. */
+  pills?: ReactNode;
   /** The headline value (or the price on a lookup). */
   value: ReactNode;
   /** Today's move under / beside it. */
@@ -29,7 +31,7 @@ export interface HoldingHeaderProps {
  * the full name in its title); meta chips; value and today on the right (under the
  * symbol on a phone). On a phone it collapses to one sticky line once scrolled past.
  */
-export function HoldingHeader({ symbol, name, chips, value, today, back }: HoldingHeaderProps) {
+export function HoldingHeader({ symbol, name, chips, pills, value, today, back }: HoldingHeaderProps) {
   const ref = useRef<HTMLElement | null>(null);
   const [past, setPast] = useState(false);
   useEffect(() => {
@@ -47,6 +49,7 @@ export function HoldingHeader({ symbol, name, chips, value, today, back }: Holdi
       <header ref={ref} className="holding-page__head">
         <h1 className="holding-page__title" title={`${symbol} · ${name}`}>
           <span className="holding-page__symbol">{symbol}</span>
+          {pills && <span className="holding-page__pills">{pills}</span>}
           <span className="holding-page__name">{name}</span>
         </h1>
         <div className="holding-page__figures">

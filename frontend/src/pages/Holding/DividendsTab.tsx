@@ -50,12 +50,10 @@ export function DividendBars({ years, ccy, currentYear }: { years: { year: numbe
   );
 }
 
-function rowMeta(d: DividendRowDto, tx: TransactionOut | undefined): string {
-  if (d.kind === "reinvest") {
-    const q = tx?.quantity;
-    return `Reinvested · ${q ? `${formatQuantity(q)} sh` : d.account}`;
-  }
-  return `${d.kind === "interest" ? "Interest" : "Cash"} · ${d.account}`;
+/** Line 1 on this tab: how it was paid (every row here is a dividend). */
+function rowTitle(d: DividendRowDto, tx: TransactionOut | undefined): string {
+  if (d.kind === "reinvest") return tx?.quantity ? `Reinvested · ${formatQuantity(tx.quantity)} sh` : "Reinvested";
+  return d.kind === "interest" ? "Interest" : "Cash";
 }
 
 function perShare(d: DividendRowDto, tx: TransactionOut | undefined): string {
@@ -130,14 +128,13 @@ export function DividendsTab({
               <YearLine year={year} summary={total !== null ? <Money amount={toNum(total)} currency={ccy} /> : undefined} />
               {list.map((d) => {
                 const tx = d.id !== null ? txById.get(d.id) : undefined;
-                // Line 1 says what it is; line 2 says how it was paid (cash or reinvested).
-                const k = kindLook("dividend_cash");
+                const k = kindLook(d.kind === "reinvest" ? "dividend_reinvest" : "dividend_cash");
                 return (
                   <TwoLineRow
                     key={d.id ?? `${d.date}-${d.amount}`}
-                    lead={<KindTag icon={k.icon} label={d.kind === "interest" ? "Interest" : k.label} />}
+                    lead={<KindTag icon={k.icon} label={rowTitle(d, tx)} />}
                     amount={<Money amount={toNum(d.amount)} currency={ccy} />}
-                    meta={`${formatDate(d.date)} · ${rowMeta(d, tx)}`}
+                    meta={`${formatDate(d.date)} · ${d.account}`}
                     detail={perShare(d, tx)}
                   />
                 );

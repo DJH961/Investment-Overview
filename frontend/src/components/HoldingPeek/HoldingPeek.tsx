@@ -2,11 +2,10 @@ import clsx from "clsx";
 import { ArrowRight, Layers, ListOrdered } from "lucide-react";
 import type { ReactNode } from "react";
 import { LinkButton } from "../Button";
-import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
 import { Sparkline } from "../Sparkline";
-import { formatDate, formatMoney, formatPp, formatQuantity } from "../../lib/format";
+import { formatAxisDate, formatMoney, formatPp, formatQuantity } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { type HoldingPeekDto, useHoldingPeek } from "../../lib/queries/holding-detail";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
@@ -17,8 +16,8 @@ import "./HoldingPeek.scss";
 export const SOON_DAYS = 60;
 
 const TRADE_LABEL: Record<string, string> = {
-  buy: "Bought",
-  sell: "Sold",
+  buy: "Buy",
+  sell: "Sell",
   dividend_reinvest: "Reinvested",
   transfer_in: "Moved in",
   transfer_out: "Moved out",
@@ -40,6 +39,9 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** "23/12": the day in the app's date layout, no year (the peek is about recent things). */
+const shortDay = (iso: string): string => formatAxisDate(Date.parse(`${iso.slice(0, 10)}T12:00:00Z`), 0);
+
 function tranchesText(p: HoldingPeekDto): string {
   const t = p.tranches;
   const base = `${t.open_count} open`;
@@ -55,8 +57,7 @@ function TradeFact({ p }: { p: HoldingPeekDto }) {
     <>
       {TRADE_LABEL[t.kind] ?? t.kind}
       {qty !== null && ` ${formatQuantity(Math.abs(qty), Number.isInteger(qty) ? 0 : 4)} sh`}
-      {t.price_native != null && ` @ ${formatMoney(toNum(t.price_native), p.currency, { unmasked: true })}`}
-      <span className="holding-peek__muted"> · {formatDate(t.date)}</span>
+      <span className="holding-peek__muted"> · {shortDay(t.date)}</span>
     </>
   );
 }
@@ -66,14 +67,9 @@ function DividendFact({ p }: { p: HoldingPeekDto }) {
   if (!d) return <span className="holding-peek__muted">None yet</span>;
   return (
     <>
-      <Money amount={toNum(d.amount_native ?? null)} currency={p.currency} />
-      {d.reinvested && (
-        <span className="holding-peek__muted">
-          {" "}
-          reinvested{d.reinvested_quantity != null && ` · ${formatQuantity(toNum(d.reinvested_quantity), 4)} sh`}
-        </span>
-      )}
-      <span className="holding-peek__muted"> · {formatDate(d.date)}</span>
+      {formatMoney(toNum(d.amount_native ?? null), p.currency, { digits: 0 })}
+      {d.reinvested && <span className="holding-peek__muted"> reinvested</span>}
+      <span className="holding-peek__muted"> · {shortDay(d.date)}</span>
     </>
   );
 }
@@ -86,7 +82,7 @@ function TwinFact({ row }: { row: HoldingRowDto }) {
     return (
       <span className="holding-peek__twin">
         ≈ {t.symbol} <Percent ratio={toNum(t.est_today_pct ?? null)} signed />
-        <span className="holding-peek__muted"> · estimate until the NAV posts</span>
+        <span className="holding-peek__muted"> · est. until the NAV</span>
       </span>
     );
   }
@@ -165,25 +161,21 @@ export function HoldingPeek({ row, layout, id }: HoldingPeekProps) {
   const q = useHoldingPeek(row.instrument_id, true);
   const p = q.data;
   const wide = layout === "panel";
-  const facts = (which: "lots" | "activity" | "all") =>
+  const facts = () =>
     p && (
       <dl className="holding-peek__facts">
-        {which !== "activity" && <Fact label="Tranches">{tranchesText(p)}</Fact>}
-        {which !== "activity" && row.twin && (
+        <Fact label="Tranches">{tranchesText(p)}</Fact>
+        {row.twin && (
           <Fact label="Twin">
             <TwinFact row={row} />
           </Fact>
         )}
-        {which !== "lots" && (
-          <Fact label="Last trade">
-            <TradeFact p={p} />
-          </Fact>
-        )}
-        {which !== "lots" && (
-          <Fact label="Last dividend">
-            <DividendFact p={p} />
-          </Fact>
-        )}
+        <Fact label="Last trade">
+          <TradeFact p={p} />
+        </Fact>
+        <Fact label="Last dividend">
+          <DividendFact p={p} />
+        </Fact>
       </dl>
     );
 
@@ -194,13 +186,12 @@ export function HoldingPeek({ row, layout, id }: HoldingPeekProps) {
   ) : wide ? (
     <div className="holding-peek__cols">
       <Week p={p} wide />
-      {facts("lots")}
-      {facts("activity")}
+      {facts()}
     </div>
   ) : (
     <>
       <Week p={p} wide={false} />
-      {facts("all")}
+      {facts()}
     </>
   );
 

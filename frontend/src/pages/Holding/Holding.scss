@@ -48,7 +48,7 @@
   &__title {
     display: flex;
     grid-area: title;
-    align-items: baseline;
+    align-items: center;
     gap: var(--space-3);
     min-width: 0;
     margin: 0;
@@ -108,21 +108,39 @@
     font-size: var(--font-size-sm);
   }
 
+  // One line: the account chip gives way (ellipsis, full name in its title), never a wrap.
   &__chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     grid-area: chips;
+    overflow: hidden;
     align-items: center;
     gap: var(--space-1) var(--space-2);
     min-width: 0;
   }
 
   &__chip {
+    flex: 0 1 auto;
+    min-width: 0;
     max-width: 16rem;
 
     @include m.phone {
-      max-width: 7.5rem;
+      max-width: 7rem;
     }
+
+    &--fixed {
+      flex-shrink: 0;
+      max-width: none;
+    }
+  }
+
+  &__pills {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--space-1);
+    align-self: center;
+    font-family: var(--font-sans);
   }
 
   // Phone: one sticky line once the header has scrolled away (desktop: never).
@@ -346,9 +364,12 @@
     list-style: none;
     box-shadow: var(--shadow-1);
 
+    // A group's members: inset under the group row on a quieter ground, so they read as its.
     &--nested {
+      margin-left: var(--space-4);
       border: 0;
       border-top: var(--border-width) dashed var(--color-border);
+      border-left: 2px solid var(--color-border-strong);
       border-radius: 0;
       background: var(--color-surface-2);
       box-shadow: none;
@@ -558,8 +579,14 @@
     max-width: 8rem;
   }
 
-  &__tx:hover {
-    background: var(--color-surface-2);
+  // The whole row opens the edit (the date button stretches over it).
+  &__tx {
+    position: relative;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--color-surface-2);
+    }
   }
 
   &__tx-open {
@@ -570,7 +597,18 @@
     color: inherit;
     font: inherit;
     cursor: pointer;
-    text-decoration: underline dotted;
+    text-decoration: none;
+
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+    }
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+    }
   }
 
   // ---- Tranches -------------------------------------------------------------------
@@ -584,6 +622,10 @@
 
   &__lot--nested &__lot-td {
     color: var(--color-muted);
+  }
+
+  &__lot--nested &__lot-td:first-child {
+    padding-left: var(--space-7);
   }
 
   &__lot-nest-cell {
@@ -691,20 +733,53 @@
   &__twin-form {
     display: flex;
     flex-wrap: wrap;
+    max-width: 28rem;
     align-items: center;
     gap: var(--space-2) var(--space-3);
   }
 
   &__twin-input {
-    flex: 0 1 16rem;
+    flex: 1 1 10rem;
     min-width: 0;
   }
 
-  &__legend-nav {
+  &__twin-save {
+    flex: 0 0 auto;
+
+    @include m.phone {
+      min-height: var(--tap-min);
+    }
+  }
+
+  &__legend {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-4);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__legend-item {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    color: var(--color-muted);
+    white-space: nowrap;
+  }
+
+  // The twin line (chart-1, solid) and the right axis it is read on (chart-estimate).
+  &__line-swatch {
+    width: var(--space-4);
+    height: 2px;
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+  }
+
+  &__axis-swatch {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--radius-xs);
+    background: var(--chart-estimate);
   }
 
   // Same colour as the NAV marks on the chart (chart-3).
