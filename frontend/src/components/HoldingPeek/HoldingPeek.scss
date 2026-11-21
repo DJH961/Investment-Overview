@@ -114,7 +114,8 @@
 
   &--phone &__actions {
     display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+    // The primary keeps its words on one line; the two others share the rest.
+    grid-template-columns: max-content minmax(0, 1fr) minmax(0, 1fr);
   }
 
   &--panel &__actions {
@@ -124,7 +125,8 @@
   }
 
   &--phone &__action {
-    padding: 0 var(--space-2);
+    padding: 0 var(--space-3);
+    white-space: nowrap;
   }
 
   @include m.phone {

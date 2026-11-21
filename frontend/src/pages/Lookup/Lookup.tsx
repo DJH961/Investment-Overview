@@ -94,7 +94,7 @@ function Details({ quote }: { quote: LookupQuoteDto }) {
   const money = (v: number | null) => formatMoney(v, ccy, { unmasked: true });
   return (
     <section className="holding-page__section" aria-labelledby="lookup-details">
-      <h2 id="lookup-details" className="holding-page__section-title">
+      <h2 id="lookup-details" className="holding-page__sr">
         Details
       </h2>
       <dl className="holding-page__facts">
