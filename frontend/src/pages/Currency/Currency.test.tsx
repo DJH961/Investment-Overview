@@ -64,11 +64,11 @@ afterEach(() => localStorage.clear());
 describe("Currency page", () => {
   it("renders one tile per sent stat, with a tip each, except the rate (the chart's headline)", () => {
     mount();
-    expect(tiles()).toHaveLength(cur.EUR.stats!.filter((s) => s.key !== "rate_now").length);
+    expect(tiles()).toHaveLength(cur.EUR.stats!.filter((s) => s.key !== "rate_now" && s.key !== "avg_rate_vs_now").length);
     expect(screen.queryByText("EUR/USD now")).not.toBeInTheDocument();
-    expect(screen.getByText("Currency effect today")).toBeInTheDocument();
+    expect(screen.getByText("Effect today")).toBeInTheDocument();
     expect(screen.queryByText("Investing power today")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "About Currency effect today" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "About Effect today" })).toBeInTheDocument();
   });
 
   it("shows the tailwind or headwind word, not only colour", () => {

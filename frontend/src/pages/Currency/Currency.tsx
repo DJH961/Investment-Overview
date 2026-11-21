@@ -25,7 +25,7 @@ const isView = (v: string | null): v is View => VIEWS.some((o) => o.value === v)
 const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> = {
   rate_now: { label: "EUR/USD now", tip: "How many dollars one euro buys at the latest rate." },
   effect_today: {
-    label: "Currency effect today",
+    label: "Effect today",
     tip: "What the exchange rate added to or took from your portfolio value since the last close.",
   },
   investing_power_today: {
@@ -33,7 +33,7 @@ const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> 
     tip: "How many more or fewer dollars your regular euro amount buys than at the last close.",
   },
   lifetime_effect: {
-    label: "Currency effect, lifetime",
+    label: "Effect, lifetime",
     tip: "What exchange-rate moves have added to or taken from your result since you started.",
   },
   avg_rate_vs_now: {
@@ -55,7 +55,8 @@ function figure(unit: string | null | undefined, value: string | null | undefine
   const n = toNum(value ?? null);
   if (unit === "rate") return formatNumber(n, 4);
   if (unit === "fraction") return formatPp(n);
-  return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored />;
+  // Whole units: cents on a currency effect are noise (and crowd a phone row).
+  return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored digits={0} />;
 }
 
 function statItem(s: CurrencyStatDto, fallbackCcy: string): StatItem {
@@ -191,13 +192,13 @@ export function Currency() {
         <div className="currency-page__stack">
           {stats.length > 0 ? (
             <StatStrip
-              className="stat-strip--compact"
+              className="stat-strip--rows"
               label="Currency at a glance"
-              // The rate itself is the chart's headline right below.
-              items={stats.filter((s) => s.key !== "rate_now").map((s) => statItem(s, cur.ccy))}
+              // The rate and your average are on the chart right below, in its quote.
+              items={stats.filter((s) => s.key !== "rate_now" && s.key !== "avg_rate_vs_now").map((s) => statItem(s, cur.ccy))}
             />
           ) : null}
-          <RateChart />
+          <RateChart currency={currency} />
           {VIEWS.length > 1 && <SegmentedControl block ariaLabel="Currency views" options={[...VIEWS]} value={view} onChange={setView} />}
           {view === "today" ? (
             <div className="currency-page__panel">

@@ -1,20 +1,26 @@
 @use "../../styles/mixins" as m;
 
+// Text lives in three places only: the headline, the chart's legend, and one row of
+// four figures that all share the same label / figure / note shape.
 .rate-chart {
   min-width: 0;
 
-  // The rate itself in the display serif, like the Overview's headline figure:
-  // this card exists to show one number moving.
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  // The rate itself in the display serif, like the Overview's headline figure.
   &__head {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--space-1) var(--space-4);
-    margin-bottom: var(--space-3);
+    gap: var(--space-1) var(--space-3);
+    margin: 0 0 var(--space-3);
   }
 
   &__figure {
-    margin: 0;
     @include m.display(var(--font-size-3xl));
     font-variant-numeric: tabular-nums lining-nums;
     line-height: var(--line-height-tight);
@@ -24,21 +30,10 @@
     }
   }
 
-  &__figure-note {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-1) var(--space-3);
-    margin: 0;
-    font-size: var(--font-size-sm);
-  }
-
-  &__unit {
-    color: var(--color-muted);
-  }
-
   &__change {
-    font-weight: var(--font-weight-semibold);
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     font-variant-numeric: tabular-nums;
   }
 
@@ -46,7 +41,6 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    color: var(--color-fg);
     font-variant-numeric: tabular-nums;
   }
 
@@ -56,46 +50,27 @@
     border-top: var(--border-width) dashed var(--color-muted);
   }
 
-  &__extremes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1) var(--space-4);
-    margin: var(--space-2) 0 0;
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-  }
-
-  &__source {
-    margin-left: auto;
-
-    @include m.phone {
-      margin-left: 0;
-    }
-  }
-
-  // Two readings of the same move, then the trend. Separated from the chart by a
-  // hairline so the figures read as the chart's caption, not a second card.
-  &__readings {
+  &__figs {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-3) var(--space-5);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4) var(--space-4);
     margin: var(--space-4) 0 0;
     padding-top: var(--space-4);
     border-top: var(--border-width) solid var(--color-border);
 
-    @include m.tablet-up {
-      grid-template-columns: 1fr 1fr 2fr;
+    @include m.desktop {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 
-  &__reading {
+  &__fig {
     display: grid;
+    align-content: start;
     gap: var(--space-1);
     min-width: 0;
   }
 
-  &__reading-label {
+  &__fig-label {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
@@ -103,31 +78,24 @@
     font-size: var(--font-size-xs);
   }
 
-  &__reading-value {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-1) var(--space-2);
+  &__fig-value {
     margin: 0;
-    min-width: 0;
-
-    &--trend {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-  }
-
-  &__reading-figure {
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  &__fig-note {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
   }
 
   &__kind {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
 
     &--tailwind {
@@ -155,13 +123,5 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-semibold);
-  }
-
-  &__trend-note {
-    color: var(--color-muted);
-    font-size: var(--font-size-sm);
-    font-variant-numeric: tabular-nums;
   }
 }
