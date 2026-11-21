@@ -26,6 +26,33 @@
 > P16; tranches, P3; Risk share of P&L, P17; ticker lookup, P20). P18 moved to 7.4.
 > Pushes 6 (7.2) and 7 (7.3) run in parallel; merge order 7.1 → 7.2 → 7.3. The owner's post-cutover steps are in
 > [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
+>
+> **Release train to 7.2.1 (owner, 2026-11-21), one session, merged in this order:**
+>
+> 1. **7.1.1**: small improvements after 7.1. The Brief anchors on the real visit time,
+>    Risk totals move into the table footer, Back returns to where you came from,
+>    Diagnostics tabs fit on phones, the 1W per-holding bars get a backfill and a Repair
+>    action, a holding-chart cost-scale setting, and faster 1W previews on Holdings.
+> 2. **7.2.0**: push 6, the whole Currency page as one page with a sticky section bar.
+>    The EUR/USD rate chart leads, followed by Impact (constant-currency chart, bridge,
+>    month and year bars, rolling 12-month effect, records, per holding three ways,
+>    inside/outside market hours from `fx_session_rates`), The dollar (position and
+>    trend) and What if (scenarios, stress table, cushion or amplify). Also: Overview
+>    trend chips, currency as an allocation dimension, and the Projection rate band (P5).
+> 3. **7.2.1**: the finished part of 7.3, session 1: conversion pins, statuses, provider,
+>    the "Your rate / ECB" chip on Transactions and the reworked Conversions page.
+>    Sessions 2 and 3 of 7.3 (conversion costs, the Conversions section on the Currency
+>    page, P14/P15/P6) stay for a later 7.3.0.
+>
+> Owner decisions on 2026-11-21:
+>
+> - Impact shows its own day-by-day lifetime total. An info tip explains why it differs
+>   from the Overview card, which measures against the average buy rate. Tests check
+>   the gap identity, not equality.
+> - A weekend or holiday conversion is compared with the last settled ECB fixing
+>   before its date, labelled with that fixing's date.
+> - The owner approves screenshots of the changed views (only those) before each of
+>   the three releases.
 
 ---
 
