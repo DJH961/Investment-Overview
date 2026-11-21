@@ -138,3 +138,36 @@ class ProjectionOut(ApiModel):
     required_contribution: DecStr | None
     inputs: ProjectionInputsOut
     assumptions: ProjectionAssumptionsOut
+    #: P5 (v7.2): the euro result over a range of EUR/USD rates. EUR view only;
+    #: null in the USD view or without a projected dollar wallet.
+    rate_band: ProjectionRateBandOut | None = None
+
+
+class ProjectionRateRowOut(ApiModel):
+    """The projected dollar wallet's final value converted at one assumed rate."""
+
+    #: Assumed EUR/USD rate at the horizon (USD per 1 EUR).
+    usd_per_eur: DecStr
+    #: ``usd_per_eur / today's rate - 1``.
+    shift_pct: DecStr
+    pessimistic: DecStr | None
+    expected: DecStr | None
+    optimistic: DecStr | None
+
+
+class ProjectionRateBandOut(ApiModel):
+    """P5: the dollar wallet, simulated at its own USD XIRR, valued in euros at each rate.
+
+    A single-instant valuation at an *assumed* future rate (no return is converted):
+    ``final_usd / usd_per_eur``. ``rows`` run from today's rate - 15 % to + 15 %;
+    ``low``/``high`` are the EUR values at the ends for the expected scenario.
+    """
+
+    ccy: Ccy = "EUR"
+    #: Today's EUR/USD rate (the projection's ``assumptions.usd_per_eur``).
+    usd_per_eur_now: DecStr
+    #: The dollar wallet's projected final values, native USD.
+    final_usd: ProjectionFinalOut
+    rows: list[ProjectionRateRowOut] = Field(default_factory=list)
+    expected_low: DecStr | None = None
+    expected_high: DecStr | None = None

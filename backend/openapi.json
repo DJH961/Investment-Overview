@@ -171,6 +171,17 @@
             "title": "Ccy",
             "type": "string"
           },
+          "currency_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Note"
+          },
           "current_by_asset_class": {
             "items": {
               "$ref": "#/components/schemas/Bucket"
@@ -183,6 +194,13 @@
               "$ref": "#/components/schemas/Bucket"
             },
             "title": "Current By Category",
+            "type": "array"
+          },
+          "current_by_currency": {
+            "items": {
+              "$ref": "#/components/schemas/Bucket"
+            },
+            "title": "Current By Currency",
             "type": "array"
           },
           "drift": {
@@ -1851,6 +1869,33 @@
         "title": "ByCurrency[DividendsOut]",
         "type": "object"
       },
+      "ByCurrency_DollarOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/DollarOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/DollarOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[DollarOut]",
+        "type": "object"
+      },
       "ByCurrency_GraphResponse_": {
         "properties": {
           "EUR": {
@@ -1957,6 +2002,33 @@
           "USD"
         ],
         "title": "ByCurrency[PeriodsOut]",
+        "type": "object"
+      },
+      "ByCurrency_ScenariosOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/ScenariosOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/ScenariosOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[ScenariosOut]",
         "type": "object"
       },
       "ByCurrency_Union_BriefCurrencyEffect__NoneType__": {
@@ -3332,6 +3404,90 @@
         "title": "CurvePointOut",
         "type": "object"
       },
+      "Cushion": {
+        "description": "Does the dollar cushion or amplify your swings? (``domain.risk`` on both series).",
+        "properties": {
+          "dollar_rose_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dollar Rose Share"
+          },
+          "down_days": {
+            "default": 0,
+            "title": "Down Days",
+            "type": "integer"
+          },
+          "down_days_dollar_rose": {
+            "default": 0,
+            "title": "Down Days Dollar Rose",
+            "type": "integer"
+          },
+          "max_drawdown_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Eur"
+          },
+          "max_drawdown_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown Usd"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          },
+          "volatility_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volatility Eur"
+          },
+          "volatility_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volatility Usd"
+          }
+        },
+        "required": [
+          "since"
+        ],
+        "title": "Cushion",
+        "type": "object"
+      },
       "DailyCaption": {
         "description": "The day the \"Today\" move lands on (NiceGUI ``build_daily_growth_caption``).",
         "properties": {
@@ -4202,6 +4358,565 @@
           "rows"
         ],
         "title": "DividendsOut",
+        "type": "object"
+      },
+      "DollarMa200": {
+        "description": "Today's rate against its 200-day average, and that average's slope.",
+        "properties": {
+          "distance_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Distance Pct",
+            "type": "string"
+          },
+          "ma200": {
+            "$ref": "#/components/schemas/RateValue"
+          },
+          "side": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "title": "Side",
+            "type": "string"
+          },
+          "slope": {
+            "enum": [
+              "rising",
+              "falling",
+              "flat"
+            ],
+            "title": "Slope",
+            "type": "string"
+          },
+          "slope_days": {
+            "title": "Slope Days",
+            "type": "integer"
+          },
+          "slope_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Slope Pct",
+            "type": "string"
+          }
+        },
+        "required": [
+          "side",
+          "ma200",
+          "distance_pct",
+          "slope",
+          "slope_pct",
+          "slope_days"
+        ],
+        "title": "DollarMa200",
+        "type": "object"
+      },
+      "DollarOut": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "caption": {
+            "default": "Exchange rates wander and tend to revert over years; this page describes, it does not predict.",
+            "title": "Caption",
+            "type": "string"
+          },
+          "ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Ccy",
+            "type": "string"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "next_euro": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NextEuro"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position": {
+            "$ref": "#/components/schemas/DollarPosition"
+          },
+          "quote": {
+            "$ref": "#/components/schemas/DollarQuote"
+          },
+          "range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "ytd",
+              "1y",
+              "5y",
+              "10y",
+              "max"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "rolling": {
+            "items": {
+              "$ref": "#/components/schemas/RollingSeries"
+            },
+            "title": "Rolling",
+            "type": "array"
+          },
+          "stats": {
+            "items": {
+              "$ref": "#/components/schemas/DollarStat"
+            },
+            "title": "Stats",
+            "type": "array"
+          },
+          "trend": {
+            "$ref": "#/components/schemas/DollarTrend"
+          }
+        },
+        "required": [
+          "ccy",
+          "generated_at",
+          "range",
+          "quote"
+        ],
+        "title": "DollarOut",
+        "type": "object"
+      },
+      "DollarPosition": {
+        "description": "The dollar position card (IBKR \"Forex P&L\" style).",
+        "properties": {
+          "avg_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "breakeven": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exposure_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Share"
+          },
+          "exposure_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Usd"
+          },
+          "exposure_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Value"
+          },
+          "fx_gain_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Gain Eur"
+          },
+          "rate_now": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "today": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "DollarPosition",
+        "type": "object"
+      },
+      "DollarQuote": {
+        "description": "Which quote this side shows: ``inverse`` + ``USD/EUR`` (EUR), ``rate`` + ``EUR/USD`` (USD).",
+        "properties": {
+          "field": {
+            "enum": [
+              "rate",
+              "inverse"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "pair": {
+            "enum": [
+              "USD/EUR",
+              "EUR/USD"
+            ],
+            "title": "Pair",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pair",
+          "field"
+        ],
+        "title": "DollarQuote",
+        "type": "object"
+      },
+      "DollarRegime": {
+        "description": "The dollar's regime with hysteresis (``domain.fx_trend.regime``).",
+        "properties": {
+          "direction": {
+            "enum": [
+              "dollar_up",
+              "dollar_down",
+              "sideways"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          },
+          "since_change_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Since Change Pct",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction",
+          "since",
+          "since_change_pct"
+        ],
+        "title": "DollarRegime",
+        "type": "object"
+      },
+      "DollarRun": {
+        "description": "\"The dollar fell in 5 of the last 6 months\" (calendar months, last ECB day each).",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "direction": {
+            "enum": [
+              "rose",
+              "fell"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "of": {
+            "title": "Of",
+            "type": "integer"
+          },
+          "unit": {
+            "const": "month",
+            "default": "month",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction",
+          "count",
+          "of"
+        ],
+        "title": "DollarRun",
+        "type": "object"
+      },
+      "DollarStat": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "key": {
+            "enum": [
+              "percentile_since_start",
+              "percentile_y5",
+              "percentile_y10",
+              "percentile_since_1999",
+              "week52_low",
+              "week52_high",
+              "low_since_start",
+              "high_since_start",
+              "avg_rate_holding",
+              "share_above_avg",
+              "rate_volatility"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary"
+          },
+          "secondary_currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Currency"
+          },
+          "secondary_display": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Display"
+          },
+          "secondary_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rate",
+                  "fraction",
+                  "money"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Unit"
+          },
+          "unit": {
+            "enum": [
+              "rate",
+              "fraction",
+              "money"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value",
+            "type": "string"
+          },
+          "value_display": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Display"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "unit"
+        ],
+        "title": "DollarStat",
+        "type": "object"
+      },
+      "DollarTrend": {
+        "properties": {
+          "above_entry_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above Entry Share"
+          },
+          "long_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LongRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ma200": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DollarMa200"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "normal_month": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NormalRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "normal_year": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NormalRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "percentiles": {
+            "$ref": "#/components/schemas/RatePercentiles"
+          },
+          "regime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DollarRegime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DollarRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "week52": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Week52"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "DollarTrend",
         "type": "object"
       },
       "DriftRow": {
@@ -9071,6 +9786,30 @@
         "title": "LogsDto",
         "type": "object"
       },
+      "LongRun": {
+        "description": "Distance from the mean since 1999 (ECB history).",
+        "properties": {
+          "distance_inverse_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Distance Inverse Pct",
+            "type": "string"
+          },
+          "mean": {
+            "$ref": "#/components/schemas/RateValue"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "mean",
+          "distance_inverse_pct"
+        ],
+        "title": "LongRun",
+        "type": "object"
+      },
       "LookupHistory": {
         "properties": {
           "currency": {
@@ -9628,6 +10367,131 @@
           "losers"
         ],
         "title": "Movers",
+        "type": "object"
+      },
+      "NextEuro": {
+        "description": "\"\u20ac1,000 buys $X now; $Y a year ago\" (a euro notional at one rate each).",
+        "properties": {
+          "amount_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Eur",
+            "type": "string"
+          },
+          "better_than_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Better Than Share"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          },
+          "usd_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Now",
+            "type": "string"
+          },
+          "usd_year_ago": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Year Ago"
+          },
+          "year_ago_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Ago Date"
+          }
+        },
+        "required": [
+          "amount_eur",
+          "usd_now"
+        ],
+        "title": "NextEuro",
+        "type": "object"
+      },
+      "NormalRange": {
+        "description": "How today's trailing move compares with every move of the same length.",
+        "properties": {
+          "label": {
+            "enum": [
+              "normal",
+              "large",
+              "unusual"
+            ],
+            "title": "Label",
+            "type": "string"
+          },
+          "move_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Move Pct",
+            "type": "string"
+          },
+          "normal_limit_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Normal Limit Pct",
+            "type": "string"
+          },
+          "percentile": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Percentile",
+            "type": "string"
+          },
+          "typical_move_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Typical Move Pct",
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "month",
+              "year"
+            ],
+            "title": "Window",
+            "type": "string"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window",
+          "window_days",
+          "move_pct",
+          "typical_move_pct",
+          "normal_limit_pct",
+          "percentile",
+          "label"
+        ],
+        "title": "NormalRange",
         "type": "object"
       },
       "OkResponse": {
@@ -11472,6 +12336,16 @@
             "title": "Points",
             "type": "array"
           },
+          "rate_band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectionRateBandOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "real": {
             "title": "Real",
             "type": "boolean"
@@ -11645,6 +12519,125 @@
           "optimistic_real"
         ],
         "title": "ProjectionPointOut",
+        "type": "object"
+      },
+      "ProjectionRateBandOut": {
+        "description": "P5: the dollar wallet, simulated at its own USD XIRR, valued in euros at each rate.\n\nA single-instant valuation at an *assumed* future rate (no return is converted):\n``final_usd / usd_per_eur``. ``rows`` run from today's rate - 15 % to + 15 %;\n``low``/``high`` are the EUR values at the ends for the expected scenario.",
+        "properties": {
+          "ccy": {
+            "default": "EUR",
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Ccy",
+            "type": "string"
+          },
+          "expected_high": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected High"
+          },
+          "expected_low": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Low"
+          },
+          "final_usd": {
+            "$ref": "#/components/schemas/ProjectionFinalOut"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectionRateRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "usd_per_eur_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Per Eur Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "usd_per_eur_now",
+          "final_usd"
+        ],
+        "title": "ProjectionRateBandOut",
+        "type": "object"
+      },
+      "ProjectionRateRowOut": {
+        "description": "The projected dollar wallet's final value converted at one assumed rate.",
+        "properties": {
+          "expected": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "optimistic": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimistic"
+          },
+          "pessimistic": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pessimistic"
+          },
+          "shift_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Shift Pct",
+            "type": "string"
+          },
+          "usd_per_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Per Eur",
+            "type": "string"
+          }
+        },
+        "required": [
+          "usd_per_eur",
+          "shift_pct",
+          "pessimistic",
+          "expected",
+          "optimistic"
+        ],
+        "title": "ProjectionRateRowOut",
         "type": "object"
       },
       "ProjectionRequest": {
@@ -12682,6 +13675,477 @@
         "title": "ReturnSplit",
         "type": "object"
       },
+      "RollingPoint": {
+        "properties": {
+          "inverse_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Inverse Pct",
+            "type": "string"
+          },
+          "rate_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Pct",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "inverse_pct",
+          "rate_pct"
+        ],
+        "title": "RollingPoint",
+        "type": "object"
+      },
+      "RollingSeries": {
+        "properties": {
+          "normal_limit_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normal Limit Pct"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/RollingPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "typical_move_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typical Move Pct"
+          },
+          "window": {
+            "enum": [
+              "1m",
+              "3m",
+              "1y"
+            ],
+            "title": "Window",
+            "type": "string"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window",
+          "window_days"
+        ],
+        "title": "RollingSeries",
+        "type": "object"
+      },
+      "ScenarioMark": {
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "key": {
+            "enum": [
+              "average",
+              "breakeven",
+              "today",
+              "historic_low",
+              "historic_high"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "rate_display": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Display",
+            "type": "string"
+          },
+          "row_index": {
+            "title": "Row Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "rate",
+          "rate_display",
+          "row_index"
+        ],
+        "title": "ScenarioMark",
+        "type": "object"
+      },
+      "ScenarioRow": {
+        "description": "The book valued at one EUR/USD ``rate`` (a single-instant valuation).",
+        "properties": {
+          "gain": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "rate_display": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Display",
+            "type": "string"
+          },
+          "to_breakeven": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Breakeven"
+          },
+          "to_breakeven_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Breakeven Pct"
+          },
+          "value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rate",
+          "rate_display",
+          "value"
+        ],
+        "title": "ScenarioRow",
+        "type": "object"
+      },
+      "ScenarioStat": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "key": {
+            "enum": [
+              "one_cent",
+              "breakeven",
+              "value_at_low",
+              "value_at_high",
+              "volatility",
+              "deepest_fall",
+              "dollar_rose_on_down_days"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary"
+          },
+          "secondary_currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Currency"
+          },
+          "secondary_display": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Display"
+          },
+          "secondary_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rate",
+                  "fraction",
+                  "money"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Unit"
+          },
+          "unit": {
+            "enum": [
+              "rate",
+              "fraction",
+              "money"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value",
+            "type": "string"
+          },
+          "value_display": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Display"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "unit"
+        ],
+        "title": "ScenarioStat",
+        "type": "object"
+      },
+      "ScenariosOut": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "avg_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "breakeven": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption": {
+            "default": "Exchange rates wander and tend to revert over years; this page describes, it does not predict.",
+            "title": "Caption",
+            "type": "string"
+          },
+          "ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Ccy",
+            "type": "string"
+          },
+          "cushion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Cushion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "marks": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioMark"
+            },
+            "title": "Marks",
+            "type": "array"
+          },
+          "max_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Max Rate",
+            "type": "string"
+          },
+          "min_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Min Rate",
+            "type": "string"
+          },
+          "quote": {
+            "$ref": "#/components/schemas/DollarQuote"
+          },
+          "rate_now": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sensitivity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Sensitivity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stats": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioStat"
+            },
+            "title": "Stats",
+            "type": "array"
+          },
+          "step": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Step",
+            "type": "string"
+          },
+          "stress": {
+            "items": {
+              "$ref": "#/components/schemas/StressRow"
+            },
+            "title": "Stress",
+            "type": "array"
+          },
+          "value_now": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Now"
+          }
+        },
+        "required": [
+          "ccy",
+          "generated_at",
+          "quote",
+          "step",
+          "min_rate",
+          "max_rate"
+        ],
+        "title": "ScenariosOut",
+        "type": "object"
+      },
       "SchedulerJob": {
         "properties": {
           "last_failed": {
@@ -12929,6 +14393,39 @@
           "as_of"
         ],
         "title": "SeedOut",
+        "type": "object"
+      },
+      "Sensitivity": {
+        "description": "\"1 ct = \u20acX\": the book at ``rate`` and at ``rate + 0.01`` (one instant).",
+        "properties": {
+          "change": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Change",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "value_at_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value At Rate",
+            "type": "string"
+          },
+          "value_at_rate_plus": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value At Rate Plus",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rate",
+          "value_at_rate",
+          "value_at_rate_plus",
+          "change"
+        ],
+        "title": "Sensitivity",
         "type": "object"
       },
       "SettingField": {
@@ -14046,6 +15543,45 @@
           "splits"
         ],
         "title": "SplitsDto",
+        "type": "object"
+      },
+      "StressRow": {
+        "description": "The book at EUR/USD moved by ``shift_pct`` from today's rate.",
+        "properties": {
+          "change": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Change",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "rate_display": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Display",
+            "type": "string"
+          },
+          "shift_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Shift Pct",
+            "type": "string"
+          },
+          "value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "shift_pct",
+          "rate",
+          "rate_display",
+          "value",
+          "change"
+        ],
+        "title": "StressRow",
         "type": "object"
       },
       "SystemInfo": {
@@ -16656,6 +18192,34 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "Week52": {
+        "properties": {
+          "from_high_inverse_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "From High Inverse Pct",
+            "type": "string"
+          },
+          "from_low_inverse_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "From Low Inverse Pct",
+            "type": "string"
+          },
+          "high": {
+            "$ref": "#/components/schemas/RateHistoryPoint"
+          },
+          "low": {
+            "$ref": "#/components/schemas/RateHistoryPoint"
+          }
+        },
+        "required": [
+          "low",
+          "high",
+          "from_low_inverse_pct",
+          "from_high_inverse_pct"
+        ],
+        "title": "Week52",
+        "type": "object"
       }
     }
   },
@@ -17759,6 +19323,60 @@
         ]
       }
     },
+    "/api/currency/dollar/both": {
+      "get": {
+        "operationId": "get_dollar_both_api_currency_dollar_both_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "1y",
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "ytd",
+                "1y",
+                "5y",
+                "10y",
+                "max"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_DollarOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Dollar Both",
+        "tags": [
+          "currency"
+        ]
+      }
+    },
     "/api/currency/rate-history": {
       "get": {
         "operationId": "get_rate_history_api_currency_rate_history_get",
@@ -17808,6 +19426,27 @@
           }
         },
         "summary": "Get Rate History",
+        "tags": [
+          "currency"
+        ]
+      }
+    },
+    "/api/currency/scenarios/both": {
+      "get": {
+        "operationId": "get_scenarios_both_api_currency_scenarios_both_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_ScenariosOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Scenarios Both",
         "tags": [
           "currency"
         ]
