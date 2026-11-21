@@ -2,9 +2,18 @@ import clsx from "clsx";
 import { ArrowDownRight, ArrowUpRight, Minus, MoveRight, TrendingDown, TrendingUp } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { Card } from "../Card";
-import { Chart, type ChartSeries } from "../Chart";
+import { Chart, type ChartMarker, type ChartSeries } from "../Chart";
 import { InfoTip } from "../InfoTip";
-import { formatAxisDate, formatDate, formatDayTime, formatNumber, formatPercent, formatShortDay, formatTime } from "../../lib/format";
+import {
+  formatAxisDate,
+  formatDate,
+  formatDayTime,
+  formatMoney,
+  formatNumber,
+  formatPercent,
+  formatShortDay,
+  formatTime,
+} from "../../lib/format";
 import { toNum } from "../../lib/queries/portfolio";
 import {
   RATE_RANGE_LABELS,
@@ -126,15 +135,68 @@ function Figures({ data, lens }: { data: RateHistoryDto; lens: RateLens }) {
   );
 }
 
+const MARK_SHAPE = { above_reference: "above", below_reference: "below" } as const;
+const MARK_WORD = { above_reference: "better than the reference rate", below_reference: "worse than the reference rate" } as const;
+
+/**
+ * Your conversions on the chart (server `markers`, 7.2 contract with 7.3): a neutral
+ * ring sized by the amount while `kind` is null; ▲ / ▼ once 7.3 compares each with
+ * the day's reference fixing. Sized within each source currency (square root, so the
+ * area follows the amount). Only those inside the plotted span are drawn.
+ */
+export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMarker[] {
+  const pts = data.points ?? [];
+  const list = data.markers ?? [];
+  if (!pts.length || !list.length) return [];
+  const t0 = Date.parse(pts[0].t.length === 10 ? `${pts[0].t}T00:00:00Z` : pts[0].t);
+  const last = pts[pts.length - 1].t;
+  const t1 = Date.parse(last.length === 10 ? `${last}T23:59:59Z` : last);
+  const max = new Map<string, number>();
+  for (const m of list) max.set(m.from_ccy, Math.max(max.get(m.from_ccy) ?? 0, Math.abs(toNum(m.amount_from) ?? 0)));
+  return list.flatMap((m) => {
+    const t = Date.parse(`${m.date.slice(0, 10)}T12:00:00Z`);
+    const rate = toNum(m.rate);
+    if (!Number.isFinite(t) || t < t0 - 43_200_000 || t > t1 || rate === null || !(rate > 0)) return [];
+    const amount = Math.abs(toNum(m.amount_from) ?? 0);
+    const top = max.get(m.from_ccy) ?? 0;
+    const r = 3 + 4.5 * (top > 0 ? Math.sqrt(amount / top) : 0);
+    const kind = m.kind ?? null;
+    const v = lens === "rate" ? rate : 1 / rate;
+    const what = `${formatMoney(amount, m.from_ccy, { digits: 0 })} to ${m.to_ccy} on ${formatDate(m.date.slice(0, 10))} at ${formatNumber(rate, 4)}`;
+    return [
+      {
+        t,
+        v,
+        r: kind ? Math.max(4.5, r) : r,
+        shape: kind ? MARK_SHAPE[kind] : "conversion",
+        label: kind ? `Converted ${what}: ${MARK_WORD[kind]}` : `Converted ${what}`,
+      },
+    ];
+  });
+}
+
 /**
  * The Currency page's first visual: the exchange rate over a chosen range, quoted like
  * the Today card, with your average rate and the 200-day average. Direction means
  * different things for dollars held and euros still to convert, so the line is never
  * coloured good or bad; the figures below give both readings.
  */
-export function RateChart({ currency, className }: { currency: ReportingCurrency; className?: string }) {
+export function RateChart({
+  currency,
+  className,
+  range: rangeProp,
+  onRangeChange,
+}: {
+  currency: ReportingCurrency;
+  className?: string;
+  /** The page's range (the Currency page owns it); without it the chart keeps its own. */
+  range?: RateRange;
+  onRangeChange?: (range: RateRange) => void;
+}) {
   const timeZone = useTimeZone();
-  const [range, setRange] = usePersistentState<RateRange>("currency.rate.range", "1y", isRange);
+  const [ownRange, setOwnRange] = usePersistentState<RateRange>(rangeProp ? null : "currency.rate.range", "1y", isRange);
+  const range = rangeProp ?? ownRange;
+  const setRange = onRangeChange ?? setOwnRange;
   const lens = lensFor(currency);
   const pair = lens === "rate" ? "EUR/USD" : "USD/EUR";
   const q = useRateHistory(range);
@@ -149,6 +211,7 @@ export function RateChart({ currency, className }: { currency: ReportingCurrency
     return out;
   }, [data, lens, pair]);
 
+  const marks = useMemo(() => (data ? conversionMarks(data, lens) : []), [data, lens]);
   const avg = data?.avg_rate ? toNum(lens === "rate" ? data.avg_rate.rate : data.avg_rate.inverse) : null;
   const pts = data?.points ?? [];
   const last = pts.length ? pick(pts[pts.length - 1], lens) : null;
@@ -192,11 +255,22 @@ export function RateChart({ currency, className }: { currency: ReportingCurrency
         series={series}
         // Labelled in the legend, not on the plot, where it would cross the line.
         referenceLine={avg !== null ? { value: avg } : undefined}
+        markers={marks.length ? marks : undefined}
         legendExtra={
-          avg !== null ? (
-            <span className="rate-chart__avg">
-              <span className="rate-chart__avg-swatch" aria-hidden />
-              Your average {fmt(avg, lens)}
+          avg !== null || marks.length ? (
+            <span className="rate-chart__keys">
+              {avg !== null ? (
+                <span className="rate-chart__avg">
+                  <span className="rate-chart__avg-swatch" aria-hidden />
+                  Your average {fmt(avg, lens)}
+                </span>
+              ) : null}
+              {marks.length ? (
+                <span className="rate-chart__avg">
+                  <span className="rate-chart__mark-swatch" aria-hidden />
+                  {marks.length === 1 ? "1 conversion" : `${marks.length} conversions`}
+                </span>
+              ) : null}
             </span>
           ) : undefined
         }
