@@ -537,8 +537,13 @@
       gap: var(--space-1);
     }
 
+    &__legend-item {
+      gap: var(--space-1);
+      padding: 0 var(--space-2);
+    }
+
     &__legend-extra {
-      padding-left: var(--space-1);
+      padding-left: 0;
     }
   }
 }
