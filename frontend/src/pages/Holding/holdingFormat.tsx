@@ -11,8 +11,9 @@ const DAY = 86_400_000;
 
 /** Axis label for a range: clock times intraday, short dates for months, years beyond. */
 export function axisFormat(range: HoldingRange | string, xMode: "date" | "time" | undefined) {
-  if (xMode === "time" || range === "1d") return (t: number) => formatTime(new Date(t));
+  // 1W: one band per session, labelled by its day.
   if (range === "1w") return (t: number) => formatAxisDate(t, 0);
+  if (xMode === "time" || range === "1d") return (t: number) => formatTime(new Date(t));
   const short = range === "1m" || range === "3m" || range === "6m";
   return (t: number) => formatAxisDate(t, short ? 0 : 400 * DAY);
 }

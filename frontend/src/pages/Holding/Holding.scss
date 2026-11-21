@@ -555,7 +555,7 @@
   &__clip {
     @include m.truncate;
     display: block;
-    max-width: 10rem;
+    max-width: 8rem;
   }
 
   &__tx:hover {
@@ -698,6 +698,21 @@
   &__twin-input {
     flex: 0 1 16rem;
     min-width: 0;
+  }
+
+  &__legend-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-muted);
+  }
+
+  // Same colour as the NAV marks on the chart (chart-3).
+  &__nav-dot {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--chart-3);
   }
 
   &__mini-table {

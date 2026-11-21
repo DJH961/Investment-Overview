@@ -143,7 +143,10 @@ export function TwinTab({ row }: { row: HoldingRowDto }) {
           tooltipExtra={built?.extra}
           timeFormat={axisFormat(range, d?.x_mode)}
           tooltipTimeFormat={tooltipFormat(range, d?.x_mode)}
-          legendExtra={range === "1d" || range === "1w" ? <span className="holding-page__muted">● NAV at the close</span> : undefined}
+          legendExtra={range === "1d" || range === "1w" ? <span className="holding-page__legend-nav">
+                <span className="holding-page__nav-dot" aria-hidden />
+                NAV at the close
+              </span> : undefined}
           height={240}
           ariaLabel={`${row.symbol} against its twin ETF`}
           emptyMessage={q.isError ? "Could not load the twin history." : "No twin prices for this range yet."}

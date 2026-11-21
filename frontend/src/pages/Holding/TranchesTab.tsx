@@ -189,7 +189,7 @@ function GroupCard({ g, members, ccy }: { g: TrancheGroupDto; members: TrancheRo
           <Money amount={toNum(g.gain_native)} currency={ccy} signed colored />
         </span>
         <span className="holding-page__row-meta">
-          avg {formatMoney(toNum(g.avg_cost_per_share_native), ccy)} · cost <Money amount={toNum(g.cost_native)} currency={ccy} />
+          avg {formatMoney(toNum(g.avg_cost_per_share_native), ccy)} · cost <Money amount={toNum(g.cost_native)} currency={ccy} compact />
         </span>
         <span className="holding-page__row-detail holding-page__muted">
           {g.long_count} long · {g.short_count} short
