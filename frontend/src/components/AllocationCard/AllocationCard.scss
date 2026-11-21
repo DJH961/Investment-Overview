@@ -1,3 +1,11 @@
 .allocation-card {
   min-width: 0;
+
+  // Currency view: the server's caveat (a dollar-priced world fund is not all dollars).
+  &__note {
+    margin: var(--space-3) 0 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-base);
+  }
 }

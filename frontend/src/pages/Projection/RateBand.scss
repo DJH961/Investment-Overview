@@ -1,0 +1,161 @@
+@use "../../styles/mixins" as m;
+
+// P5: one row per assumed EUR/USD rate. The whisker spans pessimistic to optimistic,
+// the dot is the expected value; all rows share one scale, so the band's tilt reads
+// at a glance (a stronger euro, lower down the list, means fewer euros).
+.rate-band {
+  &__anchor {
+    scroll-margin-top: var(--space-9);
+  }
+
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  &__lead {
+    margin: 0 0 var(--space-4);
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__lead-figure {
+    @include m.figure(var(--font-size-lg));
+  }
+
+  &__lead-sep {
+    color: var(--color-muted);
+  }
+
+  &__lead-note {
+    display: block;
+    margin-top: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__caption,
+  &__sr {
+    @include m.visually-hidden;
+  }
+
+  &__th {
+    padding: 0 0 var(--space-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    text-align: left;
+
+    &--bar {
+      padding-left: var(--space-3);
+      padding-right: var(--space-3);
+    }
+
+    &--num {
+      text-align: right;
+    }
+  }
+
+  &__key {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  &__key-whisker {
+    display: inline-block;
+    width: var(--space-4);
+    height: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--color-border-strong);
+  }
+
+  &__key-dot {
+    display: inline-block;
+    width: var(--space-2);
+    height: var(--space-2);
+    margin-left: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+  }
+
+  &__row {
+    border-top: var(--border-width) solid var(--color-border);
+
+    &--today {
+      background: var(--color-accent-soft);
+    }
+  }
+
+  &__rate {
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-1);
+    font-weight: var(--font-weight-regular);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  &__rate-value {
+    display: block;
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+  }
+
+  &__rate-shift {
+    display: block;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+  }
+
+  &__row--today &__rate-shift {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__cell {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  &__track {
+    position: relative;
+    display: block;
+    height: var(--space-3);
+  }
+
+  &__whisker {
+    position: absolute;
+    top: 50%;
+    height: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--color-border-strong);
+    transform: translateY(-50%);
+  }
+
+  &__dot {
+    position: absolute;
+    top: 50%;
+    width: var(--space-3);
+    height: var(--space-3);
+    border: calc(var(--border-width) * 2) solid var(--color-surface);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+    transform: translate(-50%, -50%);
+  }
+
+  &__num {
+    padding: var(--space-2) var(--space-1) var(--space-2) 0;
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+    text-align: right;
+    white-space: nowrap;
+  }
+}
