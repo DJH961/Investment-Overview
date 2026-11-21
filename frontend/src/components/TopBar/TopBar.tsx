@@ -215,9 +215,7 @@ export function TopBar({
       <div className="top-bar__actions">
         {/* First, so it is the quickest action to reach. */}
         <span className="top-bar__refresh">
-          {quietUpdating && !refreshing && (
-            <output className="top-bar__quiet">Updating…</output>
-          )}
+          <output className="top-bar__quiet">{quietUpdating && !refreshing ? "Updating…" : ""}</output>
           <IconButton
             label="Refresh data"
             icon={<RefreshCw aria-hidden className={clsx((refreshing || quietUpdating) && "top-bar__spin")} />}

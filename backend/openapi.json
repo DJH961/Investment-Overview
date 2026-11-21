@@ -16292,7 +16292,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "7.1.1"
+    "version": "7.1.2"
   },
   "openapi": "3.1.0",
   "paths": {

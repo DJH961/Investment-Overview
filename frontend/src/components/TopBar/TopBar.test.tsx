@@ -135,6 +135,13 @@ describe("TopBar update states", () => {
     expect(refresh.querySelector(".top-bar__spin")).not.toBeNull();
   });
 
+  it("keeps the quiet update label slot reserved while idle", () => {
+    renderBar({ compact: false });
+    const slot = document.querySelector(".top-bar__quiet");
+    expect(slot).toBeInTheDocument();
+    expect(slot).toBeEmptyDOMElement();
+  });
+
   it("an explicit (loud) refresh spins and disables but adds no text", () => {
     renderBar({ compact: false, refreshing: true });
     expect(screen.queryByText("Updating…")).toBeNull();
