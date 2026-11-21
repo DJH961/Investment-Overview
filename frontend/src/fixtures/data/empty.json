@@ -3983,6 +3983,7 @@
   "balance_usd": "0",
   "deposits": [],
   "fallbacks": [],
+  "rejected_pins": [],
   "remaining": []
  },
  "GET /api/graphs/1d/both": {

@@ -21,6 +21,7 @@ from investment_dashboard.models.base import (
     ConfigBase,
     LedgerBase,
 )
+from investment_dashboard.models.fx_conversion import FxConversion, FxConversionPin
 from investment_dashboard.models.fx_history import FxHistory
 from investment_dashboard.models.import_batch import ImportBatch
 from investment_dashboard.models.instrument import Instrument
@@ -45,6 +46,8 @@ __all__ = [
     "Base",
     "CacheBase",
     "ConfigBase",
+    "FxConversion",
+    "FxConversionPin",
     "FxHistory",
     "ImportBatch",
     "Instrument",
