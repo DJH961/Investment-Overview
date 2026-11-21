@@ -681,7 +681,7 @@ def _seed_open_session(session: Any, inst: dict[str, Any], today: _dt.date) -> N
         intraday_repo,
         price_cache_repo,
         prices_repo,
-        twin_prices_repo,
+        symbol_prices_repo,
     )
     from investment_dashboard.services import (
         fx_service,
@@ -769,7 +769,7 @@ def _seed_open_session(session: Any, inst: dict[str, Any], today: _dt.date) -> N
         _dt.datetime.combine(prev_day, _dt.time(20, 0)): prev_close["FAKEL"],
         **{t: paths["FAKEL"][i] for i, t in enumerate(times)},
     }
-    twin_prices_repo.upsert_prices(session, "FAKEL", twin_rows)
+    symbol_prices_repo.upsert_prices(session, "FAKEL", twin_rows)
     session.flush()
 
 

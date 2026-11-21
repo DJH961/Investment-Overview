@@ -13,6 +13,7 @@ the pre-edit identity, so an imported cash move and its sweep stay paired.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -29,6 +30,7 @@ from investment_dashboard.domain.money_market import (
 from investment_dashboard.errors import NotFoundError, ValidationError
 from investment_dashboard.repositories import accounts_repo, instruments_repo, transactions_repo
 from investment_dashboard.services import (
+    holding_values_service,
     intraday_snapshots_service,
     manual_entry,
     snapshots_service,
@@ -157,8 +159,23 @@ def _note_change(action: str, txn_id: int, on: date, kind: str, account_id: int)
     )
 
 
-def _after_write(session: Session, affected: set[date]) -> None:
+def _after_write(
+    session: Session, affected: set[date], instrument_ids: Iterable[int | None] = ()
+) -> None:
     snapshots_service.invalidate_for_trade_dates(session, affected)
+    # The per-holding daily values of every instrument touched: the edited row's
+    # (before and after), and any row still booked on an affected date in its
+    # accounts (the paired money-market settlement leg).
+    touched = set(instrument_ids)
+    for on in affected:
+        touched.update(
+            t.instrument_id for t in transactions_repo.list_transactions(session, start=on, end=on)
+        )
+    if affected:
+        since = min(affected)
+        holding_values_service.invalidate_instruments_for_trades(
+            session, [(iid, since) for iid in touched]
+        )
     intraday_snapshots_service.clear_week_samples(
         session, from_date=min(affected) if affected else None
     )
@@ -183,7 +200,7 @@ def create(session: Session, data: TransactionInput) -> TransactionEditResult:
         )
         if not wrote:
             warnings.append(NO_MONEY_MARKET_WARNING)
-    _after_write(session, {data.date})
+    _after_write(session, {data.date}, [inserted.instrument_id])
     _note_change("created", inserted.id, data.date, data.kind, data.account_id)
     return TransactionEditResult(inserted, warnings)
 
@@ -197,6 +214,15 @@ def update(session: Session, txn_id: int, data: TransactionInput) -> Transaction
     old_external_id = existing.external_id
     old_date = existing.date
     old_net_native = existing.net_native
+    old_instrument_id = existing.instrument_id
+    old_leg = find_existing_settlement_leg(
+        session,
+        account_id=existing.account_id,
+        external_id=existing.external_id,
+        on=existing.date,
+        net_native=existing.net_native,
+    )
+    old_leg_instrument_id = old_leg.instrument_id if old_leg is not None else None
     prep = _prepare(session, data)
     updated = transactions_repo.update_transaction(session, txn_id, **prep.fields)
     if updated is None:  # pragma: no cover - checked above
@@ -214,7 +240,11 @@ def update(session: Session, txn_id: int, data: TransactionInput) -> Transaction
         old_net_native=old_net_native,
         native_ccy=prep.native_ccy,
     )
-    _after_write(session, {data.date, old_date})
+    _after_write(
+        session,
+        {data.date, old_date},
+        [old_instrument_id, updated.instrument_id, old_leg_instrument_id],
+    )
     _note_change("updated", txn_id, data.date, data.kind, data.account_id)
     return TransactionEditResult(updated, list(prep.warnings))
 
@@ -227,6 +257,7 @@ def delete(session: Session, txn_id: int) -> bool:
     parent_date = parent.date
     parent_kind = parent.kind
     parent_account_id = parent.account_id
+    touched: list[int | None] = [parent.instrument_id]
     leg = find_existing_settlement_leg(
         session,
         account_id=parent.account_id,
@@ -235,10 +266,11 @@ def delete(session: Session, txn_id: int) -> bool:
         net_native=parent.net_native,
     )
     if leg is not None and leg.id != parent.id:
+        touched.append(leg.instrument_id)
         session.delete(leg)
         session.flush()
     transactions_repo.delete_transaction(session, txn_id)
-    _after_write(session, {parent_date})
+    _after_write(session, {parent_date}, touched)
     _note_change("deleted", txn_id, parent_date, parent_kind, parent_account_id)
     return True
 

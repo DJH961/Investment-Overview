@@ -11,6 +11,7 @@ Wraps ``yfinance.download`` with our preferred defaults:
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -766,4 +767,151 @@ def fetch_instrument_info(
         currency=(str(currency).upper() if currency else None),
         expense_ratio=expense_ratio,
         category=(str(raw_category).strip() or None) if raw_category else None,
+    )
+
+
+# -- Lookup (symbols the user does not hold) ----------------------------------------
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    """One symbol-search result. ``currency`` is rarely in Yahoo's search payload."""
+
+    symbol: str
+    name: str
+    exchange: str | None
+    type: str | None
+    currency: str | None
+
+
+@dataclass(frozen=True)
+class QuoteSnapshot:
+    """A one-off quote for a symbol, all amounts in the symbol's native currency."""
+
+    symbol: str
+    name: str | None
+    exchange: str | None
+    type: str | None
+    currency: str | None
+    price: Decimal
+    previous_close: Decimal | None
+    week52_low: Decimal | None
+    week52_high: Decimal | None
+
+
+def _opt_decimal(value: Any) -> Decimal | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return Decimal(repr(number))
+
+
+def search_instruments(
+    query: str,
+    limit: int = 10,
+    *,
+    search_factory: Any = None,
+) -> list[SearchHit]:
+    """Search Yahoo for symbols matching ``query`` (at most ``limit`` hits).
+
+    ``search_factory`` injects a stand-in for ``yfinance.Search`` in tests.
+    Raises :class:`YFinanceError` when the provider call fails.
+    """
+    factory = search_factory or yf.Search
+    try:
+        quotes = retry_call(
+            lambda: list(
+                factory(
+                    query,
+                    max_results=limit,
+                    news_count=0,
+                    lists_count=0,
+                    include_cb=False,
+                    enable_fuzzy_query=False,
+                ).quotes
+            ),
+            attempts=2,
+            backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
+            jitter=_DOWNLOAD_JITTER,
+            description="yfinance.Search",
+        )
+    except Exception as exc:
+        raise YFinanceError(f"yfinance.Search failed: {exc}") from exc
+
+    hits: list[SearchHit] = []
+    for raw in quotes:
+        symbol = str(raw.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        name = raw.get("longname") or raw.get("shortname") or symbol
+        exchange = raw.get("exchDisp") or raw.get("exchange")
+        kind = raw.get("quoteType") or raw.get("typeDisp")
+        currency = raw.get("currency")
+        hits.append(
+            SearchHit(
+                symbol=symbol.upper(),
+                name=str(name).strip(),
+                exchange=str(exchange) if exchange else None,
+                type=str(kind).upper() if kind else None,
+                currency=str(currency).upper() if currency else None,
+            )
+        )
+        if len(hits) >= limit:
+            break
+    return hits
+
+
+def fetch_quote(symbol: str, *, ticker_factory: Any = None) -> QuoteSnapshot | None:
+    """Return a one-off quote for ``symbol`` or ``None`` when Yahoo knows no price for it.
+
+    Raises :class:`YFinanceError` when the provider call itself fails.
+    """
+    factory = ticker_factory or yf.Ticker
+
+    def _call() -> tuple[Any, dict[str, Any]]:
+        ticker = factory(symbol)
+        fast = ticker.fast_info
+        try:
+            info: dict[str, Any] = ticker.info or {}
+        except Exception as exc:  # the name is optional; the price is not
+            log.debug("yfinance Ticker(%s).info failed: %s", symbol, exc)
+            info = {}
+        return fast, info
+
+    try:
+        fast, info = retry_call(
+            _call,
+            attempts=2,
+            backoff_seconds=_DOWNLOAD_BACKOFF_SECONDS,
+            jitter=_DOWNLOAD_JITTER,
+            description="yfinance quote",
+        )
+        price = _opt_decimal(fast["last_price"])
+        previous = _opt_decimal(fast["previous_close"])
+        low = _opt_decimal(fast["year_low"])
+        high = _opt_decimal(fast["year_high"])
+        currency = fast["currency"]
+        exchange = fast["exchange"]
+        kind = fast["quote_type"]
+    except Exception as exc:
+        raise YFinanceError(f"yfinance quote failed for {symbol}: {exc}") from exc
+
+    if price is None or price <= 0:
+        return None
+    name = info.get("longName") or info.get("shortName")
+    return QuoteSnapshot(
+        symbol=symbol,
+        name=str(name).strip() if name else None,
+        exchange=str(info.get("fullExchangeName") or exchange) if (info or exchange) else None,
+        type=str(info.get("quoteType") or kind).upper()
+        if (info.get("quoteType") or kind)
+        else None,
+        currency=str(currency).upper() if currency else None,
+        price=price,
+        previous_close=previous,
+        week52_low=low,
+        week52_high=high,
     )

@@ -28,7 +28,7 @@ from investment_dashboard.repositories import (
     intraday_repo,
     prices_repo,
     snapshots_repo,
-    twin_prices_repo,
+    symbol_prices_repo,
 )
 from investment_dashboard.services import (
     intraday_snapshots_service as iss,
@@ -103,7 +103,7 @@ def _seed(session: Session, *, twin: str | None, official_nav: Decimal | None) -
     prices_repo.upsert_closes(session, fund.id, fund_closes)
     if twin:
         instrument_overrides_repo.upsert(session, fund.id, intraday_twin=twin)
-        twin_prices_repo.upsert_prices(session, twin, TWIN_ROWS)
+        symbol_prices_repo.upsert_prices(session, twin, TWIN_ROWS)
     # The stock is flat all session: the stored samples carry only its component.
     for at in (OPEN, datetime(2024, 6, 3, 15, 0), MID, datetime(2024, 6, 3, 19, 0), CLOSE):
         intraday_repo.insert_sample(session, at, D("1000"))
@@ -255,7 +255,7 @@ def _seed_week(session: Session, *, twin: str | None) -> None:
     )
     if twin:
         instrument_overrides_repo.upsert(session, fund.id, intraday_twin=twin)
-        twin_prices_repo.upsert_prices(session, twin, WEEK_TWIN_ROWS)
+        symbol_prices_repo.upsert_prices(session, twin, WEEK_TWIN_ROWS)
     for day_open, day_mid, day_close in ((FRI_OPEN, FRI_MID, FRI_CLOSE), (OPEN, MID, CLOSE)):
         for at in (day_open, day_mid, day_close):
             intraday_repo.insert_sample(session, at, D("1000"))
@@ -320,7 +320,7 @@ def test_backfill_stores_earlier_sessions_once_and_throttles_empty_answers(
     assert first > 0
     assert len(calls) == 1
     assert calls[0][0] == ["TWN"]
-    stored = twin_prices_repo.prices_in_range(session, ["TWN"], datetime(2024, 5, 29), CLOSE)
+    stored = symbol_prices_repo.prices_in_range(session, ["TWN"], datetime(2024, 5, 29), CLOSE)
     assert FRI_MID in stored["TWN"]  # an earlier session of the week is now there
     # Stored sessions are not fetched again.
     iss._week_attempts.clear()

@@ -451,6 +451,9 @@ def _attribution_for_window(
 
     contribs: dict[int, Decimal] = {}
     dividends: dict[int, Decimal] = {}
+    # Dated money into each holding (buy +, sell −, paid-out dividend −) for the
+    # row's own Modified Dietz return (P17).
+    flows: dict[int, list[tuple[date, Decimal]]] = {}
     for t in txns:
         if t.instrument_id is None:
             continue
@@ -459,8 +462,10 @@ def _attribution_for_window(
             continue
         if t.kind in {TransactionKind.BUY.value, TransactionKind.SELL.value}:
             contribs[t.instrument_id] = contribs.get(t.instrument_id, ZERO) + (-net)
+            flows.setdefault(t.instrument_id, []).append((t.date, -net))
         elif t.kind == TransactionKind.DIVIDEND_CASH.value:
             dividends[t.instrument_id] = dividends.get(t.instrument_id, ZERO) + net
+            flows.setdefault(t.instrument_id, []).append((t.date, -net))
 
     rows: list[InstrumentReturn] = []
     held_at_end = {p.instrument.id for p in end_positions}
@@ -473,6 +478,7 @@ def _attribution_for_window(
                 end_value=end_marks[instr_id],
                 net_contribution=contribs.get(instr_id, ZERO),
                 dividends_cash=dividends.get(instr_id, ZERO),
+                flows=tuple(flows.get(instr_id, ())),
             )
         )
     # Instruments held at start but fully exited by end still attribute P&L.
@@ -487,12 +493,13 @@ def _attribution_for_window(
                 end_value=ZERO,
                 net_contribution=contribs.get(instr_id, ZERO),
                 dividends_cash=dividends.get(instr_id, ZERO),
+                flows=tuple(flows.get(instr_id, ())),
             )
         )
     cash_row = _cash_row(session, start=start, end=end, currency=ccy, eur_to_usd=eur_to_usd)
     if cash_row is not None:
         rows.append(cash_row)
-    return attribute_portfolio_return(rows)
+    return attribute_portfolio_return(rows, window=(start, end))
 
 
 #: ``instrument_id`` of the attribution table's "Cash" row (no instrument has id 0).
@@ -531,6 +538,7 @@ def _cash_row(
     end_value = cash.through(end)
     ov = cashflows.eur_overrides_for(session)
     moved_in = ZERO
+    flows: list[tuple[date, Decimal]] = []
     for t in txns:
         if t.date <= start or t.account_id not in cash.account_ids or not t.net_native:
             continue
@@ -542,6 +550,7 @@ def _cash_row(
             continue  # interest, fees, tax: what the cash earned or paid
         if amt is not None:
             moved_in += amt
+            flows.append((t.date, amt))
     if start_value == 0 and end_value == 0 and moved_in == 0:
         return None
     return InstrumentReturn(
@@ -550,6 +559,7 @@ def _cash_row(
         start_value=start_value,
         end_value=end_value,
         net_contribution=moved_in,
+        flows=tuple(flows),
     )
 
 

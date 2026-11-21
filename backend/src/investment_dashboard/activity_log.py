@@ -63,6 +63,9 @@ SUBJECTS: dict[str, tuple[str, ...]] = {
         f"{_PKG}.services.tiingo_fallback_wiring",
         f"{_PKG}.services.intraday_snapshots_service",
         f"{_PKG}.services.price_probe_service",
+        # Symbol lookup (7.1, P20): on-demand provider calls for instruments you
+        # do not hold; logs the action, symbol and range only, never the query.
+        f"{_PKG}.services.lookup_service",
         f"{_PKG}.services.scheduler",
         # adapters.pull_log narrates every pull (requested/settled/failed/
         # fallback/budget) on a hand-picked logger name ("investment_dashboard.

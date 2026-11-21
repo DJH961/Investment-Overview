@@ -716,6 +716,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/holdings/{instrument_id}/peek": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Holding Peek */
+        get: operations["get_holding_peek_api_holdings__instrument_id__peek_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/holdings/{instrument_id}/tranches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Holding Tranches */
+        get: operations["get_holding_tranches_api_holdings__instrument_id__tranches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/holdings/{instrument_id}/twin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Holding Twin */
+        get: operations["get_holding_twin_api_holdings__instrument_id__twin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports": {
         parameters: {
             query?: never;
@@ -992,6 +1043,57 @@ export interface paths {
         };
         /** Get Live */
         get: operations["get_live_api_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lookup/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search */
+        get: operations["search_api_lookup_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lookup/{symbol}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** History */
+        get: operations["history_api_lookup__symbol__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lookup/{symbol}/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Quote */
+        get: operations["quote_api_lookup__symbol__quote_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1847,10 +1949,20 @@ export interface components {
             /** Net Contribution */
             net_contribution: string | null;
             /**
+             * Own Return
+             * @description Modified Dietz return of this row alone in the window (fraction, 0.01 = 1%); null when its average capital is not positive
+             */
+            own_return?: string | null;
+            /**
              * Pct Of Total Return
-             * @description Share of total return (fraction, 0.01 = 1%)
+             * @description Deprecated (7.1, removed next release; read share_of_pnl): P&L over the window's start value (fraction, 0.01 = 1%)
              */
             pct_of_total_return: string | null;
+            /**
+             * Share Of Pnl
+             * @description Row P&L / total P&L (fraction, 0.01 = 1%); null when |total P&L| is below 0.5% of the average capital
+             */
+            share_of_pnl?: string | null;
             /** Start Value */
             start_value: string | null;
             /** Symbol */
@@ -2937,8 +3049,18 @@ export interface components {
         };
         /** DividendHoldingOut */
         DividendHoldingOut: {
+            /**
+             * By Year
+             * @description Dividends per year, newest first, each at its own date's rate
+             */
+            by_year?: components["schemas"]["DividendHoldingYearOut"][];
             /** Count */
             count: number;
+            /**
+             * Last 12M
+             * @description Dividends dated in the last 12 months (equals ttm)
+             */
+            last_12m?: string | null;
             /** Last Date */
             last_date: string;
             /** Lifetime */
@@ -2953,6 +3075,18 @@ export interface components {
             ttm: string;
             /** Ttm Other */
             ttm_other: string;
+            /**
+             * Yield Ttm
+             * @description last_12m / the holding's current value, fraction; null when not held
+             */
+            yield_ttm?: string | null;
+        };
+        /** DividendHoldingYearOut */
+        DividendHoldingYearOut: {
+            /** Amount */
+            amount: string;
+            /** Year */
+            year: number;
         };
         /** DividendRowOut */
         DividendRowOut: {
@@ -3488,15 +3622,101 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * HistoryPeriod
+         * @description The range's figures, server-computed (Modified Dietz, EUR and USD each from
+         *     its own currency's value and flow stream; a return is never converted).
+         */
+        HistoryPeriod: {
+            /**
+             * Bought Eur
+             * @description Net bought (buys - sells), each at its own date's rate
+             */
+            bought_eur?: string | null;
+            /** Bought Usd */
+            bought_usd?: string | null;
+            /**
+             * Change Eur
+             * @description Gain in the range: closing - opening value - net bought + cash dividends
+             */
+            change_eur?: string | null;
+            /** Change Usd */
+            change_usd?: string | null;
+            /**
+             * Dividends Eur
+             * @description Dividends (cash + reinvested), each at its own date's rate
+             */
+            dividends_eur?: string | null;
+            /** Dividends Usd */
+            dividends_usd?: string | null;
+            /**
+             * Return Eur
+             * @description Modified Dietz (fraction, 0.01 = 1%)
+             */
+            return_eur?: string | null;
+            /**
+             * Return Usd
+             * @description Modified Dietz (fraction, 0.01 = 1%)
+             */
+            return_usd?: string | null;
+        };
         /** HistoryPoint */
         HistoryPoint: {
             /**
+             * Invested Eur
+             * @description Cumulative buys - sells, each at its own date's rate (value mode)
+             */
+            invested_eur?: string | null;
+            /**
+             * Invested Usd
+             * @description Cumulative buys - sells, each at its own date's rate (value mode)
+             */
+            invested_usd?: string | null;
+            /**
              * T
-             * @description Date (ISO), one close per trading day
+             * @description Date (ISO) for a daily range; explicit-UTC instant for 1d / 1w
              */
             t: string;
-            /** V */
+            /**
+             * V
+             * @description Price, native currency
+             */
             v?: string | null;
+            /**
+             * Value Eur
+             * @description Value in EUR at that instant's / day's rate (value mode)
+             */
+            value_eur?: string | null;
+            /**
+             * Value Native
+             * @description Value of the holding, native currency (null in price mode)
+             */
+            value_native?: string | null;
+            /**
+             * Value Usd
+             * @description Value in USD at that instant's / day's rate (value mode)
+             */
+            value_usd?: string | null;
+        };
+        /** HistoryTrade */
+        HistoryTrade: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "sell";
+            /** Price Native */
+            price_native?: string | null;
+            /**
+             * Quantity
+             * @description Shares, always positive
+             */
+            quantity?: string | null;
+            /**
+             * T
+             * @description Trade date (daily) or that session's close instant (1d / 1w)
+             */
+            t: string;
         };
         /**
          * HoldingGroup
@@ -3560,9 +3780,14 @@ export interface components {
         };
         /**
          * HoldingHistoryResponse
-         * @description Daily closes of one instrument in its native currency (never converted).
+         * @description One holding's chart: native prices (``price`` mode) or its value (``value``).
          */
         HoldingHistoryResponse: {
+            /**
+             * Avg Price Native
+             * @description Average cost per share now, native (the price-mode cost line)
+             */
+            avg_price_native?: string | null;
             /**
              * Ccy
              * @description The instrument's native currency, for display
@@ -3570,15 +3795,56 @@ export interface components {
             ccy: string;
             /** Instrument Id */
             instrument_id: number;
+            /**
+             * Mode
+             * @default price
+             * @enum {string}
+             */
+            mode: "value" | "price";
+            period?: components["schemas"]["HistoryPeriod"] | null;
             /** Points */
             points: components["schemas"]["HistoryPoint"][];
             /**
              * Range
              * @enum {string}
              */
-            range: "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            /**
+             * Sessions
+             * @default []
+             */
+            sessions: components["schemas"]["GraphSession"][];
             /** Symbol */
             symbol: string;
+            /**
+             * Trades
+             * @default []
+             */
+            trades: components["schemas"]["HistoryTrade"][];
+            /**
+             * X Mode
+             * @default date
+             * @enum {string}
+             */
+            x_mode: "date" | "time";
+        };
+        /**
+         * HoldingPeekResponse
+         * @description What an expanded Holdings row shows that the row itself cannot.
+         */
+        HoldingPeekResponse: {
+            /**
+             * Currency
+             * @description Native currency of the amounts
+             */
+            currency: string;
+            /** Instrument Id */
+            instrument_id: number;
+            last_dividend?: components["schemas"]["PeekDividend"] | null;
+            last_trade?: components["schemas"]["PeekTrade"] | null;
+            tranches: components["schemas"]["PeekTranches"];
+            /** @description Null for a NAV fund (no intraday) */
+            week?: components["schemas"]["PeekWeek"] | null;
         };
         /** HoldingRow */
         HoldingRow: {
@@ -3706,6 +3972,56 @@ export interface components {
              * @description Year to date (fraction, 0.01 = 1%)
              */
             ytd_growth?: string | null;
+        };
+        /**
+         * HoldingTwinResponse
+         * @description A fund's ETF twin on the deep-dive. The 1D estimate is built at read time.
+         */
+        HoldingTwinResponse: {
+            /**
+             * Estimate Points
+             * @description 1d only: prev_NAV x twin_now / twin_prev_close
+             */
+            estimate_points: components["schemas"]["TwinPricePoint"][];
+            /** Instrument Id */
+            instrument_id: number;
+            /** Nav Points */
+            nav_points: components["schemas"]["TwinNavPoint"][];
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y";
+            /** Rebased */
+            rebased?: components["schemas"]["TwinRebasedPoint"][] | null;
+            /**
+             * Recent
+             * @description The last 5 sessions
+             */
+            recent: components["schemas"]["TwinRecent"][];
+            /**
+             * Sessions
+             * @default []
+             */
+            sessions: components["schemas"]["GraphSession"][];
+            stats: components["schemas"]["TwinStats"];
+            /** Symbol */
+            symbol: string;
+            twin_now?: components["schemas"]["TwinNow"] | null;
+            /** Twin Points */
+            twin_points: components["schemas"]["TwinPricePoint"][];
+            /**
+             * Twin Reason
+             * @enum {string}
+             */
+            twin_reason: "same_index" | "close_index" | "manual";
+            /** Twin Symbol */
+            twin_symbol: string;
+            /**
+             * X Mode
+             * @enum {string}
+             */
+            x_mode: "date" | "time";
         };
         /** HoldingsFx */
         HoldingsFx: {
@@ -4604,6 +4920,90 @@ export interface components {
             /** Sources */
             sources: string[];
         };
+        /** LookupHistory */
+        LookupHistory: {
+            /** Currency */
+            currency?: string | null;
+            /** Points */
+            points: components["schemas"]["LookupPoint"][];
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            /** Sessions */
+            sessions: components["schemas"]["LookupSession"][];
+            /** Symbol */
+            symbol: string;
+            /**
+             * X Mode
+             * @enum {string}
+             */
+            x_mode: "date" | "time";
+        };
+        /** LookupHit */
+        LookupHit: {
+            /** Currency */
+            currency?: string | null;
+            /** Exchange */
+            exchange?: string | null;
+            /** Held Instrument Id */
+            held_instrument_id?: number | null;
+            /** Name */
+            name: string;
+            /** Symbol */
+            symbol: string;
+            /** Type */
+            type?: string | null;
+        };
+        /** LookupPoint */
+        LookupPoint: {
+            /** Fx Eur Usd */
+            fx_eur_usd?: string | null;
+            /** Price Native */
+            price_native: string;
+            /** T */
+            t: string;
+        };
+        /** LookupQuote */
+        LookupQuote: {
+            /** Captured At */
+            captured_at: string;
+            /** Currency */
+            currency?: string | null;
+            /** Day Change Native */
+            day_change_native?: string | null;
+            /** Day Pct */
+            day_pct?: string | null;
+            /** Exchange */
+            exchange?: string | null;
+            /** Fx Eur Usd */
+            fx_eur_usd?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Price Native */
+            price_native: string;
+            /** Symbol */
+            symbol: string;
+            /** Type */
+            type?: string | null;
+            /** Week52 High */
+            week52_high?: string | null;
+            /** Week52 Low */
+            week52_low?: string | null;
+        };
+        /** LookupSearchResponse */
+        LookupSearchResponse: {
+            /** Results */
+            results: components["schemas"]["LookupHit"][];
+        };
+        /** LookupSession */
+        LookupSession: {
+            /** Close */
+            close: string;
+            /** Open */
+            open: string;
+        };
         /** MaintenanceErrorDto */
         MaintenanceErrorDto: {
             /** Detail */
@@ -4890,6 +5290,76 @@ export interface components {
             last_used_at?: string | null;
             /** Name */
             name: string;
+        };
+        /** PeekDividend */
+        PeekDividend: {
+            /**
+             * Amount Native
+             * @description The amount paid, native
+             */
+            amount_native?: string | null;
+            /** Date */
+            date: string;
+            /** Reinvested */
+            reinvested: boolean;
+            /** Reinvested Quantity */
+            reinvested_quantity?: string | null;
+        };
+        /** PeekTrade */
+        PeekTrade: {
+            /** Date */
+            date: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "sell";
+            /** Price Native */
+            price_native?: string | null;
+            /** Quantity */
+            quantity?: string | null;
+        };
+        /** PeekTranches */
+        PeekTranches: {
+            /** Next Long Term Days */
+            next_long_term_days?: number | null;
+            /**
+             * Next Long Term On
+             * @description ISO date
+             */
+            next_long_term_on?: string | null;
+            /** Open Count */
+            open_count: number;
+        };
+        /** PeekWeek */
+        PeekWeek: {
+            /**
+             * Currency
+             * @description Native currency of value_native
+             */
+            currency: string;
+            /** Points */
+            points: components["schemas"]["PeekWeekPoint"][];
+            /**
+             * Return Eur
+             * @description Past week, EUR (fraction, 0.01 = 1%)
+             */
+            return_eur?: string | null;
+            /**
+             * Return Usd
+             * @description Past week, USD (fraction, 0.01 = 1%)
+             */
+            return_usd?: string | null;
+        };
+        /** PeekWeekPoint */
+        PeekWeekPoint: {
+            /**
+             * T
+             * @description Explicit-UTC instant
+             */
+            t: string;
+            /** Value Native */
+            value_native?: string | null;
         };
         /**
          * PeriodRowOut
@@ -6209,6 +6679,146 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** TrancheGroupOut */
+        TrancheGroupOut: {
+            /** Account Id */
+            account_id: number;
+            /** Avg Cost Per Share Native */
+            avg_cost_per_share_native: string | null;
+            /** Cost Native */
+            cost_native: string;
+            /** Count */
+            count: number;
+            /** Gain Native */
+            gain_native: string | null;
+            /**
+             * Gain Pct
+             * @description fraction, 0.01 = 1%
+             */
+            gain_pct: string | null;
+            /** Long Count */
+            long_count: number;
+            /** Quantity Left */
+            quantity_left: string;
+            /** Row Ids */
+            row_ids: number[];
+            /**
+             * Short Count
+             * @description Short-term rows, the 'soon' ones included
+             */
+            short_count: number;
+            /**
+             * Source
+             * @constant
+             */
+            source: "reinvest";
+        };
+        /** TrancheRowOut */
+        TrancheRowOut: {
+            /** Account Id */
+            account_id: number;
+            /** Account Name */
+            account_name: string;
+            /** Acquired On */
+            acquired_on: string;
+            /** Age Days */
+            age_days: number;
+            /**
+             * Cost Native
+             * @description Cost of the shares still held, native
+             */
+            cost_native: string;
+            /** Cost Per Share Native */
+            cost_per_share_native: string;
+            /**
+             * Days To Long Term
+             * @description Null once long-term
+             */
+            days_to_long_term: number | null;
+            /**
+             * Gain Native
+             * @description Against today's price; null without a price
+             */
+            gain_native: string | null;
+            /**
+             * Gain Pct
+             * @description fraction, 0.01 = 1%
+             */
+            gain_pct: string | null;
+            /**
+             * Id
+             * @description Id of the transaction that opened the tranche
+             */
+            id: number;
+            /**
+             * Long Term On
+             * @description Acquisition date + 1 year + 1 day
+             */
+            long_term_on: string;
+            /**
+             * Quantity Bought
+             * @description Shares bought, on today's split basis
+             */
+            quantity_bought: string;
+            /** Quantity Left */
+            quantity_left: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "buy" | "reinvest" | "transfer_in";
+            /**
+             * Status
+             * @description soon = long-term in <= 60 days
+             * @enum {string}
+             */
+            status: "long" | "soon" | "short";
+        };
+        /** TrancheTotalsOut */
+        TrancheTotalsOut: {
+            /** Fully Sold Count */
+            fully_sold_count: number;
+            /** Long Quantity */
+            long_quantity: string;
+            /** Matches Position */
+            matches_position: boolean;
+            /** Position Quantity */
+            position_quantity: string;
+            /** Quantity Left */
+            quantity_left: string;
+            /** Short Quantity */
+            short_quantity: string;
+        };
+        /** TranchesResponse */
+        TranchesResponse: {
+            /** As Of */
+            as_of: string;
+            /** Currency */
+            currency: string;
+            /**
+             * Groups
+             * @description Open reinvested tranches per account
+             */
+            groups: components["schemas"]["TrancheGroupOut"][];
+            /** Instrument Id */
+            instrument_id: number;
+            /**
+             * Method
+             * @description FIFO view per purchase; the holding's totals use average cost
+             * @constant
+             */
+            method: "fifo_view";
+            /** Price Native */
+            price_native: string | null;
+            /**
+             * Rows
+             * @description Open tranches, oldest first
+             */
+            rows: components["schemas"]["TrancheRowOut"][];
+            /** Symbol */
+            symbol: string;
+            totals: components["schemas"]["TrancheTotalsOut"];
+        };
         /**
          * TransactionAll
          * @description The whole ledger in one answer (the client filters, sorts and pages it).
@@ -6538,6 +7148,93 @@ export interface components {
              * @description Setting twin.divergence_window, in sessions
              */
             window: number;
+        };
+        /** TwinNavPoint */
+        TwinNavPoint: {
+            /** Nav Native */
+            nav_native?: string | null;
+            /** T */
+            t: string;
+        };
+        /** TwinNow */
+        TwinNow: {
+            /** Captured At */
+            captured_at: string;
+            /**
+             * Day Pct
+             * @description Against the previous session close (fraction, 0.01 = 1%)
+             */
+            day_pct?: string | null;
+            /** Price Native */
+            price_native?: string | null;
+        };
+        /** TwinPricePoint */
+        TwinPricePoint: {
+            /** Price Native */
+            price_native?: string | null;
+            /** T */
+            t: string;
+        };
+        /** TwinRebasedPoint */
+        TwinRebasedPoint: {
+            /**
+             * Fund Pct
+             * @description From the range start (fraction, 0.01 = 1%)
+             */
+            fund_pct?: string | null;
+            /**
+             * Gap Pp
+             * @description twin_pct - fund_pct, in pp
+             */
+            gap_pp?: string | null;
+            /** T */
+            t: string;
+            /**
+             * Twin Pct
+             * @description From the range start (fraction, 0.01 = 1%)
+             */
+            twin_pct?: string | null;
+        };
+        /** TwinRecent */
+        TwinRecent: {
+            /**
+             * Estimate Pct
+             * @description Twin's move (fraction, 0.01 = 1%)
+             */
+            estimate_pct?: string | null;
+            /** Gap Pp */
+            gap_pp?: string | null;
+            /**
+             * Nav Pct
+             * @description Fund NAV's move (fraction, 0.01 = 1%)
+             */
+            nav_pct?: string | null;
+            /** Session Date */
+            session_date: string;
+        };
+        /** TwinStats */
+        TwinStats: {
+            /**
+             * Bias Label
+             * @default none
+             * @enum {string}
+             */
+            bias_label: "runs_high" | "runs_low" | "none";
+            /**
+             * Bias Pp
+             * @description Mean signed gap, pp (+: twin high)
+             */
+            bias_pp?: string | null;
+            /**
+             * Median Gap Pp
+             * @description Median absolute gap, pp
+             */
+            median_gap_pp?: string | null;
+            /**
+             * Sessions
+             * @default 0
+             */
+            sessions: number;
         };
         /**
          * TwinSuggestionDto
@@ -7993,7 +8690,8 @@ export interface operations {
     get_holding_history_api_holdings__instrument_id__history_get: {
         parameters: {
             query?: {
-                range?: "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+                range?: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+                mode?: "value" | "price";
             };
             header?: never;
             path: {
@@ -8010,6 +8708,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HoldingHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_holding_peek_api_holdings__instrument_id__peek_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingPeekResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_holding_tranches_api_holdings__instrument_id__tranches_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranchesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_holding_twin_api_holdings__instrument_id__twin_get: {
+        parameters: {
+            query?: {
+                range?: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y";
+            };
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingTwinResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8538,6 +9331,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LiveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_api_lookup_search_get: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookupSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    history_api_lookup__symbol__history_get: {
+        parameters: {
+            query?: {
+                range?: "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+            };
+            header?: never;
+            path: {
+                /** @description Upper-case provider symbol. */
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookupHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    quote_api_lookup__symbol__quote_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Upper-case provider symbol. */
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookupQuote"];
                 };
             };
             /** @description Validation Error */

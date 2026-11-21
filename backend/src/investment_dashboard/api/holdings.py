@@ -9,10 +9,15 @@ from investment_dashboard.api.deps import SessionDep
 from investment_dashboard.api.schemas.common import ByCurrency
 from investment_dashboard.api.schemas.holdings import (
     GroupBy,
+    HistoryMode,
     HistoryRange,
     HoldingHistoryResponse,
+    HoldingPeekResponse,
     HoldingsResponse,
+    HoldingTwinResponse,
+    TwinRange,
 )
+from investment_dashboard.readmodels import holding_detail, holding_peek
 from investment_dashboard.readmodels import holdings as holdings_readmodel
 from investment_dashboard.services.read_cache import (
     cached_read,
@@ -49,11 +54,34 @@ def get_holding_history(
     session: SessionDep,
     instrument_id: int,
     range: HistoryRange = "1y",
+    mode: HistoryMode = "price",
 ) -> HoldingHistoryResponse:
-    body = holdings_readmodel.build_history(session, instrument_id, range_key=range)
+    body = holdings_readmodel.build_history(session, instrument_id, range_key=range, mode=mode)
     if body is None:
         raise HTTPException(404, detail="Unknown instrument.")
     return HoldingHistoryResponse.model_validate(body)
+
+
+@router.get("/holdings/{instrument_id}/twin", response_model=HoldingTwinResponse)
+@cached_read
+def get_holding_twin(
+    session: SessionDep,
+    instrument_id: int,
+    range: TwinRange = "1d",
+) -> HoldingTwinResponse:
+    body = holding_detail.build_twin(session, instrument_id, range_key=range)
+    if body is None:
+        raise HTTPException(404, detail="Unknown instrument or no ETF twin set.")
+    return HoldingTwinResponse.model_validate(body)
+
+
+@router.get("/holdings/{instrument_id}/peek", response_model=HoldingPeekResponse)
+@cached_read
+def get_holding_peek(session: SessionDep, instrument_id: int) -> HoldingPeekResponse:
+    body = holding_peek.build(session, instrument_id)
+    if body is None:
+        raise HTTPException(404, detail="Unknown instrument.")
+    return HoldingPeekResponse.model_validate(body)
 
 
 register_warmer(lambda session: _holdings_both(session=session, group_by="none"))

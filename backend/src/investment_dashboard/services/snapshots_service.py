@@ -341,6 +341,10 @@ def warm_range(session: Session, start: date, end: date, *, force: bool = False)
     if end < start:
         return 0
     today = exchange_today()
+    if force:
+        # A forced rebuild means a close (or rate) moved: the per-holding daily
+        # values from ``start`` on go too and rebuild lazily on their next read.
+        _drop_holding_values_from(session, start)
     # One bulk read of the window instead of a per-day cache round-trip.
     stored = stored_snapshots_in_range(session, start, end)
     warmed = 0
@@ -406,8 +410,24 @@ def fill_missing_in_background(start: date, end: date) -> bool:
     return True
 
 
+def _drop_holding_values_from(session: Session, start: date) -> None:
+    """Drop every holding's daily values from ``start`` (price / FX / split change)."""
+    from investment_dashboard.services import holding_values_service  # noqa: PLC0415
+
+    try:
+        holding_values_service.invalidate_from(session, start)
+    except Exception:  # pragma: no cover - defensive: snapshot invalidation must not break
+        log.warning("could not drop the holding daily values", exc_info=True)
+
+
 def invalidate_from(session: Session, start: date) -> int:
-    """Drop cached snapshots on/after ``start`` after a ledger mutation."""
+    """Drop cached snapshots on/after ``start`` after a price / FX / split change.
+
+    The per-holding daily values go from the same date. A trade invalidates through
+    :func:`invalidate_for_trade_dates` instead, which leaves the other holdings'
+    values alone (their callers drop the traded instrument's rows).
+    """
+    _drop_holding_values_from(session, start)
     return snapshots_repo.delete_from(session, start)
 
 
@@ -437,7 +457,7 @@ def invalidate_for_trade_dates(
     from investment_dashboard.db import cache_write_session  # noqa: PLC0415
 
     with cache_write_session(session) as cache:
-        return invalidate_from(cache, min(past))
+        return snapshots_repo.delete_from(cache, min(past))
 
 
 def stored_snapshots_in_range(
@@ -490,6 +510,8 @@ def invalidate_all(session: Session) -> int:
     rows, so the zero closing values stuck permanently. Clearing the whole
     snapshot cache after a backfill forces the next render to recompute each
     period with the now-complete price + FX history. Snapshots are pure
-    cache-tier data (regenerable), so dropping them is always safe.
+    cache-tier data (regenerable), so dropping them is always safe. The per-holding
+    daily values go too.
     """
+    _drop_holding_values_from(session, date.min)
     return snapshots_repo.delete_from(session, date.min)

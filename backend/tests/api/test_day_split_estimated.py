@@ -48,7 +48,7 @@ from investment_dashboard.repositories import (
     instruments_repo,
     intraday_repo,
     prices_repo,
-    twin_prices_repo,
+    symbol_prices_repo,
 )
 from investment_dashboard.services import scheduler
 
@@ -120,7 +120,7 @@ def seeded(api_db: Path) -> dict[str, int]:
         )
         s.flush()
         with cache_write_session(s) as cache:
-            twin_prices_repo.upsert_prices(
+            symbol_prices_repo.upsert_prices(
                 cache,
                 "TWN",
                 {

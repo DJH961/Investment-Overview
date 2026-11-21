@@ -65,6 +65,8 @@ def _attribution_row(r: AttributionRow) -> dict[str, Any]:
         "net_contribution": dec(r.net_contribution),
         "absolute_pnl": dec(r.absolute_pnl),
         "pct_of_total_return": dec(r.pct_of_total_return),
+        "share_of_pnl": dec(r.share_of_pnl),
+        "own_return": dec(r.own_return),
     }
 
 

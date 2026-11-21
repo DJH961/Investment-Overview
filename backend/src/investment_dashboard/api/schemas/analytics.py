@@ -22,7 +22,24 @@ class AttributionOut(ApiModel):
     net_contribution: DecStr | None
     absolute_pnl: DecStr | None
     pct_of_total_return: DecStr | None = Field(
-        description="Share of total return (fraction, 0.01 = 1%)"
+        description=(
+            "Deprecated (7.1, removed next release; read share_of_pnl): P&L over the "
+            "window's start value (fraction, 0.01 = 1%)"
+        )
+    )
+    share_of_pnl: DecStr | None = Field(
+        default=None,
+        description=(
+            "Row P&L / total P&L (fraction, 0.01 = 1%); null when |total P&L| is "
+            "below 0.5% of the average capital"
+        ),
+    )
+    own_return: DecStr | None = Field(
+        default=None,
+        description=(
+            "Modified Dietz return of this row alone in the window (fraction, "
+            "0.01 = 1%); null when its average capital is not positive"
+        ),
     )
 
 
