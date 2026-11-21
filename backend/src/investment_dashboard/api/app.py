@@ -73,6 +73,8 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "maintenance",
     "system",
     "instruments",
+    # v7.1
+    "lookup",
 )
 
 _SECURITY_HEADERS = {
