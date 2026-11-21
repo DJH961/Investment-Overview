@@ -17,7 +17,19 @@ import { SegmentedControl } from "../SegmentedControl";
 import { Skeleton } from "../Skeleton";
 import "./Chart.scss";
 
-export type ChartTone = "primary" | "benchmark" | "muted";
+/** `invested`: a dashed muted guide line; `estimate`: the dashed twin-estimate line. */
+export type ChartTone = "primary" | "benchmark" | "muted" | "invested" | "estimate";
+
+/**
+ * A point mark on the plot: a trade (▲ buy / ▼ sell, the shape carries the meaning) or
+ * a small dot (a NAV print). Not part of the scrub; its label is its accessible name.
+ */
+export interface ChartMarker {
+  t: string | number;
+  v: number;
+  shape: "buy" | "sell" | "dot";
+  label: string;
+}
 
 /**
  * x axis layout: evenly spaced dates (default), clock-aligned intraday ticks, or
@@ -137,6 +149,10 @@ export interface ChartProps {
   series: ChartSeries[];
   referenceLine?: ChartReferenceLine;
   nowMarker?: ChartNowMarker;
+  /** Trade or NAV marks drawn over the lines (part of the y range). */
+  markers?: ChartMarker[];
+  /** One extra tooltip / readout line for the scrubbed time (e.g. the gap between two lines). */
+  tooltipExtra?: (t: number) => string | null;
   range?: string;
   onRangeChange?: (range: string) => void;
   ranges?: string[];
@@ -261,6 +277,8 @@ export function Chart({
   series,
   referenceLine,
   nowMarker,
+  markers,
+  tooltipExtra,
   range,
   onRangeChange,
   ranges,
@@ -358,6 +376,7 @@ export function Chart({
     // Room for the marker: a small gutter after the last point, never the night.
     const tMax = nowOk ? tLast + Math.max(tLast - tMin, 1) * NOW_GUTTER : tLast;
     const ref = [
+      ...(markers ?? []).map((m) => m.v).filter((v) => Number.isFinite(v)),
       ...(referenceLine && Number.isFinite(referenceLine.value) ? [referenceLine.value] : []),
       ...(nowOk ? [nowMarker.v] : []),
     ];
@@ -371,7 +390,7 @@ export function Chart({
     lo -= pad;
     hi += pad;
     return { lo, hi, tMin, tMax };
-  }, [values, times, referenceLine, nowMarker]);
+  }, [values, times, referenceLine, nowMarker, markers]);
   const nowX = bounds && nowMarker ? bounds.tMin + (bounds.tMax - bounds.tMin) * (1 - NOW_GUTTER / 2.5) : null;
 
   // Margins fit the widest tick label, so labels are never clipped and the plot
@@ -541,6 +560,7 @@ export function Chart({
             : [];
         })
       : [];
+  const tipExtra = cursorT !== null && tooltipExtra ? tooltipExtra(cursorT) : null;
   const tipOnLeft = cursorX !== null && cursorX > width * 0.6;
 
   return (
@@ -694,6 +714,28 @@ export function Chart({
               </g>
             );
           })}
+          {markers && markers.length > 0 && (
+            <g className="chart__marks" data-markers>
+              {markers.map((m, k) => {
+                const mt = toTime(m.t);
+                if (!Number.isFinite(mt) || !Number.isFinite(m.v)) return null;
+                const mx = scales.x(mt);
+                const my = scales.y(m.v);
+                return (
+                  <g key={`${k}-${mt}`} className={clsx("chart__mark", `chart__mark--${m.shape}`)} data-mark={m.shape}>
+                    <title>{m.label}</title>
+                    {m.shape === "dot" ? (
+                      <circle cx={mx} cy={my} r={3.5} />
+                    ) : m.shape === "buy" ? (
+                      <path d={`M${mx - 5},${my + 9} L${mx + 5},${my + 9} L${mx},${my + 2} Z`} />
+                    ) : (
+                      <path d={`M${mx - 5},${my - 9} L${mx + 5},${my - 9} L${mx},${my - 2} Z`} />
+                    )}
+                  </g>
+                );
+              })}
+            </g>
+          )}
           {endPt && (
             <path
               className="chart__end-marker"
@@ -763,6 +805,7 @@ export function Chart({
                 <span className="chart__tooltip-value">{r.value}</span>
               </div>
             ))}
+            {tipExtra && <div className="chart__tooltip-extra">{tipExtra}</div>}
           </output>
         )}
       </div>
@@ -776,6 +819,7 @@ export function Chart({
               <span className="chart__readout-value">{r.value}</span>
             </span>
           ))}
+          {tipExtra && <span className="chart__readout-item chart__readout-extra">{tipExtra}</span>}
         </output>
       ) : all.length > 1 || legendExtra ? (
         <ul className="chart__legend">

@@ -796,3 +796,16 @@
     gap: var(--space-3);
   }
 }
+
+// 7.1: the desktop peek toggle at the row end (turns when open).
+.holdings-page {
+  &__peek-toggle {
+    color: var(--color-muted);
+    transition: transform var(--duration-fast) var(--ease-standard);
+
+    &--open {
+      color: var(--color-fg);
+      transform: rotate(180deg);
+    }
+  }
+}
