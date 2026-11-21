@@ -1,7 +1,8 @@
 @use "../../styles/mixins" as m;
 
-// The holdings row's peek (7.1). Phone: one compact column (<= ~200 px).
-// Desktop: a full-width panel row, three columns (week | tranches + twin | activity).
+// The holdings row's peek (7.1). Phone: one compact column (<= ~200 px), one line per
+// fact. Desktop: a full-width panel row in three zones: the week | the facts as
+// label-over-value pairs (2 x 2) | the buttons stacked. Nothing is ellipsised.
 .holding-peek {
   display: flex;
   flex-direction: column;
@@ -10,22 +11,21 @@
   font-size: var(--font-size-sm);
 
   &--phone {
-    padding: 0 var(--space-3) var(--space-3);
+    padding: var(--space-3);
     border-top: var(--border-width) dashed var(--color-border);
-    padding-top: var(--space-3);
   }
 
   &--panel {
     flex-direction: row;
     align-items: center;
     gap: var(--space-6);
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-4) var(--space-5);
   }
 
   &__cols {
     display: grid;
     flex: 1 1 auto;
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.4fr);
+    grid-template-columns: 16rem minmax(0, 1fr);
     gap: var(--space-6);
     align-items: center;
     min-width: 0;
@@ -41,10 +41,11 @@
   }
 
   &--panel &__week {
-    grid-template-columns: auto auto;
     grid-template-areas:
       "key pct"
       "spark spark";
+    grid-template-columns: auto auto;
+    justify-content: space-between;
     gap: var(--space-1) var(--space-3);
   }
 
@@ -74,13 +75,26 @@
     margin: 0;
   }
 
-  // One line each: the label in a fixed column, the fact beside it.
+  // Desktop: label over value, two columns, values wrap rather than clip.
+  &--panel &__facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-6);
+  }
+
+  // Phone: one line each, the label in a fixed column.
   &__fact {
     display: grid;
     grid-template-columns: 6.5rem minmax(0, 1fr);
     gap: var(--space-2);
     align-items: baseline;
     min-width: 0;
+  }
+
+  &--panel &__fact {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
   }
 
   &__key {
@@ -92,10 +106,8 @@
   &__value {
     min-width: 0;
     margin: 0;
-    overflow: hidden;
     font-variant-numeric: tabular-nums;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
 
   &__muted {
@@ -119,7 +131,7 @@
   }
 
   &--panel &__actions {
-    flex: 0 0 auto;
+    flex: 0 0 11rem;
     flex-direction: column;
     align-items: stretch;
   }
@@ -127,11 +139,5 @@
   &--phone &__action {
     padding: 0 var(--space-3);
     white-space: nowrap;
-  }
-
-  @include m.phone {
-    &__fact {
-      grid-template-columns: 6.5rem minmax(0, 1fr);
-    }
   }
 }

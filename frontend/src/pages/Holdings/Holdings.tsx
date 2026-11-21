@@ -180,14 +180,29 @@ export function Holdings() {
         header: "Holding",
         primary: true,
         sortValue: (r) => r.symbol,
-        cell: (r) => (
-          <HoldingIdentity
-            row={r}
-            nameLines={1}
-            live={r.market_open && marks.staleMove(r) === null}
-            className="holdings-page__holding"
-          />
-        ),
+        cell: (r) => {
+          // The peek toggle leads the cell (the symbol still links straight to the page).
+          const open = peekId === r.instrument_id;
+          return (
+            <span className="holdings-page__holding-cell">
+              <IconButton
+                size="sm"
+                label={open ? `Close ${r.symbol} summary` : `Show ${r.symbol} summary`}
+                aria-expanded={open}
+                aria-controls={open ? `holding-peek-${r.instrument_id}` : undefined}
+                className={clsx("holdings-page__peek-toggle", open && "holdings-page__peek-toggle--open")}
+                icon={<ChevronDown aria-hidden />}
+                onClick={() => setPeekId(open ? null : r.instrument_id)}
+              />
+              <HoldingIdentity
+                row={r}
+                nameLines={1}
+                live={r.market_open && marks.staleMove(r) === null}
+                className="holdings-page__holding"
+              />
+            </span>
+          );
+        },
       },
       {
         key: "category",
@@ -381,27 +396,6 @@ export function Holdings() {
         align: "right",
         sortValue: (r) => toNum(r.ytd_growth),
         cell: (r) => <Percent ratio={toNum(r.ytd_growth)} signed colored />,
-      },
-      {
-        // The peek toggle at the row end (the symbol still links straight to the page).
-        key: "peek",
-        header: "",
-        group: "Period",
-        align: "right",
-        cell: (r) => {
-          const open = peekId === r.instrument_id;
-          return (
-            <IconButton
-              size="sm"
-              label={open ? `Close ${r.symbol} summary` : `Show ${r.symbol} summary`}
-              aria-expanded={open}
-              aria-controls={open ? `holding-peek-${r.instrument_id}` : undefined}
-              className={clsx("holdings-page__peek-toggle", open && "holdings-page__peek-toggle--open")}
-              icon={<ChevronDown aria-hidden />}
-              onClick={() => setPeekId(open ? null : r.instrument_id)}
-            />
-          );
-        },
       },
     ],
     [currency, maxWeight, stamps, marks, peekId],

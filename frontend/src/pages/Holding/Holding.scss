@@ -558,8 +558,14 @@
     max-width: 8rem;
   }
 
-  &__tx:hover {
-    background: var(--color-surface-2);
+  // The whole row opens the edit (the date button stretches over it).
+  &__tx {
+    position: relative;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--color-surface-2);
+    }
   }
 
   &__tx-open {
@@ -570,7 +576,18 @@
     color: inherit;
     font: inherit;
     cursor: pointer;
-    text-decoration: underline dotted;
+    text-decoration: none;
+
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+    }
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+    }
   }
 
   // ---- Tranches -------------------------------------------------------------------
