@@ -137,7 +137,7 @@ def test_golden_groups_and_totals() -> None:
 
 
 def test_long_term_on_leap_day_and_plain_day() -> None:
-    assert tr.long_term_on(date(2024, 2, 29)) == date(2025, 3, 2)
+    assert tr.long_term_on(date(2024, 2, 29)) == date(2025, 3, 1)
     assert tr.long_term_on(date(2024, 1, 15)) == date(2025, 1, 16)
     assert tr.long_term_on(date(2023, 2, 28)) == date(2024, 2, 29)
 

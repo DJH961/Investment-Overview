@@ -166,13 +166,16 @@ def replay(txns: Iterable[TrancheTxn], *, money_market: bool = False) -> list[Tr
 def long_term_on(acquired: date) -> date:
     """First long-term day: acquisition + 1 year + 1 day.
 
-    29 Feb has no anniversary, so its year ends on 1 Mar: a lot bought
-    29 Feb 2024 is long-term on 2 Mar 2025.
+    US rule: held "more than one year", counted from the day after purchase, so
+    the first long-term day is the day after the one-year anniversary. 29 Feb
+    has no anniversary in a common year; counted in calendar months the year
+    ends on 28 Feb (the usual broker reading), so a lot bought 29 Feb 2024 is
+    long-term on 1 Mar 2025. Information only, not tax advice.
     """
     try:
         anniversary = acquired.replace(year=acquired.year + 1)
     except ValueError:  # 29 Feb
-        anniversary = date(acquired.year + 1, 3, 1)
+        anniversary = date(acquired.year + 1, 2, 28)
     return anniversary + timedelta(days=1)
 
 

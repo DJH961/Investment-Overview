@@ -119,9 +119,10 @@ Changing the twin stays `PATCH /api/instruments/{id}` (`intraday_twin`).
             long_quantity, short_quantity, fully_sold_count } }
 ```
 
-`long_term_on` = acquisition date + 1 year + 1 day (29 Feb → 1 Mar next year
-+ 1 day: a lot bought 29 Feb 2024 is long-term on 2 Mar 2025). Tranche figures
-never feed any aggregate.
+`long_term_on` = the day after the one-year anniversary ("held more than one
+year"). A 29 Feb purchase's anniversary is 28 Feb (calendar months), so a lot
+bought 29 Feb 2024 is long-term on 1 Mar 2025 (owner, 2026-11-21: "do what you
+think is right"). Tranche figures never feed any aggregate.
 
 ### `GET /api/holdings/{instrument_id}/peek` (orchestrator, at integration)
 
