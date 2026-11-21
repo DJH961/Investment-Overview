@@ -18,6 +18,13 @@
   (cash + reinvested, native), `computed_at`. Native only.
 - One row per (date, instrument, account) held at that trading day's close,
   from the first ledger date to the last close.
+- *As built (lane A):* `quantity` is `Numeric(18,8)` (the share convention);
+  a date with a trade or dividend also gets a row (a full sale leaves a
+  `quantity` 0 row so its flow is kept). Stored through yesterday; today's rows
+  are valued live and never stored. `close_price_native` is the feed's
+  (split-adjusted) close; `value_native = quantity × split factor × close`.
+  Besides `invalidate_instrument_from` the service has `invalidate_from(session,
+  date)` (all instruments) and `invalidate_instruments_for_trades`.
 
 ## Services (plain dataclasses, never ORM rows)
 
@@ -70,6 +77,12 @@ def invalidate_instrument_from(session, instrument_id, from_date) -> None
   - `period`: `{change_eur, change_usd, return_eur, return_usd, bought_eur,
     bought_usd, dividends_eur, dividends_usd}` for the range, server-computed
     (Modified Dietz on the holding's flows; the client never computes it).
+    `change` = closing − opening value − net bought + cash dividends (the gain);
+    `bought` = buys − sells; `dividends` = cash + reinvested. Flows: buys, sells
+    and un-reinvested cash dividends, each at its own date's rate.
+  - *As built:* price mode keeps the old `t`/`v` points (new fields null);
+    `trades[].t` is the date (daily) or that session's close instant (1d/1w);
+    NAV = effective asset class `mutual_fund` / `cash` / `savings`.
 
 ### `GET /api/holdings/{instrument_id}/twin?range=` (lane A)
 
