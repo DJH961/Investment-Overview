@@ -8,6 +8,7 @@ from pydantic import Field
 
 from investment_dashboard.api.deps import Ccy
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
+from investment_dashboard.api.schemas.graphs import GraphSession
 
 _FRAC = "fraction, 0.01 = 1%"
 
@@ -298,19 +299,135 @@ class HoldingsResponse(ApiModel):
     summary: HoldingsSummary
 
 
-HistoryRange = Literal["1m", "3m", "6m", "ytd", "1y", "all"]
+HistoryRange = Literal["1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all"]
+HistoryMode = Literal["value", "price"]
+TwinRange = Literal["1d", "1w", "1m", "3m", "6m", "ytd", "1y"]
+XMode = Literal["date", "time"]
 
 
 class HistoryPoint(ApiModel):
-    t: str = Field(description="Date (ISO), one close per trading day")
-    v: DecStr | None = None
+    t: str = Field(description="Date (ISO) for a daily range; explicit-UTC instant for 1d / 1w")
+    v: DecStr | None = Field(default=None, description="Price, native currency")
+    value_native: DecStr | None = Field(
+        default=None, description="Value of the holding, native currency (null in price mode)"
+    )
+    value_eur: DecStr | None = Field(
+        default=None, description="Value in EUR at that instant's / day's rate (value mode)"
+    )
+    value_usd: DecStr | None = Field(
+        default=None, description="Value in USD at that instant's / day's rate (value mode)"
+    )
+    invested_eur: DecStr | None = Field(
+        default=None,
+        description="Cumulative buys - sells, each at its own date's rate (value mode)",
+    )
+    invested_usd: DecStr | None = Field(
+        default=None,
+        description="Cumulative buys - sells, each at its own date's rate (value mode)",
+    )
+
+
+class HistoryTrade(ApiModel):
+    t: str = Field(description="Trade date (daily) or that session's close instant (1d / 1w)")
+    kind: Literal["buy", "sell"]
+    quantity: DecStr | None = Field(default=None, description="Shares, always positive")
+    price_native: DecStr | None = None
+
+
+class HistoryPeriod(ApiModel):
+    """The range's figures, server-computed (Modified Dietz, EUR and USD each from
+    its own currency's value and flow stream; a return is never converted)."""
+
+    change_eur: DecStr | None = Field(
+        default=None,
+        description="Gain in the range: closing - opening value - net bought + cash dividends",
+    )
+    change_usd: DecStr | None = None
+    return_eur: DecStr | None = Field(default=None, description=f"Modified Dietz ({_FRAC})")
+    return_usd: DecStr | None = Field(default=None, description=f"Modified Dietz ({_FRAC})")
+    bought_eur: DecStr | None = Field(
+        default=None, description="Net bought (buys - sells), each at its own date's rate"
+    )
+    bought_usd: DecStr | None = None
+    dividends_eur: DecStr | None = Field(
+        default=None, description="Dividends (cash + reinvested), each at its own date's rate"
+    )
+    dividends_usd: DecStr | None = None
 
 
 class HoldingHistoryResponse(ApiModel):
-    """Daily closes of one instrument in its native currency (never converted)."""
+    """One holding's chart: native prices (``price`` mode) or its value (``value``)."""
 
     instrument_id: int
     symbol: str
     range: HistoryRange
     ccy: str = Field(description="The instrument's native currency, for display")
     points: list[HistoryPoint]
+    mode: HistoryMode = "price"
+    x_mode: XMode = "date"
+    sessions: list[GraphSession] = []  # noqa: RUF012 - pydantic copies defaults
+    trades: list[HistoryTrade] = []  # noqa: RUF012
+    avg_price_native: DecStr | None = Field(
+        default=None, description="Average cost per share now, native (the price-mode cost line)"
+    )
+    period: HistoryPeriod | None = None
+
+
+class TwinPricePoint(ApiModel):
+    t: str
+    price_native: DecStr | None = None
+
+
+class TwinNavPoint(ApiModel):
+    t: str
+    nav_native: DecStr | None = None
+
+
+class TwinRebasedPoint(ApiModel):
+    t: str
+    fund_pct: DecStr | None = Field(default=None, description=f"From the range start ({_FRAC})")
+    twin_pct: DecStr | None = Field(default=None, description=f"From the range start ({_FRAC})")
+    gap_pp: DecStr | None = Field(default=None, description="twin_pct - fund_pct, in pp")
+
+
+class TwinNow(ApiModel):
+    price_native: DecStr | None = None
+    day_pct: DecStr | None = Field(
+        default=None, description=f"Against the previous session close ({_FRAC})"
+    )
+    captured_at: str
+
+
+class TwinStats(ApiModel):
+    median_gap_pp: DecStr | None = Field(default=None, description="Median absolute gap, pp")
+    bias_pp: DecStr | None = Field(default=None, description="Mean signed gap, pp (+: twin high)")
+    bias_label: Literal["runs_high", "runs_low", "none"] = "none"
+    sessions: int = 0
+
+
+class TwinRecent(ApiModel):
+    session_date: str
+    estimate_pct: DecStr | None = Field(default=None, description=f"Twin's move ({_FRAC})")
+    nav_pct: DecStr | None = Field(default=None, description=f"Fund NAV's move ({_FRAC})")
+    gap_pp: DecStr | None = None
+
+
+class HoldingTwinResponse(ApiModel):
+    """A fund's ETF twin on the deep-dive. The 1D estimate is built at read time."""
+
+    instrument_id: int
+    symbol: str
+    twin_symbol: str
+    twin_reason: Literal["same_index", "close_index", "manual"]
+    range: TwinRange
+    x_mode: XMode
+    sessions: list[GraphSession] = []  # noqa: RUF012
+    twin_points: list[TwinPricePoint]
+    estimate_points: list[TwinPricePoint] = Field(
+        description="1d only: prev_NAV x twin_now / twin_prev_close"
+    )
+    nav_points: list[TwinNavPoint]
+    rebased: list[TwinRebasedPoint] | None = None
+    twin_now: TwinNow | None = None
+    stats: TwinStats
+    recent: list[TwinRecent] = Field(description="The last 5 sessions")
