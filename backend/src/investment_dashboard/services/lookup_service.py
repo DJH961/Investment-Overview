@@ -18,11 +18,13 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters import yfinance_client as yf_client
 from investment_dashboard.adapters.yfinance_client import SearchHit
+from investment_dashboard.domain import market_hours
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.errors import DomainError, NotFoundError, UpstreamError, ValidationError
 from investment_dashboard.repositories import instruments_repo
@@ -34,6 +36,7 @@ CACHE_TTL_SECONDS = 15 * 60
 CACHE_MAX_SYMBOLS = 50
 RANGES = ("1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all")
 _SESSION_GAP = timedelta(hours=4)
+_NY_TZ = ZoneInfo("America/New_York")
 _ALL_START = date(1970, 1, 1)
 
 
@@ -226,7 +229,42 @@ def _range_start(range_: str, today: date) -> date:
     }[range_]
 
 
+def _nyse_sessions(bars: dict[datetime, Decimal]) -> list[tuple[SessionSpan, list[datetime]]]:
+    """US listings: one group per NYSE trading day, regular hours only (half days included).
+
+    The span is the calendar's open and close, so a lookup chart lines up with the
+    portfolio's 1D/1W charts; bars outside the regular session (pre/after hours) are
+    dropped, as they are for held instruments.
+    """
+    by_day: dict[date, list[datetime]] = {}
+    for ts in sorted(bars):  # bar times are naive UTC
+        ny = ts.replace(tzinfo=UTC).astimezone(_NY_TZ)
+        day = ny.date()
+        if not market_hours.is_trading_day(day):
+            continue
+        if not (
+            market_hours.regular_session_open(day) <= ny <= market_hours.regular_session_close(day)
+        ):
+            continue
+        by_day.setdefault(day, []).append(ts)
+    return [
+        (
+            SessionSpan(
+                open=_iso(
+                    market_hours.regular_session_open(day).astimezone(UTC).replace(tzinfo=None)
+                ),
+                close=_iso(
+                    market_hours.regular_session_close(day).astimezone(UTC).replace(tzinfo=None)
+                ),
+            ),
+            group,
+        )
+        for day, group in sorted(by_day.items())
+    ]
+
+
 def _split_sessions(bars: dict[datetime, Decimal]) -> list[list[datetime]]:
+    """Non-US listings: sessions split on a gap of more than four hours between bars."""
     sessions: list[list[datetime]] = []
     for ts in sorted(bars):
         if sessions and ts - sessions[-1][-1] <= _SESSION_GAP:
@@ -262,8 +300,15 @@ def get_history(session: Session, symbol: str, range_: str) -> History:
             bars = yf_client.fetch_intraday_closes_range(
                 [symbol], today - timedelta(days=7), today, interval=interval
             ).get(symbol, {})
-            for group in _split_sessions(bars)[-(1 if range_ == "1d" else 5) :]:
-                sessions.append(SessionSpan(open=_iso(group[0]), close=_iso(group[-1])))
+            if _currency_of(session, symbol) == "USD":
+                grouped = _nyse_sessions(bars)
+            else:
+                grouped = [
+                    (SessionSpan(open=_iso(g[0]), close=_iso(g[-1])), g)
+                    for g in _split_sessions(bars)
+                ]
+            for span, group in grouped[-(1 if range_ == "1d" else 5) :]:
+                sessions.append(span)
                 for ts in group:
                     points.append(
                         HistoryPoint(

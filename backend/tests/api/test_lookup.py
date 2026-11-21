@@ -163,13 +163,28 @@ def test_history_1d_returns_only_the_last_session(
     one = api_client.get("/api/lookup/ZZZ/history", params={"range": "1d"}).json()
     assert one["x_mode"] == "time"
     assert len(one["sessions"]) == 1
-    assert one["sessions"][0] == {"open": "2026-01-06T14:30:00Z", "close": "2026-01-06T14:31:00Z"}
+    # A USD listing: the span is the NYSE calendar's regular session, not first/last bar.
+    assert one["sessions"][0] == {"open": "2026-01-06T14:30:00Z", "close": "2026-01-06T21:00:00Z"}
     assert [p["price_native"] for p in one["points"]] == ["2", "3"]
     week = api_client.get("/api/lookup/ZZZ/history", params={"range": "1w"}).json()
     assert len(week["sessions"]) == 2
     assert len(week["points"]) == 4
     assert seen_interval == ["1m", "5m"]
     assert datetime.now(UTC)  # keep import used
+
+
+def test_history_1d_drops_pre_and_after_hours_bars_for_us_listings(
+    api_client: TestClient, fake_yf: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 13:00 UTC = 08:00 ET (pre-market), 15:00 UTC in session, 22:00 UTC = 17:00 ET (after hours).
+    bars = {
+        datetime(2026, 1, 6, 13, 0): Decimal("1"),
+        datetime(2026, 1, 6, 15, 0): Decimal("2"),
+        datetime(2026, 1, 6, 22, 0): Decimal("3"),
+    }
+    monkeypatch.setattr(yfc, "fetch_intraday_closes_range", lambda *a, **k: {"ZZZ": bars})
+    body = api_client.get("/api/lookup/ZZZ/history", params={"range": "1d"}).json()
+    assert [p["price_native"] for p in body["points"]] == ["2"]
 
 
 def test_bad_symbol_and_range_are_422(api_client: TestClient, fake_yf: None) -> None:
