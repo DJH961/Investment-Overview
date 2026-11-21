@@ -44,15 +44,22 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
     daySplitMoved(toNum(row.day_overnight_pct ?? null), toNum(row.day_overnight ?? null));
   return (
     <li className={clsx("holdings-page__item", tintClass(row))} data-search-row>
-      <button
-        type="button"
-        className={clsx("holdings-page__item-head", hasSplit && "holdings-page__item-head--split")}
-        aria-expanded={open}
-        aria-controls={detailId}
-        onClick={() => setOpen((o) => !o)}
-      >
+      {/*
+        The head is a plain container; one invisible button covers it and toggles the peek.
+        The day split's (i) sits above that button, so it is never a button inside a button
+        and tapping it does not open the row.
+      */}
+      <div className={clsx("holdings-page__item-head", hasSplit && "holdings-page__item-head--split")}>
+        <button
+          type="button"
+          className="holdings-page__item-toggle"
+          aria-expanded={open}
+          aria-controls={detailId}
+          aria-label={`${row.symbol} · ${row.name}: ${open ? "hide" : "show"} summary`}
+          onClick={() => setOpen((o) => !o)}
+        />
         <span className="holdings-page__item-title">
-          {/* Inside the row button: the symbol is not a link (the peek has "Open"). */}
+          {/* Under the row toggle: the symbol is not a link (the peek has "Open"). */}
           <HoldingIdentity row={row} link={false} live={row.market_open && !stale} />
         </span>
         <span className="holdings-page__item-figures">
@@ -111,7 +118,7 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
             <RowStamp text={stamp} labelled />
           </span>
         )}
-      </button>
+      </div>
       {open && <HoldingPeek id={detailId} row={row} layout="phone" />}
     </li>
   );

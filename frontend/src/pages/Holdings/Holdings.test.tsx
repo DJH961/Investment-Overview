@@ -379,6 +379,11 @@ describe("Holdings page", () => {
           /Session\s*\+0\.55%\s*Overnight\s*-0\.45%/,
         );
         expect(container.querySelector(".holdings-page__item-head--split")).not.toBeNull();
+        // The (i) is not a button inside the row button, and tapping it leaves the row shut.
+        expect(container.querySelector("button button")).toBeNull();
+        const toggle = screen.getByRole("button", { name: /VWCE/ });
+        fireEvent.click(screen.getByRole("button", { name: "About session and overnight" }));
+        expect(toggle).toHaveAttribute("aria-expanded", "false");
       } finally {
         restore();
       }
