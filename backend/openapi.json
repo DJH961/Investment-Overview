@@ -1770,6 +1770,33 @@
         "title": "ByCurrency[CalculatorInputsOut]",
         "type": "object"
       },
+      "ByCurrency_CurrencyEffectOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/CurrencyEffectOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/CurrencyEffectOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[CurrencyEffectOut]",
+        "type": "object"
+      },
       "ByCurrency_CurrencyOut_": {
         "properties": {
           "EUR": {
@@ -2768,6 +2795,182 @@
         "title": "CurrencyBuys",
         "type": "object"
       },
+      "CurrencyEffectOut": {
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "bridge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectBridge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "buys": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectBuys"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ccy": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Ccy",
+            "type": "string"
+          },
+          "end_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End On"
+          },
+          "explainer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explainer"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "granularity": {
+            "enum": [
+              "intraday",
+              "daily",
+              "weekly"
+            ],
+            "title": "Granularity",
+            "type": "string"
+          },
+          "grid": {
+            "items": {
+              "$ref": "#/components/schemas/EffectGridRow"
+            },
+            "title": "Grid",
+            "type": "array"
+          },
+          "headline": {
+            "$ref": "#/components/schemas/EffectHeadline"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingEffect"
+            },
+            "title": "Holdings",
+            "type": "array"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/EffectBar"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "range": {
+            "title": "Range",
+            "type": "string"
+          },
+          "records": {
+            "$ref": "#/components/schemas/EffectRecords"
+          },
+          "rolling": {
+            "items": {
+              "$ref": "#/components/schemas/EffectRollingPoint"
+            },
+            "title": "Rolling",
+            "type": "array"
+          },
+          "rolling_window_days": {
+            "default": 252,
+            "title": "Rolling Window Days",
+            "type": "integer"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/EffectPoint"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "session_split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "start_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start On"
+          },
+          "stats": {
+            "items": {
+              "$ref": "#/components/schemas/EffectStat"
+            },
+            "title": "Stats",
+            "type": "array"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/EffectBar"
+            },
+            "title": "Years",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ccy",
+          "range",
+          "as_of",
+          "generated_at",
+          "granularity",
+          "headline"
+        ],
+        "title": "CurrencyEffectOut",
+        "type": "object"
+      },
       "CurrencyLifetime": {
         "properties": {
           "avg_invest_rate": {
@@ -3027,6 +3230,22 @@
             ],
             "title": "Currency"
           },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "dollar_up",
+                  "dollar_down",
+                  "sideways"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
           "key": {
             "enum": [
               "rate_now",
@@ -3034,7 +3253,10 @@
               "investing_power_today",
               "lifetime_effect",
               "avg_rate_vs_now",
-              "one_cent"
+              "one_cent",
+              "effect_this_year",
+              "effect_lifetime",
+              "dollar_trend"
             ],
             "title": "Key",
             "type": "string"
@@ -3054,6 +3276,22 @@
               }
             ],
             "title": "Kind"
+          },
+          "normal": {
+            "anyOf": [
+              {
+                "enum": [
+                  "normal",
+                  "large",
+                  "unusual"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normal"
           },
           "secondary": {
             "anyOf": [
@@ -3097,6 +3335,17 @@
               }
             ],
             "title": "Secondary Unit"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
           },
           "unit": {
             "enum": [
@@ -4285,6 +4534,641 @@
           "drift_pp"
         ],
         "title": "DriftRow",
+        "type": "object"
+      },
+      "EffectBar": {
+        "description": "One month (``YYYY-MM``) or year (``YYYY``) of the currency effect.",
+        "properties": {
+          "currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "currency",
+          "kind"
+        ],
+        "title": "EffectBar",
+        "type": "object"
+      },
+      "EffectBridge": {
+        "description": "``start + deposits + market + currency == end`` exactly, in ``ccy``.",
+        "properties": {
+          "currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "deposits": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Deposits",
+            "type": "string"
+          },
+          "end": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "End",
+            "type": "string"
+          },
+          "end_on": {
+            "title": "End On",
+            "type": "string"
+          },
+          "market": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Market",
+            "type": "string"
+          },
+          "start": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start",
+            "type": "string"
+          },
+          "start_on": {
+            "title": "Start On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_on",
+          "end_on",
+          "start",
+          "deposits",
+          "market",
+          "currency",
+          "end"
+        ],
+        "title": "EffectBridge",
+        "type": "object"
+      },
+      "EffectBuys": {
+        "description": "\"\u20ac1,000 buys $X; yesterday $Y\" (``domain/session_fx.fx_buying_power_split``).",
+        "properties": {
+          "amount_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Eur",
+            "type": "string"
+          },
+          "change_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Usd"
+          },
+          "market_hours_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Hours Usd"
+          },
+          "overnight_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overnight Usd"
+          },
+          "usd_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Now",
+            "type": "string"
+          },
+          "usd_prev": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Prev"
+          }
+        },
+        "required": [
+          "amount_eur",
+          "usd_now"
+        ],
+        "title": "EffectBuys",
+        "type": "object"
+      },
+      "EffectGridRow": {
+        "description": "One year of the month x year grid: 12 cells (Jan..Dec), null = no data.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "months": {
+            "items": {
+              "anyOf": [
+                {
+                  "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxItems": 12,
+            "minItems": 12,
+            "title": "Months",
+            "type": "array"
+          },
+          "total": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "months",
+          "total",
+          "kind"
+        ],
+        "title": "EffectGridRow",
+        "type": "object"
+      },
+      "EffectHeadline": {
+        "description": "EUR return, USD return, the effect between them and the effect in money.",
+        "properties": {
+          "currency_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Share"
+          },
+          "effect": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Effect",
+            "type": "string"
+          },
+          "effect_pp": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effect Pp"
+          },
+          "eur_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eur Return"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "market": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Market",
+            "type": "string"
+          },
+          "return_basis": {
+            "enum": [
+              "periods",
+              "daily_chain",
+              "day"
+            ],
+            "title": "Return Basis",
+            "type": "string"
+          },
+          "usd_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usd Return"
+          }
+        },
+        "required": [
+          "effect",
+          "market",
+          "kind",
+          "return_basis"
+        ],
+        "title": "EffectHeadline",
+        "type": "object"
+      },
+      "EffectPoint": {
+        "description": "One point of the constant-currency chart.\n\n``constant_currency = value - currency``: the actual value minus the currency\neffect accumulated since the range start (each rate move counted only for the\nmoney held when it happened). The gap between the two lines is ``currency``.",
+        "properties": {
+          "constant_currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Constant Currency",
+            "type": "string"
+          },
+          "currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          },
+          "value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "value",
+          "constant_currency",
+          "currency"
+        ],
+        "title": "EffectPoint",
+        "type": "object"
+      },
+      "EffectRecord": {
+        "description": "A record: a day (ISO date), month (``YYYY-MM``) or year (``YYYY``).",
+        "properties": {
+          "currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "currency"
+        ],
+        "title": "EffectRecord",
+        "type": "object"
+      },
+      "EffectRecords": {
+        "description": "Best / worst currency day, month and year of the range, plus lifetime figures.",
+        "properties": {
+          "average_monthly_contribution": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Monthly Contribution"
+          },
+          "best_day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "best_month": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "best_year": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifetime_effect": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lifetime Effect"
+          },
+          "lifetime_months_of_contributions": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lifetime Months Of Contributions"
+          },
+          "worst_day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worst_month": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "worst_year": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "EffectRecords",
+        "type": "object"
+      },
+      "EffectRollingPoint": {
+        "description": "Currency effect summed over the ``rolling_window_days`` business days to ``t``.",
+        "properties": {
+          "currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "currency"
+        ],
+        "title": "EffectRollingPoint",
+        "type": "object"
+      },
+      "EffectRun": {
+        "description": "The current streak of same-sign months (lifetime), e.g. \"helped 7 months running\".",
+        "properties": {
+          "currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "months": {
+            "title": "Months",
+            "type": "integer"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          },
+          "statement": {
+            "title": "Statement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "months",
+          "since",
+          "currency",
+          "statement"
+        ],
+        "title": "EffectRun",
+        "type": "object"
+      },
+      "EffectStat": {
+        "description": "One Impact tile (same shape as the strip's ``CurrencyStat``).",
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "key": {
+            "enum": [
+              "eur_return",
+              "usd_return",
+              "effect_pp",
+              "effect",
+              "currency_share",
+              "best_month",
+              "worst_month",
+              "tailwind_share",
+              "longest_tailwind",
+              "longest_headwind",
+              "typical_day",
+              "largest_day",
+              "months_of_contributions",
+              "inside_hours",
+              "outside_hours",
+              "rate_range_today",
+              "buys_now"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tailwind",
+                  "headwind",
+                  "neutral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary"
+          },
+          "secondary_currency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Currency"
+          },
+          "secondary_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rate",
+                  "fraction",
+                  "money",
+                  "count"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Unit"
+          },
+          "unit": {
+            "enum": [
+              "rate",
+              "fraction",
+              "money",
+              "count"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "unit"
+        ],
+        "title": "EffectStat",
         "type": "object"
       },
       "EstimateFund": {
@@ -5605,6 +6489,65 @@
           "kind"
         ],
         "title": "HistoryTrade",
+        "type": "object"
+      },
+      "HoldingEffect": {
+        "description": "One holding's change over the range, three ways, in ``ccy``.\n\n``price + dividends + currency == total``. ``price``: the change in value not\nexplained by flows or the rate (the holding's market move); ``dividends``:\npaid in the range, each at its own date's rate; ``currency``: each day's\nholding revalued from the previous day's rate to that day's.",
+        "properties": {
+          "currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "dividends": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Dividends",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "native_ccy": {
+            "title": "Native Ccy",
+            "type": "string"
+          },
+          "price": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Price",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "total": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "native_ccy",
+          "price",
+          "dividends",
+          "currency",
+          "total"
+        ],
+        "title": "HoldingEffect",
         "type": "object"
       },
       "HoldingGroup": {
@@ -12931,6 +13874,61 @@
         "title": "SeedOut",
         "type": "object"
       },
+      "SessionSplit": {
+        "description": "The range's currency effect inside vs outside US market hours.\n\nOnly days with recorded session open/close rates are split\n(``covered_currency``); earlier days are ``uncovered_currency``.\n``inside + outside == covered_currency`` exactly;\n``covered_currency + uncovered_currency`` = the range's currency effect.",
+        "properties": {
+          "available_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available From"
+          },
+          "covered_currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Covered Currency",
+            "type": "string"
+          },
+          "inside": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Inside",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "outside": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Outside",
+            "type": "string"
+          },
+          "uncovered_currency": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Uncovered Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "inside",
+          "outside",
+          "covered_currency",
+          "uncovered_currency"
+        ],
+        "title": "SessionSplit",
+        "type": "object"
+      },
       "SettingField": {
         "properties": {
           "choices": {
@@ -17754,6 +18752,50 @@
           }
         },
         "summary": "Get Currency Both",
+        "tags": [
+          "currency"
+        ]
+      }
+    },
+    "/api/currency/effect/both": {
+      "get": {
+        "operationId": "get_currency_effect_both_api_currency_effect_both_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "ytd",
+              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|all|\\d{4})$",
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_CurrencyEffectOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Currency Effect Both",
         "tags": [
           "currency"
         ]
