@@ -125,9 +125,18 @@ never feed any aggregate.
 
 ### `GET /api/holdings/{instrument_id}/peek` (orchestrator, at integration)
 
-`{ week: {points: [{t, value_native}], change_pct}, tranches: {open_count,
-next_long_term_on, next_long_term_days}, last_trade: {date, kind, quantity} |
-null, last_dividend: {date, amount, currency} | null, twin: TwinView | null }`
+As built (`HoldingPeekResponse`):
+
+```
+{ instrument_id, currency,                                  # native currency of amounts
+  week: { points: [{t, value_native}], currency, return_eur, return_usd } | null,  # null for NAV funds
+  tranches: { open_count, next_long_term_on, next_long_term_days },
+  last_trade: { date, kind: "buy"|"sell", quantity, price_native } | null,
+  last_dividend: { date, reinvested, amount_native, reinvested_quantity } | null }
+```
+
+The week's return is the 1W history `period` (server-computed). The twin line is
+not repeated here: the client already has `twin` on the holdings row.
 
 ### `GET /api/dividends/both` (lane B, additive)
 

@@ -431,3 +431,46 @@ class HoldingTwinResponse(ApiModel):
     twin_now: TwinNow | None = None
     stats: TwinStats
     recent: list[TwinRecent] = Field(description="The last 5 sessions")
+
+
+class PeekWeekPoint(ApiModel):
+    t: str = Field(description="Explicit-UTC instant")
+    value_native: DecStr | None = None
+
+
+class PeekWeek(ApiModel):
+    points: list[PeekWeekPoint]
+    currency: str = Field(description="Native currency of value_native")
+    return_eur: DecStr | None = Field(default=None, description=f"Past week, EUR ({_FRAC})")
+    return_usd: DecStr | None = Field(default=None, description=f"Past week, USD ({_FRAC})")
+
+
+class PeekTranches(ApiModel):
+    open_count: int
+    next_long_term_on: str | None = Field(default=None, description="ISO date")
+    next_long_term_days: int | None = None
+
+
+class PeekTrade(ApiModel):
+    date: str
+    kind: Literal["buy", "sell"]
+    quantity: DecStr | None = None
+    price_native: DecStr | None = None
+
+
+class PeekDividend(ApiModel):
+    date: str
+    reinvested: bool
+    amount_native: DecStr | None = Field(default=None, description="The amount paid, native")
+    reinvested_quantity: DecStr | None = None
+
+
+class HoldingPeekResponse(ApiModel):
+    """What an expanded Holdings row shows that the row itself cannot."""
+
+    instrument_id: int
+    currency: str = Field(description="Native currency of the amounts")
+    week: PeekWeek | None = Field(default=None, description="Null for a NAV fund (no intraday)")
+    tranches: PeekTranches
+    last_trade: PeekTrade | None = None
+    last_dividend: PeekDividend | None = None
