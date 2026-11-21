@@ -1,3 +1,6 @@
+@use "../../styles/mixins" as m;
+
+// The holding deep dive (7.1): header, tabs, and one row grammar across the tabs.
 .holding-page {
   display: flex;
   flex-direction: column;
@@ -9,30 +12,793 @@
     align-items: center;
     gap: var(--space-1);
     align-self: flex-start;
+    min-height: var(--tap-min);
+    margin: calc(var(--space-2) * -1) 0 calc(var(--page-gap) * -1 + var(--space-1));
     color: var(--color-muted);
     font-size: var(--font-size-sm);
     text-decoration: none;
 
     &:hover {
-      color: var(--color-text);
+      color: var(--color-fg);
     }
   }
 
+  // ---- header -------------------------------------------------------------------
+  // Desktop: title and chips left, value and today right. Phone: value under the title.
+  &__head {
+    display: grid;
+    grid-template-areas:
+      "title figures"
+      "chips figures";
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2) var(--space-6);
+    align-items: center;
+    min-width: 0;
+
+    @include m.phone {
+      grid-template-areas:
+        "title"
+        "figures"
+        "chips";
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-2);
+    }
+  }
+
+  &__title {
+    display: flex;
+    grid-area: title;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
+    margin: 0;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__symbol {
+    flex-shrink: 0;
+    font-family: var(--font-display);
+    font-size: var(--font-size-3xl);
+    letter-spacing: var(--tracking-display);
+    line-height: var(--line-height-tight);
+
+    @include m.phone {
+      font-size: var(--font-size-2xl);
+    }
+  }
+
+  // ONE line: the full name is in the title's tooltip.
+  &__name {
+    @include m.truncate;
+    min-width: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-regular);
+  }
+
+  &__figures {
+    display: flex;
+    grid-area: figures;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    @include m.phone {
+      flex-direction: row;
+      align-items: baseline;
+      gap: var(--space-3);
+    }
+  }
+
+  &__value {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-figure);
+    line-height: var(--line-height-tight);
+
+    @include m.phone {
+      font-size: var(--font-size-xl);
+    }
+  }
+
+  &__today {
+    display: inline-flex;
+    gap: var(--space-2);
+    font-size: var(--font-size-sm);
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    grid-area: chips;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    min-width: 0;
+  }
+
+  &__chip {
+    max-width: 16rem;
+
+    @include m.phone {
+      max-width: 7.5rem;
+    }
+  }
+
+  // Phone: one sticky line once the header has scrolled away (desktop: never).
+  &__sticky {
+    display: none;
+
+    @include m.phone {
+      position: fixed;
+      top: calc(var(--topbar-height) + var(--safe-top));
+      right: 0;
+      left: 0;
+      z-index: var(--z-sticky);
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-3);
+      padding: var(--space-2) var(--space-4);
+      border-bottom: var(--border-width) solid var(--color-border);
+      background: var(--color-surface-glass);
+      backdrop-filter: blur(12px);
+      font-size: var(--font-size-sm);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+  }
+
+  &__sticky-symbol {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__sticky-value {
+    margin-left: auto;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__sticky-today {
+    display: inline-flex;
+    gap: var(--space-2);
+  }
+
+  // ---- panels and sections --------------------------------------------------------
   &__panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-gap);
+    min-width: 0;
+    padding-top: var(--space-4);
+  }
+
+  // Phone: chart first, then the tiles 2 x 2, then the facts (plan step 3).
+  &__panel--performance {
+    @include m.phone {
+      & > .holding-page__kpis {
+        order: 2;
+      }
+
+      & > .holding-page__chart {
+        order: 1;
+      }
+
+      & > .holding-page__section:last-child {
+        order: 3;
+      }
+    }
+  }
+
+  &__section {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
     min-width: 0;
+    padding: var(--card-pad-y) var(--card-pad-x);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-1);
   }
 
-  &__total {
+  &__section-title {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-4);
+
+    @include m.tablet-only {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @include m.phone {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-3);
+    }
+  }
+
+  &__today-hint {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  &__range-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  &__range-summary {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Key facts: three columns on desktop, a label / value list on a phone.
+  &__facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-6);
+    margin: 0;
+
+    @include m.tablet-only {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @include m.phone {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
+  }
+
+  &__fact {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+
+    @include m.phone {
+      flex-direction: row;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--space-3);
+      min-height: var(--tap-min);
+      padding: var(--space-2) 0;
+      border-bottom: var(--border-width) solid var(--color-border);
+
+      &:last-child {
+        border-bottom: 0;
+      }
+    }
+  }
+
+  &__fact-key {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+
+  &__fact-value {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+
+    @include m.phone {
+      text-align: right;
+    }
+  }
+
+  &__muted {
+    color: var(--color-muted);
+  }
+
+  &__note {
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
+
+    &--warn {
+      color: var(--color-fg);
+    }
+  }
+
+  &__sr {
+    @include m.visually-hidden;
   }
 
   &__more {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
     align-self: flex-start;
+    min-height: var(--tap-min);
     font-size: var(--font-size-sm);
+  }
+
+  &__table-wrap {
+    min-width: 0;
+    overflow-x: auto;
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-1);
+  }
+
+  // ---- the two-line row grammar (Transactions, Dividends, phone Tranches) -------------
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    list-style: none;
+    box-shadow: var(--shadow-1);
+
+    &--nested {
+      border: 0;
+      border-top: var(--border-width) dashed var(--color-border);
+      border-radius: 0;
+      background: var(--color-surface-2);
+      box-shadow: none;
+    }
+  }
+
+  &__row-item {
+    border-bottom: var(--border-width) solid var(--color-border);
+
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-1) var(--space-3);
+    align-items: baseline;
+    width: 100%;
+    min-height: var(--tap-min);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--font-size-sm);
+    text-align: left;
+
+    &--button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: var(--font-size-sm);
+      cursor: pointer;
+
+      &:hover {
+        background: var(--color-surface-2);
+      }
+    }
+  }
+
+  &__row-lead {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__row-amount {
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  &__row-meta {
+    @include m.truncate;
+    min-width: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__row-detail {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  &__year {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    border-bottom: var(--border-width) solid var(--color-border);
+    background: var(--color-surface-2);
+    font-size: var(--font-size-xs);
+  }
+
+  &__year-label {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__year-summary {
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__kind {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    white-space: nowrap;
+  }
+
+  &__kind-icon {
+    display: inline-flex;
+    color: var(--color-muted);
+  }
+
+  // ---- Transactions ----------------------------------------------------------------
+  // A fieldset (a labelled group of toggles) without the fieldset chrome.
+  &__filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+
+    @include m.phone {
+      flex-wrap: nowrap;
+      gap: var(--space-1);
+    }
+  }
+
+  &__filter {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--control-height);
+    padding: 0 var(--space-3);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+
+    @include m.phone {
+      min-height: var(--tap-min);
+      padding: 0 var(--space-2);
+      font-size: var(--font-size-xs);
+    }
+
+    &--on {
+      border-color: var(--color-ink);
+      background: var(--color-ink);
+      color: var(--color-ink-fg);
+    }
+  }
+
+  &__filter-count {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+
+  &__txs,
+  &__lots {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__tx-th,
+  &__lot-th {
+    padding: var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-border);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    text-align: left;
+    white-space: nowrap;
+
+    &--right {
+      text-align: right;
+    }
+  }
+
+  &__tx-year-cell {
+    padding: var(--space-2) var(--space-4);
+    border-bottom: var(--border-width) solid var(--color-border);
+    background: var(--color-surface-2);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    text-align: left;
+  }
+
+  &__tx-year-cell &__year-summary {
+    margin-left: var(--space-3);
+  }
+
+  &__tx-td,
+  &__lot-td {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-border);
+    vertical-align: middle;
+    white-space: nowrap;
+
+    &--right {
+      text-align: right;
+    }
+
+    &--account {
+      color: var(--color-muted);
+    }
+  }
+
+  // Long account names: one clipped line (a td ignores max-width in an auto table).
+  &__clip {
+    @include m.truncate;
+    display: block;
+    max-width: 8rem;
+  }
+
+  &__tx:hover {
+    background: var(--color-surface-2);
+  }
+
+  &__tx-open {
+    min-height: var(--control-height-sm);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline dotted;
+  }
+
+  // ---- Tranches -------------------------------------------------------------------
+  &__lots--nested {
+    background: var(--color-surface-2);
+  }
+
+  &__lot--group {
+    background: var(--color-surface);
+  }
+
+  &__lot--nested &__lot-td {
+    color: var(--color-muted);
+  }
+
+  &__lot-nest-cell {
+    padding: 0;
+    border-bottom: var(--border-width) solid var(--color-border);
+  }
+
+  &__lot-sub {
+    display: block;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+  }
+
+  &__lot-gain {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  &__lot-pct {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__lot-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--control-height-sm);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+  }
+
+  &__lot-chevron {
+    flex-shrink: 0;
+    color: var(--color-muted);
+    transition: transform var(--duration-fast) var(--ease-standard);
+
+    &--open {
+      transform: rotate(180deg);
+    }
+  }
+
+  // Status: icon + word, the tint is a quiet second cue (text stays fg).
+  &__lot-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    color: var(--color-fg);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-base);
+    white-space: nowrap;
+
+    &--long {
+      border-color: var(--color-lot-long);
+      background: var(--color-lot-long-soft);
+    }
+
+    &--soon {
+      border-color: var(--color-lot-soon);
+      background: var(--color-lot-soon-soft);
+    }
+  }
+
+  &__lot-icon {
+    flex-shrink: 0;
+    color: var(--color-muted);
+
+    &--long {
+      color: var(--color-lot-long);
+    }
+
+    &--soon {
+      color: var(--color-lot-soon);
+    }
+  }
+
+  &__lot-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-5);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__lot-check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-fg);
+  }
+
+  // ---- Twin -----------------------------------------------------------------------
+  &__twin-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  &__twin-input {
+    flex: 0 1 16rem;
+    min-width: 0;
+  }
+
+  &__legend-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-muted);
+  }
+
+  // Same colour as the NAV marks on the chart (chart-3).
+  &__nav-dot {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--chart-3);
+  }
+
+  &__mini-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__mini-caption {
+    padding-bottom: var(--space-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    text-align: left;
+  }
+
+  &__mini-th,
+  &__mini-td {
+    padding: var(--space-2) var(--space-2);
+    border-bottom: var(--border-width) solid var(--color-border);
+    text-align: left;
+    white-space: nowrap;
+
+    &--right {
+      text-align: right;
+    }
+  }
+
+  &__mini-th {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+
+  // ---- Dividends: one bar per year --------------------------------------------------
+  &__bars {
+    margin: 0;
+    padding: var(--card-pad-y) var(--card-pad-x);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-1);
+  }
+
+  &__bars-plot {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-2);
+    height: 9rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__bar-slot {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  &__bar-value {
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__bar {
+    width: min(100%, 3rem);
+    border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+    background: var(--chart-1);
+
+    // The running year: dashed outline, not a full bar (it is not over yet).
+    &--ytd {
+      border: var(--border-width) dashed var(--chart-1);
+      background: var(--color-accent-soft);
+    }
+  }
+
+  &__bar-label {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
   }
 }

@@ -17,6 +17,8 @@ export interface TabsProps<T extends string> {
   onChange: (value: T) => void;
   ariaLabel: string;
   className?: string;
+  /** Phone: share the row without scrolling (badges hidden). For four short tabs. */
+  fit?: boolean;
 }
 
 /**
@@ -25,9 +27,9 @@ export interface TabsProps<T extends string> {
  * switch between whole panels. On a phone the tab row scrolls sideways when it must.
  * Controlled, so a page can mirror the tab in the URL.
  */
-export function Tabs<T extends string>({ items, value, onChange, ariaLabel, className }: TabsProps<T>) {
+export function Tabs<T extends string>({ items, value, onChange, ariaLabel, className, fit = false }: TabsProps<T>) {
   return (
-    <RadixTabs.Root className={clsx("tabs", className)} value={value} onValueChange={(v) => onChange(v as T)}>
+    <RadixTabs.Root className={clsx("tabs", fit && "tabs--fit", className)} value={value} onValueChange={(v) => onChange(v as T)}>
       <RadixTabs.List className="tabs__list" aria-label={ariaLabel} data-scrollable>
         {items.map((item) => (
           <RadixTabs.Trigger key={item.value} value={item.value} className="tabs__trigger">

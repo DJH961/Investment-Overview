@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
-import { isValidElement, useMemo, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useMemo, useState, type ReactNode } from "react";
 import { Skeleton } from "../Skeleton";
 import "./DataTable.scss";
 
@@ -63,6 +63,13 @@ export interface DataTableProps<Row> {
   className?: string;
   /** Extra class for a body row (e.g. a gain/loss tint). */
   rowClassName?: (row: Row) => string | false | undefined;
+  /**
+   * A full-width panel row under a body row (the Holdings peek). Return null for rows
+   * that are closed; the caller owns which rows are open (and the toggle's aria-expanded).
+   */
+  renderExpanded?: (row: Row) => ReactNode | null;
+  /** Opens a row (e.g. a transaction edit); the row gets a pointer and Enter opens it too. */
+  onRowClick?: (row: Row) => void;
 }
 
 type Direction = "asc" | "desc";
@@ -99,6 +106,8 @@ export function DataTable<Row>({
   emptyMessage = "Nothing to show yet.",
   className,
   rowClassName,
+  renderExpanded,
+  onRowClick,
 }: DataTableProps<Row>) {
   const [sort, setSort] = useState<{ key: string; direction: Direction } | undefined>(defaultSort);
 
@@ -191,8 +200,19 @@ export function DataTable<Row>({
               </tr>
             ))}
           {!loading &&
-            sorted.map((row) => (
-              <tr key={rowKey(row)} className={clsx("data-table__row", rowClassName?.(row))}>
+            sorted.map((row) => {
+              const expanded = renderExpanded?.(row) ?? null;
+              return (
+              <Fragment key={rowKey(row)}>
+              <tr
+                className={clsx(
+                  "data-table__row",
+                  expanded !== null && "data-table__row--open",
+                  onRowClick && "data-table__row--clickable",
+                  rowClassName?.(row),
+                )}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+              >
                 {columns.map((col, i) => {
                   const content = col.cell(row);
                   const role = col.primary ? "primary" : (col.phone ?? "show");
@@ -231,7 +251,16 @@ export function DataTable<Row>({
                   );
                 })}
               </tr>
-            ))}
+              {expanded !== null && (
+                <tr className="data-table__expanded">
+                  <td className="data-table__expanded-cell" colSpan={columns.length}>
+                    <div className="data-table__expanded-inner">{expanded}</div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              );
+            })}
         </tbody>
       </table>
       {!loading && sorted.length === 0 && <p className="data-table__empty">{emptyMessage}</p>}

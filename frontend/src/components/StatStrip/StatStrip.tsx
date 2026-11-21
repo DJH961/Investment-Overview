@@ -19,6 +19,8 @@ export interface StatStripProps {
   /** Accessible name of the strip ("Currency at a glance"). */
   label: string;
   className?: string;
+  /** Phone: three narrow columns instead of two (a strip of exactly three figures). */
+  phoneColumns?: 2 | 3;
 }
 
 /**
@@ -26,9 +28,9 @@ export interface StatStripProps {
  * page's always-visible tile strip). Wraps to two columns on phones, never clips;
  * tiles that have no figure yet are simply left out by the caller.
  */
-export function StatStrip({ items, label, className }: StatStripProps) {
+export function StatStrip({ items, label, className, phoneColumns = 2 }: StatStripProps) {
   return (
-    <section className={clsx("stat-strip", className)} aria-label={label}>
+    <section className={clsx("stat-strip", phoneColumns === 3 && "stat-strip--phone-3", className)} aria-label={label}>
       <dl className="stat-strip__list">
         {items.map((s) => (
           <div key={s.key} className="stat-strip__item">

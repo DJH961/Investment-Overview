@@ -1,0 +1,137 @@
+@use "../../styles/mixins" as m;
+
+// The holdings row's peek (7.1). Phone: one compact column (<= ~200 px).
+// Desktop: a full-width panel row, three columns (week | tranches + twin | activity).
+.holding-peek {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  font-size: var(--font-size-sm);
+
+  &--phone {
+    padding: 0 var(--space-3) var(--space-3);
+    border-top: var(--border-width) dashed var(--color-border);
+    padding-top: var(--space-3);
+  }
+
+  &--panel {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  &__cols {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: var(--space-6);
+    align-items: center;
+    min-width: 0;
+  }
+
+  &__week {
+    display: grid;
+    grid-template-columns: auto auto auto;
+    align-items: center;
+    justify-content: start;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  &--panel &__week {
+    grid-template-columns: auto auto;
+    grid-template-areas:
+      "key pct"
+      "spark spark";
+    gap: var(--space-1) var(--space-3);
+  }
+
+  &--panel &__week &__key {
+    grid-area: key;
+  }
+
+  &--panel &__spark {
+    grid-area: spark;
+  }
+
+  &--panel &__week-pct {
+    grid-area: pct;
+    justify-self: end;
+  }
+
+  &__week-pct {
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__facts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    margin: 0;
+  }
+
+  // One line each: the label in a fixed column, the fact beside it.
+  &__fact {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: var(--space-2);
+    align-items: baseline;
+    min-width: 0;
+  }
+
+  &__key {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+
+  &__value {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__muted {
+    color: var(--color-muted);
+  }
+
+  &__twin {
+    font-style: italic;
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  &--phone &__actions {
+    display: grid;
+    // The primary keeps its words on one line; the two others share the rest.
+    grid-template-columns: max-content minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  &--panel &__actions {
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  &--phone &__action {
+    padding: 0 var(--space-3);
+    white-space: nowrap;
+  }
+
+  @include m.phone {
+    &__fact {
+      grid-template-columns: 6.5rem minmax(0, 1fr);
+    }
+  }
+}

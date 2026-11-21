@@ -1,0 +1,95 @@
+@use "../../styles/mixins" as m;
+
+// One holding identity (7.1): symbol + status pills, name, twin line. Used by the
+// Overview list, the phone list and the desktop table's first column.
+.holding-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+
+  &__line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  &__symbol {
+    color: inherit;
+    font-weight: var(--font-weight-semibold);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  // A link only when it is one (never inside the phone row's button).
+  &__symbol--link:hover {
+    text-decoration: underline;
+  }
+
+  &__name {
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
+
+    &--one {
+      display: block;
+      @include m.truncate;
+    }
+  }
+
+  &__twin {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-style: italic;
+    white-space: nowrap;
+  }
+
+  &__pill {
+    flex-shrink: 0;
+    padding: 0 var(--space-1);
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-base);
+    white-space: nowrap;
+
+    &--live,
+    &--winner {
+      background: var(--color-pos-soft);
+      color: var(--color-pos);
+    }
+
+    &--warn {
+      background: var(--color-warn-soft);
+      color: var(--color-fg);
+    }
+
+    &--loser {
+      background: var(--color-neg-soft);
+      color: var(--color-neg);
+    }
+
+    // The estimate cue: outlined, italic, a word (never colour alone).
+    &--est {
+      border-color: var(--color-estimate);
+      background: var(--color-estimate-soft);
+      color: var(--color-fg);
+      font-style: italic;
+    }
+  }
+}

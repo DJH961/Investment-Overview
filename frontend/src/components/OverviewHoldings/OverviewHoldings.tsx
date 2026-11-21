@@ -6,7 +6,8 @@ import { Card } from "../Card";
 import { DaySplitLegend, hasSplit } from "../DaySplit";
 import { InfoTip } from "../InfoTip";
 import { ErrorState } from "../ErrorState";
-import { foldStamps, formatStamp, holdingMarks, isNavRow, PriceStamps, PriceTick, sentenceCase } from "../Freshness";
+import { foldStamps, formatStamp, holdingMarks, PriceStamps, PriceTick, sentenceCase } from "../Freshness";
+import { HoldingPills } from "../HoldingIdentity";
 import { Money } from "../Money";
 import { Percent } from "../Percent";
 import { Skeleton } from "../Skeleton";
@@ -256,22 +257,9 @@ function Row({
           <Link to={`/holdings/${row.instrument_id}`} className="overview-holdings__symbol-link">
             {row.symbol}
           </Link>
-          {/* Warnings first: when the cell is narrow they wrap to a second line, never clip. */}
-          {row.value_warning && (
-            <span className="overview-holdings__pill overview-holdings__pill--warn">stale value</span>
-          )}
-          {row.price_data_warning && (
-            <span className="overview-holdings__pill overview-holdings__pill--warn">bad history</span>
-          )}
-          {live && <span className="overview-holdings__pill overview-holdings__pill--live">live</span>}
-          {row.is_money_market && <span className="overview-holdings__pill">CASH</span>}
-          {!row.is_money_market && isNavRow(row) && <span className="overview-holdings__pill">NAV</span>}
-          <PriceTick title={tick} />
-          {badge && (
-            <span className={clsx("overview-holdings__pill", `overview-holdings__pill--${badge}`)}>
-              {badge === "winner" ? "top winner" : "top loser"}
-            </span>
-          )}
+          {/* The shared pill set (HoldingIdentity). The estimate cue lives on the twin
+              line under this row here, so it is not repeated on the symbol line. */}
+          <HoldingPills row={row} live={live} badge={badge} tick={tick} est={false} />
         </span>
         <span className="overview-holdings__name" title={row.name} data-truncate-ok>
           {row.name}

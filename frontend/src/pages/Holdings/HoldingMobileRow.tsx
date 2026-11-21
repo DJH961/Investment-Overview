@@ -1,16 +1,16 @@
 import clsx from "clsx";
-import { ChevronDown, LineChart } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
-import { Button } from "../../components/Button";
 import { daySplitMoved, HoldingDaySplit } from "../../components/DaySplit";
 import { PriceTick } from "../../components/Freshness";
+import { HoldingIdentity } from "../../components/HoldingIdentity";
+import { HoldingPeek } from "../../components/HoldingPeek";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { formatMoney, formatQuantity } from "../../lib/format";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
-import { Flags, HoldingDetails, RowStamp, TwinBlock, TwinLine, tintClass } from "./HoldingParts";
+import { RowStamp, tintClass } from "./HoldingParts";
 
 interface Props {
   row: HoldingRowDto;
@@ -21,17 +21,16 @@ interface Props {
   tick?: string | null;
   /** "Not updated yesterday — an earlier session's move" for a stale day move. */
   staleMove?: string | null;
-  onOpenChart: (row: HoldingRowDto) => void;
 }
 
 /**
  * Collapsed: the key figures without a tap, in a fixed 3 x 2 grid of label-over-
  * value cells (nothing is cut off at 360 px, and a currency switch never moves
- * the list); the price time only when it differs from the list's. Expanded:
- * only what the chips do not show (avg price, cost basis, unrealised gain,
- * dividends, MTD / YTD, fee, account, price stamps) + the twin block + the chart.
+ * the list); the price time only when it differs from the list's. Expanded: the
+ * compact peek (past week, four one-line facts, the ways into the holding page);
+ * everything else lives on that page.
  */
-export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMove = null, onOpenChart }: Props) {
+export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMove = null }: Props) {
   const [open, setOpen] = useState(false);
   const detailId = `holding-detail-${row.instrument_id}`;
   const stale = staleMove !== null;
@@ -53,12 +52,8 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
         onClick={() => setOpen((o) => !o)}
       >
         <span className="holdings-page__item-title">
-          <span className="holdings-page__item-line">
-            <strong>{row.symbol}</strong>
-            <Flags row={row} />
-          </span>
-          <span className="holdings-page__muted holdings-page__item-name">{row.name}</span>
-          <TwinLine row={row} />
+          {/* Inside the row button: the symbol is not a link (the peek has "Open"). */}
+          <HoldingIdentity row={row} link={false} live={row.market_open && !stale} />
         </span>
         <span className="holdings-page__item-figures">
           <Money amount={toNum(row.value)} currency={ccy} />
@@ -117,24 +112,7 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
           </span>
         )}
       </button>
-      {open && (
-        <>
-          <HoldingDetails id={detailId} row={row} ccy={ccy} variant="more" />
-          {row.twin && (
-            <div className="holdings-page__item-twin">
-              <TwinBlock row={row} ccy={ccy} />
-            </div>
-          )}
-          <div className="holdings-page__item-actions">
-            <Link to={`/holdings/${row.instrument_id}`} className="holdings-page__page-link">
-              Open {row.symbol}
-            </Link>
-            <Button variant="secondary" leftIcon={<LineChart aria-hidden size={16} />} onClick={() => onOpenChart(row)}>
-              Price chart
-            </Button>
-          </div>
-        </>
-      )}
+      {open && <HoldingPeek id={detailId} row={row} layout="phone" />}
     </li>
   );
 }

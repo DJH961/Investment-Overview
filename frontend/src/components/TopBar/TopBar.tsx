@@ -12,6 +12,7 @@ import { Percent } from "../Percent";
 import { IconButton } from "../IconButton";
 import { Menu, type MenuItem } from "../Menu";
 import { SegmentedControl } from "../SegmentedControl";
+import { LookupSearch } from "../LookupSearch";
 import "./TopBar.scss";
 
 /** What the data-health badge shows (fed by the diagnostics status hook). */
@@ -205,6 +206,8 @@ export function TopBar({
           )}
         </div>
       )}
+      {/* Desktop: look up any instrument (phone: in the Holdings page header). */}
+      {!compact && <LookupSearch className="top-bar__lookup" />}
       <div className="top-bar__actions">
         {/* First, so it is the quickest action to reach. */}
         <span className="top-bar__refresh">
