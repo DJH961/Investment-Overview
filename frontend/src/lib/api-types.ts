@@ -409,6 +409,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/currency/rate-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Rate History */
+        get: operations["get_rate_history_api_currency_rate_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/deposits/both": {
         parameters: {
             query?: never;
@@ -2681,6 +2698,23 @@ export interface components {
             eur: string;
             /** Usd */
             usd: string;
+        };
+        /** ConversionMarker */
+        ConversionMarker: {
+            /** Amount From */
+            amount_from: string;
+            /** Conversion Id */
+            conversion_id: number;
+            /** Date */
+            date: string;
+            /** From Ccy */
+            from_ccy: string;
+            /** Kind */
+            kind?: ("above_reference" | "below_reference") | null;
+            /** Rate */
+            rate: string;
+            /** To Ccy */
+            to_ccy: string;
         };
         /** CurrencyBlock */
         CurrencyBlock: {
@@ -5812,6 +5846,72 @@ export interface components {
             /** Status */
             status: string | null;
         };
+        /** RateChange */
+        RateChange: {
+            /** End Rate */
+            end_rate: string;
+            /** Inverse Pct */
+            inverse_pct: string;
+            /** Rate Pct */
+            rate_pct: string;
+            /** Start Rate */
+            start_rate: string;
+        };
+        /** RateHistoryOut */
+        RateHistoryOut: {
+            /** As Of */
+            as_of?: string | null;
+            avg_rate?: components["schemas"]["RateValue"] | null;
+            change?: components["schemas"]["RateChange"] | null;
+            /**
+             * Granularity
+             * @enum {string}
+             */
+            granularity: "intraday" | "daily" | "weekly";
+            high?: components["schemas"]["RateHistoryPoint"] | null;
+            low?: components["schemas"]["RateHistoryPoint"] | null;
+            /** Ma200 */
+            ma200?: components["schemas"]["RateHistoryPoint"][];
+            /** Markers */
+            markers?: components["schemas"]["ConversionMarker"][];
+            percentiles?: components["schemas"]["RatePercentiles"];
+            /** Points */
+            points?: components["schemas"]["RateHistoryPoint"][];
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "ECB reference rate" | "live samples";
+            trend?: components["schemas"]["RateTrend"] | null;
+        };
+        /** RateHistoryPoint */
+        RateHistoryPoint: {
+            /** Inverse */
+            inverse: string;
+            /** Rate */
+            rate: string;
+            /** T */
+            t: string;
+        };
+        /**
+         * RatePercentiles
+         * @description Share of days (0..1) the dollar was cheaper than today, per window.
+         */
+        RatePercentiles: {
+            /** Since 1999 */
+            since_1999?: string | null;
+            /** Since Start */
+            since_start?: string | null;
+            /** Y10 */
+            y10?: string | null;
+            /** Y5 */
+            y5?: string | null;
+        };
         /** RatePoint */
         RatePoint: {
             /**
@@ -5823,6 +5923,46 @@ export interface components {
             rate: string;
             /** Source */
             source: string;
+        };
+        /**
+         * RateTrend
+         * @description The dollar's regime and how unusual its recent move is (full daily history).
+         */
+        RateTrend: {
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "dollar_up" | "dollar_down" | "sideways";
+            /** Move Pct */
+            move_pct: string;
+            /** Move Percentile */
+            move_percentile: string;
+            /**
+             * Normal
+             * @enum {string}
+             */
+            normal: "normal" | "large" | "unusual";
+            /** Since */
+            since: string;
+            /** Since Change Pct */
+            since_change_pct: string;
+            /** Typical Move Pct */
+            typical_move_pct: string;
+            /**
+             * Vs Ma200
+             * @enum {string}
+             */
+            vs_ma200: "above" | "below";
+            /** Window Days */
+            window_days: number;
+        };
+        /** RateValue */
+        RateValue: {
+            /** Inverse */
+            inverse: string;
+            /** Rate */
+            rate: string;
         };
         /** RatesDto */
         RatesDto: {
@@ -8198,6 +8338,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ByCurrency_CurrencyOut_"];
+                };
+            };
+        };
+    };
+    get_rate_history_api_currency_rate_history_get: {
+        parameters: {
+            query?: {
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateHistoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

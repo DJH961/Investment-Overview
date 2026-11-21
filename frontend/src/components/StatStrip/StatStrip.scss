@@ -53,6 +53,50 @@
     }
   }
 
+  // Rows on phones (the Currency page): one line per figure, label left, figure and
+  // note right, so long amounts never squeeze into half a screen and the chart below
+  // starts above the fold.
+  &--rows &__list {
+    @include m.phone {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  &--rows &__item {
+    @include m.phone {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "label value"
+        "label note";
+      align-items: baseline;
+      gap: 0 var(--space-3);
+      padding: var(--space-2) var(--space-4);
+    }
+  }
+
+  &--rows &__label {
+    @include m.phone {
+      grid-area: label;
+      align-self: center;
+    }
+  }
+
+  &--rows &__value {
+    @include m.phone {
+      grid-area: value;
+      justify-self: end;
+      font-size: var(--font-size-md);
+    }
+  }
+
+  &--rows &__note {
+    @include m.phone {
+      grid-area: note;
+      justify-self: end;
+    }
+  }
+
   &__note {
     margin: 0;
     color: var(--color-muted);

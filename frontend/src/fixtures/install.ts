@@ -16,6 +16,7 @@
  * the tab, as the server would; any `?brief=` brings it back.
  */
 
+import { rateHistoryFixture } from "./rateHistory";
 import { v71Answer, v71Extend } from "./v71";
 
 type Fixtures = Record<string, unknown>;
@@ -272,6 +273,16 @@ export async function installFixtures(): Promise<void> {
     if (method !== "GET") {
       const body = findBody(data, method, url.pathname + url.search);
       return body === undefined ? json({}) : respond(body);
+    }
+    // Until the recorder writes it (v7.2): a synthetic rate history.
+    if (url.pathname === "/api/currency/rate-history" && !(`GET ${url.pathname}` in data)) {
+      const life = ((data["GET /api/currency/both"] as Obj | undefined)?.EUR as Obj | undefined)?.lifetime as Obj | undefined;
+      return json(
+        rateHistoryFixture(url.searchParams.get("range") ?? "1y", {
+          now: Number(life?.current_rate ?? 1.16),
+          avg: Number(life?.avg_invest_rate ?? 1.09),
+        }),
+      );
     }
     // 7.1 endpoints are synthesised until the recorder writes them (see ./v71).
     const made = v71Answer(url, data);

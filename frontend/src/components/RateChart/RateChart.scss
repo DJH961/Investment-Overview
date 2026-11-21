@@ -1,0 +1,127 @@
+@use "../../styles/mixins" as m;
+
+// Text lives in three places only: the headline, the chart's legend, and one row of
+// four figures that all share the same label / figure / note shape.
+.rate-chart {
+  min-width: 0;
+
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  // The rate itself in the display serif, like the Overview's headline figure.
+  &__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    margin: 0 0 var(--space-3);
+  }
+
+  &__figure {
+    @include m.display(var(--font-size-3xl));
+    font-variant-numeric: tabular-nums lining-nums;
+    line-height: var(--line-height-tight);
+
+    @include m.tablet-up {
+      font-size: var(--font-size-4xl);
+    }
+  }
+
+  &__change {
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__avg {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Same dash as the plot's reference line (Chart `__reference-line`: 4 4, muted).
+  &__avg-swatch {
+    width: 16px;
+    border-top: var(--border-width) dashed var(--color-muted);
+  }
+
+  &__figs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4) var(--space-4);
+    margin: var(--space-4) 0 0;
+    padding-top: var(--space-4);
+    border-top: var(--border-width) solid var(--color-border);
+
+    @include m.desktop {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  &__fig {
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  &__fig-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__fig-value {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  &__fig-note {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__kind {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-weight: var(--font-weight-medium);
+
+    &--tailwind {
+      color: var(--color-pos);
+    }
+
+    &--headwind {
+      color: var(--color-neg);
+    }
+
+    &--neutral {
+      color: var(--color-muted);
+    }
+  }
+
+  &__kind-icon,
+  &__trend-icon {
+    flex: none;
+    width: 1em;
+    height: 1em;
+  }
+
+  // The trend is a description, not a verdict: no good/bad colour.
+  &__trend {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+}

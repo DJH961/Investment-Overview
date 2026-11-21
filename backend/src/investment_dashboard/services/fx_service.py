@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters.frankfurter_client import (
     FrankfurterError,
+    FxRateRecord,
     fetch_rates,
 )
 from investment_dashboard.domain import market_hours
@@ -713,6 +714,98 @@ def _refresh_single_quote(
     if quote.upper() == "USD" and (frankfurter_failed or not rates):
         written += _refresh_single_quote_fallback(session, today=today, base=base, quote=quote)
     return written
+
+
+#: First ECB reference-rate day (the euro's launch). The long EUR/USD history the
+#: Currency page charts (v7.2) is backfilled to here, independently of the ledger
+#: floor :func:`refresh_fx_history` uses (``boot._earliest_needed_date``).
+HISTORY_START = date(1999, 1, 4)
+#: Slack (calendar days) when deciding whether a year is already stored: a year
+#: counts as present when its first stored rate is within this many days of the
+#: year's start and its last within this many days of the year's end (holidays,
+#: weekends and the not-yet-published fixing of today all fit inside it).
+_HISTORY_YEAR_SLACK_DAYS = 7
+
+
+def _history_year_chunks(start: date, today: date) -> list[tuple[date, date]]:
+    """``[(first, last), ...]`` one calendar year each, clamped to ``[start, today]``."""
+    chunks: list[tuple[date, date]] = []
+    for year in range(start.year, today.year + 1):
+        first = max(start, date(year, 1, 1))
+        last = min(today, date(year, 12, 31))
+        if first <= last:
+            chunks.append((first, last))
+    return chunks
+
+
+def backfill_long_history(
+    session: Session,
+    *,
+    start: date = HISTORY_START,
+    today: date | None = None,
+    base: str = "EUR",
+    quote: str = "USD",
+    fetch: Callable[..., list[FxRateRecord]] | None = None,
+) -> int:
+    """One-time backfill of ``fx_history`` back to ``start`` (default 1999-01-04).
+
+    ``session`` must be a **cache-tier** session (``cache_session_scope``). Fetches
+    from Frankfurter one calendar year per request (so a long range is never
+    thinned) and skips every year already stored (see ``_HISTORY_YEAR_SLACK_DAYS``),
+    so a second run makes no request at all. Idempotent: the upsert keeps manual
+    rows and rewrites a partially stored year harmlessly. A failing year is logged
+    and skipped (the next run retries it). Returns the number of rows written.
+    """
+    today = today or exchange_today()
+    fetcher = fetch or fetch_rates
+    with_dates = sorted(fx_repo.get_rates(session, base=base, quote=quote))
+    slack = timedelta(days=_HISTORY_YEAR_SLACK_DAYS)
+    by_year: dict[int, tuple[date, date]] = {}
+    for d in with_dates:
+        lo, hi = by_year.get(d.year, (d, d))
+        by_year[d.year] = (min(lo, d), max(hi, d))
+    written = 0
+    fetched_years = 0
+    failed_years: list[int] = []
+    for first, last in _history_year_chunks(start, today):
+        stored = by_year.get(first.year)
+        if stored is not None and stored[0] <= first + slack and stored[1] >= last - slack:
+            continue
+        try:
+            records = fetcher(first, last, base=base, quote=quote)
+        except FrankfurterError as exc:
+            log.warning("FX history backfill %s/%s %s failed: %s", base, quote, first.year, exc)
+            failed_years.append(first.year)
+            continue
+        fetched_years += 1
+        rates = {r.date: r.rate for r in records if r.rate > 0}
+        if rates:
+            written += fx_repo.upsert_rates(session, rates, base=base, quote=quote)
+    if fetched_years or failed_years:
+        log.info(
+            "FX history backfill %s/%s since %s: %d year(s) fetched, %d row(s) written%s",
+            base,
+            quote,
+            start,
+            fetched_years,
+            written,
+            f", failed years {failed_years}" if failed_years else "",
+        )
+    if written:
+        from investment_dashboard.services import read_cache  # noqa: PLC0415
+
+        read_cache.invalidate(read_cache.FX)
+    return written
+
+
+def get_settled_rates(
+    session: Session, *, base: str = "EUR", quote: str = "USD"
+) -> dict[date, Decimal]:
+    """Every stored (settled) ``{date: rate}``; never the live overlay of today."""
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        return fx_repo.get_rates(cache, base=base, quote=quote)
 
 
 def _refresh_single_quote_fallback(

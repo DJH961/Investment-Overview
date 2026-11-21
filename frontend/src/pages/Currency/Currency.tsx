@@ -1,30 +1,23 @@
-﻿import { ArrowDownRight, ArrowUpRight, Euro, Minus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Euro, Minus } from "lucide-react";
 import { useCallback, type ReactNode } from "react";
-import { useSearchParams } from "react-router";
-import { Card } from "../../components/Card";
-import { CurrencyBox } from "../../components/CurrencyBox";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
-import { SegmentedControl } from "../../components/SegmentedControl";
+import { RateChart } from "../../components/RateChart";
 import { Skeleton } from "../../components/Skeleton";
 import { StatStrip, type StatItem } from "../../components/StatStrip";
 import { formatDate, formatNumber, formatPp } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
-import { toNum, useOverview } from "../../lib/queries/portfolio";
-import { useCurrency, type CurrencyDto, type CurrencyStatDto } from "../../lib/queries/currency";
+import { toNum } from "../../lib/queries/portfolio";
+import { useCurrency, type CurrencyStatDto } from "../../lib/queries/currency";
 import { useShellStatus } from "../../lib/shell";
 import "./Currency.scss";
-
-const VIEWS = [{ value: "today", label: "Today" }] as const;
-type View = (typeof VIEWS)[number]["value"];
-const isView = (v: string | null): v is View => VIEWS.some((o) => o.value === v);
 
 const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> = {
   rate_now: { label: "EUR/USD now", tip: "How many dollars one euro buys at the latest rate." },
   effect_today: {
-    label: "Currency effect today",
+    label: "Effect today",
     tip: "What the exchange rate added to or took from your portfolio value since the last close.",
   },
   investing_power_today: {
@@ -32,7 +25,7 @@ const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> 
     tip: "How many more or fewer dollars your regular euro amount buys than at the last close.",
   },
   lifetime_effect: {
-    label: "Currency effect, lifetime",
+    label: "Effect, lifetime",
     tip: "What exchange-rate moves have added to or taken from your result since you started.",
   },
   avg_rate_vs_now: {
@@ -54,7 +47,8 @@ function figure(unit: string | null | undefined, value: string | null | undefine
   const n = toNum(value ?? null);
   if (unit === "rate") return formatNumber(n, 4);
   if (unit === "fraction") return formatPp(n);
-  return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored />;
+  // Whole units: cents on a currency effect are noise (and crowd a phone row).
+  return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored digits={0} />;
 }
 
 function statItem(s: CurrencyStatDto, fallbackCcy: string): StatItem {
@@ -89,73 +83,9 @@ function statItem(s: CurrencyStatDto, fallbackCcy: string): StatItem {
   };
 }
 
-/** The Today figures under the box: the day's rate range and what the regular amount buys. */
-function TodayFigures({ cur }: { cur: CurrencyDto }) {
-  const { rate_range: range, buys } = cur;
-  if (!range && !buys) return null;
-  return (
-    <Card className="currency-page__figures" title="Today in numbers">
-      <dl className="currency-page__rows">
-        {range ? (
-          <div className="currency-page__row" data-testid="today-range">
-            <dt className="currency-page__row-label">Today's range{cur.today.pair ? ` (${cur.today.pair})` : ""}</dt>
-            <dd className="currency-page__row-value">
-              {formatNumber(toNum(range.low_display), 4)} to {formatNumber(toNum(range.high_display), 4)}
-            </dd>
-          </div>
-        ) : null}
-        {buys ? (
-          <div className="currency-page__row" data-testid="today-buys">
-            <dt className="currency-page__row-label">
-              <Euro aria-hidden className="currency-page__row-icon" />
-              {formatNumber(toNum(buys.amount_eur), 0)} euros buy
-            </dt>
-            <dd className="currency-page__row-value">
-              <Money amount={toNum(buys.usd_now)} currency="USD" /> now
-              {buys.usd_prev ? (
-                <>
-                  {" · yesterday "}
-                  <Money amount={toNum(buys.usd_prev)} currency="USD" />
-                </>
-              ) : null}
-              {buys.change_usd ? (
-                <>
-                  {" · "}
-                  <Money amount={toNum(buys.change_usd)} currency="USD" signed colored />
-                </>
-              ) : null}
-              {buys.market_hours_usd != null && buys.overnight_usd != null ? (
-                <span className="currency-page__split">
-                  market hours <Money amount={toNum(buys.market_hours_usd)} currency="USD" signed colored />
-                  {" · overnight "}
-                  <Money amount={toNum(buys.overnight_usd)} currency="USD" signed colored />
-                </span>
-              ) : null}
-            </dd>
-          </div>
-        ) : null}
-      </dl>
-    </Card>
-  );
-}
-
 export function Currency() {
   const { currency } = usePrefs();
   const q = useCurrency(currency);
-  const overview = useOverview(currency);
-  const [params, setParams] = useSearchParams();
-  const rawView = params.get("view");
-  const view: View = isView(rawView) ? rawView : "today";
-  const setView = (v: View) =>
-    setParams(
-      (p) => {
-        const next = new URLSearchParams(p);
-        if (v === "today") next.delete("view");
-        else next.set("view", v);
-        return next;
-      },
-      { replace: true },
-    );
 
   const { refetch: qRefetch } = q;
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
@@ -188,18 +118,16 @@ export function Currency() {
         />
       ) : (
         <div className="currency-page__stack">
+          {/* The page leads with the rate; the strip follows. Today's split stays on the
+              Overview's Currency card: this page shows only views the Overview has not. */}
+          <RateChart currency={currency} />
           {stats.length > 0 ? (
-            <StatStrip label="Currency at a glance" items={stats.map((s) => statItem(s, cur.ccy))} />
-          ) : null}
-          {VIEWS.length > 1 && <SegmentedControl block ariaLabel="Currency views" options={[...VIEWS]} value={view} onChange={setView} />}
-          {view === "today" ? (
-            <div className="currency-page__panel">
-              <CurrencyBox
-                data={{ ccy: cur.ccy, currency: { today: cur.today }, kpis: { total_value: overview.data?.kpis?.total_value } }}
-                collapsibleId="currency.today"
-              />
-              <TodayFigures cur={cur} />
-            </div>
+            <StatStrip
+              className="stat-strip--rows"
+              label="Currency at a glance"
+              // The rate and your average are on the chart above, in its quote.
+              items={stats.filter((s) => s.key !== "rate_now" && s.key !== "avg_rate_vs_now").map((s) => statItem(s, cur.ccy))}
+            />
           ) : null}
         </div>
       )}
