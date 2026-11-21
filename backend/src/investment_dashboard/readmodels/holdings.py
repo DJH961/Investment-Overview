@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -30,7 +30,6 @@ from investment_dashboard.readmodels.queries.overview_query import (
     compute_instrument_metrics,
     holding_freshness,
 )
-from investment_dashboard.repositories import instruments_repo
 from investment_dashboard.services import fx_service, intraday_snapshots_service, prices_service
 from investment_dashboard.services.daily_growth_view import fx_move_pct
 from investment_dashboard.services.metrics_service import (
@@ -708,38 +707,21 @@ def _sum(values: list[Decimal | None]) -> Decimal | None:
     return sum((v for v in values if v is not None), start=ZERO)
 
 
-#: Upper bound on daily closes read for one chart (about 24 years of trading days).
-_HISTORY_MAX_POINTS = 6000
+def build_history(
+    session: Session,
+    instrument_id: int,
+    *,
+    range_key: str,
+    mode: str = "price",
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """One holding's chart (``None`` for an unknown id); see :mod:`.holding_detail`.
 
-
-def _history_start(range_key: str, today: date) -> date | None:
-    if range_key == "all":
-        return None
-    if range_key == "ytd":
-        return date(today.year, 1, 1)
-    days = {"1m": 31, "3m": 92, "6m": 183, "1y": 366}[range_key]
-    return today - timedelta(days=days)
-
-
-def build_history(session: Session, instrument_id: int, *, range_key: str) -> dict[str, Any] | None:
-    """Daily closes of one instrument in its NATIVE currency, or ``None`` for an unknown id.
-
-    No conversion happens here (currency rule): ``ccy`` is the instrument's
-    native currency, to label the axis. Read through ``prices_service`` only.
+    ``price`` mode on a daily range keeps the original body: the instrument's daily
+    closes in its NATIVE currency (``ccy`` labels the axis), never converted.
     """
-    instrument = instruments_repo.get_instrument(session, instrument_id)
-    if instrument is None:
-        return None
-    today = market_hours.exchange_today()
-    pairs = prices_service.recent_closes_by_instrument(
-        session, [instrument_id], on_or_before=today, limit=_HISTORY_MAX_POINTS
-    ).get(instrument_id, [])
-    start = _history_start(range_key, today)
-    points = sorted((d, c) for d, c in pairs if start is None or d >= start)
-    return {
-        "instrument_id": instrument_id,
-        "symbol": instrument.symbol,
-        "range": range_key,
-        "ccy": instrument.native_currency,
-        "points": [{"t": d.isoformat(), "v": dec(c)} for d, c in points],
-    }
+    from investment_dashboard.readmodels import holding_detail  # noqa: PLC0415
+
+    return holding_detail.build_history(
+        session, instrument_id, range_key=range_key, mode=mode, now=now
+    )

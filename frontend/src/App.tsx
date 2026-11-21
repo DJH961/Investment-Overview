@@ -65,6 +65,7 @@ export function App() {
               <Route path="/overview" element={withHide(<Overview />)} />
               <Route path="/holdings" element={lazyPage("Holdings")} />
               <Route path="/holdings/:id/:tab?" element={lazyPage("Holding")} />
+              <Route path="/lookup/:symbol/:tab?" element={lazyPage("Lookup")} />
               <Route path="/currency" element={SHOW_CURRENCY_PAGE ? lazyPage("Currency") : <Navigate to="/overview" replace />} />
               <Route path="/periods" element={lazyPage("Periods")} />
               <Route path="/activity" element={lazyPage("Activity")} />

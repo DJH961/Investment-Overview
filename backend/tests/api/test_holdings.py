@@ -222,3 +222,23 @@ def test_history_unknown_instrument_and_bad_range(api_client: TestClient, seeded
     assert api_client.get("/api/holdings/99999/history").status_code == 404
     iid = _by_symbol(get_one(api_client, "/api/holdings?ccy=USD"))["VTI"]["instrument_id"]
     assert api_client.get(f"/api/holdings/{iid}/history?range=5y").status_code == 422
+    assert api_client.get(f"/api/holdings/{iid}/history?mode=both").status_code == 422
+
+
+def test_history_value_mode_and_intraday(api_client: TestClient, seeded: None) -> None:
+    iid = _by_symbol(get_one(api_client, "/api/holdings?ccy=USD"))["VTI"]["instrument_id"]
+    body = api_client.get(f"/api/holdings/{iid}/history?range=all&mode=value").json()
+    assert body["mode"] == "value"
+    assert body["x_mode"] == "date"
+    assert body["points"]
+    assert body["points"][-1]["value_usd"] is not None
+    assert set(body["period"]) >= {"change_eur", "return_usd", "bought_eur", "dividends_usd"}
+    day = api_client.get(f"/api/holdings/{iid}/history?range=1d").json()
+    assert day["x_mode"] == "time"
+    assert len(day["sessions"]) == 1
+
+
+def test_twin_404_without_a_twin(api_client: TestClient, seeded: None) -> None:
+    iid = _by_symbol(get_one(api_client, "/api/holdings?ccy=USD"))["VTI"]["instrument_id"]
+    assert api_client.get(f"/api/holdings/{iid}/twin?range=1d").status_code == 404
+    assert api_client.get(f"/api/holdings/{iid}/twin?range=all").status_code == 422

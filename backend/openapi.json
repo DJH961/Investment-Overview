@@ -658,6 +658,19 @@
             ],
             "title": "Net Contribution"
           },
+          "own_return": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Modified Dietz return of this row alone in the window (fraction, 0.01 = 1%); null when its average capital is not positive",
+            "title": "Own Return"
+          },
           "pct_of_total_return": {
             "anyOf": [
               {
@@ -668,8 +681,21 @@
                 "type": "null"
               }
             ],
-            "description": "Share of total return (fraction, 0.01 = 1%)",
+            "description": "Deprecated (7.1, removed next release; read share_of_pnl): P&L over the window's start value (fraction, 0.01 = 1%)",
             "title": "Pct Of Total Return"
+          },
+          "share_of_pnl": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Row P&L / total P&L (fraction, 0.01 = 1%); null when |total P&L| is below 0.5% of the average capital",
+            "title": "Share Of Pnl"
           },
           "start_value": {
             "anyOf": [
@@ -3837,9 +3863,30 @@
       },
       "DividendHoldingOut": {
         "properties": {
+          "by_year": {
+            "description": "Dividends per year, newest first, each at its own date's rate",
+            "items": {
+              "$ref": "#/components/schemas/DividendHoldingYearOut"
+            },
+            "title": "By Year",
+            "type": "array"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
+          },
+          "last_12m": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dividends dated in the last 12 months (equals ttm)",
+            "title": "Last 12M"
           },
           "last_date": {
             "title": "Last Date",
@@ -3872,6 +3919,19 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Ttm Other",
             "type": "string"
+          },
+          "yield_ttm": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "last_12m / the holding's current value, fraction; null when not held",
+            "title": "Yield Ttm"
           }
         },
         "required": [
@@ -3885,6 +3945,25 @@
           "last_date"
         ],
         "title": "DividendHoldingOut",
+        "type": "object"
+      },
+      "DividendHoldingYearOut": {
+        "properties": {
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year",
+          "amount"
+        ],
+        "title": "DividendHoldingYearOut",
         "type": "object"
       },
       "DividendRowOut": {
@@ -5280,10 +5359,144 @@
         "title": "Health",
         "type": "object"
       },
+      "HistoryPeriod": {
+        "description": "The range's figures, server-computed (Modified Dietz, EUR and USD each from\nits own currency's value and flow stream; a return is never converted).",
+        "properties": {
+          "bought_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Net bought (buys - sells), each at its own date's rate",
+            "title": "Bought Eur"
+          },
+          "bought_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bought Usd"
+          },
+          "change_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Gain in the range: closing - opening value - net bought + cash dividends",
+            "title": "Change Eur"
+          },
+          "change_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Usd"
+          },
+          "dividends_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dividends (cash + reinvested), each at its own date's rate",
+            "title": "Dividends Eur"
+          },
+          "dividends_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividends Usd"
+          },
+          "return_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Modified Dietz (fraction, 0.01 = 1%)",
+            "title": "Return Eur"
+          },
+          "return_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Modified Dietz (fraction, 0.01 = 1%)",
+            "title": "Return Usd"
+          }
+        },
+        "title": "HistoryPeriod",
+        "type": "object"
+      },
       "HistoryPoint": {
         "properties": {
+          "invested_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cumulative buys - sells, each at its own date's rate (value mode)",
+            "title": "Invested Eur"
+          },
+          "invested_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cumulative buys - sells, each at its own date's rate (value mode)",
+            "title": "Invested Usd"
+          },
           "t": {
-            "description": "Date (ISO), one close per trading day",
+            "description": "Date (ISO) for a daily range; explicit-UTC instant for 1d / 1w",
             "title": "T",
             "type": "string"
           },
@@ -5297,13 +5510,101 @@
                 "type": "null"
               }
             ],
+            "description": "Price, native currency",
             "title": "V"
+          },
+          "value_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Value in EUR at that instant's / day's rate (value mode)",
+            "title": "Value Eur"
+          },
+          "value_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Value of the holding, native currency (null in price mode)",
+            "title": "Value Native"
+          },
+          "value_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Value in USD at that instant's / day's rate (value mode)",
+            "title": "Value Usd"
           }
         },
         "required": [
           "t"
         ],
         "title": "HistoryPoint",
+        "type": "object"
+      },
+      "HistoryTrade": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "price_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Native"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Shares, always positive",
+            "title": "Quantity"
+          },
+          "t": {
+            "description": "Trade date (daily) or that session's close instant (1d / 1w)",
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "kind"
+        ],
+        "title": "HistoryTrade",
         "type": "object"
       },
       "HoldingGroup": {
@@ -5486,8 +5787,21 @@
         "type": "object"
       },
       "HoldingHistoryResponse": {
-        "description": "Daily closes of one instrument in its native currency (never converted).",
+        "description": "One holding's chart: native prices (``price`` mode) or its value (``value``).",
         "properties": {
+          "avg_price_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Average cost per share now, native (the price-mode cost line)",
+            "title": "Avg Price Native"
+          },
           "ccy": {
             "description": "The instrument's native currency, for display",
             "title": "Ccy",
@@ -5496,6 +5810,25 @@
           "instrument_id": {
             "title": "Instrument Id",
             "type": "integer"
+          },
+          "mode": {
+            "default": "price",
+            "enum": [
+              "value",
+              "price"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistoryPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "points": {
             "items": {
@@ -5506,6 +5839,8 @@
           },
           "range": {
             "enum": [
+              "1d",
+              "1w",
               "1m",
               "3m",
               "6m",
@@ -5516,8 +5851,33 @@
             "title": "Range",
             "type": "string"
           },
+          "sessions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphSession"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
           "symbol": {
             "title": "Symbol",
+            "type": "string"
+          },
+          "trades": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/HistoryTrade"
+            },
+            "title": "Trades",
+            "type": "array"
+          },
+          "x_mode": {
+            "default": "date",
+            "enum": [
+              "date",
+              "time"
+            ],
+            "title": "X Mode",
             "type": "string"
           }
         },
@@ -5529,6 +5889,61 @@
           "points"
         ],
         "title": "HoldingHistoryResponse",
+        "type": "object"
+      },
+      "HoldingPeekResponse": {
+        "description": "What an expanded Holdings row shows that the row itself cannot.",
+        "properties": {
+          "currency": {
+            "description": "Native currency of the amounts",
+            "title": "Currency",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "last_dividend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeekDividend"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_trade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeekTrade"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tranches": {
+            "$ref": "#/components/schemas/PeekTranches"
+          },
+          "week": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PeekWeek"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null for a NAV fund (no intraday)"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "currency",
+          "tranches"
+        ],
+        "title": "HoldingPeekResponse",
         "type": "object"
       },
       "HoldingRow": {
@@ -5907,6 +6322,133 @@
           "price_data_warning"
         ],
         "title": "HoldingRow",
+        "type": "object"
+      },
+      "HoldingTwinResponse": {
+        "description": "A fund's ETF twin on the deep-dive. The 1D estimate is built at read time.",
+        "properties": {
+          "estimate_points": {
+            "description": "1d only: prev_NAV x twin_now / twin_prev_close",
+            "items": {
+              "$ref": "#/components/schemas/TwinPricePoint"
+            },
+            "title": "Estimate Points",
+            "type": "array"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "nav_points": {
+            "items": {
+              "$ref": "#/components/schemas/TwinNavPoint"
+            },
+            "title": "Nav Points",
+            "type": "array"
+          },
+          "range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "rebased": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TwinRebasedPoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rebased"
+          },
+          "recent": {
+            "description": "The last 5 sessions",
+            "items": {
+              "$ref": "#/components/schemas/TwinRecent"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
+          "sessions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphSession"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/TwinStats"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "twin_now": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TwinNow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "twin_points": {
+            "items": {
+              "$ref": "#/components/schemas/TwinPricePoint"
+            },
+            "title": "Twin Points",
+            "type": "array"
+          },
+          "twin_reason": {
+            "enum": [
+              "same_index",
+              "close_index",
+              "manual"
+            ],
+            "title": "Twin Reason",
+            "type": "string"
+          },
+          "twin_symbol": {
+            "title": "Twin Symbol",
+            "type": "string"
+          },
+          "x_mode": {
+            "enum": [
+              "date",
+              "time"
+            ],
+            "title": "X Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "twin_symbol",
+          "twin_reason",
+          "range",
+          "x_mode",
+          "twin_points",
+          "estimate_points",
+          "nav_points",
+          "stats",
+          "recent"
+        ],
+        "title": "HoldingTwinResponse",
         "type": "object"
       },
       "HoldingsFx": {
@@ -8529,6 +9071,325 @@
         "title": "LogsDto",
         "type": "object"
       },
+      "LookupHistory": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/LookupPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "6m",
+              "ytd",
+              "1y",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/LookupSession"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "x_mode": {
+            "enum": [
+              "date",
+              "time"
+            ],
+            "title": "X Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "range",
+          "x_mode",
+          "sessions",
+          "points"
+        ],
+        "title": "LookupHistory",
+        "type": "object"
+      },
+      "LookupHit": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "exchange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange"
+          },
+          "held_instrument_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held Instrument Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "required": [
+          "symbol",
+          "name"
+        ],
+        "title": "LookupHit",
+        "type": "object"
+      },
+      "LookupPoint": {
+        "properties": {
+          "fx_eur_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Eur Usd"
+          },
+          "price_native": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Price Native",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "price_native"
+        ],
+        "title": "LookupPoint",
+        "type": "object"
+      },
+      "LookupQuote": {
+        "properties": {
+          "captured_at": {
+            "title": "Captured At",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "day_change_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Change Native"
+          },
+          "day_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Pct"
+          },
+          "exchange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange"
+          },
+          "fx_eur_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fx Eur Usd"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "price_native": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Price Native",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "week52_high": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week52 High"
+          },
+          "week52_low": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week52 Low"
+          }
+        },
+        "required": [
+          "symbol",
+          "price_native",
+          "captured_at"
+        ],
+        "title": "LookupQuote",
+        "type": "object"
+      },
+      "LookupSearchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/LookupHit"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "title": "LookupSearchResponse",
+        "type": "object"
+      },
+      "LookupSession": {
+        "properties": {
+          "close": {
+            "title": "Close",
+            "type": "string"
+          },
+          "open": {
+            "title": "Open",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open",
+          "close"
+        ],
+        "title": "LookupSession",
+        "type": "object"
+      },
       "MaintenanceErrorDto": {
         "properties": {
           "detail": {
@@ -9360,6 +10221,205 @@
           "name"
         ],
         "title": "PasskeyOut",
+        "type": "object"
+      },
+      "PeekDividend": {
+        "properties": {
+          "amount_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The amount paid, native",
+            "title": "Amount Native"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "reinvested": {
+            "title": "Reinvested",
+            "type": "boolean"
+          },
+          "reinvested_quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reinvested Quantity"
+          }
+        },
+        "required": [
+          "date",
+          "reinvested"
+        ],
+        "title": "PeekDividend",
+        "type": "object"
+      },
+      "PeekTrade": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "price_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Native"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          }
+        },
+        "required": [
+          "date",
+          "kind"
+        ],
+        "title": "PeekTrade",
+        "type": "object"
+      },
+      "PeekTranches": {
+        "properties": {
+          "next_long_term_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Long Term Days"
+          },
+          "next_long_term_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO date",
+            "title": "Next Long Term On"
+          },
+          "open_count": {
+            "title": "Open Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "open_count"
+        ],
+        "title": "PeekTranches",
+        "type": "object"
+      },
+      "PeekWeek": {
+        "properties": {
+          "currency": {
+            "description": "Native currency of value_native",
+            "title": "Currency",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/PeekWeekPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "return_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Past week, EUR (fraction, 0.01 = 1%)",
+            "title": "Return Eur"
+          },
+          "return_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Past week, USD (fraction, 0.01 = 1%)",
+            "title": "Return Usd"
+          }
+        },
+        "required": [
+          "points",
+          "currency"
+        ],
+        "title": "PeekWeek",
+        "type": "object"
+      },
+      "PeekWeekPoint": {
+        "properties": {
+          "t": {
+            "description": "Explicit-UTC instant",
+            "title": "T",
+            "type": "string"
+          },
+          "value_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Native"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "PeekWeekPoint",
         "type": "object"
       },
       "PeriodRowOut": {
@@ -13957,6 +15017,341 @@
         "title": "TiingoUse",
         "type": "object"
       },
+      "TrancheGroupOut": {
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "integer"
+          },
+          "avg_cost_per_share_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Cost Per Share Native"
+          },
+          "cost_native": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost Native",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "gain_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gain Native"
+          },
+          "gain_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fraction, 0.01 = 1%",
+            "title": "Gain Pct"
+          },
+          "long_count": {
+            "title": "Long Count",
+            "type": "integer"
+          },
+          "quantity_left": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Quantity Left",
+            "type": "string"
+          },
+          "row_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Row Ids",
+            "type": "array"
+          },
+          "short_count": {
+            "description": "Short-term rows, the 'soon' ones included",
+            "title": "Short Count",
+            "type": "integer"
+          },
+          "source": {
+            "const": "reinvest",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "source",
+          "count",
+          "quantity_left",
+          "cost_native",
+          "avg_cost_per_share_native",
+          "gain_native",
+          "gain_pct",
+          "long_count",
+          "short_count",
+          "row_ids"
+        ],
+        "title": "TrancheGroupOut",
+        "type": "object"
+      },
+      "TrancheRowOut": {
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "integer"
+          },
+          "account_name": {
+            "title": "Account Name",
+            "type": "string"
+          },
+          "acquired_on": {
+            "title": "Acquired On",
+            "type": "string"
+          },
+          "age_days": {
+            "title": "Age Days",
+            "type": "integer"
+          },
+          "cost_native": {
+            "description": "Cost of the shares still held, native",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost Native",
+            "type": "string"
+          },
+          "cost_per_share_native": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost Per Share Native",
+            "type": "string"
+          },
+          "days_to_long_term": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null once long-term",
+            "title": "Days To Long Term"
+          },
+          "gain_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Against today's price; null without a price",
+            "title": "Gain Native"
+          },
+          "gain_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fraction, 0.01 = 1%",
+            "title": "Gain Pct"
+          },
+          "id": {
+            "description": "Id of the transaction that opened the tranche",
+            "title": "Id",
+            "type": "integer"
+          },
+          "long_term_on": {
+            "description": "Acquisition date + 1 year + 1 day",
+            "title": "Long Term On",
+            "type": "string"
+          },
+          "quantity_bought": {
+            "description": "Shares bought, on today's split basis",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Quantity Bought",
+            "type": "string"
+          },
+          "quantity_left": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Quantity Left",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "buy",
+              "reinvest",
+              "transfer_in"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "soon = long-term in <= 60 days",
+            "enum": [
+              "long",
+              "soon",
+              "short"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "account_id",
+          "account_name",
+          "acquired_on",
+          "source",
+          "quantity_bought",
+          "quantity_left",
+          "cost_per_share_native",
+          "cost_native",
+          "age_days",
+          "long_term_on",
+          "days_to_long_term",
+          "status",
+          "gain_native",
+          "gain_pct"
+        ],
+        "title": "TrancheRowOut",
+        "type": "object"
+      },
+      "TrancheTotalsOut": {
+        "properties": {
+          "fully_sold_count": {
+            "title": "Fully Sold Count",
+            "type": "integer"
+          },
+          "long_quantity": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Long Quantity",
+            "type": "string"
+          },
+          "matches_position": {
+            "title": "Matches Position",
+            "type": "boolean"
+          },
+          "position_quantity": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Position Quantity",
+            "type": "string"
+          },
+          "quantity_left": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Quantity Left",
+            "type": "string"
+          },
+          "short_quantity": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Short Quantity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quantity_left",
+          "position_quantity",
+          "matches_position",
+          "long_quantity",
+          "short_quantity",
+          "fully_sold_count"
+        ],
+        "title": "TrancheTotalsOut",
+        "type": "object"
+      },
+      "TranchesResponse": {
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "groups": {
+            "description": "Open reinvested tranches per account",
+            "items": {
+              "$ref": "#/components/schemas/TrancheGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "method": {
+            "const": "fifo_view",
+            "description": "FIFO view per purchase; the holding's totals use average cost",
+            "title": "Method",
+            "type": "string"
+          },
+          "price_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Native"
+          },
+          "rows": {
+            "description": "Open tranches, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/TrancheRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/TrancheTotalsOut"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "symbol",
+          "currency",
+          "method",
+          "as_of",
+          "price_native",
+          "rows",
+          "groups",
+          "totals"
+        ],
+        "title": "TranchesResponse",
+        "type": "object"
+      },
       "TransactionAll": {
         "description": "The whole ledger in one answer (the client filters, sorts and pages it).",
         "properties": {
@@ -14721,6 +16116,244 @@
         "title": "TwinHealth",
         "type": "object"
       },
+      "TwinNavPoint": {
+        "properties": {
+          "nav_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nav Native"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "TwinNavPoint",
+        "type": "object"
+      },
+      "TwinNow": {
+        "properties": {
+          "captured_at": {
+            "title": "Captured At",
+            "type": "string"
+          },
+          "day_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Against the previous session close (fraction, 0.01 = 1%)",
+            "title": "Day Pct"
+          },
+          "price_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Native"
+          }
+        },
+        "required": [
+          "captured_at"
+        ],
+        "title": "TwinNow",
+        "type": "object"
+      },
+      "TwinPricePoint": {
+        "properties": {
+          "price_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Native"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "TwinPricePoint",
+        "type": "object"
+      },
+      "TwinRebasedPoint": {
+        "properties": {
+          "fund_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the range start (fraction, 0.01 = 1%)",
+            "title": "Fund Pct"
+          },
+          "gap_pp": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "twin_pct - fund_pct, in pp",
+            "title": "Gap Pp"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          },
+          "twin_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From the range start (fraction, 0.01 = 1%)",
+            "title": "Twin Pct"
+          }
+        },
+        "required": [
+          "t"
+        ],
+        "title": "TwinRebasedPoint",
+        "type": "object"
+      },
+      "TwinRecent": {
+        "properties": {
+          "estimate_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Twin's move (fraction, 0.01 = 1%)",
+            "title": "Estimate Pct"
+          },
+          "gap_pp": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap Pp"
+          },
+          "nav_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fund NAV's move (fraction, 0.01 = 1%)",
+            "title": "Nav Pct"
+          },
+          "session_date": {
+            "title": "Session Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_date"
+        ],
+        "title": "TwinRecent",
+        "type": "object"
+      },
+      "TwinStats": {
+        "properties": {
+          "bias_label": {
+            "default": "none",
+            "enum": [
+              "runs_high",
+              "runs_low",
+              "none"
+            ],
+            "title": "Bias Label",
+            "type": "string"
+          },
+          "bias_pp": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean signed gap, pp (+: twin high)",
+            "title": "Bias Pp"
+          },
+          "median_gap_pp": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Median absolute gap, pp",
+            "title": "Median Gap Pp"
+          },
+          "sessions": {
+            "default": 0,
+            "title": "Sessions",
+            "type": "integer"
+          }
+        },
+        "title": "TwinStats",
+        "type": "object"
+      },
       "TwinSuggestionDto": {
         "description": "A built-in ETF twin for a fund (a suggestion only, never applied automatically).\n\n``same_index``: the fund and ETF track the exact same index (or are share\nclasses of one Vanguard portfolio). ``close``: a different index whose daily\nmoves were measured to follow the fund as tightly as an identical pair.",
         "properties": {
@@ -15029,7 +16662,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "7.0.1"
+    "version": "7.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -16906,6 +18539,8 @@
             "schema": {
               "default": "1y",
               "enum": [
+                "1d",
+                "1w",
                 "1m",
                 "3m",
                 "6m",
@@ -16914,6 +18549,20 @@
                 "all"
               ],
               "title": "Range",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "price",
+              "enum": [
+                "value",
+                "price"
+              ],
+              "title": "Mode",
               "type": "string"
             }
           }
@@ -16941,6 +18590,151 @@
           }
         },
         "summary": "Get Holding History",
+        "tags": [
+          "holdings"
+        ]
+      }
+    },
+    "/api/holdings/{instrument_id}/peek": {
+      "get": {
+        "operationId": "get_holding_peek_api_holdings__instrument_id__peek_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldingPeekResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Holding Peek",
+        "tags": [
+          "holdings"
+        ]
+      }
+    },
+    "/api/holdings/{instrument_id}/tranches": {
+      "get": {
+        "operationId": "get_holding_tranches_api_holdings__instrument_id__tranches_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranchesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Holding Tranches",
+        "tags": [
+          "holdings"
+        ]
+      }
+    },
+    "/api/holdings/{instrument_id}/twin": {
+      "get": {
+        "operationId": "get_holding_twin_api_holdings__instrument_id__twin_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "1d",
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "6m",
+                "ytd",
+                "1y"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldingTwinResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Holding Twin",
         "tags": [
           "holdings"
         ]
@@ -17689,6 +19483,160 @@
         "summary": "Get Live",
         "tags": [
           "live"
+        ]
+      }
+    },
+    "/api/lookup/search": {
+      "get": {
+        "operationId": "search_api_lookup_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 60,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookupSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/{symbol}/history": {
+      "get": {
+        "operationId": "history_api_lookup__symbol__history_get",
+        "parameters": [
+          {
+            "description": "Upper-case provider symbol.",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "description": "Upper-case provider symbol.",
+              "pattern": "^[A-Z0-9.\\-^=]{1,15}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "1y",
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "6m",
+                "ytd",
+                "1y",
+                "all"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookupHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "History",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/lookup/{symbol}/quote": {
+      "get": {
+        "operationId": "quote_api_lookup__symbol__quote_get",
+        "parameters": [
+          {
+            "description": "Upper-case provider symbol.",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "description": "Upper-case provider symbol.",
+              "pattern": "^[A-Z0-9.\\-^=]{1,15}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookupQuote"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Quote",
+        "tags": [
+          "lookup"
         ]
       }
     },

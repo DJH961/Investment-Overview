@@ -46,6 +46,7 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     # B1 reads A
     "overview",
     "holdings",
+    "tranches",
     "allocations",
     "graphs",
     # B2 reads B
@@ -75,6 +76,8 @@ GUARDED_ROUTER_MODULES: tuple[str, ...] = (
     "maintenance",
     "system",
     "instruments",
+    # v7.1
+    "lookup",
 )
 
 _SECURITY_HEADERS = {

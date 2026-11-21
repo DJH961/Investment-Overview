@@ -238,3 +238,20 @@
     }
   }
 }
+
+// 7.1: a full-width panel row under an opened row (the Holdings peek), and rows that open.
+.data-table {
+  &__expanded-cell {
+    padding: 0;
+    border-bottom: var(--border-width) solid var(--color-border);
+    background: var(--color-surface-2);
+  }
+
+  &__row--open > .data-table__td {
+    border-bottom-color: transparent;
+  }
+
+  &__row--clickable {
+    cursor: pointer;
+  }
+}

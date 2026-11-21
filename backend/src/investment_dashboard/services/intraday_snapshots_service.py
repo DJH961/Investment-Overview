@@ -372,6 +372,75 @@ def _usd_by_instant(
     return {t: _market_component_usd(priced, lookups, t, fx_t=fx) for t, _eur, fx in samples}
 
 
+# --- per-holding prices next to each portfolio sample (7.1) -----------------------
+#
+# Every portfolio sample in ``intraday_value`` is a sum over the intraday-priced
+# holdings of ``value_i x price_i(t) / close_i``. The price each holding was
+# repriced at is written to ``intraday_symbol_prices`` (kind ``holding``) at the
+# same instant, from the same bars (no extra fetching), so a holding's 1D/1W
+# chart is a read and the holdings sum to the portfolio line at every instant.
+
+
+def _holding_prices_at(
+    priced: list[Position],
+    bars_by_symbol: dict[str, dict[datetime, Decimal]],
+    times: Iterable[datetime],
+) -> dict[str, dict[datetime, Decimal]]:
+    """``{symbol: {t: price}}``: the price each holding was repriced at for ``times``.
+
+    The same forward fill and fallback (the position's own close) as
+    :func:`_market_component_usd` / :func:`_reconstruct_session_samples`.
+    """
+    lookups = {sym: _make_forward_fill(bars) for sym, bars in bars_by_symbol.items()}
+    wanted = list(times)
+    out: dict[str, dict[datetime, Decimal]] = {}
+    for p in priced:
+        sym = p.instrument.symbol
+        if sym in out:
+            continue  # one price per symbol, whichever account holds it
+        lookup = lookups.get(sym)
+        rows: dict[datetime, Decimal] = {}
+        for t in wanted:
+            price_t = lookup(t) if lookup is not None else None
+            if price_t is None or price_t <= 0:
+                price_t = p.current_price_native
+            if price_t is not None and price_t > 0:
+                rows[t] = price_t
+        if rows:
+            out[sym] = rows
+    return out
+
+
+def _store_holding_prices(cache: Session, prices: dict[str, dict[datetime, Decimal]]) -> int:
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
+
+    written = 0
+    for sym, rows in prices.items():
+        written += symbol_prices_repo.upsert_prices(
+            cache, sym, rows, kind=symbol_prices_repo.KIND_HOLDING
+        )
+    return written
+
+
+def _prune_holding_prices(cache: Session, cutoff: datetime) -> None:
+    """Drop holding prices older than ``cutoff`` (the same cut as ``intraday_value``)."""
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
+
+    symbol_prices_repo.delete_before(cache, cutoff, kind=symbol_prices_repo.KIND_HOLDING)
+
+
+def _drop_holding_prices_at(cache: Session, times: list[datetime]) -> None:
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
+
+    symbol_prices_repo.delete_at(cache, times, kind=symbol_prices_repo.KIND_HOLDING)
+
+
+def _drop_holding_prices_in(cache: Session, start: datetime, end: datetime) -> None:
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
+
+    symbol_prices_repo.delete_in_range(cache, start, end, kind=symbol_prices_repo.KIND_HOLDING)
+
+
 def _row_eur(row: IntradayValue) -> Decimal:
     """EUR of a stored sample: ``usd / fx`` at its instant, else the EUR column."""
     if row.market_value_usd is not None and row.fx_eur_usd:
@@ -811,7 +880,17 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:  # noqa: PLR0
                 ):
                     return False
                 intraday_repo.insert_sample(cache, captured_at, value_eur, fx_eur_usd, value_usd)
+                # Each holding's price at this instant, next to the portfolio sample.
+                live_priced = [
+                    p
+                    for p in positions
+                    if p.shares > _MIN_SHARES
+                    and is_intraday_priced(p)
+                    and p.current_price_native is not None
+                ]
+                _store_holding_prices(cache, _holding_prices_at(live_priced, {}, [captured_at]))
                 intraday_repo.delete_before(cache, week_window_start_utc(now))
+                _prune_holding_prices(cache, week_window_start_utc(now))
     except Exception:  # pragma: no cover - defensive: capture is best-effort
         log.warning("intraday value capture failed", exc_info=True)
         return False
@@ -935,6 +1014,23 @@ def sample_fx_at(
         if row.fx_eur_usd is not None and row.fx_eur_usd > 0:
             return row.fx_eur_usd
     return None
+
+
+def stored_sample_rates(
+    session: Session, start: datetime, end: datetime
+) -> dict[datetime, Decimal]:
+    """``{captured_at: EUR/USD}`` of the stored portfolio samples in ``[start, end]``.
+
+    The per-instant rate each sample carries (samples without one are left out).
+    A pure read, no network: the holding deep-dive's 1D/1W EUR line uses it.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, start, end)
+    return {
+        r.captured_at: r.fx_eur_usd for r in rows if r.fx_eur_usd is not None and r.fx_eur_usd > 0
+    }
 
 
 @dataclass(frozen=True)
@@ -1276,6 +1372,7 @@ def _reconstruct_session(
         if bad:
             with cache_write_session(session) as cache:
                 intraday_repo.delete_at(cache, bad)
+                _drop_holding_prices_at(cache, bad)
             log.info("replaced %d live graph point(s) that disagreed with the bars", len(bad))
             dropped = set(bad)
             live_times = [t for t in live_times if t not in dropped]
@@ -1294,11 +1391,14 @@ def _reconstruct_session(
         skip=lambda t: _covered_by_live(live_times, t, _half_window(interval)),
     )
     usd_at = _usd_by_instant(priced, bars_by_symbol, samples)
+    holding_prices = _holding_prices_at(priced, bars_by_symbol, [t for t, _m, _fx in samples])
     with cache_write_session(session) as cache:
         for t, market, point_fx in samples:
             intraday_repo.insert_sample(cache, t, market, point_fx, usd_at.get(t))
             written += 1
+        _store_holding_prices(cache, holding_prices)
         intraday_repo.delete_before(cache, _week_window_start_for(session_date))
+        _prune_holding_prices(cache, _week_window_start_for(session_date))
     return written
 
 
@@ -1922,6 +2022,7 @@ def _fetch_and_persist_week_days(
                 )
             )
         day_interval = {d: i for i, days in runs for d in days} | used_interval
+        holding_prices: dict[str, dict[datetime, Decimal]] = {}
         for session_date in to_fetch:
             built = _build_week_day_samples(
                 session, session_date, positions_by_day[session_date], bars_by_symbol, fx_bars
@@ -1929,9 +2030,13 @@ def _fetch_and_persist_week_days(
             usd_at.update(_usd_by_instant(positions_by_day[session_date], bars_by_symbol, built))
             half = _half_window(day_interval.get(session_date, interval))
             stored_set = set(stored_times)
-            fetched.extend(
-                s for s in built if s[0] in stored_set or not _near(stored_times, s[0], half)
+            kept = [s for s in built if s[0] in stored_set or not _near(stored_times, s[0], half)]
+            fetched.extend(kept)
+            day_prices = _holding_prices_at(
+                positions_by_day[session_date], bars_by_symbol, [t for t, _m, _fx in kept]
             )
+            for sym, rows in day_prices.items():
+                holding_prices.setdefault(sym, {}).update(rows)
 
         # Persist what we sourced so the next render reads it from cache, and
         # prune anything older than the rolling week.
@@ -1939,7 +2044,9 @@ def _fetch_and_persist_week_days(
             with cache_write_session(session) as cache:
                 for t, market, point_fx in fetched:
                     intraday_repo.insert_sample(cache, t, market, point_fx, usd_at.get(t))
+                _store_holding_prices(cache, holding_prices)
                 intraday_repo.delete_before(cache, week_start)
+                _prune_holding_prices(cache, week_start)
 
     for session_date in to_fetch:
         _mark_week_day_fetched(session, session_date, anchor)
@@ -2092,6 +2199,7 @@ def clear_day_samples(
     end = _session_start_utc(session_date + timedelta(days=1))
     with cache_write_session(session) as cache:
         deleted = intraday_repo.delete_in_range(cache, start, end)
+        _drop_holding_prices_in(cache, start, end)
     app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
     return deleted
 
@@ -2116,10 +2224,12 @@ def clear_week_samples(
     with cache_write_session(session) as cache:
         if from_date is None:
             deleted = intraday_repo.delete_all(cache)
+            _drop_holding_prices_in(cache, datetime.min, datetime.max)
         else:
             deleted = intraday_repo.delete_in_range(
                 cache, _session_start_utc(from_date), datetime.max
             )
+            _drop_holding_prices_in(cache, _session_start_utc(from_date), datetime.max)
     app_config_service.delete_key(session, _RECONSTRUCTED_KEY)
     app_config_service.delete_by_prefix(session, _WEEK_FETCHED_PREFIX)
     return deleted
@@ -2148,6 +2258,7 @@ def drop_frozen_samples(session: Session, start: datetime, end: datetime) -> int
         return 0
     with cache_write_session(session) as cache:
         removed = intraday_repo.delete_at(cache, frozen)
+        _drop_holding_prices_at(cache, frozen)
     log.info("removed %d frozen graph point(s) between %s and %s", removed, start, end)
     return removed
 
@@ -2166,6 +2277,7 @@ def drop_samples_after(session: Session, since: datetime, until: datetime) -> in
         return 0
     try:
         with cache_write_session(session) as cache:
+            _drop_holding_prices_in(cache, start, end)
             return intraday_repo.delete_in_range(cache, start, end)
     except Exception:  # pragma: no cover - defensive
         log.warning("could not remove frozen graph points", exc_info=True)
@@ -2300,9 +2412,11 @@ def fill_gaps_from_tiingo(  # noqa: PLR0915
         if not keep:
             continue
         usd_at = _usd_by_instant(priced, bars_by_symbol, keep)
+        holding_prices = _holding_prices_at(priced, bars_by_symbol, [t for t, _m, _fx in keep])
         with cache_write_session(session) as cache:
             for t, market, point_fx in keep:
                 intraday_repo.insert_sample(cache, t, market, point_fx, usd_at.get(t))
+            _store_holding_prices(cache, holding_prices)
         written += len(keep)
     activity("market_data").info(
         "graph gap fill from Tiingo: %d gap(s), %d point(s) written, %d request(s)%s",
@@ -2561,7 +2675,7 @@ def _fund_plans(session: Session, *, session_date: date, strict: bool) -> _Plans
     cached closes and twin prices (no network).
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
     from investment_dashboard.services import positions_service, prices_service  # noqa: PLC0415
 
     positions = positions_service.compute_positions(session, as_of=session_date)
@@ -2579,7 +2693,7 @@ def _fund_plans(session: Session, *, session_date: date, strict: bool) -> _Plans
     )
     twins = sorted({t for p in funds if (t := _twin_of(p))})
     with cache_read_session(session) as cache:
-        twin_rows = twin_prices_repo.prices_in_range(
+        twin_rows = symbol_prices_repo.prices_in_range(
             cache, twins, _session_start_utc(prev_date), close_at
         )
 
@@ -3252,8 +3366,8 @@ def fund_divergence(
     from investment_dashboard.db import cache_read_session, memo  # noqa: PLC0415
     from investment_dashboard.domain.late_data import divergences  # noqa: PLC0415
     from investment_dashboard.repositories import (  # noqa: PLC0415
+        symbol_prices_repo,
         transactions_repo,
-        twin_prices_repo,
     )
     from investment_dashboard.services import prices_service  # noqa: PLC0415
 
@@ -3269,7 +3383,7 @@ def fund_divergence(
         }
         start = _session_start_utc(session_date - TWIN_CLOSE_RETENTION)
         with cache_read_session(session) as cache:
-            rows = twin_prices_repo.prices_in_range(
+            rows = symbol_prices_repo.prices_in_range(
                 cache, [twin_symbol], start, _session_close_utc(session_date)
             )
         twin_closes = twin_session_closes(rows.get(twin_symbol, {}))
@@ -3319,13 +3433,13 @@ def twin_price_coverage(
     recognised session close), for "is this twin being fetched at all".
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
 
     today = last_session_date(now or datetime.now(UTC))
     start = _session_start_utc(today - TWIN_CLOSE_RETENTION)
     end = _session_close_utc(today)
     with cache_read_session(session) as cache:
-        rows = twin_prices_repo.prices_in_range(cache, [symbol], start, end).get(symbol, {})
+        rows = symbol_prices_repo.prices_in_range(cache, [symbol], start, end).get(symbol, {})
     closes = twin_session_closes(rows)
     return {
         "stored_sessions": len(closes),
@@ -3388,7 +3502,7 @@ def _store_twin_closes(
     capturing the settled print (see the "missing_close" branch in
     :func:`refresh_twin_prices`).
     """
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
 
     written = 0
     for symbol, by_day in closes.items():
@@ -3397,7 +3511,7 @@ def _store_twin_closes(
             rows[_session_close_utc(prev_date)] = prev
         if (cur := by_day.get(session_date)) is not None and cur > 0:
             rows[live_at] = cur
-        written += twin_prices_repo.upsert_prices(cache, symbol, rows)
+        written += symbol_prices_repo.upsert_prices(cache, symbol, rows)
     return written
 
 
@@ -3429,12 +3543,12 @@ def backfill_week_twin_prices(
     """
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
 
     window = recent_trading_sessions(now)
     sessions = [previous_trading_session(window[0]), *window[:-1]]
     with cache_read_session(session) as cache:
-        stored = twin_prices_repo.prices_in_range(
+        stored = symbol_prices_repo.prices_in_range(
             cache, twins, _session_start_utc(sessions[0]), _session_close_utc(sessions[-1])
         )
     keys = {(s, d): f"{_TWIN_WEEK_PREFIX}{s}:{d.isoformat()}" for s in twins for d in sessions}
@@ -3471,7 +3585,7 @@ def backfill_week_twin_prices(
                 if price > 0 and day in wanted and at <= _session_close_utc(day):
                     rows[at] = price
                     days_seen[day] = days_seen.get(day, 0) + 1
-            written += twin_prices_repo.upsert_prices(cache, symbol, rows)
+            written += symbol_prices_repo.upsert_prices(cache, symbol, rows)
             got += [(symbol, d) for d, n in days_seen.items() if n >= 2]
     for symbol, day in got:
         app_config_service.set_value(session, keys[(symbol, day)], "1")
@@ -3538,13 +3652,13 @@ def _stale_year_backfills(
     :data:`_YEAR_STALE_TRADING_DAYS`), not the whole year.
     """
     from investment_dashboard.db import cache_read_session  # noqa: PLC0415
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
 
     if not done_symbols:
         return set()
     cutoff = _trading_days_before(last_done, _YEAR_STALE_TRADING_DAYS)
     with cache_read_session(session) as cache:
-        recent = twin_prices_repo.prices_in_range(
+        recent = symbol_prices_repo.prices_in_range(
             cache, done_symbols, _session_start_utc(cutoff), _session_close_utc(last_done)
         )
     return {
@@ -3577,7 +3691,7 @@ def backfill_twin_year_closes(
     from investment_dashboard.activity_log import activity  # noqa: PLC0415
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_write_session  # noqa: PLC0415
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
 
     keys = {s: f"{_TWIN_YEAR_PREFIX}{s}" for s in twins}
     abandoned_keys = {s: f"{_TWIN_YEAR_ABANDONED_PREFIX}{s}" for s in twins}
@@ -3615,7 +3729,7 @@ def backfill_twin_year_closes(
                 if price > 0 and day <= last_done and _is_trading_day(day)
             }
             if rows:
-                written += twin_prices_repo.upsert_prices(cache, symbol, rows)
+                written += symbol_prices_repo.upsert_prices(cache, symbol, rows)
                 stored[symbol] = len(rows)
     attempt_keys = {s: f"{_TWIN_YEAR_ATTEMPTS_PREFIX}{s}" for s in due}
     for symbol, count in stored.items():
@@ -3668,17 +3782,17 @@ def prune_twin_prices(session: Session, *, now: datetime) -> None:
     """
     from investment_dashboard.activity_log import activity  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
 
     bars_cutoff = week_window_start_utc(now) - timedelta(days=7)
     oldest = _to_naive_utc(now) - TWIN_CLOSE_RETENTION
     with cache_read_session(session) as cache:
-        symbols = twin_prices_repo.distinct_symbols(cache)
-        stored = twin_prices_repo.prices_in_range(cache, symbols, oldest, bars_cutoff)
+        symbols = symbol_prices_repo.distinct_symbols(cache)
+        stored = symbol_prices_repo.prices_in_range(cache, symbols, oldest, bars_cutoff)
     keep = {at for rows in stored.values() for at, _price in _session_close_rows(rows).values()}
     with cache_write_session(session) as cache:
-        dropped = twin_prices_repo.delete_before(cache, bars_cutoff, keep=list(keep))
-        dropped += twin_prices_repo.delete_before(cache, oldest)
+        dropped = symbol_prices_repo.delete_before(cache, bars_cutoff, keep=list(keep))
+        dropped += symbol_prices_repo.delete_before(cache, oldest)
     if dropped:
         activity("market_data").info(
             "twin prices: pruned %d row(s) past retention (kept %d session-close row(s))",
@@ -3733,7 +3847,7 @@ def refresh_twin_prices(
     """
     from investment_dashboard.adapters import yfinance_client  # noqa: PLC0415
     from investment_dashboard.db import cache_read_session, cache_write_session  # noqa: PLC0415
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
     from investment_dashboard.services import positions_service  # noqa: PLC0415
 
     now = now or datetime.now(UTC)
@@ -3751,7 +3865,7 @@ def refresh_twin_prices(
     true_close_at = _session_actual_close_utc(session_date)
     market_open = is_us_market_open(now)
     with cache_read_session(session) as cache:
-        stored = twin_prices_repo.prices_in_range(
+        stored = symbol_prices_repo.prices_in_range(
             cache, twins, _session_start_utc(prev_date), close_at
         )
     written = 0
@@ -3806,7 +3920,7 @@ def refresh_twin_prices(
                 rows = {
                     t: v for t, v in (bars.get(symbol) or {}).items() if v > 0 and t <= close_at
                 }
-                written += twin_prices_repo.upsert_prices(cache, symbol, rows)
+                written += symbol_prices_repo.upsert_prices(cache, symbol, rows)
         for symbol in sparse:
             app_config_service.set_value(session, keys[symbol], session_date.isoformat())
         log.info(
@@ -3879,10 +3993,10 @@ def clear_twin_prices(session: Session) -> int:
     """
     from investment_dashboard.activity_log import activity  # noqa: PLC0415
     from investment_dashboard.db import cache_write_session  # noqa: PLC0415
-    from investment_dashboard.repositories import twin_prices_repo  # noqa: PLC0415
+    from investment_dashboard.repositories import symbol_prices_repo  # noqa: PLC0415
 
     with cache_write_session(session) as cache:
-        deleted = twin_prices_repo.delete_all(cache)
+        deleted = symbol_prices_repo.delete_all(cache)
     for prefix in (
         _TWIN_BACKFILLED_PREFIX,
         _TWIN_WEEK_PREFIX,

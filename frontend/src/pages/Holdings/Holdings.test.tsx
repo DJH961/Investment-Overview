@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render as rtlRender, screen, within, type RenderOptions } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HoldingsDto } from "../../lib/queries/holdings";
@@ -149,21 +151,44 @@ vi.mock("../../lib/queries/holdings", async (orig) => ({
     refetch: vi.fn(),
   }),
 }));
+vi.mock("../../lib/queries/holding-detail", async (orig) => ({
+  ...(await orig<typeof import("../../lib/queries/holding-detail")>()),
+  useHoldingPeek: () => ({
+    data: {
+      instrument_id: 1,
+      currency: "EUR",
+      week: {
+        currency: "EUR",
+        points: [
+          { t: "2026-10-26", value_native: "980" },
+          { t: "2026-10-30", value_native: "1000" },
+        ],
+        return_eur: "0.012",
+        return_usd: "0.01",
+      },
+      tranches: { open_count: 3, next_long_term_on: "2026-12-01", next_long_term_days: 31 },
+      last_trade: { date: "2026-09-01", kind: "buy", quantity: "2", price_native: "50" },
+      last_dividend: { date: "2026-06-01", reinvested: false, amount_native: "12.5", reinvested_quantity: null },
+    },
+    isPending: false,
+    isError: false,
+  }),
+}));
 vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 
 import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { Holdings } from "./Holdings";
 
-/** Every render sits in a router: the symbol cells are links. */
-const render = (ui: React.ReactElement, options?: RenderOptions) =>
-  rtlRender(ui, { wrapper: MemoryRouter, ...options });
-
-/** The sheet only opens from the phone row now (the desktop symbol links to the page). */
-function openSheet(symbol: string) {
-  fireEvent.click(screen.getByRole("button", { name: new RegExp(symbol) }));
-  fireEvent.click(screen.getByRole("button", { name: "Price chart" }));
+/** Every render sits in a router (the symbol cells are links) and a query client (lookup, peek). */
+function Wrapper({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
+  );
 }
+const render = (ui: React.ReactElement, options?: RenderOptions) => rtlRender(ui, { wrapper: Wrapper, ...options });
 
 beforeEach(() => {
   phone.value = false;
@@ -205,19 +230,38 @@ describe("Holdings page", () => {
     expect(localStorage.getItem("iv.holdings.group")).toBe('"account"');
   });
 
-  it("keeps the open detail sheet in step with fresh data instead of a frozen copy", () => {
+  it("phone: tapping a row opens the compact peek with the ways into the page, tapping again closes it", () => {
     phone.value = true;
-    const saved = holdings.holdings;
-    try {
-      const { rerender } = render(<Holdings />);
-      openSheet("VWCE");
-      expect(screen.getByRole("dialog")).toHaveTextContent("World ETF");
-      holdings.holdings = [{ ...saved[0], name: "Renamed ETF" }] as typeof saved;
-      rerender(<Holdings />);
-      expect(screen.getByRole("dialog")).toHaveTextContent("Renamed ETF");
-    } finally {
-      holdings.holdings = saved;
-    }
+    render(<Holdings />);
+    const head = screen.getByRole("button", { name: /VWCE/ });
+    expect(head).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(head);
+    expect(head).toHaveAttribute("aria-expanded", "true");
+    const peek = screen.getByRole("region", { name: "VWCE at a glance" });
+    expect(within(peek).getByText("3 open · long-term in 31 d")).toBeInTheDocument();
+    expect(within(peek).getByText(/Buy 2 sh/)).toBeInTheDocument();
+    expect(within(peek).getByText("Last dividend")).toBeInTheDocument();
+    expect(within(peek).getByRole("link", { name: /Open VWCE/ })).toHaveAttribute("href", "/holdings/1");
+    expect(within(peek).getByRole("link", { name: "Tranches" })).toHaveAttribute("href", "/holdings/1/tranches");
+    expect(within(peek).getByRole("link", { name: "Activity" })).toHaveAttribute("href", "/holdings/1/transactions");
+    // The old expansion and its sheet are gone.
+    expect(screen.queryByRole("button", { name: "Price chart" })).toBeNull();
+    fireEvent.click(head);
+    expect(screen.queryByRole("region", { name: "VWCE at a glance" })).toBeNull();
+  });
+
+  it("desktop: the chevron at the row end opens the same peek as a full-width row", () => {
+    const { container } = render(<Holdings />);
+    const toggle = screen.getByRole("button", { name: "Show VWCE summary" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    const open = screen.getByRole("button", { name: "Close VWCE summary" });
+    expect(open).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelector(".data-table__expanded")).not.toBeNull();
+    const peek = screen.getByRole("region", { name: "VWCE at a glance" });
+    expect(within(peek).getByRole("link", { name: /Open deep dive/ })).toHaveAttribute("href", "/holdings/1");
+    fireEvent.click(open);
+    expect(container.querySelector(".data-table__expanded")).toBeNull();
   });
 
   it("an empty portfolio offers an Import button, not just text", () => {
@@ -335,6 +379,11 @@ describe("Holdings page", () => {
           /Session\s*\+0\.55%\s*Overnight\s*-0\.45%/,
         );
         expect(container.querySelector(".holdings-page__item-head--split")).not.toBeNull();
+        // The (i) is not a button inside the row button, and tapping it leaves the row shut.
+        expect(container.querySelector("button button")).toBeNull();
+        const toggle = screen.getByRole("button", { name: /VWCE/ });
+        fireEvent.click(screen.getByRole("button", { name: "About session and overnight" }));
+        expect(toggle).toHaveAttribute("aria-expanded", "false");
       } finally {
         restore();
       }
@@ -365,16 +414,13 @@ describe("Holdings page", () => {
     });
   });
 
-  it("on a phone shows today in money and the price chart button", () => {
+  it("on a phone shows today in money", () => {
     phone.value = true;
     const { container } = render(<Holdings />);
     // One holding: its price time is the list's, said once in the header, not on the row.
     expect(container.querySelector(".holdings-page__row-stamp")).toBeNull();
     expect(container.querySelector(".holdings-page__today")).toHaveTextContent("+€10.00"); // money move
     expect(container.querySelector(".holdings-page__today--stale")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /VWCE/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Price chart" }));
-    expect(screen.getByLabelText("VWCE price against cost basis")).toBeInTheDocument();
   });
 
   it("greys the today move when the daily move is stale", () => {
@@ -387,15 +433,6 @@ describe("Holdings page", () => {
     } finally {
       holdings.holdings[0].daily_is_stale = false;
     }
-  });
-
-  it("opens the detail drawer with a cost-basis line", () => {
-    phone.value = true;
-    render(<Holdings />);
-    openSheet("VWCE");
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByLabelText("VWCE price against cost basis")).toBeInTheDocument();
-    expect(screen.getByText("Cost basis", { selector: "text" })).toBeInTheDocument();
   });
 
   it("shows money only when the group return on cost is null", () => {
@@ -425,12 +462,12 @@ describe("Holdings page", () => {
     holdings.holdings = [twinRow()] as typeof saved;
     try {
       const { container, unmount } = render(<Holdings />);
-      const line = container.querySelector(".holdings-page__twin-line");
+      const line = container.querySelector(".holding-identity__twin");
       expect(line).toHaveTextContent(/≈\s*VOO\s*\+0\.42%/);
       unmount();
       holdings.holdings = [twinRow({ twin: { ...twinRow().twin, pending: false, est_price: null, est_value: null, est_today_move: null, est_today_pct: null, at: null } })] as typeof saved;
       const again = render(<Holdings />);
-      expect(again.container.querySelector(".holdings-page__twin-line")).toBeNull();
+      expect(again.container.querySelector(".holding-identity__twin")).toBeNull();
     } finally {
       holdings.holdings = saved;
     }
@@ -461,59 +498,19 @@ describe("Holdings page", () => {
     }
   });
 
-  it("shows the Twin block with estimate and divergence in the sheet", () => {
-    phone.value = true;
-    const saved = holdings.holdings;
-    holdings.holdings = [twinRow()] as typeof saved;
-    try {
-      render(<Holdings />);
-      openSheet("FXAIX");
-      const block = within(screen.getByRole("dialog")).getByLabelText("ETF twin of FXAIX");
-      expect(within(block).getByText(/Same index/)).toBeInTheDocument();
-      expect(within(block).getByText("Estimated value")).toBeInTheDocument();
-      expect(within(block).getByText("€1,015.00")).toBeInTheDocument();
-      expect(within(block).getByText("+0.03 pp")).toBeInTheDocument(); // last session
-      expect(within(block).getByText("-€3.40")).toBeInTheDocument();
-      expect(within(block).getByText(/over 17 of 20 sessions/)).toBeInTheDocument();
-      expect(within(block).getByText(/twin runs high/)).toBeInTheDocument();
-      expect(within(block).getByRole("button", { name: "About twin divergence" })).toBeInTheDocument();
-    } finally {
-      holdings.holdings = saved;
-    }
-  });
-
-  it("says so when there is not enough history for a divergence, and hides the estimate once posted", () => {
-    phone.value = true;
-    const saved = holdings.holdings;
-    holdings.holdings = [twinRow({ twin: { ...twinRow().twin, pending: false, divergence: null } })] as typeof saved;
-    try {
-      render(<Holdings />);
-      openSheet("FXAIX");
-      const block = within(screen.getByRole("dialog")).getByLabelText("ETF twin of FXAIX");
-      expect(within(block).getByText(/Not enough history yet/)).toBeInTheDocument();
-      expect(within(block).queryByText("Estimated value")).toBeNull();
-    } finally {
-      holdings.holdings = saved;
-    }
-  });
-
-  it("phone expansion shows only what the chips do not, plus the twin block", () => {
+  it("phone peek of a NAV fund carries the twin line from the row, not the old details list", () => {
     phone.value = true;
     const saved = holdings.holdings;
     holdings.holdings = [twinRow()] as typeof saved;
     try {
       const { container } = render(<Holdings />);
-      expect(container.querySelector(".holdings-page__twin-line")).toHaveTextContent(/VOO/);
+      expect(container.querySelector(".holding-identity__twin")).toHaveTextContent(/VOO/);
       fireEvent.click(screen.getByRole("button", { name: /FXAIX/ }));
-      const detail = container.querySelector(".holdings-page__detail") as HTMLElement;
-      const keys = [...detail.querySelectorAll("dt")].map((d) => d.textContent);
-      // Total return is a chip on the row; unrealised gain (P/L) waits in the expansion.
-      for (const dup of ["Price", "Shares", "Growth", "XIRR", "Weight"]) expect(keys).not.toContain(dup);
-      expect(keys.some((k) => k?.startsWith("Total return"))).toBe(false);
-      for (const key of ["Avg price", "Cost basis", "Unrealised gain", "Dividends", "MTD", "YTD", "Expense", "Account"])
-        expect(keys).toContain(key);
-      expect(screen.getByLabelText("ETF twin of FXAIX")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Price chart" })).toBeInTheDocument();
+      const peek = screen.getByRole("region", { name: "FXAIX at a glance" });
+      expect(within(peek).getByText("Twin")).toBeInTheDocument();
+      expect(within(peek).getByText(/est. until the NAV/)).toBeInTheDocument();
+      expect(container.querySelector(".holdings-page__detail")).toBeNull();
+      expect(screen.queryByLabelText("ETF twin of FXAIX")).toBeNull();
     } finally {
       holdings.holdings = saved;
     }
@@ -530,11 +527,10 @@ describe("Holdings page", () => {
           <Holdings />
         </HideAmountsProvider>,
       );
-      openSheet("FXAIX");
+      fireEvent.click(screen.getByRole("button", { name: /FXAIX/ }));
       const text = container.ownerDocument.body.textContent ?? "";
-      expect(text).not.toMatch(/1,015|3\.40/);
+      expect(text).not.toMatch(/1,015|3\.40|12\.50/);
       expect(text).toContain("+0.42%");
-      expect(text).toContain("+0.03 pp");
     } finally {
       holdings.holdings = saved;
     }

@@ -81,4 +81,30 @@
       @include m.focus-ring;
     }
   }
+
+  // Phone, a row that does not fit: the right edge fades, so the cut tab reads as
+  // "scroll for more" (the fit variant below never needs it).
+  &:not(.tabs--fit) .tabs__list {
+    @include m.phone {
+      mask-image: linear-gradient(to right, var(--color-fg) calc(100% - var(--space-7)), transparent);
+    }
+  }
+
+  // `fit`: on a phone the tabs share the row without scrolling (counts drop out).
+  &--fit {
+    @include m.phone {
+      .tabs__list {
+        justify-content: space-between;
+        gap: var(--space-2);
+      }
+
+      .tabs__trigger {
+        padding: 0;
+      }
+
+      .tabs__badge {
+        display: none;
+      }
+    }
+  }
 }
