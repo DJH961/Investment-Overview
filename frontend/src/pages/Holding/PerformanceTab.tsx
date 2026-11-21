@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Chart, type ChartMarker, type ChartSeries } from "../../components/Chart";
+import { Chart, isReferenceInSoftBounds, type ChartMarker, type ChartSeries } from "../../components/Chart";
 import { hasSplit, HoldingDaySplit } from "../../components/DaySplit";
 import { holdingPriceTime, PriceStamps } from "../../components/Freshness";
 import { KpiTile } from "../../components/KpiTile";
@@ -8,7 +8,7 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { useIsPhone } from "../../lib/useMediaQuery";
-import { formatMoney, formatQuantity } from "../../lib/format";
+import { chartMoneyFormat, formatMoney, formatQuantity } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 import {
   HOLDING_RANGES,
@@ -216,7 +216,8 @@ export function HoldingKpis({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCu
 
 export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurrency }) {
   const ranges = rangesFor(row);
-  const pref = useDisplayPrefs().holdingsRange as HoldingRange;
+  const { holdingsRange, holdingChartCostScale } = useDisplayPrefs();
+  const pref = holdingsRange as HoldingRange;
   const [range, setRange] = useState<HoldingRange>(() => (ranges.includes(pref) ? pref : "1y"));
   const [mode, setMode] = useState<HistoryMode>("value");
   const safeRange = ranges.includes(range) ? range : "1y";
@@ -225,8 +226,37 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
     () => buildSeries(history.data, mode, ccy, row.symbol),
     [history.data, mode, ccy, row.symbol],
   );
+  const [investedOverride, setInvestedOverride] = useState<{ key: string; visible: boolean } | null>(null);
+  const autoHideInvested = useMemo(() => {
+    if (mode !== "value" || holdingChartCostScale === "always") return false;
+    const valPts = (series.find((s) => s.id === "value")?.points ?? [])
+      .map((p) => p.v)
+      .filter((v): v is number => v !== null && Number.isFinite(v));
+    const invPts = (series.find((s) => s.id === "invested")?.points ?? [])
+      .map((p) => p.v)
+      .filter((v): v is number => v !== null && Number.isFinite(v));
+    if (!valPts.length || !invPts.length) return false;
+    const valLo = Math.min(...valPts);
+    const valHi = Math.max(...valPts);
+    const invLo = Math.min(...invPts);
+    const invHi = Math.max(...invPts);
+    if (holdingChartCostScale === "never") return invLo < valLo || invHi > valHi;
+    return !isReferenceInSoftBounds(invLo, valLo, valHi) || !isReferenceInSoftBounds(invHi, valLo, valHi);
+  }, [mode, series, holdingChartCostScale]);
+  const overrideKey = `${row.instrument_id}|${safeRange}|${holdingChartCostScale}`;
+  const activeOverride = investedOverride && investedOverride.key === overrideKey ? investedOverride.visible : null;
+  const hideInvested = activeOverride !== null ? !activeOverride : autoHideInvested;
+  const chartSeries = useMemo(
+    () =>
+      mode === "value"
+        ? series.map((s) => (s.id === "invested" ? { ...s, hidden: hideInvested } : s))
+        : series,
+    [mode, series, hideInvested],
+  );
   const native = history.data?.ccy ?? row.native_currency;
   const avg = toNum(history.data?.avg_price_native ?? row.avg_price_native);
+  const priceSoftBounds: boolean | "strict" =
+    holdingChartCostScale === "always" ? false : holdingChartCostScale === "never" ? "strict" : true;
   const xMode = history.data?.x_mode;
   const sessions = chartSessions(history.data?.sessions);
   const isPhone = useIsPhone();
@@ -245,13 +275,32 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
   return (
     <section className="holding-page__section holding-page__chart" aria-label="Performance chart">
       <Chart
-        series={series}
+        series={chartSeries}
         markers={markers}
-        referenceLine={mode === "price" && avg !== null ? { value: avg, label: "Avg cost" } : undefined}
+        referenceLine={
+          mode === "price" && avg !== null
+            ? {
+                value: avg,
+                label: "Avg cost",
+                softBounds: priceSoftBounds,
+                formattedValue: formatMoney(avg, native, { unmasked: true }),
+              }
+            : undefined
+        }
         range={safeRange}
         ranges={ranges}
         rangeLabel={rangeLabel}
-        onRangeChange={(r) => setRange(r as HoldingRange)}
+        onRangeChange={(r) => {
+          setRange(r as HoldingRange);
+          setInvestedOverride(null);
+        }}
+        onToggleSeries={
+          mode === "value"
+            ? (id) => {
+                if (id === "invested") setInvestedOverride({ key: overrideKey, visible: hideInvested });
+              }
+            : undefined
+        }
         headerExtra={isPhone ? undefined : modeSwitch}
         // Phone: the switch sits at the end of the legend row (legend left, switch right).
         legendExtra={isPhone ? modeSwitch : undefined}
@@ -259,7 +308,9 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
         sessions={sessions}
         loading={history.isPending}
         busy={history.isFetching && !history.isPending}
-        valueFormat={(v) => (mode === "price" ? formatMoney(v, native, { unmasked: true }) : formatMoney(v, ccy, { compact: true }))}
+        valueFormat={(v, step) =>
+          mode === "price" ? formatMoney(v, native, { unmasked: true }) : chartMoneyFormat(ccy, "axis")(v, step)
+        }
         timeFormat={axisFormat(safeRange, xMode)}
         tooltipTimeFormat={tooltipFormat(safeRange, xMode)}
         height={240}

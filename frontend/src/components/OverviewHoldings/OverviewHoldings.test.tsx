@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setHideAmounts } from "../../lib/format";
 import type { HoldingRowDto, OverviewDto } from "../../lib/queries/portfolio";
@@ -63,6 +63,25 @@ describe("OverviewHoldings", () => {
     expect(screen.getByRole("link", { name: "Full table" })).toHaveAttribute("href", "/holdings");
     expect(screen.getByRole("button", { name: "Show all 10 holdings" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Holdings" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("navigates to a holding with Overview back-target state", () => {
+    function Destination() {
+      const loc = useLocation();
+      return <output data-testid="dest">{`${loc.pathname}:${JSON.stringify(loc.state)}`}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/overview"]}>
+        <Routes>
+          <Route path="/overview" element={<OverviewHoldings currency="EUR" />} />
+          <Route path="/holdings/:id" element={<Destination />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "S20" }));
+    expect(screen.getByTestId("dest")).toHaveTextContent(
+      `/holdings/20:${JSON.stringify({ from: { to: "/overview", label: "Overview" } })}`,
+    );
   });
 
   it("shows the session / overnight split under a row's day figure only when the server sent one", () => {

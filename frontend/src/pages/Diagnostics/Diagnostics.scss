@@ -24,16 +24,47 @@
   &__tabs {
     overflow-x: auto;
     scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    @include m.phone {
+      padding-right: var(--space-7);
+      -webkit-overflow-scrolling: touch;
+      // The right edge fades, so a cut tab reads as "scroll for more" (as the holding tabs do).
+      mask-image: linear-gradient(to right, var(--color-fg) calc(100% - var(--space-7)), transparent);
+    }
   }
 
   &__segmented {
     min-width: max-content;
+    max-width: none;
+
+    @include m.phone {
+      margin-right: var(--space-4);
+
+      .diagnostics &:has(> :nth-child(5)) {
+        display: inline-flex;
+        width: max-content;
+        max-width: none;
+      }
+
+      .diagnostics &:has(> :nth-child(5)) .segmented__item {
+        flex: 0 0 auto;
+        min-width: max-content;
+        height: var(--tap-min);
+        padding: 0 var(--space-3);
+        white-space: nowrap;
+      }
+    }
   }
 
   &__tab {
     display: flex;
     flex-direction: column;
     gap: var(--page-gap);
+    min-width: 0;
   }
 
   &__muted {
@@ -60,6 +91,37 @@
     }
   }
 
+  // All checks: the status chip and the count chip form one group on the right, whatever the
+  // name's length (desktop keeps its Status / Items columns; the count rides with the status).
+  &__check-count {
+    display: none;
+  }
+
+  &__check-row {
+    @include m.phone {
+      flex-wrap: nowrap;
+      align-items: flex-start;
+
+      .data-table__td--primary {
+        flex: 1 1 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .data-table__td--headline {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: var(--space-1);
+        white-space: nowrap;
+      }
+
+      .diagnostics__check-count {
+        display: inline-flex;
+      }
+    }
+  }
+
   &__attention-title {
     display: inline-flex;
     align-items: center;
@@ -68,6 +130,7 @@
 
   &__count {
     @extend %chip-badge;
+    flex-shrink: 0;
     background: var(--color-warn-soft);
     color: var(--color-warn);
   }
@@ -81,10 +144,16 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    min-width: 0;
     padding: var(--space-4);
+    overflow-wrap: anywhere;
     border-left: var(--space-1) solid var(--color-border-strong);
     border-radius: var(--radius-md);
     background: var(--color-surface-2);
+
+    @include m.phone {
+      padding: var(--space-3);
+    }
 
     &--warning {
       border-left-color: var(--color-warn);
@@ -97,8 +166,15 @@
 
   &__issue-head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-2);
+  }
+
+  &__issue-icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    min-height: calc(var(--font-size-md) * var(--line-height-base));
   }
 
   &__issue-title {
@@ -120,6 +196,8 @@
 
   &__chip {
     @extend %chip-badge;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     border: var(--border-width) solid var(--color-border);
     color: var(--color-fg);
   }
@@ -127,8 +205,13 @@
   &__fixes {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--space-2);
+
+    @include m.phone {
+      width: 100%;
+      align-items: flex-start;
+    }
   }
 
   &__fix-link {
@@ -137,6 +220,10 @@
     gap: var(--space-1);
     color: var(--color-accent);
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      min-height: var(--tap-min);
+    }
   }
 
   &__problems {
@@ -164,12 +251,32 @@
     @extend %plain-list;
     gap: var(--space-1);
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      gap: 0;
+    }
   }
 
   &__log-row {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
+
+    @include m.phone {
+      align-items: baseline;
+      gap: var(--space-1) var(--space-2);
+      padding: var(--space-2) 0;
+      border-bottom: var(--border-width) solid var(--color-border);
+
+      &:first-child {
+        padding-top: 0;
+      }
+
+      &:last-child {
+        padding-bottom: 0;
+        border-bottom: 0;
+      }
+    }
 
     &--error {
       color: var(--color-neg);
@@ -185,6 +292,10 @@
     flex: 1 1 200px;
     min-width: 0;
     overflow-wrap: anywhere;
+
+    @include m.phone {
+      flex: 1 0 100%;
+    }
   }
 
   &__download {
@@ -194,9 +305,23 @@
     padding: var(--space-2) var(--space-4);
     border: var(--border-width) solid var(--color-border-strong);
     border-radius: var(--radius-md);
+    background: var(--color-surface);
     color: var(--color-fg);
     font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
     text-decoration: none;
+    transition:
+      background-color var(--duration-fast) var(--ease-standard),
+      border-color var(--duration-fast) var(--ease-standard);
+
+    &:hover {
+      background: var(--color-surface-2);
+    }
+
+    @include m.phone {
+      min-height: var(--tap-min);
+    }
   }
 }
 
@@ -210,8 +335,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    min-width: 0;
     padding-bottom: var(--space-4);
+    overflow-wrap: anywhere;
     border-bottom: var(--border-width) solid var(--color-border);
+
+    &:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
   }
 
   &__job-head {
@@ -219,6 +351,12 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
+
+    @include m.phone {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-1);
+    }
   }
 
   &__job-desc {
@@ -265,6 +403,11 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
     max-width: 520px;
+
+    @include m.phone {
+      width: 100%;
+      max-width: 100%;
+    }
   }
 
   &__launch {
@@ -272,14 +415,29 @@
     flex-direction: column;
     align-items: flex-start;
     gap: var(--space-1);
+    max-width: 100%;
+
+    @include m.phone {
+      .repair__job > & {
+        width: 100%;
+        align-items: stretch;
+      }
+    }
   }
 
   &__run {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
+    max-width: 100%;
     margin: 0;
+    overflow-wrap: anywhere;
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      align-items: flex-start;
+      gap: var(--space-2);
+    }
 
     &--succeeded {
       color: var(--color-pos);
@@ -342,6 +500,15 @@
     gap: var(--space-2);
     padding-bottom: var(--space-3);
     border-bottom: var(--border-width) solid var(--color-border);
+
+    &:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+
+    @include m.phone {
+      align-items: flex-start;
+    }
   }
 
   &__job-text {
@@ -354,6 +521,11 @@
   &__job-actions {
     display: flex;
     gap: var(--space-2);
+
+    @include m.phone {
+      flex-wrap: wrap;
+      width: 100%;
+    }
   }
 
   &__paused {
@@ -369,7 +541,28 @@
     flex-wrap: wrap;
     align-items: flex-end;
     gap: var(--space-3);
+    min-width: 0;
     margin-bottom: var(--space-3);
+
+    @include m.phone {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+
+  &__controls {
+    @include m.phone {
+      .segmented {
+        overflow-x: auto;
+        max-width: 100%;
+        scrollbar-width: none;
+      }
+
+      .segmented__item {
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+    }
   }
 
   &__add {
@@ -415,6 +608,22 @@
     align-items: flex-end;
     gap: var(--space-3);
     margin-bottom: var(--space-3);
+
+    @include m.phone {
+      flex-direction: column;
+      align-items: stretch;
+
+      .segmented {
+        overflow-x: auto;
+        max-width: 100%;
+        scrollbar-width: none;
+      }
+
+      .segmented__item {
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+    }
   }
 
   &__lines {
@@ -470,7 +679,13 @@
     grid-template-columns: max-content minmax(0, 1fr);
     gap: var(--space-1) var(--space-4);
     margin: 0 0 var(--space-4);
+    overflow-wrap: anywhere;
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-1);
+    }
   }
 
   &__fact {
@@ -531,6 +746,12 @@
     justify-content: space-between;
     gap: var(--space-2);
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-1);
+    }
   }
 
   &__meter-label {
@@ -594,6 +815,10 @@
     margin: var(--space-2) 0 0;
     padding-left: var(--space-5);
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      padding-left: var(--space-4);
+    }
   }
 
   &__use-title {
@@ -631,7 +856,9 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    min-width: 0;
     padding: var(--space-3);
+    overflow-wrap: anywhere;
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface-2);
@@ -672,9 +899,13 @@
 
   &__facts {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
     gap: var(--space-1) var(--space-4);
     margin: var(--space-1) 0 0;
+
+    @include m.phone {
+      gap: var(--space-2);
+    }
   }
 
   &__fact {
@@ -682,6 +913,10 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     font-size: var(--font-size-sm);
+
+    @include m.phone {
+      gap: var(--space-1) var(--space-2);
+    }
   }
 
   &__fact-key {
@@ -707,7 +942,7 @@
 
   &__lead {
     margin: 0;
-    color: var(--color-fg-muted);
+    color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
 
@@ -766,7 +1001,7 @@
 
   &__lead {
     margin: 0;
-    color: var(--color-fg-muted);
+    color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
 
@@ -777,6 +1012,11 @@
     margin: 0;
     font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
+
+    @include m.phone {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-1);
+    }
   }
 
   &__label {
@@ -784,7 +1024,15 @@
   }
 
   &__value {
+    min-width: 0;
     margin: 0;
+    overflow-wrap: anywhere;
+
+    @include m.phone {
+      &:not(:last-child) {
+        margin-bottom: var(--space-2);
+      }
+    }
   }
 
   &__form {
@@ -797,6 +1045,11 @@
   &__input {
     flex: 0 1 14rem;
     min-width: 0;
+
+    @include m.phone {
+      flex: 1 0 100%;
+      width: 100%;
+    }
   }
 
   &__error {

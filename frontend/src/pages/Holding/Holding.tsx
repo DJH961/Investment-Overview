@@ -1,6 +1,6 @@
 ﻿import { useQuery } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
-import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router";
 import { Chip } from "../../components/Chip";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
@@ -16,7 +16,7 @@ import { type TransactionFilters, transactionsQuery } from "../../lib/queries/le
 import { useHoldingTranches } from "../../lib/queries/holding-detail";
 import { toNum } from "../../lib/queries/portfolio";
 import { DividendsTab } from "./DividendsTab";
-import { BackLink, HoldingHeader } from "./HoldingHeader";
+import { BackLink, backTargetFromState, HoldingHeader } from "./HoldingHeader";
 import { assetClassLabel } from "./holdingFormat";
 import { isNavFund, PerformanceTab } from "./PerformanceTab";
 import { TranchesTab } from "./TranchesTab";
@@ -59,7 +59,9 @@ export function HoldingChips({ row }: { row: HoldingRowDto }) {
 
 export function Holding() {
   const { id = "", tab } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const back = backTargetFromState(location.state);
   const { currency } = usePrefs();
   const holdings = useHoldings(currency);
   const dividends = useDividends(currency);
@@ -82,13 +84,13 @@ export function Holding() {
   const divCount = (dividends.data?.rows ?? []).filter((d) => d.symbol === symbol).length;
 
   // The old Details tab folded into Performance (7.1): keep its links working.
-  if (tab === "details") return <Navigate to={`/holdings/${id}`} replace />;
-  if (tab !== undefined && !ALL_TABS.includes(tab as TabKey)) return <Navigate to={`/holdings/${id}`} replace />;
+  if (tab === "details") return <Navigate to={`/holdings/${id}`} replace state={location.state} />;
+  if (tab !== undefined && !ALL_TABS.includes(tab as TabKey)) return <Navigate to={`/holdings/${id}`} replace state={location.state} />;
 
   if (holdings.isError && !holdings.data) {
     return (
       <div className="holding-page">
-        <BackLink />
+        <BackLink to={back.to} label={back.label} />
         <ErrorState message={holdings.error.message} onRetry={() => void holdings.refetch()} />
       </div>
     );
@@ -96,7 +98,7 @@ export function Holding() {
   if (holdings.isPending) {
     return (
       <div className="holding-page">
-        <BackLink />
+        <BackLink to={back.to} label={back.label} />
         <Skeleton height="12rem" />
       </div>
     );
@@ -104,7 +106,7 @@ export function Holding() {
   if (!row) {
     return (
       <div className="holding-page">
-        <BackLink />
+        <BackLink to={back.to} label={back.label} />
         <EmptyState
           icon={<Inbox aria-hidden />}
           title="We can't find this holding"
@@ -117,7 +119,7 @@ export function Holding() {
 
   const tabs = tabsFor(row);
   // A twin link on a fund that has none (any more) lands on Performance.
-  if (tab !== undefined && !tabs.includes(tab as TabKey)) return <Navigate to={`/holdings/${id}`} replace />;
+  if (tab !== undefined && !tabs.includes(tab as TabKey)) return <Navigate to={`/holdings/${id}`} replace state={location.state} />;
   const active: TabKey = (tab as TabKey | undefined) ?? "performance";
 
   const content: Record<TabKey, { label: string; badge?: number; node: React.ReactNode }> = {
@@ -158,6 +160,7 @@ export function Holding() {
       <HoldingHeader
         symbol={row.symbol}
         name={row.name}
+        back={back}
         chips={<HoldingChips row={row} />}
         pills={<HoldingPills row={row} live={row.market_open && !row.daily_is_stale} />}
         value={<Money amount={toNum(row.value)} currency={currency} />}
@@ -175,7 +178,7 @@ export function Holding() {
         // Four tabs fit a 360 px phone; a NAV fund's fifth (Twin) scrolls sideways.
         fit={tabs.length <= 4}
         // Replace, not push: Back leaves the holding instead of stepping through its tabs.
-        onChange={(t) => navigate(tabPath(id, t), { replace: true })}
+        onChange={(t) => navigate(tabPath(id, t), { replace: true, state: location.state })}
       />
     </div>
   );

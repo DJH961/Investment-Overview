@@ -632,3 +632,218 @@ def test_long_window_movers_use_the_shares_held_at_the_start(  # noqa: PLR0915
     assert abs(
         Decimal(eur_top["move"]) - (Decimal("1100") / rate_now - Decimal("1000") / rate_then)
     ) < Decimal("1e-18")
+
+
+def test_mid_session_visit_from_after_close_anchors_on_intraday_graph_and_movers(  # noqa: PLR0915
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Watched first ~2h live, closed app (with >30m capture gap), returned after close.
+
+    * ``start_basis == "intraday"`` (does not fall back to yesterday's close).
+    * ``start_value`` matches the 1D graph at the anchored sample (stocks + twin-estimated
+      NAV fund + same-day cash deposited before ``visit_from``).
+    * Same-day flows before ``visit_from`` are not double-subtracted (``net_flows == 0``).
+    * ``move == end_value - start_value``.
+    * Movers start from stored per-holding intraday prices + twin fund price at that instant
+      (and end at estimated price when the NAV is still pending), not yesterday's close.
+    """
+    from investment_dashboard.readmodels.queries.overview_query import build_intraday_value_series
+    from investment_dashboard.repositories import (
+        instrument_overrides_repo,
+        instruments_repo,
+        prices_repo,
+        symbol_prices_repo,
+    )
+
+    tue = date(2026, 10, 27)
+    wed = date(2026, 10, 28)
+    # Left at 11:30 ET (15:30 UTC), 60 min after the 10:30 ET (14:30 UTC) sample.
+    sample_ts = datetime(2026, 10, 28, 14, 30)
+    visit_from = datetime(2026, 10, 28, 15, 30, tzinfo=UTC)
+    returned_at = datetime(2026, 10, 28, 22, 0, tzinfo=UTC)  # 18:00 ET, after close
+    _at(monkeypatch, returned_at)
+    # The hero's headline (the window's end value, with the twin estimate) reads the wall
+    # clock; pin it to the moment the owner returned so the test does not depend on today.
+    from investment_dashboard.readmodels import overview as overview_rm
+
+    real_build_both = overview_rm.build_overview_both
+    monkeypatch.setattr(
+        overview_rm,
+        "build_overview_both",
+        lambda session, **kw: real_build_both(session, **{**kw, "now": returned_at}),
+    )
+    real_active_spot = fx_service.active_live_spot
+    monkeypatch.setattr(
+        fx_service,
+        "active_live_spot",
+        lambda quote="USD", *, today=None, now=None: real_active_spot(
+            quote, today=today, now=now or (None if today else returned_at)
+        ),
+    )
+
+    with ledger_session_scope() as session:
+        acct = accounts_repo.create_account(
+            session,
+            broker="fidelity",
+            account_label="Main",
+            native_currency="USD",
+            account_type="brokerage",
+        )
+        cash_acct = accounts_repo.create_account(
+            session,
+            broker="fidelity",
+            account_label="Cash USD",
+            native_currency="USD",
+            account_type="cash",
+        )
+        aaa = instruments_repo.get_or_create(
+            session, symbol="AAA", asset_class="etf", native_currency="USD"
+        )
+        bbb = instruments_repo.get_or_create(
+            session, symbol="BBB", asset_class="etf", native_currency="USD"
+        )
+        fund = instruments_repo.get_or_create(
+            session, symbol="FUNDX", asset_class="mutual_fund", native_currency="USD"
+        )
+        instrument_overrides_repo.upsert(session, fund.id, intraday_twin="TWN")
+        # Yesterday: AAA=100, BBB=50, FUNDX=200. Today close: AAA=120, BBB=48, FUNDX pending.
+        prices_repo.upsert_closes(session, aaa.id, {tue: Decimal("100"), wed: Decimal("120")})
+        prices_repo.upsert_closes(session, bbb.id, {tue: Decimal("50"), wed: Decimal("48")})
+        prices_repo.upsert_closes(session, fund.id, {tue: Decimal("200")})
+        fx_repo.upsert_rates(session, {tue: Decimal("1.10"), wed: Decimal("1.12")})
+
+        for on, kind, net, inst, qty, px in (
+            (tue, "buy", "-1000", aaa, "10", "100"),
+            (tue, "buy", "-500", bbb, "10", "50"),
+            (tue, "buy", "-1000", fund, "5", "200"),
+        ):
+            session.add(
+                Transaction(
+                    account_id=acct.id,
+                    date=on,
+                    kind=kind,
+                    source=TransactionSource.MANUAL,
+                    instrument_id=inst.id,
+                    quantity=Decimal(qty),
+                    price_native=Decimal(px),
+                    net_native=Decimal(net),
+                    created_at=datetime(on.year, on.month, on.day, 14, 0),
+                )
+            )
+        # Same-day morning cash deposit before visit_from: already in start_value, never a flow.
+        session.add(
+            Transaction(
+                account_id=cash_acct.id,
+                date=wed,
+                kind="deposit",
+                source=TransactionSource.MANUAL,
+                net_native=Decimal("500"),
+                created_at=datetime(2026, 10, 28, 13, 45),
+            )
+        )
+        session.flush()
+
+        # Intraday sample at 14:30 UTC: AAA=110 (1100) + BBB=45 (450) = 1550 USD @ 1.12 FX.
+        intraday_repo.insert_sample(
+            session,
+            sample_ts,
+            Decimal("1550") / Decimal("1.12"),
+            fx_eur_usd=Decimal("1.12"),
+            market_value_usd=Decimal("1550"),
+        )
+        symbol_prices_repo.upsert_prices(
+            session, "AAA", {sample_ts: Decimal("110")}, kind=symbol_prices_repo.KIND_HOLDING
+        )
+        symbol_prices_repo.upsert_prices(
+            session, "BBB", {sample_ts: Decimal("45")}, kind=symbol_prices_repo.KIND_HOLDING
+        )
+        # Twin TWN: Tue close 100 -> Wed 14:30 = 102 (FUNDX=204) -> Wed close = 105 (FUNDX=210).
+        symbol_prices_repo.upsert_prices(
+            session,
+            "TWN",
+            {
+                datetime(2026, 10, 27, 20, 0): Decimal("100"),
+                sample_ts: Decimal("102"),
+                datetime(2026, 10, 28, 20, 0): Decimal("105"),
+            },
+            kind=symbol_prices_repo.KIND_TWIN,
+        )
+        app_config_service.set_value(session, brief_service.FROM_KEY, visit_from.isoformat())
+        app_config_service.set_value(session, brief_service.START_KEY, returned_at.isoformat())
+        app_config_service.set_value(session, brief_service.SEEN_KEY, returned_at.isoformat())
+        usd_graph = build_intraday_value_series(session, currency="USD", now=returned_at)
+
+    read_cache.invalidate()
+    fx_service.set_live_spot("USD", Decimal("1.15"), observed_on=wed, observed_at=returned_at)
+    try:
+        brief = api_client.get("/api/brief").json()
+    finally:
+        fx_service.clear_live_spot()
+
+    assert brief["due"] is True
+    assert brief["kind"] == "session"
+    assert brief["sessions_passed"] == 1
+    assert [b["kind"] for b in brief["boundaries"]] == ["close"]
+    win = brief["window_move"]
+    assert win is not None
+
+    # USD 1D graph at 14:30 UTC: 1550 stocks + 5*204 FUNDX (1020) + 500 cash = 3070 USD.
+    graph_at_sample = next(p.value for p in usd_graph if p.date == sample_ts)
+    assert graph_at_sample == Decimal("3070")
+
+    usd, eur = win["USD"], win["EUR"]
+    assert usd["start_basis"] == eur["start_basis"] == "intraday"
+    assert Decimal(usd["net_flows"]) == 0
+    assert Decimal(eur["net_flows"]) == 0
+    assert Decimal(usd["start_value"]) == graph_at_sample == Decimal("3070")
+    assert abs(Decimal(eur["start_value"]) - Decimal("3070") / Decimal("1.12")) < Decimal("1e-12")
+    # End: AAA 1200 + BBB 480 + FUNDX est 1050 + cash 500 = 3230 USD.
+    assert Decimal(usd["end_value"]) == Decimal("3230")
+    assert abs(Decimal(eur["end_value"]) - Decimal("3230") / Decimal("1.15")) < Decimal("1e-12")
+    assert usd["estimated"] is True
+    assert eur["estimated"] is True
+    for side in (usd, eur):
+        assert Decimal(side["move"]) == Decimal(side["end_value"]) - Decimal(side["start_value"])
+
+    # Movers use intraday start prices (BBB 45->48 is +6.67%, NOT close-to-close 50->48 = -4%).
+    assert usd["movers"]["eligible_count"] == 3
+    assert [m["symbol"] for m in usd["movers"]["winners"]] == ["AAA", "BBB", "FUNDX"]
+    assert usd["movers"]["losers"] == []
+    bbb_move = next(m for m in usd["movers"]["winners"] if m["symbol"] == "BBB")
+    assert Decimal(bbb_move["move"]) == Decimal("30")
+    assert abs(Decimal(bbb_move["pct"]) - Decimal("3") / Decimal("45")) < Decimal("1e-12")
+    fund_move = next(m for m in usd["movers"]["winners"] if m["symbol"] == "FUNDX")
+    assert Decimal(fund_move["move"]) == Decimal("30")  # 5 * (210 - 204)
+    assert abs(Decimal(fund_move["pct"]) - Decimal("6") / Decimal("204")) < Decimal("1e-12")
+
+
+def test_sample_at_lookahead_just_after_open_never_crosses_sessions(
+    api_db: object,
+) -> None:
+    from investment_dashboard.services import intraday_snapshots_service as iss
+
+    tue_late = datetime(2026, 10, 27, 19, 55)
+    wed_first = datetime(2026, 10, 28, 13, 33)  # 09:33 ET, 3 min after open
+    with ledger_session_scope() as session:
+        intraday_repo.insert_sample(
+            session,
+            tue_late,
+            Decimal("900"),
+            fx_eur_usd=Decimal("1.10"),
+            market_value_usd=Decimal("990"),
+        )
+        intraday_repo.insert_sample(
+            session,
+            wed_first,
+            Decimal("1000"),
+            fx_eur_usd=Decimal("1.12"),
+            market_value_usd=Decimal("1120"),
+        )
+        session.flush()
+        # Just after open (09:31 ET) before first sample landed -> 5m lookahead picks Wed's sample.
+        hit = iss.sample_at(session, datetime(2026, 10, 28, 13, 31, tzinfo=UTC))
+        assert hit is not None
+        assert hit.captured_at == wed_first
+        assert hit.market_usd == Decimal("1120")
+        # Pre-open (09:20 ET) must not cross into Wed's open sample or Tue's close.
+        assert iss.sample_at(session, datetime(2026, 10, 28, 13, 20, tzinfo=UTC)) is None

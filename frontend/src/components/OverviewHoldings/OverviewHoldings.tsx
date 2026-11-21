@@ -254,7 +254,11 @@ function Row({
     <li className={clsx("overview-holdings__row", hasTwinLine(row, watch) && "overview-holdings__row--twin")} data-symbol={row.symbol}>
       <span className="overview-holdings__who">
         <span className="overview-holdings__symbol">
-          <Link to={`/holdings/${row.instrument_id}`} className="overview-holdings__symbol-link">
+          <Link
+            to={`/holdings/${row.instrument_id}`}
+            state={{ from: { to: "/overview", label: "Overview" } }}
+            className="overview-holdings__symbol-link"
+          >
             {row.symbol}
           </Link>
           {/* The shared pill set (HoldingIdentity). The estimate cue lives on the twin

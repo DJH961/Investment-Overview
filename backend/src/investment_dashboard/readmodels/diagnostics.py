@@ -43,6 +43,9 @@ _JOB_ACTIONS: dict[str, tuple[tuple[str, str, dict[str, Any]], ...]] = {
     "intraday_graph": (
         ("graphs.reload", "Reload 1D / 1W graphs (prices + EUR/USD)", {"which": "all"}),
     ),
+    "holding_intraday_graph": (
+        ("graphs.backfill_holdings", "Backfill 1W holding bars", {"force": False}),
+    ),
 }
 #: Checks whose examples are instrument symbols (offer a per-instrument re-download).
 _PER_INSTRUMENT = frozenset({"prices_missing", "prices_stale", "prices_anomaly"})

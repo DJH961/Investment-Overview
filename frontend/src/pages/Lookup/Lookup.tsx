@@ -1,6 +1,6 @@
 import { Inbox } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router";
 import { Chart } from "../../components/Chart";
 import { Chip } from "../../components/Chip";
 import { EmptyState } from "../../components/EmptyState";
@@ -15,7 +15,7 @@ import { usePrefs } from "../../lib/prefs";
 import { HOLDING_RANGES, type HoldingRange } from "../../lib/queries/holding-detail";
 import { type LookupHistoryDto, type LookupQuoteDto, useLookupHistory, useLookupQuote } from "../../lib/queries/lookup";
 import { toNum } from "../../lib/queries/portfolio";
-import { HoldingHeader } from "../Holding/HoldingHeader";
+import { BackLink, backTargetFromState, HoldingHeader } from "../Holding/HoldingHeader";
 import { axisFormat, chartSessions, chartXMode, rangeLabel, tooltipFormat } from "../Holding/holdingFormat";
 import "../Holding/Holding.scss";
 import "./Lookup.scss";
@@ -125,15 +125,17 @@ function Details({ quote }: { quote: LookupQuoteDto }) {
 export function Lookup() {
   const { symbol: raw = "", tab } = useParams();
   const symbol = decodeURIComponent(raw).toUpperCase();
+  const location = useLocation();
   const navigate = useNavigate();
+  const back = backTargetFromState(location.state);
   const quote = useLookupQuote(symbol);
-  if (tab !== undefined && !TABS.includes(tab as LookupTab)) return <Navigate to={`/lookup/${raw}`} replace />;
+  if (tab !== undefined && !TABS.includes(tab as LookupTab)) return <Navigate to={`/lookup/${raw}`} replace state={location.state} />;
   const active: LookupTab = (tab as LookupTab | undefined) ?? "performance";
-  const back = { to: "/holdings", label: "Holdings" };
 
   if (quote.isPending) {
     return (
       <div className="holding-page">
+        <BackLink to={back.to} label={back.label} />
         <Skeleton height="12rem" />
       </div>
     );
@@ -141,6 +143,7 @@ export function Lookup() {
   if (quote.isError || !quote.data) {
     return (
       <div className="holding-page">
+        <BackLink to={back.to} label={back.label} />
         {quote.isError && !(quote.error instanceof ApiError && quote.error.status === 404) ? (
           <ErrorState message="Could not look this symbol up." onRetry={() => void quote.refetch()} />
         ) : (
@@ -201,7 +204,12 @@ export function Lookup() {
         items={items}
         value={active}
         ariaLabel="Instrument views"
-        onChange={(t) => navigate(t === "performance" ? `/lookup/${raw}` : `/lookup/${raw}/${t}`, { replace: true })}
+        onChange={(t) =>
+          navigate(t === "performance" ? `/lookup/${raw}` : `/lookup/${raw}/${t}`, {
+            replace: true,
+            state: location.state,
+          })
+        }
       />
     </div>
   );

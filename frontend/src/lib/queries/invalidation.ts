@@ -44,7 +44,11 @@ export const INVALIDATION = {
 export type InvalidationKind = keyof typeof INVALIDATION;
 
 /** Settings no report depends on (mirrors `read_cache.PRESENTATION_SETTINGS` on the server). */
-export const PRESENTATION_SETTINGS: ReadonlySet<string> = new Set(["display_currency", "theme"]);
+export const PRESENTATION_SETTINGS: ReadonlySet<string> = new Set([
+  "display_currency",
+  "theme",
+  "display.holding_chart_cost_scale",
+]);
 
 /** True when a settings write touched anything a report is computed from. */
 export function settingsAffectReports(keys: readonly string[]): boolean {

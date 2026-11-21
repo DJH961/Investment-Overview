@@ -13,6 +13,7 @@ const VALUES: SettingsValues = {
   clock_format: v("24h"),
   "display.overview_default_range": v("1y"),
   "display.holdings_default_range": v("3m"),
+  "display.holding_chart_cost_scale": v("never"),
   "chart_pref.analytics_lookback": v(180),
   display_currency: v("USD"),
   theme: v("dark"),
@@ -32,6 +33,7 @@ describe("displayPrefs", () => {
       hour12: false,
       overviewRange: "1y",
       holdingsRange: "3m",
+      holdingChartCostScale: "never",
       riskLookback: 180,
       currency: "USD",
       theme: "dark",
@@ -44,6 +46,7 @@ describe("displayPrefs", () => {
     expect(resolveTimeZone("Not/AZone")).toBeUndefined();
     expect(resolveTimeZone("UTC")).toBe("UTC");
     expect(prefsFromValues({ "display.locale": v("xx-XX") }).locale).toBe(DEFAULT_DISPLAY_PREFS.locale);
+    expect(prefsFromValues({ "display.holding_chart_cost_scale": v("invalid") }).holdingChartCostScale).toBe("auto");
   });
 
   it("drives lib/format and caches per device", () => {

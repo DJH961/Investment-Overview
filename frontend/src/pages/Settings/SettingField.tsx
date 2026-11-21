@@ -23,6 +23,8 @@ const CHOICE_LABELS: Record<string, string> = {
   all: "All",
   true: "On",
   false: "Off",
+  always: "Always",
+  never: "Data only",
 };
 const choiceLabel = (c: string) => CHOICE_LABELS[c] ?? (/^\d+[dwmy]$/.test(c) ? c.toUpperCase() : c);
 

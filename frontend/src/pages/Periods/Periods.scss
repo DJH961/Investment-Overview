@@ -1,7 +1,9 @@
 @use "../../styles/mixins" as m;
 
 .periods-page {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
 
   &__grid {
     display: grid;

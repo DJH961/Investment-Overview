@@ -130,6 +130,20 @@
     font-size: var(--font-size-xs);
   }
 
+  &__reference--offscale {
+    .chart__reference-label {
+      fill: var(--color-muted);
+      font-variant-numeric: tabular-nums;
+      font-weight: var(--font-weight-medium);
+    }
+  }
+
+  &__reference-pill {
+    fill: var(--color-surface);
+    stroke: var(--color-border-strong);
+    stroke-width: 1;
+  }
+
   // The after-close "now" point belongs to the primary (EUR) line: filled in the
   // primary's colour (pos/neg on a trend day, below), ringed in the surface, never the
   // pale hollow ring that read as the dashed second-currency series.

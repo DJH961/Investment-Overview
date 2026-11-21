@@ -188,7 +188,9 @@ def _window_move(
         return None
     rate_now = _live_rate(overview_both)
     if rate_now is None:
-        rate_now = brief_service.live_rate(now)
+        rate_now = brief_service.live_rate(now) or _dec(
+            _get(_get(overview_both, "EUR"), "fx_eur_usd")
+        )
     effect = (
         brief_domain.currency_effect_since(
             inputs.book, rate_then=inputs.rate_then, rate_now=rate_now

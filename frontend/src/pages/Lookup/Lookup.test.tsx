@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
@@ -45,10 +45,10 @@ vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
 
 import { convertAt, Lookup } from "./Lookup";
 
-function renderAt(path: string) {
+function renderAt(entry: string | { pathname: string; state?: unknown }) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/lookup/:symbol/:tab?" element={<Lookup />} />
         </Routes>
@@ -81,5 +81,16 @@ describe("Lookup (not held)", () => {
     expect(convertAt(100, "EUR", "USD", 1.1)).toBeCloseTo(110);
     expect(convertAt(100, "USD", "USD", null)).toBe(100);
     expect(convertAt(100, "USD", "EUR", null)).toBeNull();
+  });
+
+  it("defaults Back link to Holdings and preserves origin state across tabs", () => {
+    const direct = renderAt("/lookup/FAKEQ");
+    expect(screen.getByRole("link", { name: "Holdings" })).toHaveAttribute("href", "/holdings");
+    direct.unmount();
+
+    renderAt({ pathname: "/lookup/FAKEQ", state: { from: { to: "/overview", label: "Overview" } } });
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Details" }));
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
   });
 });

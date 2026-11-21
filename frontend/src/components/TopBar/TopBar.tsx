@@ -152,7 +152,7 @@ export function TopBar({
       {leading}
       <div className="top-bar__title-block">
         <div className="top-bar__title-line">
-          <p className="top-bar__title">{title}</p>
+          <p className="top-bar__title" data-truncate-ok>{title}</p>
           {compact && summary && (
             <span className="top-bar__mini" aria-label={summaryLabel(summary.estimated)}>
               {summary.estimated && <EstMark />}

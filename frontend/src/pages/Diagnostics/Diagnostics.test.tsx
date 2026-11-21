@@ -157,14 +157,70 @@ describe("Health & Repair: Health tab", () => {
     expect(calls.find((c) => c.method === "POST")?.body).toEqual({ params: { force: true } });
   });
 
-  it("uses the shared segmented control for its sections and switches on click", async () => {
+  it("uses the shared segmented control for its sections, switches on click, and scrolls active radio into view", async () => {
+    const scrollSpy = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollSpy });
+    try {
+      renderPage();
+      await screen.findByText("Needs attention");
+      const group = screen.getByRole("radiogroup", { name: "Health & Repair sections" });
+      expect(within(group).getAllByRole("radio").length).toBeGreaterThanOrEqual(6);
+      expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+      expect(group).toHaveClass("diagnostics__segmented");
+      expect(scrollSpy).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
+
+      scrollSpy.mockClear();
+      fireEvent.click(within(group).getByRole("radio", { name: "Repair" }));
+      expect(await screen.findByRole("region", { name: "Repair" })).toBeInTheDocument();
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" }));
+    } finally {
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  it("marks Health checks and Data providers columns cleanly for mobile cards", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+        if (url.includes("/api/diagnostics")) {
+          return json({
+            ...DIAG,
+            providers: [
+              {
+                name: "yfinance",
+                status: "ok",
+                last_fetch_at: "2025-05-01T00:00:00Z",
+                last_fetch_symbols: ["VTI"],
+                message: "fetched",
+              },
+            ],
+          });
+        }
+        if (url.includes("/api/maintenance/jobs")) return json(CATALOGUE);
+        if (url.includes("/refresh")) return json({ running: false });
+        return json([]);
+      }),
+    );
+
     renderPage();
-    await screen.findByText("Needs attention");
-    const group = screen.getByRole("radiogroup", { name: "Health & Repair sections" });
-    expect(within(group).getAllByRole("radio").length).toBeGreaterThanOrEqual(6);
-    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
-    fireEvent.click(within(group).getByRole("radio", { name: "Repair" }));
-    expect(await screen.findByRole("region", { name: "Repair" })).toBeInTheDocument();
+    const checksTable = await screen.findByRole("table", { name: "Health checks" });
+    const firstCheckRow = within(within(checksTable).getAllByRole("rowgroup")[1]).getAllByRole("row")[0];
+    const checkCells = within(firstCheckRow).getAllByRole("cell");
+    expect(checkCells[0]).toHaveClass("data-table__td--headline");
+    expect(within(checkCells[0]).getByText("2")).toHaveClass("diagnostics__check-count");
+    expect(checkCells[1]).toHaveClass("data-table__td--primary");
+    expect(checkCells[2]).toHaveClass("data-table__td--phone-hidden");
+    expect(checkCells[3]).toHaveClass("data-table__td--phone-hidden");
+
+    const providersTable = screen.getByRole("table", { name: "Data providers" });
+    const providerRow = within(within(providersTable).getAllByRole("rowgroup")[1]).getAllByRole("row")[0];
+    const providerCells = within(providerRow).getAllByRole("cell");
+    expect(providerCells[0]).toHaveClass("data-table__td--primary");
+    expect(providerCells[1]).toHaveClass("data-table__td--headline");
+    expect(providerCells[2]).toHaveClass("data-table__td--sub");
+    expect(providerCells[3]).toHaveClass("data-table__td--phone-hidden");
+    expect(providerCells[4]).toHaveClass("data-table__td--phone-hidden");
   });
 
   it("spells out check statuses instead of printing the raw API word", async () => {
@@ -204,6 +260,46 @@ describe("Health & Repair: Repair tab", () => {
     fireEvent.click(confirm);
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/jobs/cache.reset"))).toBe(true));
     expect(calls.find((c) => c.url.endsWith("/jobs/cache.reset"))?.body).toEqual({ params: {}, confirm: "RESET" });
+  });
+
+  it("marks Recent runs columns for compact mobile rows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+        if (url.includes("/api/maintenance/jobs")) {
+          return json({
+            ...CATALOGUE,
+            recent: [
+              {
+                id: "run-1",
+                job: "prices.refresh",
+                status: "succeeded",
+                actor: "session",
+                params: {},
+                result: null,
+                error: null,
+                started_at: "2025-05-01T10:00:00Z",
+                finished_at: "2025-05-01T10:00:02Z",
+              },
+            ],
+          });
+        }
+        if (url.includes("/api/maintenance/tiingo")) return json(TIINGO);
+        if (url.includes("/api/maintenance/twins")) return json(TWINS);
+        return json([]);
+      }),
+    );
+
+    renderPage("/diagnostics?tab=repair");
+    const runsTable = await screen.findByRole("table", { name: "Recent maintenance runs" });
+    const runRow = within(within(runsTable).getAllByRole("rowgroup")[1]).getAllByRole("row")[0];
+    const runCells = within(runRow).getAllByRole("cell");
+    expect(runCells[0]).toHaveClass("data-table__td--primary");
+    expect(runCells[1]).toHaveClass("data-table__td--headline");
+    expect(runCells[2]).toHaveClass("data-table__td--sub");
+    expect(runCells[3]).toHaveClass("data-table__td--phone-hidden");
+    expect(runCells[4]).toHaveClass("data-table__td--phone-hidden");
   });
 });
 

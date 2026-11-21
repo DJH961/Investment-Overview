@@ -46,6 +46,7 @@ const session: BriefDto = {
   sessions: ["2026-06-30"],
   sessions_passed: 1,
   move: { EUR: move("EUR"), USD: move("USD") },
+  window_move: null,
 };
 
 interface Call {
@@ -183,6 +184,41 @@ describe("DailyBrief", () => {
     expect(split).toBeNull();
     expect(screen.getByTestId("brief-session")).not.toHaveTextContent("Market");
     expect(screen.getByTestId("brief-figure")).toHaveTextContent("1,400.00");
+  });
+
+  it("one session with an intraday window move shows WindowFact and window movers instead of SessionFact", async () => {
+    const intradayWin = { ...windowOf(null), start_basis: "intraday" as const, move: "450.25", pct: "0.0031" };
+    const partialSession = {
+      ...session,
+      window_move: {
+        EUR: intradayWin,
+        USD: { ...intradayWin, currency_move: null, move: "510.00", pct: "0.0035" },
+      },
+    } as unknown as BriefDto;
+    stub(() => partialSession);
+    mount("EUR");
+    expect(await screen.findByTestId("brief-window-move")).toHaveTextContent("While you were away");
+    expect(screen.getByTestId("brief-figure")).toHaveTextContent("+€450.25");
+    expect(screen.getByTestId("brief-value-path")).toHaveTextContent("€1,469,107 → €1,481,087");
+    expect(screen.queryByTestId("brief-session")).toBeNull();
+    expect(screen.getByTestId("brief-movers-up")).toHaveTextContent("WIN1");
+    expect(screen.getByTestId("brief-movers-down")).toHaveTextContent("LOS1");
+    expect(screen.queryByText("AAA")).toBeNull();
+    expect(screen.getByTestId("brief-window")).toHaveTextContent("· 1 session");
+  });
+
+  it("one session with a close-basis window move still shows SessionFact", async () => {
+    const closeWin = { ...windowOf(null), start_basis: "close" as const, move: "450.25" };
+    const closedSession = {
+      ...session,
+      window_move: { EUR: closeWin, USD: { ...closeWin, currency_move: null } },
+    } as unknown as BriefDto;
+    stub(() => closedSession);
+    mount("EUR");
+    expect(await screen.findByTestId("brief-session")).toBeInTheDocument();
+    expect(screen.getByTestId("brief-figure")).toHaveTextContent("+€1,234.50");
+    expect(screen.queryByTestId("brief-window-move")).toBeNull();
+    expect(screen.getByTestId("brief-movers")).toHaveTextContent("AAA");
   });
 
   it("dismiss: gone at once, the ack carries the instant shown, and it stays gone", async () => {

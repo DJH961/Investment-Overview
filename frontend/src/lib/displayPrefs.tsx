@@ -17,6 +17,7 @@ import { readPersisted, writePersisted } from "./usePersistentState";
 
 export type ClockFormat = "auto" | "12h" | "24h";
 export type RangeKey = "1d" | "1w" | "1m" | "3m" | "6m" | "ytd" | "1y" | "all";
+export type HoldingChartCostScale = "auto" | "always" | "never";
 
 export interface DisplayPrefs {
   /** Regional preset (`display.locale`): what "auto" date / number / clock follow. */
@@ -32,6 +33,8 @@ export interface DisplayPrefs {
   hour12: boolean | undefined;
   overviewRange: RangeKey;
   holdingsRange: RangeKey;
+  /** How holding charts scale around Avg cost / Invested (`display.holding_chart_cost_scale`). */
+  holdingChartCostScale: HoldingChartCostScale;
   /** Show a "top winner" / "top loser" pill in the Overview's Holdings list. */
   moverBadges: boolean;
   /** Risk page lookback in days. */
@@ -52,6 +55,7 @@ export const DEFAULT_DISPLAY_PREFS: DisplayPrefs = {
   hour12: undefined,
   overviewRange: "1m",
   holdingsRange: "1y",
+  holdingChartCostScale: "auto",
   moverBadges: false,
   riskLookback: 365,
   currency: "EUR",
@@ -99,6 +103,11 @@ export function prefsFromValues(values: SettingsValues | undefined, base: Displa
     hour12: clockFormat === "12h" ? true : clockFormat === "24h" ? false : undefined,
     overviewRange: pick(RANGES, v("display.overview_default_range"), base.overviewRange),
     holdingsRange: pick(RANGES, v("display.holdings_default_range"), base.holdingsRange),
+    holdingChartCostScale: pick(
+      ["auto", "always", "never"] as const,
+      v("display.holding_chart_cost_scale"),
+      base.holdingChartCostScale,
+    ),
     moverBadges: typeof v("display.mover_badges") === "boolean" ? Boolean(v("display.mover_badges")) : base.moverBadges,
     riskLookback: Number.isFinite(lookback) && lookback > 0 ? lookback : base.riskLookback,
     currency: pick(["EUR", "USD"] as const, v("display_currency"), base.currency),

@@ -52,8 +52,8 @@ export function RepairTab() {
   const c = q.data;
   const runColumns: Column<JobRun>[] = [
     { key: "job", header: "Job", primary: true, cell: (r) => c.jobs.find((j) => j.id === r.job)?.label ?? r.job },
-    { key: "status", header: "Status", cell: (r) => <span className={`repair__status repair__status--${r.status}`}>{r.status}</span> },
-    { key: "started", header: "Started", cell: (r) => formatDateTime(r.started_at), sortValue: (r) => r.started_at },
+    { key: "status", header: "Status", phone: "headline", cell: (r) => <span className={`repair__status repair__status--${r.status}`}>{r.status}</span> },
+    { key: "started", header: "Started", phone: "sub", cell: (r) => formatDateTime(r.started_at), sortValue: (r) => r.started_at },
     { key: "actor", header: "By", phone: "hide", cell: (r) => r.actor },
     { key: "error", header: "Error", phone: "hide", cell: (r) => r.error ?? "" },
   ];

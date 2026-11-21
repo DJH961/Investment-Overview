@@ -80,3 +80,18 @@ describe("chartMoneyFormat axis with a tick step", () => {
     expect(axis(125_000, 5_000)).toBe("€125k");
   });
 });
+
+describe("negative zero", () => {
+  it("never prints a minus on a value that rounds to zero", () => {
+    expect(formatMoney(-0, "EUR")).toBe("€0.00");
+    expect(formatMoney(-0.0000001, "EUR")).toBe("€0.00");
+    expect(formatPercent(-0)).toBe("0.00%");
+    expect(formatPercent(-0.000001)).toBe("0.00%");
+    expect(formatNumber(-0.001)).toBe("0.00");
+  });
+  it("keeps the minus on a real loss", () => {
+    expect(formatMoney(-0.01, "EUR")).toBe("-€0.01");
+    expect(formatPercent(-0.0125)).toBe("-1.25%");
+  });
+});
+

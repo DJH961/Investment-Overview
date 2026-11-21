@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render as rtlRender, screen, within, type RenderOptions } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, waitFor, within, type RenderOptions } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HoldingsDto } from "../../lib/queries/holdings";
 
 const phone = vi.hoisted(() => ({ value: false }));
+const realPeek = vi.hoisted(() => ({ value: false }));
 
 const holdings: HoldingsDto = {
   as_of: "2026-10-30",
@@ -151,32 +152,41 @@ vi.mock("../../lib/queries/holdings", async (orig) => ({
     refetch: vi.fn(),
   }),
 }));
-vi.mock("../../lib/queries/holding-detail", async (orig) => ({
-  ...(await orig<typeof import("../../lib/queries/holding-detail")>()),
-  useHoldingPeek: () => ({
-    data: {
-      instrument_id: 1,
-      currency: "EUR",
-      week: {
-        currency: "EUR",
-        points: [
-          { t: "2026-10-26", value_native: "980" },
-          { t: "2026-10-30", value_native: "1000" },
-        ],
-        return_eur: "0.012",
-        return_usd: "0.01",
-      },
-      tranches: { open_count: 3, next_long_term_on: "2026-12-01", next_long_term_days: 31 },
-      last_trade: { date: "2026-09-01", kind: "buy", quantity: "2", price_native: "50" },
-      last_dividend: { date: "2026-06-01", reinvested: false, amount_native: "12.5", reinvested_quantity: null },
-    },
-    isPending: false,
-    isError: false,
-  }),
-}));
+const samplePeek = {
+  instrument_id: 1,
+  currency: "EUR",
+  week: {
+    currency: "EUR",
+    points: [
+      { t: "2026-10-26", value_native: "980" },
+      { t: "2026-10-30", value_native: "1000" },
+    ],
+    return_eur: "0.012",
+    return_usd: "0.01",
+  },
+  tranches: { open_count: 3, next_long_term_on: "2026-12-01", next_long_term_days: 31 },
+  last_trade: { date: "2026-09-01", kind: "buy", quantity: "2", price_native: "50" },
+  last_dividend: { date: "2026-06-01", reinvested: false, amount_native: "12.5", reinvested_quantity: null },
+};
+
+vi.mock("../../lib/queries/holding-detail", async (orig) => {
+  const mod = await orig<typeof import("../../lib/queries/holding-detail")>();
+  return {
+    ...mod,
+    useHoldingPeek: (instrumentId: number, enabled: boolean) =>
+      realPeek.value
+        ? mod.useHoldingPeek(instrumentId, enabled)
+        : {
+            data: samplePeek,
+            isPending: false,
+            isError: false,
+          },
+  };
+});
 vi.mock("../../lib/prefs", () => ({ usePrefs: () => ({ currency: "EUR" }) }));
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 
+import { setHideAmounts } from "../../lib/format";
 import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { Holdings } from "./Holdings";
 
@@ -192,8 +202,14 @@ const render = (ui: React.ReactElement, options?: RenderOptions) => rtlRender(ui
 
 beforeEach(() => {
   phone.value = false;
+  realPeek.value = false;
+  setHideAmounts(false);
   groupOver = {};
   localStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("Holdings page", () => {
@@ -547,5 +563,106 @@ describe("Holdings page", () => {
     expect(text).toContain("••,•••");
     expect(text).toContain("VWCE");
     expect(text).not.toMatch(/1,000|1000|200\.00|120\.00|220\.00|10\.0000|€\s?10\.00/);
+  });
+
+  it("preloads peeks in bulk after idle so expanding a row needs no /peek request", async () => {
+    realPeek.value = true;
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        calls.push(url);
+        if (url.endsWith("/api/holdings/peeks")) {
+          return new Response(JSON.stringify({ peeks: { "1": samplePeek } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ detail: "unexpected" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    render(<Holdings />);
+    await waitFor(() => expect(calls.some((u) => u.endsWith("/api/holdings/peeks"))).toBe(true));
+
+    fireEvent.click(screen.getByRole("button", { name: "Show VWCE summary" }));
+    const peek = await screen.findByRole("region", { name: "VWCE at a glance" });
+    expect(within(peek).getByText("3 open · long-term in 31 d")).toBeInTheDocument();
+    expect(within(peek).getByText(/Buy 2 sh/)).toBeInTheDocument();
+    expect(calls.some((u) => u.endsWith("/api/holdings/1/peek"))).toBe(false);
+  });
+
+  it("falls back to /api/holdings/{id}/peek if /api/holdings/peeks fails", async () => {
+    realPeek.value = true;
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        calls.push(url);
+        if (url.endsWith("/api/holdings/peeks")) {
+          return new Response(JSON.stringify({ detail: "Not Found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.endsWith("/api/holdings/1/peek")) {
+          return new Response(JSON.stringify(samplePeek), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ detail: "unexpected" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    render(<Holdings />);
+    await waitFor(() => expect(calls.some((u) => u.endsWith("/api/holdings/peeks"))).toBe(true));
+
+    fireEvent.click(screen.getByRole("button", { name: "Show VWCE summary" }));
+    const peek = await screen.findByRole("region", { name: "VWCE at a glance" });
+    expect(await within(peek).findByText("3 open · long-term in 31 d")).toBeInTheDocument();
+    expect(calls.some((u) => u.endsWith("/api/holdings/1/peek"))).toBe(true);
+  });
+
+  it("warms one row's peek immediately on pointer enter or focus before idle preload fires", async () => {
+    realPeek.value = true;
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        calls.push(url);
+        if (url.endsWith("/api/holdings/1/peek")) {
+          return new Response(JSON.stringify(samplePeek), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ peeks: {} }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const desktop = render(<Holdings />);
+    const toggle = screen.getByRole("button", { name: "Show VWCE summary" });
+    fireEvent.pointerEnter(toggle);
+    await waitFor(() => expect(calls.filter((u) => u.endsWith("/api/holdings/1/peek"))).toHaveLength(1));
+    desktop.unmount();
+
+    phone.value = true;
+    render(<Holdings />);
+    const mobileToggle = screen.getByRole("button", { name: /VWCE/ });
+    fireEvent.focus(mobileToggle);
+    await waitFor(() => expect(calls.filter((u) => u.endsWith("/api/holdings/1/peek"))).toHaveLength(2));
   });
 });

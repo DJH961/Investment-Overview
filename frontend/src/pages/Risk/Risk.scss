@@ -3,7 +3,9 @@
 // Desktop: four headline tiles of one size, then the equity curve beside the
 // full metrics table (both cards the same height), then attribution.
 .risk-page {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
 
   &__stack {
     display: grid;
@@ -77,6 +79,10 @@
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
+
+  &__attribution + &__note {
+    margin-top: var(--space-3);
+  }
 }
 
 .risk-page__group {
@@ -140,29 +146,6 @@
   color: var(--color-faint);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
-}
-
-.risk-page__total {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin: var(--space-3) 0 0;
-  padding-top: var(--space-2);
-  border-top: var(--border-width) solid var(--color-border);
-  font-size: var(--font-size-sm);
-  font-variant-numeric: tabular-nums;
-
-  &-label {
-    font-weight: var(--font-weight-semibold);
-  }
-
-  &-values {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-    margin: 0;
-  }
 }
 
 .risk-page__pos {

@@ -1,11 +1,31 @@
 import clsx from "clsx";
 import { Search } from "lucide-react";
 import { useId, useState, type KeyboardEvent } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { Input } from "../Input";
 import { type LookupResultDto, useLookupSearch } from "../../lib/queries/lookup";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
+import { backTargetFromState, type BackTarget } from "../../pages/Holding/HoldingHeader";
 import "./LookupSearch.scss";
+
+const ROUTE_BACK_LABELS: Record<string, string> = {
+  "/overview": "Overview",
+  "/holdings": "Holdings",
+  "/risk": "Risk",
+  "/periods": "Periods",
+  "/activity": "Activity",
+  "/allocations": "Allocations",
+  "/transactions": "Transactions",
+  "/diagnostics": "Health & Repair",
+  "/settings": "Settings",
+};
+
+function backFromLocation(pathname: string, state: unknown): BackTarget {
+  if (/^\/(holdings|lookup)\/.+/.test(pathname)) return backTargetFromState(state);
+  const normalized = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  const to = pathname.startsWith("/") && !pathname.startsWith("//") ? pathname : "/holdings";
+  return { to, label: ROUTE_BACK_LABELS[normalized] ?? "Back" };
+}
 
 export const lookupTarget = (r: LookupResultDto): string =>
   r.held_instrument_id != null ? `/holdings/${r.held_instrument_id}` : `/lookup/${encodeURIComponent(r.symbol)}`;
@@ -21,6 +41,7 @@ export function LookupSearch({ className, placeholder = "Look up a symbol" }: { 
   const [active, setActive] = useState(0);
   const q = useDebouncedValue(text);
   const search = useLookupSearch(q);
+  const location = useLocation();
   const navigate = useNavigate();
   const listId = useId();
   const results = q.trim() ? (search.data?.results ?? []) : [];
@@ -29,7 +50,8 @@ export function LookupSearch({ className, placeholder = "Look up a symbol" }: { 
   const go = (r: LookupResultDto) => {
     setOpen(false);
     setText("");
-    navigate(lookupTarget(r));
+    const from = backFromLocation(location.pathname, location.state);
+    navigate(lookupTarget(r), { state: { from } });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

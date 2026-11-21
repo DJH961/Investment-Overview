@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrefsProvider } from "../../lib/prefs";
@@ -61,7 +61,15 @@ describe("Risk", () => {
     expect(await screen.findByText("Risk and volatility")).toBeInTheDocument();
     expect(screen.getByText("Risk-free rate")).toBeInTheDocument();
     expect(screen.getByText("vs BM (funded)")).toBeInTheDocument();
-    expect(screen.getByLabelText("Attribution total")).toHaveTextContent("P&L");
+    const table = screen.getByRole("table", { name: "Return attribution" });
+    expect(within(table).getByRole("columnheader", { name: "P&L" })).toBeInTheDocument();
+    const total = within(table).getByLabelText("Attribution total");
+    expect(within(total).getByRole("rowheader", { name: "Total" })).toBeInTheDocument();
+    expect(total).toHaveTextContent("Start€10.00");
+    expect(total).toHaveTextContent("End€15.00");
+    expect(total).toHaveTextContent("Net added€0.00");
+    expect(within(total).getByText("€5.00")).toHaveClass("money--pos");
+    expect(within(total).queryByText("Share of P&L")).not.toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "5Y" })).toBeInTheDocument();
   });
 

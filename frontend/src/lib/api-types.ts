@@ -699,6 +699,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/holdings/peeks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Holding Peeks */
+        get: operations["get_holding_peeks_api_holdings_peeks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/holdings/{instrument_id}/history": {
         parameters: {
             query?: never;
@@ -3845,6 +3862,16 @@ export interface components {
             tranches: components["schemas"]["PeekTranches"];
             /** @description Null for a NAV fund (no intraday) */
             week?: components["schemas"]["PeekWeek"] | null;
+        };
+        /**
+         * HoldingPeeksResponse
+         * @description Batch peek payload for every currently held instrument.
+         */
+        HoldingPeeksResponse: {
+            /** Peeks */
+            peeks: {
+                [key: string]: components["schemas"]["HoldingPeekResponse"];
+            };
         };
         /** HoldingRow */
         HoldingRow: {
@@ -8683,6 +8710,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_holding_peeks_api_holdings_peeks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoldingPeeksResponse"];
                 };
             };
         };

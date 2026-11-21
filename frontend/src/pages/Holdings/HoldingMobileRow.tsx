@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { ChevronDown } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { daySplitMoved, HoldingDaySplit } from "../../components/DaySplit";
 import { PriceTick } from "../../components/Freshness";
@@ -8,6 +9,7 @@ import { HoldingPeek } from "../../components/HoldingPeek";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { formatMoney, formatQuantity } from "../../lib/format";
+import { prefetchHoldingPeek } from "../../lib/queries/holding-detail";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
 import { RowStamp, tintClass } from "./HoldingParts";
@@ -32,6 +34,7 @@ interface Props {
  */
 export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMove = null }: Props) {
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
   const detailId = `holding-detail-${row.instrument_id}`;
   const stale = staleMove !== null;
   const shares = toNum(row.shares);
@@ -57,6 +60,8 @@ export function HoldingMobileRow({ row, ccy, stamp = null, tick = null, staleMov
           aria-controls={detailId}
           aria-label={`${row.symbol} · ${row.name}: ${open ? "hide" : "show"} summary`}
           onClick={() => setOpen((o) => !o)}
+          onPointerEnter={() => void prefetchHoldingPeek(queryClient, row.instrument_id)}
+          onFocus={() => void prefetchHoldingPeek(queryClient, row.instrument_id)}
         />
         <span className="holdings-page__item-title">
           {/* Under the row toggle: the symbol is not a link (the peek has "Open"). */}

@@ -105,17 +105,23 @@ export function HealthTab() {
     {
       key: "sev",
       header: "Status",
-      cell: (c) => <span className={`diagnostics__sev diagnostics__sev--${c.count ? c.severity : "ok"}`}>{c.count === 0 ? "OK" : (SEVERITY_LABEL[c.severity] ?? c.severity)}</span>,
+      phone: "headline",
+      cell: (c) => (
+        <>
+          <span className={`diagnostics__sev diagnostics__sev--${c.count ? c.severity : "ok"}`}>{c.count === 0 ? "OK" : (SEVERITY_LABEL[c.severity] ?? c.severity)}</span>
+          {c.count > 0 && <span className="diagnostics__sev diagnostics__sev--info diagnostics__check-count">{c.count}</span>}
+        </>
+      ),
       sortValue: (c) => (c.count ? (RANK[c.severity] ?? 9) : 9),
     },
     { key: "title", header: "Check", primary: true, cell: (c) => c.title, sortValue: (c) => c.title },
-    { key: "count", header: "Items", align: "right", cell: (c) => c.count, sortValue: (c) => c.count },
+    { key: "count", header: "Items", align: "right", phone: "hide", cell: (c) => c.count, sortValue: (c) => c.count },
     { key: "detail", header: "Detail", phone: "hide", cell: (c) => c.detail },
   ];
   const providerColumns: Column<Provider>[] = [
     { key: "name", header: "Provider", primary: true, cell: (p) => p.name },
-    { key: "status", header: "Status", cell: (p) => p.status ?? "unknown" },
-    { key: "fetch", header: "Last fetch", cell: (p) => formatDateTime(p.last_fetch_at) },
+    { key: "status", header: "Status", phone: "headline", cell: (p) => p.status ?? "unknown" },
+    { key: "fetch", header: "Last fetch", phone: "sub", cell: (p) => formatDateTime(p.last_fetch_at) },
     {
       key: "symbols",
       header: "Last symbols",
@@ -152,7 +158,9 @@ export function HealthTab() {
             {attention.map((c) => (
               <li key={c.id} className={`diagnostics__issue diagnostics__issue--${c.severity}`}>
                 <div className="diagnostics__issue-head">
-                  <SevIcon severity={c.severity} />
+                  <span className="diagnostics__issue-icon">
+                    <SevIcon severity={c.severity} />
+                  </span>
                   <strong className="diagnostics__issue-title">{c.title}</strong>
                   <span className="diagnostics__count">{c.count}</span>
                 </div>
@@ -208,7 +216,7 @@ export function HealthTab() {
       <BriefVisitCard />
 
       <Card title="All checks" flush collapsibleId="diagnostics.checks">
-        <DataTable caption="Health checks" columns={checkColumns} rows={[...d.checks].sort(bySeverity)} rowKey={(c) => c.id} />
+        <DataTable caption="Health checks" columns={checkColumns} rows={[...d.checks].sort(bySeverity)} rowKey={(c) => c.id} rowClassName={() => "diagnostics__check-row"} />
       </Card>
       <Card title="Data providers" flush collapsibleId="diagnostics.providers">
         <DataTable caption="Data providers" columns={providerColumns} rows={d.providers} rowKey={(p) => p.name} />

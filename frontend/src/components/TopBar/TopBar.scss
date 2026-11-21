@@ -320,10 +320,16 @@
       min-width: 0;
     }
 
+    // One line on a phone: a long page title is cut with an ellipsis (the full title is the
+    // page heading below), never wrapped, so the live line stays at the same height.
     .top-bar__title {
+      flex: 0 1 auto;
       min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
       font-size: var(--font-size-md);
-      white-space: normal;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     // The value and the day % may stack in a very narrow block (seven-figure USD at

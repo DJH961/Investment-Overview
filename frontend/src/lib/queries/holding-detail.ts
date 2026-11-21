@@ -4,7 +4,8 @@
  * never derives a return from these: it shows them, sums them (linear) or converts
  * one instant at the rate sent with it.
  */
-import { useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { components } from "../api-types";
 
@@ -34,14 +35,83 @@ export function useHoldingHistoryV2(instrumentId: number | null, range: HoldingR
 // ---- peek ---------------------------------------------------------------------------
 
 export type HoldingPeekDto = S["HoldingPeekResponse"];
+export type HoldingPeeksDto = S["HoldingPeeksResponse"];
 
-/** The list row's peek: fetched only once the row is opened. */
+const PEEK_STALE_MS = 60_000;
+
+export const holdingPeekQueryKey = (instrumentId: number) => ["holdings", "peek", instrumentId] as const;
+
+const fetchHoldingPeek = (instrumentId: number, signal?: AbortSignal) =>
+  api<HoldingPeekDto>(`/api/holdings/${instrumentId}/peek`, { signal });
+
+/** The list row's peek: fetched when opened unless already preloaded. */
 export function useHoldingPeek(instrumentId: number, enabled: boolean) {
   return useQuery<HoldingPeekDto>({
-    queryKey: ["holdings", "peek", instrumentId],
+    queryKey: holdingPeekQueryKey(instrumentId),
     enabled,
-    staleTime: 60_000,
-    queryFn: ({ signal }) => api<HoldingPeekDto>(`/api/holdings/${instrumentId}/peek`, { signal }),
+    staleTime: PEEK_STALE_MS,
+    queryFn: ({ signal }) => fetchHoldingPeek(instrumentId, signal),
+  });
+}
+
+/** Warm one row's peek on hover/focus before a click arrives. */
+export function prefetchHoldingPeek(queryClient: QueryClient, instrumentId: number): Promise<void> {
+  return queryClient.prefetchQuery({
+    queryKey: holdingPeekQueryKey(instrumentId),
+    staleTime: PEEK_STALE_MS,
+    queryFn: ({ signal }) => fetchHoldingPeek(instrumentId, signal),
+  });
+}
+
+/**
+ * Quietly preload every held instrument's peek once the Holdings list has
+ * rendered and the browser hits idle, populating individual peek cache entries.
+ */
+export function usePrefetchHoldingPeeks(enabled: boolean): void {
+  const queryClient = useQueryClient();
+  const [idleReady, setIdleReady] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const markReady = () => {
+      if (!cancelled) setIdleReady(true);
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof w.requestIdleCallback === "function") {
+      const handle = w.requestIdleCallback(markReady, { timeout: 150 });
+      return () => {
+        cancelled = true;
+        w.cancelIdleCallback?.(handle);
+        setIdleReady(false);
+      };
+    }
+    const timer = window.setTimeout(markReady, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      setIdleReady(false);
+    };
+  }, [enabled]);
+
+  useQuery<HoldingPeeksDto>({
+    queryKey: ["holdings", "peeks"],
+    enabled: enabled && idleReady,
+    staleTime: PEEK_STALE_MS,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const res = await api<HoldingPeeksDto>("/api/holdings/peeks", { signal });
+      for (const [id, peek] of Object.entries(res.peeks)) {
+        const instrumentId = Number(id);
+        if (Number.isFinite(instrumentId)) {
+          queryClient.setQueryData(holdingPeekQueryKey(instrumentId), peek);
+        }
+      }
+      return res;
+    },
   });
 }
 

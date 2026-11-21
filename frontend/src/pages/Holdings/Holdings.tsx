@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import { ChevronDown, Inbox, Search } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "../../components/Button";
@@ -21,6 +22,7 @@ import { Select } from "../../components/Select";
 import { Skeleton } from "../../components/Skeleton";
 import { formatAxisDate, formatDate, formatMoney, formatQuantity } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
+import { prefetchHoldingPeek, usePrefetchHoldingPeeks } from "../../lib/queries/holding-detail";
 import {
   type HoldingRowDto,
   type HoldingsGroupBy,
@@ -112,6 +114,7 @@ export function Holdings() {
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const [groupBy, setGroupBy] = usePersistentState<HoldingsGroupBy>("holdings.group", "none", oneOf(GROUP_OPTIONS));
   const query = useHoldings(currency, groupBy);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [categoryPref, setCategory] = usePersistentState<string>("holdings.category", ALL);
   const [sortKey, setSortKey] = usePersistentState<SortKey>("holdings.sort", "value", oneOf(SORT_OPTIONS));
@@ -119,6 +122,7 @@ export function Holdings() {
   const [peekId, setPeekId] = useState<number | null>(null);
 
   const data = query.data;
+  usePrefetchHoldingPeeks(Boolean(data && data.holdings.length > 0));
   const status = query.isPending ? "loading" : query.isError ? "stale" : "closed";
   const timeZone = useTimeZone();
   // The price time is said once (page header + top bar); a row says its own only when it differs.
@@ -195,6 +199,8 @@ export function Holdings() {
                 className={clsx("holdings-page__peek-toggle", open && "holdings-page__peek-toggle--open")}
                 icon={<ChevronDown aria-hidden />}
                 onClick={() => setPeekId(open ? null : r.instrument_id)}
+                onPointerEnter={() => void prefetchHoldingPeek(queryClient, r.instrument_id)}
+                onFocus={() => void prefetchHoldingPeek(queryClient, r.instrument_id)}
               />
               <HoldingIdentity
                 row={r}
@@ -400,7 +406,7 @@ export function Holdings() {
         cell: (r) => <Percent ratio={toNum(r.ytd_growth)} signed colored />,
       },
     ],
-    [currency, maxWeight, stamps, marks, peekId],
+    [currency, maxWeight, stamps, marks, peekId, queryClient],
   );
 
   if (query.isError && !data) {
