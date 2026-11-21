@@ -13,6 +13,7 @@ import { HoldingIdentity } from "../../components/HoldingIdentity";
 import { HoldingPeek } from "../../components/HoldingPeek";
 import { IconButton } from "../../components/IconButton";
 import { Input } from "../../components/Input";
+import { LookupSearch } from "../../components/LookupSearch";
 import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
 import { Percent } from "../../components/Percent";
@@ -466,6 +467,8 @@ export function Holdings() {
       <PageHeader
         title="Holdings"
         subtitle="Every position in full detail"
+        // Phone: look up any instrument here (desktop: in the top bar).
+        actions={isPhone ? <LookupSearch className="holdings-page__lookup" /> : undefined}
       />
 
       <HoldingsKpis data={data} currency={currency} />

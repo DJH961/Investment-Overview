@@ -10,6 +10,7 @@ type Loader = () => Promise<{ default: ComponentType }>;
 const loaders = {
   Holdings: () => import("../pages/Holdings").then((m) => ({ default: m.Holdings })),
   Holding: () => import("../pages/Holding").then((m) => ({ default: m.Holding })),
+  Lookup: () => import("../pages/Lookup").then((m) => ({ default: m.Lookup })),
   Currency: () => import("../pages/Currency").then((m) => ({ default: m.Currency })),
   Periods: () => import("../pages/Periods").then((m) => ({ default: m.Periods })),
   Activity: () => import("../pages/Activity").then((m) => ({ default: m.Activity })),
@@ -52,6 +53,7 @@ const PRELOAD_ORDER: PageName[] = [
   "Diagnostics",
   "Help",
   "Onboarding",
+  "Lookup",
   "NotFound",
 ];
 

@@ -1,0 +1,98 @@
+@use "../../styles/mixins" as m;
+
+// Look up any instrument (7.1): a search box with a results panel under it.
+.lookup-search {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  max-width: 22rem;
+
+  @include m.phone {
+    max-width: none;
+  }
+
+  &__panel {
+    position: absolute;
+    top: calc(100% + var(--space-1));
+    right: 0;
+    left: 0;
+    z-index: var(--z-popover);
+    min-width: 18rem;
+    max-height: 22rem;
+    overflow-y: auto;
+    border: var(--border-width) solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
+    box-shadow: var(--shadow-2);
+
+    @include m.phone {
+      min-width: 0;
+    }
+  }
+
+  &__list {
+    margin: 0;
+    padding: var(--space-1);
+    list-style: none;
+  }
+
+  &__item {
+    display: grid;
+    grid-template-areas:
+      "symbol meta"
+      "name name";
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0 var(--space-3);
+    align-items: baseline;
+    width: 100%;
+    min-height: var(--tap-min);
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover,
+    &--active {
+      background: var(--color-surface-2);
+    }
+  }
+
+  &__symbol {
+    grid-area: symbol;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__meta {
+    grid-area: meta;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__owned {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__name {
+    @include m.truncate;
+    grid-area: name;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__note {
+    margin: 0;
+    padding: var(--space-3);
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+}

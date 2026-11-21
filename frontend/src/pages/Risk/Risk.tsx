@@ -22,6 +22,7 @@ import { usePersistentState } from "../../lib/usePersistentState";
 import { type AnalyticsOut, toNum, useAnalytics } from "../../lib/queries/reports";
 import { useShellStatus } from "../../lib/shell";
 import { Maybe } from "../Periods/Maybe";
+import type { AttributionExtra } from "../../lib/queries/holding-detail";
 import "./Risk.scss";
 
 const LOOKBACKS = [
@@ -35,7 +36,8 @@ const LOOKBACKS = [
   { value: "0", label: "All" },
 ] as const;
 
-type AttrRow = AnalyticsOut["attribution"][number];
+// share_of_pnl / own_return: 7.1 contract additions, typed by hand until api-types is regenerated.
+type AttrRow = AnalyticsOut["attribution"][number] & AttributionExtra;
 type Kind = "pct" | "ratio";
 type Tone = "none" | "sign";
 
@@ -199,11 +201,20 @@ export function Risk() {
       cell: (r) => money(r.absolute_pnl, true),
     },
     {
-      key: "pct",
-      header: "% of return",
+      // P17 (7.1): the share of the window's P&L ("–" when the total is near zero) and the
+      // row's own money-weighted return, both from the server.
+      key: "share",
+      header: "Share of P&L",
       align: "right",
-      sortValue: (r) => toNum(r.pct_of_total_return),
-      cell: (r) => <Percent ratio={toNum(r.pct_of_total_return)} />,
+      sortValue: (r) => toNum(r.share_of_pnl ?? null),
+      cell: (r) => <Percent ratio={toNum(r.share_of_pnl ?? null)} />,
+    },
+    {
+      key: "own",
+      header: "Own return",
+      align: "right",
+      sortValue: (r) => toNum(r.own_return ?? null),
+      cell: (r) => <Percent ratio={toNum(r.own_return ?? null)} signed colored />,
     },
   ];
 

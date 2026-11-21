@@ -1,0 +1,26 @@
+// The lookup page reuses the holding page's layout (Holding.scss); only its own bits here.
+.lookup-page {
+  &__stamp {
+    font-size: var(--font-size-xs);
+  }
+
+  &__range-bar {
+    position: relative;
+    display: block;
+    height: var(--space-1);
+    margin-top: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+  }
+
+  &__range-mark {
+    position: absolute;
+    top: 50%;
+    width: var(--space-3);
+    height: var(--space-3);
+    border: var(--border-width) solid var(--color-surface);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+    transform: translate(-50%, -50%);
+  }
+}
