@@ -34,6 +34,10 @@
 
   &__label {
     @include m.eyebrow;
+    display: flex;
+    align-items: center;
+    // The (i) never touches the words.
+    gap: var(--space-1);
     overflow-wrap: anywhere;
   }
 

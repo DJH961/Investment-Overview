@@ -342,8 +342,8 @@ describe("Holding page", () => {
       expect(screen.getByRole("button", { name: "All 2" })).toHaveAttribute("aria-pressed", "true");
       fireEvent.click(screen.getByRole("button", { name: "Sells 1" }));
       expect(screen.getAllByRole("button", { name: /^Edit / })).toHaveLength(1);
-      fireEvent.click(screen.getByRole("button", { name: "Dividends 0" }));
-      expect(screen.getByText("No dividends for VWCE.")).toBeInTheDocument();
+      // A kind with nothing in it gets no chip.
+      expect(screen.queryByRole("button", { name: /^Dividends/ })).toBeNull();
     });
 
     it("says when there are no transactions", async () => {
@@ -360,7 +360,8 @@ describe("Holding page", () => {
       expect(screen.getByText("Yield (TTM)")).toBeInTheDocument();
       expect(screen.getByLabelText("Dividends per year")).toHaveTextContent("ytd");
       const list = screen.getByRole("list", { name: "Dividends from VWCE" });
-      expect(within(list).getAllByText("Dividend")).toHaveLength(1);
+      // Every row here is a dividend: line 1 says how it was paid.
+      expect(within(list).getAllByText("Cash")).toHaveLength(1);
       expect(screen.queryByText(/99\.00/)).toBeNull();
     });
 

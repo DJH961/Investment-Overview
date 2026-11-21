@@ -239,7 +239,7 @@ describe("Holdings page", () => {
     expect(head).toHaveAttribute("aria-expanded", "true");
     const peek = screen.getByRole("region", { name: "VWCE at a glance" });
     expect(within(peek).getByText("3 open · long-term in 31 d")).toBeInTheDocument();
-    expect(within(peek).getByText(/Bought 2 sh/)).toBeInTheDocument();
+    expect(within(peek).getByText(/Buy 2 sh/)).toBeInTheDocument();
     expect(within(peek).getByText("Last dividend")).toBeInTheDocument();
     expect(within(peek).getByRole("link", { name: /Open VWCE/ })).toHaveAttribute("href", "/holdings/1");
     expect(within(peek).getByRole("link", { name: "Tranches" })).toHaveAttribute("href", "/holdings/1/tranches");
@@ -503,7 +503,7 @@ describe("Holdings page", () => {
       fireEvent.click(screen.getByRole("button", { name: /FXAIX/ }));
       const peek = screen.getByRole("region", { name: "FXAIX at a glance" });
       expect(within(peek).getByText("Twin")).toBeInTheDocument();
-      expect(within(peek).getByText(/estimate until the NAV posts/)).toBeInTheDocument();
+      expect(within(peek).getByText(/est. until the NAV/)).toBeInTheDocument();
       expect(container.querySelector(".holdings-page__detail")).toBeNull();
       expect(screen.queryByLabelText("ETF twin of FXAIX")).toBeNull();
     } finally {
