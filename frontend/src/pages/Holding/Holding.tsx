@@ -34,7 +34,8 @@ export function tabsFor(row: HoldingRowDto): TabKey[] {
 const tabPath = (id: string, tab: TabKey) => (tab === "performance" ? `/holdings/${id}` : `/holdings/${id}/${tab}`);
 
 export function HoldingChips({ row }: { row: HoldingRowDto }) {
-  const type = assetClassLabel(row.asset_class);
+  // The NAV / CASH pill already says what a fund is; the type chip would repeat it.
+  const type = row.price_type === "nav" || row.is_money_market ? null : assetClassLabel(row.asset_class);
   return (
     <>
       <Chip size="sm" outline title={row.account} className="holding-page__chip">
