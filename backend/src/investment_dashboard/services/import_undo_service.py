@@ -181,6 +181,7 @@ def undo(
 ) -> UndoResult:
     """Delete the transactions of ``batch_id`` (see the module doc for the steps)."""
     from investment_dashboard.services import (  # noqa: PLC0415
+        holding_values_service,
         intraday_snapshots_service,
         refresh_status,
         snapshots_service,
@@ -192,9 +193,13 @@ def undo(
     if batch.status != BATCH_ACTIVE:
         raise ConflictError("this import was already undone")
     backup = _backup_first()
+    trades = [
+        (t.instrument_id, t.date) for t in import_batches_repo.transactions_of(session, batch_id)
+    ]
     deleted, dates = import_batches_repo.delete_transactions_of(session, batch_id)
     if dates:
         snapshots_service.invalidate_for_trade_dates(session, dates)
+        holding_values_service.invalidate_instruments_for_trades(session, trades)
         intraday_snapshots_service.clear_week_samples(session, from_date=min(dates))
     moment = (now or datetime.now(UTC)).astimezone(UTC).replace(tzinfo=None)
     import_batches_repo.mark_undone(
