@@ -799,6 +799,10 @@
 
 // 7.1: the desktop peek toggle leads the Holding cell (turns when open).
 .holdings-page {
+  &__lookup {
+    max-width: none;
+  }
+
   &__holding-cell {
     display: flex;
     align-items: flex-start;

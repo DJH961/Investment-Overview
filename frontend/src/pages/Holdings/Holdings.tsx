@@ -461,9 +461,9 @@ export function Holdings() {
       <PageHeader
         title="Holdings"
         subtitle="Every position in full detail"
-        // Phone: look up any instrument here (desktop: in the top bar).
-        actions={isPhone ? <LookupSearch className="holdings-page__lookup" /> : undefined}
       />
+      {/* Phone: look up any instrument here, full width (desktop: in the top bar). */}
+      {isPhone && <LookupSearch className="holdings-page__lookup" />}
 
       <HoldingsKpis data={data} currency={currency} />
       <FlagNotice rows={data?.holdings ?? []} />

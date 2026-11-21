@@ -41,19 +41,17 @@ export function HoldingChips({ row }: { row: HoldingRowDto }) {
       <Chip size="sm" outline title={row.account} className="holding-page__chip">
         {row.account}
       </Chip>
-      <Chip size="sm" outline className="holding-page__chip">
+      <Chip size="sm" outline className="holding-page__chip holding-page__chip--fixed">
         {row.category}
       </Chip>
-      <Chip size="sm" outline>
+      <Chip size="sm" outline className="holding-page__chip holding-page__chip--fixed">
         {row.native_currency}
       </Chip>
       {type && (
-        <Chip size="sm" outline>
+        <Chip size="sm" outline className="holding-page__chip holding-page__chip--fixed">
           {type}
         </Chip>
       )}
-      {/* No "live" here: the top bar already says so, and the chips stay on one line. */}
-      <HoldingPills row={row} />
     </>
   );
 }
@@ -158,6 +156,7 @@ export function Holding() {
         symbol={row.symbol}
         name={row.name}
         chips={<HoldingChips row={row} />}
+        pills={<HoldingPills row={row} live={row.market_open && !row.daily_is_stale} />}
         value={<Money amount={toNum(row.value)} currency={currency} />}
         today={
           <>

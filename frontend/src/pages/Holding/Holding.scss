@@ -108,21 +108,34 @@
     font-size: var(--font-size-sm);
   }
 
+  // One line: the account chip gives way (ellipsis, full name in its title), never a wrap.
   &__chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     grid-area: chips;
+    overflow: hidden;
     align-items: center;
     gap: var(--space-1) var(--space-2);
     min-width: 0;
   }
 
   &__chip {
+    flex: 0 1 auto;
+    min-width: 0;
     max-width: 16rem;
 
-    @include m.phone {
-      max-width: 7.5rem;
+    &--fixed {
+      flex-shrink: 0;
     }
+  }
+
+  &__pills {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--space-1);
+    align-self: center;
+    font-family: var(--font-sans);
   }
 
   // Phone: one sticky line once the header has scrolled away (desktop: never).
@@ -346,9 +359,12 @@
     list-style: none;
     box-shadow: var(--shadow-1);
 
+    // A group's members: inset under the group row on a quieter ground, so they read as its.
     &--nested {
+      margin-left: var(--space-4);
       border: 0;
       border-top: var(--border-width) dashed var(--color-border);
+      border-left: 2px solid var(--color-border-strong);
       border-radius: 0;
       background: var(--color-surface-2);
       box-shadow: none;
@@ -601,6 +617,10 @@
 
   &__lot--nested &__lot-td {
     color: var(--color-muted);
+  }
+
+  &__lot--nested &__lot-td:first-child {
+    padding-left: var(--space-7);
   }
 
   &__lot-nest-cell {

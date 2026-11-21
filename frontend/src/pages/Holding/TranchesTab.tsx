@@ -159,7 +159,9 @@ function LotCard({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; ne
           <Money amount={toNum(r.gain_native)} currency={ccy} signed colored />
         </span>
         <span className="holding-page__row-meta">
-          {qty(r.quantity_left)} / {qty(r.quantity_bought)} sh · {formatMoney(toNum(r.cost_per_share_native), ccy)}
+          {/* "x / y" only when some were sold; otherwise just the shares. */}
+          {toNum(r.quantity_left) === toNum(r.quantity_bought) ? qty(r.quantity_left) : `${qty(r.quantity_left)} / ${qty(r.quantity_bought)}`} sh ·{" "}
+          {formatMoney(toNum(r.cost_per_share_native), ccy)}
         </span>
         <span className="holding-page__row-detail">
           <TrancheBadge row={r} />
