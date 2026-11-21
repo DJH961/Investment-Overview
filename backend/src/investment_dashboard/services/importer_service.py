@@ -62,6 +62,7 @@ from investment_dashboard.repositories import (
     transactions_repo,
 )
 from investment_dashboard.services import (
+    holding_values_service,
     instrument_enrichment_service,
     intraday_snapshots_service,
     snapshots_service,
@@ -420,6 +421,7 @@ def import_csv(
     fx_missing: set[date] = set()
     fx_missing_rows = 0
     inserted_dates: set[date] = set()
+    inserted_trades: list[tuple[int | None, date]] = []
     # Symbols the data provider couldn't resolve during enrichment (audit D2).
     unresolved: set[str] = set()
     for prow, dup in zip(parsed_rows, is_dup, strict=True):
@@ -481,6 +483,7 @@ def import_csv(
         else:
             inserted += 1
             inserted_dates.add(prow.date)
+            inserted_trades.append((result.instrument_id, prow.date))
 
     # Any newly-inserted past-dated row invalidates every cached daily close on
     # or after the earliest one, so the affected window of /monthly, /yearly and
@@ -488,6 +491,7 @@ def import_csv(
     # clears the cached intraday 1D/1W curves so stale samples are wiped.
     if inserted_dates:
         snapshots_service.invalidate_for_trade_dates(session, inserted_dates)
+        holding_values_service.invalidate_instruments_for_trades(session, inserted_trades)
         intraday_snapshots_service.clear_week_samples(session, from_date=min(inserted_dates))
 
     if fx_missing:
