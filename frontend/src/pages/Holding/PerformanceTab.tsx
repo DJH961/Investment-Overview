@@ -20,7 +20,8 @@ import {
 } from "../../lib/queries/holding-detail";
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { toNum } from "../../lib/queries/portfolio";
-import { axisFormat, chartSessions, rangeLabel, tooltipFormat } from "./holdingFormat";
+import { formatQuantity as formatShares } from "../Transactions/numbers";
+import { axisFormat, chartSessions, chartXMode, rangeLabel, tooltipFormat } from "./holdingFormat";
 
 /** Whether this holding has an intraday price at all (NAV funds publish once a day). */
 export const isNavFund = (row: HoldingRowDto): boolean => row.price_type === "nav" || row.is_money_market;
@@ -133,7 +134,6 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export function KeyFacts({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurrency }) {
-  const shares = toNum(row.shares);
   const native = row.native_currency;
   return (
     <section className="holding-page__section" aria-labelledby="holding-facts">
@@ -141,7 +141,7 @@ export function KeyFacts({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurre
         Key facts
       </h2>
       <dl className="holding-page__facts">
-        <Fact label="Shares">{formatQuantity(shares, shares !== null && Number.isInteger(shares) ? 0 : 4)}</Fact>
+        <Fact label="Shares">{formatShares(row.shares)}</Fact>
         <Fact label="Avg → now">
           {formatMoney(toNum(row.avg_price_native), native)} → {formatMoney(toNum(row.price_native), native, { unmasked: true })}
         </Fact>
@@ -189,8 +189,8 @@ export function HoldingKpis({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCu
         value={<Money amount={toNum(row.total_return)} currency={ccy} signed colored />}
         hint={
           <>
-            <Percent ratio={toNum(row.total_growth)} signed /> · incl. dividends{" "}
-            <Money amount={toNum(row.dividends)} currency={ccy} />
+            <Percent ratio={toNum(row.total_growth)} signed /> · incl. <Money amount={toNum(row.dividends)} currency={ccy} compact />{" "}
+            dividends
           </>
         }
       />
@@ -254,7 +254,7 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
         onRangeChange={(r) => setRange(r as HoldingRange)}
         // Phone: the switch sits beside the range figure, under the chart.
         headerExtra={isPhone ? undefined : modeSwitch}
-        xMode={xMode === "time" && sessions.length ? "session" : (xMode ?? "date")}
+        xMode={chartXMode(xMode, sessions)}
         sessions={sessions}
         loading={history.isPending}
         busy={history.isFetching && !history.isPending}

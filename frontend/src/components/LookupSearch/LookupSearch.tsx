@@ -8,7 +8,7 @@ import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import "./LookupSearch.scss";
 
 export const lookupTarget = (r: LookupResultDto): string =>
-  r.held_instrument_id !== null ? `/holdings/${r.held_instrument_id}` : `/lookup/${encodeURIComponent(r.symbol)}`;
+  r.held_instrument_id != null ? `/holdings/${r.held_instrument_id}` : `/lookup/${encodeURIComponent(r.symbol)}`;
 
 /**
  * Look up any instrument by symbol or name (7.1, P20). Owned ones open their holding
@@ -90,12 +90,12 @@ export function LookupSearch({ className, placeholder = "Look up a symbol" }: { 
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => go(r)}
                   >
-                    <span className="lookup-search__symbol">{r.symbol}</span>
-                    <span className="lookup-search__name">{r.name}</span>
-                    <span className="lookup-search__meta">
-                      {[r.exchange, r.type].filter(Boolean).join(" · ")}
-                      {r.held_instrument_id !== null && <span className="lookup-search__owned"> · you own this</span>}
+                    <span className="lookup-search__symbol">
+                      {r.symbol}
+                      {r.held_instrument_id != null && <span className="lookup-search__owned">you own this</span>}
                     </span>
+                    <span className="lookup-search__meta">{[r.exchange, r.type].filter(Boolean).join(" · ")}</span>
+                    <span className="lookup-search__name">{r.name}</span>
                   </button>
                 </li>
               ))}

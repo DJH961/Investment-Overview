@@ -17,7 +17,7 @@
     right: 0;
     left: 0;
     z-index: var(--z-popover);
-    min-width: 18rem;
+    min-width: 24rem;
     max-height: 22rem;
     overflow-y: auto;
     border: var(--border-width) solid var(--color-border-strong);
@@ -63,6 +63,7 @@
 
   &__symbol {
     grid-area: symbol;
+    white-space: nowrap;
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
   }
@@ -78,8 +79,14 @@
   }
 
   &__owned {
+    margin-left: var(--space-2);
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-soft);
     color: var(--color-fg);
+    font-size: var(--font-size-2xs);
     font-weight: var(--font-weight-medium);
+    white-space: nowrap;
   }
 
   &__name {

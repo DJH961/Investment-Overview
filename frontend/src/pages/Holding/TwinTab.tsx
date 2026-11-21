@@ -9,7 +9,7 @@ import { type HoldingTwinDto, TWIN_RANGES, type TwinRange, useHoldingTwin } from
 import type { HoldingRowDto } from "../../lib/queries/holdings";
 import { instrumentErrors, useUpdateInstrument } from "../../lib/queries/instruments";
 import { toNum } from "../../lib/queries/portfolio";
-import { axisFormat, chartSessions, rangeLabel, tooltipFormat } from "./holdingFormat";
+import { axisFormat, chartSessions, chartXMode, rangeLabel, tooltipFormat } from "./holdingFormat";
 
 const REASON: Record<HoldingTwinDto["twin_reason"], string> = {
   same_index: "tracks the same index",
@@ -134,7 +134,7 @@ export function TwinTab({ row }: { row: HoldingRowDto }) {
           ranges={TWIN_RANGES}
           rangeLabel={rangeLabel}
           onRangeChange={(r) => setRange(r as TwinRange)}
-          xMode={d?.x_mode === "time" && sessions.length ? "session" : (d?.x_mode ?? "date")}
+          xMode={chartXMode(d?.x_mode, sessions)}
           sessions={sessions}
           loading={q.isPending}
           busy={q.isFetching && !q.isPending}

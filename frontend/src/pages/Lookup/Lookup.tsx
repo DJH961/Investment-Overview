@@ -16,7 +16,7 @@ import { HOLDING_RANGES, type HoldingRange } from "../../lib/queries/holding-det
 import { type LookupHistoryDto, type LookupQuoteDto, useLookupHistory, useLookupQuote } from "../../lib/queries/lookup";
 import { toNum } from "../../lib/queries/portfolio";
 import { HoldingHeader } from "../Holding/HoldingHeader";
-import { axisFormat, chartSessions, rangeLabel, tooltipFormat } from "../Holding/holdingFormat";
+import { axisFormat, chartSessions, chartXMode, rangeLabel, tooltipFormat } from "../Holding/holdingFormat";
 import "../Holding/Holding.scss";
 import "./Lookup.scss";
 
@@ -66,7 +66,7 @@ function PriceChart({ symbol, quote }: { symbol: string; quote: LookupQuoteDto }
             <SegmentedControl ariaLabel="Price in" size="sm" options={options.map((o) => ({ value: o, label: o }))} value={shown} onChange={setShown} />
           ) : undefined
         }
-        xMode={data?.x_mode === "time" && sessions.length ? "session" : (data?.x_mode ?? "date")}
+        xMode={chartXMode(data?.x_mode, sessions)}
         sessions={sessions}
         loading={q.isPending}
         busy={q.isFetching && !q.isPending}

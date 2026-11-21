@@ -19,7 +19,7 @@ import { BackLink, HoldingHeader } from "./HoldingHeader";
 import { assetClassLabel } from "./holdingFormat";
 import { isNavFund, PerformanceTab } from "./PerformanceTab";
 import { TranchesTab } from "./TranchesTab";
-import { isDividend, TransactionsTab } from "./TransactionsTab";
+import { TransactionsTab } from "./TransactionsTab";
 import { TwinTab } from "./TwinTab";
 import "./Holding.scss";
 
@@ -123,7 +123,7 @@ export function Holding() {
     tranches: { label: "Tranches", node: <TranchesTab row={row} /> },
     transactions: {
       label: "Transactions",
-      badge: txQuery.data ? txns.filter((t) => !isDividend(t.kind)).length : undefined,
+      badge: txQuery.data ? txns.length : undefined,
       node: <TransactionsTab row={row} txns={txns} pending={txQuery.isPending} error={txQuery.isError} />,
     },
     dividends: {

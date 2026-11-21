@@ -254,7 +254,7 @@ export function DataTable<Row>({
               {expanded !== null && (
                 <tr className="data-table__expanded">
                   <td className="data-table__expanded-cell" colSpan={columns.length}>
-                    {expanded}
+                    <div className="data-table__expanded-inner">{expanded}</div>
                   </td>
                 </tr>
               )}

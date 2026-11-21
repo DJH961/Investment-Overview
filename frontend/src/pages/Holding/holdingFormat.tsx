@@ -77,3 +77,9 @@ const ASSET_CLASS: Record<string, string> = {
 
 export const assetClassLabel = (c: string | null | undefined): string | null =>
   c ? (ASSET_CLASS[c] ?? c.replace(/_/g, " ")) : null;
+
+/** Several sessions: equal bands (nights squeezed out); one session: clock ticks. */
+export function chartXMode(xMode: "date" | "time" | undefined, sessions: ChartSession[]): "date" | "time" | "session" {
+  if (xMode !== "time") return "date";
+  return sessions.length > 1 ? "session" : "time";
+}

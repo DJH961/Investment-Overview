@@ -446,10 +446,15 @@
   }
 
   // ---- Transactions ----------------------------------------------------------------
+  // A fieldset (a labelled group of toggles) without the fieldset chrome.
   &__filters {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
   }
 
   &__filter {
@@ -743,7 +748,6 @@
     align-items: center;
     gap: var(--space-1);
     min-width: 0;
-    max-width: 5rem;
   }
 
   &__bar-value {
@@ -754,7 +758,7 @@
   }
 
   &__bar {
-    width: 100%;
+    width: min(100%, 3rem);
     border-radius: var(--radius-xs) var(--radius-xs) 0 0;
     background: var(--chart-1);
 
