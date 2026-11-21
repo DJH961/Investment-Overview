@@ -530,11 +530,15 @@
     }
 
     &--account {
-      max-width: 14rem;
-      overflow: hidden;
       color: var(--color-muted);
-      text-overflow: ellipsis;
     }
+  }
+
+  // Long account names: one clipped line (a td ignores max-width in an auto table).
+  &__clip {
+    @include m.truncate;
+    display: block;
+    max-width: 12rem;
   }
 
   &__tx:hover {

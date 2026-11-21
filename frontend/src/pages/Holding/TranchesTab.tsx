@@ -60,7 +60,7 @@ function LotRow({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; nes
         )}
       </td>
       <td className="holding-page__lot-td holding-page__lot-td--account" title={r.account_name}>
-        {r.account_name}
+        <span className="holding-page__clip">{r.account_name}</span>
       </td>
       <td className="holding-page__lot-td holding-page__lot-td--right">
         {qty(r.quantity_left)} / {qty(r.quantity_bought)}
@@ -112,7 +112,7 @@ function GroupRow({
           </button>
         </td>
         <td className="holding-page__lot-td holding-page__lot-td--account" title={account}>
-          {account}
+          <span className="holding-page__clip">{account}</span>
         </td>
         <td className="holding-page__lot-td holding-page__lot-td--right">{qty(g.quantity_left)}</td>
         <td className="holding-page__lot-td holding-page__lot-td--right">

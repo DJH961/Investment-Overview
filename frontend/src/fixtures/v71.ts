@@ -118,9 +118,14 @@ function tranches(row: Row, accountId: number): Obj {
   }
   const groups: Obj[] = [];
   if (row.symbol === "FAKEL") {
-    const each = (Number(row.shares) - 4300) / REINVEST_DATES.length;
+    // Four decimals each, the last one takes the rest, so the lots sum to the position exactly.
+    const total = Number(row.shares) - 4300;
+    const each = Math.floor((total / REINVEST_DATES.length) * 1e4) / 1e4;
     const first = id;
-    REINVEST_DATES.forEach((d, i) => lot(d, "reinvest", each, each, 150 + i * 12));
+    REINVEST_DATES.forEach((d, i) => {
+      const q = i === REINVEST_DATES.length - 1 ? total - each * (REINVEST_DATES.length - 1) : each;
+      lot(d, "reinvest", q, q, 150 + i * 12);
+    });
     const members = out.filter((r) => (r.id as number) >= first);
     const cost = members.reduce((a, r) => a + Number(r.cost_native), 0);
     const left = members.reduce((a, r) => a + Number(r.quantity_left), 0);

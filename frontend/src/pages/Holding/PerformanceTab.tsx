@@ -146,7 +146,7 @@ export function KeyFacts({ row, ccy }: { row: HoldingRowDto; ccy: ReportingCurre
           {formatMoney(toNum(row.avg_price_native), native)} → {formatMoney(toNum(row.price_native), native, { unmasked: true })}
         </Fact>
         <Fact label="Price as of">
-          <PriceStamps price={holdingPriceTime(row)} updated={null} layout="stack" />
+          <PriceStamps price={holdingPriceTime(row)} updated={null} terse />
         </Fact>
         <Fact label="Cost basis">
           <Money amount={toNum(row.cost_basis)} currency={ccy} />

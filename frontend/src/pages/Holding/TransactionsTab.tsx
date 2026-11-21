@@ -234,7 +234,7 @@ export function TransactionsTab({
                         <KindTag icon={k.icon} label={k.label} />
                       </td>
                       <td className="holding-page__tx-td holding-page__tx-td--account" title={t.account}>
-                        {t.account}
+                        <span className="holding-page__clip">{t.account}</span>
                       </td>
                       <td className="holding-page__tx-td holding-page__tx-td--right">
                         {t.quantity == null ? "–" : formatQuantity(t.quantity)}
