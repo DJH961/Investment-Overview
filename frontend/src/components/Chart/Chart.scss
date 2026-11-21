@@ -480,6 +480,11 @@
     }
   }
 
+  // The right axis read as the twin estimate (twin chart, 1D).
+  &__axis-label--estimate {
+    fill: var(--chart-estimate);
+  }
+
   &__marker--invested {
     fill: var(--color-muted);
   }

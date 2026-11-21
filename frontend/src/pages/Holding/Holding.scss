@@ -708,20 +708,53 @@
   &__twin-form {
     display: flex;
     flex-wrap: wrap;
+    max-width: 28rem;
     align-items: center;
     gap: var(--space-2) var(--space-3);
   }
 
   &__twin-input {
-    flex: 0 1 16rem;
+    flex: 1 1 10rem;
     min-width: 0;
   }
 
-  &__legend-nav {
+  &__twin-save {
+    flex: 0 0 auto;
+
+    @include m.phone {
+      min-height: var(--tap-min);
+    }
+  }
+
+  &__legend {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-4);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__legend-item {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    color: var(--color-muted);
+    white-space: nowrap;
+  }
+
+  // The twin line (chart-1, solid) and the right axis it is read on (chart-estimate).
+  &__line-swatch {
+    width: var(--space-4);
+    height: 2px;
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+  }
+
+  &__axis-swatch {
+    width: var(--space-2);
+    height: var(--space-2);
+    border-radius: var(--radius-xs);
+    background: var(--chart-estimate);
   }
 
   // Same colour as the NAV marks on the chart (chart-3).
