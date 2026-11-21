@@ -859,10 +859,15 @@
     z-index: calc(var(--z-raised) + 1);
   }
 
-  // The (i) gets a phone-sized tap area without growing the line.
+  // The (i) gets a phone-sized tap area without growing the line. The box grows up, down
+  // and to the left only (never past the row's right edge), the icon stays at that edge.
   &__item-split .info-tip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
     min-width: var(--tap-min);
     min-height: var(--tap-min);
-    margin: calc((var(--tap-min) - var(--icon-md)) / -2);
+    margin-block: calc((var(--tap-min) - var(--icon-md)) / -2);
+    margin-inline: calc(var(--icon-md) - var(--tap-min)) 0;
   }
 }

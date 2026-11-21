@@ -17,6 +17,42 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.1.0] — 2026-11-21
+
+### Added
+- **Holding deep dive.** Every holding page has four tabs: **Performance** (now the default),
+  **Tranches**, **Transactions** and **Dividends**, plus **Twin** for a NAV fund with an ETF
+  twin. The header is one line with chips; the old Details tab is folded into Performance as
+  "Key facts" (old `/details` links redirect).
+- **Performance:** value or price chart with 1D, 1W, 1M, 3M, 6M, YTD, 1Y and All. Value mode
+  shows what you invested and marks your trades; the range figure (gain, return, bought,
+  dividends) is computed on the server. A NAV fund has no 1D / 1W.
+- **Per-holding 1D / 1W and stored daily values (P16).** Each holding's price is now kept
+  beside every portfolio sample, and each holding's value per day is stored, so a late
+  transaction rebuilds only that holding from its trade date.
+- **Tranches (P3):** each purchase as its own row, used up first in, first out, in USD, with
+  age and a long-term countdown ("Long-term in 37 d"). Reinvested dividends are grouped. It is
+  a FIFO view for information: the holding's totals still use average cost.
+- **Twin view for NAV funds:** the ETF's intraday line with the fund's estimate on a second
+  scale, the official NAV per session as a dot, NAV against twin from 1M on, the tracking
+  record, and changing the twin right there.
+- **Transactions and Dividends tabs** rebuilt: two-line rows grouped by year with yearly
+  totals, filters by kind, and dividend tiles (lifetime, last 12 months, yield) with a bar per
+  year.
+- **Look up any ticker (P20):** search by symbol or name and open a price page for
+  instruments you do not hold. Nothing is added to your portfolio.
+- **Holdings list peek:** opening a row shows the past week, tranche status, the last trade
+  and the last dividend, with links into the deep dive, on phone and desktop.
+
+### Changed
+- **Risk › Contribution (P17):** "% of return" is replaced by **Share of P&L** and **Own
+  return** (the holding's money-weighted return in the window), so "All" no longer looks huge.
+- One set of status pills (live, NAV, ≈ est., stale, cash) across Overview and Holdings.
+
+### Fixed
+- The phone holdings row no longer nests the session-split info button inside the row button
+  (tapping it opened the row).
+
 ## [7.0.1] — 2026-11-21
 
 ### Fixed

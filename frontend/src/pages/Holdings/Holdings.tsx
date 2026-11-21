@@ -29,7 +29,7 @@ import {
 import { toNum } from "../../lib/queries/portfolio";
 import { useTimeZone } from "../../lib/timezone";
 import { useShellStatus } from "../../lib/shell";
-import { PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
+import { DESKTOP_QUERY, PHONE_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { HoldingMobileRow } from "./HoldingMobileRow";
 import { GroupSummary } from "./GroupSummary";
@@ -108,6 +108,8 @@ function FlagNotice({ rows }: { rows: HoldingRowDto[] }) {
 export function Holdings() {
   const { currency } = usePrefs();
   const isPhone = useMediaQuery(PHONE_QUERY);
+  // The top bar carries the lookup box only on desktop; phones and tablets get it here.
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
   const [groupBy, setGroupBy] = usePersistentState<HoldingsGroupBy>("holdings.group", "none", oneOf(GROUP_OPTIONS));
   const query = useHoldings(currency, groupBy);
   const [search, setSearch] = useState("");
@@ -463,7 +465,7 @@ export function Holdings() {
         subtitle="Every position in full detail"
       />
       {/* Phone: look up any instrument here, full width (desktop: in the top bar). */}
-      {isPhone && <LookupSearch className="holdings-page__lookup" />}
+      {!isDesktop && <LookupSearch className="holdings-page__lookup" />}
 
       <HoldingsKpis data={data} currency={currency} />
       <FlagNotice rows={data?.holdings ?? []} />

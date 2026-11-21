@@ -543,6 +543,13 @@
       padding: 0 var(--space-2);
     }
 
+    // The toggle fills its chip edge to edge: its pull-out must match the chip's padding.
+    &__legend-toggle {
+      gap: var(--space-1);
+      padding: 0 var(--space-2);
+      margin: 0 calc(-1 * var(--space-2));
+    }
+
     &__legend-extra {
       padding-left: 0;
     }

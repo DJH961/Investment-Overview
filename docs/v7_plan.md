@@ -21,8 +21,10 @@
 > 7.2 (`SHOW_CURRENCY_PAGE` in `frontend/src/lib/features.ts`). Pushes 1 to 3 shipped as 6.13.1 to
 > 6.15.0, then 6.16.0 and 6.17.x. **7.0.1** (2026-11-21) is the owner's fix list
 > after 7.0: currency figures agree everywhere, Overview "today first", quiet
-> background updates. Next: push 5 (7.1); do not start it until
-> the owner approves. The owner's post-cutover steps are in
+> background updates. **Push 5 (7.1.0, 2026-11-21)**: the holding deep dive (Performance,
+> Tranches, Transactions, Dividends, Twin tabs; per-holding 1D/1W and stored daily values,
+> P16; tranches, P3; Risk share of P&L, P17; ticker lookup, P20). P18 moved to 7.4.
+> Pushes 6 (7.2) and 7 (7.3) run in parallel; merge order 7.1 → 7.2 → 7.3. The owner's post-cutover steps are in
 > [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
 
 ---

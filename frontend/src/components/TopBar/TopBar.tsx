@@ -13,6 +13,7 @@ import { IconButton } from "../IconButton";
 import { Menu, type MenuItem } from "../Menu";
 import { SegmentedControl } from "../SegmentedControl";
 import { LookupSearch } from "../LookupSearch";
+import { DESKTOP_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import "./TopBar.scss";
 
 /** What the data-health badge shows (fed by the diagnostics status hook). */
@@ -127,6 +128,9 @@ export function TopBar({
   // Phones use the chip's short form ("Closed", "Open · 15:42"); wider screens stack
   // the state over its detail ("Closed" / "Prices 22:00 (close)"): two clean lines.
   const shortChip = compact && Boolean(freshness.short);
+  // The lookup box only fits beside the summary and the actions on desktop; below that it
+  // lives in the Holdings page header instead (the tablet top bar must not overflow).
+  const isDesktop = useMediaQuery(DESKTOP_QUERY);
 
   const accountItems: MenuItem[] = [
     ...(compact ? [{ label: `Theme: ${theme}`, icon: <ThemeIcon aria-hidden />, onSelect: cycleTheme }] : []),
@@ -207,7 +211,7 @@ export function TopBar({
         </div>
       )}
       {/* Desktop: look up any instrument (phone: in the Holdings page header). */}
-      {!compact && <LookupSearch className="top-bar__lookup" />}
+      {!compact && isDesktop && <LookupSearch className="top-bar__lookup" />}
       <div className="top-bar__actions">
         {/* First, so it is the quickest action to reach. */}
         <span className="top-bar__refresh">
