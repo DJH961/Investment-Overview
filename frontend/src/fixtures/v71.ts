@@ -576,9 +576,9 @@ export function v71Extend(path: string, body: unknown, data: Obj): unknown {
   }
   if (path === "/api/settings/values") {
     const b = body as { values: Obj };
-    if (b.values[COST_SCALE_KEY]) return body;
     // `sessionStorage["iv.fixtures.costScale"]` lets a reviewer (or a screenshot script) try each choice.
     const asked = typeof window !== "undefined" ? window.sessionStorage.getItem("iv.fixtures.costScale") : null;
+    if (b.values[COST_SCALE_KEY] && asked !== "always" && asked !== "never") return body;
     const value = asked === "always" || asked === "never" ? asked : "auto";
     const entry = { default: "auto", env_value_present: false, is_set: value !== "auto", modified_at: null, source: value === "auto" ? "default" : "user", stored_invalid: false, value };
     return { ...b, values: { ...b.values, [COST_SCALE_KEY]: entry } };

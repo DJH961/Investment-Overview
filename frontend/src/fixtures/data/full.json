@@ -6239,9 +6239,9 @@
      ],
      "winners": [
       {
-       "move": "1720.1746899310616970054446",
+       "move": "2723.8478472865434541024505",
        "name": "Fake Institutional NAV Index Fund",
-       "pct": "0.01478333669170289433027224064",
+       "pct": "0.02340899448126450238511989605",
        "reason": "window",
        "symbol": "FAKENX",
        "twin": null
@@ -6292,9 +6292,9 @@
      ],
      "winners": [
       {
-       "move": "2595.88640000000000",
+       "move": "3764.2623224775163134366246",
        "name": "Fake Institutional NAV Index Fund",
-       "pct": "0.01924873360035490879194988310",
+       "pct": "0.02791234726112166283564975879",
        "reason": "window",
        "symbol": "FAKENX",
        "twin": null
@@ -7932,6 +7932,32 @@
     "title": "Intraday graph coverage"
    },
    {
+    "actions": [
+     {
+      "danger": "none",
+      "href": null,
+      "id": "graphs.backfill_holdings",
+      "kind": "job",
+      "label": "Backfill 1W holding bars",
+      "params": {
+       "force": false
+      }
+     }
+    ],
+    "count": 5,
+    "detail": "5 held stock(s)/ETF(s) are missing 1 Week intraday bars (leaving per-holding 1W charts or list peeks empty even when the portfolio 1W line is cached). Run 'Backfill 1W holding bars' to fill them without altering the portfolio curve.",
+    "examples": [
+     "FAKEB",
+     "FAKEG",
+     "FAKEL",
+     "FAKET",
+     "FAKEU.DE"
+    ],
+    "id": "holding_intraday_graph",
+    "severity": "warning",
+    "title": "Per-holding 1W intraday bars"
+   },
+   {
     "actions": [],
     "count": 0,
     "detail": "No frozen-quote stretches from the price provider in the last 7 days.",
@@ -7959,7 +7985,7 @@
     "title": "Deposits paid at the ECB rate"
    }
   ],
-  "count": 9,
+  "count": 14,
   "generated_at": "2026-06-30T18:15:00+00:00",
   "problems": [],
   "provider_log": [
@@ -64906,6 +64932,38 @@
    {
     "backup_first": false,
     "confirm_word": null,
+    "danger": "none",
+    "description": "Download missing 1 Week intraday price bars for held stocks and ETFs into the per-holding price cache without altering the stored portfolio 1D / 1W curve.",
+    "group": "graphs",
+    "heavy": true,
+    "id": "graphs.backfill_holdings",
+    "label": "Backfill 1W per-holding intraday bars",
+    "last_run": null,
+    "params": [
+     {
+      "choices": [],
+      "default": null,
+      "help": "",
+      "label": "Instrument (empty = all held stocks/ETFs)",
+      "name": "instrument_id",
+      "required": false,
+      "type": "int"
+     },
+     {
+      "choices": [],
+      "default": false,
+      "help": "",
+      "label": "Re-download days already covered",
+      "name": "force",
+      "required": false,
+      "type": "bool"
+     }
+    ],
+    "running": false
+   },
+   {
+    "backup_first": false,
+    "confirm_word": null,
     "danger": "confirm",
     "description": "Delete the stored 1D or 1W samples; they refill during the next session.",
     "group": "graphs",
@@ -67829,6 +67887,30 @@
     "unit": null
    },
    {
+    "choices": [
+     "auto",
+     "always",
+     "never"
+    ],
+    "danger": null,
+    "default": "auto",
+    "env_bound": null,
+    "env_var": null,
+    "help": "How holding charts scale when average cost (Price mode) or money invested (Value mode) sits far outside the plotted range. 'Auto' keeps the y-axis zoomed to the curve if cost/invested would flatten it (showing an edge cue or legend toggle instead); 'Always' always includes it on the axis; 'Data only' scales strictly to the curve.",
+    "key": "display.holding_chart_cost_scale",
+    "label": "Holding chart cost / invested scale",
+    "level": "user",
+    "max": null,
+    "min": null,
+    "nullable": false,
+    "restart_required": false,
+    "secret": false,
+    "section": "display",
+    "since": "7.1",
+    "type": "enum",
+    "unit": null
+   },
+   {
     "choices": [],
     "danger": null,
     "default": false,
@@ -69210,6 +69292,15 @@
     "value": 2
    },
    "display.date_format": {
+    "default": "auto",
+    "env_value_present": false,
+    "is_set": true,
+    "modified_at": null,
+    "source": "default",
+    "stored_invalid": false,
+    "value": "auto"
+   },
+   "display.holding_chart_cost_scale": {
     "default": "auto",
     "env_value_present": false,
     "is_set": true,
