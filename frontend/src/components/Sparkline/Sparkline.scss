@@ -8,6 +8,20 @@
     stroke-width: 1.75;
     stroke-linecap: round;
     stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+
+  // A faint reference (your average entry): dashed and muted, under the line.
+  &__ref {
+    stroke: var(--color-muted);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+    opacity: 0.8;
+    vector-effect: non-scaling-stroke;
+  }
+
+  &--stretch {
+    width: 100%;
   }
 
   &--pos &__line {
