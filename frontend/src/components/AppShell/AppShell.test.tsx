@@ -56,8 +56,8 @@ describe("AppShell", () => {
     renderShell();
     act(() => setRefreshState({ running: true, explicit: false, source: "scheduled" }));
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(screen.getByText("Updating…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Refresh data" })).toBeEnabled();
+    expect(screen.queryByText("Updating…")).toBeNull();
+    expect(screen.getByRole("button", { name: "Updating prices" })).toBeEnabled();
     act(() => setRefreshState({ explicit: true }));
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh data" })).toBeDisabled();
@@ -69,7 +69,7 @@ describe("AppShell", () => {
     expect(screen.queryByRole("navigation", { name: "Primary" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "More" })).toBeInTheDocument();
     // Refresh and the account menu (sign out) are in the top bar, enabled without any page registering a handler.
-    expect(screen.getByRole("button", { name: "Refresh data" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^(Refresh data|Updating prices)$/ })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Account and sign out" })).toBeInTheDocument();
   });
   it("shows Updating… and a progress bar while a server refresh runs", () => {
