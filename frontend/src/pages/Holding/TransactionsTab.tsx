@@ -154,7 +154,8 @@ export function TransactionsTab({
 
   return (
     <div className="holding-page__panel">
-      <div className="holding-page__filters" role="group" aria-label="Show">
+      <fieldset className="holding-page__filters">
+        <legend className="holding-page__sr">Show</legend>
         {(Object.keys(MATCH) as TxFilter[]).map((f) => (
           <button
             key={f}
@@ -166,7 +167,7 @@ export function TransactionsTab({
             {LABEL[f]} <span className="holding-page__filter-count">{counts[f]}</span>
           </button>
         ))}
-      </div>
+      </fieldset>
       {shown.length === 0 ? (
         <p className="holding-page__note">No {LABEL[filter].toLowerCase()} for {row.symbol}.</p>
       ) : isPhone ? (

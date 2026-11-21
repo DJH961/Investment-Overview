@@ -1,6 +1,5 @@
 ﻿import { useQuery } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
-import { useMemo } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { Chip } from "../../components/Chip";
 import { EmptyState } from "../../components/EmptyState";
@@ -76,11 +75,8 @@ export function Holding() {
   };
   const txQuery = useQuery({ ...transactionsQuery(filters), enabled: symbol !== "" });
   // A list we already hold, filtered again here: the server's symbol filter is a prefix match.
-  const txns = useMemo(() => (txQuery.data?.rows ?? []).filter((t) => t.symbol === symbol), [txQuery.data, symbol]);
-  const divCount = useMemo(
-    () => (dividends.data?.rows ?? []).filter((d) => d.symbol === symbol).length,
-    [dividends.data, symbol],
-  );
+  const txns = (txQuery.data?.rows ?? []).filter((t) => t.symbol === symbol);
+  const divCount = (dividends.data?.rows ?? []).filter((d) => d.symbol === symbol).length;
 
   // The old Details tab folded into Performance (7.1): keep its links working.
   if (tab === "details") return <Navigate to={`/holdings/${id}`} replace />;

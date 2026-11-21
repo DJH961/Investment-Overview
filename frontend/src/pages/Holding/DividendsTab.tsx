@@ -95,7 +95,7 @@ export function DividendsTab({
     for (const r of rows) out.set(r.date.slice(0, 4), [...(out.get(r.date.slice(0, 4)) ?? []), r]);
     return [...out];
   }, [rows]);
-  const asOfYear = Number((data?.as_of ?? new Date().toISOString()).slice(0, 4));
+  const asOfYear = Number((data?.as_of ?? rows[0]?.date ?? "").slice(0, 4));
   const yearTotal = (y: string) => totals?.by_year?.find((b) => String(b.year) === y)?.amount ?? null;
 
   if (error) return <ErrorState message="Could not load the dividends." onRetry={onRetry} />;

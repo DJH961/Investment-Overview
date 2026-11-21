@@ -96,12 +96,14 @@ function ChangeTwin({ row }: { row: HoldingRowDto }) {
   };
   return (
     <form className="holding-page__twin-form" onSubmit={submit} aria-label="Change twin">
-      <Input
-        aria-label="Twin ETF symbol"
-        placeholder="ETF symbol, empty for none"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-      />
+      <span className="holding-page__twin-input">
+        <Input
+          aria-label="Twin ETF symbol"
+          placeholder="ETF symbol, empty for none"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      </span>
       <Button type="submit" variant="secondary" loading={update.isPending}>
         Change twin
       </Button>

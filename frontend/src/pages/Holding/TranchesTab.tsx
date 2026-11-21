@@ -28,10 +28,10 @@ export function TrancheBadge({ row }: { row: Pick<TrancheRowDto, "status" | "day
   const days = row.days_to_long_term;
   const look =
     row.status === "long"
-      ? { icon: <CircleCheck aria-hidden size={14} />, text: "Long-term" }
+      ? { icon: <CircleCheck aria-hidden size={14} className="holding-page__lot-icon holding-page__lot-icon--long" />, text: "Long-term" }
       : row.status === "soon"
-        ? { icon: <Hourglass aria-hidden size={14} />, text: `Long-term in ${days ?? "–"} d` }
-        : { icon: <Clock aria-hidden size={14} />, text: `Short-term · ${days ?? "–"} d left` };
+        ? { icon: <Hourglass aria-hidden size={14} className="holding-page__lot-icon holding-page__lot-icon--soon" />, text: `Long-term in ${days ?? "–"} d` }
+        : { icon: <Clock aria-hidden size={14} className="holding-page__lot-icon" />, text: `Short-term · ${days ?? "–"} d left` };
   return (
     <span className={clsx("holding-page__lot-badge", `holding-page__lot-badge--${row.status}`)}>
       {look.icon}
@@ -44,7 +44,7 @@ function Gain({ amount, pct, ccy }: { amount: string | null; pct: string | null;
   return (
     <span className="holding-page__lot-gain">
       <Money amount={toNum(amount)} currency={ccy} signed colored />
-      <Percent ratio={toNum(pct)} signed />
+      <Percent ratio={toNum(pct)} signed className="holding-page__lot-pct" />
     </span>
   );
 }
@@ -131,8 +131,8 @@ function GroupRow({
         </td>
       </tr>
       {open && (
-        <tr id={id} className="holding-page__lot-nest">
-          <td colSpan={8} className="holding-page__lot-nest-cell">
+        <tr id={id} className="holding-page__lot-nest" aria-label={`Reinvested dividends in ${account}`}>
+          <td colSpan={8} className="holding-page__lot-nest-cell" aria-label={`${g.count} reinvested tranches`}>
             <table className="holding-page__lots holding-page__lots--nested">
               <caption className="holding-page__sr">Reinvested dividends in {account}</caption>
               <tbody>
