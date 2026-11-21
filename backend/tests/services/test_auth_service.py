@@ -6,6 +6,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterator
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -239,35 +240,52 @@ def test_passkey_and_token_limiters_have_no_global_cap(clock: Clock) -> None:
 
 
 def test_verify_password_refuses_when_slots_are_full(
-    db: Session, clock: Clock, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    svc.set_password(db, "a-good-long-password")
-    entered = threading.Barrier(3)
-    release = threading.Event()
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'auth.db'}", connect_args={"check_same_thread": False}
+    )
+    ConfigBase.metadata.create_all(engine)
+    session_factory = sessionmaker(engine)
+    try:
+        with session_factory() as s:
+            svc.set_password(s, "a-good-long-password")
+            s.commit()
 
-    def slow_verify(stored: str, password: str) -> bool:
-        entered.wait(timeout=5)
-        release.wait(timeout=5)
-        return True
+        entered = threading.Barrier(3)
+        release = threading.Event()
 
-    monkeypatch.setattr(svc, "_hasher", SimpleNamespace(verify=slow_verify))
-    results: list[Any] = []
+        def slow_verify(stored: str, password: str) -> bool:
+            entered.wait(timeout=5)
+            release.wait(timeout=5)
+            return True
 
-    def run() -> None:
-        results.append(svc.verify_password(db, "a-good-long-password", max_concurrent=2))
+        monkeypatch.setattr(svc, "_hasher", SimpleNamespace(verify=slow_verify))
+        results: list[Any] = []
+        results_lock = threading.Lock()
 
-    workers = [threading.Thread(target=run) for _ in range(2)]
-    for w in workers:
-        w.start()
-    entered.wait(timeout=5)  # both slots are now taken
-    with pytest.raises(svc.VerifierBusyError):
-        svc.verify_password(db, "a-good-long-password", max_concurrent=2)
-    release.set()
-    for w in workers:
-        w.join()
-    assert results == [True, True]
-    monkeypatch.setattr(svc, "_hasher", SimpleNamespace(verify=lambda stored, password: True))
-    assert svc.verify_password(db, "a-good-long-password", max_concurrent=2)  # slots freed
+        def run() -> None:
+            # Each thread opens its own Session + connection (SQLAlchemy Sessions are not thread-safe).
+            with session_factory() as s:
+                ok = svc.verify_password(s, "a-good-long-password", max_concurrent=2)
+            with results_lock:
+                results.append(ok)
+
+        workers = [threading.Thread(target=run) for _ in range(2)]
+        for w in workers:
+            w.start()
+        entered.wait(timeout=5)  # both slots are now taken
+        with session_factory() as s, pytest.raises(svc.VerifierBusyError):
+            svc.verify_password(s, "a-good-long-password", max_concurrent=2)
+        release.set()
+        for w in workers:
+            w.join()
+        assert results == [True, True]
+        monkeypatch.setattr(svc, "_hasher", SimpleNamespace(verify=lambda stored, password: True))
+        with session_factory() as s:
+            assert svc.verify_password(s, "a-good-long-password", max_concurrent=2)  # slots freed
+    finally:
+        engine.dispose()
 
 
 def test_session_is_fresh_window(db: Session, clock: Clock) -> None:
