@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import full from "../../fixtures/data/full.json";
@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
 // The rate chart has its own tests and query; the page tests cover the strip and Today.
-vi.mock("../../components/RateChart", () => ({ RateChart: () => null }));
+vi.mock("../../components/RateChart", () => ({ RateChart: () => <div data-testid="rate-chart" /> }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 vi.mock("../../lib/prefs", async (orig) => ({
   ...(await orig<typeof import("../../lib/prefs")>()),
@@ -33,7 +33,6 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
   useOverview: (c: "EUR" | "USD") => ({ data: state.overview?.[c] }),
 }));
 
-import { CurrencyBox } from "../../components/CurrencyBox";
 import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { Currency } from "./Currency";
 
@@ -52,7 +51,6 @@ function mount(route = "/currency") {
 }
 
 const tiles = () => document.querySelectorAll(".stat-strip__item");
-const rows = () => document.querySelectorAll(".currency-page__row");
 
 beforeEach(() => {
   state.ccy = "EUR";
@@ -81,54 +79,34 @@ describe("Currency page", () => {
     expect(screen.getByText("Tailwind")).toBeInTheDocument();
   });
 
-  it("leaves the strip out when no stats are sent", () => {
+  it("leaves the strip out when no stats are sent, keeping the chart", () => {
     state.both = { EUR: { ...cur.EUR, stats: [] }, USD: { ...cur.USD, stats: [] } };
     mount();
     expect(tiles()).toHaveLength(0);
-    expect(screen.getByTestId("today-buys")).toBeInTheDocument();
+    expect(screen.getByTestId("rate-chart")).toBeInTheDocument();
   });
 
-  it("EUR and USD have one shape: same tiles and same Today rows", () => {
+  it("EUR and USD have one shape: same tiles", () => {
     const eur = mount();
     const nEur = tiles().length;
-    const rEur = rows().length;
     eur.unmount();
     state.ccy = "USD";
     mount();
     expect(tiles().length).toBe(nEur);
-    expect(rows().length).toBe(rEur);
-    expect(rEur).toBeGreaterThan(0);
+    expect(nEur).toBeGreaterThan(0);
   });
 
-  it("prints the regular amount and what it buys", () => {
+  it("leads with the rate chart, then the strip", () => {
     mount();
-    const buys = screen.getByTestId("today-buys");
-    expect(within(buys).getByText(/100 euros buy/)).toBeInTheDocument();
-    expect(buys.textContent).toContain("yesterday");
+    const chart = screen.getByTestId("rate-chart");
+    const strip = document.querySelector(".stat-strip")!;
+    expect(chart.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("unknown ?view= falls back to Today", () => {
-    mount("/currency?view=nonsense");
-    // One view only: no view switch is shown (it returns with a second view).
-    expect(screen.queryByLabelText("Currency views")).toBeNull();
-    expect(screen.getByTestId("today-buys")).toBeInTheDocument();
-  });
-
-  it("shows the same box as the Overview card for the same today block", () => {
-    for (const c of ["EUR", "USD"] as const) {
-      state.ccy = c;
-      const page = mount();
-      const pageBox = page.container.querySelector(".currency-box")?.textContent;
-      page.unmount();
-      const ovBox = render(
-        <HideAmountsProvider>
-          <CurrencyBox data={ov[c]} />
-        </HideAmountsProvider>,
-      );
-      expect(pageBox).toBeTruthy();
-      expect(pageBox).toBe(ovBox.container.querySelector(".currency-box")?.textContent);
-      ovBox.unmount();
-    }
+  it("does not repeat the Overview's Currency card", () => {
+    // Today's split lives on the Overview; this page shows only views the Overview has not.
+    mount();
+    expect(document.querySelector(".currency-box")).toBeNull();
   });
 });
 
