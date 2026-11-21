@@ -81,7 +81,7 @@ function Figures({ data, lens }: { data: RateHistoryDto; lens: RateLens }) {
   // Low and high of the quote shown (in USD/EUR the dollar's low is EUR/USD's high).
   const lo = lens === "rate" ? data.low : data.high;
   const hi = lens === "rate" ? data.high : data.low;
-  const day = (p: RatePointDto | null) => (p ? formatDate(p.t.slice(0, 10)) : "–");
+  const day = (p: RatePointDto | null | undefined) => (p ? formatDate(p.t.slice(0, 10)) : "–");
   return (
     <dl className="rate-chart__figs">
       <Figure
@@ -144,13 +144,14 @@ export function RateChart({ currency, className }: { currency: ReportingCurrency
   const series = useMemo<ChartSeries[]>(() => {
     if (!data) return [];
     const toPts = (pts: RatePointDto[]) => pts.map((p) => ({ t: p.t, v: pick(p, lens) }));
-    const out: ChartSeries[] = [{ id: "rate", label: pair, points: toPts(data.points), tone: "primary" }];
-    if (data.ma200.length) out.push({ id: "ma200", label: "200-day average", points: toPts(data.ma200), tone: "benchmark" });
+    const out: ChartSeries[] = [{ id: "rate", label: pair, points: toPts(data.points ?? []), tone: "primary" }];
+    if (data.ma200?.length) out.push({ id: "ma200", label: "200-day average", points: toPts(data.ma200), tone: "benchmark" });
     return out;
   }, [data, lens, pair]);
 
   const avg = data?.avg_rate ? toNum(lens === "rate" ? data.avg_rate.rate : data.avg_rate.inverse) : null;
-  const last = data?.points.length ? pick(data.points[data.points.length - 1], lens) : null;
+  const pts = data?.points ?? [];
+  const last = pts.length ? pick(pts[pts.length - 1], lens) : null;
   const change = toNum(lens === "rate" ? data?.change?.rate_pct : data?.change?.inverse_pct);
   const rangeLabel = shown === "max" ? "since 1999" : RATE_RANGE_LABELS[shown];
   const long = shown === "1y" || shown === "5y" || shown === "10y" || shown === "max";

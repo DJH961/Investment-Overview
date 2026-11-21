@@ -16,7 +16,7 @@ from investment_dashboard.api.schemas.common import ApiModel, DecStr
 RateRange = Literal["1d", "1w", "1m", "3m", "ytd", "1y", "5y", "10y", "max"]
 
 
-class RatePoint(ApiModel):
+class RateHistoryPoint(ApiModel):
     #: ISO date (daily / weekly) or ISO datetime in UTC (intraday).
     t: str
     rate: DecStr
@@ -83,13 +83,13 @@ class RateHistoryOut(ApiModel):
     #: ISO date of the last settled row, or ISO datetime (UTC) of the live point.
     as_of: str | None = None
     source: Literal["ECB reference rate", "live samples"]
-    points: list[RatePoint] = Field(default_factory=list)
+    points: list[RateHistoryPoint] = Field(default_factory=list)
     #: 200-day moving average (ranges >= 1y, daily / weekly only).
-    ma200: list[RatePoint] = Field(default_factory=list)
+    ma200: list[RateHistoryPoint] = Field(default_factory=list)
     #: The Overview's lifetime ``avg_invest_rate``.
     avg_rate: RateValue | None = None
-    low: RatePoint | None = None
-    high: RatePoint | None = None
+    low: RateHistoryPoint | None = None
+    high: RateHistoryPoint | None = None
     change: RateChange | None = None
     trend: RateTrend | None = None
     percentiles: RatePercentiles = Field(default_factory=RatePercentiles)
@@ -101,7 +101,7 @@ __all__ = [
     "RateChange",
     "RateHistoryOut",
     "RatePercentiles",
-    "RatePoint",
+    "RateHistoryPoint",
     "RateRange",
     "RateTrend",
     "RateValue",

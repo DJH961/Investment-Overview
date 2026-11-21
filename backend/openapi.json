@@ -2598,6 +2598,61 @@
         "title": "ConversionBatchOut",
         "type": "object"
       },
+      "ConversionMarker": {
+        "properties": {
+          "amount_from": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount From",
+            "type": "string"
+          },
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "from_ccy": {
+            "title": "From Ccy",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "above_reference",
+                  "below_reference"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "to_ccy": {
+            "title": "To Ccy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "rate",
+          "amount_from",
+          "from_ccy",
+          "to_ccy",
+          "conversion_id"
+        ],
+        "title": "ConversionMarker",
+        "type": "object"
+      },
       "CurrencyBlock": {
         "properties": {
           "lifetime": {
@@ -10758,6 +10813,246 @@
         "title": "ProviderOut",
         "type": "object"
       },
+      "RateChange": {
+        "properties": {
+          "end_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "End Rate",
+            "type": "string"
+          },
+          "inverse_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Inverse Pct",
+            "type": "string"
+          },
+          "rate_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate Pct",
+            "type": "string"
+          },
+          "start_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Rate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_rate",
+          "end_rate",
+          "rate_pct",
+          "inverse_pct"
+        ],
+        "title": "RateChange",
+        "type": "object"
+      },
+      "RateHistoryOut": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "avg_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "granularity": {
+            "enum": [
+              "intraday",
+              "daily",
+              "weekly"
+            ],
+            "title": "Granularity",
+            "type": "string"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateHistoryPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "low": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateHistoryPoint"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ma200": {
+            "items": {
+              "$ref": "#/components/schemas/RateHistoryPoint"
+            },
+            "title": "Ma200",
+            "type": "array"
+          },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/ConversionMarker"
+            },
+            "title": "Markers",
+            "type": "array"
+          },
+          "percentiles": {
+            "$ref": "#/components/schemas/RatePercentiles"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/RateHistoryPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "range": {
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "ytd",
+              "1y",
+              "5y",
+              "10y",
+              "max"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "ECB reference rate",
+              "live samples"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "trend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateTrend"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "range",
+          "granularity",
+          "source"
+        ],
+        "title": "RateHistoryOut",
+        "type": "object"
+      },
+      "RateHistoryPoint": {
+        "properties": {
+          "inverse": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Inverse",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "t": {
+            "title": "T",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "rate",
+          "inverse"
+        ],
+        "title": "RateHistoryPoint",
+        "type": "object"
+      },
+      "RatePercentiles": {
+        "description": "Share of days (0..1) the dollar was cheaper than today, per window.",
+        "properties": {
+          "since_1999": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since 1999"
+          },
+          "since_start": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since Start"
+          },
+          "y10": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y10"
+          },
+          "y5": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y5"
+          }
+        },
+        "title": "RatePercentiles",
+        "type": "object"
+      },
       "RatePoint": {
         "properties": {
           "date": {
@@ -10781,6 +11076,98 @@
           "source"
         ],
         "title": "RatePoint",
+        "type": "object"
+      },
+      "RateTrend": {
+        "description": "The dollar's regime and how unusual its recent move is (full daily history).",
+        "properties": {
+          "direction": {
+            "enum": [
+              "dollar_up",
+              "dollar_down",
+              "sideways"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "move_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Move Pct",
+            "type": "string"
+          },
+          "move_percentile": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Move Percentile",
+            "type": "string"
+          },
+          "normal": {
+            "enum": [
+              "normal",
+              "large",
+              "unusual"
+            ],
+            "title": "Normal",
+            "type": "string"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          },
+          "since_change_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Since Change Pct",
+            "type": "string"
+          },
+          "typical_move_pct": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Typical Move Pct",
+            "type": "string"
+          },
+          "vs_ma200": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "title": "Vs Ma200",
+            "type": "string"
+          },
+          "window_days": {
+            "title": "Window Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "direction",
+          "since",
+          "since_change_pct",
+          "vs_ma200",
+          "normal",
+          "move_pct",
+          "typical_move_pct",
+          "move_percentile",
+          "window_days"
+        ],
+        "title": "RateTrend",
+        "type": "object"
+      },
+      "RateValue": {
+        "properties": {
+          "inverse": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Inverse",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rate",
+          "inverse"
+        ],
+        "title": "RateValue",
         "type": "object"
       },
       "RatesDto": {
@@ -15734,6 +16121,60 @@
           }
         },
         "summary": "Get Currency Both",
+        "tags": [
+          "currency"
+        ]
+      }
+    },
+    "/api/currency/rate-history": {
+      "get": {
+        "operationId": "get_rate_history_api_currency_rate_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "1y",
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "ytd",
+                "1y",
+                "5y",
+                "10y",
+                "max"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Rate History",
         "tags": [
           "currency"
         ]
