@@ -208,8 +208,9 @@ describe("Health & Repair: Health tab", () => {
     const firstCheckRow = within(within(checksTable).getAllByRole("rowgroup")[1]).getAllByRole("row")[0];
     const checkCells = within(firstCheckRow).getAllByRole("cell");
     expect(checkCells[0]).toHaveClass("data-table__td--headline");
+    expect(within(checkCells[0]).getByText("2")).toHaveClass("diagnostics__check-count");
     expect(checkCells[1]).toHaveClass("data-table__td--primary");
-    expect(checkCells[2].querySelector(".data-table__label")?.textContent).toBe("Items");
+    expect(checkCells[2]).toHaveClass("data-table__td--phone-hidden");
     expect(checkCells[3]).toHaveClass("data-table__td--phone-hidden");
 
     const providersTable = screen.getByRole("table", { name: "Data providers" });

@@ -29,7 +29,7 @@
 >
 > **Release train to 7.2.1 (owner, 2026-11-21), one session, merged in this order:**
 >
-> 1. **7.1.1**: small improvements after 7.1. The Brief anchors on the real visit time,
+> 1. **7.1.1** (shipped 2026-11-21): small improvements after 7.1. The Brief anchors on the real visit time,
 >    Risk totals move into the table footer, Back returns to where you came from,
 >    Diagnostics tabs fit on phones, the 1W per-holding bars get a backfill and a Repair
 >    action, a holding-chart cost-scale setting, and faster 1W previews on Holdings.

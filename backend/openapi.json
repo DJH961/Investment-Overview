@@ -5891,6 +5891,23 @@
         "title": "HoldingPeekResponse",
         "type": "object"
       },
+      "HoldingPeeksResponse": {
+        "description": "Batch peek payload for every currently held instrument.",
+        "properties": {
+          "peeks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/HoldingPeekResponse"
+            },
+            "title": "Peeks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "peeks"
+        ],
+        "title": "HoldingPeeksResponse",
+        "type": "object"
+      },
       "HoldingRow": {
         "properties": {
           "account": {
@@ -16275,7 +16292,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "7.1.0"
+    "version": "7.1.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -18073,6 +18090,27 @@
           }
         },
         "summary": "Get Holdings Both",
+        "tags": [
+          "holdings"
+        ]
+      }
+    },
+    "/api/holdings/peeks": {
+      "get": {
+        "operationId": "get_holding_peeks_api_holdings_peeks_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldingPeeksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Holding Peeks",
         "tags": [
           "holdings"
         ]

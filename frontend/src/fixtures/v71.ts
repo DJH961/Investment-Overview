@@ -516,6 +516,11 @@ export function v71Answer(url: URL, data: Obj): unknown | undefined {
   const { usd, rate } = rows(data);
   const accounts = (data["GET /api/accounts"] as { id: number; account_label?: string; name?: string }[] | undefined) ?? [];
   const accountId = (row: Row) => accounts.find((a) => (a.account_label ?? a.name) === row.account)?.id ?? 1;
+  if (path === "/api/holdings/peeks") {
+    const peeks: Obj = {};
+    for (const row of usd) peeks[String(row.instrument_id)] = peek(row, data, accountId(row));
+    return { peeks };
+  }
   let m = /^\/api\/holdings\/(\d+)\/(peek|tranches|twin|history)$/.exec(path);
   if (m) {
     const row = usd.find((r) => r.instrument_id === Number(m![1]));
@@ -535,6 +540,8 @@ export function v71Answer(url: URL, data: Obj): unknown | undefined {
   return undefined;
 }
 
+const COST_SCALE_KEY = "display.holding_chart_cost_scale";
+
 /** Adds the 7.1 fields to a recorded answer (only the endpoints the contract extends). */
 export function v71Extend(path: string, body: unknown, data: Obj): unknown {
   if (path === "/api/deposits/dividends/both") {
@@ -542,5 +549,39 @@ export function v71Extend(path: string, body: unknown, data: Obj): unknown {
     return withDividendExtras(body, usd, eur);
   }
   if (path === "/api/analytics/both") return withAttributionExtras(body);
+  if (path === "/api/settings/schema") {
+    const b = body as { fields: Obj[] };
+    if (b.fields.some((f) => f.key === COST_SCALE_KEY)) return body;
+    const field = {
+      choices: ["auto", "always", "never"],
+      danger: null,
+      default: "auto",
+      env_bound: null,
+      env_var: null,
+      help: "How holding charts scale when average cost (Price mode) or money invested (Value mode) sits far outside the plotted range. 'Auto' keeps the y-axis zoomed to the curve if cost/invested would flatten it; 'Always' always includes it on the axis; 'Data only' scales strictly to the curve.",
+      key: COST_SCALE_KEY,
+      label: "Holding chart cost / invested scale",
+      level: "user",
+      max: null,
+      min: null,
+      nullable: false,
+      restart_required: false,
+      secret: false,
+      section: "display",
+      since: "7.1",
+      type: "enum",
+      unit: null,
+    };
+    return { ...b, fields: [...b.fields, field] };
+  }
+  if (path === "/api/settings/values") {
+    const b = body as { values: Obj };
+    if (b.values[COST_SCALE_KEY]) return body;
+    // `sessionStorage["iv.fixtures.costScale"]` lets a reviewer (or a screenshot script) try each choice.
+    const asked = typeof window !== "undefined" ? window.sessionStorage.getItem("iv.fixtures.costScale") : null;
+    const value = asked === "always" || asked === "never" ? asked : "auto";
+    const entry = { default: "auto", env_value_present: false, is_set: value !== "auto", modified_at: null, source: value === "auto" ? "default" : "user", stored_invalid: false, value };
+    return { ...b, values: { ...b.values, [COST_SCALE_KEY]: entry } };
+  }
   return body;
 }

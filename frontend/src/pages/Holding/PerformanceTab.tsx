@@ -8,7 +8,7 @@ import { Percent } from "../../components/Percent";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { useDisplayPrefs } from "../../lib/displayPrefs";
 import { useIsPhone } from "../../lib/useMediaQuery";
-import { formatMoney, formatQuantity } from "../../lib/format";
+import { chartMoneyFormat, formatMoney, formatQuantity } from "../../lib/format";
 import type { ReportingCurrency } from "../../lib/prefs";
 import {
   HOLDING_RANGES,
@@ -308,7 +308,9 @@ export function PerformanceChart({ row, ccy }: { row: HoldingRowDto; ccy: Report
         sessions={sessions}
         loading={history.isPending}
         busy={history.isFetching && !history.isPending}
-        valueFormat={(v) => (mode === "price" ? formatMoney(v, native, { unmasked: true }) : formatMoney(v, ccy, { compact: true }))}
+        valueFormat={(v, step) =>
+          mode === "price" ? formatMoney(v, native, { unmasked: true }) : chartMoneyFormat(ccy, "axis")(v, step)
+        }
         timeFormat={axisFormat(safeRange, xMode)}
         tooltipTimeFormat={tooltipFormat(safeRange, xMode)}
         height={240}

@@ -13,6 +13,7 @@ from investment_dashboard.models import Transaction
 from investment_dashboard.readmodels import diagnostics as diagnostics_rm
 from investment_dashboard.repositories import (
     accounts_repo,
+    fx_repo,
     instruments_repo,
     intraday_repo,
     prices_repo,
@@ -80,6 +81,7 @@ def _seed_portfolio(session: Session) -> tuple[int, int, int]:
             )
         )
         prices_repo.upsert_closes(session, instr.id, {d: px for d in sessions})
+    fx_repo.upsert_rates(session, {d: D("1.10") for d in sessions})
     session.flush()
     return acme.id, beta.id, fund.id
 

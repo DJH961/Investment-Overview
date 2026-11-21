@@ -35,7 +35,7 @@ export function useHoldingHistoryV2(instrumentId: number | null, range: HoldingR
 // ---- peek ---------------------------------------------------------------------------
 
 export type HoldingPeekDto = S["HoldingPeekResponse"];
-export type HoldingPeeksDto = { peeks: Record<string, HoldingPeekDto> };
+export type HoldingPeeksDto = S["HoldingPeeksResponse"];
 
 const PEEK_STALE_MS = 60_000;
 

@@ -662,6 +662,24 @@ def test_mid_session_visit_from_after_close_anchors_on_intraday_graph_and_movers
     visit_from = datetime(2026, 10, 28, 15, 30, tzinfo=UTC)
     returned_at = datetime(2026, 10, 28, 22, 0, tzinfo=UTC)  # 18:00 ET, after close
     _at(monkeypatch, returned_at)
+    # The hero's headline (the window's end value, with the twin estimate) reads the wall
+    # clock; pin it to the moment the owner returned so the test does not depend on today.
+    from investment_dashboard.readmodels import overview as overview_rm
+
+    real_build_both = overview_rm.build_overview_both
+    monkeypatch.setattr(
+        overview_rm,
+        "build_overview_both",
+        lambda session, **kw: real_build_both(session, **{**kw, "now": returned_at}),
+    )
+    real_active_spot = fx_service.active_live_spot
+    monkeypatch.setattr(
+        fx_service,
+        "active_live_spot",
+        lambda quote="USD", *, today=None, now=None: real_active_spot(
+            quote, today=today, now=now or (None if today else returned_at)
+        ),
+    )
 
     with ledger_session_scope() as session:
         acct = accounts_repo.create_account(

@@ -3,7 +3,9 @@
 // Desktop: four headline tiles of one size, then the equity curve beside the
 // full metrics table (both cards the same height), then attribution.
 .risk-page {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
 
   &__stack {
     display: grid;

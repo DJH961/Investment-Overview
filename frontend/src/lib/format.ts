@@ -122,7 +122,7 @@ function maskedMoney(amount: number, currency: Currency, opts: MoneyOptions): st
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
       // A real zero has no sign; the sample is never zero, so decide here.
-      signDisplay: opts.signed && amount !== 0 ? "exceptZero" : "auto",
+      signDisplay: opts.signed && amount !== 0 ? "exceptZero" : "negative",
     },
     sample,
   ).replace(/\d/g, "•");
@@ -143,7 +143,7 @@ export function formatMoney(amount: number | null | undefined, currency: Currenc
       ...(opts.significant
         ? { maximumSignificantDigits: opts.significant }
         : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
-      signDisplay: opts.signed ? "exceptZero" : "auto",
+      signDisplay: opts.signed ? "exceptZero" : "negative",
     },
     amount,
   );
@@ -161,7 +161,7 @@ export function formatPercent(
       style: "percent",
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
-      signDisplay: opts.signed ? "exceptZero" : "auto",
+      signDisplay: opts.signed ? "exceptZero" : "negative",
     },
     ratio,
   );
@@ -175,7 +175,7 @@ export function formatQuantity(value: number | null | undefined, digits = 2): st
 
 export function formatNumber(value: number | null | undefined, digits = 2): string {
   if (isMissing(value)) return "–";
-  return formatIntl({ minimumFractionDigits: digits, maximumFractionDigits: digits }, value);
+  return formatIntl({ minimumFractionDigits: digits, maximumFractionDigits: digits, signDisplay: "negative" }, value);
 }
 
 const isCalendarDate = (value: string | Date): value is string =>

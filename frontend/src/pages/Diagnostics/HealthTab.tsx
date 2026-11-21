@@ -106,11 +106,16 @@ export function HealthTab() {
       key: "sev",
       header: "Status",
       phone: "headline",
-      cell: (c) => <span className={`diagnostics__sev diagnostics__sev--${c.count ? c.severity : "ok"}`}>{c.count === 0 ? "OK" : (SEVERITY_LABEL[c.severity] ?? c.severity)}</span>,
+      cell: (c) => (
+        <>
+          <span className={`diagnostics__sev diagnostics__sev--${c.count ? c.severity : "ok"}`}>{c.count === 0 ? "OK" : (SEVERITY_LABEL[c.severity] ?? c.severity)}</span>
+          {c.count > 0 && <span className="diagnostics__sev diagnostics__sev--info diagnostics__check-count">{c.count}</span>}
+        </>
+      ),
       sortValue: (c) => (c.count ? (RANK[c.severity] ?? 9) : 9),
     },
     { key: "title", header: "Check", primary: true, cell: (c) => c.title, sortValue: (c) => c.title },
-    { key: "count", header: "Items", align: "right", cell: (c) => c.count, sortValue: (c) => c.count },
+    { key: "count", header: "Items", align: "right", phone: "hide", cell: (c) => c.count, sortValue: (c) => c.count },
     { key: "detail", header: "Detail", phone: "hide", cell: (c) => c.detail },
   ];
   const providerColumns: Column<Provider>[] = [
@@ -211,7 +216,7 @@ export function HealthTab() {
       <BriefVisitCard />
 
       <Card title="All checks" flush collapsibleId="diagnostics.checks">
-        <DataTable caption="Health checks" columns={checkColumns} rows={[...d.checks].sort(bySeverity)} rowKey={(c) => c.id} />
+        <DataTable caption="Health checks" columns={checkColumns} rows={[...d.checks].sort(bySeverity)} rowKey={(c) => c.id} rowClassName={() => "diagnostics__check-row"} />
       </Card>
       <Card title="Data providers" flush collapsibleId="diagnostics.providers">
         <DataTable caption="Data providers" columns={providerColumns} rows={d.providers} rowKey={(p) => p.name} />

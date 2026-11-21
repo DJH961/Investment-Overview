@@ -17,6 +17,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.1.1] — 2026-11-21
+
+### Added
+- **Chart scaling setting.** Settings → Display has a new "Holding chart cost / invested
+  scale" choice (Auto, Always, Data only). Auto keeps a holding's chart zoomed to the curve
+  when your average cost or invested amount sits far away and would flatten it.
+- **Faster 1W previews on Holdings.** The 1W preview rows load in one batch while the page is
+  idle, and start loading when you hover or focus a row, so they open without a wait.
+- **Repair: back-fill 1W holding bars.** Diagnostics → Health now warns when a held stock or
+  ETF is missing 1W intraday bars, and Repair has a one-click action to fill them in without
+  touching the portfolio curve.
+
+### Fixed
+- **"Since you last looked" starts where you left.** When you watched part of a session live,
+  the Daily Brief now measures from that moment (stocks, estimated NAV funds and same-day
+  cash) instead of snapping back to the previous close, and movers use the same start.
+- **Risk attribution totals** now sit in the table's footer on desktop, aligned with their
+  columns, and in a summary card on phones.
+- **Back from a holding** returns to the page you came from (Overview or Lookup) instead of
+  always going to Holdings, and keeps that when you switch tabs.
+- **Diagnostics on phones.** The Health and Repair tabs no longer cram six tabs into one row
+  (the tab strip fades at the right edge to show it scrolls), the "All checks" status and count
+  chips line up on the right on every row, and the cards wrap and space cleanly at 360 and 390 wide.
+- **Phone top bar and page headers.** Long page titles ("Health & Repair") stay on one line in the
+  phone top bar instead of wrapping, and Risk, Periods, Projection and Activity keep a full page
+  gap under their header.
+- **No `-€0.00` or `-0.00%`.** Tiny negative amounts and percentages that round to zero now format
+  without a minus sign, and zoomed holding Value charts use step-aware axis labels around €1m.
+
 ## [7.1.0] — 2026-11-21
 
 ### Added
