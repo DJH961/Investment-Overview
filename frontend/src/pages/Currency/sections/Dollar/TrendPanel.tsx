@@ -42,10 +42,6 @@ export function NormalGauge({ range }: { range: NormalRangeDto }) {
   const digits = (extent * 100) % 1 === 0 ? 0 : 1;
   return (
     <div className="dollar-gauge">
-      <p className="dollar-gauge__text">
-        <strong className="dollar-gauge__move">{pct(move)}</strong>
-        <span className={clsx("dollar-gauge__label", outside && "dollar-gauge__label--outside")}>{NORMAL_WORD[range.label]}</span>
-      </p>
       <div
         className="dollar-gauge__track"
         role="img"
@@ -64,25 +60,64 @@ export function NormalGauge({ range }: { range: NormalRangeDto }) {
   );
 }
 
-/** One row: a short label (with its tip), the visual, at most one short line. */
-function Row({ label, tip, children }: { label: string; tip?: string; children: React.ReactNode }) {
+/** The figure and its word on a gauge cell's label line: "+1.6% · larger than usual". */
+function GaugeAside({ range }: { range: NormalRangeDto }) {
+  const outside = range.label !== "normal";
+  return (
+    <span className="dollar-trend__aside">
+      <strong className="dollar-gauge__move">{pct(toNum(range.move_pct) ?? 0)}</strong>
+      <span className={clsx("dollar-gauge__label", outside && "dollar-gauge__label--outside")}>{NORMAL_WORD[range.label]}</span>
+    </span>
+  );
+}
+
+/**
+ * One cell: its label line (label and tip on the left, an optional figure on the right),
+ * then the picture, its end labels and at most one short line, in that order in every
+ * cell, so cells side by side line up.
+ */
+function Row({ label, tip, aside, children }: { label: string; tip?: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="dollar-trend__row">
-      <dt className="dollar-trend__label">
-        {label}
-        {tip ? <InfoTip label={label} content={tip} /> : null}
+      <dt className="dollar-trend__head">
+        <span className="dollar-trend__label">
+          {label}
+          {tip ? <InfoTip label={label} content={tip} /> : null}
+        </span>
+        {aside}
       </dt>
       <dd className="dollar-trend__body">{children}</dd>
     </div>
   );
 }
 
-/** A group of rows under one short heading. */
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+/** One bordered tile answering one question: its title, the answer as the headline, then its rows. */
+function Tile({
+  title,
+  tip,
+  headline,
+  sub,
+  flag,
+  children,
+}: {
+  title: string;
+  tip?: string;
+  headline: React.ReactNode;
+  sub?: string;
+  flag?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="dollar-trend__group" aria-label={title}>
-      <h3 className="dollar-trend__group-title">{title}</h3>
-      <dl className="dollar-trend__rows">{children}</dl>
+    <section className={clsx("dollar-tile", flag && "dollar-tile--flag")} aria-label={title}>
+      <header className="dollar-tile__head">
+        <h3 className="dollar-tile__title">
+          {title}
+          {tip ? <InfoTip label={title} content={tip} /> : null}
+        </h3>
+        <p className="dollar-tile__headline">{headline}</p>
+        {sub ? <p className="dollar-tile__sub">{sub}</p> : null}
+      </header>
+      <dl className="dollar-tile__rows">{children}</dl>
     </section>
   );
 }
@@ -136,192 +171,181 @@ export function TrendPanel({ data }: { data: DollarDto }) {
   const year = t.normal_year;
   const run = t.run;
   const headline = percentiles[0];
-  const hasDirection = Boolean((regime && dir) || (ma && maDistance !== null));
+  const hasDirection = Boolean((regime && dir) || (ma && maDistance !== null) || run);
   const hasNormal = Boolean(month || year);
-  const hasStands = Boolean(percentiles.length || (w && lo !== null && hi !== null) || longRun || aboveEntry !== null || run);
+  const hasStands = Boolean(percentiles.length || (w && lo !== null && hi !== null) || longRun || aboveEntry !== null);
+
+  const monthWord = month
+    ? { normal: "Normal this month", large: "Larger than usual this month", unusual: "Unusual this month" }[month.label]
+    : null;
+  const runRow = run ? (
+    <Row
+      label="Recent run"
+      tip="The dollar's move over each of the last months (calendar month ends). Filled months went the way of the run."
+    >
+      <ol className="dollar-run" aria-label={`The dollar ${run.direction} in ${run.count} of the last ${run.of} months`}>
+        {(run.months ?? []).map((m) => {
+          const Icon = m.move === "rose" ? TrendingUp : m.move === "fell" ? TrendingDown : Minus;
+          const [y, mo] = m.month.split("-").map(Number);
+          const name = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+          return (
+            <li key={m.month} className={clsx("dollar-run__item", m.move === run.direction && "dollar-run__item--on")}>
+              <span className="dollar-run__cell" title={`${name} ${y}: the dollar ${m.move}`}>
+                <Icon aria-hidden className="dollar-run__icon" />
+              </span>
+              <span className="dollar-run__month">{name}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="dollar-trend__line">
+        {cap(run.direction)} in {run.count} of the last {run.of} months
+      </p>
+    </Row>
+  ) : null;
 
   return (
     <Card className="dollar-trend" title="Dollar trend">
-      <ul className="dollar-trend__chips" aria-label="The dollar in one line">
-        {regime && dir ? (
-          <li className="dollar-trend__chip">
-            <dir.Icon aria-hidden className="dollar-trend__chip-icon" />
-            {cap(dir.word)}
-          </li>
+      <div className="dollar-trend__tiles">
+        {hasDirection ? (
+          <Tile
+            title="Direction"
+            tip="The direction only changes once the dollar has clearly crossed its 200-day average, so the label does not flicker."
+            headline={
+              regime && dir ? (
+                <>
+                  <dir.Icon aria-hidden className="dollar-tile__icon" />
+                  {cap(dir.word)}
+                </>
+              ) : (
+                "Direction"
+              )
+            }
+            sub={regime ? `since ${formatDate(regime.since)} · ${pct(toNum(regime.since_change_pct))}` : undefined}
+          >
+            {ma && maDistance !== null ? (
+              <Row
+                label="200-day average"
+                tip={`The dollar's average rate over the last 200 days (${rateText(toNum(quoteOf(ma.ma200, field)), field)}), and whether that average is rising or falling (now ${ma.slope}).`}
+              >
+                <div className="dollar-range">
+                  <Bar at={at(maDistance, 0.06) / 100} mid label={`The dollar is ${mag(maDistance)} ${ma.side} its 200-day average`} />
+                  <p className="dollar-range__ends" aria-hidden>
+                    <span>−6%</span>
+                    <span>average</span>
+                    <span>+6%</span>
+                  </p>
+                </div>
+                <p className="dollar-trend__line">
+                  {(regime?.direction === "dollar_down" && ma.side === "above") ||
+                  (regime?.direction === "dollar_up" && ma.side === "below")
+                    ? "Still "
+                    : ""}
+                  {mag(maDistance)} {ma.side}, average {ma.slope}
+                </p>
+              </Row>
+            ) : null}
+            {runRow}
+          </Tile>
         ) : null}
-        {month ? (
-          <li className={clsx("dollar-trend__chip", month.label !== "normal" && "dollar-trend__chip--flag")}>
-            This month {NORMAL_WORD[month.label]}
-          </li>
+        {hasNormal ? (
+          <Tile
+            title="Is this normal?"
+            tip="The dollar's move against every move of the same length since 1999. The shaded band holds the 80% that were normal."
+            headline={monthWord ?? "Normal?"}
+            sub={month ? `a typical month moves about ±${mag(toNum(month.typical_move_pct) ?? 0)}` : undefined}
+            flag={month ? month.label !== "normal" : false}
+          >
+            {month ? (
+              <Row label="This month" tip="The last month's move against every month since 1999." aside={<GaugeAside range={month} />}>
+                <NormalGauge range={month} />
+              </Row>
+            ) : null}
+            {year ? (
+              <Row
+                label="This year"
+                tip={`The last year's move against every year since 1999. A typical year moves about ±${mag(toNum(year.typical_move_pct) ?? 0)}.`}
+                aside={<GaugeAside range={year} />}
+              >
+                <NormalGauge range={year} />
+              </Row>
+            ) : null}
+          </Tile>
         ) : null}
-        {headline && headline.v !== null ? (
-          <li className="dollar-trend__chip">
-            Higher than on {share(headline.v)} of days {headline.label}
-          </li>
+        {hasStands ? (
+          <Tile
+            title="Where it stands"
+            tip="The share of days on which the dollar was cheaper than today. A high share means the dollar is dear against its own history."
+            headline={headline && headline.v !== null ? `Higher than on ${share(headline.v)} of days` : "Where it stands"}
+            sub={headline ? headline.label : undefined}
+          >
+            {percentiles.length > 1 ? (
+              <Row label="Against history" tip="The share of days on which the dollar was cheaper than today, in each window.">
+                <ul className="dollar-pct" aria-label="Share of days the dollar was cheaper than today">
+                  {percentiles.map((x) => (
+                    <li key={x.key} className="dollar-pct__row">
+                      <span className="dollar-pct__label">{x.label}</span>
+                      <span className="dollar-pct__track" role="img" aria-label={`Cheaper than today on ${share(x.v)} of days ${x.label}`}>
+                        <span className="dollar-pct__fill" style={{ width: `${(x.v ?? 0) * 100}%` }} />
+                        <span className="dollar-pct__dot" style={{ left: `${Math.max(2, Math.min(98, (x.v ?? 0) * 100))}%` }} />
+                      </span>
+                      <strong className="dollar-pct__value">{share(x.v)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </Row>
+            ) : null}
+            {w && lo !== null && hi !== null ? (
+              <Row label="52 weeks" tip="Today's rate between the lowest and highest rate of the last 52 weeks.">
+                <div className="dollar-range">
+                  {nowAt !== null ? <Bar at={nowAt} label={`Today ${rateText(now, field)} between the 52-week low and high`} /> : null}
+                  <p className="dollar-range__ends" aria-hidden>
+                    <span>low {rateText(lo, field)}</span>
+                    <span>high {rateText(hi, field)}</span>
+                  </p>
+                </div>
+                <p className="dollar-trend__line">
+                  {mag(toNum(w.from_high_inverse_pct) ?? 0)} above the low, {mag(toNum(w.from_low_inverse_pct) ?? 0)} below the high
+                </p>
+              </Row>
+            ) : null}
+            {longRun && longDistance !== null ? (
+              <Row
+                label="Long run"
+                tip="The dollar against its average since 1999. Exchange rates tend to drift back towards it over years, not months."
+              >
+                <div className="dollar-range">
+                  <Bar
+                    at={at(longDistance, 0.3) / 100}
+                    mid
+                    label={`${mag(longDistance)} ${longDistance >= 0 ? "above" : "below"} its long-run average`}
+                  />
+                  <p className="dollar-range__ends" aria-hidden>
+                    <span>−30%</span>
+                    <span>average since {longRun.since.slice(0, 4)}</span>
+                    <span>+30%</span>
+                  </p>
+                </div>
+                <p className="dollar-trend__line">
+                  {mag(longDistance)} {longDistance >= 0 ? "above" : "below"} the average (
+                  {rateText(toNum(quoteOf(longRun.mean, field)), field)})
+                </p>
+              </Row>
+            ) : null}
+            {aboveEntry !== null ? (
+              <Row label="You" tip="The share of days since your first transaction on which the dollar was above your average rate.">
+                <div className="dollar-range">
+                  <Bar at={aboveEntry} fill label={`The dollar was above your average rate on ${share(aboveEntry)} of days`} />
+                  <p className="dollar-range__ends" aria-hidden>
+                    <span>no days</span>
+                    <span>every day</span>
+                  </p>
+                </div>
+                <p className="dollar-trend__line">Above your average rate on {share(aboveEntry)} of days</p>
+              </Row>
+            ) : null}
+          </Tile>
         ) : null}
-      </ul>
-      <div className="dollar-trend__cols">
-        <div className="dollar-trend__col">
-          {hasDirection ? (
-            <Group title="Direction">
-              {regime && dir ? (
-                <Row
-                  label="Regime"
-                  tip="The direction only changes once the dollar has clearly crossed its 200-day average, so the label does not flicker."
-                >
-                  <p className="dollar-trend__lead">
-                    <dir.Icon aria-hidden className="dollar-trend__icon" />
-                    <strong className="dollar-trend__strong">{cap(dir.word)}</strong>
-                  </p>
-                  <p className="dollar-trend__line">
-                    Since {formatDate(regime.since)}: {pct(toNum(regime.since_change_pct))}
-                  </p>
-                </Row>
-              ) : null}
-              {ma && maDistance !== null ? (
-                <Row
-                  label="200-day avg"
-                  tip={`The dollar's average rate over the last 200 days (${rateText(toNum(quoteOf(ma.ma200, field)), field)}), and whether that average is rising or falling (now ${ma.slope}).`}
-                >
-                  <div className="dollar-range">
-                    <Bar at={at(maDistance, 0.06) / 100} mid label={`The dollar is ${mag(maDistance)} ${ma.side} its 200-day average`} />
-                    <p className="dollar-range__ends" aria-hidden>
-                      <span>−6%</span>
-                      <span>average</span>
-                      <span>+6%</span>
-                    </p>
-                  </div>
-                  <p className="dollar-trend__line">
-                    {(regime?.direction === "dollar_down" && ma.side === "above") ||
-                    (regime?.direction === "dollar_up" && ma.side === "below")
-                      ? "Still "
-                      : ""}
-                    {mag(maDistance)} {ma.side}, average {ma.slope}
-                  </p>
-                </Row>
-              ) : null}
-            </Group>
-          ) : null}
-          {hasNormal ? (
-            <Group title="Is this normal?">
-              {month ? (
-                <Row
-                  label="This month"
-                  tip={`The dollar's move over the last month against every month since 1999. A typical month moves about ±${mag(toNum(month.typical_move_pct) ?? 0)}; the shaded band holds the 80% of months that were normal.`}
-                >
-                  <NormalGauge range={month} />
-                </Row>
-              ) : null}
-              {year ? (
-                <Row
-                  label="This year"
-                  tip={`The dollar's move over the last year against every year since 1999. A typical year moves about ±${mag(toNum(year.typical_move_pct) ?? 0)}; the shaded band holds the 80% of years that were normal.`}
-                >
-                  <NormalGauge range={year} />
-                </Row>
-              ) : null}
-            </Group>
-          ) : null}
-        </div>
-        <div className="dollar-trend__col">
-          {hasStands ? (
-            <Group title="Where it stands">
-              {percentiles.length > 0 ? (
-                <Row
-                  label="Against history"
-                  tip="The share of days on which the dollar was cheaper than today, in each window. Long bars mean the dollar is dear."
-                >
-                  <ul className="dollar-pct" aria-label="Share of days the dollar was cheaper than today">
-                    {percentiles.map((x) => (
-                      <li key={x.key} className="dollar-pct__row">
-                        <span className="dollar-pct__label">{x.label}</span>
-                        <span
-                          className="dollar-pct__track"
-                          role="img"
-                          aria-label={`Cheaper than today on ${share(x.v)} of days ${x.label}`}
-                        >
-                          <span className="dollar-pct__fill" style={{ width: `${(x.v ?? 0) * 100}%` }} />
-                          <span className="dollar-pct__dot" style={{ left: `${Math.max(2, Math.min(98, (x.v ?? 0) * 100))}%` }} />
-                        </span>
-                        <strong className="dollar-pct__value">{share(x.v)}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                </Row>
-              ) : null}
-              {w && lo !== null && hi !== null ? (
-                <Row label="52 weeks" tip="Today's rate between the lowest and highest rate of the last 52 weeks.">
-                  <div className="dollar-range">
-                    <p className="dollar-range__ends dollar-range__ends--figures">
-                      <span>{rateText(lo, field)}</span>
-                      <span>{rateText(hi, field)}</span>
-                    </p>
-                    {nowAt !== null ? <Bar at={nowAt} label={`Today ${rateText(now, field)} between the 52-week low and high`} /> : null}
-                  </div>
-                  <p className="dollar-trend__line">
-                    {mag(toNum(w.from_high_inverse_pct) ?? 0)} above the low, {mag(toNum(w.from_low_inverse_pct) ?? 0)} below the high
-                  </p>
-                </Row>
-              ) : null}
-              {longRun && longDistance !== null ? (
-                <Row
-                  label="Long run"
-                  tip="The dollar against its average since 1999. Exchange rates tend to drift back towards it over years, not months."
-                >
-                  <div className="dollar-range">
-                    <Bar
-                      at={at(longDistance, 0.3) / 100}
-                      mid
-                      label={`${mag(longDistance)} ${longDistance >= 0 ? "above" : "below"} its long-run average`}
-                    />
-                    <p className="dollar-range__ends" aria-hidden>
-                      <span>−30%</span>
-                      <span>average since {longRun.since.slice(0, 4)}</span>
-                      <span>+30%</span>
-                    </p>
-                  </div>
-                  <p className="dollar-trend__line">
-                    {mag(longDistance)} {longDistance >= 0 ? "above" : "below"} the average (
-                    {rateText(toNum(quoteOf(longRun.mean, field)), field)})
-                  </p>
-                </Row>
-              ) : null}
-              {aboveEntry !== null ? (
-                <Row label="You" tip="The share of days since your first transaction on which the dollar was above your average rate.">
-                  <div className="dollar-range">
-                    <Bar at={aboveEntry} fill label={`The dollar was above your average rate on ${share(aboveEntry)} of days`} />
-                  </div>
-                  <p className="dollar-trend__line">Above your average rate on {share(aboveEntry)} of days</p>
-                </Row>
-              ) : null}
-              {run ? (
-                <Row
-                  label="Recent run"
-                  tip="The dollar's move over each of the last months (calendar month ends). Filled months went the way of the run."
-                >
-                  <ol className="dollar-run" aria-label={`The dollar ${run.direction} in ${run.count} of the last ${run.of} months`}>
-                    {(run.months ?? []).map((m) => {
-                      const Icon = m.move === "rose" ? TrendingUp : m.move === "fell" ? TrendingDown : Minus;
-                      const [y, mo] = m.month.split("-").map(Number);
-                      const name = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
-                      return (
-                        <li key={m.month} className={clsx("dollar-run__item", m.move === run.direction && "dollar-run__item--on")}>
-                          <span className="dollar-run__cell" title={`${name} ${y}: the dollar ${m.move}`}>
-                            <Icon aria-hidden className="dollar-run__icon" />
-                          </span>
-                          <span className="dollar-run__month">{name}</span>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                  <p className="dollar-trend__line">
-                    {cap(run.direction)} in {run.count} of the last {run.of} months
-                  </p>
-                </Row>
-              ) : null}
-            </Group>
-          ) : null}
-        </div>
       </div>
     </Card>
   );

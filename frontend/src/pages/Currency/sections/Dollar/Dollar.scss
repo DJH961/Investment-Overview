@@ -34,17 +34,23 @@
     gap: var(--space-5);
 
     @container dollar-position (min-width: 44rem) {
-      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-      gap: var(--space-6);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(4, auto);
+      gap: 0 var(--space-6);
     }
   }
 
   &__lens {
     display: grid;
-    // Beside the taller next-euro panel, the holdings side spreads its three blocks evenly.
-    align-content: space-evenly;
-    gap: var(--space-5);
+    align-content: start;
+    gap: var(--space-4);
     min-width: 0;
+
+    @container dollar-position (min-width: 44rem) {
+      grid-row: span 4;
+      grid-template-rows: subgrid;
+      gap: var(--space-4);
+    }
 
     &--next {
       padding-top: var(--space-5);
@@ -95,16 +101,19 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // Four figures: two by two on a narrow card, four across from 32rem.
+  // Each lens's own picture; the row is as tall as the taller one, both centred in it.
+  &__visual {
+    display: grid;
+    align-content: start;
+    min-width: 0;
+  }
+
+  // Exactly three small figures per lens.
   &__figs {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-4);
-    margin: var(--space-1) 0 0;
-
-    @container dollar-position (min-width: 32rem) {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin: 0;
   }
 
   &__fig {
@@ -127,6 +136,10 @@
   }
 
   &__note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-1);
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
@@ -166,69 +179,10 @@
 .dollar-trend {
   container: dollar-trend / inline-size;
 
-  // Two columns of rows on a wide card (each its own list), one on a narrow card.
-  &__cols {
+  // Three rows, one question each, split by hairlines.
+  &__tiles {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-3) var(--space-6);
-
-    @container dollar-trend (min-width: 48rem) {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      align-items: start;
-    }
-  }
-
-  &__col {
-    display: grid;
-    align-content: start;
-    gap: var(--space-5);
-    min-width: 0;
-  }
-
-  // The verdict in one line.
-  &__chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin: 0 0 var(--space-5);
-    padding: 0;
-    list-style: none;
-  }
-
-  &__chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: var(--space-1) var(--space-3);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--radius-full);
-    background: var(--color-surface-2);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-
-    &--flag {
-      border-color: transparent;
-      background: var(--color-warn-soft);
-    }
-  }
-
-  &__chip-icon {
-    width: var(--font-size-md);
-    height: var(--font-size-md);
-  }
-
-  &__group {
-    display: grid;
-    gap: var(--space-2);
-    min-width: 0;
-  }
-
-  &__group-title {
-    @include m.eyebrow(var(--font-size-sm));
-    margin: 0;
-    padding-bottom: var(--space-2);
-    border-bottom: var(--border-width) solid var(--color-border-strong);
-    color: var(--color-fg);
   }
 
   &__rows {
@@ -241,31 +195,41 @@
   &__row {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-1);
+    gap: var(--space-2);
     padding: var(--space-3) 0;
     border-top: var(--border-width) solid var(--color-border);
 
     &:first-child {
+      padding-top: 0;
       border-top: 0;
     }
 
     &:last-child {
       padding-bottom: 0;
     }
+  }
 
-    @container dollar-trend (min-width: 24rem) {
-      grid-template-columns: 6.5rem minmax(0, 1fr);
-      gap: var(--space-4);
-    }
+  // A cell's label line: label left, its figure right, one fixed height in every cell.
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: var(--space-6);
   }
 
   &__label {
     @include m.eyebrow;
     display: inline-flex;
     align-items: center;
-    align-self: start;
     gap: var(--space-1);
-    padding-top: calc(var(--space-1) / 2);
+  }
+
+  &__aside {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-variant-numeric: tabular-nums;
   }
 
   &__body {
@@ -715,75 +679,15 @@
 }
 
 // Bought-at vs now on one scale; the stretch between them is the rate's effect on you.
-.dollar-scale {
-  display: grid;
-  gap: var(--space-1);
-  margin: var(--space-1) 0;
-
-  &__track {
-    position: relative;
-    height: var(--space-2);
-    border-radius: var(--radius-full);
-    background: var(--color-surface-2);
-    box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
-  }
-
-  &__gap {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    background: var(--color-muted);
-
-    &--tailwind {
-      background: var(--color-pos);
-    }
-
-    &--headwind {
-      background: var(--color-neg);
-    }
-  }
-
-  &__mark {
-    position: absolute;
-    top: 50%;
-    width: var(--space-3);
-    height: var(--space-3);
-    border: calc(var(--border-width) * 2) solid var(--color-fg);
-    border-radius: var(--radius-full);
-    background: var(--color-surface);
-    transform: translate(-50%, -50%);
-
-    &--now {
-      background: var(--color-fg);
-      border-color: var(--color-surface);
-    }
-  }
-
-  &__ends {
-    position: relative;
-    height: var(--font-size-sm);
-    margin: 0;
-    color: var(--color-muted);
-    font-size: var(--font-size-2xs);
-  }
-
-  &__end {
-    position: absolute;
-    transform: translateX(-50%);
-
-    &--now {
-      color: var(--color-fg);
-      font-weight: var(--font-weight-semibold);
-    }
-  }
-}
-
 // ---- Since you started: the range bar -------------------------------------------------
 
 .dollar-since {
-  &__plot {
-    display: grid;
-    gap: var(--space-1);
+  display: grid;
+  gap: var(--space-1);
+
+  &__caption {
+    @include m.eyebrow;
+    margin: 0 0 var(--space-1);
   }
 
   &__above,
@@ -798,7 +702,6 @@
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    transform: translateX(-50%);
 
     &--now {
       color: var(--color-fg);
@@ -814,100 +717,135 @@
     position: relative;
     height: var(--space-3);
     border-radius: var(--radius-full);
-    background: var(--color-accent-soft);
-    box-shadow: inset 0 0 0 var(--border-width) var(--color-border-strong);
+    background: var(--color-surface-2);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
   }
 
-  &__avg {
+  // Your average to today: what the dollar's move did to what you hold.
+  &__gap {
     position: absolute;
-    top: calc(var(--space-1) * -1);
-    bottom: calc(var(--space-1) * -1);
-    border-left: calc(var(--border-width) * 2) solid var(--color-fg);
-    transform: translateX(-50%);
+    top: 0;
+    bottom: 0;
+    background: var(--color-muted);
+
+    &--tailwind {
+      background: var(--color-pos);
+    }
+
+    &--headwind {
+      background: var(--color-neg);
+    }
   }
 
+  &__avg,
   &__now {
     position: absolute;
     top: 50%;
     width: var(--space-4);
     height: var(--space-4);
-    border: calc(var(--border-width) * 2) solid var(--color-surface);
     border-radius: var(--radius-full);
-    background: var(--chart-1);
     transform: translate(-50%, -50%);
+  }
+
+  // Open marker: your average. Filled: today (the same pair as on the next-euro side).
+  &__avg {
+    border: calc(var(--border-width) * 2) solid var(--color-fg);
+    background: var(--color-surface);
+  }
+
+  &__now {
+    border: calc(var(--border-width) * 2) solid var(--color-surface);
+    background: var(--color-fg);
   }
 
   &__ends {
     display: flex;
     justify-content: space-between;
-    gap: var(--space-4);
-    margin: var(--space-3) 0 0;
-  }
-
-  &__end {
-    display: grid;
-    gap: var(--space-1);
-
-    &--high {
-      text-align: right;
-    }
-  }
-
-  &__label {
-    @include m.eyebrow;
-  }
-
-  &__value {
-    @include m.figure(var(--font-size-lg));
-    margin: 0;
-  }
-
-  &__date {
-    margin: 0;
+    gap: var(--space-3);
+    margin: var(--space-1) 0 0;
     color: var(--color-muted);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-2xs);
     font-variant-numeric: tabular-nums;
   }
 }
 
 // ---- Next euro: a year of "dollars per €1,000" --------------------------------------
 
-.dollar-spark {
+.next-cols {
   display: grid;
   gap: var(--space-1);
 
-  &__plot {
+  &__caption {
+    @include m.eyebrow;
+    margin: 0 0 var(--space-1);
+  }
+
+  // Room above the columns for the best/worst labels; the points share the plot's box.
+  &__frame {
     position: relative;
-    margin: var(--space-2) var(--space-2) 0;
+    margin-top: var(--space-4);
   }
 
-  &__svg {
-    display: block;
-    width: 100%;
-    height: calc(var(--space-9) + var(--space-3));
-    overflow: visible;
+  &__plot {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: calc(var(--space-9) + var(--space-6));
+    margin: 0;
+    padding: 0;
+    border-bottom: var(--border-width) solid var(--color-border-strong);
+    list-style: none;
   }
 
-  &__line {
-    fill: none;
-    stroke: var(--chart-1);
-    stroke-width: 1.75;
-    stroke-linejoin: round;
-    vector-effect: non-scaling-stroke;
-  }
-
-  &__dot {
+  // The year's best and worst day: a small point on the column top with its figure above.
+  &__point {
     position: absolute;
-    width: var(--space-3);
-    height: var(--space-3);
-    border: calc(var(--border-width) * 2) solid var(--color-surface);
+    width: var(--space-2);
+    height: var(--space-2);
+    border: calc(var(--border-width) * 1.5) solid var(--color-surface);
     border-radius: var(--radius-full);
-    background: var(--chart-1);
-    transform: translate(-50%, -50%);
+    background: var(--color-fg);
+    transform: translate(-50%, 50%);
+  }
+
+  &__point-label {
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: 50%;
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+
+  &__point--start &__point-label {
+    left: 0;
+    transform: none;
+  }
+
+  &__point--end &__point-label {
+    right: 0;
+    left: auto;
+    transform: none;
+  }
+
+  &__col {
+    flex: 1 1 0;
+    min-width: 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--color-border-strong);
 
     &--then {
       background: var(--color-surface);
-      border-color: var(--chart-1);
+      box-shadow: inset 0 0 0 calc(var(--border-width) * 1.5) var(--color-fg);
+    }
+
+    &--today {
+      background: var(--color-fg);
     }
   }
 
@@ -917,6 +855,83 @@
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-2xs);
-    font-variant-numeric: tabular-nums;
   }
 }
+
+// ---- Trend tiles ---------------------------------------------------------------------
+
+.dollar-tile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-5) 0;
+  border-top: var(--border-width) solid var(--color-border-strong);
+
+  &:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  &:last-child {
+    padding-bottom: 0;
+  }
+
+  @container dollar-trend (min-width: 44rem) {
+    grid-template-columns: 13rem minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  &__head {
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+  }
+
+  &__title {
+    @include m.eyebrow;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+  }
+
+  &__headline {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+
+  &__icon {
+    flex-shrink: 0;
+    width: var(--font-size-xl);
+    height: var(--font-size-xl);
+  }
+
+  &__sub {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // The pictures side by side, as many as fit (two or three on a desktop row).
+  &__rows {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    align-items: start;
+    gap: var(--space-4) var(--space-6);
+    min-width: 0;
+    margin: 0;
+
+    .dollar-trend__row {
+      padding: 0;
+      border-top: 0;
+    }
+  }
+}
+

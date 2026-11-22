@@ -1,12 +1,63 @@
 import clsx from "clsx";
+import type { ReactNode } from "react";
 import { Card } from "../../../../components/Card";
 import { KindTag } from "../../../../components/CurrencySection";
 import { InfoTip } from "../../../../components/InfoTip";
 import { Money } from "../../../../components/Money";
-import { formatDate, formatPercent } from "../../../../lib/format";
+import { formatDate } from "../../../../lib/format";
 import { quoteOf, type DollarDto } from "../../../../lib/queries/currencyDollar";
 import { toNum } from "../../../../lib/queries/portfolio";
 import { leanOf, pct, quoteWords, rateText, share } from "./quote";
+import { SinceStarted } from "./RangeCard";
+
+/**
+ * One anatomy for both lenses, so they read as siblings: an eyebrow with a quiet hint, a
+ * display headline with one quiet line, one picture (each the one that fits its story),
+ * then three small figures. The rows line up across the two lenses (CSS subgrid).
+ */
+function Lens({
+  name,
+  hint,
+  headline,
+  note,
+  visual,
+  figs,
+  next,
+}: {
+  name: string;
+  hint: string;
+  headline: ReactNode;
+  note: ReactNode;
+  visual: ReactNode;
+  figs: { key: string; label: string; tip?: string; value: ReactNode; note?: ReactNode }[];
+  next?: boolean;
+}) {
+  return (
+    <section className={clsx("dollar-position__lens", next && "dollar-position__lens--next")} aria-label={name}>
+      <p className="dollar-position__eyebrow">
+        {name}
+        <span className="dollar-position__hint">{hint}</span>
+      </p>
+      <p className="dollar-position__lead">
+        <span className="dollar-position__lead-figure">{headline}</span>
+        <span className="dollar-position__lead-note">{note}</span>
+      </p>
+      <div className="dollar-position__visual">{visual}</div>
+      <dl className="dollar-position__figs">
+        {figs.map((f) => (
+          <div key={f.key} className="dollar-position__fig">
+            <dt className="dollar-position__label">
+              {f.label}
+              {f.tip ? <InfoTip label={f.label} content={f.tip} /> : null}
+            </dt>
+            <dd className="dollar-position__value">{f.value}</dd>
+            {f.note ? <dd className="dollar-position__note">{f.note}</dd> : null}
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
 
 /**
  * The dollar as a holding (IBKR "Forex P&L" style), through both lenses side by side:
@@ -20,16 +71,9 @@ export function PositionCard({ data }: { data: DollarDto }) {
   // The holdings lens speaks of the dollar in both views; only the rates follow the quote.
   const sinceBuying = toNum(pos.change?.inverse_pct ?? null);
   const today = toNum(pos.today?.inverse_pct ?? null);
-  const holdingsLean = leanOf(toNum(pos.change?.inverse_pct ?? null));
+  const holdingsLean = leanOf(sinceBuying);
   const bought = q(pos.avg_rate);
   const nowRate = q(pos.rate_now);
-  // A scale around both rates (half their gap either side), so the two markers read apart.
-  const lo = bought !== null && nowRate !== null ? Math.min(bought, nowRate) : 0;
-  const hi = bought !== null && nowRate !== null ? Math.max(bought, nowRate) : 1;
-  const pad = Math.max((hi - lo) * 0.5, hi * 0.02);
-  const place = (v: number) => ((v - (lo - pad)) / (hi + pad - (lo - pad))) * 100;
-  const boughtAt = bought !== null ? place(bought) : 50;
-  const nowAt = nowRate !== null ? place(nowRate) : 50;
   const breakeven = q(pos.breakeven);
   const breakevenDiffers = breakeven !== null && (bought === null || breakeven.toFixed(4) !== bought.toFixed(4));
   const exposure = toNum(pos.exposure_usd ?? null);
@@ -38,16 +82,12 @@ export function PositionCard({ data }: { data: DollarDto }) {
   return (
     <Card className="dollar-position" title="Your dollar position">
       <div className="dollar-position__lenses">
-        <section className="dollar-position__lens" aria-label="Your holdings">
-          <p className="dollar-position__eyebrow">
-            Your holdings
-            <span className="dollar-position__hint">a stronger dollar helps</span>
-          </p>
-          <p className="dollar-position__lead">
-            <span className="dollar-position__lead-figure">
-              <Money amount={exposure} currency="USD" digits={0} />
-            </span>
-            <span className="dollar-position__lead-note">
+        <Lens
+          name="Your holdings"
+          hint="a stronger dollar helps"
+          headline={<Money amount={exposure} currency="USD" digits={0} />}
+          note={
+            <>
               {pos.exposure_share ? `${share(toNum(pos.exposure_share))} of your holdings` : "priced in dollars"}
               {data.ccy === "EUR" && pos.exposure_value ? (
                 <>
@@ -55,61 +95,24 @@ export function PositionCard({ data }: { data: DollarDto }) {
                   <Money amount={toNum(pos.exposure_value)} currency="EUR" digits={0} />
                 </>
               ) : null}
-            </span>
-          </p>
-          {bought !== null && nowRate !== null ? (
-            <div className="dollar-scale" role="img" aria-label={`Bought at ${rateText(bought, field)}, now ${rateText(nowRate, field)}`}>
-              <div className="dollar-scale__track">
-                <span
-                  className={clsx("dollar-scale__gap", `dollar-scale__gap--${holdingsLean}`)}
-                  style={{ left: `${Math.min(boughtAt, nowAt)}%`, width: `${Math.abs(nowAt - boughtAt)}%` }}
-                />
-                <span className="dollar-scale__mark" style={{ left: `${boughtAt}%` }} />
-                <span className="dollar-scale__mark dollar-scale__mark--now" style={{ left: `${nowAt}%` }} />
-              </div>
-              <p className="dollar-scale__ends" aria-hidden>
-                <span className="dollar-scale__end" style={{ left: `${boughtAt}%` }}>
-                  bought
-                </span>
-                <span className="dollar-scale__end dollar-scale__end--now" style={{ left: `${nowAt}%` }}>
-                  now
-                </span>
-              </p>
-            </div>
-          ) : null}
-          <dl className="dollar-position__figs">
-            <div className="dollar-position__fig">
-              <dt className="dollar-position__label">Bought at</dt>
-              <dd className="dollar-position__value">{rateText(q(pos.avg_rate), field)}</dd>
-              <dd className="dollar-position__note">your average rate</dd>
-            </div>
-            <div className="dollar-position__fig">
-              <dt className="dollar-position__label">Now</dt>
-              <dd className="dollar-position__value">{rateText(q(pos.rate_now), field)}</dd>
-              <dd className="dollar-position__note">today {pct(today, 2)}</dd>
-            </div>
-            <div className="dollar-position__fig">
-              <dt className="dollar-position__label">Since buying</dt>
-              <dd className="dollar-position__value">{pct(sinceBuying)}</dd>
-              <dd className="dollar-position__note">
-                <KindTag kind={holdingsLean} />
-              </dd>
-            </div>
-            {breakevenDiffers ? (
-              <div className="dollar-position__fig">
-                <dt className="dollar-position__label">
-                  Break-even
-                  <InfoTip
-                    label="Break-even"
-                    content={`The rate (${quoteWords(field)}) at which the currency effect on your holdings is zero.`}
-                  />
-                </dt>
-                <dd className="dollar-position__value">{rateText(breakeven, field)}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </section>
-        {next ? <NextEuro next={next} /> : null}
+            </>
+          }
+          visual={<SinceStarted data={data} lean={holdingsLean} />}
+          figs={[
+            { key: "bought", label: "Bought at", value: rateText(bought, field), note: "your average" },
+            { key: "now", label: "Now", value: rateText(nowRate, field), note: `${pct(today, 2)} today` },
+            {
+              key: "since",
+              label: "Since buying",
+              tip: breakevenDiffers
+                ? `The dollar's change since your average rate. Break-even is ${rateText(breakeven, field)} (${quoteWords(field)}): the rate at which the currency effect on your holdings is zero.`
+                : "The dollar's change since your average rate. You are back to break-even at your average rate.",
+              value: pct(sinceBuying),
+              note: <KindTag kind={holdingsLean} />,
+            },
+          ]}
+        />
+        {next ? <NextEuro next={next} data={data} /> : null}
       </div>
     </Card>
   );
@@ -117,96 +120,123 @@ export function PositionCard({ data }: { data: DollarDto }) {
 
 type NextDto = NonNullable<DollarDto["next_euro"]>;
 
-/** Dollars one euro-notional buys over the last year (weekly), today's dot and the year-ago point marked. */
-function NextEuro({ next }: { next: NextDto }) {
+type Extreme = { t: number; v: number; kind: "best" | "worst" };
+
+/**
+ * "Your next euro" picture: what EUR 1,000 bought each week of the past year (server
+ * points), the year-ago column outlined and today's solid, on a scale starting near the
+ * year's low. The year's best and worst day (the server's 52-week high and low, as
+ * EUR 1,000 x EUR/USD: linear presentation only) sit on it as small labelled points;
+ * when the two are close, their labels lean apart so they never overlap.
+ */
+function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extremes: Extreme[] }) {
+  const vs = [...pts.map((p) => p.v), ...extremes.map((e) => e.v)];
+  const max = Math.max(...vs);
+  const min = Math.min(...vs);
+  const base = min - (max - min) * 0.6;
+  const h = (v: number) => (max === base ? 100 : ((v - base) / (max - base)) * 100);
+  const t0 = pts[0].t;
+  const t1 = pts[pts.length - 1].t;
+  const x = (t: number) => Math.max(0, Math.min(100, ((t - t0) / (t1 - t0 || 1)) * 100));
+  const placed = extremes.map((e) => ({ ...e, x: x(e.t), y: h(e.v) }));
+  // Close together (or near an edge): anchor each label away from the other / the edge.
+  const close = placed.length === 2 && Math.abs(placed[0].x - placed[1].x) < 22;
+  const anchor = (e: (typeof placed)[number]): "start" | "middle" | "end" => {
+    if (close) {
+      const other = placed.find((o) => o !== e)!;
+      return e.x >= other.x ? "start" : "end";
+    }
+    return e.x < 12 ? "start" : e.x > 88 ? "end" : "middle";
+  };
+  return (
+    <div className="next-cols">
+      <p className="next-cols__caption">Each week of the past year</p>
+      <div className="next-cols__frame">
+        <ol className="next-cols__plot" aria-label="What 1,000 euros bought each week of the past year">
+          {pts.map((p, i) => (
+            <li
+              key={p.t}
+              className={clsx("next-cols__col", i === pts.length - 1 && "next-cols__col--today", i === 0 && "next-cols__col--then")}
+              style={{ height: `${h(p.v)}%` }}
+              title={`${formatDate(new Date(p.t).toISOString().slice(0, 10))}: US$${Math.round(p.v)}`}
+            />
+          ))}
+        </ol>
+        {placed.map((e) => (
+          <span
+            key={e.kind}
+            className={clsx("next-cols__point", `next-cols__point--${anchor(e)}`)}
+            style={{ left: `${e.x}%`, bottom: `${e.y}%` }}
+          >
+            <span className="next-cols__point-label">
+              {e.kind === "best" ? "best" : "worst"} <Money amount={e.v} currency="USD" digits={0} />
+            </span>
+          </span>
+        ))}
+      </div>
+      <p className="next-cols__ends" aria-hidden>
+        <span>a year ago</span>
+        <span>today</span>
+      </p>
+    </div>
+  );
+}
+
+function NextEuro({ next, data }: { next: NextDto; data: DollarDto }) {
   const now = toNum(next.usd_now);
   const ago = toNum(next.usd_year_ago ?? null);
   const change = toNum(next.change_pct ?? null);
   const better = toNum(next.better_than_share ?? null);
+  const amount = toNum(next.amount_eur) ?? 1000;
   const pts = (next.spark ?? [])
     .map((p) => ({ t: Date.parse(p.t), v: toNum(p.usd) }))
     .filter((p): p is { t: number; v: number } => p.v !== null && Number.isFinite(p.t));
-  // Today's spot closes the line (it can differ from the last settled day).
   if (now !== null && pts.length) pts.push({ t: pts[pts.length - 1].t + 86_400_000, v: now });
-  const W = 300;
-  const H = 72;
-  let spark: React.ReactNode = null;
-  if (pts.length > 2) {
-    const vs = pts.map((p) => p.v);
-    const lo = Math.min(...vs);
-    const hi = Math.max(...vs);
-    const room = (hi - lo) * 0.15 || 1;
-    const t0 = pts[0].t;
-    const t1 = pts[pts.length - 1].t;
-    const x = (t: number) => ((t - t0) / (t1 - t0 || 1)) * 100;
-    const y = (v: number) => 100 - ((v - (lo - room)) / (hi - lo + room * 2)) * 100;
-    const d = pts.map((p, i) => `${i ? "L" : "M"}${((x(p.t) / 100) * W).toFixed(1)},${((y(p.v) / 100) * H).toFixed(1)}`).join(" ");
-    const first = pts[0];
-    spark = (
-      <div className="dollar-spark">
-        <div className="dollar-spark__plot">
-          <svg
-            className="dollar-spark__svg"
-            viewBox={`0 0 ${W} ${H}`}
-            preserveAspectRatio="none"
-            role="img"
-            aria-label={`Dollars a euro buys over the last year, from ${ago !== null ? Math.round(ago) : "?"} to ${now !== null ? Math.round(now) : "?"}`}
-          >
-            <path className="dollar-spark__line" d={d} />
-          </svg>
-          <span className="dollar-spark__dot dollar-spark__dot--then" style={{ left: `${x(first.t)}%`, top: `${y(first.v)}%` }} />
-          <span className="dollar-spark__dot" style={{ left: "100%", top: `${y(pts[pts.length - 1].v)}%` }} />
-        </div>
-        <p className="dollar-spark__ends" aria-hidden>
-          <span>{next.year_ago_date ? formatDate(next.year_ago_date) : "a year ago"}</span>
-          <span>now</span>
-        </p>
-      </div>
-    );
+  // The year's best and worst day for converting: the 52-week high and low of EUR/USD.
+  const w = data.trend?.week52;
+  const extremes: Extreme[] = [];
+  for (const pt of w ? [w.low, w.high] : []) {
+    const rate = toNum(pt.rate);
+    const t = Date.parse(pt.t.length === 10 ? `${pt.t}T12:00:00Z` : pt.t);
+    if (rate !== null && Number.isFinite(t)) extremes.push({ t, v: rate * amount, kind: "worst" });
+  }
+  if (extremes.length === 2) {
+    extremes.sort((p, q) => p.v - q.v);
+    extremes[1].kind = "best";
   }
   return (
-    <section className="dollar-position__lens dollar-position__lens--next" aria-label="Your next euro">
-      <p className="dollar-position__eyebrow">
-        Your next euro
-        <span className="dollar-position__hint">a stronger euro helps</span>
-      </p>
-      <p className="dollar-position__lead">
-        <span className="dollar-position__lead-figure">
+    <Lens
+      next
+      name="Your next euro"
+      hint="a stronger euro helps"
+      headline={
+        <>
           <Money amount={toNum(next.amount_eur)} currency="EUR" digits={0} /> buys <Money amount={now} currency="USD" digits={0} />
-        </span>
-        <span className="dollar-position__lead-note">at today's rate</span>
-      </p>
-      {spark}
-      {ago !== null ? (
-        <p className="dollar-position__next-sub">
-          <Money amount={ago} currency="USD" digits={0} /> a year ago
-          {change !== null ? (
-            <>
-              {" · "}
-              <span className="dollar-position__next-change">{pct(change)}</span>
-              {change === 0 ? null : change > 0 ? " more dollars" : " fewer dollars"}
-              <KindTag kind={leanOf(change)} />
-            </>
-          ) : null}
-        </p>
-      ) : null}
-      {better !== null ? (
-        <div className="dollar-range">
-          <div
-            className="dollar-range__track"
-            role="img"
-            aria-label={`A euro buys more dollars today than on ${formatPercent(better, { digits: 0 })} of days since you started`}
-          >
-            <span className="dollar-range__fill" style={{ width: `${better * 100}%` }} />
-            <span className="dollar-range__dot" style={{ left: `${Math.max(2, Math.min(98, better * 100))}%` }} />
-          </div>
-          <p className="dollar-range__ends" aria-hidden>
-            <span>fewest dollars</span>
-            <span>most dollars</span>
-          </p>
-          <p className="dollar-position__next-sub">Better than on {formatPercent(better, { digits: 0 })} of days since you started</p>
-        </div>
-      ) : null}
-    </section>
+        </>
+      }
+      note="at today's rate"
+      visual={pts.length > 2 ? <WeekColumns pts={pts} extremes={extremes.length === 2 ? extremes : []} /> : null}
+      figs={[
+        {
+          key: "ago",
+          label: "A year ago",
+          value: ago !== null ? <Money amount={ago} currency="USD" digits={0} /> : "–",
+          note: "for the same €1,000",
+        },
+        {
+          key: "change",
+          label: "Change",
+          value: pct(change),
+          note: <KindTag kind={leanOf(change)} />,
+        },
+        {
+          key: "better",
+          label: "Better than",
+          tip: "On how many days since your first transaction a euro bought fewer dollars than it does today.",
+          value: better !== null ? share(better) : "–",
+          note: "of days since start",
+        },
+      ]}
+    />
   );
 }

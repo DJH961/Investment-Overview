@@ -4,7 +4,6 @@ import { RATE_RANGE_LABELS } from "../../../../lib/queries/currencyRate";
 import { useDollar } from "../../../../lib/queries/currencyDollar";
 import type { CurrencySectionComponentProps } from "../../sections";
 import { PositionCard } from "./PositionCard";
-import { RangeCard } from "./RangeCard";
 import { RollingPanel } from "./RollingPanel";
 import { TrendPanel } from "./TrendPanel";
 import "./Dollar.scss";
@@ -33,7 +32,6 @@ export function Dollar({ id, label, currency, range }: CurrencySectionComponentP
     >
       {data ? (
         <>
-          <RangeCard data={data} />
           <PositionCard data={data} />
           <TrendPanel data={data} />
           <RollingPanel data={data} />
