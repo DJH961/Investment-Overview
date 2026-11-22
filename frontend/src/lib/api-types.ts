@@ -3079,6 +3079,11 @@ export interface components {
             max_drawdown_usd?: string | null;
             /** Since */
             since: string;
+            /**
+             * Too Short
+             * @default false
+             */
+            too_short: boolean;
             /** Volatility Eur */
             volatility_eur?: string | null;
             /** Volatility Usd */
@@ -3493,7 +3498,7 @@ export interface components {
              * Range
              * @enum {string}
              */
-            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             /** Rolling */
             rolling?: components["schemas"]["RollingSeries"][];
             /** Stats */
@@ -4005,6 +4010,11 @@ export interface components {
             id: number;
             /** Note */
             note: string | null;
+            /**
+             * Off Pct
+             * @description all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.
+             */
+            off_pct?: string | null;
             /** Provider */
             provider: ("wise" | "revolut" | "other") | null;
             /**
@@ -6663,7 +6673,7 @@ export interface components {
              * Range
              * @enum {string}
              */
-            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             /**
              * Source
              * @enum {string}
@@ -6955,7 +6965,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "average" | "breakeven" | "today" | "historic_low" | "historic_high";
+            key: "average" | "breakeven" | "today" | "range_start" | "historic_low" | "historic_high";
             /** Rate */
             rate: string;
             /** Rate Display */
@@ -6970,6 +6980,8 @@ export interface components {
         ScenarioRow: {
             /** Gain */
             gain?: string | null;
+            /** Other Value */
+            other_value?: string | null;
             /** Rate */
             rate: string;
             /** Rate Display */
@@ -7027,6 +7039,11 @@ export interface components {
              */
             ccy: "EUR" | "USD";
             cushion?: components["schemas"]["Cushion"] | null;
+            /**
+             * Exposed
+             * @default true
+             */
+            exposed: boolean;
             /** Generated At */
             generated_at: string;
             /** Marks */
@@ -7035,7 +7052,21 @@ export interface components {
             max_rate: string;
             /** Min Rate */
             min_rate: string;
+            /**
+             * Other Ccy
+             * @default USD
+             * @enum {string}
+             */
+            other_ccy: "EUR" | "USD";
             quote: components["schemas"]["DollarQuote"];
+            /**
+             * Range
+             * @default max
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
+            /** Range Start */
+            range_start?: string | null;
             rate_now?: components["schemas"]["RateValue"] | null;
             /** Rows */
             rows?: components["schemas"]["ScenarioRow"][];
@@ -7048,6 +7079,8 @@ export interface components {
             stress?: components["schemas"]["StressRow"][];
             /** Value Now */
             value_now?: string | null;
+            /** Value Now Other */
+            value_now_other?: string | null;
         };
         /** SchedulerJob */
         SchedulerJob: {
@@ -7524,6 +7557,10 @@ export interface components {
         StressRow: {
             /** Change */
             change: string;
+            /** Other Change */
+            other_change?: string | null;
+            /** Other Value */
+            other_value?: string | null;
             /** Rate */
             rate: string;
             /** Rate Display */
@@ -9370,7 +9407,7 @@ export interface operations {
     get_dollar_both_api_currency_dollar_both_get: {
         parameters: {
             query?: {
-                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             };
             header?: never;
             path?: never;
@@ -9432,7 +9469,7 @@ export interface operations {
     get_rate_history_api_currency_rate_history_get: {
         parameters: {
             query?: {
-                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             };
             header?: never;
             path?: never;
@@ -9462,7 +9499,9 @@ export interface operations {
     };
     get_scenarios_both_api_currency_scenarios_both_get: {
         parameters: {
-            query?: never;
+            query?: {
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9476,6 +9515,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ByCurrency_ScenariosOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

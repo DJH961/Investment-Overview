@@ -178,12 +178,15 @@ export function RateChart({
   className,
   range: rangeProp,
   onRangeChange,
+  showRangePicker = true,
 }: {
   currency: ReportingCurrency;
   className?: string;
   /** The page's range (the Currency page owns it); without it the chart keeps its own. */
   range?: RateRange;
   onRangeChange?: (range: RateRange) => void;
+  /** False when the page shows the range picker elsewhere (the Currency page sticky bar). */
+  showRangePicker?: boolean;
 }) {
   const timeZone = useTimeZone();
   const [ownRange, setOwnRange] = usePersistentState<RateRange>(rangeProp ? null : "currency.rate.range", "1y", isRange);
@@ -268,7 +271,7 @@ export function RateChart({
           ) : undefined
         }
         range={shown}
-        ranges={[...RATE_RANGES]}
+        ranges={showRangePicker ? [...RATE_RANGES] : undefined}
         rangeLabel={(r) => RATE_RANGE_LABELS[r as RateRange] ?? r}
         onRangeChange={(r) => setRange(r as RateRange)}
         loading={q.isPending}

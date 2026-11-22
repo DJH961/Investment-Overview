@@ -13,7 +13,7 @@ from pydantic import Field
 
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
 
-RateRange = Literal["1d", "1w", "1m", "3m", "ytd", "1y", "5y", "10y", "max"]
+RateRange = Literal["1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max"]
 
 
 class RateHistoryPoint(ApiModel):

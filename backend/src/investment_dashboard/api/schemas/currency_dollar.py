@@ -288,6 +288,8 @@ class ScenarioRow(ApiModel):
     rate_display: DecStr
     #: The holdings' value in ``ccy`` at ``rate``.
     value: DecStr
+    #: The book in the other currency at `rate` (what still moves for an all-native book).
+    other_value: DecStr | None = None
     #: The currency gain in ``ccy`` at ``rate`` against your average rate: the
     #: holdings whose native currency is not ``ccy`` valued at ``rate`` minus at
     #: ``avg_invest_rate``. Null without an average rate.
@@ -300,7 +302,7 @@ class ScenarioRow(ApiModel):
 
 
 class ScenarioMark(ApiModel):
-    key: Literal["average", "breakeven", "today", "historic_low", "historic_high"]
+    key: Literal["average", "breakeven", "today", "range_start", "historic_low", "historic_high"]
     rate: DecStr
     rate_display: DecStr
     date: str | None = None
@@ -318,6 +320,9 @@ class StressRow(ApiModel):
     value: DecStr
     #: ``value`` minus today's value, in ``ccy``.
     change: DecStr
+    #: The same two figures for the book in the other currency.
+    other_value: DecStr | None = None
+    other_change: DecStr | None = None
 
 
 class Sensitivity(ApiModel):
@@ -332,8 +337,11 @@ class Sensitivity(ApiModel):
 class Cushion(ApiModel):
     """Does the dollar cushion or amplify your swings? (``domain.risk`` on both series)."""
 
-    #: First day of the measured window (your first invested day).
+    #: First day of the measured window (the page range's start, or your first invested
+    #: day if later).
     since: str
+    #: The window is too short for a meaningful volatility: only ``since`` is set.
+    too_short: bool = False
     #: Annualised volatility of the flow-adjusted daily returns, per currency.
     volatility_eur: DecStr | None = None
     volatility_usd: DecStr | None = None
@@ -358,6 +366,15 @@ class ScenariosOut(ApiModel):
     generated_at: str
     quote: DollarQuote
     caption: str = CAPTION
+    #: The page range the marks, low/high stats and cushion describe, and its first day.
+    range: RateRange = "max"
+    range_start: str | None = None
+    #: False when none of the holdings are in the other currency, so the side's own
+    #: value does not move with the rate (an all-dollar book in the dollar view).
+    exposed: bool = True
+    other_ccy: Ccy = "USD"
+    #: The book in ``other_ccy`` at today's rate (what still moves when not ``exposed``).
+    value_now_other: DecStr | None = None
     #: Slider step, and the first / last row, in the side's ``quote`` (rows ascend in it).
     step: DecStr
     min_rate: DecStr
