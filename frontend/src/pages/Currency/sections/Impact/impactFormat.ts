@@ -21,5 +21,7 @@ export function periodLabel(label: string | null | undefined): string {
 /** A small signed amount for a dense cell ("+€1.2K", "−€640"). */
 export function compactSigned(v: number | null, ccy: string): string {
   if (v === null) return "";
-  return formatMoney(v, ccy, { compact: true, narrow: true, signed: true, significant: Math.abs(v) >= 1000 ? 2 : 3 });
+  // Under a thousand: whole units ("+€7", never "+€7.38"); above: two significant digits ("−€16K").
+  if (Math.abs(v) < 1000) return formatMoney(Math.round(v), ccy, { narrow: true, signed: true, digits: 0 });
+  return formatMoney(v, ccy, { compact: true, narrow: true, signed: true, significant: 2 });
 }

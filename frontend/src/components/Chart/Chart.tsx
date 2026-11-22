@@ -34,7 +34,8 @@ export type ChartTone = "primary" | "benchmark" | "muted" | "invested" | "estima
 export interface ChartMarker {
   t: string | number;
   v: number;
-  shape: "buy" | "sell" | "dot" | "conversion" | "above" | "below";
+  /** `rug`: a quiet tick on the date axis (its `v` is ignored and not part of the y range). */
+  shape: "buy" | "sell" | "dot" | "conversion" | "above" | "below" | "rug";
   label: string;
   /** Size in px (conversion markers: by amount). Default 3.5 for dots and rings, 5 for triangles. */
   r?: number;
@@ -517,7 +518,7 @@ export function Chart({
     // Room for the marker: a small gutter after the last point, never the night.
     const tMax = nowOk ? tLast + Math.max(tLast - tMin, 1) * NOW_GUTTER : tLast;
     const dataRefs = [
-      ...(markers ?? []).map((m) => m.v).filter((v) => Number.isFinite(v)),
+      ...(markers ?? []).filter((m) => m.shape !== "rug").map((m) => m.v).filter((v) => Number.isFinite(v)),
       ...(nowOk ? [nowMarker.v] : []),
     ];
     const dataLo = Math.min(...values, ...dataRefs);
@@ -934,6 +935,17 @@ export function Chart({
                 const mt = toTime(m.t);
                 if (!Number.isFinite(mt) || !Number.isFinite(m.v)) return null;
                 const mx = scales.x(mt);
+                if (m.shape === "rug") {
+                  const base = PAD.top + innerH;
+                  const h = m.r ?? 6;
+                  return (
+                    <g key={`${k}-${mt}`} className="chart__mark chart__mark--rug" data-mark="rug">
+                      <title>{m.label}</title>
+                      <rect className="chart__rug-hit" x={mx - 4} y={base - 14} width={8} height={14} />
+                      <line className="chart__rug" x1={mx} x2={mx} y1={base - h} y2={base} />
+                    </g>
+                  );
+                }
                 const my = scales.y(m.v);
                 return (
                   <g key={`${k}-${mt}`} className={clsx("chart__mark", `chart__mark--${m.shape}`)} data-mark={m.shape}>

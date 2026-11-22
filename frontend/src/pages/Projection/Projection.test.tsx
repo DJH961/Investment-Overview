@@ -162,8 +162,10 @@ describe("Projection", () => {
   });
 
   it("formats the axis and filters monthly detail rows", () => {
-    expect(axisLabel(10, true)).toBe("Month 120");
-    expect(axisLabel(2, false)).toBe("Year 2");
+    // Real calendar dates from the projection's start, not "Year 2" / "Month 39".
+    expect(axisLabel(2, false, "2026-10-31")).toBe("2028");
+    expect(axisLabel(39 / 12, true, "2026-10-31")).toMatch(/Jan.*2030/);
+    expect(axisLabel(2, false, "")).toBe("Year 2");
     const rows = detailRows(out(true) as never);
     expect(rows.map((r) => r.label)).toEqual(["2027-10", "2028-10"]);
   });

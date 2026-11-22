@@ -135,14 +135,13 @@ function Figures({ data, lens }: { data: RateHistoryDto; lens: RateLens }) {
   );
 }
 
-const MARK_SHAPE = { above_reference: "above", below_reference: "below" } as const;
 const MARK_WORD = { above_reference: "better than the reference rate", below_reference: "worse than the reference rate" } as const;
 
 /**
- * Your conversions on the chart (server `markers`, 7.2 contract with 7.3): a neutral
- * ring sized by the amount while `kind` is null; ▲ / ▼ once 7.3 compares each with
- * the day's reference fixing. Sized within each source currency (square root, so the
- * area follows the amount). Only those inside the plotted span are drawn.
+ * Your conversions on the chart (server `markers`, 7.2 contract with 7.3): quiet ticks on
+ * the date axis, taller for larger amounts (within each source currency). They mark when
+ * you converted, not a point on the reference line: your own rate usually differs from
+ * the fixing, so a mark on the line would mislead. Only those inside the plotted span.
  */
 export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMarker[] {
   const pts = data.points ?? [];
@@ -159,19 +158,12 @@ export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMark
     if (!Number.isFinite(t) || t < t0 - 43_200_000 || t > t1 || rate === null || !(rate > 0)) return [];
     const amount = Math.abs(toNum(m.amount_from) ?? 0);
     const top = max.get(m.from_ccy) ?? 0;
-    const r = 3 + 4.5 * (top > 0 ? Math.sqrt(amount / top) : 0);
+    // Tick height follows the amount (square root, so the area reads like the amount).
+    const h = 4 + 8 * (top > 0 ? Math.sqrt(amount / top) : 0);
     const kind = m.kind ?? null;
     const v = lens === "rate" ? rate : 1 / rate;
     const what = `${formatMoney(amount, m.from_ccy, { digits: 0 })} to ${m.to_ccy} on ${formatDate(m.date.slice(0, 10))} at ${formatNumber(rate, 4)}`;
-    return [
-      {
-        t,
-        v,
-        r: kind ? Math.max(4.5, r) : r,
-        shape: kind ? MARK_SHAPE[kind] : "conversion",
-        label: kind ? `Converted ${what}: ${MARK_WORD[kind]}` : `Converted ${what}`,
-      },
-    ];
+    return [{ t, v, r: h, shape: "rug" as const, label: kind ? `Converted ${what}: ${MARK_WORD[kind]}` : `Converted ${what}` }];
   });
 }
 
@@ -254,7 +246,8 @@ export function RateChart({
       <Chart
         series={series}
         // Labelled in the legend, not on the plot, where it would cross the line.
-        referenceLine={avg !== null ? { value: avg } : undefined}
+        // Far from a short range's line it becomes an edge marker, so the line keeps its scale.
+        referenceLine={avg !== null ? { value: avg, softBounds: true } : undefined}
         markers={marks.length ? marks : undefined}
         legendExtra={
           avg !== null || marks.length ? (

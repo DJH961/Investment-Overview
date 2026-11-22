@@ -53,17 +53,17 @@ export function RateBand({ band, endLabel }: { band: Band; endLabel?: string }) 
         className="rate-band"
         title={
           <span className="rate-band__title">
-            In euros, at other exchange rates
+            Your dollars at other exchange rates
             <InfoTip
-              label="In euros, at other exchange rates"
-              content="Your dollar holdings are projected at their own dollar return, then valued in euros at each assumed EUR/USD rate on the horizon. A stronger euro (rate up) means fewer euros. This is not a forecast of the rate."
+              label="Your dollars at other exchange rates"
+              content="Your dollar holdings are grown at their own dollar return, then valued in euros at each assumed EUR/USD rate on the horizon. A stronger euro (rate up) means fewer euros. The headline above grows the whole portfolio at your euro return instead, which already carries the dollar's past moves, so the two differ even at today's rate. Neither is a forecast of the rate."
             />
           </span>
         }
         collapsibleId="projection.rate-band"
       >
         <p className="rate-band__lead">
-          Expected {endLabel ? `in ${endLabel}` : ""}: <strong className="rate-band__lead-figure">{fig(low)}</strong>
+          Your dollar holdings {endLabel ? `in ${endLabel}` : ""}: <strong className="rate-band__lead-figure">{fig(low)}</strong>
           <span className="rate-band__lead-sep"> to </span>
           <strong className="rate-band__lead-figure">{fig(high)}</strong>
           <span className="rate-band__lead-note">
@@ -72,8 +72,11 @@ export function RateBand({ band, endLabel }: { band: Band; endLabel?: string }) 
             {formatNumber(now, 4)}
           </span>
         </p>
+        <p className="rate-band__note">
+          Grown at their dollar return, so even at today&apos;s rate this differs from the headline, which uses your euro return.
+        </p>
         <table className="rate-band__table">
-          <caption className="rate-band__caption">Projected euro value by EUR/USD rate at the horizon</caption>
+          <caption className="rate-band__caption">Projected euro value of your dollar holdings by EUR/USD rate at the horizon</caption>
           <thead>
             <tr>
               <th scope="col" className="rate-band__th">

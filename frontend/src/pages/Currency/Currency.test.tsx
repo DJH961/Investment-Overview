@@ -64,11 +64,10 @@ beforeEach(() => {
 afterEach(() => localStorage.clear());
 
 describe("Currency page", () => {
-  it("renders one tile per sent stat, with a tip each, except the rate (the chart's headline)", () => {
+  it("renders one tile per sent stat, with a tip each, except what the chart or What if shows", () => {
     mount();
-    expect(tiles()).toHaveLength(
-      cur.EUR.stats!.filter((s) => !["rate_now", "avg_rate_vs_now", "lifetime_effect"].includes(s.key)).length,
-    );
+    const elsewhere = ["rate_now", "avg_rate_vs_now", "lifetime_effect", "dollar_trend", "one_cent", "investing_power_today"];
+    expect(tiles()).toHaveLength(cur.EUR.stats!.filter((s) => !elsewhere.includes(s.key)).length);
     expect(screen.queryByText("EUR/USD now")).not.toBeInTheDocument();
     expect(screen.getByText("Effect today")).toBeInTheDocument();
     expect(screen.queryByText("Investing power today")).not.toBeInTheDocument();
@@ -82,7 +81,7 @@ describe("Currency page", () => {
     eur.unmount();
     state.ccy = "USD";
     mount();
-    expect(screen.getByText("Tailwind")).toBeInTheDocument();
+    expect(screen.getAllByText("Tailwind").length).toBeGreaterThan(0);
   });
 
   it("leaves the strip out when no stats are sent, keeping the chart", () => {

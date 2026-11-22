@@ -12,7 +12,8 @@
 
     @include m.desktop {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      align-items: start;
+      // Side by side the two cards end on one line.
+      align-items: stretch;
     }
   }
 
@@ -69,24 +70,75 @@
 
   &__chart { margin-top: var(--space-4); }
 
+  // The headline (left) and the two returns as bars (right); stacked on phones.
+  &__top {
+    display: grid;
+    gap: var(--space-5);
+    align-items: center;
+
+    @include m.tablet-up {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      gap: var(--space-6);
+    }
+  }
+
+  &__headline { display: grid; gap: var(--space-1); min-width: 0; }
+
+  &__headline &__fig-label { margin: 0; }
+
+  &__headline-value {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--font-size-3xl);
+    line-height: var(--line-height-tight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // The range's smaller figures, under the chart, on the hero's own grid.
+  &__minor {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4) var(--space-5);
+    margin: var(--space-4) 0 0;
+    padding-top: var(--space-4);
+    border-top: var(--border-width) solid var(--color-border);
+
+    @include m.tablet-up {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  &__minor-fig { min-width: 0; }
+
+  &__minor-value {
+    margin: var(--space-1) 0 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
   &__title {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
   }
 
-  &__months { display: grid; gap: var(--space-5); }
+  &__months { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); min-width: 0; }
 
   &__rolling { min-width: 0; }
 
   &__run {
-    margin: var(--space-3) 0 0;
-    padding: var(--space-3);
-    border-left: calc(var(--border-width) * 3) solid var(--color-accent);
-    background: var(--color-surface-2);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-2);
+    margin: 0;
     color: var(--color-fg);
     font-size: var(--font-size-sm);
+    line-height: var(--line-height-base);
   }
+
+  &__run-text { flex: 1 1 12rem; min-width: 0; }
 
   &__sums {
     display: grid;
@@ -125,9 +177,23 @@
   &__more-icon { width: 1em; height: 1em; }
 }
 
+// Beside Records the card is as tall as its neighbour: the rows spread to fill it.
+.impact__bridge {
+  display: flex;
+  flex-direction: column;
+}
+
+.impact__bridge .card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
 .bridge {
   display: grid;
-  gap: var(--space-3);
+  flex: 1 1 auto;
+  align-content: space-evenly;
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -140,7 +206,7 @@
   }
 
   &__label { color: var(--color-muted); font-size: var(--font-size-xs); }
-  &__track { position: relative; height: var(--space-4); border-radius: var(--radius-sm); background: var(--color-surface-2); }
+  &__track { position: relative; height: var(--space-5); border-radius: var(--radius-sm); background: var(--color-surface-2); }
   &__bar { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: var(--radius-sm); background: var(--color-border-strong); }
   &__bar--deposits { background: var(--color-accent); }
   &__bar--market { background: var(--color-pos); }
@@ -158,25 +224,38 @@
 }
 
 .effect-bars {
+  // --effect-up: the share of the plot above zero (set from the data).
+  --effect-plot: 8rem;
+
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(2rem, 1fr));
-  align-items: stretch;
   gap: var(--space-1);
-  min-height: 9rem;
   margin: 0;
-  padding: var(--space-3) 0 0;
+  padding: var(--space-4) 0 0;
   list-style: none;
 
-  &__col { position: relative; display: grid; grid-template-rows: 1fr auto; min-width: 0; }
-  &__half { position: relative; display: flex; align-items: end; justify-content: center; min-height: 3.2rem; border-bottom: var(--border-width) solid var(--color-border-strong); }
-  &__half--down { align-items: start; border-bottom: 0; border-top: var(--border-width) solid var(--color-border-strong); }
-  &__bar { display: grid; place-items: start center; width: min(75%, 2rem); min-height: 2px; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+  &__col {
+    position: relative;
+    display: grid;
+    grid-template-rows: calc(var(--effect-plot) * var(--effect-up)) calc(var(--effect-plot) * (1 - var(--effect-up))) auto;
+    min-width: 0;
+  }
+
+  &__half { position: relative; display: flex; align-items: end; justify-content: center; border-bottom: var(--border-width) solid var(--color-border-strong); }
+  &__half--down { align-items: start; border-bottom: 0; }
+  &__bar { position: relative; width: min(70%, 1.75rem); min-height: 2px; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
   &__bar--pos { background: var(--color-pos); }
-  &__bar--neg { align-self: start; border-radius: 0 0 var(--radius-sm) var(--radius-sm); background: var(--color-neg); }
-  &__arrow { width: var(--font-size-2xs); height: var(--font-size-2xs); color: var(--color-fg); }
-  &__label { overflow: hidden; padding-top: var(--space-1); color: var(--color-muted); font-size: var(--font-size-2xs); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+  &__bar--neg { border-radius: 0 0 var(--radius-sm) var(--radius-sm); background: var(--color-neg); }
+
+  // The arrow sits just past the bar's end, so the sign reads without colour even on a sliver.
+  &__arrow { position: absolute; left: 50%; width: var(--font-size-2xs); height: var(--font-size-2xs); color: var(--color-muted); transform: translateX(-50%); }
+  &__bar--pos &__arrow { bottom: calc(100% + 2px); }
+  &__bar--neg &__arrow { top: calc(100% + 2px); }
+
+  &__label { display: grid; overflow: hidden; padding-top: var(--space-2); color: var(--color-muted); font-size: var(--font-size-2xs); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
   &__label--flat { color: var(--color-fg); font-weight: var(--font-weight-semibold); }
-  &__col--year { border-left: var(--border-width) solid var(--color-border-strong); }
+  &__year { color: var(--color-fg); font-weight: var(--font-weight-medium); }
+  &__col--year { border-left: var(--border-width) dashed var(--color-border); }
   &--dense { grid-template-columns: repeat(auto-fit, minmax(1.3rem, 1fr)); }
 }
 
@@ -216,7 +295,7 @@
   overscroll-behavior-inline: contain;
 
   &__table { width: 100%; min-width: 42rem; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  &__caption { padding-bottom: var(--space-2); color: var(--color-muted); font-size: var(--font-size-xs); text-align: left; }
+  &__caption { padding: var(--space-4) 0 var(--space-2); color: var(--color-muted); font-size: var(--font-size-xs); text-align: left; }
   &__head { padding: var(--space-2); color: var(--color-muted); font-size: var(--font-size-2xs); font-weight: var(--font-weight-medium); text-align: right; }
   &__head--year, &__year { position: sticky; left: 0; background: var(--color-surface); text-align: left; }
   &__cell { padding: var(--space-2); border-top: var(--border-width) solid var(--color-border); font-size: var(--font-size-2xs); text-align: right; white-space: nowrap; }
@@ -227,15 +306,18 @@
 }
 
 .records {
-  display: grid;
-  gap: var(--space-2);
-  margin: 0;
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
 
-  &__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); padding: var(--space-2) 0; border-top: var(--border-width) solid var(--color-border); }
-  &__label { color: var(--color-muted); font-size: var(--font-size-xs); }
-  &__when { grid-column: 2; grid-row: 1; color: var(--color-muted); font-size: var(--font-size-2xs); }
-  &__amount { grid-column: 1 / -1; margin: 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }
-  &__life { margin: var(--space-3) 0 0; padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); font-size: var(--font-size-sm); line-height: var(--line-height-base); }
+  &__head { padding: 0 0 var(--space-2) var(--space-3); color: var(--color-muted); font-size: var(--font-size-2xs); font-weight: var(--font-weight-medium); text-align: right; }
+  &__row { border-top: var(--border-width) solid var(--color-border); }
+  &__label { padding: var(--space-3) var(--space-2) var(--space-3) 0; color: var(--color-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-align: left; vertical-align: top; }
+  &__cell { padding: var(--space-3) 0 var(--space-3) var(--space-3); text-align: right; vertical-align: top; }
+  &__cell--none { color: var(--color-muted); }
+  &__amount { display: block; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); white-space: nowrap; }
+  &__when { display: block; margin-top: var(--space-1); color: var(--color-muted); font-size: var(--font-size-2xs); white-space: nowrap; }
+  &__life { margin: var(--space-2) 0 0; padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); color: var(--color-muted); font-size: var(--font-size-xs); line-height: var(--line-height-base); }
 }
 
 .holding-split {
@@ -251,14 +333,39 @@
   &__symbol { display: block; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
   &__long { display: block; max-width: 18ch; overflow: hidden; color: var(--color-muted); font-size: var(--font-size-2xs); text-overflow: ellipsis; white-space: nowrap; }
   &__cell { padding: var(--space-3) var(--space-2); font-size: var(--font-size-xs); text-align: right; white-space: nowrap; }
-  &__cell--fx { border-inline: var(--border-width) dashed var(--color-border-strong); }
+  // The currency column is the section's subject: a faint tint marks it.
+  &__head--fx, &__cell--fx { background: var(--color-surface-2); }
   &__cell--total { font-weight: var(--font-weight-semibold); }
   &__none { color: var(--color-muted); }
 
+  // Phones: one compact block per holding. The name and its currency effect lead; price,
+  // dividends and the total change follow as a labelled line, so nothing hides off-screen.
   @include m.phone {
-    &__head { padding-inline: var(--space-1); font-size: var(--font-size-2xs); }
-    &__cell, &__name { padding-inline: var(--space-1); }
-    &__long { max-width: 12ch; }
+    display: block;
+    min-width: 0;
+
+    &__thead { display: none; }
+    &__tbody { display: block; }
+
+    &__row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-areas: "name name fx" "price div total";
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-3) 0;
+    }
+
+    &__name { grid-area: name; padding: 0; }
+    &__long { max-width: none; }
+
+    &__cell { display: flex; flex-direction: column; align-items: flex-end; padding: 0; font-size: var(--font-size-2xs); }
+    &__cell::before { content: attr(data-label); color: var(--color-muted); font-size: var(--font-size-2xs); }
+
+    &__cell--price { grid-area: price; align-items: flex-start; }
+    &__cell--div { grid-area: div; align-items: center; }
+    &__cell--total { grid-area: total; }
+    &__cell--fx { grid-area: fx; align-self: center; background: none; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+    &__cell--fx::before { content: "Currency"; }
   }
 }
 
@@ -284,4 +391,59 @@
     &__hint { display: block; }
     &__viewport { border-bottom: var(--border-width) solid var(--color-border); }
   }
+}
+
+.return-bars {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  min-width: 0;
+
+  &__row {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr) 4.5rem;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  &__label { color: var(--color-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); }
+  &__value { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; text-align: right; }
+  &__row--gap &__value { color: var(--color-muted); font-weight: var(--font-weight-medium); }
+
+  &__track { position: relative; height: var(--space-5); border-radius: var(--radius-sm); background: var(--color-surface-2); }
+  &__track--bare { height: var(--space-3); background: none; }
+  &__zero { position: absolute; top: calc(var(--space-1) * -1); bottom: calc(var(--space-1) * -1); width: var(--border-width); background: var(--color-border-strong); }
+  &__bar { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-sm); }
+  &__row--mine &__bar { background: var(--chart-1); }
+  &__row--other &__bar { border: calc(var(--border-width) * 1.5) dashed var(--chart-1); background: var(--color-accent-soft); }
+
+  // The currency: the same hatch as the gap on the chart.
+  &__gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-inline: var(--border-width) solid var(--chart-3);
+    background: repeating-linear-gradient(45deg, var(--chart-3) 0 1.5px, transparent 1.5px 4px);
+  }
+
+  @include m.phone {
+    &__row { grid-template-columns: 4.5rem minmax(0, 1fr) 4rem; gap: var(--space-2); }
+  }
+}
+
+.share-bar {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+
+  &__track { display: flex; overflow: hidden; height: var(--space-2); border-radius: var(--radius-full); background: var(--color-surface-2); }
+  &__market { background: var(--color-border-strong); }
+  &__currency { background: repeating-linear-gradient(45deg, var(--chart-3) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 var(--border-width) var(--chart-3); }
+
+  &__legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: 0; color: var(--color-muted); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; }
+  &__key { display: inline-flex; align-items: center; gap: var(--space-1); }
+
+  &__key::before { content: ""; width: var(--space-3); height: var(--space-2); border-radius: var(--radius-sm); }
+  &__key--market::before { background: var(--color-border-strong); }
+  &__key--currency::before { background: repeating-linear-gradient(45deg, var(--chart-3) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 var(--border-width) var(--chart-3); }
 }

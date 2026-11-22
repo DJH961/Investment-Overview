@@ -622,6 +622,22 @@
     stroke-width: 1.5;
   }
 
+  // A conversion as a quiet tick on the date axis: when, and how much (its height),
+  // without claiming a point on the reference line. Hover shows the details.
+  &__rug {
+    stroke: var(--color-muted);
+    stroke-linecap: round;
+    stroke-width: 2;
+  }
+
+  &__rug-hit {
+    fill: transparent;
+  }
+
+  &__mark--rug:hover &__rug {
+    stroke: var(--color-fg);
+  }
+
   &__mark--above,
   &__mark--below {
     stroke: var(--color-fg);

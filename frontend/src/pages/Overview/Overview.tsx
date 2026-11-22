@@ -102,7 +102,7 @@ function useTreemapHeight(active: boolean) {
 export function Overview() {
   const { currency } = usePrefs();
   const overview = useOverview(currency);
-  const rateLine = useRateLine(currency);
+  const rateLine = useRateLine();
   const { overviewRange } = useDisplayPrefs();
 
   const live = useLiveGrace(useLiveStatus());

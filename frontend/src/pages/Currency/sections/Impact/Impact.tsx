@@ -2,7 +2,9 @@ import { Euro } from "lucide-react";
 import { useCallback } from "react";
 import { CurrencySection, serverStatItem, type StatMeta } from "../../../../components/CurrencySection";
 import { InfoTip } from "../../../../components/InfoTip";
-import { formatDate, formatNumber } from "../../../../lib/format";
+import { Money } from "../../../../components/Money";
+import type { StatItem } from "../../../../components/StatStrip";
+import { formatDate, formatNumber, formatPercent } from "../../../../lib/format";
 import { RATE_RANGE_LABELS } from "../../../../lib/queries/currencyRate";
 import { effectRangeFor, useCurrencyEffect, type CurrencyEffectDto, type EffectStatDto } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
@@ -11,14 +13,13 @@ import type { CurrencySectionComponentProps } from "../../sections";
 import { BridgeCard, foreignOf, HoldingsCard, ImpactHero, MonthsCard, RecordsCard, RollingCard, SessionCard } from "./ImpactPanels";
 import "./Impact.scss";
 
-/** The section strip's words. The headline (returns, effect, share) is in the hero, not repeated here. */
+/** The section's secondary figures' words (the hero carries the returns and the effect). */
 const STAT_LABELS: Record<string, StatMeta> = {
-  tailwind_share: { label: "Months it helped", tip: "The share of months in this range in which the exchange rate added value.", fractionFormat: "percent" },
-  typical_day: { label: "Typical day", tip: "The middle size of a day's currency effect in this range: half the days moved less." },
+  tailwind_share: { label: "Months it helped", tip: "In how many of this range's months the exchange rate added value." },
+  typical_day: { label: "Typical day", tip: "The middle size of a day's currency effect in this range, either way: half the days moved less." },
   largest_day: { label: "Largest day", tip: "The day with the biggest currency effect in this range, either way." },
-  months_of_contributions: { label: "In months of deposits", tip: "The lifetime currency effect divided by your average monthly deposit." },
   rate_range_today: { label: "Today's range", tip: "The lowest and highest rate today." },
-  typical_month: { label: "Typical month", tip: "The middle size of a month's currency effect." },
+  typical_month: { label: "Typical month", tip: "The middle size of a month's currency effect, either way." },
 };
 /** Shown in their own panels (hero, records, run, market hours, buys): never twice. */
 const ELSEWHERE = new Set([
@@ -34,33 +35,40 @@ const ELSEWHERE = new Set([
   "inside_hours",
   "outside_hours",
   "buys_now",
+  "months_of_contributions",
 ]);
+/** Sizes, not gains: shown as ± without a sign or colour. */
+const UNSIGNED = new Set(["typical_day", "typical_month"]);
 
-function stripItems(stats: EffectStatDto[], ccy: string) {
+export function stripItems(stats: EffectStatDto[], ccy: string): StatItem[] {
   return stats
-    .filter((s) => !ELSEWHERE.has(s.key))
+    .filter((s) => !ELSEWHERE.has(s.key) && STAT_LABELS[s.key])
     .map((s) => {
-      // `count` figures (months) are plain numbers; a stat's own period goes in its note.
+      const meta = STAT_LABELS[s.key];
+      if (s.key === "tailwind_share") {
+        const n = toNum(s.secondary ?? null);
+        const share = toNum(s.value) ?? 0;
+        // A count of months reads better than a share of them.
+        const value = n !== null && n > 0 ? `${Math.round(share * n)} of ${formatNumber(n, 0)}` : formatPercent(share, { digits: 0 });
+        return { key: s.key, label: meta.label, tip: meta.tip, value };
+      }
+      if (UNSIGNED.has(s.key)) {
+        const v = toNum(s.value);
+        return {
+          key: s.key,
+          label: meta.label,
+          tip: meta.tip,
+          value: v === null ? "–" : <>±<Money amount={Math.abs(v)} currency={s.currency ?? ccy} digits={0} /></>,
+        };
+      }
+      // Left after the special cases: money and rate figures (no counts reach here).
       const base = serverStatItem(
-        {
-          ...s,
-          unit: s.unit === "count" ? "rate" : s.unit,
-          secondary: s.secondary_unit === "count" ? null : s.secondary,
-          secondary_unit: s.secondary_unit === "count" ? null : s.secondary_unit,
-        },
-        STAT_LABELS[s.key],
+        { ...s, unit: s.unit === "count" ? "rate" : s.unit, secondary_unit: s.secondary_unit === "count" ? null : s.secondary_unit },
+        meta,
         ccy,
       );
-      const value = s.unit === "count" ? formatNumber(toNum(s.value), 1) : base.value;
-      const note =
-        s.key === "tailwind_share" && s.secondary
-          ? `of ${s.secondary} months`
-          : s.label
-            ? /^\d{4}-\d{2}-\d{2}/.test(s.label)
-              ? formatDate(s.label.slice(0, 10))
-              : s.label
-            : base.note;
-      return { ...base, value, note };
+      const note = s.label && /^\d{4}-\d{2}-\d{2}/.test(s.label) ? formatDate(s.label.slice(0, 10)) : base.note;
+      return { ...base, note };
     });
 }
 
@@ -96,7 +104,6 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
           </span>
         ) : undefined
       }
-      stats={data ? stripItems(data.stats ?? [], data.ccy) : undefined}
       state={q.isError && !data ? "error" : !data ? "loading" : empty ? "empty" : "ready"}
       busy={q.isFetching && !q.isPending && q.isPlaceholderData}
       onRetry={refetch}
@@ -107,7 +114,7 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
     >
       {data ? (
         <div className="impact">
-          <ImpactHero data={data} range={shownRange} />
+          <ImpactHero data={data} range={shownRange} figures={stripItems(data.stats ?? [], data.ccy)} />
           <div className="impact__pair">
             {intraday ? <SessionCard data={data} /> : null}
             <BridgeCard data={data} />

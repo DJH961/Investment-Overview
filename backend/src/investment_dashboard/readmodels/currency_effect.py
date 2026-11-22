@@ -688,7 +688,16 @@ def effect_stats(
         )
         share_up = fa.tailwind_share(months)
         if share_up is not None:
-            out.append(_stat("tailwind_share", share_up, "fraction"))
+            # The month count rides along, so the page can say "4 of 12 months".
+            out.append(
+                _stat(
+                    "tailwind_share",
+                    share_up,
+                    "fraction",
+                    secondary=Decimal(len(months)),
+                    secondary_unit="count",
+                )
+            )
         runs = longest_runs(months)
         if 1 in runs:
             out.append(

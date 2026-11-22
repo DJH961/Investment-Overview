@@ -63,8 +63,18 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
   },
 };
 
-/** On the chart already, in its quote: never repeated in the strip. */
-const ON_THE_CHART = new Set(["rate_now", "avg_rate_vs_now", "lifetime_effect"]);
+/**
+ * On the chart already (rate, average, dollar trend), in What if (one cent) or about the
+ * next conversion rather than your holdings (investing power, the Overview's Today card):
+ * never twice. Both views keep the same three tiles: today, this year, lifetime.
+ */
+const NOT_IN_STRIP = new Set(["rate_now", "avg_rate_vs_now", "lifetime_effect", "dollar_trend", "one_cent", "investing_power_today"]);
+/** Today, this year, lifetime: the strip reads left to right from short to long. */
+const STRIP_ORDER = ["effect_today", "effect_this_year", "effect_ytd", "effect_lifetime"];
+const stripRank = (key: string) => {
+  const i = STRIP_ORDER.indexOf(key);
+  return i < 0 ? STRIP_ORDER.length : i;
+};
 
 export function Currency() {
   const { sub } = useParams();
@@ -141,9 +151,9 @@ function CurrencyMain({ range }: { range: CurrencyRangeState }) {
             <StatStrip
               className="stat-strip--rows"
               label="Currency at a glance"
-              // The rate and your average are on the chart above, in its quote.
               items={stats
-                .filter((s) => !ON_THE_CHART.has(s.key))
+                .filter((s) => !NOT_IN_STRIP.has(s.key))
+                .sort((a, b) => stripRank(a.key) - stripRank(b.key))
                 .map((s) => serverStatItem(s, STRIP_LABELS[s.key], cur.ccy))}
             />
           ) : null}

@@ -57,12 +57,12 @@
     gap: var(--space-1) var(--space-4);
   }
 
-  // Same as the plot's neutral conversion ring (Chart `__mark--conversion`).
+  // Same as the plot's conversion tick on the date axis (Chart `__rug`).
   &__mark-swatch {
-    width: 10px;
+    width: 2px;
     height: 10px;
-    border: 1.5px solid var(--color-fg);
     border-radius: var(--radius-full);
+    background: var(--color-muted);
   }
 
   &__figs {
