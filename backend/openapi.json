@@ -3334,6 +3334,8 @@
                 "enum": [
                   "dollar_up",
                   "dollar_down",
+                  "euro_up",
+                  "euro_down",
                   "sideways"
                 ],
                 "type": "string"
@@ -5081,12 +5083,14 @@
         "type": "object"
       },
       "DollarRegime": {
-        "description": "The dollar's regime with hysteresis (``domain.fx_trend.regime``).",
+        "description": "The trend's regime with hysteresis (``domain.fx_trend.regime``).\n\nIn ``DollarTrend.asset``'s terms: the EUR view reads the dollar (``dollar_*``), the\nUSD view the euro (``euro_*``, on the EUR/USD rate itself).",
         "properties": {
           "direction": {
             "enum": [
               "dollar_up",
               "dollar_down",
+              "euro_up",
+              "euro_down",
               "sideways"
             ],
             "title": "Direction",
@@ -5287,6 +5291,7 @@
         "type": "object"
       },
       "DollarTrend": {
+        "description": "The trend of one currency against the other, in its own terms.\n\n``asset`` says whose: ``dollar`` (the EUR view: every move, average, run and\npercentile is the dollar's, on EUR per USD) or ``euro`` (the USD view: the same\nfigures computed on the EUR/USD rate itself, never the dollar's negated).\n``ma200.distance_pct``, ``normal_*.move_pct``, ``run``, ``percentiles`` (days the\nasset was cheaper than today), ``long_run.distance_pct`` and\n``above_entry_share`` (days the asset stood above your average rate) follow it.",
         "properties": {
           "above_entry_share": {
             "anyOf": [
@@ -5299,6 +5304,15 @@
               }
             ],
             "title": "Above Entry Share"
+          },
+          "asset": {
+            "default": "dollar",
+            "enum": [
+              "dollar",
+              "euro"
+            ],
+            "title": "Asset",
+            "type": "string"
           },
           "long_run": {
             "anyOf": [
@@ -11386,6 +11400,18 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Distance Inverse Pct",
             "type": "string"
+          },
+          "distance_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Pct"
           },
           "mean": {
             "$ref": "#/components/schemas/RateValue"

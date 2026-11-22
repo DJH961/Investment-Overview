@@ -19,11 +19,13 @@ const H = 88;
  * shaded band is ±the 80th percentile of every move of that length since 1999, the
  * dashed line zero. Plain presentation of the server's series (the view's quote).
  */
-function RollingMini({ s, word }: { s: RollingSeriesDto; word: string | null }) {
+function RollingMini({ s, word, euro }: { s: RollingSeriesDto; word: string | null; euro: boolean }) {
   const pts = (s.points ?? [])
     .map((p) => ({
       t: Date.parse(p.t),
-      v: toNum(p.inverse_pct),
+      // The view's own currency: the dollar's change (EUR view) or the euro's (USD view),
+      // each computed on its own price by the server, with its own normal band.
+      v: toNum(euro ? p.rate_pct : p.inverse_pct),
     }))
     .filter((p): p is { t: number; v: number } => p.v !== null && Number.isFinite(p.t));
   const limit = Math.abs(toNum(s.normal_limit_pct ?? null) ?? 0);
@@ -88,6 +90,8 @@ function RollingMini({ s, word }: { s: RollingSeriesDto; word: string | null }) 
 /** Rolling 1M / 3M / 1Y changes, each next to its normal band (over the page range). */
 export function RollingPanel({ data }: { data: DollarDto }) {
   const t = data.trend;
+  const euro = t?.asset === "euro";
+  const name = euro ? "euro" : "dollar";
   // One wording everywhere: the server's label for the windows it rates, else "larger than usual".
   const NAMES = { normal: "normal", large: "larger than usual", unusual: "unusual" } as const;
   const wordFor = (w: string) => {
@@ -104,15 +108,15 @@ export function RollingPanel({ data }: { data: DollarDto }) {
           Rolling changes
           <InfoTip
             label="Rolling changes"
-            content={`How much the dollar moved over the trailing month, quarter and year at each day of the range. The shaded band is a normal move of that length (80% of all since 1999).`}
+            content={`How much the ${name} moved over the trailing month, quarter and year at each day of the range. The shaded band is a normal move of that length (80% of all since 1999).`}
           />
         </span>
       }
-      meta="the dollar's change"
+      meta={`the ${name}'s change`}
     >
       <div className="dollar-rolling__grid">
         {series.map((s) => (
-          <RollingMini key={s.window} s={s} word={wordFor(s.window)} />
+          <RollingMini key={s.window} s={s} word={wordFor(s.window)} euro={euro} />
         ))}
       </div>
     </Card>

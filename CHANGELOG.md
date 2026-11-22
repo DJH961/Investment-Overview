@@ -46,8 +46,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cards, what the rate did to the euros you send in: the effect on each deposit against the
   range's start rate, a chart of dollars received against the same euros at the start rate,
   a euros-to-dollars bridge, months and years, records, a rolling line and a per-deposit list.
-  Exposure becomes "Your buying power"; Scenarios shows what €1,000 and your regular amount
-  buy at other rates. Both views keep the euro-versus-dollar return gap as a second line.
+  Exposure becomes "Your euro position" with your buying power and a **Euro trend** (direction,
+  200-day average, normal month and year, recent run, where the rate stands, rolling changes,
+  all computed on EUR/USD itself); Scenarios shows what €1,000 and your regular amount buy at
+  other rates. Both views keep the euro-versus-dollar return gap as a second line.
+- **Conversions page redesigned for hundreds of rows:** each conversion is one calm row with
+  the dollar amount first; months fold like on Transactions (the two newest open, older years
+  folded into one line each), filters for period, provider and "still in the pool" (a single
+  Filters sheet on phones), and the deposit list folds the same way with a "Needs attention"
+  filter and a bar for each conversion's share of a deposit.
 - **1D and 1W rate chart round the clock:** 15-minute EUR/USD bars from Yahoo cover the
   nights, the weekend is squeezed out with a single divider where the market shut, and the US
   stock market's open hours are shaded. How long the server reuses fetched bars is a setting
@@ -67,6 +74,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and -high figures and the "does the dollar cushion your swings?" window now follow it.
 - Conversions review pass: no overflow at 1280, trimmed decimals in the edit form, clearer
   KPI names, phone rows, the matching list and the pin dialog.
+- **Sidebar cut off "Currency conversions"** on 768, 864 and 900 px tall windows: its spacing
+  now follows one continuous scale for the twelve rows, checked from 680 to 1440 px.
+- The 1W rate line runs on across the weekend divider instead of leaving a white gap.
 
 ## [7.2.0] — 2026-11-22
 
