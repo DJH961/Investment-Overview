@@ -4,13 +4,32 @@
   display: flex;
   flex-direction: column;
   gap: var(--page-gap);
+  --conv-cols: minmax(8rem, 1fr) minmax(12rem, 1.2fr) 5.5rem 7rem 4.5rem minmax(8rem, 1.2fr) 2.75rem;
 
   &__muted {
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
 
-  &__list {
+  &__empty {
+    margin: 0;
+    padding: var(--space-4) var(--card-pad-x);
+  }
+
+  &__toolbar {
+    padding: var(--space-2) var(--card-pad-x) var(--space-3);
+
+    &--deposits {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2) var(--space-3);
+    }
+  }
+
+  &__folds,
+  &__list,
+  &__deposits {
     display: flex;
     flex-direction: column;
     list-style: none;
@@ -26,20 +45,201 @@
   }
 }
 
-// One conversion. Phone and tablet: id and menu, the dollars, the rate facts, the deposits it
-// paid for, the note. Wide screens: one line.
+// A month inside an older year's card: its header sits under the year's, and its rows are
+// inset behind a rule, so the header and what it folds read as one group. (Top-level months and
+// years are plain cards, exactly like the Transactions page.)
+.fold {
+  border-top: var(--border-width) solid var(--color-border);
+
+  &:first-child {
+    border-top: 0;
+  }
+
+  &__heading {
+    margin: 0;
+    font: inherit;
+  }
+
+  &__button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: var(--tap-min);
+    padding: var(--space-1) var(--card-pad-x);
+    border: 0;
+    background: none;
+    color: var(--color-fg);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+
+    &:hover {
+      background: var(--color-surface-2);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__chevron {
+    flex: none;
+    width: var(--font-size-lg);
+    height: var(--font-size-lg);
+    color: var(--color-muted);
+    transition: transform 0.15s ease;
+
+    @include m.reduced-motion {
+      transition: none;
+    }
+  }
+
+  &:not(&--open) &__chevron {
+    transform: rotate(-90deg);
+  }
+
+  &__title {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__meta {
+    margin: 0;
+    padding: 0 var(--card-pad-x) var(--space-2) calc(var(--card-pad-x) + var(--font-size-lg) + var(--space-2));
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__body {
+    margin-left: calc(var(--card-pad-x) + var(--font-size-lg) / 2);
+    border-left: var(--space-1) solid var(--color-surface-2);
+  }
+}
+
+// One-line toolbar: period, provider and the pool toggle. Phones get one Filters button and a sheet.
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+
+  &__inline {
+    display: none;
+    align-items: center;
+    gap: var(--space-2);
+
+    @include m.tablet-up {
+      display: flex;
+      flex-wrap: wrap;
+    }
+  }
+
+  &__inline &__select {
+    width: auto;
+    min-width: 11rem;
+    height: 2.25rem;
+  }
+
+  &__phone {
+    @include m.tablet-up {
+      display: none;
+    }
+  }
+
+  &__count {
+    margin: 0 0 0 auto;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__clear {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-accent);
+    cursor: pointer;
+    font: inherit;
+    text-decoration: underline;
+  }
+
+  &__sheet {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  &__sheet-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+}
+
+// An on/off filter pill: the check mark says "on" as well as the colour.
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+
+  @include m.tablet-up {
+    min-height: 2.25rem;
+  }
+
+  &--on {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__icon {
+    width: var(--font-size-md);
+    height: var(--font-size-md);
+  }
+
+  &:focus-visible {
+    @include m.focus-ring;
+  }
+}
+
+// Column labels above the rows (wide screens only: the rows are one line there).
+.conv-head {
+  display: none;
+
+  @include m.wide {
+    display: grid;
+    grid-template-columns: var(--conv-cols);
+    gap: 0 var(--space-3);
+    padding: var(--space-1) var(--card-pad-x);
+    border-bottom: var(--border-width) solid var(--color-border);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+}
+
+// One conversion. Narrow: title line (date, provider, dollars, menu), a summary line that opens
+// the details, chips of the deposits it paid for. Wide: one line of columns.
 .conv {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas:
-    "id menu"
-    "hero hero"
-    "facts facts"
-    "paid paid"
-    "note note";
+    "id usd menu"
+    "paid paid paid"
+    "detail detail detail";
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-4) var(--card-pad-x);
+  gap: 0 var(--space-3);
+  padding: var(--space-1) var(--card-pad-x) var(--space-2);
   border-top: var(--border-width) solid var(--color-border);
 
   &:first-child {
@@ -51,7 +251,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1) var(--space-2);
     min-width: 0;
   }
 
@@ -61,47 +261,103 @@
     font-variant-numeric: tabular-nums;
   }
 
-  &__menu {
-    grid-area: menu;
-    // 44 px target on phones, aligned with the title line.
-    margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0 0;
-  }
-
   &__hero {
-    grid-area: hero;
+    grid-area: usd;
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-1) var(--space-3);
+    flex-direction: column;
+    align-items: flex-end;
     min-width: 0;
   }
 
   &__usd {
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-lg);
     font-weight: var(--font-weight-figure);
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.01em;
   }
 
-  &__sent {
+  &__sent,
+  &__sub {
     color: var(--color-muted);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
   }
 
-  &__facts {
-    grid-area: facts;
+  &__menu {
+    grid-area: menu;
+    margin-right: calc(-1 * var(--space-2));
+  }
+
+  &__paid {
+    grid-area: paid;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-3);
+    min-width: 0;
+  }
+
+  &__brief {
+    display: inline-flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 2.25rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__chevron {
+    flex: none;
+    width: var(--font-size-md);
+    height: var(--font-size-md);
+  }
+
+  &__chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  &__chip-link {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--radius-full);
+    text-decoration: none;
+
+    &:hover {
+      filter: brightness(0.96);
+    }
+  }
+
+  // The facts a phone row folds away.
+  &__detail {
+    grid-area: detail;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-3);
-    margin: 0;
-    padding: var(--space-2) 0;
-    border-block: var(--border-width) dashed var(--color-border);
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: var(--space-2) var(--space-3);
+    margin: var(--space-1) 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
   }
 
   &__fact {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: 2px;
     min-width: 0;
 
     dt {
@@ -112,129 +368,174 @@
       display: flex;
       flex-direction: column;
       margin: 0;
-      font-size: var(--font-size-md);
+      font-size: var(--font-size-sm);
       font-variant-numeric: tabular-nums;
     }
   }
 
-  &__sub {
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    font-variant-numeric: tabular-nums;
-  }
-
-  &__paid {
-    grid-area: paid;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-1) var(--space-3);
-    min-width: 0;
-
-    @include m.wide {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-  }
-
-  &__label {
-    @include m.eyebrow(var(--font-size-xs));
-  }
-
-  &__chips {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-1) var(--space-2);
-  }
-
-  &__chip-link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2.5rem;
-    border-radius: var(--radius-full);
-    text-decoration: none;
-
-    &:hover {
-      filter: brightness(0.96);
-    }
-  }
-
   &__note {
-    grid-area: note;
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
     min-width: 0;
     overflow-wrap: anywhere;
+
+    &--detail {
+      grid-column: 1 / -1;
+    }
+
+    &--wide {
+      display: none;
+    }
+  }
+
+  // Wide-only pieces.
+  &__cell,
+  &__sent--wide {
+    display: none;
   }
 
   @include m.wide {
-    grid-template-columns: minmax(8rem, 0.9fr) minmax(10rem, 1.1fr) minmax(15rem, 1.7fr) minmax(8rem, 1fr) auto;
-    grid-template-areas:
-      "id hero facts paid menu"
-      "note note note note note";
+    grid-template-columns: var(--conv-cols);
+    grid-template-areas: "id usd rate ecb off paid menu";
+    gap: 0 var(--space-3);
+    padding: var(--space-2) var(--card-pad-x);
 
-    &__facts {
-      padding: 0;
-      border-block: 0;
+    &__hero {
+      align-items: flex-start;
     }
 
-    &__chip-link {
-      min-height: 0;
+    &__sent--wide {
+      display: inline;
+    }
+
+    &__cell {
+      display: flex;
+      flex-direction: column;
+      font-size: var(--font-size-md);
+      font-variant-numeric: tabular-nums;
+
+      &--rate {
+        grid-area: rate;
+      }
+
+      &--ecb {
+        grid-area: ecb;
+      }
+
+      &--off {
+        grid-area: off;
+      }
+    }
+
+    &__id {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    &__note--wide {
+      display: block;
+      max-width: 100%;
+      @include m.truncate;
+      font-size: var(--font-size-xs);
+    }
+
+    &__brief,
+    &__detail {
+      display: none;
     }
 
     &__menu {
-      margin: 0;
+      margin-right: 0;
     }
   }
 }
 
-// One USD deposit and the conversions that paid for it.
+// One USD deposit: a folded line (date, dollars, bar, status) that opens to its slices.
 .deposit {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4) 0;
   border-top: var(--border-width) solid var(--color-border);
 
   &:first-child {
     border-top: 0;
-    padding-top: 0;
-  }
-
-  &:last-child {
-    padding-bottom: 0;
   }
 
   &__head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "date usd chevron"
+      "bar bar status";
     align-items: center;
     gap: var(--space-1) var(--space-3);
-  }
+    width: 100%;
+    min-height: var(--tap-min);
+    padding: var(--space-2) var(--card-pad-x);
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
 
-  &__title {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-1) var(--space-3);
+    &:hover {
+      background: var(--color-surface-2);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+
+    @include m.wide {
+      grid-template-columns: 8rem 9rem minmax(6rem, 1fr) 9rem 1.5rem;
+      grid-template-areas: "date usd bar status chevron";
+    }
   }
 
   &__date {
+    grid-area: date;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     font-variant-numeric: tabular-nums;
   }
 
   &__usd {
-    font-size: var(--font-size-lg);
+    grid-area: usd;
+    font-size: var(--font-size-md);
     font-weight: var(--font-weight-figure);
     font-variant-numeric: tabular-nums;
   }
 
+  &__summary {
+    grid-area: bar;
+    display: flex;
+    height: var(--space-2);
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+  }
+
+  &__status {
+    grid-area: status;
+    justify-self: end;
+  }
+
+  &__chevron {
+    grid-area: chevron;
+    justify-self: end;
+    width: var(--font-size-md);
+    height: var(--font-size-md);
+    color: var(--color-muted);
+  }
+
+  &__detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-1) var(--card-pad-x) var(--space-4);
+  }
+
   &__rate {
-    grid-column: 1 / -1;
+    margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
@@ -301,7 +602,7 @@
   }
 
   // The deposit as a track; each slice fills its share. Accent = your conversions,
-  // hatched muted = the ECB rate (a pattern as well as a colour).
+  // hatched ink = the ECB rate (a pattern as well as a colour).
   &__bar {
     display: block;
     height: var(--space-2);
@@ -312,8 +613,8 @@
 
   &__fill {
     display: block;
+    flex: none;
     height: 100%;
-    border-radius: var(--radius-full);
     background: var(--color-accent);
 
     &--ecb {
@@ -323,6 +624,10 @@
         transparent var(--space-1) var(--space-2)
       );
     }
+  }
+
+  &__bar &__fill {
+    border-radius: var(--radius-full);
   }
 
   &__actions {

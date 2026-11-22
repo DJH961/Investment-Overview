@@ -1,9 +1,8 @@
-import { Coins, Copy, MoreHorizontal, Pencil, Pin, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Coins, Copy, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
-import { Chip } from "../../components/Chip";
 import { Dialog } from "../../components/Dialog";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
@@ -18,8 +17,9 @@ import { Skeleton } from "../../components/Skeleton";
 import { StatStrip } from "../../components/StatStrip";
 import { useToast } from "../../components/Toast";
 import { ApiError } from "../../lib/api";
-import { formatDate, formatNumber } from "../../lib/format";
+import { formatDate, formatNumber, getFormatPrefs, todayIn } from "../../lib/format";
 import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
+import { usePersistentState } from "../../lib/usePersistentState";
 import {
   useDeleteConversion,
   useFxConversions,
@@ -30,17 +30,23 @@ import {
   type FxConversion,
   type FxProvider,
 } from "../../lib/queries/manage";
+import { offEcbText, trimDecimal, weekdayDate } from "./matching";
+import { ConversionHead, ConversionRow } from "./ConversionRow";
+import { DepositRow } from "./DepositRow";
+import { activeCount, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters } from "./Filters";
+import { Fold } from "./Fold";
 import {
-  ecbCell,
-  offEcbText,
-  offPctText,
-  offPctWords,
-  providerLabel,
-  trimDecimal,
-  weekdayDate,
-} from "./matching";
+  buildSections,
+  groupByMonth,
+  inPeriod,
+  monthLabel,
+  newestMonths,
+  PERIOD_ALL,
+  periodOptions,
+  validPeriod,
+  type MonthGroup,
+} from "./grouping";
 import { PinDialog } from "./PinDialog";
-import { StatusChip } from "./StatusChip";
 import "./CurrencyConversions.scss";
 
 interface FormState {
@@ -221,208 +227,182 @@ export function ConversionDialog({ open, onOpenChange, editing, prefill }: Conve
   );
 }
 
-/** One deposit: how much each conversion paid, as a bar of the deposit's dollars. */
-function MatchRow({
-  d,
-  conversions,
-  onAdd,
-  onPin,
+const FOLDS_KEY = "conversions.folds";
+const isFolds = (v: unknown): v is Record<string, boolean> =>
+  typeof v === "object" && v !== null && !Array.isArray(v) && Object.values(v).every((x) => typeof x === "boolean");
+
+type Folds = Record<string, boolean>;
+
+/**
+ * Month folds (and year folds for years before this one) around any dated list. Only the
+ * open groups render their rows. `prefix` keeps the remembered open/closed state of the
+ * conversions and of the deposits apart.
+ */
+function FoldedList<T>({
+  prefix,
+  items,
+  dateOf,
+  thisYear,
+  filtered,
+  folds,
+  setFolds,
+  meta,
+  children,
 }: {
-  d: DepositMatch;
-  conversions: ReadonlyMap<number, FxConversion>;
-  onAdd: (d: DepositMatch) => void;
-  onPin: (d: DepositMatch) => void;
+  prefix: string;
+  items: readonly T[];
+  dateOf: (item: T) => string;
+  thisYear: string;
+  /** While a filter is on, every group opens so the matches are all in view. */
+  filtered: boolean;
+  folds: Folds;
+  setFolds: (update: (prev: Folds) => Folds) => void;
+  meta: (items: readonly T[]) => ReactNode;
+  children: (items: readonly T[]) => ReactNode;
 }) {
-  const total = Number(d.usd);
-  // A bar is this slice's share of the deposit (linear presentation maths on server figures).
-  const share = (usd: string) => `${Math.min(100, Math.max(0, total > 0 ? (Number(usd) / total) * 100 : 0))}%`;
-  const hasFallback = d.fallback_usd !== null && Number(d.fallback_usd) > 0;
+  const groups = groupByMonth(items, dateOf);
+  const sections = buildSections(groups, thisYear);
+  const recent = newestMonths(groups.map((g) => g.key));
+  const isOpen = (key: string, fallback: boolean) => folds[key] ?? (filtered ? true : fallback);
+  const toggle = (key: string, now: boolean) => setFolds((prev) => ({ ...prev, [key]: !now }));
+  const month = (g: MonthGroup<T>, nested = false) => {
+    const key = `${prefix}:${g.key}`;
+    const open = isOpen(key, recent.has(g.key));
+    return (
+      <Fold
+        key={key}
+        nested={nested}
+        open={open}
+        onToggle={() => toggle(key, open)}
+        title={monthLabel(g.key)}
+        meta={meta(g.items)}
+      >
+        {children(g.items)}
+      </Fold>
+    );
+  };
   return (
-    <li className="deposit" id={`deposit-${d.transaction_id}`}>
-      <div className="deposit__head">
-        <div className="deposit__title">
-          <span className="deposit__date">{formatDate(d.date)}</span>
-          <Money amount={total} currency="USD" className="deposit__usd" />
-        </div>
-        <StatusChip status={d.status} pinned={d.pinned} />
-        <span className="deposit__rate">
-          {d.effective_rate ? `Your rate ${formatNumber(Number(d.effective_rate), 4)}` : "No rate for this deposit"}
-        </span>
-      </div>
-      <ul className="deposit__slices">
-        {d.slices.map((s) => {
-          const c = conversions.get(s.conversion_id);
-          return (
-            <li key={`${s.conversion_id}-${s.usd}-${s.pinned}`} className="deposit__slice">
-              <div className="deposit__slice-top">
-                <Link to={{ hash: `#conversion-${s.conversion_id}` }} className="deposit__link">
-                  {[formatDate(s.conversion_date), providerLabel(c?.provider), formatNumber(Number(s.rate), 4)]
-                    .filter(Boolean)
-                    .join(" · ")}
-                  {s.pinned && (
-                    <span className="deposit__pinned" title="Pinned">
-                      <Pin className="deposit__pin" aria-hidden />
-                      <span className="deposit__sr">Pinned</span>
-                    </span>
-                  )}
-                </Link>
-                <span className="deposit__amounts">
-                  <Money amount={Number(s.usd)} currency="USD" /> for <Money amount={Number(s.eur)} currency="EUR" />
-                </span>
-              </div>
-              <span className="deposit__bar" aria-hidden>
-                <span className="deposit__fill" style={{ width: share(s.usd) }} />
-              </span>
-            </li>
-          );
-        })}
-        {hasFallback && (
-          <li className="deposit__slice">
-            <div className="deposit__slice-top">
-              <span className="deposit__ecb">
-                ECB rate{d.fallback_rate_date ? ` of ${formatDate(d.fallback_rate_date)}` : ""}
-                {d.fallback_rate ? ` · ${formatNumber(Number(d.fallback_rate), 4)}` : ""}
-              </span>
-              <span className="deposit__amounts">
-                <Money amount={Number(d.fallback_usd)} currency="USD" />
-                {d.fallback_eur ? (
-                  <>
-                    {" "}
-                    for <Money amount={Number(d.fallback_eur)} currency="EUR" />
-                  </>
-                ) : null}
-              </span>
-            </div>
-            <span className="deposit__bar" aria-hidden>
-              <span className="deposit__fill deposit__fill--ecb" style={{ width: share(d.fallback_usd as string) }} />
-            </span>
-          </li>
-        )}
-      </ul>
-      <div className="deposit__actions">
-        {d.status !== "matched" && (
-          <Button size="sm" variant="secondary" onClick={() => onAdd(d)}>
-            Add the conversion
-          </Button>
-        )}
-        <Button size="sm" variant="secondary" onClick={() => onPin(d)}>
-          {d.pinned ? "Change pin…" : "Pin a conversion…"}
-        </Button>
-      </div>
-    </li>
+    <div className="conversions__folds">
+      {sections.map((s) => {
+        if (s.kind === "month") return month(s.group);
+        const key = `${prefix}:y${s.block.year}`;
+        const open = isOpen(key, s.block.months.some((g) => recent.has(g.key)));
+        return (
+          <Fold
+            key={key}
+            open={open}
+            onToggle={() => toggle(key, open)}
+            title={s.block.year}
+            meta={meta(s.block.months.flatMap((g) => g.items))}
+          >
+            {s.block.months.map((g) => month(g, true))}
+          </Fold>
+        );
+      })}
+    </div>
   );
 }
 
-/** One conversion: the dollars are the hero, the rate facts and the deposits it paid for sit quietly around. */
-function ConversionRow({ c, menu }: { c: FxConversion; menu: React.ReactNode }) {
-  const e = ecbCell(c);
-  const n = c.used_by.length;
-  const left = Number(c.remaining_usd);
-  const fees = c.fees_eur && Number(c.fees_eur) > 0 ? Number(c.fees_eur) : 0;
-  const allIn = Number(c.all_in_rate) !== Number(c.rate);
-  return (
-    <li className="conv" id={`conversion-${c.id}`}>
-      <div className="conv__id">
-        <span className="conv__date">{formatDate(c.date)}</span>
-        {c.provider && (
-          <Chip size="sm" outline>
-            {providerLabel(c.provider)}
-          </Chip>
-        )}
-      </div>
-      <div className="conv__hero">
-        <Money amount={Number(c.usd_received)} currency="USD" className="conv__usd" />
-        <span className="conv__sent">
-          from <Money amount={Number(c.eur_sent)} currency="EUR" />
-          {fees > 0 && (
-            <>
-              {" "}
-              + <Money amount={fees} currency="EUR" /> fees
-            </>
-          )}
-        </span>
-      </div>
-      <dl className="conv__facts">
-        <div className="conv__fact">
-          <dt>Rate</dt>
-          <dd>
-            {formatNumber(Number(c.rate), 4)}
-            {allIn && <span className="conv__sub">all-in {formatNumber(Number(c.all_in_rate), 4)}</span>}
-          </dd>
-        </div>
-        <div className="conv__fact" title={e.title}>
-          <dt>ECB that day</dt>
-          <dd>
-            {e.text}
-            {e.from && <span className="conv__sub">{e.from}</span>}
-          </dd>
-        </div>
-        <div className="conv__fact" title={offPctWords(c.off_pct) ?? undefined}>
-          <dt>vs ECB</dt>
-          <dd>{offPctText(c.off_pct)}</dd>
-        </div>
-      </dl>
-      <div className="conv__paid">
-        <span className="conv__label">Paid for</span>
-        <span className="conv__chips">
-          {n === 0 ? (
-            <Chip size="sm" tone="neutral">
-              In the pool
-            </Chip>
-          ) : (
-            c.used_by.slice(0, 2).map((u) => (
-              <Link key={`${u.deposit_id}-${u.pinned}`} to={{ hash: `#deposit-${u.deposit_id}` }} className="conv__chip-link">
-                <Chip size="sm" outline>
-                  {formatDate(u.date)}
-                </Chip>
-              </Link>
-            ))
-          )}
-          {n > 2 && <span className="conv__sub">+{n - 2} more</span>}
-          {n > 0 && left > 0.005 && (
-            <span className="conv__sub">
-              <Money amount={left} currency="USD" /> left
-            </span>
-          )}
-        </span>
-      </div>
-      {c.note && (
-        <p className="conv__note" title={c.note}>
-          {c.note}
-        </p>
-      )}
-      <div className="conv__menu">{menu}</div>
-    </li>
-  );
-}
-
-/** Scroll to (and briefly mark) the element a `#conversion-<id>` / `#deposit-<id>` link points at. */
-function useHashTarget(ready: boolean) {
-  const location = useLocation();
-  useEffect(() => {
-    const id = location.hash.slice(1);
-    if (!ready || !id) return;
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
-    el.classList.add("conversions__target");
-    const timer = window.setTimeout(() => el.classList.remove("conversions__target"), 1800);
-    return () => window.clearTimeout(timer);
-  }, [location.hash, location.key, ready]);
-}
+const sumOf = (rows: readonly FxConversion[], pick: (c: FxConversion) => string) =>
+  rows.reduce((total, c) => total + Number(pick(c)), 0);
 
 export function CurrencyConversions() {
   const list = useFxConversions();
   const pool = useFxPool();
   const del = useDeleteConversion();
   const { toast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [dialog, setDialog] = useState<{ editing: FxConversion | null; prefill?: Partial<FormState> } | null>(null);
   const [confirm, setConfirm] = useState<FxConversion | null>(null);
-
-  useHashTarget(Boolean(list.data && pool.data));
   const [pinning, setPinning] = useState<DepositMatch | null>(null);
+  const [folds, setFolds] = usePersistentState<Folds>(FOLDS_KEY, {}, isFolds);
+  const [openDeposits, setOpenDeposits] = useState<ReadonlySet<number>>(new Set());
+  const [pending, setPending] = useState<string | null>(null);
 
-  const byId = new Map((list.data ?? []).map((c) => [c.id, c]));
+  const today = todayIn(getFormatPrefs().timeZone);
+  const conversions = list.data ?? [];
+  const deposits = pool.data?.deposits ?? [];
+  const byId = new Map(conversions.map((c) => [c.id, c]));
+  const periods = periodOptions([...conversions.map((c) => c.date), ...deposits.map((d) => d.date)], today);
+
+  // The filters live in the address (?period=&provider=&pool=1&needs=1) so a view can be linked.
+  const providerParam = params.get("provider");
+  const filters: ConversionFilters = {
+    period: validPeriod(params.get("period"), periods),
+    provider: PROVIDER_FILTER_OPTIONS.some((o) => o.value === providerParam) ? (providerParam as string) : "all",
+    pool: params.get("pool") === "1",
+  };
+  const needs = params.get("needs") === "1";
+  const writeParams = (next: ConversionFilters, nextNeeds: boolean) => {
+    const out = new URLSearchParams();
+    if (next.period !== PERIOD_ALL) out.set("period", next.period);
+    if (next.provider !== "all") out.set("provider", next.provider);
+    if (next.pool) out.set("pool", "1");
+    if (nextNeeds) out.set("needs", "1");
+    setParams(out, { replace: true });
+  };
+
+  const shownConversions = conversions.filter(
+    (c) =>
+      inPeriod(c.date, filters.period, today) &&
+      (filters.provider === "all" || c.provider === filters.provider) &&
+      (!filters.pool || Number(c.remaining_usd) > 0.005),
+  );
+  const shownDeposits = deposits.filter(
+    (d) => inPeriod(d.date, filters.period, today) && (!needs || d.status !== "matched"),
+  );
+  const conversionsFiltered = activeCount(filters) > 0;
+  const depositsFiltered = filters.period !== PERIOD_ALL || needs;
+
+  // Follow a #conversion-<id> / #deposit-<id> link: show the row (clearing filters that hide it,
+  // opening its folds), then scroll to it.
+  const ready = Boolean(list.data && pool.data);
+  const latest = useRef({ byId, deposits, shownConversions, shownDeposits });
+  useEffect(() => {
+    latest.current = { byId, deposits, shownConversions, shownDeposits };
+  });
+  useEffect(() => {
+    const id = location.hash.slice(1);
+    const m = /^(conversion|deposit)-(\d+)$/.exec(id);
+    if (!ready || !m) return;
+    // Next frame: the lists are on screen, and state is set from the callback, not the effect body.
+    const frame = requestAnimationFrame(() => {
+      const cur = latest.current;
+      const n = Number(m[2]);
+      const isConversion = m[1] === "conversion";
+      const item = isConversion ? cur.byId.get(n) : cur.deposits.find((d) => d.transaction_id === n);
+      if (!item) return;
+      const visible = isConversion
+        ? cur.shownConversions.includes(item as FxConversion)
+        : cur.shownDeposits.includes(item as DepositMatch);
+      if (!visible) {
+        navigate({ search: "", hash: location.hash }, { replace: true });
+        return;
+      }
+      const month = item.date.slice(0, 7);
+      const prefix = isConversion ? "c" : "d";
+      setFolds((prev) => ({ ...prev, [`${prefix}:${month}`]: true, [`${prefix}:y${month.slice(0, 4)}`]: true }));
+      if (!isConversion) setOpenDeposits((prev) => new Set(prev).add(n));
+      setPending(id);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [location.hash, location.key, ready, navigate, setFolds]);
+  useEffect(() => {
+    if (!pending) return;
+    const frame = requestAnimationFrame(() => {
+      const el = document.getElementById(pending);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.classList.add("conversions__target");
+        window.setTimeout(() => el.classList.remove("conversions__target"), 1800);
+      }
+      setPending(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pending]);
+
   const menuFor = (r: FxConversion) => (
     <Menu
       trigger={<IconButton label={`Actions for conversion ${r.id}`} icon={<MoreHorizontal aria-hidden />} />}
@@ -443,6 +423,7 @@ export function CurrencyConversions() {
       Add conversion
     </Button>
   );
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
   return (
     <div className="conversions">
@@ -483,10 +464,10 @@ export function CurrencyConversions() {
               {
                 key: "count",
                 label: "Conversions",
-                value: list.data.length,
+                value: conversions.length,
                 note: (
                   <>
-                    <Money amount={list.data.reduce((sum, c) => sum + Number(c.eur_sent), 0)} currency="EUR" /> sent
+                    <Money amount={sumOf(conversions, (c) => c.eur_sent)} currency="EUR" digits={0} /> sent
                   </>
                 ),
               },
@@ -494,44 +475,136 @@ export function CurrencyConversions() {
                 key: "ecb",
                 label: "On the ECB rate",
                 tip: "Deposits that use the ECB rate for all or part of their dollars, because no conversion of yours covers them.",
-                value: pool.data ? pool.data.deposits.filter((d) => d.status !== "matched").length : "–",
-                note: pool.data ? `of ${pool.data.deposits.length} deposits` : undefined,
+                value: pool.data ? deposits.filter((d) => d.status !== "matched").length : "–",
+                note: pool.data ? `of ${deposits.length} deposits` : undefined,
               },
             ]}
           />
           <Card title="Conversions" flush>
-            <ul className="conversions__list" aria-label="Currency conversions">
-              {list.data.map((c) => (
-                <ConversionRow key={c.id} c={c} menu={menuFor(c)} />
-              ))}
-            </ul>
+            <div className="conversions__toolbar">
+              <FilterBar
+                value={filters}
+                onChange={(next) => writeParams(next, needs)}
+                periods={periods}
+                shown={shownConversions.length}
+                total={conversions.length}
+              />
+            </div>
           </Card>
+          {shownConversions.length === 0 ? (
+            <Card flush>
+              <p className="conversions__muted conversions__empty">No conversion matches these filters.</p>
+            </Card>
+          ) : (
+                <FoldedList
+                  prefix="c"
+                  items={shownConversions}
+                  dateOf={(c) => c.date}
+                  thisYear={today.slice(0, 4)}
+                  filtered={conversionsFiltered}
+                  folds={folds}
+                  setFolds={setFolds}
+                  meta={(rows) => (
+                    <>
+                      {plural(rows.length, "conversion", "conversions")} ·{" "}
+                      <Money amount={sumOf(rows, (c) => c.eur_sent)} currency="EUR" digits={0} /> →{" "}
+                      <Money amount={sumOf(rows, (c) => c.usd_received)} currency="USD" digits={0} />
+                    </>
+                  )}
+                >
+                  {(rows) => (
+                    <>
+                      <ConversionHead />
+                      <ul className="conversions__list" aria-label="Currency conversions">
+                        {rows.map((c) => (
+                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} />
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </FoldedList>
+          )}
           <Card
             title="How each deposit was paid for"
             subtitle="Pinned conversions first, then the oldest conversions first, then the ECB rate for the rest."
+            flush
           >
-            {pool.isError && !pool.data ? (
-              <ErrorState onRetry={() => void pool.refetch()} />
-            ) : pool.isPending ? (
-              <Skeleton height="120px" />
-            ) : pool.data.deposits.length === 0 ? (
-              <p className="conversions__muted">No USD deposits to match yet.</p>
-            ) : (
-              <ul className="conversions__matches">
-                {pool.data.deposits.map((d) => (
-                  <MatchRow
-                    key={d.transaction_id}
-                    d={d}
-                    conversions={byId}
-                    onAdd={(m) =>
-                      setDialog({ editing: null, prefill: { date: m.date, usd: m.fallback_usd ?? "" } })
-                    }
-                    onPin={setPinning}
-                  />
-                ))}
-              </ul>
+            {deposits.length > 0 && (
+              <div className="conversions__toolbar conversions__toolbar--deposits">
+                <ToggleChip pressed={needs} onPressedChange={(on) => writeParams(filters, on)}>
+                  Needs attention
+                </ToggleChip>
+                <p className="filter-bar__count">
+                  {depositsFiltered
+                    ? `Showing ${shownDeposits.length} of ${deposits.length}`
+                    : plural(deposits.length, "deposit", "deposits")}
+                  {depositsFiltered && (
+                    <>
+                      {" · "}
+                      <button type="button" className="filter-bar__clear" onClick={() => writeParams(NO_FILTERS, false)}>
+                        Clear filters
+                      </button>
+                    </>
+                  )}
+                </p>
+              </div>
             )}
           </Card>
+          {pool.isError && !pool.data ? (
+            <ErrorState onRetry={() => void pool.refetch()} />
+          ) : pool.isPending ? (
+            <Skeleton height="120px" />
+          ) : deposits.length === 0 ? (
+            <Card flush>
+              <p className="conversions__muted conversions__empty">No USD deposits to match yet.</p>
+            </Card>
+          ) : shownDeposits.length === 0 ? (
+            <Card flush>
+              <p className="conversions__muted conversions__empty">No deposit matches these filters.</p>
+            </Card>
+          ) : (
+            <FoldedList
+              prefix="d"
+              items={shownDeposits}
+              dateOf={(d) => d.date}
+              thisYear={today.slice(0, 4)}
+              filtered={depositsFiltered}
+              folds={folds}
+              setFolds={setFolds}
+              meta={(rows) => {
+                const attention = rows.filter((d) => d.status !== "matched").length;
+                return (
+                  <>
+                    {plural(rows.length, "deposit", "deposits")} ·{" "}
+                    <Money amount={rows.reduce((t, d) => t + Number(d.usd), 0)} currency="USD" digits={0} />
+                    {attention > 0 && ` · ${attention} need attention`}
+                  </>
+                );
+              }}
+            >
+              {(rows) => (
+                <ul className="conversions__deposits" aria-label="Deposits">
+                  {rows.map((d) => (
+                    <DepositRow
+                      key={d.transaction_id}
+                      d={d}
+                      conversions={byId}
+                      open={openDeposits.has(d.transaction_id)}
+                      onToggle={() =>
+                        setOpenDeposits((prev) => {
+                          const next = new Set(prev);
+                          if (!next.delete(d.transaction_id)) next.add(d.transaction_id);
+                          return next;
+                        })
+                      }
+                      onAdd={(m) => setDialog({ editing: null, prefill: { date: m.date, usd: m.fallback_usd ?? "" } })}
+                      onPin={setPinning}
+                    />
+                  ))}
+                </ul>
+              )}
+            </FoldedList>
+          )}
         </>
       )}
 
