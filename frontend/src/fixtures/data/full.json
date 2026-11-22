@@ -6870,7 +6870,7 @@
     },
     {
      "currency": null,
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "key": "dollar_trend",
      "kind": null,
      "normal": "large",
@@ -6879,7 +6879,7 @@
      "secondary_unit": null,
      "since": "2025-09-08",
      "unit": "fraction",
-     "value": "-0.00422318"
+     "value": "0.00424109"
     }
    ],
    "today": {
@@ -9627,8 +9627,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -9997,7 +9999,7 @@
    "range": "10y",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "-0.0142423148",
@@ -10855,12 +10857,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "-0.0278150354",
@@ -11678,12 +11680,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0904677498",
@@ -12311,7 +12313,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -12326,7 +12328,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -12415,9 +12417,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -12425,72 +12429,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -13238,8 +13242,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -13603,7 +13609,7 @@
    "range": "1d",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "0.0046571114",
@@ -13716,12 +13722,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "0.0036239811",
@@ -13834,12 +13840,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0311958040",
@@ -13952,7 +13958,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -13967,7 +13973,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -14056,9 +14062,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -14066,72 +14074,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -14884,8 +14892,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -15254,7 +15264,7 @@
    "range": "1m",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "0.0046571114",
@@ -15367,12 +15377,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "0.0036239811",
@@ -15485,12 +15495,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0311958040",
@@ -15603,7 +15613,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -15618,7 +15628,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -15707,9 +15717,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -15717,72 +15729,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -16535,8 +16547,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -16905,7 +16919,7 @@
    "range": "1w",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "0.0046571114",
@@ -17018,12 +17032,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "0.0036239811",
@@ -17136,12 +17150,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0311958040",
@@ -17254,7 +17268,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -17269,7 +17283,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -17358,9 +17372,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -17368,72 +17384,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -21786,8 +21802,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -22156,7 +22174,7 @@
    "range": "1y",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "0.0117368081",
@@ -23469,12 +23487,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "0.0150765716",
@@ -24787,12 +24805,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "0.0148353324",
@@ -26105,7 +26123,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -26120,7 +26138,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -26209,9 +26227,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -26219,72 +26239,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -27712,8 +27732,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -28082,7 +28104,7 @@
    "range": "3m",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "0.0005317782",
@@ -28420,12 +28442,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "-0.0109237855",
@@ -28763,12 +28785,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0234032960",
@@ -29106,7 +29128,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -29121,7 +29143,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -29210,9 +29232,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -29220,72 +29244,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -41108,8 +41132,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -41478,7 +41504,7 @@
    "range": "5y",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "-0.0158512335",
@@ -45736,12 +45762,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "-0.0277314612",
@@ -49789,12 +49815,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0911453777",
@@ -52897,7 +52923,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -52912,7 +52938,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -53001,9 +53027,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -53011,72 +53039,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -64899,8 +64927,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -65269,7 +65299,7 @@
    "range": "all",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "-0.0158512335",
@@ -69527,12 +69557,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "-0.0277314612",
@@ -73580,12 +73610,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0911453777",
@@ -76688,7 +76718,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -76703,7 +76733,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -76792,9 +76822,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -76802,72 +76834,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -79585,8 +79617,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -79955,7 +79989,7 @@
    "range": "max",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "-0.0142423148",
@@ -80813,12 +80847,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "-0.0278150354",
@@ -81636,12 +81670,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0904677498",
@@ -82269,7 +82303,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -82284,7 +82318,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -82373,9 +82407,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -82383,72 +82419,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
@@ -84806,8 +84842,10 @@
    ],
    "trend": {
     "above_entry_share": "0.0091954023",
+    "asset": "dollar",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "-0.0129843365",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -85176,7 +85214,7 @@
    "range": "ytd",
    "rolling": [
     {
-     "normal_limit_pct": "0.0120690380",
+     "normal_limit_pct": "0.0121447191",
      "points": [
       {
        "inverse_pct": "-0.0012573655",
@@ -85824,12 +85862,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0066462046",
+     "typical_move_pct": "0.0066722182",
      "window": "1m",
      "window_days": 21
     },
     {
-     "normal_limit_pct": "0.0233547500",
+     "normal_limit_pct": "0.0234935089",
      "points": [
       {
        "inverse_pct": "-0.0087708911",
@@ -86477,12 +86515,12 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0133254901",
+     "typical_move_pct": "0.0133139318",
      "window": "3m",
      "window_days": 63
     },
     {
-     "normal_limit_pct": "0.0321850974",
+     "normal_limit_pct": "0.0332426969",
      "points": [
       {
        "inverse_pct": "-0.0128070685",
@@ -87130,7 +87168,7 @@
        "t": "2026-06-30"
       }
      ],
-     "typical_move_pct": "0.0205593846",
+     "typical_move_pct": "0.0209261472",
      "window": "1y",
      "window_days": 252
     }
@@ -87145,7 +87183,7 @@
      "secondary_display": null,
      "secondary_unit": null,
      "unit": "fraction",
-     "value": "0.3517241379",
+     "value": "0.6482758621",
      "value_display": null
     },
     {
@@ -87234,9 +87272,11 @@
     }
    ],
    "trend": {
-    "above_entry_share": "0.0091954023",
+    "above_entry_share": "0.9908045977",
+    "asset": "euro",
     "long_run": {
      "distance_inverse_pct": "-0.0129843365",
+     "distance_pct": "0.0125301584",
      "mean": {
       "inverse": "0.870333",
       "rate": "1.1496941502"
@@ -87244,72 +87284,72 @@
      "since": "2023-02-27"
     },
     "ma200": {
-     "distance_pct": "0.0103007445",
+     "distance_pct": "-0.0102648911",
      "ma200": {
       "inverse": "0.849617",
       "rate": "1.177082625"
      },
-     "side": "above",
-     "slope": "falling",
+     "side": "below",
+     "slope": "rising",
      "slope_days": 20,
-     "slope_pct": "-0.0010152478"
+     "slope_pct": "0.0010005646"
     },
     "normal_month": {
      "label": "large",
-     "move_pct": "0.0161210300",
-     "normal_limit_pct": "0.0120690380",
-     "percentile": "0.9347826087",
-     "typical_move_pct": "0.0066462046",
+     "move_pct": "-0.0158652656",
+     "normal_limit_pct": "0.0121447191",
+     "percentile": "0.9300822562",
+     "typical_move_pct": "0.0066722182",
      "window": "month",
      "window_days": 21
     },
     "normal_year": {
      "label": "normal",
-     "move_pct": "-0.0194120172",
-     "normal_limit_pct": "0.0321850974",
-     "percentile": "0.4475806452",
-     "typical_move_pct": "0.0205593846",
+     "move_pct": "0.0197963033",
+     "normal_limit_pct": "0.0332426969",
+     "percentile": "0.4556451613",
+     "typical_move_pct": "0.0209261472",
      "window": "year",
      "window_days": 252
     },
     "percentiles": {
      "since_1999": null,
-     "since_start": "0.3517241379",
+     "since_start": "0.6482758621",
      "y10": null,
      "y5": null
     },
     "regime": {
-     "direction": "dollar_down",
+     "direction": "euro_up",
      "since": "2025-09-08",
-     "since_change_pct": "-0.0042231760"
+     "since_change_pct": "0.0042410868"
     },
     "run": {
      "count": 4,
-     "direction": "fell",
+     "direction": "rose",
      "months": [
       {
        "month": "2026-01",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-02",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-03",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-04",
-       "move": "fell"
+       "move": "rose"
       },
       {
        "month": "2026-05",
-       "move": "rose"
+       "move": "fell"
       },
       {
        "month": "2026-06",
-       "move": "rose"
+       "move": "fell"
       }
      ],
      "of": 6,
