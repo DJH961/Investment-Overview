@@ -3987,9 +3987,14 @@ export interface components {
             date: string;
             /**
              * Ecb Rate
-             * @description Settled fixing dated exactly that day; null when not published.
+             * @description Settled fixing dated that day; on a weekend or holiday the last settled fixing before it (up to a week back). Null when there is none.
              */
             ecb_rate: string | null;
+            /**
+             * Ecb Rate Date
+             * @description Date the fixing is from; differs from the conversion date on a weekend.
+             */
+            ecb_rate_date?: string | null;
             /**
              * Effective Rate
              * @description USD received per EUR sent (derived).
@@ -4005,6 +4010,11 @@ export interface components {
             id: number;
             /** Note */
             note: string | null;
+            /**
+             * Off Pct
+             * @description all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.
+             */
+            off_pct?: string | null;
             /** Provider */
             provider: ("wise" | "revolut" | "other") | null;
             /**
@@ -5680,8 +5690,12 @@ export interface components {
             exchange?: string | null;
             /** Held Instrument Id */
             held_instrument_id?: number | null;
+            /** Last Held On */
+            last_held_on?: string | null;
             /** Name */
             name: string;
+            /** Sold Instrument Id */
+            sold_instrument_id?: number | null;
             /** Symbol */
             symbol: string;
             /** Type */
@@ -5710,6 +5724,8 @@ export interface components {
             exchange?: string | null;
             /** Fx Eur Usd */
             fx_eur_usd?: string | null;
+            /** Last Held On */
+            last_held_on?: string | null;
             /** Name */
             name?: string | null;
             /** Price Native */
@@ -6810,6 +6826,8 @@ export interface components {
             date: string;
             /** Ecb Rate */
             ecb_rate: string | null;
+            /** Ecb Rate Date */
+            ecb_rate_date?: string | null;
             /** Published */
             published: boolean;
         };

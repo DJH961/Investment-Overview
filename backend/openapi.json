@@ -6333,8 +6333,20 @@
                 "type": "null"
               }
             ],
-            "description": "Settled fixing dated exactly that day; null when not published.",
+            "description": "Settled fixing dated that day; on a weekend or holiday the last settled fixing before it (up to a week back). Null when there is none.",
             "title": "Ecb Rate"
+          },
+          "ecb_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Date the fixing is from; differs from the conversion date on a weekend.",
+            "title": "Ecb Rate Date"
           },
           "effective_rate": {
             "description": "USD received per EUR sent (derived).",
@@ -6377,6 +6389,19 @@
               }
             ],
             "title": "Note"
+          },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.",
+            "title": "Off Pct"
           },
           "provider": {
             "anyOf": [
@@ -11052,9 +11077,32 @@
             ],
             "title": "Held Instrument Id"
           },
+          "last_held_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Held On"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "sold_instrument_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sold Instrument Id"
           },
           "symbol": {
             "title": "Symbol",
@@ -11173,6 +11221,18 @@
               }
             ],
             "title": "Fx Eur Usd"
+          },
+          "last_held_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Held On"
           },
           "name": {
             "anyOf": [
@@ -14685,6 +14745,17 @@
               }
             ],
             "title": "Ecb Rate"
+          },
+          "ecb_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate Date"
           },
           "published": {
             "title": "Published",

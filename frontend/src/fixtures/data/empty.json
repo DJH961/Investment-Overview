@@ -8231,6 +8231,12 @@
   "rejected_pins": [],
   "remaining": []
  },
+ "GET /api/fx-conversions/reference?date=2026-06-26": {
+  "date": "2026-06-26",
+  "ecb_rate": null,
+  "ecb_rate_date": null,
+  "published": false
+ },
  "GET /api/graphs/1d/both": {
   "EUR": {
    "as_of": "2026-06-30",

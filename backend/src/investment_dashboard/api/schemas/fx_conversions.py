@@ -54,7 +54,14 @@ class FxConversionOut(ApiModel):
     rate: DecStr = Field(description="usd_received / eur_sent (same as effective_rate).")
     all_in_rate: DecStr = Field(description="usd_received / (eur_sent + fees).")
     ecb_rate: DecStr | None = Field(
-        description="Settled fixing dated exactly that day; null when not published."
+        description=(
+            "Settled fixing dated that day; on a weekend or holiday the last settled fixing "
+            "before it (up to a week back). Null when there is none."
+        )
+    )
+    ecb_rate_date: str | None = Field(
+        default=None,
+        description="Date the fixing is from; differs from the conversion date on a weekend.",
     )
     off_pct: DecStr | None = Field(
         default=None,
@@ -101,6 +108,9 @@ class PinsIn(ApiModel):
 class ReferenceOut(ApiModel):
     date: str
     ecb_rate: DecStr | None
+    #: Date the fixing is from (the last settled one before ``date`` on a weekend).
+    ecb_rate_date: str | None = None
+    #: True when the fixing is dated exactly ``date``.
     published: bool
 
 

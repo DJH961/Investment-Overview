@@ -7,7 +7,7 @@ import { ApiError } from "../../lib/api";
 import { formatDate, formatMoney } from "../../lib/format";
 import { toApiDecimal } from "../../lib/parseDecimal";
 import { useSetPins, useUnpin, type DepositMatch, type FxConversion } from "../../lib/queries/manage";
-import { conversionName, pinCandidates, validatePins, type PinDraft } from "./matching";
+import { conversionTitle, pinCandidates, validatePins, type PinDraft } from "./matching";
 
 export interface PinDialogProps {
   deposit: DepositMatch;
@@ -15,7 +15,7 @@ export interface PinDialogProps {
   onClose: () => void;
 }
 
-/** "Use this conversion…": choose which conversions pay for a deposit, and how many dollars each. */
+/** "Pin a conversion…": choose which conversions pay for a deposit, and how many dollars each. */
 export function PinDialog({ deposit, conversions, onClose }: PinDialogProps) {
   const setPins = useSetPins();
   const unpin = useUnpin();
@@ -25,6 +25,15 @@ export function PinDialog({ deposit, conversions, onClose }: PinDialogProps) {
     Object.fromEntries(deposit.slices.filter((s) => s.pinned).map((s) => [s.conversion_id, s.usd])),
   );
   const [error, setError] = useState<string | null>(null);
+
+  // "$X free", or which deposit a used-up conversion pays for. This deposit's own pin counts as free.
+  const availability = (c: FxConversion): string => {
+    const own = Number(deposit.slices.find((s) => s.pinned && s.conversion_id === c.id)?.usd ?? 0);
+    const free = Number(c.remaining_usd) + own;
+    if (free > 0.005) return `${formatMoney(free, "USD")} free`;
+    const others = c.used_by.filter((u) => u.deposit_id !== deposit.transaction_id);
+    return others.length > 0 ? `pays the ${formatDate(others[0].date)} deposit` : "no dollars left";
+  };
 
   const drafts = (): PinDraft[] =>
     Object.entries(amounts)
@@ -69,8 +78,8 @@ export function PinDialog({ deposit, conversions, onClose }: PinDialogProps) {
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title="Use this conversion"
-      description={`Deposit of ${formatMoney(Number(deposit.usd), "USD")} on ${formatDate(deposit.date)}. Conversions up to 7 days after it can be chosen. Dollars you do not pin are matched oldest first.`}
+      title="Pin a conversion"
+      description={`Deposit of ${formatMoney(Number(deposit.usd), "USD")} on ${formatDate(deposit.date)}. Pick the conversions that paid for it; the rest is matched oldest first.`}
       footer={
         <>
           {deposit.pinned && (
@@ -89,14 +98,17 @@ export function PinDialog({ deposit, conversions, onClose }: PinDialogProps) {
     >
       <form id="pin-form" className="pin-form" onSubmit={submit} noValidate>
         {candidates.length === 0 ? (
-          <p className="conversions__muted">No conversion is dated within 7 days after this deposit.</p>
+          <p className="conversions__muted">No conversion is dated up to 7 days after this deposit.</p>
         ) : (
           <ul className="pin-form__list">
             {candidates.map((c) => (
               <li key={c.id} className="pin-form__row">
-                <span className="pin-form__name">{conversionName(c)}</span>
+                <span className="pin-form__name">
+                  {conversionTitle(c)} · {formatMoney(Number(c.eur_sent), "EUR")} → {formatMoney(Number(c.usd_received), "USD")}
+                  <span className="pin-form__free">{availability(c)}</span>
+                </span>
                 <Input
-                  aria-label={`USD from conversion ${conversionName(c)}`}
+                  aria-label={`USD from the ${conversionTitle(c)} conversion`}
                   inputMode="decimal"
                   placeholder="USD"
                   value={amounts[c.id] ?? ""}

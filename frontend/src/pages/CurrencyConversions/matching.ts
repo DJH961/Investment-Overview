@@ -1,4 +1,4 @@
-import { formatDate, formatMoney, formatNumber } from "../../lib/format";
+import { formatDate, formatMoney, formatNumber, getFormatPrefs, todayIn } from "../../lib/format";
 import type { DepositMatch, DepositStatus, FxConversion } from "../../lib/queries/manage";
 
 /** A deposit may be paid by a conversion dated up to this many days after it (contract). */
@@ -11,6 +11,80 @@ export function conversionName(c: Pick<FxConversion, "date" | "eur_sent" | "usd_
     `${formatMoney(Number(c.eur_sent), "EUR", { digits: 0 })} → ${formatMoney(Number(c.usd_received), "USD", { digits: 0 })}`,
     formatNumber(Number(c.rate), 4),
   ].join(" · ");
+}
+
+const PROVIDER_LABELS: Record<string, string> = { wise: "Wise", revolut: "Revolut", other: "Other" };
+
+/** "Wise", "Revolut", "Other" or "" for a conversion's provider. */
+export function providerLabel(provider: string | null | undefined): string {
+  return provider ? (PROVIDER_LABELS[provider] ?? "") : "";
+}
+
+/** "16/10/2026 · Wise" (the provider is left out when it is not set). */
+export function conversionTitle(c: Pick<FxConversion, "date" | "provider">): string {
+  return [formatDate(c.date), providerLabel(c.provider)].filter(Boolean).join(" · ");
+}
+
+/** "861.730000" -> "861.73", "1000.000000" -> "1000": the server pads, a form should not. */
+export function trimDecimal(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.includes(".") ? value.replace(/\.?0+$/, "") : value;
+}
+
+/** "Fri 20/11/2026": a weekday and the date in the chosen layout. */
+export function weekdayDate(iso: string): string {
+  const day = new Intl.DateTimeFormat(getFormatPrefs().locale, { weekday: "short", timeZone: "UTC" }).format(
+    new Date(`${iso}T00:00:00Z`),
+  );
+  return `${day} ${formatDate(iso)}`;
+}
+
+/** The "vs ECB" figure: "−0.56 %" (a plain number, neutral text, no pos/neg colour). */
+export function offPctText(offPct: string | null | undefined): string {
+  if (offPct === null || offPct === undefined) return "–";
+  const pct = Number(offPct) * 100;
+  if (!Number.isFinite(pct)) return "–";
+  if (Math.abs(pct) < 0.005) return "0.00 %";
+  return `${pct < 0 ? "−" : "+"}${formatNumber(Math.abs(pct), 2)} %`;
+}
+
+/** "0.56 % below ECB" for the phone line; null without a figure. */
+export function offPctWords(offPct: string | null | undefined): string | null {
+  if (offPct === null || offPct === undefined) return null;
+  const pct = Number(offPct) * 100;
+  if (!Number.isFinite(pct)) return null;
+  if (Math.abs(pct) < 0.005) return "at the ECB rate";
+  return `${formatNumber(Math.abs(pct), 2)} % ${pct < 0 ? "below" : "above"} ECB`;
+}
+
+export interface EcbCell {
+  /** Main text: the rate, or "No fixing" / "Not yet". */
+  text: string;
+  /** Muted second line: the fixing's own day when it is not the conversion's day. */
+  from: string | null;
+  /** Tooltip explaining a missing fixing. */
+  title?: string;
+}
+
+/**
+ * The ECB column. A weekend or holiday conversion is compared with the last settled
+ * fixing before it, labelled with that date. Without any: "Not yet" for today (the
+ * fixing is published in the afternoon), otherwise "No fixing".
+ */
+export function ecbCell(
+  c: Pick<FxConversion, "date" | "ecb_rate" | "ecb_rate_date">,
+  today: string = todayIn(getFormatPrefs().timeZone),
+): EcbCell {
+  if (c.ecb_rate) {
+    const own = !c.ecb_rate_date || c.ecb_rate_date === c.date;
+    return {
+      text: formatNumber(Number(c.ecb_rate), 4),
+      from: own ? null : weekdayDate(c.ecb_rate_date as string),
+      title: own ? undefined : "No fixing on this day; the last one before it is used.",
+    };
+  }
+  if (c.date >= today) return { text: "Not yet", from: null, title: "Today's ECB fixing is published in the afternoon." };
+  return { text: "No fixing", from: null, title: "The ECB publishes no fixing on weekends and holidays." };
 }
 
 /** Short name for a slice: date and the all-in rate. */
@@ -65,12 +139,13 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Conversions a deposit may be pinned to: dated up to 7 days after it, newest first. */
+/** Conversions a deposit may be pinned to: dated up to 7 days after it, nearest date first. */
 export function pinCandidates(deposit: Pick<DepositMatch, "date">, conversions: readonly FxConversion[]): FxConversion[] {
   const limit = addDays(deposit.date, PIN_WINDOW_DAYS);
+  const apart = (iso: string) => Math.abs(Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${deposit.date}T00:00:00Z`));
   return conversions
     .filter((c) => c.date <= limit)
-    .sort((a, b) => (a.date === b.date ? b.id - a.id : a.date < b.date ? 1 : -1));
+    .sort((a, b) => apart(a.date) - apart(b.date) || b.id - a.id);
 }
 
 export interface PinDraft {

@@ -48,8 +48,30 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-1) var(--space-3);
     font-size: var(--font-size-sm);
+  }
+
+  &__match-status {
+    flex: none;
+    margin-left: auto;
+  }
+
+  &__match-rate {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__slice-amounts {
+    margin-left: var(--space-1);
+  }
+
+  &__pin {
+    width: 1em;
+    height: 1em;
+    margin-left: var(--space-1);
+    vertical-align: -0.125em;
   }
 
   &__slices {
@@ -68,6 +90,52 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     margin-top: var(--space-1);
+
+    @include m.tablet-up {
+      justify-content: flex-end;
+    }
+  }
+
+  // A link from elsewhere on the page just scrolled here: show where.
+  &__target {
+    background: var(--color-surface-2);
+    border-radius: var(--radius-sm);
+    outline: var(--border-width) solid var(--color-accent);
+    outline-offset: var(--space-1);
+  }
+
+  &__date,
+  &__ecb,
+  &__stack {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__stack {
+    align-items: flex-end;
+  }
+
+  &__ecb {
+    align-items: flex-end;
+  }
+
+  // The muted second line of a cell (a note, the fees, the fixing's own day).
+  &__note {
+    max-width: 14ch;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__paid {
+    font-size: var(--font-size-sm);
+  }
+
+  &__muted-inline {
+    color: var(--color-muted);
   }
 
   &__link {
@@ -75,25 +143,6 @@
     text-decoration: underline;
   }
 
-  &__used {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    min-width: 0;
-  }
-
-  &__used-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    padding: 0;
-    border: 0;
-    background: none;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    text-align: left;
-  }
 }
 
 .pin-form {
@@ -123,7 +172,14 @@
   }
 
   &__name {
+    display: flex;
+    flex-direction: column;
     overflow-wrap: anywhere;
+  }
+
+  &__free {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
   }
 }
 

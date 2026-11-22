@@ -149,8 +149,38 @@ def test_reference_published_and_not(api_client: TestClient) -> None:
     with ledger_session_scope() as s:
         s.add(FxHistory(date=date(2024, 1, 15), base="EUR", quote="USD", rate=Decimal("1.0950")))
     hit = api_client.get("/api/fx-conversions/reference", params={"date": "2024-01-15"}).json()
-    assert hit == {"date": "2024-01-15", "ecb_rate": "1.0950", "published": True} or (
-        Decimal(hit["ecb_rate"]) == Decimal("1.095") and hit["published"] is True
-    )
+    assert Decimal(hit["ecb_rate"]) == Decimal("1.095") and hit["published"] is True
+    assert hit["ecb_rate_date"] == "2024-01-15"
+    # A Sunday before any fixing: nothing to compare with.
     miss = api_client.get("/api/fx-conversions/reference", params={"date": "2024-01-14"}).json()
-    assert miss == {"date": "2024-01-14", "ecb_rate": None, "published": False}
+    assert miss == {
+        "date": "2024-01-14",
+        "ecb_rate": None,
+        "ecb_rate_date": None,
+        "published": False,
+    }
+    # A Sunday after a fixing: the last settled one (Mon 15th) is used, labelled with its date.
+    sun = api_client.get("/api/fx-conversions/reference", params={"date": "2024-01-21"}).json()
+    assert Decimal(sun["ecb_rate"]) == Decimal("1.095")
+    assert sun["ecb_rate_date"] == "2024-01-15" and sun["published"] is False
+
+
+def test_off_pct_is_all_in_against_the_fixing(api_client: TestClient) -> None:
+    with ledger_session_scope() as s:
+        s.add(FxHistory(date=date(2024, 1, 15), base="EUR", quote="USD", rate=Decimal("1.10")))
+    # 1100 USD for 1000 EUR + 10 EUR fees: all-in 1100/1010, against the 1.10 fixing.
+    api_client.post("/api/fx-conversions", json=BODY)
+    row = api_client.get("/api/fx-conversions").json()[0]
+    assert row["ecb_rate_date"] == "2024-01-15"
+    expected = Decimal(1100) / Decimal(1010) / Decimal("1.10") - 1
+    assert abs(Decimal(row["off_pct"]) - expected) < Decimal("1e-9")
+    assert Decimal(row["off_pct"]) < 0
+    # A weekend conversion is compared with the last settled fixing before it.
+    api_client.post("/api/fx-conversions", json={**BODY, "date": "2024-01-20"})
+    sat = next(r for r in api_client.get("/api/fx-conversions").json() if r["date"] == "2024-01-20")
+    assert sat["ecb_rate_date"] == "2024-01-15"
+    assert sat["off_pct"] is not None
+    # No fixing in the week before: no figure, not an error.
+    api_client.post("/api/fx-conversions", json={**BODY, "date": "2023-06-03"})
+    old = next(r for r in api_client.get("/api/fx-conversions").json() if r["date"] == "2023-06-03")
+    assert old["ecb_rate"] is None and old["off_pct"] is None

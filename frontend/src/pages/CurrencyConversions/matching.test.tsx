@@ -9,6 +9,10 @@ import {
   conversionName,
   depositsById,
   depositStatusLook,
+  ecbCell,
+  offPctText,
+  offPctWords,
+  trimDecimal,
   offEcbText,
   pinCandidates,
   rateChipLabel,
@@ -139,5 +143,32 @@ describe("Transactions chip join", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /ECB/ }));
     expect(onOpen).toHaveBeenCalledWith(m);
+  });
+});
+
+describe("table cells", () => {
+  it("trims the server's padding from a prefilled figure", () => {
+    expect(trimDecimal("861.730000")).toBe("861.73");
+    expect(trimDecimal("1000.000000")).toBe("1000");
+    expect(trimDecimal("100")).toBe("100");
+    expect(trimDecimal(null)).toBe("");
+  });
+  it("shows vs ECB as a plain signed percentage", () => {
+    expect(offPctText("-0.0056")).toBe("−0.56 %");
+    expect(offPctText("0.0123")).toBe("+1.23 %");
+    expect(offPctText(null)).toBe("–");
+    expect(offPctWords("-0.0056")).toMatch(/0\D56 % below ECB/);
+  });
+  it("labels a weekend fixing with its own date, and a missing one with a reason", () => {
+    const weekend = ecbCell({ date: "2026-11-22", ecb_rate: "1.1612", ecb_rate_date: "2026-11-20" }, "2026-11-23");
+    expect(weekend.text).toMatch(/1\D1612/);
+    expect(weekend.from).toContain("20/11/2026");
+    expect(ecbCell({ date: "2026-11-20", ecb_rate: "1.1612", ecb_rate_date: "2026-11-20" }).from).toBeNull();
+    expect(ecbCell({ date: "2026-06-06", ecb_rate: null, ecb_rate_date: null }, "2026-11-23").text).toBe("No fixing");
+    expect(ecbCell({ date: "2026-11-23", ecb_rate: null, ecb_rate_date: null }, "2026-11-23").text).toBe("Not yet");
+  });
+  it("lists pin candidates nearest date first", () => {
+    const list = [conv(1, "2026-03-12"), conv(2, "2026-03-05"), conv(3, "2026-03-07")];
+    expect(pinCandidates({ date: "2026-03-06" }, list).map((c) => c.id)).toEqual([3, 2, 1]);
   });
 });

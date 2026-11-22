@@ -119,6 +119,7 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/transactions/all",
     "/api/fx-conversions",
     "/api/fx-conversions/pool",
+    "/api/fx-conversions/reference?date=2026-06-26",
     "/api/onboarding",
     "/api/refresh/status",
     "/api/settings",
