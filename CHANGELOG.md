@@ -42,6 +42,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Your conversions on the EUR/USD chart:** one mark per conversion at its date and its own
   rate, sized by the euros converted; ▲ blue is better than the ECB daily reference, ▼ orange
   is worse. A "Conversions" chip on the chart turns them on and off (remembered per device).
+- **Recurring plans (7.3, P14):** set up your conversion (Revolut by default), monthly deposit
+  and regular buys once (Manage > Recurring, with a guided "Set up your routine" that suggests
+  amounts and cadence from your last months). The end-of-day job adds each due date as an
+  **est.** row once its price has settled, catching up every missed date: a buy at that day's
+  close (a due date that is not a session rolls to the next one) with its core-fund draw, a
+  deposit in the broker import's shape (needs no input, never prompts), a conversion at that
+  day's ECB fixing pushed by the provider's average spread plus the plan's expected fee.
+  Values, graphs and FIFO matching include them at once. One quiet reminder per plan
+  (Transactions, Recurring, Data Health) says what to do; settle by typing in the quick-settle
+  sheet (steppers on the last stored decimal, linked fields, one Save, next draft) or, later,
+  by importing the file. Migration 0027 (also adds `import_batches.update_images` and
+  `updated_count` for the import-update undo).
 
 ## [7.2.1] — 2026-11-22
 

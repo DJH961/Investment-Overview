@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -21,6 +22,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -46,6 +48,9 @@ class Transaction(Base):
         ),
         CheckConstraint(f"kind IN ({_KIND_VALUES})", name="ck_transactions_kind"),
         CheckConstraint(f"source IN ({_SOURCE_VALUES})", name="ck_transactions_source"),
+        UniqueConstraint(
+            "estimate_plan_id", "estimate_due_date", name="uq_transactions_estimate_plan_due"
+        ),
         Index("ix_transactions_date", "date"),
         Index("ix_transactions_instrument_id", "instrument_id"),
         Index("ix_transactions_account_date", "account_id", "date"),
@@ -89,6 +94,17 @@ class Transaction(Base):
     #: Loose reference to ``import_batches.id`` (migration 0020); ``None`` for
     #: manual rows, older imports and imported rows edited by hand since.
     import_batch_id: Mapped[int | None] = mapped_column(Integer)
+
+    #: Recurring-plan estimate (7.3, P14): written automatically at a due date's settled
+    #: close, flagged until the owner settles it (import or typed figures).
+    #: ``estimate_plan_id`` goes ``NULL`` when the plan is deleted; the due date stays.
+    estimate_plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recurring_plans.id", ondelete="SET NULL")
+    )
+    estimate_due_date: Mapped[date | None] = mapped_column(Date)
+    is_estimate: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("0"), default=False
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False),

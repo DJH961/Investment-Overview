@@ -1608,6 +1608,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recurring/estimates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Estimates */
+        get: operations["estimates_api_recurring_estimates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Plans */
+        get: operations["list_plans_api_recurring_plans_get"];
+        put?: never;
+        /** Create Plan */
+        post: operations["create_plan_api_recurring_plans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Plan */
+        put: operations["update_plan_api_recurring_plans__plan_id__put"];
+        post?: never;
+        /** Delete Plan */
+        delete: operations["delete_plan_api_recurring_plans__plan_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans/{plan_id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End Plan */
+        post: operations["end_plan_api_recurring_plans__plan_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans/{plan_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Plan */
+        post: operations["pause_plan_api_recurring_plans__plan_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/plans/{plan_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Plan */
+        post: operations["resume_plan_api_recurring_plans__plan_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Settle */
+        post: operations["settle_api_recurring_settle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recurring/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Suggestions
+         * @description Plans the last months of the ledger look like (deposits, buys, conversions).
+         *
+         *     Suggestions only: the "Set up your routine" flow prefills its form from these and
+         *     nothing is created until the owner confirms.
+         */
+        get: operations["suggestions_api_recurring_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/refresh": {
         parameters: {
             query?: never;
@@ -4233,6 +4377,70 @@ export interface components {
              */
             twin: string;
         };
+        /** EstimateOut */
+        EstimateOut: {
+            /** Currency */
+            currency: string | null;
+            /** Date */
+            date: string;
+            /** Due Date */
+            due_date: string | null;
+            /** Fees */
+            fees: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Label
+             * @description Account for a buy, provider for a conversion.
+             */
+            label: string;
+            /** Plan Id */
+            plan_id: number | null;
+            /** Price */
+            price: string | null;
+            /**
+             * Price Dp
+             * @description Decimals the ledger holds for this price (what a stepper moves).
+             * @default 4
+             */
+            price_dp: number;
+            /** Quantity */
+            quantity: string | null;
+            /**
+             * Quantity Dp
+             * @description Same for the quantity.
+             * @default 4
+             */
+            quantity_dp: number;
+            /** Received */
+            received: string | null;
+            /**
+             * Row Type
+             * @enum {string}
+             */
+            row_type: "transaction" | "fx_conversion";
+            /** Sent */
+            sent: string | null;
+            /** Symbol */
+            symbol: string | null;
+            /** Total */
+            total: string | null;
+        };
+        /** EstimatesOut */
+        EstimatesOut: {
+            /**
+             * Count
+             * @description Estimated rows still to settle (the badge number). A buy and its core-fund leg are one; deposits need no input and are never counted.
+             */
+            count: number;
+            /**
+             * Groups
+             * @description The reminder, one line per plan.
+             */
+            groups: components["schemas"]["ReminderGroupOut"][];
+            /** Rows */
+            rows: components["schemas"]["EstimateOut"][];
+        };
         /**
          * Freshness
          * @description How fresh the figures are (drives the Live / Updated / Updating... chip).
@@ -4385,6 +4593,12 @@ export interface components {
             from_ccy: string;
             /** Id */
             id: number;
+            /**
+             * Is Estimate
+             * @description A recurring-plan estimate not yet settled (7.3, P14).
+             * @default false
+             */
+            is_estimate: boolean;
             /** Note */
             note: string | null;
             /**
@@ -6729,6 +6943,119 @@ export interface components {
             /** Target Pct */
             target_pct: string;
         };
+        /** PlanIn */
+        PlanIn: {
+            /**
+             * Account Id
+             * @description Buy plans.
+             */
+            account_id?: number | null;
+            /**
+             * Amount
+             * @description Buy: native amount per run; conversion: EUR sent.
+             */
+            amount?: number | string | null;
+            /**
+             * Anchor
+             * @description Weekday 0-6 (Monday = 0) for weeks, day of month 1-31 for months.
+             */
+            anchor?: number | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Every */
+            every: number;
+            /**
+             * Expected Fee
+             * @description Conversion plans: EUR fee per run. Defaults to the last real conversion's fee with that provider.
+             */
+            expected_fee?: number | string | null;
+            /**
+             * Instrument Id
+             * @description Buy plans.
+             */
+            instrument_id?: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "deposit" | "conversion";
+            /**
+             * Provider
+             * @description Conversion plans.
+             */
+            provider?: ("wise" | "revolut" | "other") | null;
+            /**
+             * Shares
+             * @description Buy plans, instead of amount.
+             */
+            shares?: number | string | null;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "days" | "weeks" | "months";
+        };
+        /** PlanOut */
+        PlanOut: {
+            /** Account */
+            account: string | null;
+            /** Account Id */
+            account_id: number | null;
+            /** Amount */
+            amount: string | null;
+            /** Anchor */
+            anchor: number | null;
+            /** End Date */
+            end_date: string | null;
+            /** Every */
+            every: number;
+            /** Expected Fee */
+            expected_fee: string | null;
+            /** Id */
+            id: number;
+            /** Instrument Id */
+            instrument_id: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "deposit" | "conversion";
+            /**
+             * Next Due
+             * @description Next due date still to be handled; null if none.
+             */
+            next_due: string | null;
+            /**
+             * Note
+             * @description One-line caution, e.g. a buy plan whose account has no settlement fund.
+             */
+            note?: string | null;
+            /** Paused */
+            paused: boolean;
+            /** Provider */
+            provider: ("wise" | "revolut" | "other") | null;
+            /** Shares */
+            shares: string | null;
+            /** Start Date */
+            start_date: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "paused" | "ended";
+            /** Symbol */
+            symbol: string | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "days" | "weeks" | "months";
+        };
         /** PlanRequest */
         PlanRequest: {
             /**
@@ -7420,6 +7747,29 @@ export interface components {
             /** Usd */
             usd: string;
         };
+        /** ReminderGroupOut */
+        ReminderGroupOut: {
+            /** Count */
+            count: number;
+            /**
+             * Input
+             * @description What settles them: type the figures (conversions) or import the file (buys).
+             * @enum {string}
+             */
+            input: "type" | "import";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "conversion";
+            /**
+             * Message
+             * @description One plain sentence for this plan; never one per row.
+             */
+            message: string;
+            /** Plan Id */
+            plan_id: number | null;
+        };
         /**
          * ReturnSplit
          * @description Investment return (USD wallet) vs currency effect; independent, never converted.
@@ -8040,6 +8390,45 @@ export interface components {
                 [key: string]: components["schemas"]["SettingValueDto"];
             };
         };
+        /** SettleIn */
+        SettleIn: {
+            /**
+             * Due Date
+             * @description Also settle (as estimated) every est. row of this due date.
+             */
+            due_date?: string | null;
+            /** Rows */
+            rows?: components["schemas"]["SettleRowIn"][];
+        };
+        /** SettleOut */
+        SettleOut: {
+            /** Remaining */
+            remaining: number;
+            /** Settled */
+            settled: number;
+        };
+        /** SettleRowIn */
+        SettleRowIn: {
+            /** Fees */
+            fees?: number | string | null;
+            /** Id */
+            id: number;
+            /** Price */
+            price?: number | string | null;
+            /** Quantity */
+            quantity?: number | string | null;
+            /** Received */
+            received?: number | string | null;
+            /**
+             * Row Type
+             * @enum {string}
+             */
+            row_type: "transaction" | "fx_conversion";
+            /** Sent */
+            sent?: number | string | null;
+            /** Total */
+            total?: number | string | null;
+        };
         /**
          * ShareCountEntry
          * @description One share count typed from the broker's screen.
@@ -8123,6 +8512,40 @@ export interface components {
             unit_change?: string | null;
             /** Value */
             value: string;
+        };
+        /** SuggestionOut */
+        SuggestionOut: {
+            /** Account */
+            account?: string | null;
+            /** Account Id */
+            account_id?: number | null;
+            /** Amount */
+            amount: string;
+            /** Anchor */
+            anchor: number | null;
+            /** Every */
+            every: number;
+            /** Instrument Id */
+            instrument_id?: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "buy" | "deposit" | "conversion";
+            /**
+             * Occurrences
+             * @description How many past rows the suggestion is based on.
+             */
+            occurrences: number;
+            /** Provider */
+            provider?: ("wise" | "revolut" | "other") | null;
+            /** Symbol */
+            symbol?: string | null;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "days" | "weeks" | "months";
         };
         /** SystemInfo */
         SystemInfo: {
@@ -8650,6 +9073,12 @@ export interface components {
             id: number;
             /** Instrument Id */
             instrument_id?: number | null;
+            /**
+             * Is Estimate
+             * @description A recurring-plan estimate not yet settled (import or typed figures).
+             * @default false
+             */
+            is_estimate: boolean;
             /**
              * Is Settlement Leg
              * @default false
@@ -12181,6 +12610,289 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimates_api_recurring_estimates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EstimatesOut"];
+                };
+            };
+        };
+    };
+    list_plans_api_recurring_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"][];
+                };
+            };
+        };
+    };
+    create_plan_api_recurring_plans_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_plan_api_recurring_plans__plan_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_plan_api_recurring_plans__plan_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    end_plan_api_recurring_plans__plan_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_plan_api_recurring_plans__plan_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_plan_api_recurring_plans__plan_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settle_api_recurring_settle_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggestions_api_recurring_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionOut"][];
                 };
             };
         };

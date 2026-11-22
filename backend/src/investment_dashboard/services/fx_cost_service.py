@@ -19,12 +19,19 @@ if TYPE_CHECKING:
 
 
 def conversions_with_fixings(session: Session) -> list[fx_spread.Conversion]:
-    """Every EUR to USD conversion with the settled fixing it is compared with."""
+    """Every real EUR to USD conversion with the settled fixing it is compared with.
+
+    Estimated conversions (recurring plans, not settled yet) are left out: their rate is
+    itself derived from these averages, so costs, markers and the provider offset only
+    ever read what really happened.
+    """
     rows = fx_conversion_service.list_conversions(session)
     rates = fx_service.get_settled_rates(session, base="EUR", quote="USD")
     today = date.today()
     out: list[fx_spread.Conversion] = []
     for r in rows:
+        if r.is_estimate:
+            continue
         fixing = fx_spread.fixing_for(rates, r.date)
         month = fx_spread.month_average(rates, r.date, today)
         out.append(

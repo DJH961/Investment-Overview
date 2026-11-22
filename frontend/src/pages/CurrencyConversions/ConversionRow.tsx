@@ -5,6 +5,7 @@ import { Chip } from "../../components/Chip";
 import { Money } from "../../components/Money";
 import { formatDate, formatMoney, formatNumber } from "../../lib/format";
 import type { FxConversion } from "../../lib/queries/manage";
+import { EstChip } from "../Transactions/EstChip";
 import { ecbCell, offPctText, offPctWords, providerLabel } from "./matching";
 
 /** The deposits a conversion paid for, as chips that jump to them; "In the pool" when none. */
@@ -48,7 +49,7 @@ function Fact({ label, children, title }: { label: string; children: ReactNode; 
  * row). Narrower: the title line (date, provider, dollars, menu), one summary line that opens
  * the rest (all-in rate, the ECB fixing, fees, note), and the chips of the deposits it paid for.
  */
-export function ConversionRow({ c, menu }: { c: FxConversion; menu: ReactNode }) {
+export function ConversionRow({ c, menu, onSettle }: { c: FxConversion; menu: ReactNode; onSettle?: () => void }) {
   const [open, setOpen] = useState(false);
   const e = ecbCell(c);
   const fees = c.fees_eur && Number(c.fees_eur) > 0 ? Number(c.fees_eur) : 0;
@@ -63,6 +64,7 @@ export function ConversionRow({ c, menu }: { c: FxConversion; menu: ReactNode })
             {providerLabel(c.provider)}
           </Chip>
         )}
+        {c.is_estimate && onSettle && <EstChip onOpen={onSettle} />}
         {c.note && (
           <span className="conv__note conv__note--wide" title={c.note}>
             {c.note}

@@ -76,6 +76,33 @@ exports[`write -> invalidated keys > instrumentEdit 1`] = `
 ]
 `;
 
+exports[`write -> invalidated keys > recurringPlanWrite 1`] = `
+[
+  "diagnostics/status",
+]
+`;
+
+exports[`write -> invalidated keys > recurringSettle 1`] = `
+[
+  "allocations/both",
+  "analytics/both",
+  "brief",
+  "calculator/inputs",
+  "currency/both",
+  "deposits/both",
+  "deposits/dividends",
+  "diagnostics/status",
+  "fx-conversions",
+  "graphs/1d",
+  "holdings/both",
+  "holdings/history",
+  "overview/both",
+  "periods/monthly",
+  "transaction/1",
+  "transactions/[object Object]",
+]
+`;
+
 exports[`write -> invalidated keys > refresh 1`] = `
 [
   "allocations/both",

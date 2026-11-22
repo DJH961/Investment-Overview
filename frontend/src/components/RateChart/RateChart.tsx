@@ -175,7 +175,7 @@ function underOver(offPct: string | null | undefined): string | null {
  * ECB daily reference (a saving), ▼ orange = fewer (a cost); a plain ring when that day has
  * no fixing. Shape carries the meaning, colour only repeats it. Only those inside the
  * plotted span. Hover or tap: "12 Mar 2025 · €2,770 → $3,000 · 1.0830 · 0.2 % under ECB".
- * TODO(7.3 lane C): skip a marker whose `is_estimate` is set (estimated conversions).
+ * Estimated conversions never reach `markers` (the server leaves them out).
  */
 export function conversionMarks(data: RateHistoryDto, lens: RateLens): ChartMarker[] {
   const pts = data.points ?? [];

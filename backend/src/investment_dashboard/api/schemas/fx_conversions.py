@@ -86,6 +86,9 @@ class FxConversionOut(ApiModel):
     )
     used_by: list[UsedByOut]
     remaining_usd: DecStr
+    is_estimate: bool = Field(
+        default=False, description="A recurring-plan estimate not yet settled (7.3, P14)."
+    )
 
 
 class CostSummaryOut(ApiModel):

@@ -28,7 +28,11 @@ from investment_dashboard.domain.import_match import (
     match_updates,
 )
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import transaction_edit_service, transaction_fx_service
+from investment_dashboard.services import (
+    recurring_service,
+    transaction_edit_service,
+    transaction_fx_service,
+)
 
 if TYPE_CHECKING:
     from investment_dashboard.models import Transaction
@@ -218,6 +222,9 @@ def apply_import_update(
         external_id=incoming.external_id,
         source=incoming.source,
     )
+    if existing.is_estimate:
+        # The broker's figures settle a recurring plan's est. row (and a buy's core-fund leg).
+        recurring_service.confirm_estimate(session, existing)
 
 
 @dataclass(frozen=True)

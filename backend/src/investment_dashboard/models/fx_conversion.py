@@ -11,6 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -20,6 +21,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, synonym
 
@@ -35,6 +37,9 @@ class FxConversion(Base):
             "provider IS NULL OR provider IN ('wise', 'revolut', 'other')",
             name="ck_fx_conversions_provider",
         ),
+        UniqueConstraint(
+            "estimate_plan_id", "estimate_due_date", name="uq_fx_conversions_estimate_plan_due"
+        ),
         Index("ix_fx_conversions_date", "date"),
     )
 
@@ -48,6 +53,14 @@ class FxConversion(Base):
     from_ccy: Mapped[str] = mapped_column(String(3), nullable=False, server_default="EUR")
     to_ccy: Mapped[str] = mapped_column(String(3), nullable=False, server_default="USD")
     provider: Mapped[str | None] = mapped_column(String(16))
+    #: Recurring-plan estimate (7.3, P14), as on ``transactions``.
+    estimate_plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recurring_plans.id", ondelete="SET NULL")
+    )
+    estimate_due_date: Mapped[date | None] = mapped_column(Date)
+    is_estimate: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("0"), default=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.current_timestamp(), nullable=False
     )

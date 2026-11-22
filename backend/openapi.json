@@ -6956,6 +6956,208 @@
         "title": "EstimateFund",
         "type": "object"
       },
+      "EstimateOut": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "fees": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "description": "Account for a buy, provider for a conversion.",
+            "title": "Label",
+            "type": "string"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "price_dp": {
+            "default": 4,
+            "description": "Decimals the ledger holds for this price (what a stepper moves).",
+            "title": "Price Dp",
+            "type": "integer"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "quantity_dp": {
+            "default": 4,
+            "description": "Same for the quantity.",
+            "title": "Quantity Dp",
+            "type": "integer"
+          },
+          "received": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received"
+          },
+          "row_type": {
+            "enum": [
+              "transaction",
+              "fx_conversion"
+            ],
+            "title": "Row Type",
+            "type": "string"
+          },
+          "sent": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "row_type",
+          "id",
+          "plan_id",
+          "due_date",
+          "date",
+          "label",
+          "symbol",
+          "currency",
+          "price",
+          "quantity",
+          "total",
+          "fees",
+          "sent",
+          "received"
+        ],
+        "title": "EstimateOut",
+        "type": "object"
+      },
+      "EstimatesOut": {
+        "properties": {
+          "count": {
+            "description": "Estimated rows still to settle (the badge number). A buy and its core-fund leg are one; deposits need no input and are never counted.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "groups": {
+            "description": "The reminder, one line per plan.",
+            "items": {
+              "$ref": "#/components/schemas/ReminderGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/EstimateOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "rows",
+          "groups"
+        ],
+        "title": "EstimatesOut",
+        "type": "object"
+      },
       "Freshness": {
         "description": "How fresh the figures are (drives the Live / Updated / Updating... chip).",
         "properties": {
@@ -7382,6 +7584,12 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "is_estimate": {
+            "default": false,
+            "description": "A recurring-plan estimate not yet settled (7.3, P14).",
+            "title": "Is Estimate",
+            "type": "boolean"
           },
           "note": {
             "anyOf": [
@@ -14064,6 +14272,374 @@
         "title": "PlanCategoryOut",
         "type": "object"
       },
+      "PlanIn": {
+        "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Buy plans.",
+            "title": "Account Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Buy: native amount per run; conversion: EUR sent.",
+            "title": "Amount"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Weekday 0-6 (Monday = 0) for weeks, day of month 1-31 for months.",
+            "title": "Anchor"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "every": {
+            "maximum": 366.0,
+            "minimum": 1.0,
+            "title": "Every",
+            "type": "integer"
+          },
+          "expected_fee": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion plans: EUR fee per run. Defaults to the last real conversion's fee with that provider.",
+            "title": "Expected Fee"
+          },
+          "instrument_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Buy plans.",
+            "title": "Instrument Id"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "deposit",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Conversion plans.",
+            "title": "Provider"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Buy plans, instead of amount.",
+            "title": "Shares"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "days",
+              "weeks",
+              "months"
+            ],
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "unit",
+          "every",
+          "start_date"
+        ],
+        "title": "PlanIn",
+        "type": "object"
+      },
+      "PlanOut": {
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "every": {
+            "title": "Every",
+            "type": "integer"
+          },
+          "expected_fee": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Fee"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "instrument_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Id"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "deposit",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "next_due": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Next due date still to be handled; null if none.",
+            "title": "Next Due"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One-line caution, e.g. a buy plan whose account has no settlement fund.",
+            "title": "Note"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shares"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "ended"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "unit": {
+            "enum": [
+              "days",
+              "weeks",
+              "months"
+            ],
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "unit",
+          "every",
+          "anchor",
+          "start_date",
+          "end_date",
+          "status",
+          "paused",
+          "account_id",
+          "account",
+          "instrument_id",
+          "symbol",
+          "amount",
+          "shares",
+          "provider",
+          "expected_fee",
+          "next_due"
+        ],
+        "title": "PlanOut",
+        "type": "object"
+      },
       "PlanRequest": {
         "properties": {
           "allow_sell": {
@@ -16326,6 +16902,56 @@
         "title": "RemainingBatchOut",
         "type": "object"
       },
+      "ReminderGroupOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "input": {
+            "description": "What settles them: type the figures (conversions) or import the file (buys).",
+            "enum": [
+              "type",
+              "import"
+            ],
+            "title": "Input",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "description": "One plain sentence for this plan; never one per row.",
+            "title": "Message",
+            "type": "string"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          }
+        },
+        "required": [
+          "plan_id",
+          "kind",
+          "count",
+          "input",
+          "message"
+        ],
+        "title": "ReminderGroupOut",
+        "type": "object"
+      },
       "ReturnSplit": {
         "description": "Investment return (USD wallet) vs currency effect; independent, never converted.",
         "properties": {
@@ -18370,6 +18996,168 @@
         "title": "SettingsValuesDto",
         "type": "object"
       },
+      "SettleIn": {
+        "properties": {
+          "due_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Also settle (as estimated) every est. row of this due date.",
+            "title": "Due Date"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SettleRowIn"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "title": "SettleIn",
+        "type": "object"
+      },
+      "SettleOut": {
+        "properties": {
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          },
+          "settled": {
+            "title": "Settled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "settled",
+          "remaining"
+        ],
+        "title": "SettleOut",
+        "type": "object"
+      },
+      "SettleRowIn": {
+        "properties": {
+          "fees": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "received": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received"
+          },
+          "row_type": {
+            "enum": [
+              "transaction",
+              "fx_conversion"
+            ],
+            "title": "Row Type",
+            "type": "string"
+          },
+          "sent": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "row_type",
+          "id"
+        ],
+        "title": "SettleRowIn",
+        "type": "object"
+      },
       "ShareCountEntry": {
         "description": "One share count typed from the broker's screen.",
         "properties": {
@@ -18609,6 +19397,123 @@
           "change"
         ],
         "title": "StressRow",
+        "type": "object"
+      },
+      "SuggestionOut": {
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "amount": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "every": {
+            "title": "Every",
+            "type": "integer"
+          },
+          "instrument_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Id"
+          },
+          "kind": {
+            "enum": [
+              "buy",
+              "deposit",
+              "conversion"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurrences": {
+            "description": "How many past rows the suggestion is based on.",
+            "title": "Occurrences",
+            "type": "integer"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "unit": {
+            "enum": [
+              "days",
+              "weeks",
+              "months"
+            ],
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "unit",
+          "every",
+          "anchor",
+          "amount",
+          "occurrences"
+        ],
+        "title": "SuggestionOut",
         "type": "object"
       },
       "SystemInfo": {
@@ -20106,6 +21011,12 @@
               }
             ],
             "title": "Instrument Id"
+          },
+          "is_estimate": {
+            "default": false,
+            "description": "A recurring-plan estimate not yet settled (import or typed figures).",
+            "title": "Is Estimate",
+            "type": "boolean"
           },
           "is_settlement_leg": {
             "default": false,
@@ -25688,6 +26599,369 @@
         "summary": "Periods Both",
         "tags": [
           "periods"
+        ]
+      }
+    },
+    "/api/recurring/estimates": {
+      "get": {
+        "operationId": "estimates_api_recurring_estimates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Estimates",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans": {
+      "get": {
+        "operationId": "list_plans_api_recurring_plans_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanOut"
+                  },
+                  "title": "Response List Plans Api Recurring Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Plans",
+        "tags": [
+          "recurring"
+        ]
+      },
+      "post": {
+        "operationId": "create_plan_api_recurring_plans_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans/{plan_id}": {
+      "delete": {
+        "operationId": "delete_plan_api_recurring_plans__plan_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Plan",
+        "tags": [
+          "recurring"
+        ]
+      },
+      "put": {
+        "operationId": "update_plan_api_recurring_plans__plan_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans/{plan_id}/end": {
+      "post": {
+        "operationId": "end_plan_api_recurring_plans__plan_id__end_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "End Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans/{plan_id}/pause": {
+      "post": {
+        "operationId": "pause_plan_api_recurring_plans__plan_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/plans/{plan_id}/resume": {
+      "post": {
+        "operationId": "resume_plan_api_recurring_plans__plan_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Plan",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/settle": {
+      "post": {
+        "operationId": "settle_api_recurring_settle_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Settle",
+        "tags": [
+          "recurring"
+        ]
+      }
+    },
+    "/api/recurring/suggestions": {
+      "get": {
+        "description": "Plans the last months of the ledger look like (deposits, buys, conversions).\n\nSuggestions only: the \"Set up your routine\" flow prefills its form from these and\nnothing is created until the owner confirms.",
+        "operationId": "suggestions_api_recurring_suggestions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SuggestionOut"
+                  },
+                  "title": "Response Suggestions Api Recurring Suggestions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Suggestions",
+        "tags": [
+          "recurring"
         ]
       }
     },

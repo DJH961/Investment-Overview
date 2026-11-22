@@ -99,6 +99,7 @@ def _out(
             if sl.deposit_id in dates
         ],
         remaining_usd=_s(use.remaining_usd if use is not None else row.usd_received),
+        is_estimate=bool(row.is_estimate),
     )
 
 

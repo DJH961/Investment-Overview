@@ -156,7 +156,7 @@ def _trend(daily: Sequence[tuple[date, Decimal]]) -> dict[str, Any] | None:
 
 def _markers(session: Session, start: date, end: date) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    # TODO(7.3 lane C): skip estimated conversions (``is_estimate``) once that flag exists.
+    # Estimated conversions never get a marker: ``conversions_with_fixings`` skips them.
     for row in fx_cost_service.conversions_with_fixings(session):
         if not start <= row.date <= end or row.eur_sent <= 0:
             continue

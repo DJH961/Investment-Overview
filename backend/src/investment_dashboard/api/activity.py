@@ -127,6 +127,30 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
         "deposit unpinned",
         "deposit unpin failed",
     ),
+    # v7.3 recurring plans (P14): every write goes to the ``changes`` subject.
+    ("POST", "/api/recurring/plans"): ("recurring plan added", "recurring plan rejected"),
+    ("PUT", "/api/recurring/plans/{plan_id}"): (
+        "recurring plan changed",
+        "recurring plan change rejected",
+    ),
+    ("POST", "/api/recurring/plans/{plan_id}/pause"): (
+        "recurring plan paused",
+        "recurring plan pause failed",
+    ),
+    ("POST", "/api/recurring/plans/{plan_id}/resume"): (
+        "recurring plan resumed",
+        "recurring plan resume failed",
+    ),
+    ("POST", "/api/recurring/plans/{plan_id}/end"): (
+        "recurring plan ended",
+        "recurring plan end failed",
+    ),
+    ("DELETE", "/api/recurring/plans/{plan_id}"): (
+        "recurring plan deleted (its rows stay)",
+        "recurring plan delete failed",
+    ),
+    ("POST", "/api/recurring/settle"): ("estimated rows settled", "estimate settle rejected"),
+    ("GET", "/api/recurring/estimates"): ("estimated rows read", "estimated rows failed"),
     ("PUT", "/api/maintenance/splits/{instrument_id}/{on}"): (
         "manual split set",
         "manual split rejected",

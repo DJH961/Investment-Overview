@@ -43,6 +43,10 @@ class TransactionOut(ApiModel):
         default=None,
         description="Net cash in USD from net_native at the trade date's rate (null: no rate).",
     )
+    is_estimate: bool = Field(
+        default=False,
+        description="A recurring-plan estimate not yet settled (import or typed figures).",
+    )
 
 
 class TransactionSummary(ApiModel):

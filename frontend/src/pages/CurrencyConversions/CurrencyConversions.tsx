@@ -33,6 +33,8 @@ import {
 import { offEcbText, trimDecimal, weekdayDate } from "./matching";
 import { costStatItems, PeriodRate, useCostsAll } from "./CostBits";
 import { ConversionHead, ConversionRow } from "./ConversionRow";
+import { SettleSheet } from "../../components/SettleSheet";
+import { useEstimateQueue } from "../Transactions/EstChip";
 import { DepositRow } from "./DepositRow";
 import { activeCount, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters } from "./Filters";
 import { Fold } from "./Fold";
@@ -311,6 +313,7 @@ export function CurrencyConversions() {
   const list = useFxConversions();
   const pool = useFxPool();
   const costs = useCostsAll();
+  const est = useEstimateQueue("fx_conversion");
   const del = useDeleteConversion();
   const { toast } = useToast();
   const location = useLocation();
@@ -429,6 +432,7 @@ export function CurrencyConversions() {
 
   return (
     <div className="conversions">
+      <SettleSheet rows={est.queue} onClose={est.close} />
       <PageHeader
         title="Currency conversions"
         subtitle="What your EUR to USD conversions really cost, and which one paid for each deposit."
@@ -521,7 +525,7 @@ export function CurrencyConversions() {
                       <ConversionHead />
                       <ul className="conversions__list" aria-label="Currency conversions">
                         {rows.map((c) => (
-                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} />
+                          <ConversionRow key={c.id} c={c} menu={menuFor(c)} onSettle={() => est.open(c.id)} />
                         ))}
                       </ul>
                     </>

@@ -395,6 +395,7 @@ def test_eod_job_fetches_the_live_spot_first(monkeypatch: pytest.MonkeyPatch) ->
         "_refresh_benchmark",
         "_refresh_intraday_day",
         "_warm_snapshots",
+        "_generate_recurring_estimates",
         "_run_cache_janitor",
     ):
         monkeypatch.setattr(boot, name, lambda n=name: calls.append(n))
