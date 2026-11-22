@@ -32,6 +32,9 @@ export const CVD_PAIRS: { a: string; b: string; why: string }[] = [
   { a: "--chart-1", b: "--chart-3", why: "Risk/Projection primary vs benchmark" },
   { a: "--chart-1", b: "--color-muted", why: "Risk/Projection primary vs muted (net invested / pessimistic)" },
   { a: "--chart-3", b: "--color-muted", why: "Risk/Projection benchmark vs muted line" },
+  // Conversions page (7.2.1): the deposit bars, a conversion's share in accent and the ECB share
+  // hatched in ink (the hatch carries the meaning as well).
+  { a: "--color-accent", b: "--color-fg", why: "Conversions: deposit bar, your conversion vs ECB-rate share" },
   // Asset-class bar (Overview, AssetClassCard ASSET_CLASS_LOOK; also the stripe on the Fund-view treemap
   // tiles): etf chart-1, mutual funds chart-3 (gold), cash chart-5 (dark teal), stocks chart-6 (hatched; vs
   // cash it is the one pair under 20 for a protan in the dark theme, so the hatch is the second cue).

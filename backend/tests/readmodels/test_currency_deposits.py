@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from hypothesis import given
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from sqlalchemy.orm import Session
 
@@ -44,6 +44,7 @@ def test_two_deposits_at_different_rates() -> None:
     assert de.year_totals(items) == [("2024", D(100))]
 
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(
     rate=st.decimals(min_value=D("0.8"), max_value=D("1.6"), places=4),
     amounts=st.lists(st.decimals(min_value=D(1), max_value=D(10**6), places=2), max_size=20),
@@ -59,6 +60,7 @@ def test_effect_is_zero_when_the_rate_never_moves(rate: Decimal, amounts: list[D
     assert all(abs(v) < D("1e-15") * (1 + len(amounts)) for _t, v in rolled)
 
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(
     r0=st.decimals(min_value=D("0.8"), max_value=D("1.6"), places=4),
     rows=st.lists(

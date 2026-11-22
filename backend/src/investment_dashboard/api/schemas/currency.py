@@ -60,7 +60,8 @@ class CurrencyStat(ApiModel):
     #: Tailwind / headwind word for the side's reader; null when it does not apply.
     kind: Literal["tailwind", "headwind", "neutral"] | None = None
     #: ``dollar_trend`` only: the dollar's regime (``domain/fx_trend.regime``).
-    direction: Literal["dollar_up", "dollar_down", "sideways"] | None = None
+    #: The USD view gets the euro's own trend (``euro_up`` / ``euro_down``).
+    direction: Literal["dollar_up", "dollar_down", "euro_up", "euro_down", "sideways"] | None = None
     #: ``dollar_trend`` only: how unusual the recent move is.
     normal: Literal["normal", "large", "unusual"] | None = None
     #: ``dollar_trend`` only: ISO date the regime started.

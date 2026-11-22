@@ -3738,6 +3738,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -3804,6 +3805,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -3873,6 +3875,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -3939,6 +3942,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4008,6 +4012,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4074,6 +4079,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4143,6 +4149,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4209,6 +4216,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4278,6 +4286,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4344,6 +4353,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4413,6 +4423,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4479,6 +4490,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4548,6 +4560,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4614,6 +4627,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4683,6 +4697,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4749,6 +4764,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4818,6 +4834,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4884,6 +4901,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -4953,6 +4971,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "dollar",
     "long_run": null,
     "ma200": null,
     "normal_month": null,
@@ -5019,6 +5038,7 @@
    "stats": [],
    "trend": {
     "above_entry_share": null,
+    "asset": "euro",
     "long_run": null,
     "ma200": null,
     "normal_month": null,

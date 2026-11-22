@@ -4,147 +4,648 @@
   display: flex;
   flex-direction: column;
   gap: var(--page-gap);
-
-  &__kpis {
-    display: grid;
-    // Two tiles today: fill the row instead of leaving half of it blank.
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: var(--page-gap);
-    @include m.phone-tile-grid;
-
-    // One subject: the first figure leads on its own stage surface.
-    @include m.tablet-up {
-      grid-template-columns: minmax(0, 1.6fr) repeat(auto-fit, minmax(14rem, 1fr));
-
-      > :first-child {
-        background: var(--stage-bg);
-        border-color: var(--stage-border);
-        border-radius: var(--radius-xl);
-      }
-    }
-  }
+  --conv-cols: minmax(8rem, 1fr) minmax(12rem, 1.2fr) 5.5rem 7rem 4.5rem minmax(8rem, 1.2fr) 2.75rem;
 
   &__muted {
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
 
-  &__matches,
-  &__slices {
+  &__empty {
+    margin: 0;
+    padding: var(--space-4) var(--card-pad-x);
+  }
+
+  &__toolbar {
+    padding: var(--space-2) var(--card-pad-x) var(--space-3);
+
+    &--deposits {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-2) var(--space-3);
+    }
+  }
+
+  &__folds,
+  &__list,
+  &__deposits {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
     list-style: none;
     margin: 0;
     padding: 0;
   }
 
-  &__match {
-    padding-bottom: var(--space-2);
-    border-bottom: var(--border-width) solid var(--color-border);
+  // A link from elsewhere on the page just scrolled here: show where.
+  &__target {
+    background: var(--color-accent-soft);
+    outline: var(--border-width) solid var(--color-accent);
+    outline-offset: calc(-1 * var(--border-width));
+  }
+}
+
+// A month inside an older year's card: its header sits under the year's, and its rows are
+// inset behind a rule, so the header and what it folds read as one group. (Top-level months and
+// years are plain cards, exactly like the Transactions page.)
+.fold {
+  border-top: var(--border-width) solid var(--color-border);
+
+  &:first-child {
+    border-top: 0;
   }
 
-  &__match-head {
+  &__heading {
+    margin: 0;
+    font: inherit;
+  }
+
+  &__button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: var(--tap-min);
+    padding: var(--space-1) var(--card-pad-x);
+    border: 0;
+    background: none;
+    color: var(--color-fg);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+
+    &:hover {
+      background: var(--color-surface-2);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__chevron {
+    flex: none;
+    width: var(--font-size-lg);
+    height: var(--font-size-lg);
+    color: var(--color-muted);
+    transition: transform 0.15s ease;
+
+    @include m.reduced-motion {
+      transition: none;
+    }
+  }
+
+  &:not(&--open) &__chevron {
+    transform: rotate(-90deg);
+  }
+
+  &__title {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__meta {
+    margin: 0;
+    padding: 0 var(--card-pad-x) var(--space-2) calc(var(--card-pad-x) + var(--font-size-lg) + var(--space-2));
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__body {
+    margin-left: calc(var(--card-pad-x) + var(--font-size-lg) / 2);
+    border-left: var(--space-1) solid var(--color-surface-2);
+  }
+}
+
+// One-line toolbar: period, provider and the pool toggle. Phones get one Filters button and a sheet.
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+
+  &__inline {
+    display: none;
+    align-items: center;
+    gap: var(--space-2);
+
+    @include m.tablet-up {
+      display: flex;
+      flex-wrap: wrap;
+    }
+  }
+
+  &__inline &__select {
+    width: auto;
+    min-width: 11rem;
+    height: 2.25rem;
+  }
+
+  &__phone {
+    @include m.tablet-up {
+      display: none;
+    }
+  }
+
+  &__count {
+    margin: 0 0 0 auto;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__clear {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-accent);
+    cursor: pointer;
+    font: inherit;
+    text-decoration: underline;
+  }
+
+  &__sheet {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  &__sheet-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+}
+
+// An on/off filter pill: the check mark says "on" as well as the colour.
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-fg);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+
+  @include m.tablet-up {
+    min-height: 2.25rem;
+  }
+
+  &--on {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__icon {
+    width: var(--font-size-md);
+    height: var(--font-size-md);
+  }
+
+  &:focus-visible {
+    @include m.focus-ring;
+  }
+}
+
+// Column labels above the rows (wide screens only: the rows are one line there).
+.conv-head {
+  display: none;
+
+  @include m.wide {
+    display: grid;
+    grid-template-columns: var(--conv-cols);
+    gap: 0 var(--space-3);
+    padding: var(--space-1) var(--card-pad-x);
+    border-bottom: var(--border-width) solid var(--color-border);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+}
+
+// One conversion. Narrow: title line (date, provider, dollars, menu), a summary line that opens
+// the details, chips of the deposits it paid for. Wide: one line of columns.
+.conv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "id usd menu"
+    "paid paid paid"
+    "detail detail detail";
+  align-items: center;
+  gap: 0 var(--space-3);
+  padding: var(--space-1) var(--card-pad-x) var(--space-2);
+  border-top: var(--border-width) solid var(--color-border);
+
+  &:first-child {
+    border-top: 0;
+  }
+
+  &__id {
+    grid-area: id;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    gap: var(--space-1) var(--space-2);
+    min-width: 0;
+  }
+
+  &__date {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__hero {
+    grid-area: usd;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 0;
+  }
+
+  &__usd {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-figure);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__sent,
+  &__sub {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__menu {
+    grid-area: menu;
+    margin-right: calc(-1 * var(--space-2));
+  }
+
+  &__paid {
+    grid-area: paid;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-3);
+    min-width: 0;
+  }
+
+  &__brief {
+    display: inline-flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 2.25rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--color-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__chevron {
+    flex: none;
+    width: var(--font-size-md);
+    height: var(--font-size-md);
+  }
+
+  &__chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  &__chip-link {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--radius-full);
+    text-decoration: none;
+
+    &:hover {
+      filter: brightness(0.96);
+    }
+  }
+
+  // The facts a phone row folds away.
+  &__detail {
+    grid-area: detail;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: var(--space-2) var(--space-3);
+    margin: var(--space-1) 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-2);
+  }
+
+  &__fact {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+
+    dt {
+      @include m.eyebrow(var(--font-size-xs));
+    }
+
+    dd {
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      font-size: var(--font-size-sm);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__note {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+    min-width: 0;
+    overflow-wrap: anywhere;
+
+    &--detail {
+      grid-column: 1 / -1;
+    }
+
+    &--wide {
+      display: none;
+    }
+  }
+
+  // Wide-only pieces.
+  &__cell,
+  &__sent--wide {
+    display: none;
+  }
+
+  @include m.wide {
+    grid-template-columns: var(--conv-cols);
+    grid-template-areas: "id usd rate ecb off paid menu";
+    gap: 0 var(--space-3);
+    padding: var(--space-2) var(--card-pad-x);
+
+    &__hero {
+      align-items: flex-start;
+    }
+
+    &__sent--wide {
+      display: inline;
+    }
+
+    &__cell {
+      display: flex;
+      flex-direction: column;
+      font-size: var(--font-size-md);
+      font-variant-numeric: tabular-nums;
+
+      &--rate {
+        grid-area: rate;
+      }
+
+      &--ecb {
+        grid-area: ecb;
+      }
+
+      &--off {
+        grid-area: off;
+      }
+    }
+
+    &__id {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    &__note--wide {
+      display: block;
+      max-width: 100%;
+      @include m.truncate;
+      font-size: var(--font-size-xs);
+    }
+
+    &__brief,
+    &__detail {
+      display: none;
+    }
+
+    &__menu {
+      margin-right: 0;
+    }
+  }
+}
+
+// One USD deposit: a folded line (date, dollars, bar, status) that opens to its slices.
+.deposit {
+  border-top: var(--border-width) solid var(--color-border);
+
+  &:first-child {
+    border-top: 0;
+  }
+
+  &__head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "date usd chevron"
+      "bar bar status";
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    width: 100%;
+    min-height: var(--tap-min);
+    padding: var(--space-2) var(--card-pad-x);
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+
+    &:hover {
+      background: var(--color-surface-2);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+
+    @include m.wide {
+      grid-template-columns: 8rem 9rem minmax(6rem, 1fr) 9rem 1.5rem;
+      grid-template-areas: "date usd bar status chevron";
+    }
+  }
+
+  &__date {
+    grid-area: date;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__usd {
+    grid-area: usd;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-figure);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__summary {
+    grid-area: bar;
+    display: flex;
+    height: var(--space-2);
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+  }
+
+  &__status {
+    grid-area: status;
+    justify-self: end;
+  }
+
+  &__chevron {
+    grid-area: chevron;
+    justify-self: end;
+    width: var(--font-size-md);
+    height: var(--font-size-md);
+    color: var(--color-muted);
+  }
+
+  &__detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-1) var(--card-pad-x) var(--space-4);
+  }
+
+  &__rate {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__slices {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  &__slice {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__slice-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
     gap: var(--space-1) var(--space-3);
     font-size: var(--font-size-sm);
   }
 
-  &__match-status {
-    flex: none;
-    margin-left: auto;
+  &__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-accent);
+    font-weight: var(--font-weight-medium);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
   }
 
-  &__match-rate {
-    margin: 0;
+  &__ecb {
     color: var(--color-muted);
-    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
   }
 
-  &__slice-amounts {
-    display: inline;
-    margin-left: var(--space-1);
+  &__amounts {
+    color: var(--color-fg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__pinned {
+    display: inline-flex;
+  }
+
+  &__sr {
+    @include m.visually-hidden;
   }
 
   &__pin {
-    display: inline-block;
     width: 1em;
     height: 1em;
-    margin-left: var(--space-1);
-    vertical-align: -0.125em;
+    flex: none;
   }
 
-  &__slices {
-    margin-top: var(--space-1);
-    padding-left: var(--space-4);
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
+  // The deposit as a track; each slice fills its share. Accent = your conversions,
+  // hatched ink = the ECB rate (a pattern as well as a colour).
+  &__bar {
+    display: block;
+    height: var(--space-2);
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
   }
 
-  &__rate {
-    color: var(--color-muted);
+  &__fill {
+    display: block;
+    flex: none;
+    height: 100%;
+    background: var(--color-accent);
+
+    &--ecb {
+      background: repeating-linear-gradient(
+        135deg,
+        var(--color-fg) 0 var(--space-1),
+        transparent var(--space-1) var(--space-2)
+      );
+    }
   }
 
-  &__match-actions {
+  &__bar &__fill {
+    border-radius: var(--radius-full);
+  }
+
+  &__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
-    margin-top: var(--space-1);
 
     @include m.tablet-up {
       justify-content: flex-end;
     }
-  }
 
-  // A link from elsewhere on the page just scrolled here: show where.
-  &__target {
-    background: var(--color-surface-2);
-    border-radius: var(--radius-sm);
-    outline: var(--border-width) solid var(--color-accent);
-    outline-offset: var(--space-1);
+    @include m.phone {
+      .button {
+        flex: 1 1 auto;
+        min-height: var(--tap-min);
+      }
+    }
   }
-
-  &__date,
-  &__ecb,
-  &__stack {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  &__stack {
-    align-items: flex-end;
-  }
-
-  &__ecb {
-    align-items: flex-end;
-  }
-
-  // The muted second line of a cell (a note, the fees, the fixing's own day).
-  &__note {
-    max-width: 14ch;
-    overflow: hidden;
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__paid {
-    font-size: var(--font-size-sm);
-  }
-
-  &__muted-inline {
-    color: var(--color-muted);
-  }
-
-  &__link {
-    color: var(--color-accent);
-    text-decoration: underline;
-  }
-
 }
 
 .pin-form {
@@ -161,22 +662,28 @@
     padding: 0;
   }
 
+  // Each candidate is a small card: name and facts on the left, the dollars to pin on the right.
   &__row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-1);
+    grid-template-columns: minmax(0, 1fr) 6rem;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
-
-    @include m.tablet-up {
-      grid-template-columns: minmax(0, 1fr) 9rem;
-      align-items: center;
-    }
   }
 
   &__name {
     display: flex;
     flex-direction: column;
+    gap: 2px;
+    min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  &__title {
+    font-weight: var(--font-weight-semibold);
   }
 
   &__free {
