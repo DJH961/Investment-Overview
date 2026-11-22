@@ -35,6 +35,10 @@ export const INVALIDATION = {
   instrumentEdit: ["instruments", "overview", "holdings", "allocations", "analytics", "calculator", "deposits", "transactions", "graphs"],
   /** EUR returns are rebuilt server-side from the conversions; values and ledger rows are untouched. */
   fxConversionWrite: ["fx-conversions", "overview", "currency", "holdings", "graphs", "periods", "analytics", "calculator", "deposits"],
+  /** A recurring plan was added, edited, paused, ended or deleted (est. rows are written by the server's EOD job). */
+  recurringPlanWrite: ["recurring", "diagnostics"],
+  /** Settling est. rows rewrites ledger rows and conversions (7.3, P14). */
+  recurringSettle: ["recurring", ...REPORT_ROOTS, "transactions", "transaction", "fx-conversions", "diagnostics"],
   /** Prices or FX moved (tick, fx event): the live numbers. */
   tick: ["overview", "holdings", "graphs", "periods", "allocations", "currency", "brief"],
   /** End-of-day jobs or a price refresh finished: every report. */

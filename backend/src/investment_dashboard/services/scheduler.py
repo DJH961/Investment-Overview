@@ -641,6 +641,8 @@ def default_eod_job() -> dict[str, Any] | None:
         boot._refresh_splits,
         boot._refresh_benchmark,
         boot._refresh_intraday_day,
+        # Recurring-plan est. rows (7.3): after prices + FX settled, before the warm-up.
+        boot._generate_recurring_estimates,
         boot._warm_snapshots,
         boot._run_cache_janitor,
     ):

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String
+from sqlalchemy import DateTime, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from investment_dashboard.models.base import LedgerBase as Base
@@ -40,6 +40,13 @@ class ImportBatch(Base):
     undone_by: Mapped[str | None] = mapped_column(String(64))
     undone_rows: Mapped[int | None] = mapped_column(Integer)
     backup: Mapped[str | None] = mapped_column(String(128))
+    #: P15 (7.3): JSON list of before-images of transactions this import *updated* (so an
+    #: undo can restore them). Columns only; the undo logic is lane B's.
+    update_images: Mapped[str | None] = mapped_column(Text)
+    #: How many existing transactions the import updated instead of inserting.
+    updated_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<ImportBatch {self.id} {self.broker} {self.filename!r} {self.status}>"

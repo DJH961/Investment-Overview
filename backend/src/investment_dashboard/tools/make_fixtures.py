@@ -121,6 +121,10 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/fx-conversions",
     "/api/fx-conversions/pool",
     "/api/fx-conversions/reference?date=2026-06-26",
+    # v7.3 recurring plans (P14)
+    "/api/recurring/plans",
+    "/api/recurring/estimates",
+    "/api/recurring/suggestions",
     "/api/onboarding",
     "/api/refresh/status",
     "/api/settings",
@@ -635,6 +639,7 @@ def seed_full(session: Any) -> None:
     add(brokerage, top_ups["apr"], "deposit", "3000.00")
     add(brokerage, top_ups["may"], "deposit", "2500.00")
     add(brokerage, top_ups["jun"], "deposit", "4000.00")
+    _seed_recurring(session, rows, add, brokerage, inst["FAKEL"], px, rate_on)
     session.add_all(rows)
     session.flush()
     _seed_conversions(session, rows, rate_on, top_ups)
@@ -659,6 +664,131 @@ def seed_full(session: Any) -> None:
         market_value_usd=usd_then,
     )
     _seed_open_session(session, inst, today)
+
+
+def _seed_recurring(
+    session: Any,
+    rows: list[Any],
+    add: Callable[..., None],
+    account: Any,
+    instrument: Any,
+    px: Callable[[str, _dt.date], Decimal],
+    rate_on: Callable[[_dt.date], Decimal],
+) -> None:
+    """Recurring plans with est. rows so every state shows (7.3, P14).
+
+    * A monthly $200 buy plan (25th): April is settled, May and June are est. (the 25th
+      rolls to the next session: Saturday, Memorial Day).
+    * A monthly EUR 1,000 conversion plan with Wise (28th): June (a Sunday) is est., the
+      rate 0.4 % below the last fixing, fee 2.50. Dated after every deposit so the
+      matching story of the real conversions stays as it is.
+    * A paused weekly buy plan with no rows, and an ended conversion plan.
+    """
+    from investment_dashboard.domain import recurrence
+    from investment_dashboard.models import FxConversion, RecurringPlan
+
+    today = FROZEN_NOW.date()
+    buy_plan = RecurringPlan(
+        kind="buy",
+        unit="months",
+        every=1,
+        anchor=25,
+        start_date=_dt.date(2026, 4, 25),
+        generated_through=_dt.date(2026, 6, 25),
+        account_id=account.id,
+        instrument_id=instrument.id,
+        amount=D("200"),
+        created_at=_dt.datetime(2026, 4, 20, 9, 0),
+    )
+    conv_plan = RecurringPlan(
+        kind="conversion",
+        unit="months",
+        every=1,
+        anchor=28,
+        start_date=_dt.date(2026, 6, 1),
+        generated_through=_dt.date(2026, 6, 28),
+        amount=D("1000"),
+        provider="wise",
+        expected_fee=D("2.50"),
+        created_at=_dt.datetime(2026, 5, 10, 9, 0),
+    )
+    paused = RecurringPlan(
+        kind="buy",
+        unit="weeks",
+        every=2,
+        anchor=0,
+        start_date=_dt.date(2026, 3, 2),
+        generated_through=today - _dt.timedelta(days=1),
+        paused=True,
+        account_id=account.id,
+        instrument_id=instrument.id,
+        shares=D("1.5"),
+        created_at=_dt.datetime(2026, 3, 1, 9, 0),
+    )
+    ended = RecurringPlan(
+        kind="conversion",
+        unit="days",
+        every=30,
+        start_date=_dt.date(2026, 1, 1),
+        end_date=_dt.date(2026, 3, 1),
+        generated_through=_dt.date(2026, 3, 1),
+        amount=D("500"),
+        provider="revolut",
+        created_at=_dt.datetime(2025, 12, 28, 9, 0),
+    )
+    deposit_plan = RecurringPlan(
+        kind="deposit",
+        unit="months",
+        every=1,
+        anchor=5,
+        start_date=_dt.date(2026, 4, 5),
+        generated_through=_dt.date(2026, 6, 5),
+        account_id=account.id,
+        amount=D("3000"),
+        created_at=_dt.datetime(2026, 4, 1, 9, 0),
+    )
+    session.add_all([buy_plan, conv_plan, paused, ended, deposit_plan])
+    session.flush()
+    for due, est in (
+        (_dt.date(2026, 4, 25), False),
+        (_dt.date(2026, 5, 25), True),
+        (_dt.date(2026, 6, 25), True),
+    ):
+        day = recurrence.roll_to_session(due)
+        price = px(instrument.symbol, day)
+        qty = (D("200") / price).quantize(D("0.00000001"))
+        add(
+            account,
+            day,
+            "buy",
+            "-200.00",
+            instrument_id=instrument.id,
+            quantity=qty,
+            price_native=price,
+            gross_native=D("200.00"),
+            fees_native=D("0"),
+            estimate_plan_id=buy_plan.id,
+            estimate_due_date=due,
+            is_estimate=est,
+            description="est. (recurring plan)" if est else None,
+        )
+    for due in (_dt.date(2026, 6, 28),):  # a Sunday: the Friday fixing applies
+        rate = rate_on(due) * D("0.996")
+        session.add(
+            FxConversion(
+                date=due,
+                eur_sent=D("1000.00"),
+                usd_received=(D("1000") * rate).quantize(D("0.01")),
+                fees_eur=D("2.50"),
+                note="est. (recurring plan)",
+                provider="wise",
+                estimate_plan_id=conv_plan.id,
+                estimate_due_date=due,
+                is_estimate=True,
+                created_at=_dt.datetime.combine(due, _dt.time(22, 0)),
+                updated_at=_dt.datetime.combine(due, _dt.time(22, 0)),
+            )
+        )
 
 
 def _seed_conversions(

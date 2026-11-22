@@ -1103,6 +1103,33 @@ def _backfill_snapshot_usd(session: Any) -> int:
     return total
 
 
+def _generate_recurring_estimates() -> bool:
+    """Add the est. rows of recurring plans whose due date has settled (7.3, P14).
+
+    Runs in the end-of-day job after the price / FX pulls, so every missed due date is
+    caught up after time offline, and before the snapshot warm-up, so the new rows are
+    in the cached values. Like the other EOD steps it returns ``False`` on a caught
+    failure (B-005).
+    """
+    try:
+        from investment_dashboard.db import ledger_session_scope  # noqa: PLC0415
+        from investment_dashboard.services import read_cache, recurring_service  # noqa: PLC0415
+
+        with ledger_session_scope() as session:
+            report = recurring_service.generate_due_estimates(session)
+        if report.created:
+            read_cache.invalidate(read_cache.LEDGER)
+        log.info(
+            "recurring plans: %s estimated row(s) added, %s waiting for a close",
+            report.created,
+            report.pending,
+        )
+    except Exception:
+        log.warning("recurring estimates failed; continuing", exc_info=True)
+        return False
+    return True
+
+
 def _warm_snapshots() -> bool:
     """Rebuild the daily snapshot cache so the first heavy render reads it warm.
 

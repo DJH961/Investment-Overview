@@ -584,6 +584,31 @@ def _check_import_age(session: Session, *, today: date | None = None) -> HealthI
     )
 
 
+def _check_estimated_rows(session: Session) -> HealthItem:
+    """One quiet prompt for recurring-plan est. rows still to settle (7.3, P14)."""
+    from investment_dashboard.repositories import recurring_repo  # noqa: PLC0415
+
+    txns = recurring_repo.list_estimate_transactions(session)
+    convs = recurring_repo.list_estimate_conversions(session)
+    count = len(txns) + len(convs)
+    lines = [f"Buy on {t.date.isoformat()}" for t in txns[:3]] + [
+        f"Conversion on {c.date.isoformat()}" for c in convs[:3]
+    ]
+    return HealthItem(
+        key="estimated_rows",
+        title="Estimated rows to settle",
+        severity="warning" if count else "ok",
+        count=count,
+        detail=(
+            f"{count} estimated row(s) from recurring plans: import the broker file or type "
+            "what you got to settle them."
+            if count
+            else "No estimated rows waiting to be settled."
+        ),
+        examples=_examples(lines),
+    )
+
+
 def _check_prices(session: Session) -> list[HealthItem]:
     """Missing, stale, and corrupt (non-positive) price coverage."""
     actives = _active_instruments(session)
@@ -1004,6 +1029,7 @@ def check_health(session: Session) -> HealthReport:
         *_check_splits(session),
         _check_share_counts(session),
         _check_import_age(session),
+        _check_estimated_rows(session),
         _check_intraday_graph(session),
         _check_holding_intraday(session),
         _check_price_feed(session),

@@ -50230,6 +50230,15 @@
    {
     "actions": [],
     "count": 0,
+    "detail": "No estimated rows waiting to be settled.",
+    "examples": [],
+    "id": "estimated_rows",
+    "severity": "ok",
+    "title": "Estimated rows to settle"
+   },
+   {
+    "actions": [],
+    "count": 0,
     "detail": "The 1 Day and 1 Week graphs are filled to their coverage target.",
     "examples": [],
     "id": "intraday_graph",
@@ -59545,6 +59554,13 @@
   },
   "detail": null
  },
+ "GET /api/recurring/estimates": {
+  "count": 0,
+  "groups": [],
+  "rows": []
+ },
+ "GET /api/recurring/plans": [],
+ "GET /api/recurring/suggestions": [],
  "GET /api/refresh/status": {
   "historical": false,
   "last_update_at": null,

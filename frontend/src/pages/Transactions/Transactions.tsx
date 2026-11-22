@@ -31,6 +31,9 @@ import { filterLedger, monthTotals, sortLedger, summarizeLedger, useLedgerAll } 
 import { useFxConversions, useFxPool, type DepositMatch } from "../../lib/queries/manage";
 import { depositsById } from "../CurrencyConversions/matching";
 import { RateChip, RateSheet } from "./RateChip";
+import { EstChip, useEstimateQueue } from "./EstChip";
+import { ReminderCard } from "../../components/ReminderCard";
+import { SettleSheet } from "../../components/SettleSheet";
 import { useShellStatus } from "../../lib/shell";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useIsPhone } from "../../lib/useMediaQuery";
@@ -211,6 +214,7 @@ export function Transactions() {
   // USD deposits get a "Your rate" / "ECB" chip, joined client-side from the matching pool by deposit id.
   const fxPool = useFxPool();
   const fxConversions = useFxConversions();
+  const est = useEstimateQueue();
   const depositMap = useMemo(() => depositsById(fxPool.data?.deposits ?? []), [fxPool.data]);
   const [rateFor, setRateFor] = useState<DepositMatch | null>(null);
 
@@ -280,6 +284,7 @@ export function Transactions() {
           <span className="transactions-page__kind-cell">
             <span className={`transactions-page__kind transactions-page__kind--${r.kind}`}>{KIND_LABEL[r.kind] ?? r.kind}</span>
             {match && <RateChip match={match} onOpen={setRateFor} />}
+            {r.is_estimate && <EstChip onOpen={() => est.open(r.id)} />}
           </span>
         );
       },
@@ -482,6 +487,8 @@ export function Transactions() {
         }
       />
 
+      <ReminderCard />
+      <SettleSheet rows={est.queue} onClose={est.close} />
       {isPhone ? (
         <search className="transactions-page__filters transactions-page__filters--phone">
           {search}

@@ -21,7 +21,7 @@ from investment_dashboard.domain.money_market import (
     is_settlement_external_id,
 )
 from investment_dashboard.readmodels.money_format import currency_symbol, fmt_shares
-from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.repositories import recurring_repo, transactions_repo
 from investment_dashboard.services import cashflows, fx_service
 
 if TYPE_CHECKING:
@@ -77,6 +77,8 @@ class LedgerRecord:
     #: rate (currency rule); never the frozen legs. ``None`` when no rate.
     cash_eur: Decimal | None = None
     cash_usd: Decimal | None = None
+    #: ``True`` for a recurring-plan estimate not yet settled (7.3, P14).
+    is_estimate: bool = False
 
 
 def _fmt_money(value: Decimal | None, currency: str, places: int = 2) -> str:
@@ -326,6 +328,7 @@ def _to_record(
         fx_incomplete=False if is_non_cash else (cash_eur is None or cash_usd is None),
         cash_eur=cash_eur,
         cash_usd=cash_usd,
+        is_estimate=bool(t.is_estimate) and t.kind not in recurring_repo.NEEDS_NO_INPUT_KINDS,
     )
 
 
