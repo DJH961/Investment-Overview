@@ -17,6 +17,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Smart import matching:** an import row that is almost identical to an existing
+  transaction (same account, instrument and type; date within one NYSE trading day; amount
+  and shares within 0.5 % or 0.05 / 0.0001 shares) is shown as an **update** ("Update $20.00
+  → $19.99", with the old and new date, shares, price and amount) instead of a new row.
+  Confirming overwrites the existing transaction with the import's figures and keeps its id,
+  so links such as conversion pins survive. Each row can still be skipped or imported as new.
+  Exact duplicates are skipped as before. Estimated rows (recurring plans) use a looser
+  profile (3 trading days, 2 % or 0.50). Every tolerance is under Settings > Import rules.
+  The confirm result and the activity log count the updated rows.
+
 ## [7.2.1] — 2026-11-22
 
 ### Added

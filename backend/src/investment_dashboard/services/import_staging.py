@@ -22,21 +22,29 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters.generic.parser import GenericParseReport, Layout, LayoutChoice
 from investment_dashboard.adapters.importer_types import ParsedTransactionRow, ParseReport
-from investment_dashboard.adapters.row_validation import apply_fix, fixes_for, validate_row
+from investment_dashboard.adapters.row_validation import (
+    FIX_SKIP,
+    apply_fix,
+    fixes_for,
+    validate_row,
+)
 from investment_dashboard.adapters.vanguard.settlement import inject_settlement_legs
 from investment_dashboard.errors import NotFoundError, ValidationError
 from investment_dashboard.repositories import (
     accounts_repo,
     import_batches_repo,
-    transactions_repo,
 )
-from investment_dashboard.services import importer_service
+from investment_dashboard.services import import_update_service, importer_service
 from investment_dashboard.services.importer_service import Broker, ImportResult
+
+#: A preview row's status: the match outcome, or ``skipped`` (left out by the user).
+RowStatus = Literal["new", "duplicate", "update", "skipped"]
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +103,11 @@ class PreviewRow:
     fixes: tuple[str, ...] = ()
     #: The resolution the user picked, if any.
     resolution: str | None = None
+    #: ``new`` / ``duplicate`` / ``update`` / ``skipped``. An ``update`` row overwrites
+    #: ``existing``; the user may skip it or import it as new (``status`` then ``new``).
+    status: RowStatus = "new"
+    #: The existing transaction this row near-matches (old figures of an update).
+    existing: import_update_service.ExistingFigures | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +132,11 @@ class StagedImport:
 
     @property
     def new_count(self) -> int:
-        return sum(1 for r in self.rows if not r.is_duplicate and not r.skipped)
+        return sum(1 for r in self.rows if r.status == "new" and not r.skipped)
+
+    @property
+    def update_count(self) -> int:
+        return sum(1 for r in self.rows if r.status == "update" and not r.skipped)
 
     @property
     def duplicate_count(self) -> int:
@@ -215,6 +232,20 @@ def _resolve_account(
     )
 
 
+def _status_and_fixes(
+    kept: bool, match: import_update_service.RowMatch, resolution: str | None, base: list[str]
+) -> tuple[RowStatus, tuple[str, ...]]:
+    """A preview row's status and the resolutions it offers."""
+    if not kept:
+        return "skipped", tuple(base)
+    if match.status != "update":
+        return match.status, tuple(base)
+    # A near-match offers "skip" and "import as new" next to its default update.
+    status: RowStatus = "new" if resolution == import_update_service.FIX_IMPORT_NEW else "update"
+    offered = [*(f for f in base if f != FIX_SKIP), FIX_SKIP, import_update_service.FIX_IMPORT_NEW]
+    return status, tuple(offered)
+
+
 def stage(
     session: Session,
     *,
@@ -264,14 +295,7 @@ def stage(
         if isinstance(report, GenericParseReport)
         else importer_service.detect_layout(resolved, content)
     )
-    existing = {
-        t.external_id
-        for t in transactions_repo.list_transactions(session, account_id=acct_id)
-        if t.external_id
-    }
-    dups = importer_service.mark_duplicates(
-        written, existing, importer_service.existing_content_keys(session, acct_id)
-    )
+    matches = import_update_service.classify_rows(session, acct_id, written)
     # ``written`` is ``shown`` minus the skipped rows (and their settlement legs),
     # in the same order: walk both to tell which shown rows are written.
     out: list[PreviewRow] = []
@@ -279,15 +303,20 @@ def stage(
     for i, r in enumerate(shown, start=1):
         kept = w < len(written) and written[w].external_id == r.external_id
         original = by_id.get(r.external_id, r)
+        match = matches[w] if kept else import_update_service.RowMatch("new")
+        resolution = fixes.get(r.external_id) if r.external_id in by_id else None
+        status, row_fixes = _status_and_fixes(kept, match, resolution, fixes_for(original))
         out.append(
             PreviewRow(
                 index=i,
                 row=r,
-                is_duplicate=dups[w] if kept else False,
+                is_duplicate=match.status == "duplicate" if kept else False,
                 skipped=not kept,
                 warnings=tuple(validate_row(original)),
-                fixes=tuple(fixes_for(original)),
-                resolution=fixes.get(r.external_id) if r.external_id in by_id else None,
+                fixes=row_fixes,
+                resolution=resolution,
+                status=status,
+                existing=match.existing if kept else None,
             )
         )
         w += 1 if kept else 0
@@ -463,6 +492,8 @@ def confirm(
         layout=staged.layout,
         resolutions=staged.resolutions,
     )
+    # (Rows that only updated existing transactions leave no batch: they are not
+    # undoable as an import, see ``import_update_service.apply_import_update``.)
     if result.inserted:
         batch.row_count = result.inserted
         batch.duplicate_count = result.duplicates
