@@ -64,14 +64,12 @@ DAY_MOVES = {
     "FAKEL": D("0.0085"),
     "FAKEB": D("-0.0035"),
     "FAKEG": D("0.0240"),
-    "FAKEU": D("-0.0062"),
 }
 #: Intraday wobble (fraction of price) around each straight line to today's last price.
 DAY_VOL = {
     "FAKEL": 0.0030,
     "FAKEB": 0.0012,
     "FAKEG": 0.0075,
-    "FAKEU": 0.0025,
 }
 SAMPLE_MINUTES = 5
 _REAL_DATETIME = _dt.datetime
@@ -456,13 +454,6 @@ def seed_full(session: Any) -> None:
             name="Fake Institutional NAV Index Fund",
             asset_class="mutual_fund",
         ),
-        "FAKEU": instruments_repo.get_or_create(
-            session,
-            symbol="FAKEU.DE",
-            name="Fake Europa Dividend Aktie",
-            asset_class="stock",
-            native_currency="EUR",
-        ),
         "FAKEG": instruments_repo.get_or_create(
             session, symbol="FAKEG", name="Fake Growth Corp", asset_class="stock"
         ),
@@ -472,7 +463,6 @@ def seed_full(session: Any) -> None:
         "FAKEB": "Bonds",
         "FAKET": "Speculative",
         "FAKENX": "US Stocks",
-        "FAKEU": "Europe Stocks",
         "FAKEG": "US Stocks",
     }
     for sym, cat in categories.items():
@@ -485,7 +475,6 @@ def seed_full(session: Any) -> None:
         "FAKEB": (D("81.20"), D("62.10"), 0.004, 0),  # a loser
         "FAKET": (D("0.0450"), D("0.0213"), 0.03, 12),  # tiny and stale
         "FAKENX": (D("94.10"), D("171.82"), 0.008, 1),  # NAV: yesterday's close only
-        "FAKEU": (D("31.50"), D("48.95"), 0.01, 0),
         "FAKEG": (D("27.10"), D("83.40"), 0.02, 0),
     }
     walks: dict[str, dict[_dt.date, Decimal]] = {}
@@ -521,13 +510,6 @@ def seed_full(session: Any) -> None:
         broker="vanguard",
         account_label="Retirement",
         native_currency="USD",
-        account_type="brokerage",
-    )
-    euro = accounts_repo.create_account(
-        session,
-        broker="savings_bank",
-        account_label="Euro Depot",
-        native_currency="EUR",
         account_type="brokerage",
     )
     accounts_repo.create_account(
@@ -598,7 +580,6 @@ def seed_full(session: Any) -> None:
     d0 = _dt.date(2023, 3, 1)
     add(brokerage, d0, "deposit", "900000.00")
     add(retirement, d0, "deposit", "180000.00")
-    add(euro, d0, "deposit", "40000.00", "EUR")
     buy(brokerage, "FAKEL", _dt.date(2023, 3, 2), "4000")
     buy(brokerage, "FAKEL", _dt.date(2024, 1, 16), "250.5")
     buy(brokerage, "FAKEB", _dt.date(2023, 3, 6), "1500")
@@ -606,7 +587,6 @@ def seed_full(session: Any) -> None:
     buy(brokerage, "FAKET", _dt.date(2024, 5, 7), "0.00031")  # tiny
     buy(retirement, "FAKENX", _dt.date(2023, 3, 3), "800")
     buy(retirement, "FAKEL", _dt.date(2023, 3, 8), "120")
-    buy(euro, "FAKEU", _dt.date(2023, 3, 7), "500", "EUR")
     add(brokerage, _dt.date(2025, 2, 3), "deposit", "75000.00")
     buy(brokerage, "FAKEG", _dt.date(2025, 2, 4), "200")
     sell_price = px("FAKEG", _dt.date(2025, 11, 12))
@@ -631,7 +611,6 @@ def seed_full(session: Any) -> None:
     ):
         day = _dt.date(year, month, 20)
         add(brokerage, day, "dividend_cash", "1843.27", instrument_id=inst["FAKEL"].id)
-        add(euro, day, "dividend_cash", "212.40", "EUR", instrument_id=inst["FAKEU"].id)
     add(brokerage, _dt.date(2024, 8, 14), "fee", "-0.01")
     add(retirement, _dt.date(2024, 9, 2), "interest", "3.07")
     # Booked since the owner last looked (the Brief lists these): yesterday afternoon.
