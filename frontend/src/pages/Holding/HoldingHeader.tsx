@@ -51,6 +51,10 @@ export interface HoldingHeaderProps {
   value: ReactNode;
   /** Today's move under / beside it. */
   today?: ReactNode;
+  /** Current price per share (native currency): a second hero figure beside the value. */
+  price?: ReactNode;
+  /** Under the price: today's move, as-of time. */
+  priceMeta?: ReactNode;
   /** Back link target and label (Holdings, Overview, or another origin). */
   back?: BackTarget;
 }
@@ -60,7 +64,7 @@ export interface HoldingHeaderProps {
  * the full name in its title); meta chips; value and today on the right (under the
  * symbol on a phone). On a phone it collapses to one sticky line once scrolled past.
  */
-export function HoldingHeader({ symbol, name, chips, pills, value, today, back }: HoldingHeaderProps) {
+export function HoldingHeader({ symbol, name, chips, pills, value, today, price, priceMeta, back }: HoldingHeaderProps) {
   const ref = useRef<HTMLElement | null>(null);
   const [past, setPast] = useState(false);
   useEffect(() => {
@@ -82,8 +86,18 @@ export function HoldingHeader({ symbol, name, chips, pills, value, today, back }
           <span className="holding-page__name">{name}</span>
         </h1>
         <div className="holding-page__figures">
-          <span className="holding-page__value">{value}</span>
-          {today && <span className="holding-page__today">{today}</span>}
+          <div className="holding-page__figure">
+            {price && <span className="holding-page__figure-label">Value</span>}
+            <span className="holding-page__value">{value}</span>
+            {today && <span className="holding-page__today">{today}</span>}
+          </div>
+          {price && (
+            <div className="holding-page__figure holding-page__figure--price">
+              <span className="holding-page__figure-label">Price per share</span>
+              <span className="holding-page__value holding-page__value--price">{price}</span>
+              {priceMeta && <span className="holding-page__today">{priceMeta}</span>}
+            </div>
+          )}
         </div>
         <div className="holding-page__chips">{chips}</div>
       </header>
@@ -92,6 +106,7 @@ export function HoldingHeader({ symbol, name, chips, pills, value, today, back }
       <div className="holding-page__sticky" aria-hidden>
         <span className="holding-page__sticky-symbol">{symbol}</span>
         <span className="holding-page__sticky-value">{value}</span>
+        {price && <span className="holding-page__sticky-price">{price}</span>}
         {today && <span className="holding-page__sticky-today">{today}</span>}
       </div>
       )}

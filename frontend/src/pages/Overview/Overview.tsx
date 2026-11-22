@@ -30,7 +30,9 @@ import { usePrefs } from "../../lib/prefs";
 import { useOverview } from "../../lib/queries/portfolio";
 import { useShellStatus } from "../../lib/shell";
 import { useMediaQuery } from "../../lib/useMediaQuery";
+import { TrendChip } from "../../components/TrendChip";
 import { OnboardingCard } from "./OnboardingCard";
+import { useRateLine } from "./useRateLine";
 import "./Overview.scss";
 
 function EmptyActions() {
@@ -100,6 +102,7 @@ function useTreemapHeight(active: boolean) {
 export function Overview() {
   const { currency } = usePrefs();
   const overview = useOverview(currency);
+  const rateLine = useRateLine();
   const { overviewRange } = useDisplayPrefs();
 
   const live = useLiveGrace(useLiveStatus());
@@ -191,6 +194,7 @@ export function Overview() {
           {data ? (
             <CurrencyBox
               data={data}
+              trend={rateLine.trend ? <TrendChip trend={rateLine.trend} /> : undefined}
               footer={
                 SHOW_CURRENCY_PAGE ? (
                   <Link to="/currency" className="currency-box__link">
@@ -220,7 +224,7 @@ export function Overview() {
           <AssetClassCard currency={currency} />
         </div>
         <div ref={sideCol} className="overview-page__side">
-          {data ? <CurrencyLifetime data={data} /> : <Skeleton height="9rem" />}
+          {data ? <CurrencyLifetime data={data} rateLine={rateLine.line} /> : <Skeleton height="9rem" />}
         </div>
       </div>
     </div>

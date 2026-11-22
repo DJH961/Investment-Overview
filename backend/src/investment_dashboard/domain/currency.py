@@ -10,6 +10,7 @@ All functions operate on :class:`decimal.Decimal` to preserve precision.
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
@@ -50,13 +51,40 @@ def lookup_rate_with_forward_fill(
     Frankfurter only publishes business-day rates, so weekend / holiday
     cashflows must inherit the most recent prior business day's rate.
     Returns ``None`` if no prior rate exists.
+
+    A miss bisects the mapping's sorted dates (v7.2: ``fx_history`` holds ~7k rows
+    back to 1999, and a linear scan per weekend day made day-by-day loops slow).
+    The sorted dates are kept for the last few mappings seen, keyed by identity and
+    checked against the mapping's size, so a loop over one series sorts it once.
     """
     if target in rates_by_date:
         return rates_by_date[target]
-    prior = [d for d in rates_by_date if d <= target]
-    if not prior:
+    keys = _sorted_dates(rates_by_date)
+    i = bisect_right(keys, target)
+    if i == 0:
         return None
-    return rates_by_date[max(prior)]
+    return rates_by_date[keys[i - 1]]
+
+
+#: (mapping, its sorted dates) for the most recent mappings looked up. Holding the
+#: mapping itself keeps its ``id`` from being reused while it is cached.
+_SORTED_CACHE: list[tuple[Mapping[date, Decimal], list[date]]] = []
+_SORTED_CACHE_SIZE = 8
+
+
+def _sorted_dates(rates_by_date: Mapping[date, Decimal]) -> list[date]:
+    for i, (cached, keys) in enumerate(_SORTED_CACHE):
+        if cached is rates_by_date:
+            if len(keys) == len(rates_by_date):
+                if i:
+                    _SORTED_CACHE.insert(0, _SORTED_CACHE.pop(i))
+                return keys
+            del _SORTED_CACHE[i]
+            break
+    keys = sorted(rates_by_date)
+    _SORTED_CACHE.insert(0, (rates_by_date, keys))
+    del _SORTED_CACHE[_SORTED_CACHE_SIZE:]
+    return keys
 
 
 def split_native_to_dual_legs(

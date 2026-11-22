@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-fixtures",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev:fixtures", "--", "--port", "5273", "--strictPort"],
+      "port": 5273
+    }
+  ]
+}

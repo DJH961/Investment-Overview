@@ -15,6 +15,7 @@ Inputs are the Overview payloads as plain JSON-shaped dicts (``ccy -> payload``)
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -28,8 +29,12 @@ from investment_dashboard.services import (
     metrics_service,
 )
 
+log = logging.getLogger(__name__)
+
 ZERO = Decimal(0)
 ONE_CENT = Decimal("0.01")
+Q6 = Decimal("0.000001")
+Q8 = Decimal("0.00000001")
 
 
 def _d(value: Any) -> Decimal | None:
@@ -191,6 +196,56 @@ def _stats(ccy: str, payload: dict[str, Any], one_cent: dict[str, Any] | None) -
     return out
 
 
+def _effect_tiles(session: Session, ccy: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """7.2 strip tiles: USD effect today, this year, lifetime (day by day), dollar trend.
+
+    Built from the Impact read model (``readmodels/currency_effect``) so the strip
+    and the Impact section show one number. A tile without data is left out.
+    """
+    from investment_dashboard.readmodels import currency_effect  # noqa: PLC0415
+
+    out: list[dict[str, Any]] = []
+    if ccy == "USD":
+        split = payload.get("day_split") or {}
+        cur = _d(split.get("currency_move"))
+        if cur is not None and cur != 0:
+            out.append(_stat("effect_today", cur, "money", currency="USD", kind=_kind(cur)))
+    figures = currency_effect.strip_figures(session, ccy)
+    if figures.effect_year is not None:
+        extra: dict[str, Any] = {"currency": ccy, "kind": _kind(figures.effect_year)}
+        if figures.effect_year_pp is not None:
+            extra |= {"secondary": dec(figures.effect_year_pp), "secondary_unit": "fraction"}
+        out.append(_stat("effect_this_year", figures.effect_year.quantize(Q6), "money", **extra))
+    if figures.effect_lifetime is not None:
+        extra = {"currency": ccy, "kind": _kind(figures.effect_lifetime)}
+        gap = _d(payload["currency"]["return_split"].get("eur_minus_usd_pp"))
+        if gap is not None:
+            extra |= {"secondary": dec(gap), "secondary_unit": "fraction"}
+        out.append(_stat("effect_lifetime", figures.effect_lifetime.quantize(Q6), "money", **extra))
+    trend = currency_effect.dollar_trend(session=session)
+    if trend is not None:
+        out.append(
+            _stat(
+                "dollar_trend",
+                trend["since_change_pct"].quantize(Q8),
+                "fraction",
+                direction=trend["direction"],
+                normal=trend["normal"],
+                since=trend["since"],
+            )
+        )
+    return out
+
+
+def _safe_effect_tiles(session: Session, ccy: str, payload: dict[str, Any]) -> list[Any]:
+    """:func:`_effect_tiles`, never failing the strip (the 7.0 tiles still show)."""
+    try:
+        return _effect_tiles(session, ccy, payload)
+    except Exception:
+        log.warning("currency strip: Impact tiles failed", exc_info=True)
+        return []
+
+
 def build_currency_both(
     session: Session, overview: dict[str, dict[str, Any]], *, now: datetime | None = None
 ) -> dict[str, dict[str, Any]]:
@@ -211,6 +266,6 @@ def build_currency_both(
             "rate_range": _rate_range(session, now=now, quote_usd_per_eur=ccy == "USD"),
             "buys": _buys(session, cur["today"], now=now),
             "one_cent": one_cent,
-            "stats": _stats(ccy, payload, one_cent),
+            "stats": _stats(ccy, payload, one_cent) + _safe_effect_tiles(session, ccy, payload),
         }
     return out

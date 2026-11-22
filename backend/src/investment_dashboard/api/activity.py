@@ -127,6 +127,14 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
         "split removed",
         "split remove failed",
     ),
+    # v7.2 Currency page reads (plan §5: new endpoints get labels). Plain reads are
+    # not logged by :func:`subject_for`; the labels name them if one ever is.
+    ("GET", "/api/currency/rate-history"): ("currency rate history read", "rate history failed"),
+    ("GET", "/api/currency/dollar/both"): ("currency dollar section read", "dollar read failed"),
+    ("GET", "/api/currency/scenarios/both"): (
+        "currency what-if read",
+        "currency what-if failed",
+    ),
 }
 
 

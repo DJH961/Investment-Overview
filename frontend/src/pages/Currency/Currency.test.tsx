@@ -1,5 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import full from "../../fixtures/data/full.json";
 import type { CurrencyDto } from "../../lib/queries/currency";
@@ -12,6 +13,8 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("../../lib/shell", () => ({ useShellStatus: () => undefined }));
+// The rate chart has its own tests and query; the page tests cover the strip and Today.
+vi.mock("../../components/RateChart", () => ({ RateChart: () => <div data-testid="rate-chart" /> }));
 vi.mock("../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
 vi.mock("../../lib/prefs", async (orig) => ({
   ...(await orig<typeof import("../../lib/prefs")>()),
@@ -31,7 +34,6 @@ vi.mock("../../lib/queries/portfolio", async (orig) => ({
   useOverview: (c: "EUR" | "USD") => ({ data: state.overview?.[c] }),
 }));
 
-import { CurrencyBox } from "../../components/CurrencyBox";
 import { HideAmountsProvider } from "../../lib/hideAmounts";
 import { Currency } from "./Currency";
 
@@ -40,17 +42,19 @@ const cur = fx["GET /api/currency/both"];
 const ov = fx["GET /api/overview/both"];
 
 function mount(route = "/currency") {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return render(
-    <HideAmountsProvider>
-      <MemoryRouter initialEntries={[route]}>
-        <Currency />
-      </MemoryRouter>
-    </HideAmountsProvider>,
+    <QueryClientProvider client={queryClient}>
+      <HideAmountsProvider>
+        <MemoryRouter initialEntries={[route]}>
+          <Currency />
+        </MemoryRouter>
+      </HideAmountsProvider>
+    </QueryClientProvider>,
   );
 }
 
 const tiles = () => document.querySelectorAll(".stat-strip__item");
-const rows = () => document.querySelectorAll(".currency-page__row");
 
 beforeEach(() => {
   state.ccy = "EUR";
@@ -60,13 +64,14 @@ beforeEach(() => {
 afterEach(() => localStorage.clear());
 
 describe("Currency page", () => {
-  it("renders one tile per sent stat, with a tip each", () => {
+  it("renders one tile per sent stat, with a tip each, except what the chart or What if shows", () => {
     mount();
-    expect(tiles()).toHaveLength(cur.EUR.stats!.length);
-    expect(screen.getByText("EUR/USD now")).toBeInTheDocument();
-    expect(screen.getByText("Currency effect today")).toBeInTheDocument();
+    const elsewhere = ["rate_now", "avg_rate_vs_now", "lifetime_effect", "dollar_trend", "one_cent", "investing_power_today"];
+    expect(tiles()).toHaveLength(cur.EUR.stats!.filter((s) => !elsewhere.includes(s.key)).length);
+    expect(screen.queryByText("EUR/USD now")).not.toBeInTheDocument();
+    expect(screen.getByText("Effect today")).toBeInTheDocument();
     expect(screen.queryByText("Investing power today")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "About EUR/USD now" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "About Effect today" })).toBeInTheDocument();
   });
 
   it("shows the tailwind or headwind word, not only colour", () => {
@@ -76,57 +81,37 @@ describe("Currency page", () => {
     eur.unmount();
     state.ccy = "USD";
     mount();
-    expect(screen.getByText("Tailwind")).toBeInTheDocument();
+    expect(screen.getAllByText("Tailwind").length).toBeGreaterThan(0);
   });
 
-  it("leaves the strip out when no stats are sent", () => {
+  it("leaves the strip out when no stats are sent, keeping the chart", () => {
     state.both = { EUR: { ...cur.EUR, stats: [] }, USD: { ...cur.USD, stats: [] } };
     mount();
     expect(tiles()).toHaveLength(0);
-    expect(screen.getByTestId("today-buys")).toBeInTheDocument();
+    expect(screen.getByTestId("rate-chart")).toBeInTheDocument();
   });
 
-  it("EUR and USD have one shape: same tiles and same Today rows", () => {
+  it("EUR and USD have one shape: same tiles", () => {
     const eur = mount();
     const nEur = tiles().length;
-    const rEur = rows().length;
     eur.unmount();
     state.ccy = "USD";
     mount();
     expect(tiles().length).toBe(nEur);
-    expect(rows().length).toBe(rEur);
-    expect(rEur).toBeGreaterThan(0);
+    expect(nEur).toBeGreaterThan(0);
   });
 
-  it("prints the regular amount and what it buys", () => {
+  it("leads with the rate chart, then the strip", () => {
     mount();
-    const buys = screen.getByTestId("today-buys");
-    expect(within(buys).getByText(/100 euros buy/)).toBeInTheDocument();
-    expect(buys.textContent).toContain("yesterday");
+    const chart = screen.getByTestId("rate-chart");
+    const strip = document.querySelector(".stat-strip")!;
+    expect(chart.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("unknown ?view= falls back to Today", () => {
-    mount("/currency?view=nonsense");
-    // One view only: no view switch is shown (it returns with a second view).
-    expect(screen.queryByLabelText("Currency views")).toBeNull();
-    expect(screen.getByTestId("today-buys")).toBeInTheDocument();
-  });
-
-  it("shows the same box as the Overview card for the same today block", () => {
-    for (const c of ["EUR", "USD"] as const) {
-      state.ccy = c;
-      const page = mount();
-      const pageBox = page.container.querySelector(".currency-box")?.textContent;
-      page.unmount();
-      const ovBox = render(
-        <HideAmountsProvider>
-          <CurrencyBox data={ov[c]} />
-        </HideAmountsProvider>,
-      );
-      expect(pageBox).toBeTruthy();
-      expect(pageBox).toBe(ovBox.container.querySelector(".currency-box")?.textContent);
-      ovBox.unmount();
-    }
+  it("does not repeat the Overview's Currency card", () => {
+    // Today's split lives on the Overview; this page shows only views the Overview has not.
+    mount();
+    expect(document.querySelector(".currency-box")).toBeNull();
   });
 });
 

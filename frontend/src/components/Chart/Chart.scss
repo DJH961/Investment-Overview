@@ -569,3 +569,86 @@
     }
   }
 }
+
+// 7.2 Currency page: the ink reference line, the hatched gap band, conversion markers.
+.chart {
+  // "What it would have been" (the value at a frozen rate): dashed, in the text colour.
+  &__series--ink {
+    .chart__line {
+      stroke: var(--color-fg);
+      stroke-width: 1.5;
+      stroke-dasharray: 6 3;
+    }
+
+    .chart__dot {
+      fill: var(--color-fg);
+    }
+  }
+
+  &__marker--ink {
+    fill: var(--color-fg);
+  }
+
+  &__swatch--ink,
+  &__swatch--band {
+    width: 18px;
+    border-radius: 0;
+  }
+
+  &__swatch--ink {
+    height: 3px;
+    background: repeating-linear-gradient(90deg, var(--color-fg) 0 6px, transparent 6px 9px);
+  }
+
+  // The band's hatch is gold (chart-3): apart from the indigo line, the ink reference and
+  // the blue/orange figures beside the chart. Which side it is on is the lean of the hatch.
+  &__band-hatch {
+    stroke: var(--chart-3);
+    stroke-width: 1.5;
+  }
+
+  &__swatch--band {
+    height: 10px;
+    background: repeating-linear-gradient(45deg, var(--chart-3) 0 1.5px, transparent 1.5px 4px);
+  }
+
+  // Conversions on the rate chart. Neutral: an ink ring sized by the amount. Against a
+  // reference: ▲ blue above / ▼ orange below, each with an ink outline so the shape
+  // stands off the rate line whatever its fill.
+  &__mark--conversion {
+    fill: var(--color-surface);
+    fill-opacity: 0.7;
+    stroke: var(--color-fg);
+    stroke-width: 1.5;
+  }
+
+  // A conversion as a quiet tick on the date axis: when, and how much (its height),
+  // without claiming a point on the reference line. Hover shows the details.
+  &__rug {
+    stroke: var(--color-muted);
+    stroke-linecap: round;
+    stroke-width: 2;
+  }
+
+  &__rug-hit {
+    fill: transparent;
+  }
+
+  &__mark--rug:hover &__rug {
+    stroke: var(--color-fg);
+  }
+
+  &__mark--above,
+  &__mark--below {
+    stroke: var(--color-fg);
+    stroke-width: 1;
+  }
+
+  &__mark--above {
+    fill: var(--color-pos);
+  }
+
+  &__mark--below {
+    fill: var(--color-neg);
+  }
+}

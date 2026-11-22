@@ -1,0 +1,472 @@
+"""The Currency page's "The dollar" section (v7.2, ``GET /currency/dollar/both``).
+
+Built from the Overview payload of each side (``lifetime`` / ``today`` copied, so
+the pages never disagree) and the **settled** daily ECB series (``fx_history``,
+never the live overlay on a past day). Rates are USD per 1 EUR (``rate``) with
+``inverse`` = 1 / rate (the dollar in euros); each side names the quote it shows
+in ``quote`` (EUR: ``inverse`` / ``USD/EUR``; USD: ``rate`` / ``EUR/USD``).
+
+💱 Currency rule: ``exposure_usd`` is summed from native dollars (USD-account
+positions at their native value), never from a euro figure. ``exposure_value``
+is that amount in the side's currency at ONE rate (today's spot). The trend
+block, percentiles and rolling changes are statistics of the rate series itself;
+no portfolio return is involved or converted. All maths is in
+:mod:`investment_dashboard.domain.fx_trend`.
+"""
+
+from __future__ import annotations
+
+from bisect import bisect_right
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from investment_dashboard.domain import fx_trend
+from investment_dashboard.domain.fx_scenarios import book_from_holdings, value_at
+from investment_dashboard.domain.late_data import Holding
+from investment_dashboard.domain.market_hours import exchange_today
+from investment_dashboard.readmodels._serialize import dec
+from investment_dashboard.readmodels.currency_rate import range_start
+from investment_dashboard.repositories import transactions_repo
+from investment_dashboard.services import fx_service, positions_service
+
+QUOTES: dict[str, dict[str, str]] = {
+    "EUR": {"pair": "USD/EUR", "field": "inverse"},
+    "USD": {"pair": "EUR/USD", "field": "rate"},
+}
+ONE = Decimal(1)
+SIX_DP = Decimal("0.000001")
+NEXT_EURO_AMOUNT = Decimal(1000)
+INTRADAY_RANGES = frozenset({"1d", "1w"})
+WEEKLY_RANGES = frozenset({"10y", "max"})
+ROLLING_WINDOWS: tuple[tuple[str, int], ...] = (
+    ("1m", fx_trend.MONTH_ROWS),
+    ("3m", fx_trend.QUARTER_ROWS),
+    ("1y", fx_trend.YEAR_ROWS),
+)
+
+
+def _d(value: Any) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except ArithmeticError:
+        return None
+
+
+def _rv(rate: Decimal | None) -> dict[str, Any] | None:
+    """A ``RateValue`` (USD per EUR + its inverse to 6 dp), ``None`` without a rate."""
+    if rate is None or rate <= 0:
+        return None
+    return {"rate": dec(rate), "inverse": dec((ONE / rate).quantize(SIX_DP))}
+
+
+def _display(rate: Decimal, ccy: str) -> Decimal:
+    """``rate`` quoted the way side ``ccy`` shows it."""
+    return (ONE / rate).quantize(SIX_DP) if QUOTES[ccy]["field"] == "inverse" else rate
+
+
+def _change(start: Decimal | None, end: Decimal | None) -> dict[str, Any] | None:
+    if start is None or end is None or start <= 0 or end <= 0:
+        return None
+    return {
+        "start_rate": dec(start),
+        "end_rate": dec(end),
+        "rate_pct": dec(end / start - ONE),
+        "inverse_pct": dec(start / end - ONE),
+    }
+
+
+def _minus_months(day: date, months: int) -> date:
+    total = day.year * 12 + (day.month - 1) - months
+    year, month = divmod(total, 12)
+    for dd in (day.day, 30, 29, 28):
+        try:
+            return date(year, month + 1, dd)
+        except ValueError:
+            continue
+    return date(year, month + 1, 28)  # pragma: no cover - unreachable
+
+
+def _on_or_before(daily: list[tuple[date, Decimal]], day: date) -> tuple[date, Decimal] | None:
+    """The last settled row on or before ``day`` (bisect on the sorted series)."""
+
+    i = bisect_right(daily, (day, Decimal("Infinity"))) - 1
+    return daily[i] if i >= 0 else None
+
+
+def _point(d: date, rate: Decimal) -> dict[str, Any]:
+    return {"t": d.isoformat(), "rate": dec(rate), "inverse": dec((ONE / rate).quantize(SIX_DP))}
+
+
+# -- the position card ---------------------------------------------------------
+
+
+def _exposure(
+    positions: list[positions_service.Position], spot: Decimal | None, ccy: str
+) -> dict[str, Any]:
+    holdings = [
+        Holding(p.account.native_currency, p.current_value_native, p.current_value_eur)
+        for p in positions
+        if p.current_value_native
+    ]
+    book = book_from_holdings(holdings)
+    out: dict[str, Any] = {"exposure_usd": dec(book.usd) if holdings else None}
+    if spot is not None and spot > 0 and holdings:
+        side = "EUR" if ccy == "EUR" else "USD"
+        exposure_value = book.usd / spot if side == "EUR" else book.usd
+        total = value_at(book, spot, side)
+        out["exposure_value"] = dec(exposure_value)
+        out["exposure_share"] = dec(exposure_value / total) if total > 0 else None
+    return out
+
+
+def _position(
+    exposure: dict[str, Any], life: dict[str, Any], today: dict[str, Any]
+) -> dict[str, Any]:
+    avg = _d(life.get("avg_invest_rate"))
+    spot, prev = _d(today.get("spot")), _d(today.get("prev"))
+    now = _d(life.get("current_rate")) or spot
+    return {
+        **exposure,
+        "avg_rate": _rv(avg),
+        "rate_now": _rv(now),
+        "change": _change(avg, now),
+        "fx_gain_eur": life.get("fx_pnl_eur"),
+        "breakeven": _rv(_d(life.get("breakeven_rate"))),
+        "today": _change(prev, spot),
+    }
+
+
+def _next_euro(
+    daily: list[tuple[date, Decimal]], spot: Decimal | None, today: date, first: date | None
+) -> dict[str, Any] | None:
+    if spot is None or spot <= 0:
+        return None
+    usd_now = NEXT_EURO_AMOUNT * spot
+    out: dict[str, Any] = {
+        "amount_eur": dec(NEXT_EURO_AMOUNT),
+        "usd_now": dec(usd_now),
+        "better_than_share": (
+            dec(fx_trend.share_below(daily, spot, first)) if first is not None else None
+        ),
+    }
+    year_ago = today - timedelta(days=365)
+    # "Dollars per €1,000" over the last year, weekly: the sparkline beside the headline.
+    out["spark"] = [
+        {"t": d.isoformat(), "usd": dec(NEXT_EURO_AMOUNT * r)}
+        for d, r in _thin_weekly([(d, r) for d, r in daily if d >= year_ago])
+    ]
+    row = _on_or_before(daily, year_ago)
+    if row is not None and daily and daily[0][0] <= year_ago:
+        usd_then = NEXT_EURO_AMOUNT * row[1]
+        out |= {
+            "usd_year_ago": dec(usd_then),
+            "year_ago_date": row[0].isoformat(),
+            "change_pct": dec(usd_now / usd_then - ONE),
+        }
+    return out
+
+
+# -- the trend block -----------------------------------------------------------
+
+
+def _normal(daily: list[tuple[date, Decimal]], window: str, rows: int) -> dict[str, Any] | None:
+    move = fx_trend.move_normality(daily, rows)
+    band = fx_trend.move_band(daily, rows)
+    if move is None or band is None:
+        return None
+    return {
+        "window": window,
+        "window_days": rows,
+        "move_pct": dec(move.move_pct),
+        "typical_move_pct": dec(band.typical_move_pct),
+        "normal_limit_pct": dec(band.normal_limit_pct),
+        "percentile": dec(move.percentile),
+        "label": move.label,
+    }
+
+
+def _ma200(daily: list[tuple[date, Decimal]]) -> dict[str, Any] | None:
+    s = fx_trend.ma_slope(daily)
+    if s is None:
+        return None
+    return {
+        "side": s.side,
+        "ma200": {"rate": dec(s.ma_rate_now), "inverse": dec(s.ma_now.quantize(SIX_DP))},
+        "distance_pct": dec(s.distance_pct),
+        "slope": s.label,
+        "slope_pct": dec(s.slope_pct),
+        "slope_days": fx_trend.SLOPE_DAYS,
+    }
+
+
+def _week52(daily: list[tuple[date, Decimal]], today: date) -> dict[str, Any] | None:
+    rows = [(d, r) for d, r in daily if d > today - timedelta(days=365)]
+    ext = fx_trend.range_extremes(rows)
+    if ext is None or not rows:
+        return None
+    now = rows[-1][1]
+    return {
+        "low": _point(ext.low_at, ext.low),
+        "high": _point(ext.high_at, ext.high),
+        "from_low_rate_pct": dec(now / ext.low - ONE),
+        "from_high_rate_pct": dec(now / ext.high - ONE),
+        "from_low_inverse_pct": dec(ext.low / now - ONE),
+        "from_high_inverse_pct": dec(ext.high / now - ONE),
+    }
+
+
+def _trend(
+    daily: list[tuple[date, Decimal]],
+    spot: Decimal | None,
+    today: date,
+    first: date | None,
+    avg: Decimal | None,
+) -> dict[str, Any]:
+    reg = fx_trend.regime(daily)
+    run = fx_trend.monthly_run(daily)
+    mean = fx_trend.series_mean(daily, fx_service.HISTORY_START)
+    rate_now = spot if spot is not None and spot > 0 else (daily[-1][1] if daily else None)
+    percentiles: dict[str, Any] = dict.fromkeys(("since_start", "y5", "y10", "since_1999"))
+    if rate_now is not None:
+        raw = fx_trend.rate_percentiles(
+            daily,
+            rate_now,
+            {
+                "since_start": first,
+                "y5": _minus_months(today, 60),
+                "y10": _minus_months(today, 120),
+                "since_1999": fx_service.HISTORY_START,
+            },
+        )
+        percentiles = {k: dec(v) for k, v in raw.items()}
+    return {
+        "regime": (
+            {
+                "direction": reg.direction,
+                "since": reg.since.isoformat(),
+                "since_change_pct": dec(reg.since_change_pct),
+            }
+            if reg is not None
+            else None
+        ),
+        "ma200": _ma200(daily),
+        "normal_month": _normal(daily, "month", fx_trend.MONTH_ROWS),
+        "normal_year": _normal(daily, "year", fx_trend.YEAR_ROWS),
+        "percentiles": percentiles,
+        "week52": _week52(daily, today),
+        "run": (
+            {
+                "direction": run.direction,
+                "count": run.count,
+                "of": run.of,
+                "unit": "month",
+                "months": [
+                    {"month": d.strftime("%Y-%m"), "move": m}
+                    for d, m in zip(run.month_ends, run.months, strict=True)
+                ],
+            }
+            if run is not None
+            else None
+        ),
+        "long_run": (
+            {
+                "since": mean.since.isoformat(),
+                "mean": {"rate": dec(mean.rate), "inverse": dec(mean.inverse.quantize(SIX_DP))},
+                "distance_inverse_pct": dec((ONE / rate_now) / mean.inverse - ONE),
+            }
+            if mean is not None and rate_now is not None
+            else None
+        ),
+        "above_entry_share": (
+            dec(fx_trend.share_below(daily, avg, first))
+            if avg is not None and avg > 0 and first is not None
+            else None
+        ),
+    }
+
+
+# -- rolling changes -----------------------------------------------------------
+
+
+def _thin_weekly(rows: list[tuple[date, Decimal]]) -> list[tuple[date, Decimal]]:
+    out: list[tuple[date, Decimal]] = []
+    for d, v in rows:
+        if out and out[-1][0].isocalendar()[:2] == d.isocalendar()[:2]:
+            out[-1] = (d, v)
+        else:
+            out.append((d, v))
+    return out
+
+
+def _rolling(
+    daily: list[tuple[date, Decimal]], range_key: str, today: date
+) -> list[dict[str, Any]]:
+    start = range_start("1m" if range_key in INTRADAY_RANGES else range_key, today)
+    out: list[dict[str, Any]] = []
+    for window, rows in ROLLING_WINDOWS:
+        moves = fx_trend.trailing_moves(daily, rows)
+        band = fx_trend.move_band(daily, rows)
+        shown = [(d, m) for d, m in moves if d >= start]
+        if range_key in WEEKLY_RANGES:
+            shown = _thin_weekly(shown)
+        out.append(
+            {
+                "window": window,
+                "window_days": rows,
+                "points": [
+                    # rate change = 1 / (1 + inverse change) - 1
+                    {
+                        "t": d.isoformat(),
+                        "inverse_pct": dec(m),
+                        "rate_pct": dec(ONE / (ONE + m) - ONE),
+                    }
+                    for d, m in shown
+                ],
+                "typical_move_pct": dec(band.typical_move_pct) if band else None,
+                "normal_limit_pct": dec(band.normal_limit_pct) if band else None,
+            }
+        )
+    return out
+
+
+# -- stats tiles ---------------------------------------------------------------
+
+
+def _stat(key: str, value: Decimal, unit: str, **extra: Any) -> dict[str, Any]:
+    return {"key": key, "value": dec(value), "unit": unit, **extra}
+
+
+def _rate_stat(
+    key: str, rate: Decimal, ccy: str, *, on: date | None = None, **extra: Any
+) -> dict[str, Any]:
+    return _stat(
+        key,
+        rate,
+        "rate",
+        value_display=dec(_display(rate, ccy)),
+        date=on.isoformat() if on else None,
+        **extra,
+    )
+
+
+def _stats(
+    ccy: str,
+    daily: list[tuple[date, Decimal]],
+    trend: dict[str, Any],
+    first: date | None,
+    avg: Decimal | None,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for key, name in (
+        ("since_start", "percentile_since_start"),
+        ("y5", "percentile_y5"),
+        ("y10", "percentile_y10"),
+        ("since_1999", "percentile_since_1999"),
+    ):
+        value = _d(trend["percentiles"].get(key))
+        if value is not None:
+            out.append(_stat(name, value, "fraction"))
+    w52 = trend.get("week52")
+    if w52 is not None:
+        inverse = QUOTES[ccy]["field"] == "inverse"
+        for end in ("low", "high"):
+            point = w52[end]
+            distance = w52[f"from_{end}_{'inverse' if inverse else 'rate'}_pct"]
+            out.append(
+                _rate_stat(
+                    f"week52_{end}",
+                    Decimal(point["rate"]),
+                    ccy,
+                    on=date.fromisoformat(point["t"]),
+                    secondary=distance,
+                    secondary_unit="fraction",
+                )
+            )
+    if first is not None:
+        held = [(d, r) for d, r in daily if d >= first]
+        ext = fx_trend.range_extremes(held)
+        if ext is not None:
+            # The dollar's low is EUR/USD's high: in the inverted quote the extremes swap.
+            lo, lo_at, hi, hi_at = ext.low, ext.low_at, ext.high, ext.high_at
+            if QUOTES[ccy]["field"] == "inverse":
+                lo, lo_at, hi, hi_at = hi, hi_at, lo, lo_at
+            out.append(_rate_stat("low_since_start", lo, ccy, on=lo_at))
+            out.append(_rate_stat("high_since_start", hi, ccy, on=hi_at))
+        mean = fx_trend.series_mean(daily, first)
+        if mean is not None:
+            out.append(_rate_stat("avg_rate_holding", mean.rate, ccy, on=mean.since))
+        if avg is not None and avg > 0:
+            # "Above your average" in the quote this side shows: the dollar (inverse)
+            # above it in the EUR view (rate below avg), the rate above it in USD.
+            share = (
+                fx_trend.share_below(daily, avg, first)
+                if QUOTES[ccy]["field"] == "inverse"
+                else fx_trend.share_above(daily, avg, first)
+            )
+            if share is not None:
+                out.append(
+                    _stat(
+                        "share_above_avg",
+                        share,
+                        "fraction",
+                        secondary=dec(avg),
+                        secondary_unit="rate",
+                        secondary_display=dec(_display(avg, ccy)),
+                    )
+                )
+    vol = fx_trend.rate_volatility(daily, inverse=QUOTES[ccy]["field"] == "inverse")
+    if vol is not None:
+        out.append(_stat("rate_volatility", vol, "fraction"))
+    return out
+
+
+def build_dollar_both(
+    session: Session,
+    overview: dict[str, dict[str, Any]],
+    range_key: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, dict[str, Any]]:
+    """``{"EUR": DollarOut, "USD": DollarOut}`` payloads (plain dicts)."""
+    now = now or datetime.now(UTC)
+    today = exchange_today(now)
+    daily = sorted(
+        (d, r) for d, r in fx_service.get_settled_rates(session).items() if r > 0 and d <= today
+    )
+    first = transactions_repo.earliest_transaction_date(session)
+    on_raw = overview["EUR"].get("kpis", {}).get("daily_growth_as_of")
+    on = date.fromisoformat(str(on_raw)[:10]) if on_raw else today
+    positions = positions_service.compute_positions(session, as_of=on)
+    rolling = _rolling(daily, range_key, today)
+    out: dict[str, dict[str, Any]] = {}
+    # Both sides normally share the spot and the average rate: compute the block once.
+    trends: dict[tuple[Decimal | None, Decimal | None], dict[str, Any]] = {}
+    for ccy in ("EUR", "USD"):
+        cur = overview[ccy]["currency"]
+        life, today_block = cur["lifetime"], cur["today"]
+        spot = _d(today_block.get("spot"))
+        avg = _d(life.get("avg_invest_rate"))
+        if (spot, avg) not in trends:
+            trends[spot, avg] = _trend(daily, spot, today, first, avg)
+        trend = trends[spot, avg]
+        out[ccy] = {
+            "ccy": ccy,
+            "as_of": overview[ccy].get("as_of"),
+            "generated_at": now.isoformat(),
+            "range": range_key,
+            "quote": QUOTES[ccy],
+            "position": _position(_exposure(positions, spot, ccy), life, today_block),
+            "next_euro": _next_euro(daily, spot, today, first),
+            "trend": trend,
+            "rolling": rolling,
+            "stats": _stats(ccy, daily, trend, first, avg),
+        }
+    return out
+
+
+__all__ = ["QUOTES", "build_dollar_both"]

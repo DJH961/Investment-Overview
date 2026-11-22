@@ -26,6 +26,8 @@ export interface CurrencyBoxProps {
   data: CurrencyBoxData;
   /** A quiet link under the box (the Overview card links to the Currency page). */
   footer?: ReactNode;
+  /** The dollar trend chip (Overview): sits on the row under the rate, left of the footer link. */
+  trend?: ReactNode;
   /** Fold-state id (default `overview.currency`). */
   collapsibleId?: string;
 }
@@ -257,7 +259,7 @@ function EffectPanel({ data }: { data: CurrencyBoxData }) {
  * weekend freeze, and the currency effect (EUR) / investing power (USD) split
  * into market hours and overnight.
  */
-export function CurrencyBox({ data, footer, collapsibleId = "overview.currency" }: CurrencyBoxProps) {
+export function CurrencyBox({ data, footer, trend, collapsibleId = "overview.currency" }: CurrencyBoxProps) {
   const timeZone = useTimeZone();
   const today = data.currency.today;
   const frozen = today.regime?.forex_frozen ?? false;
@@ -332,7 +334,12 @@ export function CurrencyBox({ data, footer, collapsibleId = "overview.currency" 
         </div>
         {effect}
       </div>
-      {footer && <div className="currency-box__footer">{footer}</div>}
+      {(footer || trend) && (
+        <div className={trend ? "currency-box__footer currency-box__footer--trend" : "currency-box__footer"}>
+          {trend}
+          {footer}
+        </div>
+      )}
     </Card>
   );
 }

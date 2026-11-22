@@ -1,39 +1,55 @@
-﻿import { ArrowDownRight, ArrowUpRight, Euro, Minus } from "lucide-react";
-import { useCallback, type ReactNode } from "react";
-import { useSearchParams } from "react-router";
-import { Card } from "../../components/Card";
-import { CurrencyBox } from "../../components/CurrencyBox";
+import { ChevronLeft, Euro } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, Navigate, useLocation, useParams } from "react-router";
+import { CurrencySectionSlot, serverStatItem, type StatMeta } from "../../components/CurrencySection";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
-import { Money } from "../../components/Money";
 import { PageHeader } from "../../components/PageHeader";
+import { RateChart } from "../../components/RateChart";
+import { SectionBar } from "../../components/SectionBar";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
-import { StatStrip, type StatItem } from "../../components/StatStrip";
-import { formatDate, formatNumber, formatPp } from "../../lib/format";
+import { StatStrip } from "../../components/StatStrip";
+import { formatDate } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
-import { toNum, useOverview } from "../../lib/queries/portfolio";
-import { useCurrency, type CurrencyDto, type CurrencyStatDto } from "../../lib/queries/currency";
+import { useCurrency } from "../../lib/queries/currency";
+import { RATE_RANGE_LABELS, RATE_RANGES, type RateRange } from "../../lib/queries/currencyRate";
 import { useShellStatus } from "../../lib/shell";
+import { CurrencyRangeContext, useCurrencyRangeState, type CurrencyRangeState } from "./range";
+import { CURRENCY_SECTIONS, findSubPage, type CurrencySectionDef, type CurrencySubPage } from "./sections";
 import "./Currency.scss";
 
-const VIEWS = [{ value: "today", label: "Today" }] as const;
-type View = (typeof VIEWS)[number]["value"];
-const isView = (v: string | null): v is View => VIEWS.some((o) => o.value === v);
-
-const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> = {
+/** The always-visible strip's words. The server sends the figures (`/api/currency/both` stats). */
+export const STRIP_LABELS: Record<string, StatMeta> = {
   rate_now: { label: "EUR/USD now", tip: "How many dollars one euro buys at the latest rate." },
   effect_today: {
-    label: "Currency effect today",
+    label: "Effect today",
     tip: "What the exchange rate added to or took from your portfolio value since the last close.",
+  },
+  effect_ytd: {
+    label: "Effect this year",
+    tip: "What exchange-rate moves added to or took from your portfolio since 1 January, with the gap between your euro and dollar returns.",
   },
   investing_power_today: {
     label: "Investing power today",
     tip: "How many more or fewer dollars your regular euro amount buys than at the last close.",
   },
   lifetime_effect: {
-    label: "Currency effect, lifetime",
+    label: "Effect, lifetime",
     tip: "What exchange-rate moves have added to or taken from your result since you started.",
+  },
+  effect_this_year: {
+    label: "Effect this year",
+    tip: "What the exchange rate added to or took from your portfolio this year, in money and percentage points.",
+  },
+  effect_lifetime: {
+    label: "Effect, lifetime",
+    tip: "What the exchange rate added to or took from your portfolio since you started, in money and percentage points.",
+  },
+  dollar_trend: {
+    label: "Dollar trend",
+    tip: "Whether the dollar is above or below its 200-day average, and whether this month's move is a usual one. It describes; it does not predict.",
+    fractionFormat: "percent",
   },
   avg_rate_vs_now: {
     label: "Your average rate",
@@ -47,115 +63,35 @@ const LABELS: Record<string, { label: string; tip: string; noteLead?: string }> 
   },
 };
 
-const KIND_WORD = { tailwind: "Tailwind", headwind: "Headwind", neutral: "Neutral" } as const;
-const KIND_ICON = { tailwind: ArrowUpRight, headwind: ArrowDownRight, neutral: Minus } as const;
+/**
+ * On the chart already (rate, average, dollar trend), in What if (one cent) or about the
+ * next conversion rather than your holdings (investing power, the Overview's Today card):
+ * never twice. Both views keep the same three tiles: today, this year, lifetime.
+ */
+const NOT_IN_STRIP = new Set(["rate_now", "avg_rate_vs_now", "lifetime_effect", "dollar_trend", "one_cent", "investing_power_today"]);
+/** Today, this year, lifetime: the strip reads left to right from short to long. */
+const STRIP_ORDER = ["effect_today", "effect_this_year", "effect_ytd", "effect_lifetime"];
+const stripRank = (key: string) => {
+  const i = STRIP_ORDER.indexOf(key);
+  return i < 0 ? STRIP_ORDER.length : i;
+};
 
-function figure(unit: string | null | undefined, value: string | null | undefined, ccy: string | null | undefined, fallbackCcy: string): ReactNode {
-  const n = toNum(value ?? null);
-  if (unit === "rate") return formatNumber(n, 4);
-  if (unit === "fraction") return formatPp(n);
-  return <Money amount={n} currency={ccy ?? fallbackCcy} signed colored />;
-}
-
-function statItem(s: CurrencyStatDto, fallbackCcy: string): StatItem {
-  const meta = LABELS[s.key] ?? { label: s.key, tip: "" };
-  const kind = s.kind ?? null;
-  const Icon = kind ? KIND_ICON[kind] : null;
-  const secondary = s.secondary
-    ? figure(s.secondary_unit, s.secondary, s.secondary_currency ?? s.currency, fallbackCcy)
-    : null;
-  const hasNote = Boolean(kind || secondary);
-  return {
-    key: s.key,
-    label: meta.label,
-    tip: meta.tip || undefined,
-    value: figure(s.unit, s.value, s.currency, fallbackCcy),
-    note: hasNote ? (
-      <span className="currency-page__note">
-        {kind && Icon ? (
-          <span className={`currency-page__kind currency-page__kind--${kind}`}>
-            <Icon aria-hidden className="currency-page__kind-icon" />
-            {KIND_WORD[kind]}
-          </span>
-        ) : null}
-        {secondary ? (
-          <span>
-            {meta.noteLead ? `${meta.noteLead} ` : ""}
-            {secondary}
-          </span>
-        ) : null}
-      </span>
-    ) : undefined,
-  };
-}
-
-/** The Today figures under the box: the day's rate range and what the regular amount buys. */
-function TodayFigures({ cur }: { cur: CurrencyDto }) {
-  const { rate_range: range, buys } = cur;
-  if (!range && !buys) return null;
+export function Currency() {
+  const { sub } = useParams();
+  const rangeState = useCurrencyRangeState();
+  const found = findSubPage(sub);
+  if (sub && !found) return <Navigate to="/currency" replace />;
   return (
-    <Card className="currency-page__figures" title="Today in numbers">
-      <dl className="currency-page__rows">
-        {range ? (
-          <div className="currency-page__row" data-testid="today-range">
-            <dt className="currency-page__row-label">Today's range{cur.today.pair ? ` (${cur.today.pair})` : ""}</dt>
-            <dd className="currency-page__row-value">
-              {formatNumber(toNum(range.low_display), 4)} to {formatNumber(toNum(range.high_display), 4)}
-            </dd>
-          </div>
-        ) : null}
-        {buys ? (
-          <div className="currency-page__row" data-testid="today-buys">
-            <dt className="currency-page__row-label">
-              <Euro aria-hidden className="currency-page__row-icon" />
-              {formatNumber(toNum(buys.amount_eur), 0)} euros buy
-            </dt>
-            <dd className="currency-page__row-value">
-              <Money amount={toNum(buys.usd_now)} currency="USD" /> now
-              {buys.usd_prev ? (
-                <>
-                  {" · yesterday "}
-                  <Money amount={toNum(buys.usd_prev)} currency="USD" />
-                </>
-              ) : null}
-              {buys.change_usd ? (
-                <>
-                  {" · "}
-                  <Money amount={toNum(buys.change_usd)} currency="USD" signed colored />
-                </>
-              ) : null}
-              {buys.market_hours_usd != null && buys.overnight_usd != null ? (
-                <span className="currency-page__split">
-                  market hours <Money amount={toNum(buys.market_hours_usd)} currency="USD" signed colored />
-                  {" · overnight "}
-                  <Money amount={toNum(buys.overnight_usd)} currency="USD" signed colored />
-                </span>
-              ) : null}
-            </dd>
-          </div>
-        ) : null}
-      </dl>
-    </Card>
+    <CurrencyRangeContext.Provider value={rangeState}>
+      {found ? <CurrencySubPageView section={found.section} page={found.page} range={rangeState} /> : <CurrencyMain range={rangeState} />}
+    </CurrencyRangeContext.Provider>
   );
 }
 
-export function Currency() {
+function CurrencyMain({ range }: { range: CurrencyRangeState }) {
   const { currency } = usePrefs();
   const q = useCurrency(currency);
-  const overview = useOverview(currency);
-  const [params, setParams] = useSearchParams();
-  const rawView = params.get("view");
-  const view: View = isView(rawView) ? rawView : "today";
-  const setView = (v: View) =>
-    setParams(
-      (p) => {
-        const next = new URLSearchParams(p);
-        if (v === "today") next.delete("view");
-        else next.set("view", v);
-        return next;
-      },
-      { replace: true },
-    );
+  const location = useLocation();
 
   const { refetch: qRefetch } = q;
   const refetch = useCallback(() => void qRefetch(), [qRefetch]);
@@ -166,9 +102,28 @@ export function Currency() {
     q.isFetching,
   );
 
+  // Sections mount as they scroll near; a jump mounts every one up to its target, so the
+  // target's title lands where it should and does not move as the ones above load.
+  const [forcedUpTo, setForcedUpTo] = useState(-1);
+  const forceUpTo = useCallback((id: string) => {
+    const i = CURRENCY_SECTIONS.findIndex((s) => s.id === id);
+    setForcedUpTo((cur) => Math.max(cur, i));
+  }, []);
+  // A link to /currency#exposure lands on its section (mounted with every one above it).
+  const hash = location.hash.replace(/^#/, "");
+  const hashIndex = CURRENCY_SECTIONS.findIndex((s) => s.id === hash);
+  const forcedIndex = Math.max(forcedUpTo, hashIndex);
   const cur = q.data;
+  const ready = Boolean(cur);
+  useEffect(() => {
+    if (!ready || hashIndex < 0) return;
+    const frame = window.requestAnimationFrame(() => document.getElementById(hash)?.scrollIntoView?.({ block: "start" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [ready, hash, hashIndex]);
+
   const stats = cur?.stats ?? [];
   const noData = cur && stats.length === 0 && !cur.buys && !cur.rate_range && !cur.today.spot;
+  const items = useMemo(() => CURRENCY_SECTIONS.map(({ id, label }) => ({ id, label })), []);
 
   return (
     <div className="currency-page">
@@ -177,8 +132,8 @@ export function Currency() {
         <ErrorState title="Currency could not be loaded" onRetry={refetch} />
       ) : !cur ? (
         <div className="currency-page__stack" aria-busy="true">
+          <Skeleton height="20rem" />
           <Skeleton height="6rem" />
-          <Skeleton height="14rem" />
         </div>
       ) : noData ? (
         <EmptyState
@@ -188,22 +143,66 @@ export function Currency() {
         />
       ) : (
         <div className="currency-page__stack">
+          <SectionBar items={items} label="Currency sections" onSelect={forceUpTo} />
+          {/* The page leads with the rate; the strip follows. Today's split stays on the
+              Overview's Currency card: this page shows only views the Overview has not. */}
+          <RateChart currency={currency} range={range.range} onRangeChange={range.setRange} />
           {stats.length > 0 ? (
-            <StatStrip label="Currency at a glance" items={stats.map((s) => statItem(s, cur.ccy))} />
+            <StatStrip
+              className="stat-strip--rows"
+              label="Currency at a glance"
+              items={stats
+                .filter((s) => !NOT_IN_STRIP.has(s.key))
+                .sort((a, b) => stripRank(a.key) - stripRank(b.key))
+                .map((s) => serverStatItem(s, STRIP_LABELS[s.key], cur.ccy))}
+            />
           ) : null}
-          {VIEWS.length > 1 && <SegmentedControl block ariaLabel="Currency views" options={[...VIEWS]} value={view} onChange={setView} />}
-          {view === "today" ? (
-            <div className="currency-page__panel">
-              <CurrencyBox
-                data={{ ccy: cur.ccy, currency: { today: cur.today }, kpis: { total_value: overview.data?.kpis?.total_value } }}
-                collapsibleId="currency.today"
-              />
-              <TodayFigures cur={cur} />
-            </div>
-          ) : null}
+          {CURRENCY_SECTIONS.map((s, i) => (
+            <CurrencySectionSlot key={s.id} id={s.id} label={s.label} force={i <= forcedIndex}>
+              {() => <s.Component id={s.id} label={s.label} currency={currency} range={range.range} />}
+            </CurrencySectionSlot>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
+/** `/currency/<sub>`: a section's full list, with a way back to its place on the page. */
+function CurrencySubPageView({
+  section,
+  page,
+  range,
+}: {
+  section: CurrencySectionDef;
+  page: CurrencySubPage;
+  range: CurrencyRangeState;
+}) {
+  const { currency } = usePrefs();
+  useShellStatus("closed", page.label);
+  const back = `/currency?range=${range.range}#${section.id}`;
+  return (
+    <div className="currency-page currency-page--sub">
+      <Link to={back} className="currency-page__back">
+        <ChevronLeft aria-hidden size={16} />
+        Currency · {section.label}
+      </Link>
+      <PageHeader
+        title={page.label}
+        titleOnPhone
+        actions={
+          page.ranged ? (
+            <SegmentedControl
+              ariaLabel="Range"
+              size="sm"
+              options={RATE_RANGES.map((r) => ({ value: r, label: RATE_RANGE_LABELS[r] }))}
+              value={range.range}
+              onChange={(r) => range.setRange(r as RateRange)}
+            />
+          ) : undefined
+        }
+      />
+      <page.Component currency={currency} range={range.range} />
+    </div>
+  );
+}

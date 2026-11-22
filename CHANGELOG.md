@@ -17,6 +17,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.2.0] — 2026-11-22
+
+### Added
+- **Currency page, all of it, on one page.** A sticky bar jumps between three sections, and
+  each loads as you scroll to it. The EUR/USD chart leads (1D to Max, back to 1999), quoted
+  the way the top EUR/USD switch is set, with your average rate, the 200-day average and
+  your conversions as quiet ticks on the date axis.
+  - **Impact:** what the exchange rate did to your money over the chosen range. Your return
+    in euros and in dollars as two bars with the currency gap hatched between them, the
+    value with the rate frozen at the start, a start-to-end bridge, best and worst day,
+    month and year, effect by month with a year grid, a rolling 12-month line and the split
+    per holding (price, dividends, currency). On 1D and 1W: inside and outside US market
+    hours, from session open and close rates the server now keeps.
+  - **Exposure:** your dollars as a position. Where today's rate sits since you started,
+    what you bought at against now, what your next €1,000 buys (with a one-year line), and
+    the dollar's trend: direction, whether this month and year are normal, where the rate
+    stands against its history, and the last six months.
+  - **Scenarios:** drag a slider to value today's holdings at another rate, with your
+    average, break-even and past low and high on the track; a stress table at ±5, 10 and
+    15 %; and whether the dollar has cushioned your portfolio's swings.
+- **Overview:** a dollar-trend chip on the Currency card and a one-year EUR/USD line on the
+  lifetime card; currency as a third view in the Allocation card.
+- **Projection:** a card that values your dollar holdings at an EUR/USD rate you pick for
+  the horizon, with the pessimistic-to-optimistic band at that rate.
+- **Holding page:** the price per share sits next to the value in the header. Tranches show
+  each lot's shares, buy price, value now and gain at today's price, with a gain bar.
+
+### Changed
+- The Projection graph's axis shows calendar years (or months) instead of "Year 1" or
+  "Month 39".
+
 ## [7.1.2] — 2026-11-21
 
 ### Fixed

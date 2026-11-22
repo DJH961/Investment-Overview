@@ -47,6 +47,18 @@
       grid-area: sub;
     }
 
+    // "EUR/USD now" on the Overview: the 1-year line and the trend chip under the figure.
+    &--rate {
+      grid-template-areas:
+        "label value"
+        "sub value"
+        "spark spark";
+
+      > .currency-lifetime__spark {
+        grid-area: spark;
+      }
+    }
+
     // The lead: the euro's effect on the return, across the full row, big.
     &:nth-child(3) {
       grid-column: 1 / -1;
@@ -87,6 +99,48 @@
     &--neg {
       color: var(--color-neg);
     }
+  }
+
+  &__spark {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    margin: var(--space-1) 0 0;
+  }
+
+  &__spark-chip {
+    display: flex;
+    min-width: 0;
+    padding-top: var(--space-1);
+  }
+
+  &__spark-line {
+    height: var(--space-8);
+  }
+
+  &__spark-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-2);
+    min-width: 0;
+  }
+
+  &__spark-caption {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    white-space: nowrap;
+  }
+
+  &__spark-swatch {
+    display: inline-block;
+    width: var(--space-3);
+    border-top: var(--border-width) dashed var(--color-muted);
   }
 
   &__sub {

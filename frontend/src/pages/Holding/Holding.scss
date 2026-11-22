@@ -76,20 +76,50 @@
     font-weight: var(--font-weight-regular);
   }
 
+  // Value (lead) and price per share (second hero) side by side.
   &__figures {
     display: flex;
     grid-area: figures;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--space-1);
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: var(--space-6);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 
     @include m.phone {
-      flex-direction: row;
-      align-items: baseline;
+      justify-content: space-between;
       gap: var(--space-3);
     }
+  }
+
+  &__figure {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+
+    &--price {
+      padding-left: var(--space-6);
+      border-left: var(--border-width) solid var(--color-border);
+
+      @include m.phone {
+        padding-left: var(--space-3);
+      }
+    }
+
+    @include m.phone {
+      align-items: flex-start;
+
+      &--price {
+        align-items: flex-end;
+      }
+    }
+  }
+
+  &__figure-label {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
   }
 
   &__value {
@@ -99,6 +129,15 @@
 
     @include m.phone {
       font-size: var(--font-size-xl);
+    }
+
+    // The price is the second hero: same weight, one step smaller.
+    &--price {
+      font-size: var(--font-size-xl);
+
+      @include m.phone {
+        font-size: var(--font-size-lg);
+      }
     }
   }
 
@@ -173,6 +212,10 @@
   &__sticky-value {
     margin-left: auto;
     font-weight: var(--font-weight-semibold);
+  }
+
+  &__sticky-price {
+    color: var(--color-muted);
   }
 
   &__sticky-today {
@@ -424,11 +467,27 @@
     white-space: nowrap;
   }
 
+  &__row-amount--stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+  }
+
+  &__nowrap {
+    white-space: nowrap;
+  }
+
   &__row-meta {
     @include m.truncate;
     min-width: 0;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+  }
+
+  &__row-meta--wrap {
+    overflow: visible;
+    white-space: normal;
   }
 
   &__row-detail {
@@ -530,7 +589,7 @@
 
   &__tx-th,
   &__lot-th {
-    padding: var(--space-3);
+    padding: var(--space-3) var(--space-2);
     border-bottom: var(--border-width) solid var(--color-border);
     color: var(--color-muted);
     font-size: var(--font-size-xs);
@@ -541,6 +600,15 @@
     &--right {
       text-align: right;
     }
+
+
+    &--cost,
+    &--status {
+      @media (max-width: 1199px) {
+        display: none;
+      }
+    }
+
   }
 
   &__tx-year-cell {
@@ -558,7 +626,7 @@
 
   &__tx-td,
   &__lot-td {
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-2);
     border-bottom: var(--border-width) solid var(--color-border);
     vertical-align: middle;
     white-space: nowrap;
@@ -570,6 +638,15 @@
     &--account {
       color: var(--color-muted);
     }
+
+
+    &--cost,
+    &--status {
+      @media (max-width: 1199px) {
+        display: none;
+      }
+    }
+
   }
 
   // Long account names: one clipped line (a td ignores max-width in an auto table).
@@ -639,15 +716,165 @@
     font-size: var(--font-size-2xs);
   }
 
+  // Under "Value now" only where the Cost column has given way (it is one fact, never dropped).
+  &__lot-inline {
+    display: block;
+    margin-top: var(--space-1);
+
+    @media (min-width: 1200px) {
+      display: none;
+    }
+  }
+
+  &__lot-sub--cost {
+    @media (min-width: 1200px) {
+      display: none;
+    }
+  }
+
   &__lot-gain {
     display: inline-flex;
     flex-direction: column;
+    gap: var(--space-1);
     align-items: flex-end;
   }
 
   &__lot-pct {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+  }
+
+  // Gain on one shared scale: a thin track, blue / orange fill (sign and arrow say it too).
+  &__lot-bar {
+    display: block;
+    width: 5rem;
+    height: 3px;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    opacity: 0.85;
+  }
+
+  &__lot-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-sm);
+
+    &--pos {
+      background: var(--color-pos);
+    }
+
+    &--neg {
+      background: var(--color-neg);
+    }
+  }
+
+  &__lot-bar--wide {
+    width: 100%;
+    height: 4px;
+  }
+
+  // Phone tranche card: title | badge, detail, gain | %, bar (full width). Two columns, one
+  // left and one right edge, even row gaps.
+  &__lotcard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2) var(--space-3);
+    align-items: baseline;
+    width: 100%;
+    padding: var(--space-4);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+
+    &--button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font-family: inherit;
+      cursor: pointer;
+    }
+  }
+
+  &__lotcard-title {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__lotcard-badge {
+    justify-self: end;
+    font-size: var(--font-size-xs);
+  }
+
+  // Two figures, label above value: bought-at on the left edge, value now on the right.
+  &__lotcard-figs {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  &__lotcard-fig {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+
+    &--mid {
+      align-items: center;
+    }
+
+    &--end {
+      align-items: flex-end;
+    }
+  }
+
+  &__lotcard-label {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__lotcard-val {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+  }
+
+  &__lotcard-gain {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+  }
+
+  &__lotcard-pct {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
+    justify-self: end;
+    color: var(--color-muted);
+  }
+
+  &__lotcard > &__lot-bar {
+    grid-column: 1 / -1;
+  }
+
+  &__lot-now {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    align-items: baseline;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__lot-now-price {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-figure);
   }
 
   &__lot-toggle {

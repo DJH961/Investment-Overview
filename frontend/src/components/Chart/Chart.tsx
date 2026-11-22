@@ -17,18 +17,93 @@ import { SegmentedControl } from "../SegmentedControl";
 import { Skeleton } from "../Skeleton";
 import "./Chart.scss";
 
-/** `invested`: a dashed muted guide line; `estimate`: the dashed twin-estimate line. */
-export type ChartTone = "primary" | "benchmark" | "muted" | "invested" | "estimate";
+/**
+ * `invested`: a dashed muted guide line; `estimate`: the dashed twin-estimate line;
+ * `ink`: a dashed line in the text colour (a "what it would have been" reference, such
+ * as the constant-currency value next to the actual one).
+ */
+export type ChartTone = "primary" | "benchmark" | "muted" | "invested" | "estimate" | "ink";
 
 /**
- * A point mark on the plot: a trade (▲ buy / ▼ sell, the shape carries the meaning) or
- * a small dot (a NAV print). Not part of the scrub; its label is its accessible name.
+ * A point mark on the plot: a trade (▲ buy / ▼ sell, the shape carries the meaning), a
+ * small dot (a NAV print), or a currency conversion: `conversion` is a neutral ring
+ * sized by `r`, `above` / `below` a ▲ / ▼ against a reference rate (shape and colour,
+ * each with an ink outline so it stands off the line). Not part of the scrub; its label
+ * is its accessible name.
  */
 export interface ChartMarker {
   t: string | number;
   v: number;
-  shape: "buy" | "sell" | "dot";
+  /** `rug`: a quiet tick on the date axis (its `v` is ignored and not part of the y range). */
+  shape: "buy" | "sell" | "dot" | "conversion" | "above" | "below" | "rug";
   label: string;
+  /** Size in px (conversion markers: by amount). Default 3.5 for dots and rings, 5 for triangles. */
+  r?: number;
+}
+
+/**
+ * A hatched band between two series (`upper` minus `lower`, by series id): the gap that
+ * one cause explains, such as the currency effect between the actual value and the value
+ * at a frozen rate. Where `upper` is above `lower` the hatch leans one way (`/`), below
+ * it the other (`\`), so the side reads from the shape, not only the colour.
+ */
+export interface ChartBand {
+  upper: string;
+  lower: string;
+  /** Legend label; the hatched swatch is shown when set. */
+  label?: string;
+}
+
+export interface BandPolygon {
+  side: "up" | "down";
+  d: string;
+}
+
+/**
+ * Splits the area between two lines into polygons where one is above / below the other,
+ * cutting at each crossing. Points are pixel coordinates sharing x (the same times); a
+ * value of null breaks the band. y grows downwards, so "up" means `a` is drawn higher.
+ */
+export function bandPolygons(rows: { x: number; a: number | null; b: number | null }[]): BandPolygon[] {
+  const out: BandPolygon[] = [];
+  let run: { x: number; a: number; b: number }[] = [];
+  let side: "up" | "down" | null = null;
+  const flush = () => {
+    if (run.length > 1 && side) {
+      const top = run.map((p, i) => `${i ? "L" : "M"}${p.x},${p.a}`).join(" ");
+      const back = [...run].reverse().map((p) => `L${p.x},${p.b}`).join(" ");
+      out.push({ side, d: `${top} ${back} Z` });
+    }
+    run = [];
+    side = null;
+  };
+  const sideOf = (a: number, b: number): "up" | "down" | null => (a < b ? "up" : a > b ? "down" : null);
+  for (const p of rows) {
+    if (p.a === null || p.b === null || !Number.isFinite(p.a) || !Number.isFinite(p.b) || !Number.isFinite(p.x)) {
+      flush();
+      continue;
+    }
+    const cur = { x: p.x, a: p.a, b: p.b };
+    const s = sideOf(cur.a, cur.b);
+    const prev = run[run.length - 1];
+    if (prev && side && s && s !== side) {
+      // Crossing between prev and cur: close this run at the meeting point, start the next there.
+      const d0 = prev.a - prev.b;
+      const d1 = cur.a - cur.b;
+      const f = d0 / (d0 - d1);
+      const meet = { x: prev.x + f * (cur.x - prev.x), a: prev.a + f * (cur.a - prev.a), b: 0 };
+      meet.b = meet.a;
+      run.push(meet);
+      flush();
+      run = [meet, cur];
+      side = s;
+      continue;
+    }
+    run.push(cur);
+    if (!side && s) side = s;
+  }
+  flush();
+  return out;
 }
 
 /**
@@ -166,6 +241,8 @@ export interface ChartProps {
   nowMarker?: ChartNowMarker;
   /** Trade or NAV marks drawn over the lines (part of the y range). */
   markers?: ChartMarker[];
+  /** A hatched gap band between two of the series (drawn under the lines). */
+  band?: ChartBand;
   /** One extra tooltip / readout line for the scrubbed time (e.g. the gap between two lines). */
   tooltipExtra?: (t: number) => string | null;
   range?: string;
@@ -315,6 +392,14 @@ export function timeTicks(tMin: number, tMax: number, maxTicks: number): number[
   return out.length ? out : [tMin, tMax];
 }
 
+/** An equilateral-ish triangle centred on the point: ▲ (`up`) or ▼, `r` its half-width. */
+function triangle(x: number, y: number, r: number, up: boolean): string {
+  const h = r * 0.9;
+  return up
+    ? `M${x - r},${y + h} L${x + r},${y + h} L${x},${y - h} Z`
+    : `M${x - r},${y - h} L${x + r},${y - h} L${x},${y + h} Z`;
+}
+
 function toneClass(tone: ChartTone | undefined, index: number): string {
   if (tone) return tone;
   return index === 0 ? "primary" : `n${((index - 1) % 4) + 1}`;
@@ -325,6 +410,7 @@ export function Chart({
   referenceLine,
   nowMarker,
   markers,
+  band,
   tooltipExtra,
   range,
   onRangeChange,
@@ -432,7 +518,7 @@ export function Chart({
     // Room for the marker: a small gutter after the last point, never the night.
     const tMax = nowOk ? tLast + Math.max(tLast - tMin, 1) * NOW_GUTTER : tLast;
     const dataRefs = [
-      ...(markers ?? []).map((m) => m.v).filter((v) => Number.isFinite(v)),
+      ...(markers ?? []).filter((m) => m.shape !== "rug").map((m) => m.v).filter((v) => Number.isFinite(v)),
       ...(nowOk ? [nowMarker.v] : []),
     ];
     const dataLo = Math.min(...values, ...dataRefs);
@@ -646,6 +732,25 @@ export function Chart({
         })
       : [];
   const tipExtra = cursorT !== null && tooltipExtra ? tooltipExtra(cursorT) : null;
+  // The gap band: both series at the same instants (a time missing from one breaks it).
+  const bandUpper = band ? prepared.find((s) => s.id === band.upper) : undefined;
+  const bandLower = band ? prepared.find((s) => s.id === band.lower) : undefined;
+  const bandPolys =
+    bandUpper && bandLower
+      ? (() => {
+          const lower = new Map(bandLower.pts.map((p) => [p.x, p.y]));
+          return bandPolygons(
+            bandUpper.pts.map((p) => {
+              const b = lower.get(p.x);
+              return {
+                x: scales.x(p.x),
+                a: p.y === null ? null : scales.y(p.y),
+                b: b === null || b === undefined ? null : scales.y(b),
+              };
+            }),
+          );
+        })()
+      : [];
   const tipOnLeft = cursorX !== null && cursorX > width * 0.6;
 
   return (
@@ -676,6 +781,16 @@ export function Chart({
               <stop offset="0%" className="chart__grad-stop chart__grad-stop--top" />
               <stop offset="100%" className="chart__grad-stop chart__grad-stop--bottom" />
             </linearGradient>
+            {band && (
+              <>
+                <pattern id={`${gradId}-up`} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <line className="chart__band-hatch" x1={0} y1={0} x2={0} y2={6} />
+                </pattern>
+                <pattern id={`${gradId}-down`} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+                  <line className="chart__band-hatch" x1={0} y1={0} x2={0} y2={6} />
+                </pattern>
+              </>
+            )}
           </defs>
           {yTicks.map((v) => (
             <g key={v}>
@@ -760,6 +875,19 @@ export function Chart({
               )}
             </g>
           )}
+          {bandPolys.length > 0 && (
+            <g className="chart__band" data-band>
+              {bandPolys.map((p, k) => (
+                <path
+                  key={k}
+                  className={clsx("chart__band-area", `chart__band-area--${p.side}`)}
+                  data-band-side={p.side}
+                  fill={`url(#${gradId}-${p.side})`}
+                  d={p.d}
+                />
+              ))}
+            </g>
+          )}
           {prepared.map((s) => {
             // In session mode the line breaks between sessions (no overnight bridge).
             const mapped: { x: number; y: number | null }[] = [];
@@ -775,6 +903,8 @@ export function Chart({
             return (
               <g key={s.id} className={clsx("chart__series", `chart__series--${tone}`)} data-series={s.id}>
                 {tone === "primary" &&
+                  // A hatched band is the fill; a gradient under it would muddy it.
+                  bandPolys.length === 0 &&
                   runs
                     .filter((r) => r.length > 1)
                     .map((r, k) => (
@@ -805,12 +935,25 @@ export function Chart({
                 const mt = toTime(m.t);
                 if (!Number.isFinite(mt) || !Number.isFinite(m.v)) return null;
                 const mx = scales.x(mt);
+                if (m.shape === "rug") {
+                  const base = PAD.top + innerH;
+                  const h = m.r ?? 6;
+                  return (
+                    <g key={`${k}-${mt}`} className="chart__mark chart__mark--rug" data-mark="rug">
+                      <title>{m.label}</title>
+                      <rect className="chart__rug-hit" x={mx - 4} y={base - 14} width={8} height={14} />
+                      <line className="chart__rug" x1={mx} x2={mx} y1={base - h} y2={base} />
+                    </g>
+                  );
+                }
                 const my = scales.y(m.v);
                 return (
                   <g key={`${k}-${mt}`} className={clsx("chart__mark", `chart__mark--${m.shape}`)} data-mark={m.shape}>
                     <title>{m.label}</title>
-                    {m.shape === "dot" ? (
-                      <circle cx={mx} cy={my} r={3.5} />
+                    {m.shape === "dot" || m.shape === "conversion" ? (
+                      <circle cx={mx} cy={my} r={m.r ?? 3.5} />
+                    ) : m.shape === "above" || m.shape === "below" ? (
+                      <path d={triangle(mx, my, m.r ?? 5, m.shape === "above")} />
                     ) : m.shape === "buy" ? (
                       <path d={`M${mx - 5},${my + 9} L${mx + 5},${my + 9} L${mx},${my + 2} Z`} />
                     ) : (
@@ -920,7 +1063,7 @@ export function Chart({
           ))}
           {tipExtra && <span className="chart__readout-item chart__readout-extra">{tipExtra}</span>}
         </output>
-      ) : all.length > 1 || legendExtra ? (
+      ) : all.length > 1 || legendExtra || band?.label ? (
         <ul className="chart__legend">
           {(all.length > 1 ? all : []).map((s) => {
             const swatch = <span className={clsx("chart__swatch", `chart__swatch--${s.toneCls}`)} aria-hidden />;
@@ -945,6 +1088,12 @@ export function Chart({
               </li>
             );
           })}
+          {band?.label && (
+            <li className="chart__legend-item" data-legend-band>
+              <span className="chart__swatch chart__swatch--band" aria-hidden />
+              {band.label}
+            </li>
+          )}
           {legendExtra && <li className="chart__legend-extra">{legendExtra}</li>}
         </ul>
       ) : compact ? (

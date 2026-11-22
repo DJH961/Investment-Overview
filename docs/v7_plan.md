@@ -15,17 +15,11 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> **Status (2026-11-18): push 4 shipped as 7.0.0** (v5 cutover, Daily Brief,
-> the multi-session window, the market countdown, P12, holding page, the push 3
-> leftovers and the visual overhaul). The Currency page is built but hidden until
-> 7.2 (`SHOW_CURRENCY_PAGE` in `frontend/src/lib/features.ts`). Pushes 1 to 3 shipped as 6.13.1 to
-> 6.15.0, then 6.16.0 and 6.17.x. **7.0.1** (2026-11-21) is the owner's fix list
-> after 7.0: currency figures agree everywhere, Overview "today first", quiet
-> background updates. **Push 5 (7.1.0, 2026-11-21)**: the holding deep dive (Performance,
-> Tranches, Transactions, Dividends, Twin tabs; per-holding 1D/1W and stored daily values,
-> P16; tranches, P3; Risk share of P&L, P17; ticker lookup, P20). P18 moved to 7.4.
-> Pushes 6 (7.2) and 7 (7.3) run in parallel; merge order 7.1 → 7.2 → 7.3. The owner's post-cutover steps are in
-> [`v7_cutover_owner_steps.md`](v7_cutover_owner_steps.md).
+> **Status (2026-11-21): 7.1.1 is current on `main`.** The 7.1.2 hotfix is open as
+> [PR #427](https://github.com/DJH961/Investment-Overview/pull/427) with current CI green.
+> Version 7.2.0 is prepared on `codex/v7.2.0`, stacked on the hotfix branch for review;
+> 7.2.1 follows it in the owner-approved release train. Nothing in this train has been
+> merged into `main` yet.
 >
 > **Release train to 7.2.1 (owner, 2026-11-21), one session, merged in this order:**
 >
@@ -576,7 +570,8 @@ Overview's. Read that code first; do not invent a second convention.
 **Tests (property plus golden):** the three parts sum to the day's change;
 the daily parts sum to the period; inside plus outside equals the period's
 currency effect; the currency part is zero when the rate did not move; the
-lifetime figure equals the Overview card's; "today" equals `day_split`.
+lifetime figure reconciles to the Overview card by the gap identity in the owner
+decision above, not by equality; "today" equals `day_split`.
 
 **Storage:**
 
@@ -836,6 +831,14 @@ generic request line today: `fx_conversion_service` is routed there but logs
 nothing itself (audit B-021, fixed in fix round 5). The new write paths
 (statement import, the prefilled add) log a proper domain line there too. The cost report is read-only and
 needs no line.
+
+**Idea for later (owner, 2026-11-22): "Your next euro" from your own conversions.**
+The Currency page's "Your next euro" panel (The dollar section, 7.2) uses only the
+reference rate. Once 7.3's conversions are on the page, it can tie in your own
+history: what your last conversion got against the reference that day, your
+typical spread, how many dollars €1,000 bought on your conversion days compared
+with today, and (with P14 recurring plans) when the next one is due. Not planned
+into a push yet.
 
 ---
 
@@ -1157,7 +1160,7 @@ afterwards, planned in detail when v7 is done.
 | 3 | 6.x "Ready" | Fix round 5 (speed, scheduler, activity lines), the frozen-leg reads moved to the derived path (B-008), the second audit pass and its fixes, **ledger completeness checks (P7)**. | 1–2 | No high or medium finding open; Data Health reports a missing dividend in a test ledger |
 | 4 | **7.0** | **The cutover** (v5 removed, B-014, B-022, plus the API leftovers B-029 and B-031), the **Daily Brief** (§3.1) and the **market clock** (P13). Pulled in (reworked 2026-11-16): **the Currency page, first part** (the always-visible strip and the Today sub-tab, §5), **the USD-view currency figure** (P12), **a light holding page** (route with Details, Transactions and Dividends tabs, §7), and the push 3 leftovers (see below). | 3 | No v5 code on `main`; the Brief's trigger passes its table of cases; a dismissed card stays gone; the Currency page's "today" equals the Overview card; a holding has a URL |
 | 5 | **7.1** | **Holding deep-dive** (§7), on the 7.0 holding page: the Performance tab, one shared holding row, per-holding 1D/1W, ETF-twin view, tranches in USD with the long-term countdown (P3), per-holding stored value series (P16), a fair "% of return" in Risk (P17), and looking up instruments you do not hold (P20). P18 moved to 7.4 (owner, 2026-11-21). | 2 | Holdings' 1D lines sum to the portfolio line; tranche shares sum to the position |
-| 6 | **7.2** | **Currency tab, the rest** (§5): Effect, Rate, What if, and the constant-currency chart on Today; currency as an allocation dimension; the Projection rate band (P5); the currency effect trend (P11). | 2 | Daily parts sum to every period; lifetime equals the lifetime card |
+| 6 | **7.2** | **Currency tab, the rest** (§5): Effect, Rate, What if, and the constant-currency chart on Today; currency as an allocation dimension; the Projection rate band (P5); the currency effect trend (P11). | 2 | Daily parts sum to every period; lifetime reconciles to the Overview card by the gap identity |
 | 7 | **7.3** | **Conversions** (§5.1): clear matching, pinning, costs and timing, currency-generic naming (C1), the Conversions sub-tab, the "Invest this month" flow (P6), scheduled auto-invest transactions (P14) and smart import matching (P15). | 2–3 | Every USD deposit declares how it was paid for; cost golden values match the hand calculation |
 | 8 | **7.4** | **One rate everywhere** (§5.1): first stop writing the frozen currency legs (P19), then the cash pool, holding EUR cost from the pool rate, the tranche EUR column, dollars back to euros, realised versus unrealised, currency effect on cash and idle dollars, and uninvested brokerage cash in the Overview total (P18, moved from 7.1). | 2 | Holdings plus pool equal EUR invested on the real ledger; realised plus unrealised equals the lifetime effect |
 | 9 | **7.5** | **Tax information** (§6.2, P1–P3): realised gains by holding period, wash sales, sell planner, the loss list, the tax year page, the 1099 check, the withholding column. | 2 | Short/long-term totals match a hand-worked ledger, including a reinvested-dividend wash sale |

@@ -363,4 +363,50 @@ def project(
             "expected_rate_default": dec(default_rate),
             "xirr_available": seed.xirr_available,
         },
+        "rate_band": None if usd else _rate_band(seed, params_usd, real=real),
     }
+
+
+#: P5: EUR/USD at the horizon, today's rate - 15 % to + 15 % in 1 % steps (a slider).
+RATE_BAND_SHIFTS: tuple[Decimal, ...] = tuple(Decimal(s) / 100 for s in range(-15, 16))
+
+
+def _rate_band(
+    seed: ProjectionSeed, params_usd: ProjectionParams, *, real: bool
+) -> dict[str, Any] | None:
+    """P5 (v7.2): the dollar wallet's projected value in euros over a range of rates.
+
+    The USD wallet is simulated at its own USD XIRR (never a converted return); its
+    final dollars are then valued at each assumed horizon rate, a single-instant
+    valuation (``final_usd / rate``).
+    """
+    spot = seed.usd_per_eur
+    if spot <= 0 or (seed.starting_usd <= 0 and params_usd.base_contribution <= 0):
+        return None
+    result = simulate(params_usd)
+    final_usd = {s: _final(result, s, real=real) for s in _SCENARIOS}
+    rows = []
+    for shift in RATE_BAND_SHIFTS:
+        rate = spot * (ONE + shift)
+        rows.append(
+            {
+                "usd_per_eur": dec(rate),
+                "shift_pct": dec(shift),
+                **{s: dec(final_usd[s] / rate) for s in _SCENARIOS},
+            }
+        )
+    return {
+        "ccy": "EUR",
+        "usd_per_eur_now": dec(spot),
+        "final_usd": {
+            **{s: dec(v) for s, v in final_usd.items()},
+            "projected_growth": None,
+        },
+        "rows": rows,
+        # A stronger euro (higher rate) gives fewer euros: the low end is the + 15 % row.
+        "expected_low": rows[-1][SCENARIO_EXPECTED],
+        "expected_high": rows[0][SCENARIO_EXPECTED],
+    }
+
+
+_SCENARIOS = (SCENARIO_PESSIMISTIC, SCENARIO_EXPECTED, SCENARIO_OPTIMISTIC)

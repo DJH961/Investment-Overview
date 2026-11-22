@@ -389,7 +389,7 @@ describe("Holding page", () => {
     it("badges carry a word for every status, reinvests fold into one group row", () => {
       renderAt("/holdings/1/tranches");
       const table = screen.getByRole("table", { name: "Tranches of VWCE" });
-      expect(within(table).getAllByText("Long-term")).toHaveLength(1);
+      expect(within(table).getAllByText("Long-term")).toHaveLength(2);
       expect(within(table).getByText("Long-term in 37 d")).toBeInTheDocument();
       expect(within(table).getByText("Short-term · 200 d left")).toBeInTheDocument();
       // The two reinvests sit behind one group row until opened.

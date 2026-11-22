@@ -16,6 +16,9 @@
  * the tab, as the server would; any `?brief=` brings it back.
  */
 
+import { currencyDollarFixture, currencyScenariosFixture } from "./currencyDollar";
+import { currencyEffectFixture, effectScale } from "./currencyEffect";
+import { rateHistoryFixture } from "./rateHistory";
 import { v71Answer, v71Extend } from "./v71";
 
 type Fixtures = Record<string, unknown>;
@@ -166,6 +169,41 @@ function briefFor(mode: BriefMode, data: Fixtures, recorded: unknown): unknown {
   return { ...base, kind: "fx_reopen", sessions: [], sessions_passed: 0, boundaries: [], events: [], events_total: 0, fx_move: fx };
 }
 
+/**
+ * The 7.2 strip tiles (`effect_this_year`, `effect_lifetime`, `dollar_trend`), added to the
+ * recorded `/api/currency/both` until the recorder writes them: the figures of the effect
+ * fixture's YTD and All ranges, so the strip and Impact agree. A recorded tile always wins.
+ */
+function withStripTiles(body: unknown, data: Fixtures): unknown {
+  if (!body || typeof body !== "object") return body;
+  const both = body as Record<"EUR" | "USD", Obj>;
+  if ((both.EUR?.stats as Obj[] | undefined)?.some((s) => s.key === "effect_this_year")) return body;
+  const fx = fixtureBook(data);
+  const ytd = currencyEffectFixture("ytd", { now: fx.now, scale: fx.scale, data }) as Record<"EUR" | "USD", Obj>;
+  const all = currencyEffectFixture("all", { now: fx.now, scale: fx.scale, data }) as Record<"EUR" | "USD", Obj>;
+  const tile = (key: string, side: Obj, c: "EUR" | "USD") => {
+    const h = side.headline as Obj;
+    return { key, value: h.effect, unit: "money", currency: c, secondary: h.effect_pp, secondary_unit: "fraction", secondary_currency: null, kind: h.kind };
+  };
+  const out: Record<string, Obj> = {};
+  for (const c of ["EUR", "USD"] as const) {
+    const stats = [...((both[c]?.stats as Obj[] | undefined) ?? [])];
+    const at = Math.max(0, stats.findIndex((s) => s.key === "effect_today") + 1);
+    stats.splice(at, 0, tile("effect_this_year", ytd[c], c), tile("effect_lifetime", all[c], c));
+    stats.push({ key: "dollar_trend", value: "-0.0420", unit: "fraction", currency: null, kind: null, direction: "dollar_down", normal: "normal", since: null });
+    out[c] = { ...both[c], stats };
+  }
+  return out;
+}
+
+/** The synthetic book's anchors: today's rate, your average rate, and the scale that ends it at the recorded total. */
+function fixtureBook(data: Fixtures): { now: number; avg: number; scale: number } {
+  const life = ((data["GET /api/currency/both"] as Obj | undefined)?.EUR as Obj | undefined)?.lifetime as Obj | undefined;
+  const now = Number(life?.current_rate ?? 1.16);
+  const total = Number(((data["GET /api/overview/both"] as Obj | undefined)?.EUR as { kpis?: Obj } | undefined)?.kpis?.total_value ?? 0);
+  return { now, avg: Number(life?.avg_invest_rate ?? 1.09), scale: effectScale(now, total) };
+}
+
 function dayNumber(iso: string): number {
   const [y, m, d] = iso.split("-").map(Number);
   return Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
@@ -273,6 +311,25 @@ export async function installFixtures(): Promise<void> {
       const body = findBody(data, method, url.pathname + url.search);
       return body === undefined ? json({}) : respond(body);
     }
+    // Until the recorder writes them (v7.2): a synthetic rate history and currency effect,
+    // one invented book under both, so the chart's conversions and Impact's deposits agree.
+    const recordedPath = (p: string) => Object.keys(data).some((k) => k === `GET ${p}` || k.startsWith(`GET ${p}?`));
+    if (url.pathname === "/api/currency/rate-history" && !recordedPath(url.pathname)) {
+      const fx = fixtureBook(data);
+      return json(rateHistoryFixture(url.searchParams.get("range") ?? "1y", fx));
+    }
+    if (url.pathname === "/api/currency/effect/both" && !recordedPath(url.pathname) && dataset === "full") {
+      const fx = fixtureBook(data);
+      return json(currencyEffectFixture(url.searchParams.get("range") ?? "ytd", { now: fx.now, scale: fx.scale, data }));
+    }
+    if (url.pathname === "/api/currency/dollar/both" && !recordedPath(url.pathname) && dataset === "full") {
+      const fx = fixtureBook(data);
+      return json(currencyDollarFixture(url.searchParams.get("range") ?? "1y", fx.now));
+    }
+    if (url.pathname === "/api/currency/scenarios/both" && !recordedPath(url.pathname) && dataset === "full") {
+      const fx = fixtureBook(data);
+      return json(currencyScenariosFixture(fx.now));
+    }
     // 7.1 endpoints are synthesised until the recorder writes them (see ./v71).
     const made = v71Answer(url, data);
     if (made !== undefined) {
@@ -280,7 +337,8 @@ export async function installFixtures(): Promise<void> {
       return status ? json({ detail: "Fixture answer" }, status) : respond(made);
     }
     const recorded = findBody(data, "GET", url.pathname + url.search);
-    const body = recorded === undefined ? undefined : v71Extend(url.pathname, recorded, data);
+    const extended = recorded === undefined ? undefined : v71Extend(url.pathname, recorded, data);
+    const body = url.pathname === "/api/currency/both" && dataset === "full" ? withStripTiles(extended, data) : extended;
     if (body === undefined || (typeof body === "object" && body !== null && "__status" in body)) {
       return json({ detail: "No fixture for this endpoint." }, 404);
     }

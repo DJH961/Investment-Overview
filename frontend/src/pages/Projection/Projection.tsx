@@ -12,7 +12,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { Skeleton } from "../../components/Skeleton";
 import { relativeSeries, useHideAmounts } from "../../lib/hideAmounts";
-import { MASK, chartMoneyFormat, formatDate, formatNumber, formatPercent } from "../../lib/format";
+import { MASK, chartMoneyFormat, formatDate, formatMonth, formatNumber, formatPercent } from "../../lib/format";
 import { parseDecimal, toApiDecimal } from "../../lib/parseDecimal";
 import { usePrefs } from "../../lib/prefs";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
@@ -20,6 +20,7 @@ import { type ProjectionOut, type ProjectionRequest, toNum, useCalculatorInputs,
 import { useShellStatus } from "../../lib/shell";
 import { usePersistentState, type Validator } from "../../lib/usePersistentState";
 import { Maybe } from "../Periods/Maybe";
+import { RateBand } from "./RateBand";
 import "./Projection.scss";
 
 interface Form {
@@ -75,9 +76,18 @@ const GOAL_LABEL: Record<(typeof GOAL_ORDER)[number], string> = {
   optimistic: "Optimistic",
 };
 
-/** Monthly projections still report `years`; show them as months. */
-export function axisLabel(t: number, monthly: boolean): string {
-  return monthly ? `Month ${Math.round(t * 12)}` : `Year ${Math.round(t)}`;
+/**
+ * The calendar date `t` years after the projection's start (`as_of`): "2031" on a yearly
+ * projection, "Mar 2028" on a monthly one (monthly projections still report `years`).
+ */
+export function axisLabel(t: number, monthly: boolean, asOf: string): string {
+  const m = /^(\d{4})-(\d{2})/.exec(asOf);
+  if (!m) return monthly ? `Month ${Math.round(t * 12)}` : `Year ${Math.round(t)}`;
+  const start = Number(m[1]) * 12 + Number(m[2]) - 1;
+  const at = start + Math.round(t * 12);
+  const year = Math.floor(at / 12);
+  if (!monthly) return String(year);
+  return formatMonth(`${year}-${String((at % 12) + 1).padStart(2, "0")}`, "short");
 }
 
 /** Detail table: monthly mode lists whole years only (every 12th point). */
@@ -339,11 +349,12 @@ export function Projection() {
                   busy={isFetching}
                   series={hide ? series : series.map((s) => ({ ...s, valueFormat: chartMoneyFormat(currency, "tooltip") }))}
                   valueFormat={(v) => (hide ? formatPercent(v, { digits: 0 }) : chartMoneyFormat(currency, "axis")(v))}
-                  timeFormat={(t) => axisLabel(t, out.monthly)}
+                  timeFormat={(t) => axisLabel(t, out.monthly, out.as_of)}
                   ariaLabel="Projected value scenarios"
                 />
               </Card>
               </div>
+              {out.rate_band ? <RateBand band={out.rate_band} endLabel={endLabel} /> : null}
               {toNum(out.inputs.target) ? (
                 <Card title="Goal">
                     <p className="projection-page__note">

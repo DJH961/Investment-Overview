@@ -891,6 +891,16 @@ def record_if_market_open(*, now: datetime | None = None) -> bool:  # noqa: PLR0
                 _store_holding_prices(cache, _holding_prices_at(live_priced, {}, [captured_at]))
                 intraday_repo.delete_before(cache, week_window_start_utc(now))
                 _prune_holding_prices(cache, week_window_start_utc(now))
+            # Keep the session boundary rates in the ledger tier before cache samples
+            # are pruned. This is best-effort so it cannot interrupt intraday capture.
+            try:
+                from investment_dashboard.services import (  # noqa: PLC0415
+                    fx_session_rates_service,
+                )
+
+                fx_session_rates_service.record_once_per_day(session, now=now)
+            except Exception:  # pragma: no cover - defensive
+                log.warning("FX session rates recording failed", exc_info=True)
     except Exception:  # pragma: no cover - defensive: capture is best-effort
         log.warning("intraday value capture failed", exc_info=True)
         return False
@@ -933,6 +943,25 @@ def day_series_with_fx(
     with cache_read_session(session) as cache:
         rows = intraday_repo.list_in_range(cache, start, end)
     return [(r.captured_at, _row_eur(r), r.fx_eur_usd) for r in rows]
+
+
+def fx_samples_between(
+    session: Session, start: datetime, end: datetime
+) -> list[tuple[datetime, Decimal]]:
+    """Return stored positive ``(captured_at_utc, EUR/USD)`` samples in the range.
+
+    Reads the cache tier only; callers can use this to retain rates before the
+    short-lived intraday sample window is pruned.
+    """
+    from investment_dashboard.db import cache_read_session  # noqa: PLC0415
+
+    with cache_read_session(session) as cache:
+        rows = intraday_repo.list_in_range(cache, start, end)
+    return [
+        (row.captured_at, row.fx_eur_usd)
+        for row in rows
+        if row.fx_eur_usd is not None and row.fx_eur_usd > 0
+    ]
 
 
 def session_close_fx(session: Session, *, now: datetime | None = None) -> Decimal | None:

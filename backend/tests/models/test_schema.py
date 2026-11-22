@@ -30,6 +30,7 @@ EXPECTED_TABLES = {
     "transactions",
     "price_history",
     "fx_history",
+    "fx_session_rates",
     "target_allocations",
     "target_allocation_items",
     "app_config",

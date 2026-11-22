@@ -4,11 +4,13 @@ import { Link, Navigate, useLocation, useNavigate, useParams } from "react-route
 import { Chip } from "../../components/Chip";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
+import { holdingPriceTime, PriceStamps } from "../../components/Freshness";
 import { HoldingPills } from "../../components/HoldingIdentity";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { Skeleton } from "../../components/Skeleton";
 import { type TabItem, Tabs } from "../../components/Tabs";
+import { formatMoney } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { useDividends } from "../../lib/queries/activity";
 import { type HoldingRowDto, useHoldings } from "../../lib/queries/holdings";
@@ -164,6 +166,23 @@ export function Holding() {
         chips={<HoldingChips row={row} />}
         pills={<HoldingPills row={row} live={row.market_open && !row.daily_is_stale} />}
         value={<Money amount={toNum(row.value)} currency={currency} />}
+        price={
+          row.price_native ? (
+            <span title={`Price per share in ${row.native_currency}`}>
+              {formatMoney(toNum(row.price_native), row.native_currency, { unmasked: true })}
+            </span>
+          ) : undefined
+        }
+        priceMeta={
+          row.price_native ? (
+            <>
+              {row.native_currency === currency && (
+                <Percent ratio={toNum(row.today_pct)} signed colored={!row.daily_is_stale} />
+              )}
+              <PriceStamps price={holdingPriceTime(row)} updated={null} compact />
+            </>
+          ) : undefined
+        }
         today={
           <>
             <Money amount={toNum(row.today_move)} currency={currency} signed colored={!row.daily_is_stale} />
