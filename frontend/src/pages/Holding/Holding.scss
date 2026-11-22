@@ -76,20 +76,50 @@
     font-weight: var(--font-weight-regular);
   }
 
+  // Value (lead) and price per share (second hero) side by side.
   &__figures {
     display: flex;
     grid-area: figures;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--space-1);
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: var(--space-6);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 
     @include m.phone {
-      flex-direction: row;
-      align-items: baseline;
+      justify-content: space-between;
       gap: var(--space-3);
     }
+  }
+
+  &__figure {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+
+    &--price {
+      padding-left: var(--space-6);
+      border-left: var(--border-width) solid var(--color-border);
+
+      @include m.phone {
+        padding-left: var(--space-3);
+      }
+    }
+
+    @include m.phone {
+      align-items: flex-start;
+
+      &--price {
+        align-items: flex-end;
+      }
+    }
+  }
+
+  &__figure-label {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-tight);
   }
 
   &__value {
@@ -99,6 +129,15 @@
 
     @include m.phone {
       font-size: var(--font-size-xl);
+    }
+
+    // The price is the second hero: same weight, one step smaller.
+    &--price {
+      font-size: var(--font-size-xl);
+
+      @include m.phone {
+        font-size: var(--font-size-lg);
+      }
     }
   }
 
@@ -173,6 +212,10 @@
   &__sticky-value {
     margin-left: auto;
     font-weight: var(--font-weight-semibold);
+  }
+
+  &__sticky-price {
+    color: var(--color-muted);
   }
 
   &__sticky-today {
@@ -424,11 +467,27 @@
     white-space: nowrap;
   }
 
+  &__row-amount--stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+  }
+
+  &__nowrap {
+    white-space: nowrap;
+  }
+
   &__row-meta {
     @include m.truncate;
     min-width: 0;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+  }
+
+  &__row-meta--wrap {
+    overflow: visible;
+    white-space: normal;
   }
 
   &__row-detail {
@@ -642,12 +701,54 @@
   &__lot-gain {
     display: inline-flex;
     flex-direction: column;
+    gap: var(--space-1);
     align-items: flex-end;
   }
 
   &__lot-pct {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: center;
     color: var(--color-muted);
     font-size: var(--font-size-xs);
+  }
+
+  // Gain on one shared scale: a thin track, blue / orange fill (sign and arrow say it too).
+  &__lot-bar {
+    display: block;
+    width: 5rem;
+    height: var(--space-1);
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+
+  &__lot-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-sm);
+
+    &--pos {
+      background: var(--color-pos);
+    }
+
+    &--neg {
+      background: var(--color-neg);
+    }
+  }
+
+  &__lot-now {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    align-items: baseline;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__lot-now-price {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-figure);
   }
 
   &__lot-toggle {

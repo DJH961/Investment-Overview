@@ -70,4 +70,22 @@ describe("Chart band and conversion markers", () => {
     expect(marks[0].querySelector("circle")?.getAttribute("r")).toBe("6");
     expect(marks[1].querySelector("title")?.textContent).toBe("Above");
   });
+
+  it("draws a conversion as a tick on the date axis, outside the y range", () => {
+    const { container } = render(
+      <Chart
+        series={series.slice(0, 1)}
+        // A far-off rate must not stretch the axis: the tick ignores its value.
+        markers={[{ t: t(2), v: 9999, shape: "rug", r: 8, label: "Converted €1,000 at 1.1500" }]}
+        valueFormat={String}
+        timeFormat={String}
+      />,
+    );
+    const mark = container.querySelector('[data-mark="rug"]');
+    expect(mark?.querySelector("title")?.textContent).toBe("Converted €1,000 at 1.1500");
+    const line = mark?.querySelector("line");
+    expect(Number(line?.getAttribute("y2")) - Number(line?.getAttribute("y1"))).toBe(8);
+    const ticks = [...container.querySelectorAll("text")].map((n) => n.textContent ?? "");
+    expect(ticks.some((s) => s.includes("9999"))).toBe(false);
+  });
 });

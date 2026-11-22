@@ -1,12 +1,12 @@
 import clsx from "clsx";
-import { ChevronDown, CircleCheck, Clock, Hourglass, Inbox, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, CircleCheck, Clock, Hourglass, Inbox, TriangleAlert } from "lucide-react";
 import { Fragment, useState } from "react";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { Money } from "../../components/Money";
 import { Percent } from "../../components/Percent";
 import { Skeleton } from "../../components/Skeleton";
-import { formatDate, formatMoney } from "../../lib/format";
+import { formatDate, formatMoney, formatQuantity as formatQty1 } from "../../lib/format";
 import {
   type HoldingTranchesDto,
   type TrancheGroupDto,
@@ -46,16 +46,36 @@ export function TrancheBadge({
   );
 }
 
-function Gain({ amount, pct, ccy }: { amount: string | null; pct: string | null; ccy: string }) {
+/** Gain bar on one shared scale (share of the largest |gain %|); blue up, orange down. */
+function GainBar({ pct, scale }: { pct: string | null; scale: number }) {
+  const v = toNum(pct);
+  if (v === null || scale <= 0) return null;
+  const share = Math.min(1, Math.abs(v) / scale);
   return (
-    <span className="holding-page__lot-gain">
-      <Money amount={toNum(amount)} currency={ccy} signed colored digits={0} />
-      <Percent ratio={toNum(pct)} signed className="holding-page__lot-pct" />
+    <span className="holding-page__lot-bar" aria-hidden>
+      <span
+        className={clsx("holding-page__lot-bar-fill", v < 0 ? "holding-page__lot-bar-fill--neg" : "holding-page__lot-bar-fill--pos")}
+        style={{ width: `${(share * 100).toFixed(1)}%` }}
+      />
     </span>
   );
 }
 
-function LotRow({ r, ccy, nested = false, accounts }: { r: TrancheRowDto; ccy: string; nested?: boolean; accounts: boolean }) {
+function Gain({ amount, pct, ccy, scale = 0 }: { amount: string | null; pct: string | null; ccy: string; scale?: number }) {
+  const p = toNum(pct);
+  return (
+    <span className="holding-page__lot-gain">
+      <Money amount={toNum(amount)} currency={ccy} signed colored digits={0} />
+      <span className="holding-page__lot-pct">
+        {p !== null && p !== 0 && (p > 0 ? <ArrowUp aria-hidden size={12} /> : <ArrowDown aria-hidden size={12} />)}
+        <Percent ratio={p} signed />
+      </span>
+      <GainBar pct={pct} scale={scale} />
+    </span>
+  );
+}
+
+function LotRow({ r, ccy, nested = false, accounts, scale }: { r: TrancheRowDto; ccy: string; nested?: boolean; accounts: boolean; scale: number }) {
   const sold = (toNum(r.quantity_bought) ?? 0) - (toNum(r.quantity_left) ?? 0);
   return (
     <tr className={clsx("holding-page__lot", nested && "holding-page__lot--nested")}>
@@ -85,7 +105,7 @@ function LotRow({ r, ccy, nested = false, accounts }: { r: TrancheRowDto; ccy: s
         <TrancheBadge row={r} />
       </td>
       <td className="holding-page__lot-td holding-page__lot-td--right">
-        <Gain amount={r.gain_native} pct={r.gain_pct} ccy={ccy} />
+        <Gain amount={r.gain_native} pct={r.gain_pct} ccy={ccy} scale={scale} />
       </td>
     </tr>
   );
@@ -97,12 +117,14 @@ function GroupRow({
   ccy,
   account,
   accounts,
+  scale,
 }: {
   g: TrancheGroupDto;
   members: TrancheRowDto[];
   ccy: string;
   account: string;
   accounts: boolean;
+  scale: number;
 }) {
   const [open, setOpen] = useState(false);
   const id = `lot-group-${g.account_id}`;
@@ -139,7 +161,7 @@ function GroupRow({
           {g.long_count} long · {g.short_count} short
         </td>
         <td className="holding-page__lot-td holding-page__lot-td--right">
-          <Gain amount={g.gain_native} pct={g.gain_pct} ccy={ccy} />
+          <Gain amount={g.gain_native} pct={g.gain_pct} ccy={ccy} scale={scale} />
         </td>
       </tr>
       {open && (
@@ -149,7 +171,7 @@ function GroupRow({
               <caption className="holding-page__sr">Reinvested dividends in {account}</caption>
               <tbody>
                 {members.map((r) => (
-                  <LotRow key={r.id} r={r} ccy={ccy} nested accounts={accounts} />
+                  <LotRow key={r.id} r={r} ccy={ccy} nested accounts={accounts} scale={scale} />
                 ))}
               </tbody>
             </table>
@@ -160,7 +182,7 @@ function GroupRow({
   );
 }
 
-function LotCard({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; nested?: boolean }) {
+function LotCard({ r, ccy, nested = false, price }: { r: TrancheRowDto; ccy: string; nested?: boolean; price: string | null }) {
   return (
     <li className="holding-page__row-item">
       <div className="holding-page__row">
@@ -168,13 +190,21 @@ function LotCard({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; ne
           {formatDate(r.acquired_on)}
           {r.source === "reinvest" && !nested && <span className="holding-page__muted"> · reinvested</span>}
         </span>
-        <span className="holding-page__row-amount">
-          <Money amount={toNum(r.gain_native)} currency={ccy} signed colored />
+        <span className="holding-page__row-amount holding-page__row-amount--stack">
+          <Money amount={toNum(r.gain_native)} currency={ccy} signed colored digits={0} />
+          <span className="holding-page__lot-pct">
+            {toNum(r.gain_pct) !== null && toNum(r.gain_pct) !== 0 && (toNum(r.gain_pct)! > 0 ? <ArrowUp aria-hidden size={12} /> : <ArrowDown aria-hidden size={12} />)}
+            <Percent ratio={toNum(r.gain_pct)} signed />
+          </span>
         </span>
-        <span className="holding-page__row-meta">
-          {/* "x / y" only when some were sold; otherwise just the shares. */}
-          {toNum(r.quantity_left) === toNum(r.quantity_bought) ? qty(r.quantity_left) : `${qty(r.quantity_left)} / ${qty(r.quantity_bought)}`} sh ·{" "}
-          {formatMoney(toNum(r.cost_per_share_native), ccy)}
+        <span className="holding-page__row-meta holding-page__row-meta--wrap">
+          <span>
+            {toNum(r.quantity_left) === toNum(r.quantity_bought) ? qty(r.quantity_left) : `${qty(r.quantity_left)} / ${qty(r.quantity_bought)}`} sh
+          </span>{" "}
+          <span className="holding-page__nowrap">
+            {formatMoney(toNum(r.cost_per_share_native), ccy)}
+            {price !== null && ` → ${formatMoney(toNum(price), ccy, { unmasked: true })}`}
+          </span>
         </span>
         <span className="holding-page__row-detail">
           <TrancheBadge row={r} compact />
@@ -184,7 +214,7 @@ function LotCard({ r, ccy, nested = false }: { r: TrancheRowDto; ccy: string; ne
   );
 }
 
-function GroupCard({ g, members, ccy }: { g: TrancheGroupDto; members: TrancheRowDto[]; ccy: string }) {
+function GroupCard({ g, members, ccy, price }: { g: TrancheGroupDto; members: TrancheRowDto[]; ccy: string; price: string | null }) {
   const [open, setOpen] = useState(false);
   const id = `lot-card-group-${g.account_id}`;
   return (
@@ -201,7 +231,7 @@ function GroupCard({ g, members, ccy }: { g: TrancheGroupDto; members: TrancheRo
           {g.count} reinvested · {qty(g.quantity_left)} sh
         </span>
         <span className="holding-page__row-amount">
-          <Money amount={toNum(g.gain_native)} currency={ccy} signed colored />
+          <Money amount={toNum(g.gain_native)} currency={ccy} signed colored digits={0} />
         </span>
         <span className="holding-page__row-meta">
           avg {formatMoney(toNum(g.avg_cost_per_share_native), ccy)} · cost <Money amount={toNum(g.cost_native)} currency={ccy} compact />
@@ -213,7 +243,7 @@ function GroupCard({ g, members, ccy }: { g: TrancheGroupDto; members: TrancheRo
       {open && (
         <ul id={id} className="holding-page__rows holding-page__rows--nested">
           {members.map((r) => (
-            <LotCard key={r.id} r={r} ccy={ccy} nested />
+            <LotCard key={r.id} r={r} ccy={ccy} nested price={price} />
           ))}
         </ul>
       )}
@@ -238,7 +268,7 @@ function Footer({ d }: { d: HoldingTranchesDto }) {
         {t.fully_sold_count} fully sold
       </span>
       <span>
-        Long-term {qty(t.long_quantity)} sh · short-term {qty(t.short_quantity)} sh
+        Long-term {formatQty1(toNum(t.long_quantity), 1)} sh · short-term {formatQty1(toNum(t.short_quantity), 1)} sh
       </span>
     </p>
   );
@@ -261,8 +291,11 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
   const accountOf = (id: number) => d.rows.find((r) => r.account_id === id)?.account_name ?? "";
   const members = (g: TrancheGroupDto) => g.row_ids.flatMap((id) => byId.get(id) ?? []);
   const accounts = new Set(d.rows.map((r) => r.account_id)).size > 1;
-  const heads = ["Bought", ...(accounts ? ["Account"] : []), "Shares left / bought", "Cost / sh", "Cost", "Age", "Status", "Gain vs today"];
-  const right = new Set(["Shares left / bought", "Cost / sh", "Cost", "Age", "Gain vs today"]);
+  const price = d.price_native ?? null;
+  const scale = Math.max(0, ...[...d.rows, ...d.groups].map((x) => Math.abs(toNum(x.gain_pct) ?? 0)));
+  const gainHead = price !== null ? `Gain at ${formatMoney(toNum(price), ccy, { unmasked: true })}` : "Gain vs today";
+  const heads = ["Bought", ...(accounts ? ["Account"] : []), "Shares left / bought", "Cost / sh", "Cost", "Age", "Status", gainHead];
+  const right = new Set(["Shares left / bought", "Cost / sh", "Cost", "Age", gainHead]);
   return (
     <div className="holding-page__panel">
       <p className="holding-page__note">
@@ -272,10 +305,10 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
       {isPhone ? (
         <ul className="holding-page__rows">
           {loose.map((r) => (
-            <LotCard key={r.id} r={r} ccy={ccy} />
+            <LotCard key={r.id} r={r} ccy={ccy} price={price} />
           ))}
           {d.groups.map((g) => (
-            <GroupCard key={`g${g.account_id}`} g={g} members={members(g)} ccy={ccy} />
+            <GroupCard key={`g${g.account_id}`} g={g} members={members(g)} ccy={ccy} price={price} />
           ))}
         </ul>
       ) : (
@@ -293,11 +326,11 @@ export function TranchesTab({ row }: { row: HoldingRowDto }) {
             </thead>
             <tbody>
               {loose.map((r) => (
-                <LotRow key={r.id} r={r} ccy={ccy} accounts={accounts} />
+                <LotRow key={r.id} r={r} ccy={ccy} accounts={accounts} scale={scale} />
               ))}
               {d.groups.map((g) => (
                 <Fragment key={`g${g.account_id}`}>
-                  <GroupRow g={g} members={members(g)} ccy={ccy} account={accountOf(g.account_id)} accounts={accounts} />
+                  <GroupRow g={g} members={members(g)} ccy={ccy} account={accountOf(g.account_id)} accounts={accounts} scale={scale} />
                 </Fragment>
               ))}
             </tbody>
