@@ -180,17 +180,15 @@
     flex: 1 0 auto;
     flex-direction: column;
 
+    // One continuous scale, no jumps at a breakpoint: tight up to about 900 px of window
+    // height (12 rows since 7.2: Currency and Currency conversions), roomier above.
     & + & {
-      margin-top: clamp(var(--space-2), calc(2vh - 12px), var(--space-5));
-
-      @media (max-height: 800px) {
-        margin-top: var(--space-1);
-      }
+      margin-top: clamp(var(--space-1), calc(2vh - 14px), var(--space-5));
     }
   }
 
   &__group-title {
-    padding: var(--space-2) var(--space-3);
+    padding: clamp(2px, calc(1.2vh - 4px), var(--space-2)) var(--space-3);
     @include m.eyebrow;
     color: var(--color-faint);
   }
@@ -199,21 +197,18 @@
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
-    gap: clamp(2px, calc(2.4vh - 22px), var(--space-4));
+    gap: clamp(0px, calc(2.4vh - 24px), var(--space-4));
     margin: 0;
     padding: 0;
     list-style: none;
-
-    @media (max-height: 800px) {
-      gap: 0;
-    }
   }
 
   &__item {
     display: flex;
     flex: 1 1 0;
-    // Never smaller than a comfortable click target, even on a short window.
-    min-height: 32px;
+    // A comfortable click target: 32 px, a little less only on a short window so all
+    // twelve rows still fit without a scroll.
+    min-height: clamp(26px, calc(2.6vh + 8px), 32px);
     max-height: max(var(--control-height-lg), 3.6vh);
   }
 

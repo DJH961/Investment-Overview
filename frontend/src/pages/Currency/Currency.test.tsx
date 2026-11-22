@@ -75,7 +75,8 @@ describe("Currency page", () => {
   });
 
   it("shows the tailwind or headwind word, not only colour", () => {
-    // The fixture's EUR view is all headwinds; its USD view carries the tailwind.
+    // The fixture: EUR today and lifetime are headwinds (a weaker dollar); in the USD
+    // view (investing) the euro's strength since the start is a tailwind.
     const eur = mount();
     expect(screen.getAllByText("Headwind").length).toBeGreaterThan(0);
     eur.unmount();
@@ -99,6 +100,16 @@ describe("Currency page", () => {
     mount();
     expect(tiles().length).toBe(nEur);
     expect(nEur).toBeGreaterThan(0);
+  });
+
+  it("USD view: the tiles read the investing side in dollars, the return gap beside", () => {
+    state.ccy = "USD";
+    mount();
+    const strip = document.querySelector(".stat-strip")!;
+    expect(strip.textContent).toMatch(/\$/);
+    expect(strip.textContent).toMatch(/pp/);
+    const usd = cur.USD.stats!.filter((s) => s.key.startsWith("effect_"));
+    expect(usd.every((s) => s.unit === "money" && s.currency === "USD")).toBe(true);
   });
 
   it("leads with the rate chart, then the strip", () => {

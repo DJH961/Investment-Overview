@@ -44,6 +44,7 @@ EXPECTED_TABLES = {
     "auth_passkeys",
     "auth_sessions",
     "fx_conversions",
+    "fx_conversion_pins",
     "app_config_audit",
     "import_batches",
 }

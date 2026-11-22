@@ -119,6 +119,14 @@ _LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("PUT", "/api/maintenance/fx/{quote}/{on}"): ("manual FX rate set", "manual FX rate rejected"),
     ("DELETE", "/api/maintenance/fx/{quote}/{on}"): ("FX rate removed", "FX rate remove failed"),
+    ("PUT", "/api/fx-conversions/pins/{deposit_txn_id}"): (
+        "deposit pinned to conversions",
+        "deposit pin rejected",
+    ),
+    ("DELETE", "/api/fx-conversions/pins/{deposit_txn_id}"): (
+        "deposit unpinned",
+        "deposit unpin failed",
+    ),
     ("PUT", "/api/maintenance/splits/{instrument_id}/{on}"): (
         "manual split set",
         "manual split rejected",

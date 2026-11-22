@@ -557,6 +557,87 @@ def intraday_fx_bars_via_tiingo(
     return dict(bars)
 
 
+#: ``{(start_day, end_day): (monotonic_stamp, bars)}``: the EUR/USD forex bars the
+#: Currency page's 1D / 1W rate chart reads, so page loads do not hammer Yahoo.
+_FOREX_BARS_CACHE: dict[tuple[date, date], tuple[float, dict[datetime, Decimal]]] = {}
+#: Default for setting ``fx.chart_bars_max_age_seconds`` (Settings > Data refresh).
+FOREX_BARS_TTL_SECONDS = 600.0
+
+
+def clear_forex_bars_cache() -> None:
+    _FOREX_BARS_CACHE.clear()
+
+
+def forex_bars_ttl_seconds() -> float:
+    """How long fetched forex bars are reused (setting ``fx.chart_bars_max_age_seconds``)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    try:
+        return float(
+            settings_service.get_or("fx.chart_bars_max_age_seconds", FOREX_BARS_TTL_SECONDS)
+        )
+    except Exception:  # pragma: no cover - settings unreadable: keep the default
+        return FOREX_BARS_TTL_SECONDS
+
+
+def eur_usd_forex_bars(
+    start_day: date,
+    end_day: date,
+    *,
+    fetcher: Callable[[date, date], Mapping[datetime, Decimal]] | None = None,
+    tiingo_fetcher: Callable[[], Mapping[datetime, Decimal]] | None = None,
+    tiingo_token: str | None = None,
+    charge_budget: Callable[[], bool] | None = None,
+) -> dict[datetime, Decimal]:
+    """15-minute EUR/USD bars ``{bar_time_naive_utc: rate}`` over ``[start_day, end_day]``.
+
+    Yahoo ``EURUSD=X`` first, Tiingo only when a token is configured and Yahoo came
+    back empty. Cached in-process for :func:`forex_bars_ttl_seconds` (a failed or
+    empty result is cached too, so an outage is not retried on every page load).
+    Fails soft: any error yields ``{}``. Every real provider call is logged (this
+    module is in the ``market_data`` activity subject).
+    """
+    import time  # noqa: PLC0415
+
+    key = (start_day, end_day)
+    hit = _FOREX_BARS_CACHE.get(key)
+    now_mono = time.monotonic()
+    if hit is not None and now_mono - hit[0] < forex_bars_ttl_seconds():
+        return dict(hit[1])
+
+    if fetcher is None:
+        from investment_dashboard.adapters.yfinance_client import (  # noqa: PLC0415
+            fetch_eur_usd_intraday_range,
+        )
+
+        def fetcher(start: date, end: date) -> Mapping[datetime, Decimal]:
+            return fetch_eur_usd_intraday_range(start, end, interval="15m")
+
+    log.info("EUR/USD forex bars: requesting Yahoo 15m bars %s..%s", start_day, end_day)
+    try:
+        bars = {t: r for t, r in (fetcher(start_day, end_day) or {}).items() if r and r > 0}
+    except Exception as exc:
+        log.warning("EUR/USD forex bars: Yahoo failed (%s)", exc)
+        bars = {}
+    if not bars:
+        bars = {
+            t: r
+            for t, r in intraday_fx_bars_via_tiingo(
+                start_day,
+                end_day,
+                interval="15m",
+                fetcher=tiingo_fetcher,
+                token=tiingo_token,
+                charge_budget=charge_budget,
+            ).items()
+            if r and r > 0
+        }
+    else:
+        log.info("EUR/USD forex bars: %d Yahoo bar(s) for %s..%s", len(bars), start_day, end_day)
+    _FOREX_BARS_CACHE[key] = (now_mono, dict(bars))
+    return bars
+
+
 def _note_tiingo_rate_limit(exc: BaseException) -> None:
     """If ``exc`` is a Tiingo 429, pin the shared budget as spent until next :00.
 

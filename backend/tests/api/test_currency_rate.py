@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from itertools import pairwise
 from typing import Any
 
 import pytest
@@ -42,6 +43,15 @@ def _history(today: date, existing: set[date]) -> dict[date, Decimal]:
             i += 1
         day += timedelta(days=1)
     return out
+
+
+@pytest.fixture(autouse=True)
+def _no_forex_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Never reach Yahoo/Tiingo: no forex bars unless a test sets some."""
+    fx_service.clear_forex_bars_cache()
+    monkeypatch.setattr(fx_service, "eur_usd_forex_bars", lambda *_a, **_k: {})
+    yield
+    fx_service.clear_forex_bars_cache()
 
 
 @pytest.fixture
@@ -83,6 +93,7 @@ def test_unknown_range_is_rejected(api_client: TestClient, seeded: None) -> None
         ("3m", "daily", False),
         ("ytd", "daily", False),
         ("1y", "daily", True),
+        ("all", "daily", True),
         ("5y", "daily", True),
         ("10y", "weekly", True),
         ("max", "weekly", True),
@@ -197,3 +208,167 @@ def test_etag_304(api_client: TestClient, seeded: None) -> None:
     assert again.content == b""
     other = api_client.get("/api/currency/rate-history?range=1y", headers={"If-None-Match": etag})
     assert other.status_code == 200  # the range is part of the ETag
+
+
+def _rm_intraday(range_key: str, now: datetime) -> dict[str, Any]:
+    with ledger_session_scope() as session:
+        return rate_rm.build_rate_history(session, range_key, avg_invest_rate=None, now=now)
+
+
+def test_1w_weekend_merges_bars_and_stored_samples_and_squeezes_weekend(
+    api_db: object, seeded: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Saturday 2026-11-21 12:00 UTC: forex is shut, the week ended Friday 17:00 ET.
+    now = datetime(2026, 11, 21, 12, 0, tzinfo=UTC)
+    night = datetime(2026, 11, 19, 2, 0)  # Thursday night, outside US hours
+    stored = datetime(2026, 11, 20, 15, 7)
+    monkeypatch.setattr(
+        fx_service,
+        "eur_usd_forex_bars",
+        lambda *_a, **_k: {
+            night: Decimal("1.1600"),
+            night + timedelta(minutes=15): Decimal("1.1610"),
+        },
+    )
+    monkeypatch.setattr(
+        intraday_snapshots_service,
+        "fx_samples_between",
+        lambda *_a: [(stored, Decimal("1.1700")), (night, Decimal("9.9999"))],
+    )
+    body = _rm_intraday("1w", now)
+    times = [p["t"] for p in body["points"]]
+    assert times == sorted(times)
+    assert "2026-11-19T02:00:00+00:00" in times  # the night the samples never had
+    assert "2026-11-20T15:07:00+00:00" in times
+    assert body["points"][times.index("2026-11-19T02:00:00+00:00")]["rate"] == "1.1600"  # bars win
+    sessions = body["sessions"]
+    assert len(sessions) == 5
+    # Contiguous forex days, Sunday 17:00 ET open to Friday 17:00 ET close.
+    assert sessions[-1]["close"] == "2026-11-20T22:00:00+00:00"
+    assert sessions[0]["open"] == "2026-11-15T22:00:00+00:00"
+    for prev, nxt in pairwise(sessions):
+        assert prev["close"] == nxt["open"]
+
+
+def test_1d_on_weekend_shows_fridays_forex_day(
+    api_db: object, seeded: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = datetime(2026, 11, 22, 9, 0, tzinfo=UTC)  # Sunday morning
+    overnight = datetime(2026, 11, 20, 3, 0)
+    friday_late = datetime(2026, 11, 20, 21, 45)
+    monkeypatch.setattr(
+        fx_service,
+        "eur_usd_forex_bars",
+        lambda *_a, **_k: {overnight: Decimal("1.1500"), friday_late: Decimal("1.1550")},
+    )
+    monkeypatch.setattr(intraday_snapshots_service, "fx_samples_between", lambda *_a: [])
+    body = _rm_intraday("1d", now)
+    assert [p["t"] for p in body["points"]] == [
+        "2026-11-20T03:00:00+00:00",
+        "2026-11-20T21:45:00+00:00",
+    ]
+    assert body["sessions"] == []
+
+
+def test_1w_falls_back_to_stored_samples_when_yahoo_fails(
+    api_db: object, seeded: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = datetime(2026, 11, 18, 18, 0, tzinfo=UTC)
+    stored = datetime(2026, 11, 18, 15, 0)
+    monkeypatch.setattr(
+        intraday_snapshots_service, "fx_samples_between", lambda *_a: [(stored, Decimal("1.1700"))]
+    )
+    # The real service with a failing downloader and no Tiingo token: soft failure.
+    monkeypatch.undo()
+    monkeypatch.setattr(
+        intraday_snapshots_service, "fx_samples_between", lambda *_a: [(stored, Decimal("1.1700"))]
+    )
+
+    def boom(*_a: object, **_k: object) -> dict[datetime, Decimal]:
+        raise RuntimeError("yahoo down")
+
+    monkeypatch.setattr(
+        "investment_dashboard.adapters.yfinance_client.fetch_eur_usd_intraday_range", boom
+    )
+    monkeypatch.setattr(fx_service, "intraday_fx_bars_via_tiingo", lambda *_a, **_k: {})
+    fx_service.clear_forex_bars_cache()
+    body = _rm_intraday("1w", now)
+    assert [p["t"] for p in body["points"]] == ["2026-11-18T15:00:00+00:00"]
+    assert len(body["sessions"]) == 5
+
+
+def test_forex_bars_are_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.undo()
+    fx_service.clear_forex_bars_cache()
+    calls: list[int] = []
+
+    def fetch(_s: date, _e: date) -> dict[datetime, Decimal]:
+        calls.append(1)
+        return {datetime(2026, 11, 18, 1, 0): Decimal("1.16")}
+
+    day = date(2026, 11, 18)
+    assert fx_service.eur_usd_forex_bars(day, day, fetcher=fetch)
+    assert fx_service.eur_usd_forex_bars(day, day, fetcher=fetch)
+    assert len(calls) == 1
+    fx_service.clear_forex_bars_cache()
+
+
+def test_forex_bars_reuse_follows_the_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings > Data refresh "Currency chart 1D/1W: reuse rate bars for" sets the window."""
+    monkeypatch.undo()
+    fx_service.clear_forex_bars_cache()
+    ages = {"ttl": 600.0}
+    monkeypatch.setattr(fx_service, "forex_bars_ttl_seconds", lambda: ages["ttl"])
+    calls: list[int] = []
+
+    def fetch(_s: date, _e: date) -> dict[datetime, Decimal]:
+        calls.append(1)
+        return {datetime(2026, 11, 18, 1, 0): Decimal("1.16")}
+
+    day = date(2026, 11, 18)
+    fx_service.eur_usd_forex_bars(day, day, fetcher=fetch)
+    fx_service.eur_usd_forex_bars(day, day, fetcher=fetch)
+    assert len(calls) == 1
+    ages["ttl"] = 0.0  # set to (effectively) nothing: the next read fetches again
+    fx_service.eur_usd_forex_bars(day, day, fetcher=fetch)
+    assert len(calls) == 2
+    fx_service.clear_forex_bars_cache()
+
+
+def test_forex_bars_ttl_reads_the_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    from investment_dashboard.services import settings_service
+
+    monkeypatch.setattr(
+        settings_service,
+        "get_or",
+        lambda key, fallback, session=None: (
+            120 if key == "fx.chart_bars_max_age_seconds" else fallback
+        ),
+    )
+    assert fx_service.forex_bars_ttl_seconds() == 120.0
+
+
+def test_all_range_starts_at_first_ledger_day_and_empty_ledger_falls_back(
+    api_client: TestClient, seeded: None
+) -> None:
+    body = _get(api_client, "all")
+    assert body["points"][0]["t"] >= "2025-01-02"
+    assert body["granularity"] == "daily"
+    assert body["ma200"]
+    assert rate_rm.range_start("all", date(2026, 11, 22), None) == fx_service.HISTORY_START
+    assert rate_rm.range_start("all", date(2026, 11, 22), date(2025, 1, 2)) == date(2025, 1, 2)
+
+
+def test_us_market_hours_shades_regular_sessions_only() -> None:
+    """Thu 26/11/2026 is Thanksgiving (closed), Fri 27/11 a half day (13:00 close)."""
+    from investment_dashboard.readmodels.currency_rate import us_market_hours
+
+    start = datetime(2026, 11, 24, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 11, 30, 18, 0, tzinfo=UTC)
+    hours = us_market_hours(start, end)
+    opens = [h["open"][:10] for h in hours]
+    assert opens == ["2026-11-24", "2026-11-25", "2026-11-27", "2026-11-30"]
+    assert hours[0]["open"].startswith("2026-11-24T14:30")  # 09:30 New York (EST)
+    assert hours[0]["close"].startswith("2026-11-24T21:00")
+    assert hours[2]["close"].startswith("2026-11-27T18:00")  # half day: 13:00 New York
+    assert hours[3]["close"].startswith("2026-11-30T18:00")  # clipped to the window end

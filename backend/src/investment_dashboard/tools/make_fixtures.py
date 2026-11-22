@@ -64,14 +64,12 @@ DAY_MOVES = {
     "FAKEL": D("0.0085"),
     "FAKEB": D("-0.0035"),
     "FAKEG": D("0.0240"),
-    "FAKEU": D("-0.0062"),
 }
 #: Intraday wobble (fraction of price) around each straight line to today's last price.
 DAY_VOL = {
     "FAKEL": 0.0030,
     "FAKEB": 0.0012,
     "FAKEG": 0.0075,
-    "FAKEU": 0.0025,
 }
 SAMPLE_MINUTES = 5
 _REAL_DATETIME = _dt.datetime
@@ -81,9 +79,9 @@ _REAL_DATE = _dt.date
 GRAPH_RANGES = ("1d", "1w", "1m", "3m", "6m", "ytd", "1y", "all")
 HISTORY_RANGES = ("1m", "3m", "6m", "ytd", "1y", "all")
 #: The Currency page chart's ranges (``api/schemas/currency_rate.RateRange``).
-RATE_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "5y", "10y", "max")
+RATE_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max")
 # The Effect endpoint uses a shorter horizon set than the rate chart / Dollar view.
-EFFECT_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "3y", "all")
+EFFECT_RANGES = ("1d", "1w", "1m", "3m", "ytd", "1y", "3y", "5y", "10y", "all")
 GET_ENDPOINTS: tuple[str, ...] = (
     "/api/auth/me",
     "/api/auth/passkeys",
@@ -114,6 +112,7 @@ GET_ENDPOINTS: tuple[str, ...] = (
     *(f"/api/currency/effect/both?range={r}" for r in EFFECT_RANGES),
     *(f"/api/currency/dollar/both?range={r}" for r in RATE_RANGES),
     "/api/currency/scenarios/both",
+    *(f"/api/currency/scenarios/both?range={r}" for r in dict.fromkeys((*RATE_RANGES, "all"))),
     "/api/brief",
     "/api/accounts",
     "/api/instruments",
@@ -121,6 +120,7 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/transactions/all",
     "/api/fx-conversions",
     "/api/fx-conversions/pool",
+    "/api/fx-conversions/reference?date=2026-06-26",
     "/api/onboarding",
     "/api/refresh/status",
     "/api/settings",
@@ -456,13 +456,6 @@ def seed_full(session: Any) -> None:
             name="Fake Institutional NAV Index Fund",
             asset_class="mutual_fund",
         ),
-        "FAKEU": instruments_repo.get_or_create(
-            session,
-            symbol="FAKEU.DE",
-            name="Fake Europa Dividend Aktie",
-            asset_class="stock",
-            native_currency="EUR",
-        ),
         "FAKEG": instruments_repo.get_or_create(
             session, symbol="FAKEG", name="Fake Growth Corp", asset_class="stock"
         ),
@@ -472,7 +465,6 @@ def seed_full(session: Any) -> None:
         "FAKEB": "Bonds",
         "FAKET": "Speculative",
         "FAKENX": "US Stocks",
-        "FAKEU": "Europe Stocks",
         "FAKEG": "US Stocks",
     }
     for sym, cat in categories.items():
@@ -485,7 +477,6 @@ def seed_full(session: Any) -> None:
         "FAKEB": (D("81.20"), D("62.10"), 0.004, 0),  # a loser
         "FAKET": (D("0.0450"), D("0.0213"), 0.03, 12),  # tiny and stale
         "FAKENX": (D("94.10"), D("171.82"), 0.008, 1),  # NAV: yesterday's close only
-        "FAKEU": (D("31.50"), D("48.95"), 0.01, 0),
         "FAKEG": (D("27.10"), D("83.40"), 0.02, 0),
     }
     walks: dict[str, dict[_dt.date, Decimal]] = {}
@@ -521,13 +512,6 @@ def seed_full(session: Any) -> None:
         broker="vanguard",
         account_label="Retirement",
         native_currency="USD",
-        account_type="brokerage",
-    )
-    euro = accounts_repo.create_account(
-        session,
-        broker="savings_bank",
-        account_label="Euro Depot",
-        native_currency="EUR",
         account_type="brokerage",
     )
     accounts_repo.create_account(
@@ -598,7 +582,6 @@ def seed_full(session: Any) -> None:
     d0 = _dt.date(2023, 3, 1)
     add(brokerage, d0, "deposit", "900000.00")
     add(retirement, d0, "deposit", "180000.00")
-    add(euro, d0, "deposit", "40000.00", "EUR")
     buy(brokerage, "FAKEL", _dt.date(2023, 3, 2), "4000")
     buy(brokerage, "FAKEL", _dt.date(2024, 1, 16), "250.5")
     buy(brokerage, "FAKEB", _dt.date(2023, 3, 6), "1500")
@@ -606,7 +589,6 @@ def seed_full(session: Any) -> None:
     buy(brokerage, "FAKET", _dt.date(2024, 5, 7), "0.00031")  # tiny
     buy(retirement, "FAKENX", _dt.date(2023, 3, 3), "800")
     buy(retirement, "FAKEL", _dt.date(2023, 3, 8), "120")
-    buy(euro, "FAKEU", _dt.date(2023, 3, 7), "500", "EUR")
     add(brokerage, _dt.date(2025, 2, 3), "deposit", "75000.00")
     buy(brokerage, "FAKEG", _dt.date(2025, 2, 4), "200")
     sell_price = px("FAKEG", _dt.date(2025, 11, 12))
@@ -631,7 +613,6 @@ def seed_full(session: Any) -> None:
     ):
         day = _dt.date(year, month, 20)
         add(brokerage, day, "dividend_cash", "1843.27", instrument_id=inst["FAKEL"].id)
-        add(euro, day, "dividend_cash", "212.40", "EUR", instrument_id=inst["FAKEU"].id)
     add(brokerage, _dt.date(2024, 8, 14), "fee", "-0.01")
     add(retirement, _dt.date(2024, 9, 2), "interest", "3.07")
     # Booked since the owner last looked (the Brief lists these): yesterday afternoon.
@@ -645,8 +626,20 @@ def seed_full(session: Any) -> None:
         created_at=_dt.datetime(2026, 6, 29, 21, 30),
     )
     add(retirement, seen, "interest", "5.42", created_at=_dt.datetime(2026, 6, 29, 21, 32))
+    # 7.3 conversions: recent monthly top-ups, so the matching shows every status.
+    top_ups = {
+        "apr": _dt.date(2026, 4, 7),
+        "may": _dt.date(2026, 5, 5),
+        "jun": _dt.date(2026, 6, 2),
+    }
+    add(brokerage, top_ups["apr"], "deposit", "3000.00")
+    add(brokerage, top_ups["may"], "deposit", "2500.00")
+    add(brokerage, top_ups["jun"], "deposit", "4000.00")
+    for day, usd in _history_plan()[0]:
+        add(brokerage, day, "deposit", usd)
     session.add_all(rows)
     session.flush()
+    _seed_conversions(session, rows, rate_on, top_ups)
     # The owner last had the app open on Thursday just after the close (three sessions
     # ago): the Brief's window is the absence since, and the rate then is the intraday
     # sample stored 5 minutes before that last visible read. The sample carries the
@@ -668,6 +661,149 @@ def seed_full(session: Any) -> None:
         market_value_usd=usd_then,
     )
     _seed_open_session(session, inst, today)
+
+
+def _history_plan() -> tuple[
+    list[tuple[_dt.date, str]], list[tuple[_dt.date, str, str, str | None]]
+]:
+    """A deterministic three-year top-up history: ``(deposits, conversions)``.
+
+    One monthly USD top-up from April 2023 to March 2026, paid for the way a retail
+    saver does it: usually one Wise or Revolut conversion a couple of days before (matched),
+    sometimes one that is a fifth short (partly matched), sometimes two halves (two slices),
+    sometimes none (ECB only), plus a few conversions made ahead of time that wait in the pool.
+    About fifty conversions, so the Conversions page shows what hundreds look like.
+    """
+    rng = random.Random(SEED + 11)
+    deposits: list[tuple[_dt.date, str]] = []
+    conversions: list[tuple[_dt.date, str, str, str | None]] = []
+    providers = ("wise", "revolut")
+    for n in range(36):
+        month = 3 + n  # April 2023 is the 4th month of 2023
+        year, m0 = 2023 + month // 12, month % 12
+        day = _dt.date(year, m0 + 1, rng.choice((3, 4, 5, 6)))
+        usd = rng.choice((1000, 1500, 2000, 2500, 3000))
+        deposits.append((day, f"{usd}.00"))
+        lead = _dt.timedelta(days=rng.choice((1, 2, 3)))
+        provider = providers[rng.randrange(2)]
+        fees = rng.choice((None, "1.20", "2.40", "3.10")) if provider == "wise" else None
+        if n % 9 == 8:
+            continue  # no conversion: the deposit uses the ECB rate
+        if n % 11 == 5:
+            half = usd // 2
+            conversions.append((day - lead, f"{half}.00", provider, fees))
+            other = providers[1 - providers.index(provider)]
+            earlier = day - lead - _dt.timedelta(days=1)
+            conversions.append((earlier, f"{usd - half}.00", other, None))
+        elif n % 7 == 3:
+            conversions.append((day - lead, f"{usd * 4 // 5}.00", provider, fees))
+        else:
+            conversions.append((day - lead, f"{usd}.00", provider, fees))
+    for day, usd, provider in (
+        (_dt.date(2023, 8, 21), "1800.00", "revolut"),
+        (_dt.date(2024, 3, 11), "2200.00", "wise"),
+        (_dt.date(2024, 11, 18), "1200.00", "wise"),
+        (_dt.date(2025, 9, 15), "2600.00", "revolut"),
+    ):
+        conversions.append((day, usd, provider, None))
+    return deposits, conversions
+
+
+def _seed_conversions(
+    session: Any,
+    rows: list[Any],
+    rate_on: Callable[[_dt.date], Decimal],
+    top_ups: dict[str, _dt.date],
+) -> None:
+    """EUR->USD conversions covering every matching status (7.3).
+
+    * 2025-02-03 $75,000 deposit: one large conversion covers $73,000, the rest
+      falls back to the ECB rate (partly matched).
+    * April: one conversion, fully matched.
+    * May: the conversion was booked three days *after* the deposit, so only a
+      pin can reach it (pinned).
+    * June: two conversions, two slices.
+    * 2026-06-26: converted, not yet deposited ($1,000 left in the pool).
+    * The 2023 deposits have no conversion at all (ECB only).
+    """
+    from investment_dashboard.models import FxConversion, FxConversionPin
+
+    def conv(
+        day: _dt.date, usd: str, provider: str, fees: str | None, note: str | None = None
+    ) -> Any:
+        # About 0.4 % fewer dollars than the reference rate, like a retail spread.
+        eur = (D(usd) / (rate_on(day) * D("0.996"))).quantize(D("0.01"))
+        row = FxConversion(
+            date=day,
+            eur_sent=eur,
+            usd_received=D(usd),
+            fees_eur=None if fees is None else D(fees),
+            note=note,
+            provider=provider,
+            created_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+            updated_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+        )
+        session.add(row)
+        return row
+
+    conv(_dt.date(2025, 1, 28), "73000.00", "wise", "41.80")
+    conv(_dt.date(2026, 4, 1), "3000.00", "revolut", None)
+    may = conv(
+        _dt.date(2026, 5, 8),
+        "2500.00",
+        "wise",
+        "3.20",
+        "Booked late at the broker; pinned to the 5 May deposit",
+    )
+    conv(_dt.date(2026, 5, 29), "2000.00", "wise", "2.10")
+    conv(_dt.date(2026, 5, 30), "2000.00", "revolut", None)
+    conv(_dt.date(2026, 6, 26), "1000.00", "wise", "1.40")
+    for day, usd, provider, fees in _history_plan()[1]:
+        conv(day, usd, provider, fees)
+    session.flush()
+    may_deposit = next(r for r in rows if r.kind == "deposit" and r.date == top_ups["may"])
+    session.add(
+        FxConversionPin(
+            deposit_txn_id=may_deposit.id,
+            conversion_id=may.id,
+            usd=D("2500.00"),
+            created_at=_dt.datetime(2026, 5, 8, 9, 5),
+        )
+    )
+    session.flush()
+
+
+def _synthetic_forex_bars(
+    start_day: _dt.date, end_day: _dt.date, **_kw: Any
+) -> dict[_dt.datetime, Decimal]:
+    """Stand-in for Yahoo's 15-minute ``EURUSD=X`` bars (the generator has no network).
+
+    Round the clock on weekdays, none from Friday 22:00 UTC to Sunday 22:00 UTC (the
+    spot-FX weekend), ending at :data:`FX_LIVE_NOW` at the frozen moment, so the 1D/1W
+    rate chart shows the shape the server draws from the real feed.
+    """
+    rng = random.Random(SEED + 7)
+    now = FROZEN_NOW.replace(tzinfo=None)
+    t = _dt.datetime.combine(start_day, _dt.time()) - _dt.timedelta(hours=2)
+    end = min(_dt.datetime.combine(end_day, _dt.time()) + _dt.timedelta(days=1), now)
+    times: list[_dt.datetime] = []
+    while t <= end:
+        wd = t.weekday()
+        weekend = (wd == 4 and t.hour >= 22) or wd == 5 or (wd == 6 and t.hour < 22)
+        if not weekend:
+            times.append(t)
+        t += _dt.timedelta(minutes=15)
+    if len(times) < 2:
+        return {}
+    path = _bridge(rng, len(times) - 1)
+    live = float(FX_LIVE_NOW)
+    first = live * 0.9965
+    out: dict[_dt.datetime, Decimal] = {}
+    for i, at in enumerate(times):
+        frac = i / (len(times) - 1)
+        rate = (first + (live - first) * frac) * (1 + 0.004 * path[i])
+        out[at] = Decimal(f"{rate:.5f}")
+    return out
 
 
 def _bridge(rng: random.Random, steps: int) -> list[float]:
@@ -803,6 +939,8 @@ def prices_repo_close(session: Any, instrument_id: int, day: _dt.date) -> Decima
 VERSION_SENTINEL = "fixtures-version"
 _WORKDIR = ""
 _DT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$")
+#: A decimal string with more than 12 places (float maths), rounded to 10 for a stable file.
+_LONG_DECIMAL_RE = re.compile(r"^-?\d+\.\d{13,}$")
 
 
 def _normalise(value: Any, key: str = "") -> Any:
@@ -820,6 +958,10 @@ def _normalise(value: Any, key: str = "") -> Any:
             return VERSION_SENTINEL  # the mock layer swaps in the build's own version
         if key in {"boot_id", "head", "current"}:
             return "fixture"
+        if _LONG_DECIMAL_RE.match(value):
+            # Float maths (XIRR) differs in the last digit between Windows and Linux;
+            # 10 places keep every shown figure and make the file the same everywhere.
+            return str(Decimal(value).quantize(Decimal("1e-10")))
         if _WORKDIR and _WORKDIR in value:
             return "/fixtures" + value.split(_WORKDIR, 1)[1].replace("\\", "/")
         if _DT_RE.match(value):
@@ -887,11 +1029,16 @@ def _build_inner(dataset: str, workdir: Path) -> dict[str, Any]:
     app.dependency_overrides[require_session] = _actor
     _import_backend_modules()
     _reset_process_state()
+    from investment_dashboard.services import fx_service
+
+    real_bars = fx_service.eur_usd_forex_bars
+    fx_service.eur_usd_forex_bars = _synthetic_forex_bars  # type: ignore[assignment]
     restore_clock = _freeze_clock()
     try:
         return _collect(app, dataset, ledger_session_scope, TestClient)
     finally:
         restore_clock()
+        fx_service.eur_usd_forex_bars = real_bars  # type: ignore[assignment]
         dispose_engines()
         get_settings.cache_clear()
 

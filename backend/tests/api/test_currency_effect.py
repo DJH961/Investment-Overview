@@ -68,7 +68,52 @@ def test_unknown_range_is_rejected(api_client: TestClient, seeded: None) -> None
     assert api_client.get("/api/currency/effect/both?range=2y").status_code == 422
 
 
-@pytest.mark.parametrize("rng", ["1d", "1w", "1m", "3m", "ytd", "1y", "3y", "all", "2025"])
+def test_all_is_the_product_of_the_years(api_client: TestClient, seeded: None) -> None:
+    """One method everywhere: All, the years and YTD are slices of one daily chain,
+    so (1 + All) is the product of (1 + year) in each currency."""
+    today = exchange_today()
+    whole = _get(api_client, "all")
+    keys = [str(y) for y in range(FIRST_DAY.year, today.year)] + ["ytd"]
+    years = [_get(api_client, k) for k in keys]
+    for ccy in ("EUR", "USD"):
+        head = whole[ccy]["headline"]
+        assert head["return_basis"] == "daily_chain"
+        for field in ("eur_return", "usd_return"):
+            product = Decimal(1)
+            for body in years:
+                value = body[ccy]["headline"][field]
+                product *= 1 + (D(value) if value is not None else Decimal(0))
+            assert abs((1 + D(head[field])) - product) < Decimal("1e-6")
+            assert D(head[field]) > -1
+
+
+@pytest.mark.parametrize("rng", ["1y", "all"])
+def test_views_lead_with_what_answers_them(api_client: TestClient, seeded: None, rng: str) -> None:
+    """EUR (value): the money effect on the book leads, the tag follows it. USD
+    (investing): what the rate did to the euros sent in leads, with the same cards."""
+    body = _get(api_client, rng)
+    eur, usd = body["EUR"]["headline"], body["USD"]["headline"]
+    assert eur["lead"] == "effect"
+    effect = D(eur["effect"])
+    assert eur["kind"] == ("tailwind" if effect > 0 else "headwind" if effect < 0 else "neutral")
+    assert usd["lead"] == "deposits"
+    inv = body["USD"]["investing"]
+    assert inv is not None
+    assert body["EUR"]["investing"] is None
+    value = D(inv["effect"])
+    assert usd["kind"] == inv["kind"]
+    assert inv["kind"] == ("tailwind" if value > 0 else "headwind" if value < 0 else "neutral")
+    # Same identities as the EUR bridge: dollars at the start rate + effect = received.
+    assert D(inv["usd_at_start"]) + value == D(inv["usd_received"])
+    assert sum((D(d["effect"]) for d in inv["deposits"]), Decimal(0)) == value
+    months = sum((D(m["currency"]) for m in inv["months"]), Decimal(0))
+    assert abs(months - value) <= Decimal("0.000001") * (1 + len(inv["months"]))
+    assert inv["rate_only"] is not None
+
+
+@pytest.mark.parametrize(
+    "rng", ["1d", "1w", "1m", "3m", "ytd", "1y", "3y", "5y", "10y", "all", "2025"]
+)
 def test_every_range_answers_both_sides(api_client: TestClient, seeded: None, rng: str) -> None:
     body = _get(api_client, rng)
     for ccy in ("EUR", "USD"):

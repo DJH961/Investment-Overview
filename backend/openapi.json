@@ -2873,6 +2873,17 @@
             "title": "As Of",
             "type": "string"
           },
+          "book_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Note"
+          },
           "bridge": {
             "anyOf": [
               {
@@ -2952,6 +2963,21 @@
             },
             "title": "Holdings",
             "type": "array"
+          },
+          "investing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestingEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missing_deposit_days": {
+            "default": 0,
+            "title": "Missing Deposit Days",
+            "type": "integer"
           },
           "months": {
             "items": {
@@ -3308,6 +3334,8 @@
                 "enum": [
                   "dollar_up",
                   "dollar_down",
+                  "euro_up",
+                  "euro_down",
                   "sideways"
                 ],
                 "type": "string"
@@ -3706,6 +3734,11 @@
             "title": "Since",
             "type": "string"
           },
+          "too_short": {
+            "default": false,
+            "title": "Too Short",
+            "type": "boolean"
+          },
           "volatility_eur": {
             "anyOf": [
               {
@@ -3826,6 +3859,65 @@
         "title": "DaySplit",
         "type": "object"
       },
+      "DepositEffectRow": {
+        "description": "One USD deposit against the range's start rate (the investing view).",
+        "properties": {
+          "effect": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Effect",
+            "type": "string"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "on": {
+            "title": "On",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "matched",
+              "partly",
+              "ecb"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "start_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Rate",
+            "type": "string"
+          },
+          "transaction_id": {
+            "title": "Transaction Id",
+            "type": "integer"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transaction_id",
+          "on",
+          "usd",
+          "eur",
+          "rate",
+          "start_rate",
+          "effect",
+          "source"
+        ],
+        "title": "DepositEffectRow",
+        "type": "object"
+      },
       "DepositMatchOut": {
         "properties": {
           "date": {
@@ -3866,6 +3958,17 @@
             ],
             "title": "Fallback Rate"
           },
+          "fallback_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Rate Date"
+          },
           "fallback_to_ecb": {
             "title": "Fallback To Ecb",
             "type": "boolean"
@@ -3882,9 +3985,29 @@
             "title": "Matched",
             "type": "array"
           },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
           "rate_missing": {
             "title": "Rate Missing",
             "type": "boolean"
+          },
+          "slices": {
+            "items": {
+              "$ref": "#/components/schemas/DepositSliceOut"
+            },
+            "title": "Slices",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "matched",
+              "partial",
+              "ecb_only"
+            ],
+            "title": "Status",
+            "type": "string"
           },
           "transaction_id": {
             "title": "Transaction Id",
@@ -3907,7 +4030,11 @@
           "fallback_to_ecb",
           "rate_missing",
           "eur_actual",
-          "effective_rate"
+          "effective_rate",
+          "status",
+          "slices",
+          "fallback_rate_date",
+          "pinned"
         ],
         "title": "DepositMatchOut",
         "type": "object"
@@ -4020,6 +4147,48 @@
           "description"
         ],
         "title": "DepositRowOut",
+        "type": "object"
+      },
+      "DepositSliceOut": {
+        "properties": {
+          "conversion_date": {
+            "title": "Conversion Date",
+            "type": "string"
+          },
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "rate": {
+            "description": "The conversion's all-in USD per EUR.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "conversion_date",
+          "usd",
+          "eur",
+          "rate",
+          "pinned"
+        ],
+        "title": "DepositSliceOut",
         "type": "object"
       },
       "DepositSummaryOut": {
@@ -4712,6 +4881,7 @@
               "3m",
               "ytd",
               "1y",
+              "all",
               "5y",
               "10y",
               "max"
@@ -4827,6 +4997,40 @@
             ],
             "title": "Fx Gain Eur"
           },
+          "other_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Share"
+          },
+          "other_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Value"
+          },
+          "range_change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "rate_now": {
             "anyOf": [
               {
@@ -4879,12 +5083,14 @@
         "type": "object"
       },
       "DollarRegime": {
-        "description": "The dollar's regime with hysteresis (``domain.fx_trend.regime``).",
+        "description": "The trend's regime with hysteresis (``domain.fx_trend.regime``).\n\nIn ``DollarTrend.asset``'s terms: the EUR view reads the dollar (``dollar_*``), the\nUSD view the euro (``euro_*``, on the EUR/USD rate itself).",
         "properties": {
           "direction": {
             "enum": [
               "dollar_up",
               "dollar_down",
+              "euro_up",
+              "euro_down",
               "sideways"
             ],
             "title": "Direction",
@@ -5085,6 +5291,7 @@
         "type": "object"
       },
       "DollarTrend": {
+        "description": "The trend of one currency against the other, in its own terms.\n\n``asset`` says whose: ``dollar`` (the EUR view: every move, average, run and\npercentile is the dollar's, on EUR per USD) or ``euro`` (the USD view: the same\nfigures computed on the EUR/USD rate itself, never the dollar's negated).\n``ma200.distance_pct``, ``normal_*.move_pct``, ``run``, ``percentiles`` (days the\nasset was cheaper than today), ``long_run.distance_pct`` and\n``above_entry_share`` (days the asset stood above your average rate) follow it.",
         "properties": {
           "above_entry_share": {
             "anyOf": [
@@ -5097,6 +5304,15 @@
               }
             ],
             "title": "Above Entry Share"
+          },
+          "asset": {
+            "default": "dollar",
+            "enum": [
+              "dollar",
+              "euro"
+            ],
+            "title": "Asset",
+            "type": "string"
           },
           "long_run": {
             "anyOf": [
@@ -5507,14 +5723,61 @@
             "title": "Kind",
             "type": "string"
           },
+          "lead": {
+            "default": "effect",
+            "enum": [
+              "effect",
+              "gap",
+              "deposits"
+            ],
+            "title": "Lead",
+            "type": "string"
+          },
           "market": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Market",
             "type": "string"
           },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "other_ccy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Ccy"
+          },
+          "other_effect": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Effect"
+          },
           "return_basis": {
             "enum": [
-              "periods",
               "daily_chain",
               "day"
             ],
@@ -6170,6 +6433,13 @@
             ],
             "title": "Fees Eur"
           },
+          "from_ccy": {
+            "default": "EUR",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "From Ccy",
+            "type": "string"
+          },
           "note": {
             "anyOf": [
               {
@@ -6181,6 +6451,29 @@
               }
             ],
             "title": "Note"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "to_ccy": {
+            "default": "USD",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "To Ccy",
+            "type": "string"
           },
           "usd_received": {
             "anyOf": [
@@ -6206,9 +6499,40 @@
       },
       "FxConversionOut": {
         "properties": {
+          "all_in_rate": {
+            "description": "usd_received / (eur_sent + fees).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "All In Rate",
+            "type": "string"
+          },
           "date": {
             "title": "Date",
             "type": "string"
+          },
+          "ecb_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Settled fixing dated that day; on a weekend or holiday the last settled fixing before it (up to a week back). Null when there is none.",
+            "title": "Ecb Rate"
+          },
+          "ecb_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Date the fixing is from; differs from the conversion date on a weekend.",
+            "title": "Ecb Rate Date"
           },
           "effective_rate": {
             "description": "USD received per EUR sent (derived).",
@@ -6233,6 +6557,10 @@
             ],
             "title": "Fees Eur"
           },
+          "from_ccy": {
+            "title": "From Ccy",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -6248,10 +6576,61 @@
             ],
             "title": "Note"
           },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.",
+            "title": "Off Pct"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "rate": {
+            "description": "usd_received / eur_sent (same as effective_rate).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "remaining_usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Remaining Usd",
+            "type": "string"
+          },
+          "to_ccy": {
+            "title": "To Ccy",
+            "type": "string"
+          },
           "usd_received": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Usd Received",
             "type": "string"
+          },
+          "used_by": {
+            "items": {
+              "$ref": "#/components/schemas/UsedByOut"
+            },
+            "title": "Used By",
+            "type": "array"
           }
         },
         "required": [
@@ -6261,7 +6640,15 @@
           "usd_received",
           "fees_eur",
           "note",
-          "effective_rate"
+          "effective_rate",
+          "from_ccy",
+          "to_ccy",
+          "provider",
+          "rate",
+          "all_in_rate",
+          "ecb_rate",
+          "used_by",
+          "remaining_usd"
         ],
         "title": "FxConversionOut",
         "type": "object"
@@ -10094,6 +10481,165 @@
         "title": "InstrumentUpdateResult",
         "type": "object"
       },
+      "InvestAmounts": {
+        "description": "The euros the invest view prices (the USD Scenarios).",
+        "properties": {
+          "monthly_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Monthly Eur",
+            "type": "string"
+          },
+          "unit_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Unit Eur",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit_eur",
+          "monthly_eur"
+        ],
+        "title": "InvestAmounts",
+        "type": "object"
+      },
+      "InvestingEffect": {
+        "description": "The USD view's investing perspective (``readmodels/currency_deposits``).\n\nYour euros become dollars: each USD deposit's dollars minus what its euros would\nhave bought at ``start_rate`` (the rate on the range's start close; for All the\nrate on your first transaction's day). Money in dollars. ``series`` is the\ncumulative dollars received (``value``) and the same euros at the start rate\n(``constant_currency``), so the gap between them (``currency``) is the effect.\n``months`` / ``years`` / ``grid`` / ``records`` / ``rolling`` are the same shapes\nas the EUR view's, built on this effect (``records.best_day`` = best deposit).",
+        "properties": {
+          "average_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rate"
+          },
+          "deposit_count": {
+            "title": "Deposit Count",
+            "type": "integer"
+          },
+          "deposits": {
+            "items": {
+              "$ref": "#/components/schemas/DepositEffectRow"
+            },
+            "title": "Deposits",
+            "type": "array"
+          },
+          "effect": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Effect",
+            "type": "string"
+          },
+          "end_on": {
+            "title": "End On",
+            "type": "string"
+          },
+          "end_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "End Rate",
+            "type": "string"
+          },
+          "eur_sent": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Sent",
+            "type": "string"
+          },
+          "grid": {
+            "items": {
+              "$ref": "#/components/schemas/EffectGridRow"
+            },
+            "title": "Grid",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/EffectBar"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "rate_only": {
+            "$ref": "#/components/schemas/RateOnly"
+          },
+          "records": {
+            "$ref": "#/components/schemas/EffectRecords"
+          },
+          "rolling": {
+            "items": {
+              "$ref": "#/components/schemas/EffectRollingPoint"
+            },
+            "title": "Rolling",
+            "type": "array"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/EffectPoint"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "start_on": {
+            "title": "Start On",
+            "type": "string"
+          },
+          "start_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Rate",
+            "type": "string"
+          },
+          "stats": {
+            "items": {
+              "$ref": "#/components/schemas/EffectStat"
+            },
+            "title": "Stats",
+            "type": "array"
+          },
+          "usd_at_start": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd At Start",
+            "type": "string"
+          },
+          "usd_received": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Received",
+            "type": "string"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/EffectBar"
+            },
+            "title": "Years",
+            "type": "array"
+          }
+        },
+        "required": [
+          "start_on",
+          "end_on",
+          "start_rate",
+          "end_rate",
+          "effect",
+          "kind",
+          "deposit_count",
+          "eur_sent",
+          "usd_received",
+          "usd_at_start",
+          "rate_only"
+        ],
+        "title": "InvestingEffect",
+        "type": "object"
+      },
       "InvestingPower": {
         "properties": {
           "amount_eur": {
@@ -10761,6 +11307,18 @@
             "title": "Distance Inverse Pct",
             "type": "string"
           },
+          "distance_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Pct"
+          },
           "mean": {
             "$ref": "#/components/schemas/RateValue"
           },
@@ -10876,9 +11434,32 @@
             ],
             "title": "Held Instrument Id"
           },
+          "last_held_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Held On"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "sold_instrument_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sold Instrument Id"
           },
           "symbol": {
             "title": "Symbol",
@@ -10997,6 +11578,18 @@
               }
             ],
             "title": "Fx Eur Usd"
+          },
+          "last_held_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Held On"
           },
           "name": {
             "anyOf": [
@@ -12454,6 +13047,49 @@
         "title": "PeriodsOut",
         "type": "object"
       },
+      "PinIn": {
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "usd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Usd"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "usd"
+        ],
+        "title": "PinIn",
+        "type": "object"
+      },
+      "PinsIn": {
+        "properties": {
+          "pins": {
+            "items": {
+              "$ref": "#/components/schemas/PinIn"
+            },
+            "title": "Pins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "title": "PinsIn",
+        "type": "object"
+      },
       "PlanCategoryOut": {
         "properties": {
           "add_value": {
@@ -12906,6 +13542,13 @@
             "title": "Fallbacks",
             "type": "array"
           },
+          "rejected_pins": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedPinOut"
+            },
+            "title": "Rejected Pins",
+            "type": "array"
+          },
           "remaining": {
             "items": {
               "$ref": "#/components/schemas/RemainingBatchOut"
@@ -12919,7 +13562,8 @@
           "balance_eur",
           "remaining",
           "deposits",
-          "fallbacks"
+          "fallbacks",
+          "rejected_pins"
         ],
         "title": "PoolOut",
         "type": "object"
@@ -13986,12 +14630,20 @@
               "3m",
               "ytd",
               "1y",
+              "all",
               "5y",
               "10y",
               "max"
             ],
             "title": "Range",
             "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/RateSession"
+            },
+            "title": "Sessions",
+            "type": "array"
           },
           "source": {
             "enum": [
@@ -14010,6 +14662,13 @@
                 "type": "null"
               }
             ]
+          },
+          "us_market_hours": {
+            "items": {
+              "$ref": "#/components/schemas/RateSession"
+            },
+            "title": "Us Market Hours",
+            "type": "array"
           }
         },
         "required": [
@@ -14043,6 +14702,61 @@
           "inverse"
         ],
         "title": "RateHistoryPoint",
+        "type": "object"
+      },
+      "RateOnly": {
+        "description": "EUR 1,000 at the range start's rate and at its end's (the rate alone).",
+        "properties": {
+          "amount_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Eur",
+            "type": "string"
+          },
+          "change": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Change",
+            "type": "string"
+          },
+          "end_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "End Rate",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "start_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Rate",
+            "type": "string"
+          },
+          "usd_at_start": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd At Start",
+            "type": "string"
+          },
+          "usd_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_eur",
+          "start_rate",
+          "end_rate",
+          "usd_at_start",
+          "usd_now",
+          "change",
+          "kind"
+        ],
+        "title": "RateOnly",
         "type": "object"
       },
       "RatePercentiles": {
@@ -14123,6 +14837,25 @@
           "source"
         ],
         "title": "RatePoint",
+        "type": "object"
+      },
+      "RateSession": {
+        "description": "One continuous forex trading day (UTC instants), for the chart's session axis.",
+        "properties": {
+          "close": {
+            "title": "Close",
+            "type": "string"
+          },
+          "open": {
+            "title": "Open",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open",
+          "close"
+        ],
+        "title": "RateSession",
         "type": "object"
       },
       "RateTrend": {
@@ -14441,6 +15174,48 @@
         "title": "ReconcileResult",
         "type": "object"
       },
+      "ReferenceOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "ecb_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate"
+          },
+          "ecb_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate Date"
+          },
+          "published": {
+            "title": "Published",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "date",
+          "ecb_rate",
+          "published"
+        ],
+        "title": "ReferenceOut",
+        "type": "object"
+      },
       "RefreshOut": {
         "properties": {
           "active": {
@@ -14570,6 +15345,35 @@
           "seq"
         ],
         "title": "RefreshStatus",
+        "type": "object"
+      },
+      "RejectedPinOut": {
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "deposit_id": {
+            "title": "Deposit Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deposit_id",
+          "conversion_id",
+          "usd",
+          "reason"
+        ],
+        "title": "RejectedPinOut",
         "type": "object"
       },
       "RemainingBatchOut": {
@@ -14790,6 +15594,7 @@
               "average",
               "breakeven",
               "today",
+              "range_start",
               "historic_low",
               "historic_high"
             ],
@@ -14835,6 +15640,66 @@
             ],
             "title": "Gain"
           },
+          "monthly_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Change"
+          },
+          "monthly_vs_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Vs Avg"
+          },
+          "other_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Value"
+          },
+          "per_monthly": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Monthly"
+          },
+          "per_unit": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Unit"
+          },
           "rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Rate",
@@ -14868,6 +15733,30 @@
               }
             ],
             "title": "To Breakeven Pct"
+          },
+          "unit_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Change"
+          },
+          "unit_vs_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Vs Avg"
           },
           "value": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -15074,6 +15963,16 @@
             "title": "Generated At",
             "type": "string"
           },
+          "invest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestAmounts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "marks": {
             "items": {
               "$ref": "#/components/schemas/ScenarioMark"
@@ -15091,8 +15990,54 @@
             "title": "Min Rate",
             "type": "string"
           },
+          "other_ccy": {
+            "default": "USD",
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Other Ccy",
+            "type": "string"
+          },
+          "perspective": {
+            "default": "value",
+            "enum": [
+              "value",
+              "invest"
+            ],
+            "title": "Perspective",
+            "type": "string"
+          },
           "quote": {
             "$ref": "#/components/schemas/DollarQuote"
+          },
+          "range": {
+            "default": "max",
+            "enum": [
+              "1d",
+              "1w",
+              "1m",
+              "3m",
+              "ytd",
+              "1y",
+              "all",
+              "5y",
+              "10y",
+              "max"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "range_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Range Start"
           },
           "rate_now": {
             "anyOf": [
@@ -15151,6 +16096,18 @@
               }
             ],
             "title": "Value Now"
+          },
+          "value_now_other": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Now Other"
           }
         },
         "required": [
@@ -16626,6 +17583,66 @@
             "title": "Change",
             "type": "string"
           },
+          "monthly_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Change"
+          },
+          "other_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Change"
+          },
+          "other_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Value"
+          },
+          "per_monthly": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Monthly"
+          },
+          "per_unit": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Unit"
+          },
           "rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Rate",
@@ -16640,6 +17657,18 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Shift Pct",
             "type": "string"
+          },
+          "unit_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Change"
           },
           "value": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -19226,6 +20255,41 @@
         "title": "UnknownActionsOut",
         "type": "object"
       },
+      "UsedByOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "deposit_id": {
+            "title": "Deposit Id",
+            "type": "integer"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deposit_id",
+          "date",
+          "usd",
+          "eur",
+          "pinned"
+        ],
+        "title": "UsedByOut",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -19312,7 +20376,7 @@
   "info": {
     "summary": "v6 API: the server owns data, prices and all maths.",
     "title": "Investment Overview",
-    "version": "7.2.0"
+    "version": "7.2.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -20426,6 +21490,7 @@
                 "3m",
                 "ytd",
                 "1y",
+                "all",
                 "5y",
                 "10y",
                 "max"
@@ -20473,7 +21538,7 @@
             "required": false,
             "schema": {
               "default": "ytd",
-              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|all|\\d{4})$",
+              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|\\d{4})$",
               "title": "Range",
               "type": "string"
             }
@@ -20524,6 +21589,7 @@
                 "3m",
                 "ytd",
                 "1y",
+                "all",
                 "5y",
                 "10y",
                 "max"
@@ -20564,6 +21630,30 @@
     "/api/currency/scenarios/both": {
       "get": {
         "operationId": "get_scenarios_both_api_currency_scenarios_both_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "max",
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "ytd",
+                "1y",
+                "all",
+                "5y",
+                "10y",
+                "max"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -20574,6 +21664,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Get Scenarios Both",
@@ -20951,6 +22051,91 @@
         ]
       }
     },
+    "/api/fx-conversions/pins/{deposit_txn_id}": {
+      "delete": {
+        "operationId": "delete_pins_api_fx_conversions_pins__deposit_txn_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deposit_txn_id",
+            "required": true,
+            "schema": {
+              "title": "Deposit Txn Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Pins",
+        "tags": [
+          "fx-conversions"
+        ]
+      },
+      "put": {
+        "operationId": "put_pins_api_fx_conversions_pins__deposit_txn_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deposit_txn_id",
+            "required": true,
+            "schema": {
+              "title": "Deposit Txn Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositMatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Pins",
+        "tags": [
+          "fx-conversions"
+        ]
+      }
+    },
     "/api/fx-conversions/pool": {
       "get": {
         "operationId": "pool_api_fx_conversions_pool_get",
@@ -20967,6 +22152,49 @@
           }
         },
         "summary": "Pool",
+        "tags": [
+          "fx-conversions"
+        ]
+      }
+    },
+    "/api/fx-conversions/reference": {
+      "get": {
+        "operationId": "reference_api_fx_conversions_reference_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reference",
         "tags": [
           "fx-conversions"
         ]

@@ -61,3 +61,126 @@ def test_pool(api_client: TestClient) -> None:
     assert Decimal(dep["fallback_usd"]) == 400
     assert pool["fallbacks"] == [dep]
     assert Decimal(pool["balance_usd"]) == 0
+
+
+def _seed_pin_ledger() -> list[int]:
+    """Account + D1 (2024-02-01, $1000) + D2 (2024-03-01, $500); returns [d1, d2] ids."""
+    with ledger_session_scope() as s:
+        acct = Account(broker="vanguard", account_label="V2", native_currency="USD")
+        s.add(acct)
+        s.flush()
+        s.add(FxHistory(date=date(2024, 1, 1), base="EUR", quote="USD", rate=Decimal("1.25")))
+        rows = [
+            Transaction(
+                account_id=acct.id, date=d, kind="deposit", net_native=Decimal(n), source="manual"
+            )
+            for d, n in ((date(2024, 2, 1), "1000"), (date(2024, 3, 1), "500"))
+        ]
+        s.add_all(rows)
+        s.flush()
+        return [r.id for r in rows]
+
+
+def _conv(api_client: TestClient, on: str, eur: str, usd: str) -> int:
+    r = api_client.post(
+        "/api/fx-conversions", json={"date": on, "eur_sent": eur, "usd_received": usd}
+    )
+    assert r.status_code == 201, r.text
+    return int(r.json()["id"])
+
+
+def test_pins_happy_path_unpin_and_sorting(api_client: TestClient) -> None:
+    d1, d2 = _seed_pin_ledger()
+    c_early = _conv(api_client, "2024-01-10", "900", "1000")
+    c_late = _conv(api_client, "2024-03-05", "460", "500")  # 4 days after D2 (2024-03-01)
+    listed = api_client.get("/api/fx-conversions").json()
+    assert [r["id"] for r in listed] == [c_late, c_early]  # newest first
+    assert listed[0]["provider"] is None and listed[0]["from_ccy"] == "EUR"
+    assert Decimal(listed[1]["all_in_rate"]) == Decimal("1000") / Decimal("900")
+
+    pre = api_client.get("/api/fx-conversions/pool").json()
+    assert [d["transaction_id"] for d in pre["deposits"]] == [d2, d1]  # newest first
+
+    put = api_client.put(
+        f"/api/fx-conversions/pins/{d2}", json={"pins": [{"conversion_id": c_late, "usd": "500"}]}
+    )
+    assert put.status_code == 200, put.text
+    dep = put.json()
+    assert dep["transaction_id"] == d2 and dep["pinned"] is True
+    assert dep["status"] == "matched"
+    assert dep["slices"][0]["conversion_id"] == c_late and dep["slices"][0]["pinned"] is True
+    assert dep["fallback_to_ecb"] is False
+
+    listed = {r["id"]: r for r in api_client.get("/api/fx-conversions").json()}
+    assert listed[c_late]["used_by"][0]["deposit_id"] == d2
+    assert listed[c_late]["used_by"][0]["pinned"] is True
+    assert Decimal(listed[c_late]["remaining_usd"]) == 0
+
+    assert api_client.delete(f"/api/fx-conversions/pins/{d2}").status_code == 204
+    pool = api_client.get("/api/fx-conversions/pool").json()
+    dep2 = next(d for d in pool["deposits"] if d["transaction_id"] == d2)
+    assert dep2["pinned"] is False and dep2["status"] == "ecb_only"
+    assert pool["rejected_pins"] == []
+
+
+def test_pin_validation_errors(api_client: TestClient) -> None:
+    _d1, d2 = _seed_pin_ledger()
+    c_far = _conv(api_client, "2024-03-20", "900", "1000")  # 19 days after D2
+    c_ok = _conv(api_client, "2024-02-01", "900", "1000")
+    url = "/api/fx-conversions/pins/"
+    far = api_client.put(f"{url}{d2}", json={"pins": [{"conversion_id": c_far, "usd": "10"}]})
+    assert far.status_code == 422
+    over = api_client.put(f"{url}{d2}", json={"pins": [{"conversion_id": c_ok, "usd": "501"}]})
+    assert over.status_code == 422
+    not_deposit = api_client.put(f"{url}9999", json={"pins": []})
+    assert not_deposit.status_code == 422
+
+
+def test_conversion_provider_and_pair_validation(api_client: TestClient) -> None:
+    ok = api_client.post("/api/fx-conversions", json={**BODY, "provider": "wise"})
+    assert ok.status_code == 201 and ok.json()["provider"] == "wise"
+    bad_pair = api_client.post("/api/fx-conversions", json={**BODY, "from_ccy": "GBP"})
+    assert bad_pair.status_code == 422
+    bad_provider = api_client.post("/api/fx-conversions", json={**BODY, "provider": "bank"})
+    assert bad_provider.status_code == 422
+
+
+def test_reference_published_and_not(api_client: TestClient) -> None:
+    with ledger_session_scope() as s:
+        s.add(FxHistory(date=date(2024, 1, 15), base="EUR", quote="USD", rate=Decimal("1.0950")))
+    hit = api_client.get("/api/fx-conversions/reference", params={"date": "2024-01-15"}).json()
+    assert Decimal(hit["ecb_rate"]) == Decimal("1.095") and hit["published"] is True
+    assert hit["ecb_rate_date"] == "2024-01-15"
+    # A Sunday before any fixing: nothing to compare with.
+    miss = api_client.get("/api/fx-conversions/reference", params={"date": "2024-01-14"}).json()
+    assert miss == {
+        "date": "2024-01-14",
+        "ecb_rate": None,
+        "ecb_rate_date": None,
+        "published": False,
+    }
+    # A Sunday after a fixing: the last settled one (Mon 15th) is used, labelled with its date.
+    sun = api_client.get("/api/fx-conversions/reference", params={"date": "2024-01-21"}).json()
+    assert Decimal(sun["ecb_rate"]) == Decimal("1.095")
+    assert sun["ecb_rate_date"] == "2024-01-15" and sun["published"] is False
+
+
+def test_off_pct_is_all_in_against_the_fixing(api_client: TestClient) -> None:
+    with ledger_session_scope() as s:
+        s.add(FxHistory(date=date(2024, 1, 15), base="EUR", quote="USD", rate=Decimal("1.10")))
+    # 1100 USD for 1000 EUR + 10 EUR fees: all-in 1100/1010, against the 1.10 fixing.
+    api_client.post("/api/fx-conversions", json=BODY)
+    row = api_client.get("/api/fx-conversions").json()[0]
+    assert row["ecb_rate_date"] == "2024-01-15"
+    expected = Decimal(1100) / Decimal(1010) / Decimal("1.10") - 1
+    assert abs(Decimal(row["off_pct"]) - expected) < Decimal("1e-9")
+    assert Decimal(row["off_pct"]) < 0
+    # A weekend conversion is compared with the last settled fixing before it.
+    api_client.post("/api/fx-conversions", json={**BODY, "date": "2024-01-20"})
+    sat = next(r for r in api_client.get("/api/fx-conversions").json() if r["date"] == "2024-01-20")
+    assert sat["ecb_rate_date"] == "2024-01-15"
+    assert sat["off_pct"] is not None
+    # No fixing in the week before: no figure, not an error.
+    api_client.post("/api/fx-conversions", json={**BODY, "date": "2023-06-03"})
+    old = next(r for r in api_client.get("/api/fx-conversions").json() if r["date"] == "2023-06-03")
+    assert old["ecb_rate"] is None and old["off_pct"] is None

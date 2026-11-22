@@ -10,7 +10,7 @@ import { Percent } from "../../components/Percent";
 import { Skeleton } from "../../components/Skeleton";
 import { type TabItem, Tabs } from "../../components/Tabs";
 import { ApiError } from "../../lib/api";
-import { formatMoney } from "../../lib/format";
+import { formatDate, formatMoney } from "../../lib/format";
 import { usePrefs } from "../../lib/prefs";
 import { HOLDING_RANGES, type HoldingRange } from "../../lib/queries/holding-detail";
 import { type LookupHistoryDto, type LookupQuoteDto, useLookupHistory, useLookupQuote } from "../../lib/queries/lookup";
@@ -200,6 +200,12 @@ export function Lookup() {
           </>
         }
       />
+      {d.last_held_on && (
+        <p className="holding-page__muted lookup-page__sold">
+          You held this until {formatDate(d.last_held_on)}.{" "}
+          <Link to={`/transactions?symbol=${encodeURIComponent(d.symbol)}`}>See its transactions</Link>
+        </p>
+      )}
       <Tabs
         items={items}
         value={active}

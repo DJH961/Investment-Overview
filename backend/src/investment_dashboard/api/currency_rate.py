@@ -1,6 +1,6 @@
 """Currency page rate chart (v7.2).
 
-* ``GET /currency/rate-history?range=1d|1w|1m|3m|ytd|1y|5y|10y|max`` - EUR/USD
+* ``GET /currency/rate-history?range=1d|1w|1m|3m|ytd|1y|all|5y|10y|max`` - EUR/USD
   points, MA200, the lifetime average rate, low/high/change, the dollar's trend,
   "dollar cheaper than today" percentiles and conversion markers. One payload for
   both reporting currencies (a market rate, not a portfolio figure).

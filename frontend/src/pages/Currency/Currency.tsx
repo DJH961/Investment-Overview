@@ -6,8 +6,8 @@ import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { PageHeader } from "../../components/PageHeader";
 import { RateChart } from "../../components/RateChart";
-import { SectionBar } from "../../components/SectionBar";
-import { SegmentedControl } from "../../components/SegmentedControl";
+import { RangePicker, SectionBar } from "../../components/SectionBar";
+
 import { Skeleton } from "../../components/Skeleton";
 import { StatStrip } from "../../components/StatStrip";
 import { formatDate } from "../../lib/format";
@@ -24,7 +24,7 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
   rate_now: { label: "EUR/USD now", tip: "How many dollars one euro buys at the latest rate." },
   effect_today: {
     label: "Effect today",
-    tip: "What the exchange rate added to or took from your portfolio value since the last close.",
+    tip: "Euro view: what the exchange rate added to or took from your portfolio's euro value since the last close. Dollar view: how many more or fewer dollars €1,000 buys than at the last close.",
   },
   effect_ytd: {
     label: "Effect this year",
@@ -40,11 +40,11 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
   },
   effect_this_year: {
     label: "Effect this year",
-    tip: "What the exchange rate added to or took from your portfolio this year, in money and percentage points.",
+    tip: "Euro view: what the exchange rate added to or took from your portfolio's euro value this year. Dollar view: what it did to the euros you sent into your dollar accounts this year. The gap between your euro and dollar returns sits beside it.",
   },
   effect_lifetime: {
     label: "Effect, lifetime",
-    tip: "What the exchange rate added to or took from your portfolio since you started, in money and percentage points.",
+    tip: "Euro view: what the exchange rate added to or took from your portfolio's euro value since you started. Dollar view: what it did to every euro you sent into your dollar accounts. The gap between your euro and dollar returns sits beside it.",
   },
   dollar_trend: {
     label: "Dollar trend",
@@ -75,6 +75,25 @@ const stripRank = (key: string) => {
   const i = STRIP_ORDER.indexOf(key);
   return i < 0 ? STRIP_ORDER.length : i;
 };
+
+const RANGE_OPTIONS = RATE_RANGES.map((r) => ({
+  value: r,
+  label: RATE_RANGE_LABELS[r],
+  hint: r === "all" ? "All, since you started" : r === "max" ? "Max, since 1999" : undefined,
+}));
+
+/** The page range picker: in the sticky section bar, so it is in reach from every section. */
+function PageRangePicker({ range }: { range: CurrencyRangeState }) {
+  return (
+    <RangePicker
+      label="Range"
+      options={RANGE_OPTIONS}
+      value={range.range}
+      emphasis="all"
+      onChange={(r) => range.setRange(r as RateRange)}
+    />
+  );
+}
 
 export function Currency() {
   const { sub } = useParams();
@@ -143,10 +162,11 @@ function CurrencyMain({ range }: { range: CurrencyRangeState }) {
         />
       ) : (
         <div className="currency-page__stack">
-          <SectionBar items={items} label="Currency sections" onSelect={forceUpTo} />
+          <SectionBar items={items} label="Currency sections" onSelect={forceUpTo} extra={<PageRangePicker range={range} />} />
           {/* The page leads with the rate; the strip follows. Today's split stays on the
-              Overview's Currency card: this page shows only views the Overview has not. */}
-          <RateChart currency={currency} range={range.range} onRangeChange={range.setRange} />
+              Overview's Currency card: this page shows only views the Overview has not.
+              The range picker is in the sticky bar above, so the chart hides its own. */}
+          <RateChart currency={currency} range={range.range} onRangeChange={range.setRange} showRangePicker={false} />
           {stats.length > 0 ? (
             <StatStrip
               className="stat-strip--rows"
@@ -179,7 +199,8 @@ function CurrencySubPageView({
   range: CurrencyRangeState;
 }) {
   const { currency } = usePrefs();
-  useShellStatus("closed", page.label);
+  const title = currency === "USD" && page.usdLabel ? page.usdLabel : page.label;
+  useShellStatus("closed", title);
   const back = `/currency?range=${range.range}#${section.id}`;
   return (
     <div className="currency-page currency-page--sub">
@@ -188,17 +209,11 @@ function CurrencySubPageView({
         Currency · {section.label}
       </Link>
       <PageHeader
-        title={page.label}
+        title={title}
         titleOnPhone
         actions={
           page.ranged ? (
-            <SegmentedControl
-              ariaLabel="Range"
-              size="sm"
-              options={RATE_RANGES.map((r) => ({ value: r, label: RATE_RANGE_LABELS[r] }))}
-              value={range.range}
-              onChange={(r) => range.setRange(r as RateRange)}
-            />
+            <PageRangePicker range={range} />
           ) : undefined
         }
       />

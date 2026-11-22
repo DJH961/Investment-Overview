@@ -10,7 +10,8 @@ import { effectRangeFor, useCurrencyEffect, type CurrencyEffectDto, type EffectS
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencyRange } from "../../range";
 import type { CurrencySectionComponentProps } from "../../sections";
-import { BridgeCard, foreignOf, HoldingsCard, ImpactHero, MonthsCard, RecordsCard, RollingCard, SessionCard } from "./ImpactPanels";
+import { BridgeCard, foreignOf, HoldingsCard, ImpactHero, isGapLead, MonthsCard, RecordsCard, RollingCard, SessionCard } from "./ImpactPanels";
+import { DepositsCard, InvestingBridgeCard, investingView } from "./ImpactInvesting";
 import "./Impact.scss";
 
 /** The section's secondary figures' words (the hero carries the returns and the effect). */
@@ -43,11 +44,17 @@ const ELSEWHERE = new Set([
 /** Sizes, not gains: shown as ± without a sign or colour. */
 const UNSIGNED = new Set(["typical_day", "typical_month"]);
 
-export function stripItems(stats: EffectStatDto[], ccy: string): StatItem[] {
+/** The same figures in the investing view, said of deposits. */
+const INVESTING_LABELS: Record<string, StatMeta> = {
+  tailwind_share: { label: "Months it helped", tip: "In how many of this range's months with a deposit your euros bought more dollars than at the start rate." },
+  largest_day: { label: "Largest deposit effect", tip: "The deposit the exchange rate moved most, either way." },
+};
+
+export function stripItems(stats: EffectStatDto[], ccy: string, investing = false): StatItem[] {
   return stats
     .filter((s) => !ELSEWHERE.has(s.key) && STAT_LABELS[s.key])
     .map((s) => {
-      const meta = STAT_LABELS[s.key];
+      const meta = (investing && INVESTING_LABELS[s.key]) || STAT_LABELS[s.key];
       if (s.key === "tailwind_share") {
         const n = toNum(s.secondary ?? null);
         const share = toNum(s.value) ?? 0;
@@ -88,7 +95,7 @@ function rangeMeta(range: CurrencyRange, data: CurrencyEffectDto | undefined): s
   const all = effectRangeFor(range) === "all";
   // 5Y / 10Y / Max are not split further than your own time: say which window this is.
   return all
-    ? `${range === "max" ? "Max" : label}: all your time, since ${formatDate(data.start_on)}`
+    ? `${label}: all your time, since ${formatDate(data.start_on)}`
     : `${label} · ${formatDate(data.start_on)} – ${formatDate(data.end_on)}`;
 }
 
@@ -101,18 +108,28 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
   const data = q.data;
   const shownRange = data?.range ?? effectRange;
   const intraday = data?.granularity === "intraday";
+  // The USD view reads the investing side: the same cards, on the euros sent in.
+  const inv = data?.investing ?? null;
+  const view = data ? investingView(data) : undefined;
   const empty = data && (data.series ?? []).length < 2 && !data.bridge && !(data.months ?? []).length;
 
   return (
     <CurrencySection
       id={id}
       title={label}
-      explainer={`What the ${foreignOf(currency)}'s moves added to or took from your portfolio, in ${currency === "EUR" ? "euros" : "dollars"}.`}
+      explainer={
+        inv
+          ? "What the exchange rate did to the euros you send into your dollar accounts: a stronger euro buys more dollars."
+          : data && isGapLead(data)
+          ? "How your result in euros compares with your result in dollars: the part the exchange rate decides."
+          : `What the ${foreignOf(currency)}'s moves added to or took from your portfolio, in ${currency === "EUR" ? "euros" : "dollars"}.`
+      }
       meta={
         data ? (
           <span className="impact__meta">
             {rangeMeta(range, data)}
             {data.explainer ? <InfoTip label="How lifetime is counted" content={data.explainer} /> : null}
+            {data.book_note ? <InfoTip label="A deposit may be missing" content={data.book_note} /> : null}
           </span>
         ) : undefined
       }
@@ -124,17 +141,17 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
       emptyDescription="Once you hold assets in another currency over this window, what the exchange rate did shows up here."
       skeleton={["20rem", "12rem"]}
     >
-      {data ? (
+      {data && view ? (
         <div className="impact">
-          <ImpactHero data={data} range={shownRange} figures={stripItems(data.stats ?? [], data.ccy)} />
+          <ImpactHero data={data} range={shownRange} figures={stripItems((inv ? inv.stats : data.stats) ?? [], data.ccy, !!inv)} />
           <div className="impact__pair">
             {intraday ? <SessionCard data={data} /> : null}
-            <BridgeCard data={data} />
-            {!intraday ? <RecordsCard data={data} /> : null}
+            {inv ? <InvestingBridgeCard inv={inv} /> : <BridgeCard data={data} />}
+            {!intraday ? <RecordsCard data={view} dayLabel={inv ? "Deposit" : "Day"} /> : null}
           </div>
-          <MonthsCard data={data} />
-          <RollingCard data={data} range={shownRange} />
-          <HoldingsCard data={data} range={range} />
+          <MonthsCard data={view} />
+          <RollingCard data={view} range={shownRange} />
+          {inv ? <DepositsCard inv={inv} range={range} /> : <HoldingsCard data={data} range={range} />}
         </div>
       ) : null}
     </CurrencySection>

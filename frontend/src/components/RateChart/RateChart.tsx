@@ -52,6 +52,13 @@ const DIRECTION = {
   sideways: { word: "Sideways", Icon: MoveRight },
 } as const;
 
+/** The same trend told from the euro's side (the USD view, EUR/USD): the dollar weakening is the euro strengthening. */
+const EURO_DIRECTION = {
+  dollar_up: DIRECTION.dollar_down,
+  dollar_down: DIRECTION.dollar_up,
+  sideways: DIRECTION.sideways,
+} as const;
+
 const NORMAL_WORD = { normal: "normal month", large: "larger month than usual", unusual: "unusual month" } as const;
 
 type Kind = "tailwind" | "headwind" | "neutral";
@@ -86,11 +93,31 @@ function Figures({ data, lens }: { data: RateHistoryDto; lens: RateLens }) {
   const holdings = toNum(data.change?.inverse_pct);
   const next = toNum(data.change?.rate_pct);
   const trend = data.trend;
-  const dir = trend ? DIRECTION[trend.direction] : null;
+  // The USD view (EUR/USD, the investing side) tells the trend as the euro's.
+  const euroSide = lens === "rate";
+  const dir = trend ? (euroSide ? EURO_DIRECTION : DIRECTION)[trend.direction] : null;
   // Low and high of the quote shown (in USD/EUR the dollar's low is EUR/USD's high).
   const lo = lens === "rate" ? data.low : data.high;
   const hi = lens === "rate" ? data.high : data.low;
   const day = (p: RatePointDto | null | undefined) => (p ? formatDate(p.t.slice(0, 10)) : "–");
+  const hold = (
+      <Figure
+        key="hold"
+        label="Dollars you hold"
+        tip="What the rate move alone did to the euro value of a dollar held through this range. Up is good for what you own."
+        value={pct(holdings)}
+        note={<KindWord kind={kindOf(holdings)} words={{ tailwind: "Tailwind", headwind: "Headwind", neutral: "Flat" }} />}
+      />
+  );
+  const convert = (
+      <Figure
+        key="convert"
+        label="Euros you convert"
+        tip="How many more or fewer dollars one euro buys than at the start of this range. Up is good for what you invest next."
+        value={pct(next)}
+        note={<KindWord kind={kindOf(next)} words={{ tailwind: "Buys more", headwind: "Buys less", neutral: "Flat" }} />}
+      />
+  );
   return (
     <dl className="rate-chart__figs">
       <Figure
@@ -98,28 +125,26 @@ function Figures({ data, lens }: { data: RateHistoryDto; lens: RateLens }) {
         tip={`The lowest and highest rate in this range: ${day(lo)} and ${day(hi)}.`}
         value={`${fmt(pick(lo, lens), lens)} – ${fmt(pick(hi, lens), lens).replace(/^[$€]/, "")}`}
       />
-      <Figure
-        label="Dollars you hold"
-        tip="What the rate move alone did to the euro value of a dollar held through this range. Up is good for what you own."
-        value={pct(holdings)}
-        note={<KindWord kind={kindOf(holdings)} words={{ tailwind: "Tailwind", headwind: "Headwind", neutral: "Flat" }} />}
-      />
-      <Figure
-        label="Euros you convert"
-        tip="How many more or fewer dollars one euro buys than at the start of this range. Up is good for what you invest next."
-        value={pct(next)}
-        note={<KindWord kind={kindOf(next)} words={{ tailwind: "Buys more", headwind: "Buys less", neutral: "Flat" }} />}
-      />
+      {euroSide ? [convert, hold] : [hold, convert]}
       {trend && dir ? (
         <Figure
-          label="Dollar trend"
+          label={euroSide ? "Euro trend" : "Dollar trend"}
           tip={
             <>
-              Exchange rates have no built-in upward drift: they wander both ways, and that is normal. This compares the
-              dollar with its 200-day average
-              {trend.since && trend.since_change_pct ? ` (this direction since ${formatDate(trend.since)}: ${pct(toNum(trend.since_change_pct))})` : ""}
-              , and this month&apos;s move ({pct(toNum(trend.move_pct))}) with a typical month (±
-              {formatPercent(toNum(trend.typical_move_pct), { digits: 1 })}). It describes; it does not predict.
+              Exchange rates have no built-in upward drift: they wander both ways, and that is normal.{" "}
+              {euroSide ? (
+                <>
+                  This compares the euro with its 200-day average, and this month&apos;s move with a typical month. A
+                  stronger euro buys more dollars. It describes; it does not predict.
+                </>
+              ) : (
+                <>
+                  This compares the dollar with its 200-day average
+                  {trend.since && trend.since_change_pct ? ` (this direction since ${formatDate(trend.since)}: ${pct(toNum(trend.since_change_pct))})` : ""}
+                  , and this month&apos;s move ({pct(toNum(trend.move_pct))}) with a typical month (±
+                  {formatPercent(toNum(trend.typical_move_pct), { digits: 1 })}). It describes; it does not predict.
+                </>
+              )}
             </>
           }
           value={
@@ -178,12 +203,15 @@ export function RateChart({
   className,
   range: rangeProp,
   onRangeChange,
+  showRangePicker = true,
 }: {
   currency: ReportingCurrency;
   className?: string;
   /** The page's range (the Currency page owns it); without it the chart keeps its own. */
   range?: RateRange;
   onRangeChange?: (range: RateRange) => void;
+  /** Render the chart's own range buttons (false when the page shows the picker elsewhere). */
+  showRangePicker?: boolean;
 }) {
   const timeZone = useTimeZone();
   const [ownRange, setOwnRange] = usePersistentState<RateRange>(rangeProp ? null : "currency.rate.range", "1y", isRange);
@@ -208,8 +236,17 @@ export function RateChart({
   const pts = data?.points ?? [];
   const last = pts.length ? pick(pts[pts.length - 1], lens) : null;
   const change = toNum(lens === "rate" ? data?.change?.rate_pct : data?.change?.inverse_pct);
-  const rangeLabel = shown === "max" ? "since 1999" : RATE_RANGE_LABELS[shown];
-  const long = shown === "1y" || shown === "5y" || shown === "10y" || shown === "max";
+  const rangeLabel = shown === "max" ? "since 1999" : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
+  const long = shown === "1y" || shown === "all" || shown === "5y" || shown === "10y" || shown === "max";
+  const sessions = useMemo(
+    () => (shown === "1w" ? (data?.sessions ?? []).map((s) => ({ date: s.close.slice(0, 10), open: s.open, close: s.close })) : []),
+    [data, shown],
+  );
+  // 1D / 1W: shade the hours the US stock market was open (the rate trades round the clock).
+  const shade = useMemo(
+    () => (shown === "1d" || shown === "1w" ? (data?.us_market_hours ?? []).map((h) => ({ from: h.open, to: h.close })) : []),
+    [data, shown],
+  );
 
   const timeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatShortDay(t, timeZone) : formatAxisDate(t, long ? Infinity : 0);
@@ -239,7 +276,7 @@ export function RateChart({
         </span>
         {change !== null ? (
           <span className="rate-chart__change">
-            {pct(change)} {shown === "max" ? rangeLabel : `in ${rangeLabel}`}
+            {pct(change)} {shown === "max" || shown === "all" ? rangeLabel : `in ${rangeLabel}`}
           </span>
         ) : null}
       </p>
@@ -250,8 +287,14 @@ export function RateChart({
         referenceLine={avg !== null ? { value: avg, softBounds: true } : undefined}
         markers={marks.length ? marks : undefined}
         legendExtra={
-          avg !== null || marks.length ? (
+          avg !== null || marks.length || shade.length ? (
             <span className="rate-chart__keys">
+              {shade.length ? (
+                <span className="rate-chart__avg">
+                  <span className="rate-chart__shade-swatch" aria-hidden />
+                  US market open
+                </span>
+              ) : null}
               {avg !== null ? (
                 <span className="rate-chart__avg">
                   <span className="rate-chart__avg-swatch" aria-hidden />
@@ -268,13 +311,17 @@ export function RateChart({
           ) : undefined
         }
         range={shown}
-        ranges={[...RATE_RANGES]}
+        ranges={showRangePicker ? [...RATE_RANGES] : undefined}
         rangeLabel={(r) => RATE_RANGE_LABELS[r as RateRange] ?? r}
         onRangeChange={(r) => setRange(r as RateRange)}
         loading={q.isPending}
         busy={q.isFetching && !q.isPending}
         valueFormat={axis}
-        xMode={shown === "1d" ? "time" : "date"}
+        xMode={shown === "1d" ? "time" : shown === "1w" && sessions.length ? "session" : "date"}
+        sessions={sessions.length ? sessions : undefined}
+        shade={shade.length ? shade : undefined}
+        // Spot FX resumes where it left off on Friday: one line across the weekend divider.
+        joinSessions
         timeFormat={timeFormat}
         tooltipTimeFormat={tooltipTimeFormat}
         height={260}

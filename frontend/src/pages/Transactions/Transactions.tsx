@@ -1,6 +1,6 @@
 import { ArrowDownUp, Pencil, Plus, Search, SlidersHorizontal, Tag, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { DataTable, type Column } from "../../components/DataTable";
@@ -28,6 +28,9 @@ import {
   type TransactionWrite,
 } from "../../lib/queries/ledger";
 import { filterLedger, monthTotals, sortLedger, summarizeLedger, useLedgerAll } from "../../lib/queries/ledgerAll";
+import { useFxConversions, useFxPool, type DepositMatch } from "../../lib/queries/manage";
+import { depositsById } from "../CurrencyConversions/matching";
+import { RateChip, RateSheet } from "./RateChip";
 import { useShellStatus } from "../../lib/shell";
 import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import { useIsPhone } from "../../lib/useMediaQuery";
@@ -155,6 +158,15 @@ export function Transactions() {
   const [editing, setEditing] = useState<TransactionOut | "new" | null>(null);
   const [deleting, setDeleting] = useState<TransactionOut | null>(null);
 
+  // /transactions?symbol=X (from a sold holding's lookup page) opens the list filtered to it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const symbolParam = searchParams.get("symbol");
+  useEffect(() => {
+    if (!symbolParam) return;
+    setF({ ...DEFAULT_FILTERS, symbol: symbolParam.toUpperCase() });
+    setSearchParams({}, { replace: true });
+  }, [symbolParam, setF, setSearchParams]);
+
   const patch = (next: Partial<FilterState>) => {
     setF((prev) => ({ ...prev, ...next }));
     setPage(0);
@@ -195,6 +207,12 @@ export function Transactions() {
     () => (accountList.data ?? []).map((a) => ({ value: String(a.id), label: a.account_label })),
     [accountList.data],
   );
+
+  // USD deposits get a "Your rate" / "ECB" chip, joined client-side from the matching pool by deposit id.
+  const fxPool = useFxPool();
+  const fxConversions = useFxConversions();
+  const depositMap = useMemo(() => depositsById(fxPool.data?.deposits ?? []), [fxPool.data]);
+  const [rateFor, setRateFor] = useState<DepositMatch | null>(null);
 
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
@@ -256,9 +274,15 @@ export function Transactions() {
       key: "kind",
       header: "Kind",
       phone: "inline",
-      cell: (r) => (
-        <span className={`transactions-page__kind transactions-page__kind--${r.kind}`}>{KIND_LABEL[r.kind] ?? r.kind}</span>
-      ),
+      cell: (r) => {
+        const match = depositMap.get(r.id);
+        return (
+          <span className="transactions-page__kind-cell">
+            <span className={`transactions-page__kind transactions-page__kind--${r.kind}`}>{KIND_LABEL[r.kind] ?? r.kind}</span>
+            {match && <RateChip match={match} onOpen={setRateFor} />}
+          </span>
+        );
+      },
     },
     { key: "account", header: "Account", cell: (r) => r.account, phone: "hide" },
     { key: "quantity", header: "Qty", align: "right", cell: (r) => formatQuantity(r.quantity) },
@@ -525,6 +549,12 @@ export function Transactions() {
             {form}
           </Dialog>
         ))}
+
+      <RateSheet
+        match={rateFor}
+        conversions={Array.isArray(fxConversions.data) ? fxConversions.data : []}
+        onClose={() => setRateFor(null)}
+      />
 
       <Dialog
         open={deleting !== null}

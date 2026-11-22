@@ -39,17 +39,17 @@ export function useDollar(ccy: ReportingCurrency, range: RateRange) {
   return useQuery(dollarQuery(ccy, range));
 }
 
-export const scenariosQuery = (ccy: ReportingCurrency) =>
+export const scenariosQuery = (ccy: ReportingCurrency, range: RateRange = "max") =>
   queryOptions({
-    queryKey: ["currency", "scenarios"],
-    queryFn: ({ signal }) => api<Both<ScenariosDto>>("/api/currency/scenarios/both", { signal }),
+    queryKey: ["currency", "scenarios", range],
+    queryFn: ({ signal }) => api<Both<ScenariosDto>>(`/api/currency/scenarios/both?range=${range}`, { signal }),
     select: (d: Both<ScenariosDto>) => d[ccy],
     placeholderData: keepPreviousData,
     staleTime: 5 * 60_000,
   });
 
-export function useScenarios(ccy: ReportingCurrency) {
-  return useQuery(scenariosQuery(ccy));
+export function useScenarios(ccy: ReportingCurrency, range: RateRange = "max") {
+  return useQuery(scenariosQuery(ccy, range));
 }
 
 /** The side of a rate pair this view prints (the server names it in `quote.field`). */

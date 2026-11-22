@@ -88,6 +88,36 @@ def test_dollar_low_is_below_high_in_both_quotes(api_client: TestClient, seeded:
     assert eur["high_since_start"]["date"] == usd["low_since_start"]["date"]
 
 
+def test_usd_view_says_what_is_held_outside_dollars(api_client: TestClient, seeded: None) -> None:
+    body = _get(api_client, "/api/currency/dollar/both?range=1y")
+    usd, eur = body["USD"]["position"], body["EUR"]["position"]
+    # The seeded book is all dollars: nothing outside them.
+    assert Decimal(usd["other_value"]) == 0
+    assert Decimal(usd["other_share"]) == 0
+    assert eur["other_value"] is None  # the EUR view keeps its dollar position
+
+
+def test_usd_view_reads_the_euros_trend(api_client: TestClient, seeded: None) -> None:
+    """EUR view: the dollar's trend; USD view: the euro's, on the rate itself."""
+    body = _get(api_client, "/api/currency/dollar/both?range=1y")
+    eur, usd = body["EUR"]["trend"], body["USD"]["trend"]
+    assert eur["asset"] == "dollar"
+    assert usd["asset"] == "euro"
+    if eur["regime"] is not None:
+        assert eur["regime"]["direction"] in {"dollar_up", "dollar_down", "sideways"}
+        assert usd["regime"]["direction"] in {"euro_up", "euro_down", "sideways"}
+    for e, u in zip(body["EUR"]["rolling"], body["USD"]["rolling"], strict=True):
+        assert e["window"] == u["window"]
+        for pe, pu in zip(e["points"], u["points"], strict=True):
+            # Each side computes its own change; the two agree as 1 / (1 + m) - 1.
+            assert abs(Decimal(pe["rate_pct"]) - Decimal(pu["rate_pct"])) < Decimal("1e-20")
+            assert abs(Decimal(pe["inverse_pct"]) - Decimal(pu["inverse_pct"])) < Decimal("1e-20")
+    strip = api_client.get("/api/currency/both").json()
+    tile = {s["key"]: s for s in strip["USD"]["stats"]}.get("dollar_trend")
+    if tile is not None:
+        assert tile["direction"] in {"euro_up", "euro_down", "sideways"}
+
+
 def test_dollar_run_months_and_spark(api_client: TestClient, seeded: None) -> None:
     body = _get(api_client, "/api/currency/dollar/both?range=1y")
     for ccy in ("EUR", "USD"):

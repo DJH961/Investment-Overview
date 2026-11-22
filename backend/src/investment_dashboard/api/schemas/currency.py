@@ -27,8 +27,11 @@ from investment_dashboard.api.schemas.overview import CurrencyLifetime, Currency
 #: * ``dollar_trend``: the dollar's change since its regime started (fraction),
 #:   with ``direction`` and ``normal``.
 #:
-#: In the USD view ``effect_today`` is the currency part of the day move on the
-#: non-USD holdings (the Overview's ``day_split.currency_move``).
+#: In the USD view (the investing side) ``effect_today`` is how many more or fewer
+#: dollars EUR 1,000 buys than at the last close, and ``effect_this_year`` /
+#: ``effect_lifetime`` are the currency effect on your deposits (each deposit's euros
+#: times its rate minus the window's start rate); ``secondary`` is the EUR minus USD
+#: return gap.
 StatKey = Literal[
     "rate_now",
     "effect_today",
@@ -57,7 +60,8 @@ class CurrencyStat(ApiModel):
     #: Tailwind / headwind word for the side's reader; null when it does not apply.
     kind: Literal["tailwind", "headwind", "neutral"] | None = None
     #: ``dollar_trend`` only: the dollar's regime (``domain/fx_trend.regime``).
-    direction: Literal["dollar_up", "dollar_down", "sideways"] | None = None
+    #: The USD view gets the euro's own trend (``euro_up`` / ``euro_down``).
+    direction: Literal["dollar_up", "dollar_down", "euro_up", "euro_down", "sideways"] | None = None
     #: ``dollar_trend`` only: how unusual the recent move is.
     normal: Literal["normal", "large", "unusual"] | None = None
     #: ``dollar_trend`` only: ISO date the regime started.

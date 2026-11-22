@@ -133,6 +133,80 @@
     color: var(--color-fg);
   }
 
+  &__kind-cell {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  // Tap target around the rate chip; keeps a comfortable hit area without a button look.
+  &__rate-chip {
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    font: inherit;
+    min-height: 2rem;
+    // The whole word stays readable: the Kind column grows to fit it rather than cut it.
+    flex-shrink: 0;
+    min-width: max-content;
+  }
+
+  &__rate-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    font-size: var(--font-size-sm);
+  }
+
+  &__rate-heading {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-muted);
+  }
+
+  &__rate-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__rate-slice {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__rate-slice-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  &__rate-usd {
+    margin-left: auto;
+  }
+
+  &__rate-pin {
+    width: 1em;
+    height: 1em;
+    align-self: center;
+  }
+
+  &__rate-slice-detail {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__rate-link {
+    color: var(--color-accent);
+    text-decoration: underline;
+  }
+
   &__no-symbol {
     color: var(--color-muted);
     font-weight: var(--font-weight-medium);

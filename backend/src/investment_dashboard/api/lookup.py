@@ -40,6 +40,8 @@ def search(
                 type=r.type,
                 currency=r.currency,
                 held_instrument_id=r.held_instrument_id,
+                sold_instrument_id=r.sold_instrument_id,
+                last_held_on=r.last_held_on,
             )
             for r in lookup_service.search(session, q)
         ]
@@ -62,6 +64,7 @@ def quote(symbol: SymbolPath, session: SessionDep) -> LookupQuote:
         week52_low=dec(q.week52_low),
         week52_high=dec(q.week52_high),
         fx_eur_usd=dec(q.fx_eur_usd),
+        last_held_on=lookup_service.last_held_on(session, q.symbol),
     )
 
 

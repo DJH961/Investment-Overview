@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
@@ -16,6 +17,8 @@ class LookupHit(ApiModel):
     type: str | None = None
     currency: str | None = None
     held_instrument_id: int | None = None
+    sold_instrument_id: int | None = None
+    last_held_on: date | None = None
 
 
 class LookupSearchResponse(ApiModel):
@@ -35,6 +38,8 @@ class LookupQuote(ApiModel):
     week52_low: DecStr | None = None
     week52_high: DecStr | None = None
     fx_eur_usd: DecStr | None = None
+    #: Set when the symbol was held once and is fully sold now.
+    last_held_on: date | None = None
 
 
 class LookupPoint(ApiModel):

@@ -507,6 +507,23 @@ DEFS: tuple[SettingDef, ...] = (
         unit="s",
     ),
     SettingDef(
+        "fx.chart_bars_max_age_seconds",
+        SettingType.DURATION_S,
+        600,
+        "data_refresh",
+        "Currency chart 1D/1W: reuse rate bars for",
+        help=(
+            "The Currency page's 1D and 1W rate chart uses 15-minute EUR/USD bars from "
+            "Yahoo (around the clock on weekdays). The server keeps the bars it fetched "
+            "for this long before asking Yahoo again, so opening the page does not call "
+            "Yahoo every time. A failed fetch is also kept this long before a retry. "
+            "Shorter means a fresher chart and more Yahoo calls."
+        ),
+        min=_D(60),
+        max=_D(3600),
+        unit="s",
+    ),
+    SettingDef(
         "twin.estimates_enabled",
         SettingType.BOOL,
         True,

@@ -15,7 +15,7 @@ export type RateTrendDto = S["RateTrend"];
 export type RateMarkerDto = S["ConversionMarker"];
 export type RateRange = RateHistoryDto["range"];
 
-export const RATE_RANGES: readonly RateRange[] = ["1d", "1w", "1m", "3m", "ytd", "1y", "5y", "10y", "max"];
+export const RATE_RANGES: readonly RateRange[] = ["1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max"];
 
 export const RATE_RANGE_LABELS: Record<RateRange, string> = {
   "1d": "1D",
@@ -24,6 +24,7 @@ export const RATE_RANGE_LABELS: Record<RateRange, string> = {
   "3m": "3M",
   ytd: "YTD",
   "1y": "1Y",
+  all: "All",
   "5y": "5Y",
   "10y": "10Y",
   max: "Max",

@@ -19,6 +19,7 @@ vi.mock("../../lib/queries/lookup", async (orig) => ({
       week52_low: "301.20",
       week52_high: "455.90",
       fx_eur_usd: "1.08",
+      last_held_on: symbol === "SOLDQ" ? "2026-03-04" : null,
     },
     isPending: false,
     isError: false,
@@ -58,6 +59,17 @@ function renderAt(entry: string | { pathname: string; state?: unknown }) {
 }
 
 describe("Lookup (not held)", () => {
+  it("a sold instrument says when it was held until and links to its transactions", () => {
+    renderAt("/lookup/SOLDQ");
+    expect(screen.getByText(/You held this until/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "See its transactions" })).toHaveAttribute("href", "/transactions?symbol=SOLDQ");
+  });
+
+  it("a never-held instrument shows no sold line", () => {
+    renderAt("/lookup/FAKEQ");
+    expect(screen.queryByText(/You held this until/)).toBeNull();
+  });
+
   it("says Not held and offers only Performance and Details, no position tabs", () => {
     renderAt("/lookup/FAKEQ");
     expect(screen.getByText("Not held")).toBeInTheDocument();

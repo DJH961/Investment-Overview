@@ -1,5 +1,9 @@
 // The lookup page reuses the holding page's layout (Holding.scss); only its own bits here.
 .lookup-page {
+  &__sold {
+    margin: 0 0 var(--space-3);
+  }
+
   &__stamp {
     font-size: var(--font-size-xs);
   }

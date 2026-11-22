@@ -79,7 +79,23 @@ def test_stats_have_values_and_side_specific_tiles(api_client: TestClient, seede
         for tile in body[ccy]["stats"]:
             assert tile["value"] is not None
     keys_usd = {t["key"] for t in body["USD"]["stats"]}
-    assert "effect_today" not in keys_usd
+    # The USD view reads the investing side: dollars per EUR 1,000 today, and what
+    # the rate did to the euros sent in this year and since the start (as Impact).
+    tiles = {
+        t["key"]: t
+        for t in body["USD"]["stats"]
+        if t["key"] in {"effect_today", "effect_this_year", "effect_lifetime"}
+    }
+    assert {"effect_this_year", "effect_lifetime"} <= set(tiles)
+    for t in tiles.values():
+        assert t["unit"] == "money"
+        assert t["currency"] == "USD"
+        assert t["kind"] == currency_rm._kind(D(t["value"]))
+    impact = api_client.get("/api/currency/effect/both?range=all").json()
+    inv = impact["USD"]["investing"]
+    assert D(tiles["effect_lifetime"]["value"]) == D(inv["effect"])
+    gap = D(impact["USD"]["headline"]["effect_pp"])
+    assert abs(D(tiles["effect_lifetime"]["secondary"]) - gap) < Decimal("1e-8")
     keys_eur = {t["key"] for t in body["EUR"]["stats"]}
     assert "investing_power_today" not in keys_eur
     assert "rate_now" in keys_eur

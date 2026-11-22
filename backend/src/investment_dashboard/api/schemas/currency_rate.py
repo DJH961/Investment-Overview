@@ -13,7 +13,7 @@ from pydantic import Field
 
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
 
-RateRange = Literal["1d", "1w", "1m", "3m", "ytd", "1y", "5y", "10y", "max"]
+RateRange = Literal["1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max"]
 
 
 class RateHistoryPoint(ApiModel):
@@ -77,12 +77,24 @@ class ConversionMarker(ApiModel):
     conversion_id: int
 
 
+class RateSession(ApiModel):
+    """One continuous forex trading day (UTC instants), for the chart's session axis."""
+
+    open: str
+    close: str
+
+
 class RateHistoryOut(ApiModel):
     range: RateRange
     granularity: Literal["intraday", "daily", "weekly"]
     #: ISO date of the last settled row, or ISO datetime (UTC) of the live point.
     as_of: str | None = None
     source: Literal["ECB reference rate", "live samples"]
+    #: ``1w`` only: the last 5 forex days (Sun 17:00 ET to Fri 17:00 ET), oldest first.
+    sessions: list[RateSession] = Field(default_factory=list)
+    #: ``1d`` / ``1w`` only: the US stock market's regular sessions inside the window
+    #: (09:30 to 16:00 New York, 13:00 on half days; holidays left out), for shading.
+    us_market_hours: list[RateSession] = Field(default_factory=list)
     points: list[RateHistoryPoint] = Field(default_factory=list)
     #: 200-day moving average (ranges >= 1y, daily / weekly only).
     ma200: list[RateHistoryPoint] = Field(default_factory=list)
@@ -103,6 +115,7 @@ __all__ = [
     "RateHistoryPoint",
     "RatePercentiles",
     "RateRange",
+    "RateSession",
     "RateTrend",
     "RateValue",
 ]

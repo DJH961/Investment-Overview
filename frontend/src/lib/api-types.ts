@@ -647,6 +647,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fx-conversions/pins/{deposit_txn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Pins */
+        put: operations["put_pins_api_fx_conversions_pins__deposit_txn_id__put"];
+        post?: never;
+        /** Delete Pins */
+        delete: operations["delete_pins_api_fx_conversions_pins__deposit_txn_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fx-conversions/pool": {
         parameters: {
             query?: never;
@@ -656,6 +674,23 @@ export interface paths {
         };
         /** Pool */
         get: operations["pool_api_fx_conversions_pool_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fx-conversions/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reference */
+        get: operations["reference_api_fx_conversions_reference_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2824,6 +2859,8 @@ export interface components {
         CurrencyEffectOut: {
             /** As Of */
             as_of: string;
+            /** Book Note */
+            book_note?: string | null;
             bridge?: components["schemas"]["EffectBridge"] | null;
             buys?: components["schemas"]["EffectBuys"] | null;
             /**
@@ -2847,6 +2884,12 @@ export interface components {
             headline: components["schemas"]["EffectHeadline"];
             /** Holdings */
             holdings?: components["schemas"]["HoldingEffect"][];
+            investing?: components["schemas"]["InvestingEffect"] | null;
+            /**
+             * Missing Deposit Days
+             * @default 0
+             */
+            missing_deposit_days: number;
             /** Months */
             months?: components["schemas"]["EffectBar"][];
             /** Range */
@@ -2952,7 +2995,7 @@ export interface components {
             /** Currency */
             currency?: ("EUR" | "USD") | null;
             /** Direction */
-            direction?: ("dollar_up" | "dollar_down" | "sideways") | null;
+            direction?: ("dollar_up" | "dollar_down" | "euro_up" | "euro_down" | "sideways") | null;
             /**
              * Key
              * @enum {string}
@@ -3044,6 +3087,11 @@ export interface components {
             max_drawdown_usd?: string | null;
             /** Since */
             since: string;
+            /**
+             * Too Short
+             * @default false
+             */
+            too_short: boolean;
             /** Volatility Eur */
             volatility_eur?: string | null;
             /** Volatility Usd */
@@ -3094,6 +3142,31 @@ export interface components {
             /** Price Move Secondary */
             price_move_secondary: string;
         };
+        /**
+         * DepositEffectRow
+         * @description One USD deposit against the range's start rate (the investing view).
+         */
+        DepositEffectRow: {
+            /** Effect */
+            effect: string;
+            /** Eur */
+            eur: string;
+            /** On */
+            on: string;
+            /** Rate */
+            rate: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "matched" | "partly" | "ecb";
+            /** Start Rate */
+            start_rate: string;
+            /** Transaction Id */
+            transaction_id: number;
+            /** Usd */
+            usd: string;
+        };
         /** DepositMatchOut */
         DepositMatchOut: {
             /** Date */
@@ -3106,14 +3179,25 @@ export interface components {
             fallback_eur: string;
             /** Fallback Rate */
             fallback_rate: string | null;
+            /** Fallback Rate Date */
+            fallback_rate_date: string | null;
             /** Fallback To Ecb */
             fallback_to_ecb: boolean;
             /** Fallback Usd */
             fallback_usd: string;
             /** Matched */
             matched: components["schemas"]["SliceOut"][];
+            /** Pinned */
+            pinned: boolean;
             /** Rate Missing */
             rate_missing: boolean;
+            /** Slices */
+            slices: components["schemas"]["DepositSliceOut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "matched" | "partial" | "ecb_only";
             /** Transaction Id */
             transaction_id: number;
             /** Usd */
@@ -3157,6 +3241,24 @@ export interface components {
              * @description "conversions", "ecb" (pool did not cover it), "mixed"; null without conversions
              */
             rate_source?: string | null;
+        };
+        /** DepositSliceOut */
+        DepositSliceOut: {
+            /** Conversion Date */
+            conversion_date: string;
+            /** Conversion Id */
+            conversion_id: number;
+            /** Eur */
+            eur: string;
+            /** Pinned */
+            pinned: boolean;
+            /**
+             * Rate
+             * @description The conversion's all-in USD per EUR.
+             */
+            rate: string;
+            /** Usd */
+            usd: string;
         };
         /** DepositSummaryOut */
         DepositSummaryOut: {
@@ -3429,7 +3531,7 @@ export interface components {
              * Range
              * @enum {string}
              */
-            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             /** Rolling */
             rolling?: components["schemas"]["RollingSeries"][];
             /** Stats */
@@ -3452,6 +3554,11 @@ export interface components {
             exposure_value?: string | null;
             /** Fx Gain Eur */
             fx_gain_eur?: string | null;
+            /** Other Share */
+            other_share?: string | null;
+            /** Other Value */
+            other_value?: string | null;
+            range_change?: components["schemas"]["RateChange"] | null;
             rate_now?: components["schemas"]["RateValue"] | null;
             today?: components["schemas"]["RateChange"] | null;
         };
@@ -3473,14 +3580,17 @@ export interface components {
         };
         /**
          * DollarRegime
-         * @description The dollar's regime with hysteresis (``domain.fx_trend.regime``).
+         * @description The trend's regime with hysteresis (``domain.fx_trend.regime``).
+         *
+         *     In ``DollarTrend.asset``'s terms: the EUR view reads the dollar (``dollar_*``), the
+         *     USD view the euro (``euro_*``, on the EUR/USD rate itself).
          */
         DollarRegime: {
             /**
              * Direction
              * @enum {string}
              */
-            direction: "dollar_up" | "dollar_down" | "sideways";
+            direction: "dollar_up" | "dollar_down" | "euro_up" | "euro_down" | "sideways";
             /** Since */
             since: string;
             /** Since Change Pct */
@@ -3538,10 +3648,26 @@ export interface components {
             /** Value Display */
             value_display?: string | null;
         };
-        /** DollarTrend */
+        /**
+         * DollarTrend
+         * @description The trend of one currency against the other, in its own terms.
+         *
+         *     ``asset`` says whose: ``dollar`` (the EUR view: every move, average, run and
+         *     percentile is the dollar's, on EUR per USD) or ``euro`` (the USD view: the same
+         *     figures computed on the EUR/USD rate itself, never the dollar's negated).
+         *     ``ma200.distance_pct``, ``normal_*.move_pct``, ``run``, ``percentiles`` (days the
+         *     asset was cheaper than today), ``long_run.distance_pct`` and
+         *     ``above_entry_share`` (days the asset stood above your average rate) follow it.
+         */
         DollarTrend: {
             /** Above Entry Share */
             above_entry_share?: string | null;
+            /**
+             * Asset
+             * @default dollar
+             * @enum {string}
+             */
+            asset: "dollar" | "euro";
             long_run?: components["schemas"]["LongRun"] | null;
             ma200?: components["schemas"]["DollarMa200"] | null;
             normal_month?: components["schemas"]["NormalRange"] | null;
@@ -3676,13 +3802,25 @@ export interface components {
              * @enum {string}
              */
             kind: "tailwind" | "headwind" | "neutral";
+            /**
+             * Lead
+             * @default effect
+             * @enum {string}
+             */
+            lead: "effect" | "gap" | "deposits";
             /** Market */
             market: string;
+            /** Note */
+            note?: string | null;
+            /** Other Ccy */
+            other_ccy?: ("EUR" | "USD") | null;
+            /** Other Effect */
+            other_effect?: string | null;
             /**
              * Return Basis
              * @enum {string}
              */
-            return_basis: "periods" | "daily_chain" | "day";
+            return_basis: "daily_chain" | "day";
             /** Usd Return */
             usd_return?: string | null;
         };
@@ -3895,15 +4033,42 @@ export interface components {
             eur_sent: number | string;
             /** Fees Eur */
             fees_eur?: number | string | null;
+            /**
+             * From Ccy
+             * @default EUR
+             */
+            from_ccy: string;
             /** Note */
             note?: string | null;
+            /** Provider */
+            provider?: ("wise" | "revolut" | "other") | null;
+            /**
+             * To Ccy
+             * @default USD
+             */
+            to_ccy: string;
             /** Usd Received */
             usd_received: number | string;
         };
         /** FxConversionOut */
         FxConversionOut: {
+            /**
+             * All In Rate
+             * @description usd_received / (eur_sent + fees).
+             */
+            all_in_rate: string;
             /** Date */
             date: string;
+            /**
+             * Ecb Rate
+             * @description Settled fixing dated that day; on a weekend or holiday the last settled fixing before it (up to a week back). Null when there is none.
+             */
+            ecb_rate: string | null;
+            /**
+             * Ecb Rate Date
+             * @description Date the fixing is from; differs from the conversion date on a weekend.
+             */
+            ecb_rate_date?: string | null;
             /**
              * Effective Rate
              * @description USD received per EUR sent (derived).
@@ -3913,12 +4078,32 @@ export interface components {
             eur_sent: string;
             /** Fees Eur */
             fees_eur: string | null;
+            /** From Ccy */
+            from_ccy: string;
             /** Id */
             id: number;
             /** Note */
             note: string | null;
+            /**
+             * Off Pct
+             * @description all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.
+             */
+            off_pct?: string | null;
+            /** Provider */
+            provider: ("wise" | "revolut" | "other") | null;
+            /**
+             * Rate
+             * @description usd_received / eur_sent (same as effective_rate).
+             */
+            rate: string;
+            /** Remaining Usd */
+            remaining_usd: string;
+            /** To Ccy */
+            to_ccy: string;
             /** Usd Received */
             usd_received: string;
+            /** Used By */
+            used_by: components["schemas"]["UsedByOut"][];
         };
         /** FxLegs */
         FxLegs: {
@@ -5310,6 +5495,71 @@ export interface components {
              */
             redownload_suggested: boolean;
         };
+        /**
+         * InvestAmounts
+         * @description The euros the invest view prices (the USD Scenarios).
+         */
+        InvestAmounts: {
+            /** Monthly Eur */
+            monthly_eur: string;
+            /** Unit Eur */
+            unit_eur: string;
+        };
+        /**
+         * InvestingEffect
+         * @description The USD view's investing perspective (``readmodels/currency_deposits``).
+         *
+         *     Your euros become dollars: each USD deposit's dollars minus what its euros would
+         *     have bought at ``start_rate`` (the rate on the range's start close; for All the
+         *     rate on your first transaction's day). Money in dollars. ``series`` is the
+         *     cumulative dollars received (``value``) and the same euros at the start rate
+         *     (``constant_currency``), so the gap between them (``currency``) is the effect.
+         *     ``months`` / ``years`` / ``grid`` / ``records`` / ``rolling`` are the same shapes
+         *     as the EUR view's, built on this effect (``records.best_day`` = best deposit).
+         */
+        InvestingEffect: {
+            /** Average Rate */
+            average_rate?: string | null;
+            /** Deposit Count */
+            deposit_count: number;
+            /** Deposits */
+            deposits?: components["schemas"]["DepositEffectRow"][];
+            /** Effect */
+            effect: string;
+            /** End On */
+            end_on: string;
+            /** End Rate */
+            end_rate: string;
+            /** Eur Sent */
+            eur_sent: string;
+            /** Grid */
+            grid?: components["schemas"]["EffectGridRow"][];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Months */
+            months?: components["schemas"]["EffectBar"][];
+            rate_only: components["schemas"]["RateOnly"];
+            records?: components["schemas"]["EffectRecords"];
+            /** Rolling */
+            rolling?: components["schemas"]["EffectRollingPoint"][];
+            /** Series */
+            series?: components["schemas"]["EffectPoint"][];
+            /** Start On */
+            start_on: string;
+            /** Start Rate */
+            start_rate: string;
+            /** Stats */
+            stats?: components["schemas"]["EffectStat"][];
+            /** Usd At Start */
+            usd_at_start: string;
+            /** Usd Received */
+            usd_received: string;
+            /** Years */
+            years?: components["schemas"]["EffectBar"][];
+        };
         /** InvestingPower */
         InvestingPower: {
             /** Amount Eur */
@@ -5546,6 +5796,8 @@ export interface components {
         LongRun: {
             /** Distance Inverse Pct */
             distance_inverse_pct: string;
+            /** Distance Pct */
+            distance_pct?: string | null;
             mean: components["schemas"]["RateValue"];
             /** Since */
             since: string;
@@ -5579,8 +5831,12 @@ export interface components {
             exchange?: string | null;
             /** Held Instrument Id */
             held_instrument_id?: number | null;
+            /** Last Held On */
+            last_held_on?: string | null;
             /** Name */
             name: string;
+            /** Sold Instrument Id */
+            sold_instrument_id?: number | null;
             /** Symbol */
             symbol: string;
             /** Type */
@@ -5609,6 +5865,8 @@ export interface components {
             exchange?: string | null;
             /** Fx Eur Usd */
             fx_eur_usd?: string | null;
+            /** Last Held On */
+            last_held_on?: string | null;
             /** Name */
             name?: string | null;
             /** Price Native */
@@ -6098,6 +6356,18 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["PeriodRowOut"][];
         };
+        /** PinIn */
+        PinIn: {
+            /** Conversion Id */
+            conversion_id: number;
+            /** Usd */
+            usd: number | string;
+        };
+        /** PinsIn */
+        PinsIn: {
+            /** Pins */
+            pins: components["schemas"]["PinIn"][];
+        };
         /** PlanCategoryOut */
         PlanCategoryOut: {
             /** Add Value */
@@ -6255,6 +6525,8 @@ export interface components {
             deposits: components["schemas"]["DepositMatchOut"][];
             /** Fallbacks */
             fallbacks: components["schemas"]["DepositMatchOut"][];
+            /** Rejected Pins */
+            rejected_pins: components["schemas"]["RejectedPinOut"][];
             /** Remaining */
             remaining: components["schemas"]["RemainingBatchOut"][];
         };
@@ -6548,13 +6820,17 @@ export interface components {
              * Range
              * @enum {string}
              */
-            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
+            /** Sessions */
+            sessions?: components["schemas"]["RateSession"][];
             /**
              * Source
              * @enum {string}
              */
             source: "ECB reference rate" | "live samples";
             trend?: components["schemas"]["RateTrend"] | null;
+            /** Us Market Hours */
+            us_market_hours?: components["schemas"]["RateSession"][];
         };
         /** RateHistoryPoint */
         RateHistoryPoint: {
@@ -6564,6 +6840,29 @@ export interface components {
             rate: string;
             /** T */
             t: string;
+        };
+        /**
+         * RateOnly
+         * @description EUR 1,000 at the range start's rate and at its end's (the rate alone).
+         */
+        RateOnly: {
+            /** Amount Eur */
+            amount_eur: string;
+            /** Change */
+            change: string;
+            /** End Rate */
+            end_rate: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Start Rate */
+            start_rate: string;
+            /** Usd At Start */
+            usd_at_start: string;
+            /** Usd Now */
+            usd_now: string;
         };
         /**
          * RatePercentiles
@@ -6590,6 +6889,16 @@ export interface components {
             rate: string;
             /** Source */
             source: string;
+        };
+        /**
+         * RateSession
+         * @description One continuous forex trading day (UTC instants), for the chart's session axis.
+         */
+        RateSession: {
+            /** Close */
+            close: string;
+            /** Open */
+            open: string;
         };
         /**
          * RateTrend
@@ -6689,6 +6998,17 @@ export interface components {
             /** Total */
             total?: string | null;
         };
+        /** ReferenceOut */
+        ReferenceOut: {
+            /** Date */
+            date: string;
+            /** Ecb Rate */
+            ecb_rate: string | null;
+            /** Ecb Rate Date */
+            ecb_rate_date?: string | null;
+            /** Published */
+            published: boolean;
+        };
         /** RefreshOut */
         RefreshOut: {
             /** Active */
@@ -6733,6 +7053,17 @@ export interface components {
             seq: number;
             /** Source */
             source?: string | null;
+        };
+        /** RejectedPinOut */
+        RejectedPinOut: {
+            /** Conversion Id */
+            conversion_id: number;
+            /** Deposit Id */
+            deposit_id: number;
+            /** Reason */
+            reason: string;
+            /** Usd */
+            usd: string;
         };
         /** RemainingBatchOut */
         RemainingBatchOut: {
@@ -6820,7 +7151,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "average" | "breakeven" | "today" | "historic_low" | "historic_high";
+            key: "average" | "breakeven" | "today" | "range_start" | "historic_low" | "historic_high";
             /** Rate */
             rate: string;
             /** Rate Display */
@@ -6835,6 +7166,16 @@ export interface components {
         ScenarioRow: {
             /** Gain */
             gain?: string | null;
+            /** Monthly Change */
+            monthly_change?: string | null;
+            /** Monthly Vs Avg */
+            monthly_vs_avg?: string | null;
+            /** Other Value */
+            other_value?: string | null;
+            /** Per Monthly */
+            per_monthly?: string | null;
+            /** Per Unit */
+            per_unit?: string | null;
             /** Rate */
             rate: string;
             /** Rate Display */
@@ -6843,6 +7184,10 @@ export interface components {
             to_breakeven?: string | null;
             /** To Breakeven Pct */
             to_breakeven_pct?: string | null;
+            /** Unit Change */
+            unit_change?: string | null;
+            /** Unit Vs Avg */
+            unit_vs_avg?: string | null;
             /** Value */
             value: string;
         };
@@ -6894,13 +7239,34 @@ export interface components {
             cushion?: components["schemas"]["Cushion"] | null;
             /** Generated At */
             generated_at: string;
+            invest?: components["schemas"]["InvestAmounts"] | null;
             /** Marks */
             marks?: components["schemas"]["ScenarioMark"][];
             /** Max Rate */
             max_rate: string;
             /** Min Rate */
             min_rate: string;
+            /**
+             * Other Ccy
+             * @default USD
+             * @enum {string}
+             */
+            other_ccy: "EUR" | "USD";
+            /**
+             * Perspective
+             * @default value
+             * @enum {string}
+             */
+            perspective: "value" | "invest";
             quote: components["schemas"]["DollarQuote"];
+            /**
+             * Range
+             * @default max
+             * @enum {string}
+             */
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
+            /** Range Start */
+            range_start?: string | null;
             rate_now?: components["schemas"]["RateValue"] | null;
             /** Rows */
             rows?: components["schemas"]["ScenarioRow"][];
@@ -6913,6 +7279,8 @@ export interface components {
             stress?: components["schemas"]["StressRow"][];
             /** Value Now */
             value_now?: string | null;
+            /** Value Now Other */
+            value_now_other?: string | null;
         };
         /** SchedulerJob */
         SchedulerJob: {
@@ -7389,12 +7757,24 @@ export interface components {
         StressRow: {
             /** Change */
             change: string;
+            /** Monthly Change */
+            monthly_change?: string | null;
+            /** Other Change */
+            other_change?: string | null;
+            /** Other Value */
+            other_value?: string | null;
+            /** Per Monthly */
+            per_monthly?: string | null;
+            /** Per Unit */
+            per_unit?: string | null;
             /** Rate */
             rate: string;
             /** Rate Display */
             rate_display: string;
             /** Shift Pct */
             shift_pct: string;
+            /** Unit Change */
+            unit_change?: string | null;
             /** Value */
             value: string;
         };
@@ -8378,6 +8758,19 @@ export interface components {
             /** Targets */
             targets: string[];
         };
+        /** UsedByOut */
+        UsedByOut: {
+            /** Date */
+            date: string;
+            /** Deposit Id */
+            deposit_id: number;
+            /** Eur */
+            eur: string;
+            /** Pinned */
+            pinned: boolean;
+            /** Usd */
+            usd: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -9222,7 +9615,7 @@ export interface operations {
     get_dollar_both_api_currency_dollar_both_get: {
         parameters: {
             query?: {
-                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             };
             header?: never;
             path?: never;
@@ -9284,7 +9677,7 @@ export interface operations {
     get_rate_history_api_currency_rate_history_get: {
         parameters: {
             query?: {
-                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             };
             header?: never;
             path?: never;
@@ -9314,7 +9707,9 @@ export interface operations {
     };
     get_scenarios_both_api_currency_scenarios_both_get: {
         parameters: {
-            query?: never;
+            query?: {
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9328,6 +9723,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ByCurrency_ScenariosOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9604,6 +10008,70 @@ export interface operations {
             };
         };
     };
+    put_pins_api_fx_conversions_pins__deposit_txn_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deposit_txn_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositMatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_pins_api_fx_conversions_pins__deposit_txn_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deposit_txn_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pool_api_fx_conversions_pool_get: {
         parameters: {
             query?: never;
@@ -9620,6 +10088,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PoolOut"];
+                };
+            };
+        };
+    };
+    reference_api_fx_conversions_reference_get: {
+        parameters: {
+            query: {
+                date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -79,6 +79,17 @@ export function PositionCard({ data }: { data: DollarDto }) {
   const exposure = toNum(pos.exposure_usd ?? null);
   const next = data.next_euro;
 
+  if (data.ccy === "USD") {
+    return (
+      <Card className="dollar-position" title="Your euro position">
+        <div className="dollar-position__lenses">
+          <BuyingPower data={data} />
+          {next ? <NextEuro next={next} data={data} /> : null}
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card className="dollar-position" title="Your dollar position">
       <div className="dollar-position__lenses">
@@ -115,6 +126,71 @@ export function PositionCard({ data }: { data: DollarDto }) {
         {next ? <NextEuro next={next} data={data} /> : null}
       </div>
     </Card>
+  );
+}
+
+/**
+ * The USD view mirrored on investing: "Your buying power". You convert euros into
+ * dollars, so a stronger euro helps: your average conversion rate against now (are your
+ * euros buying more or fewer dollars than on average?), the rate since you started with
+ * your average marked, and the change over the page range. Every figure is the server's.
+ */
+function BuyingPower({ data }: { data: DollarDto }) {
+  const field = data.quote.field;
+  const pos = data.position ?? {};
+  const q = (v: Parameters<typeof quoteOf>[0]) => toNum(quoteOf(v, field));
+  const vsAverage = toNum(pos.change?.rate_pct ?? null);
+  const today = toNum(pos.today?.rate_pct ?? null);
+  const overRange = toNum(pos.range_change?.rate_pct ?? null);
+  const lean = leanOf(vsAverage);
+  const other = toNum(pos.other_value ?? null);
+  const figs: { key: string; label: string; tip?: string; value: ReactNode; note?: ReactNode }[] = [
+    {
+      key: "bought",
+      label: "Your average",
+      tip: "The average rate at which your euros became dollars.",
+      value: rateText(q(pos.avg_rate), field),
+      note: "euros into dollars",
+    },
+    { key: "now", label: "Now", value: rateText(q(pos.rate_now), field), note: `${pct(today, 2)} today` },
+    {
+      key: "range",
+      label: "Over this range",
+      tip: "The euro's change against the dollar from the start of the chosen range to the last close: up means each euro buys more dollars.",
+      value: pct(overRange),
+      note: <KindTag kind={leanOf(overRange)} />,
+    },
+  ];
+  if (other !== null && Math.round(other) !== 0) {
+    figs.push({
+      key: "outside",
+      label: "Held outside dollars",
+      tip: "Holdings not priced in dollars, valued in dollars at today's rate.",
+      value: <Money amount={other} currency="USD" digits={0} />,
+      note: pos.other_share ? `${share(toNum(pos.other_share))} of your holdings` : "",
+    });
+  }
+  return (
+    <Lens
+      name="Your buying power"
+      hint="a stronger euro helps"
+      headline={
+        vsAverage === null ? (
+          rateText(q(pos.rate_now), field)
+        ) : (
+          <>
+            {pct(vsAverage)} <KindTag kind={lean} />
+          </>
+        )
+      }
+      note={
+        vsAverage === null
+          ? "per euro at today's rate"
+          : `Each euro buys ${vsAverage < 0 ? "fewer" : "more"} dollars now than at your average rate.`
+      }
+      visual={<SinceStarted data={data} lean={lean} />}
+      figs={figs}
+    />
   );
 }
 

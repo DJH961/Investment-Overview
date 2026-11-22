@@ -61,6 +61,11 @@ class DollarPosition(ApiModel):
     exposure_value: DecStr | None = None
     #: ``exposure_usd`` as a share of the holdings' value (same instant), fraction.
     exposure_share: DecStr | None = None
+    #: USD view only: holdings not priced in dollars, in dollars at the valuation
+    #: rate (one instant); ``0`` for an all-dollar book.
+    other_value: DecStr | None = None
+    #: USD view only: ``other_value`` as a share of the holdings' value, fraction.
+    other_share: DecStr | None = None
     #: The Overview's ``lifetime.avg_invest_rate``.
     avg_rate: RateValue | None = None
     #: The Overview's ``lifetime.current_rate`` (falls back to today's spot).
@@ -73,6 +78,8 @@ class DollarPosition(ApiModel):
     breakeven: RateValue | None = None
     #: Today: from the previous close (``today.prev``) to the spot (``today.spot``).
     today: RateChange | None = None
+    #: Over the page range: the settled rate on the range's start to the last close.
+    range_change: RateChange | None = None
 
 
 class NextEuroPoint(ApiModel):
@@ -100,11 +107,15 @@ class NextEuro(ApiModel):
 
 
 class DollarRegime(ApiModel):
-    """The dollar's regime with hysteresis (``domain.fx_trend.regime``)."""
+    """The trend's regime with hysteresis (``domain.fx_trend.regime``).
 
-    direction: Literal["dollar_up", "dollar_down", "sideways"]
+    In ``DollarTrend.asset``'s terms: the EUR view reads the dollar (``dollar_*``), the
+    USD view the euro (``euro_*``, on the EUR/USD rate itself).
+    """
+
+    direction: Literal["dollar_up", "dollar_down", "euro_up", "euro_down", "sideways"]
     since: str
-    #: The dollar's (inverse) change since ``since``, fraction.
+    #: The asset's own change since ``since``, fraction.
     since_change_pct: DecStr
 
 
@@ -179,9 +190,23 @@ class LongRun(ApiModel):
     mean: RateValue
     #: ``inverse_now / mean.inverse - 1``.
     distance_inverse_pct: DecStr
+    #: The asset's own distance: the dollar's (as above) or the euro's
+    #: (``rate_now / mean.rate - 1``).
+    distance_pct: DecStr | None = None
 
 
 class DollarTrend(ApiModel):
+    """The trend of one currency against the other, in its own terms.
+
+    ``asset`` says whose: ``dollar`` (the EUR view: every move, average, run and
+    percentile is the dollar's, on EUR per USD) or ``euro`` (the USD view: the same
+    figures computed on the EUR/USD rate itself, never the dollar's negated).
+    ``ma200.distance_pct``, ``normal_*.move_pct``, ``run``, ``percentiles`` (days the
+    asset was cheaper than today), ``long_run.distance_pct`` and
+    ``above_entry_share`` (days the asset stood above your average rate) follow it.
+    """
+
+    asset: Literal["dollar", "euro"] = "dollar"
     regime: DollarRegime | None = None
     ma200: DollarMa200 | None = None
     normal_month: NormalRange | None = None
@@ -288,6 +313,16 @@ class ScenarioRow(ApiModel):
     rate_display: DecStr
     #: The holdings' value in ``ccy`` at ``rate``.
     value: DecStr
+    #: The book in the other currency at `rate` (what still moves for an all-native book).
+    other_value: DecStr | None = None
+    #: Invest view: dollars the euro unit / the regular amount buy at ``rate``, the change
+    #: from today's rate, and from your average conversion rate (null without one).
+    per_unit: DecStr | None = None
+    per_monthly: DecStr | None = None
+    unit_change: DecStr | None = None
+    monthly_change: DecStr | None = None
+    unit_vs_avg: DecStr | None = None
+    monthly_vs_avg: DecStr | None = None
     #: The currency gain in ``ccy`` at ``rate`` against your average rate: the
     #: holdings whose native currency is not ``ccy`` valued at ``rate`` minus at
     #: ``avg_invest_rate``. Null without an average rate.
@@ -300,7 +335,7 @@ class ScenarioRow(ApiModel):
 
 
 class ScenarioMark(ApiModel):
-    key: Literal["average", "breakeven", "today", "historic_low", "historic_high"]
+    key: Literal["average", "breakeven", "today", "range_start", "historic_low", "historic_high"]
     rate: DecStr
     rate_display: DecStr
     date: str | None = None
@@ -318,6 +353,24 @@ class StressRow(ApiModel):
     value: DecStr
     #: ``value`` minus today's value, in ``ccy``.
     change: DecStr
+    #: The same two figures for the book in the other currency.
+    other_value: DecStr | None = None
+    other_change: DecStr | None = None
+    #: Invest view: dollars the euro unit / the regular amount buy after the move, and
+    #: the change from today's.
+    per_unit: DecStr | None = None
+    per_monthly: DecStr | None = None
+    unit_change: DecStr | None = None
+    monthly_change: DecStr | None = None
+
+
+class InvestAmounts(ApiModel):
+    """The euros the invest view prices (the USD Scenarios)."""
+
+    #: A round unit: "what does EUR 1,000 buy".
+    unit_eur: DecStr
+    #: The owner's regular amount (``investing_power.amount_eur``).
+    monthly_eur: DecStr
 
 
 class Sensitivity(ApiModel):
@@ -332,8 +385,11 @@ class Sensitivity(ApiModel):
 class Cushion(ApiModel):
     """Does the dollar cushion or amplify your swings? (``domain.risk`` on both series)."""
 
-    #: First day of the measured window (your first invested day).
+    #: First day of the measured window (the page range's start, or your first invested
+    #: day if later).
     since: str
+    #: The window is too short for a meaningful volatility: only ``since`` is set.
+    too_short: bool = False
     #: Annualised volatility of the flow-adjusted daily returns, per currency.
     volatility_eur: DecStr | None = None
     volatility_usd: DecStr | None = None
@@ -358,6 +414,17 @@ class ScenariosOut(ApiModel):
     generated_at: str
     quote: DollarQuote
     caption: str = CAPTION
+    #: The page range the marks, low/high stats and cushion describe, and its first day.
+    range: RateRange = "max"
+    range_start: str | None = None
+    #: ``value`` (EUR view: today's holdings at other rates, a strong dollar is good) or
+    #: ``invest`` (USD view: what the euros you send in buy, a strong euro is good).
+    perspective: Literal["value", "invest"] = "value"
+    #: ``invest`` only: the euro unit ("what does EUR 1,000 buy") and the regular amount.
+    invest: InvestAmounts | None = None
+    other_ccy: Ccy = "USD"
+    #: The book in ``other_ccy`` at today's rate (the secondary line of the invest view).
+    value_now_other: DecStr | None = None
     #: Slider step, and the first / last row, in the side's ``quote`` (rows ascend in it).
     step: DecStr
     min_rate: DecStr
@@ -388,6 +455,7 @@ __all__ = [
     "DollarStat",
     "DollarStatKey",
     "DollarTrend",
+    "InvestAmounts",
     "LongRun",
     "NextEuro",
     "NormalRange",

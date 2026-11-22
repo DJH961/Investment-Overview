@@ -114,6 +114,12 @@
     font-weight: var(--font-weight-medium);
   }
 
+  // Neutral, not a meaning colour: a hour band behind the line (e.g. US market open).
+  &__shade {
+    fill: var(--color-border);
+    opacity: 0.55;
+  }
+
   &__session-sep {
     stroke: var(--color-border-strong);
     stroke-width: 1;

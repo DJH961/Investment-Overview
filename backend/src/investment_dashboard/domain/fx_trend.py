@@ -22,6 +22,12 @@ State machine (hysteresis), starting ``sideways`` on the first evaluable day:
    trend is kept. So a trend ends only by the opposite condition or by ten
    straight days hugging its average; it never flickers on one noisy day.
 
+**The euro's side (``of="euro"``).** The same figures for the euro, computed on the
+EUR/USD rate itself (USD per 1 EUR: *up* means the euro got stronger), never by
+negating the dollar's percentages (``1 / (1 + m) - 1 != -m``). The regime is then
+``euro_up`` / ``euro_down`` / ``sideways``; percentiles count the days the euro was
+cheaper (a lower rate); a month run counts the months the rate rose or fell.
+
 Everything is :class:`~decimal.Decimal`; nothing here does I/O.
 """
 
@@ -36,7 +42,9 @@ from typing import Literal
 
 from investment_dashboard.domain.risk import annualized_volatility
 
-Direction = Literal["dollar_up", "dollar_down", "sideways"]
+Direction = Literal["dollar_up", "dollar_down", "euro_up", "euro_down", "sideways"]
+#: Whose trend: the dollar (the inverse, EUR per USD) or the euro (the rate itself).
+Asset = Literal["dollar", "euro"]
 Normality = Literal["normal", "large", "unusual"]
 Side = Literal["above", "below"]
 
@@ -63,6 +71,16 @@ WINDOW_START_SLACK_DAYS = 31
 def inverse_series(series: Sequence[tuple[date, Decimal]]) -> list[tuple[date, Decimal]]:
     """``[(date, 1 / rate)]`` (EUR per USD); non-positive rates are dropped."""
     return [(d, ONE / r) for d, r in series if r > 0]
+
+
+def asset_series(
+    series: Sequence[tuple[date, Decimal]], of: Asset = "dollar"
+) -> list[tuple[date, Decimal]]:
+    """The price of ``of`` in the other currency: the dollar ``1 / rate`` (EUR per USD),
+    the euro the rate itself (USD per EUR). Non-positive rates are dropped."""
+    if of == "dollar":
+        return inverse_series(series)
+    return [(d, r) for d, r in series if r > 0]
 
 
 def moving_average[T](
@@ -100,12 +118,16 @@ def regime(
     band: Decimal = REGIME_BAND,
     slope_days: int = SLOPE_DAYS,
     sideways_days: int = SIDEWAYS_DAYS,
+    of: Asset = "dollar",
 ) -> Regime | None:
-    """The dollar's regime on the last day (rules in the module docstring).
+    """The dollar's (or, ``of="euro"``, the euro's) regime on the last day.
 
-    ``None`` when the series is shorter than ``window + slope_days`` rows.
+    Rules in the module docstring. ``None`` when the series is shorter than
+    ``window + slope_days`` rows.
     """
-    inv = inverse_series(series)
+    up_state: Direction = "dollar_up" if of == "dollar" else "euro_up"
+    down_state: Direction = "dollar_down" if of == "dollar" else "euro_down"
+    inv = asset_series(series, of)
     ma = [v for _d, v in moving_average(inv, window)]
     offset = window - 1  # inv[offset + k] pairs with ma[k]
     if len(ma) <= slope_days:
@@ -119,10 +141,10 @@ def regime(
         value, avg, prev = inv[i][1], ma[k], ma[k - slope_days]
         up = value > avg * upper and avg > prev
         down = value < avg * lower and avg < prev
-        if state != "dollar_up" and up:
-            state, since_idx, run_start = "dollar_up", i, None
-        elif state != "dollar_down" and down:
-            state, since_idx, run_start = "dollar_down", i, None
+        if state != up_state and up:
+            state, since_idx, run_start = up_state, i, None
+        elif state != down_state and down:
+            state, since_idx, run_start = down_state, i, None
         elif state != "sideways":
             if avg * lower <= value <= avg * upper:
                 if run_start is None:
@@ -170,7 +192,7 @@ def label_for(percentile: Decimal) -> Normality:
 
 
 def move_normality(
-    series: Sequence[tuple[date, Decimal]], window_days: int = MOVE_WINDOW
+    series: Sequence[tuple[date, Decimal]], window_days: int = MOVE_WINDOW, *, of: Asset = "dollar"
 ) -> MoveNormality | None:
     """How unusual today's ``window_days``-row move of the dollar is.
 
@@ -179,7 +201,7 @@ def move_normality(
     ``(count(|m| < |today|) + ½·count(|m| = |today|)) / N``, so a flat series gives
     0.5 ("normal"), not 1. ``None`` without at least one move.
     """
-    inv = [v for _d, v in inverse_series(series)]
+    inv = [v for _d, v in asset_series(series, of)]
     if window_days < 1 or len(inv) <= window_days:
         return None
     moves = [inv[i] / inv[i - window_days] - ONE for i in range(window_days, len(inv))]
@@ -204,11 +226,13 @@ def rate_percentiles(
     windows: Mapping[str, date | None],
     *,
     slack_days: int = WINDOW_START_SLACK_DAYS,
+    of: Asset = "dollar",
 ) -> dict[str, Decimal | None]:
-    """Per window: the share of days the dollar was **cheaper** than today.
+    """Per window: the share of days the dollar (or the euro) was **cheaper** than today.
 
     Cheaper dollar = lower inverse = higher rate, so the share is
-    ``count(rate > today_rate) / count(rows since start)``. A window is ``None``
+    ``count(rate > today_rate) / count(rows since start)``; a cheaper euro is a lower
+    rate, ``count(rate < today_rate)``. A window is ``None``
     when its start is ``None``, it has no rows, or the series begins more than
     ``slack_days`` after the start (history not there yet).
     """
@@ -223,7 +247,12 @@ def rate_percentiles(
         if not rows or today_rate <= 0:
             out[key] = None
             continue
-        out[key] = Decimal(sum(1 for r in rows if r > today_rate)) / len(rows)
+        cheaper = (
+            sum(1 for r in rows if r > today_rate)
+            if of == "dollar"
+            else sum(1 for r in rows if r < today_rate)
+        )
+        out[key] = Decimal(cheaper) / len(rows)
     return out
 
 
@@ -281,15 +310,16 @@ def quantile(values: Sequence[Decimal], q: Decimal) -> Decimal:
 
 
 def trailing_moves(
-    series: Sequence[tuple[date, Decimal]], window_days: int
+    series: Sequence[tuple[date, Decimal]], window_days: int, *, of: Asset = "dollar"
 ) -> list[tuple[date, Decimal]]:
     """The dollar's (inverse) trailing ``window_days``-row change on every row that has one.
 
-    ``inverse[i] / inverse[i − window_days] − 1`` == ``rate[i − w] / rate[i] − 1``.
+    ``inverse[i] / inverse[i − window_days] − 1`` == ``rate[i − w] / rate[i] − 1``; the
+    euro's is ``rate[i] / rate[i − w] − 1``.
     """
     if window_days < 1:
         raise ValueError("window_days must be >= 1")
-    inv = inverse_series(series)
+    inv = asset_series(series, of)
     return [
         (inv[i][0], inv[i][1] / inv[i - window_days][1] - ONE) for i in range(window_days, len(inv))
     ]
@@ -307,10 +337,14 @@ class MoveBand:
 
 
 def move_band(
-    series: Sequence[tuple[date, Decimal]], window_days: int, *, q: Decimal = NORMAL_QUANTILE
+    series: Sequence[tuple[date, Decimal]],
+    window_days: int,
+    *,
+    q: Decimal = NORMAL_QUANTILE,
+    of: Asset = "dollar",
 ) -> MoveBand | None:
     """Typical size and normal limit of every ``window_days`` move (``None`` without one)."""
-    sizes = [abs(m) for _d, m in trailing_moves(series, window_days)]
+    sizes = [abs(m) for _d, m in trailing_moves(series, window_days, of=of)]
     if not sizes:
         return None
     return MoveBand(
@@ -342,10 +376,15 @@ def ma_slope(
     window: int = MA_WINDOW,
     slope_days: int = SLOPE_DAYS,
     flat: Decimal = FLAT_SLOPE,
+    of: Asset = "dollar",
 ) -> MaSlope | None:
-    """The dollar against its MA200 and where that average points (``None`` if too short)."""
+    """The dollar (or the euro) against its MA200 and where that average points.
+
+    ``None`` if too short. ``ma_now`` / ``ma_then`` / ``side`` / ``distance_pct`` are
+    in ``of``'s terms; ``ma_rate_now`` is always the MA of the rate.
+    """
     valid = [(d, r) for d, r in series if r > 0]
-    inv = inverse_series(valid)
+    inv = asset_series(valid, of)
     ma = moving_average(inv, window)
     ma_rate = moving_average(valid, window)
     if len(ma) <= slope_days:
@@ -425,7 +464,9 @@ class MonthRun:
     month_ends: tuple[date, ...] = field(default=(), compare=False)
 
 
-def monthly_run(series: Sequence[tuple[date, Decimal]], months: int = 6) -> MonthRun | None:
+def monthly_run(
+    series: Sequence[tuple[date, Decimal]], months: int = 6, *, of: Asset = "dollar"
+) -> MonthRun | None:
     """ "The dollar fell in 5 of the last 6 months".
 
     Month ends are the last row of each calendar month (the current month's last
@@ -447,8 +488,9 @@ def monthly_run(series: Sequence[tuple[date, Decimal]], months: int = 6) -> Mont
             ends.append((d, r))
     if len(ends) <= months:
         return None
-    # The dollar rose when the rate fell (inverse up).
-    changes = [ends[i - 1][1] - ends[i][1] for i in range(len(ends) - months, len(ends))]
+    # The dollar rose when the rate fell (inverse up); the euro when the rate rose.
+    sign = -1 if of == "dollar" else 1
+    changes = [sign * (ends[i][1] - ends[i - 1][1]) for i in range(len(ends) - months, len(ends))]
     rose = sum(1 for c in changes if c > 0)
     fell = sum(1 for c in changes if c < 0)
     if rose == fell == 0:
@@ -485,6 +527,7 @@ def rate_volatility(
 
 
 __all__ = [
+    "Asset",
     "Direction",
     "Extremes",
     "MaSlope",
@@ -494,6 +537,7 @@ __all__ = [
     "Normality",
     "Regime",
     "SeriesMean",
+    "asset_series",
     "daily_returns",
     "inverse_series",
     "label_for",

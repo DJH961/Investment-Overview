@@ -17,7 +17,11 @@ export function Dollar({ id, label, currency, range }: CurrencySectionComponentP
     <CurrencySection
       id={id}
       title={label}
-      explainer="Your dollars as a holding: what you own, the rate you bought at, and whether today's move is ordinary."
+      explainer={
+        currency === "USD"
+          ? "Your euros as buying power: your average conversion rate against now, what your next euro buys, and whether the rate's move is ordinary."
+          : "Your dollars as a holding: what you own, the rate you bought at, and whether today's move is ordinary."
+      }
       meta={
         RATE_RANGE_LABELS[range] ? `${data?.quote.pair ?? ""} · ${range === "max" ? "since 1999" : RATE_RANGE_LABELS[range]}` : undefined
       }

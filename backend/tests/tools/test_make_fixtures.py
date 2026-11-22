@@ -40,11 +40,12 @@ def test_full_set_is_nasty_but_fake(runs: tuple[Path, Path]) -> None:
     assert data["GET /api/auth/me"]["authenticated"] is True
     holdings = data["GET /api/holdings/both"]["USD"]["holdings"]
     symbols = {h["symbol"] for h in holdings}
-    assert symbols >= {"FAKEL", "FAKENX", "FAKEU.DE"}
+    assert symbols >= {"FAKEL", "FAKENX"}
     assert all(s.startswith("FAKE") for s in symbols)
     assert max(len(h["name"]) for h in holdings) > 100
     assert float(data["GET /api/overview/both"]["USD"]["kpis"]["total_value"]) > 1_000_000
-    assert any(h["native_currency"] == "EUR" for h in holdings)
+    # USD-only, like the owner's ledger: every holding is priced in dollars.
+    assert all(h["native_currency"] == "USD" for h in holdings)
     assert not any("\\Users\\" in json.dumps(v) for v in data.values())
 
 

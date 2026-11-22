@@ -15,11 +15,12 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> **Status (2026-11-21): 7.1.1 is current on `main`.** The 7.1.2 hotfix is open as
-> [PR #427](https://github.com/DJH961/Investment-Overview/pull/427) with current CI green.
-> Version 7.2.0 is prepared on `codex/v7.2.0`, stacked on the hotfix branch for review;
-> 7.2.1 follows it in the owner-approved release train. Nothing in this train has been
-> merged into `main` yet.
+> **Status (2026-11-22): 7.2.0 is current on `main`; 7.2.1 is open for the owner's review**
+> on `release/7.2.1`: the finished part of 7.3 (pins, statuses, provider, the rate chip, the
+> reworked Conversions page), the Currency page fixes (All range in the sticky bar, Impact's
+> time-weighted chain with idle broker cash, the USD view as the investing side, round-the-clock
+> 1D/1W rate chart with shaded US market hours, Scenarios following the range) and the sold
+> holding lookup. Sessions 2 and 3 of 7.3 stay for 7.3.0.
 >
 > **Release train to 7.2.1 (owner, 2026-11-21), one session, merged in this order:**
 >
@@ -840,6 +841,44 @@ typical spread, how many dollars €1,000 bought on your conversion days compare
 with today, and (with P14 recurring plans) when the next one is due. Not planned
 into a push yet.
 
+#### 7.3 as settled with the owner (2026-11-21)
+
+Supersedes the matching parts above and P6/P14 in §9a/§9b where they differ.
+
+- **Providers:** Wise and Revolut (the bank is never used directly). Provider is
+  a short list (Wise · Revolut · Other); cost per provider on the Currency page.
+- **Statement import:** presets for the Wise and Revolut CSV exports on top of
+  the existing column-mapping importer, so a changed layout can still be mapped
+  by hand.
+- **Where the analysis lives:** the Conversions **section** of the one-page
+  Currency page (7.2's section registry, `docs/v7_contracts.md`), not a sub-tab.
+  Merge order 7.1 → 7.2 → 7.3; 7.3 ships after 7.2.
+- **P14 becomes recurring plans for buys and conversions.** Set up once, then
+  add, edit, pause or end them from one *Recurring* list (Manage). Cadence:
+  every N days, weeks or months, with an anchor (weekday or day of month) and
+  an optional end date.
+  - **No confirming that a plan ran.** Once a due date's close is settled (the
+    end-of-day job, catching up every missed date after time offline), the row
+    is added automatically with an **est.** flag, like ETF-twin estimates: a buy
+    at that day's close, a conversion at that day's settled ECB rate. Values,
+    graphs and matching include it at once, so after weeks away the portfolio
+    is close to real.
+  - One quiet prompt, "N estimated rows to settle" (Transactions badge, Data
+    Health), never one per row.
+  - Settle either way, never silently: **import the file** (the preview shows
+    "Update $20.00 → $19.99, est. → confirmed", via P15), or **type what you got**
+    in a quick-settle sheet with linked fields (buy: price, quantity, total;
+    conversion: sent, received, rate, fees) and fine − / + steppers (money
+    ±0.01, price and rate ±0.0001, quantity ±0.0001; hold to repeat). One row or
+    a whole due date at once.
+- **P6 is a bonus, not central:** "Invest a lump sum" (for a work bonus), one
+  secondary button on the Allocations page, no nav entry or card. Full version
+  (conversion, deposit, buys from the target, saved plan, planned versus bought
+  after the import), built last and cut first if 7.3 runs long.
+- **Found while scoping:** the ECB fallback in `fx_conversion_service._ecb_lookup`
+  reads `get_rates` (live overlay), so a deposit dated today is priced at the
+  live spot. 7.3 switches it to the settled fixing.
+
 ---
 
 ## 6. Theme D — finishing the US-taxed-abroad story
@@ -1161,7 +1200,7 @@ afterwards, planned in detail when v7 is done.
 | 4 | **7.0** | **The cutover** (v5 removed, B-014, B-022, plus the API leftovers B-029 and B-031), the **Daily Brief** (§3.1) and the **market clock** (P13). Pulled in (reworked 2026-11-16): **the Currency page, first part** (the always-visible strip and the Today sub-tab, §5), **the USD-view currency figure** (P12), **a light holding page** (route with Details, Transactions and Dividends tabs, §7), and the push 3 leftovers (see below). | 3 | No v5 code on `main`; the Brief's trigger passes its table of cases; a dismissed card stays gone; the Currency page's "today" equals the Overview card; a holding has a URL |
 | 5 | **7.1** | **Holding deep-dive** (§7), on the 7.0 holding page: the Performance tab, one shared holding row, per-holding 1D/1W, ETF-twin view, tranches in USD with the long-term countdown (P3), per-holding stored value series (P16), a fair "% of return" in Risk (P17), and looking up instruments you do not hold (P20). P18 moved to 7.4 (owner, 2026-11-21). | 2 | Holdings' 1D lines sum to the portfolio line; tranche shares sum to the position |
 | 6 | **7.2** | **Currency tab, the rest** (§5): Effect, Rate, What if, and the constant-currency chart on Today; currency as an allocation dimension; the Projection rate band (P5); the currency effect trend (P11). | 2 | Daily parts sum to every period; lifetime reconciles to the Overview card by the gap identity |
-| 7 | **7.3** | **Conversions** (§5.1): clear matching, pinning, costs and timing, currency-generic naming (C1), the Conversions sub-tab, the "Invest this month" flow (P6), scheduled auto-invest transactions (P14) and smart import matching (P15). | 2–3 | Every USD deposit declares how it was paid for; cost golden values match the hand calculation |
+| 7 | **7.3** | **Conversions** (§5.1): clear matching, pinning, costs and timing, currency-generic naming (C1), the Conversions section of the Currency page, recurring buys and conversions with estimated rows (P14), smart import matching (P15) and, as a bonus, "Invest a lump sum" (P6). Settled 2026-11-21 in §5.1. | 2–3 | Every USD deposit declares how it was paid for; cost golden values match the hand calculation |
 | 8 | **7.4** | **One rate everywhere** (§5.1): first stop writing the frozen currency legs (P19), then the cash pool, holding EUR cost from the pool rate, the tranche EUR column, dollars back to euros, realised versus unrealised, currency effect on cash and idle dollars, and uninvested brokerage cash in the Overview total (P18, moved from 7.1). | 2 | Holdings plus pool equal EUR invested on the real ledger; realised plus unrealised equals the lifetime effect |
 | 9 | **7.5** | **Tax information** (§6.2, P1–P3): realised gains by holding period, wash sales, sell planner, the loss list, the tax year page, the 1099 check, the withholding column. | 2 | Short/long-term totals match a hand-worked ledger, including a reinvested-dividend wash sale |
 | 10 | **7.6** | **The finish:** month and year recaps with the real euro return (P8, P10), one channel for facts (P9), instrument metadata from the price provider with sector and country allocation, the hand-written risk explanations (§4.5). | 1–2 | A recap's figures equal the Periods page; an alert fires in a test and is off by default |

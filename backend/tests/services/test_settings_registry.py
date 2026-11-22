@@ -65,6 +65,7 @@ def test_defaults_match_code_constants() -> None:
         == diagnostics_service._MUTUAL_FUND_STALE_GRACE_TRADING_DAYS
     )
     assert _default("diagnostics.frozen_leg_tolerance") == diagnostics_service.FROZEN_LEG_TOLERANCE
+    assert _default("fx.chart_bars_max_age_seconds") == fx_service.FOREX_BARS_TTL_SECONDS
     assert _default("twin.divergence_window") == late_data.DEFAULT_DIVERGENCE_WINDOW
     assert _default("twin.estimates_enabled") == iss.DEFAULT_ESTIMATES_ENABLED
     assert _default("projection.scenarios") == projection_query.DEFAULT_SCENARIOS
