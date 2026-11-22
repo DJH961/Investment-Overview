@@ -431,6 +431,27 @@ def _stats(
     return out
 
 
+def _range_change(
+    daily: list[tuple[date, Decimal]], range_key: str, today: date, first: date | None
+) -> dict[str, Any] | None:
+    """The settled rate from the page range's start to the last settled close."""
+    if range_key == "1d" or not daily:
+        return None
+    if range_key == "1w":
+        start = today - timedelta(days=7)
+    elif range_key == "all":
+        if first is None:
+            return None
+        start = first
+    else:
+        try:
+            start = range_start(range_key, today)
+        except KeyError:
+            return None
+    row = _on_or_before(daily, start) or daily[0]
+    return _change(row[1], daily[-1][1])
+
+
 def build_dollar_both(
     session: Session,
     overview: dict[str, dict[str, Any]],
@@ -449,6 +470,7 @@ def build_dollar_both(
     on = date.fromisoformat(str(on_raw)[:10]) if on_raw else today
     positions = positions_service.compute_positions(session, as_of=on)
     rolling = _rolling(daily, range_key, today)
+    range_change = _range_change(daily, range_key, today, first)
     out: dict[str, dict[str, Any]] = {}
     # Both sides normally share the spot and the average rate: compute the block once.
     trends: dict[tuple[Decimal | None, Decimal | None], dict[str, Any]] = {}
@@ -466,7 +488,8 @@ def build_dollar_both(
             "generated_at": now.isoformat(),
             "range": range_key,
             "quote": QUOTES[ccy],
-            "position": _position(_exposure(positions, spot, ccy), life, today_block),
+            "position": _position(_exposure(positions, spot, ccy), life, today_block)
+            | {"range_change": range_change},
             "next_euro": _next_euro(daily, spot, today, first),
             "trend": trend,
             "rolling": rolling,

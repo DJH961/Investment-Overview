@@ -19,7 +19,7 @@ export function Dollar({ id, label, currency, range }: CurrencySectionComponentP
       title={label}
       explainer={
         currency === "USD"
-          ? "What you hold outside dollars, what your euros buy when you convert them, and whether the rate's move is ordinary."
+          ? "Your euros as buying power: your average conversion rate against now, what your next euro buys, and whether the rate's move is ordinary."
           : "Your dollars as a holding: what you own, the rate you bought at, and whether today's move is ordinary."
       }
       meta={

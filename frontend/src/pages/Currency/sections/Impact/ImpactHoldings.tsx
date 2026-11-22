@@ -7,6 +7,7 @@ import { formatDate } from "../../../../lib/format";
 import { effectRangeFor, useCurrencyEffect } from "../../../../lib/queries/currencyEffect";
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencySubPageProps } from "../../sections";
+import { DepositsTable } from "./ImpactInvesting";
 import { HoldingsTable, noEffectLine, sortHoldings, withCurrencyEffect } from "./ImpactPanels";
 import "./Impact.scss";
 
@@ -16,6 +17,41 @@ export function ImpactHoldings({ currency, range }: CurrencySubPageProps) {
   const data = q.data;
   if (q.isError && !data) return <ErrorState title="Per-holding split could not be loaded" onRetry={() => void q.refetch()} />;
   if (!data) return <Skeleton height="20rem" />;
+  const inv = data.investing;
+  if (inv) {
+    // The USD view: every deposit of the range against the start rate.
+    const deps = inv.deposits ?? [];
+    if (!deps.length) return <EmptyState title="No deposits in this range" />;
+    return (
+      <Card
+        className="impact__holdings impact__holdings--all"
+        title={`${deps.length} ${deps.length === 1 ? "deposit" : "deposits"}`}
+        meta={`${formatDate(inv.start_on)} – ${formatDate(inv.end_on)}`}
+      >
+        <DepositsTable rows={deps} />
+        <dl className="impact__sums">
+          <div className="impact__sum">
+            <dt className="impact__sum-label">Sent</dt>
+            <dd className="impact__sum-value">
+              <Money amount={toNum(inv.eur_sent)} currency="EUR" digits={0} />
+            </dd>
+          </div>
+          <div className="impact__sum">
+            <dt className="impact__sum-label">Received</dt>
+            <dd className="impact__sum-value">
+              <Money amount={toNum(inv.usd_received)} currency="USD" digits={0} />
+            </dd>
+          </div>
+          <div className="impact__sum">
+            <dt className="impact__sum-label">Currency</dt>
+            <dd className="impact__sum-value">
+              <Money amount={toNum(inv.effect)} currency="USD" signed colored digits={0} />
+            </dd>
+          </div>
+        </dl>
+      </Card>
+    );
+  }
   const all = data.holdings ?? [];
   if (!all.length) return <EmptyState title="No holdings in this range" />;
   // Only the holdings the exchange rate moved in this view.

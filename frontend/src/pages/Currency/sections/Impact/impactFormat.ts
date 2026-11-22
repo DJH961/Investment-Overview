@@ -1,4 +1,4 @@
-import { formatDate, formatMonth, formatMoney, getFormatPrefs } from "../../../../lib/format";
+import { formatDate, formatMonth, formatMoney, formatNumber, getFormatPrefs } from "../../../../lib/format";
 
 /** "2026-03" -> "Mar" (bar labels); anything else passes through. */
 export function monthShort(label: string): string {
@@ -24,4 +24,18 @@ export function compactSigned(v: number | null, ccy: string): string {
   // Under a thousand: whole units ("+€7", never "+€7.38"); above: two significant digits ("−€16K").
   if (Math.abs(v) < 1000) return formatMoney(Math.round(v), ccy, { narrow: true, signed: true, digits: 0 });
   return formatMoney(v, ccy, { compact: true, narrow: true, signed: true, significant: 2 });
+}
+
+/** The returns are time-weighted (the server's `RETURNS_TIP`, word for word). */
+export const RETURNS_TIP =
+  "These returns are time-weighted: each day's growth is chained, so deposits do not distort them, and they can differ from the Overview's lifetime return, which is money-weighted.";
+
+/** A gap in points as a size ("1.9 pp"), the direction left to the words around it. */
+export const ppSize = (pp: number) => `${formatNumber(Math.abs(pp) * 100, 1)} pp`;
+/** Rounds to 0.0 pp: say "about the same", never "0.0 pp lower". */
+export const ppFlat = (pp: number) => Math.round(Math.abs(pp) * 1000) === 0;
+
+/** "Euro return 1.9 pp lower than the dollar return" (both computed on their own). */
+export function gapWords(pp: number): string {
+  return ppFlat(pp) ? "Euro and dollar returns about the same" : `Euro return ${ppSize(pp)} ${pp < 0 ? "lower" : "higher"} than the dollar return`;
 }

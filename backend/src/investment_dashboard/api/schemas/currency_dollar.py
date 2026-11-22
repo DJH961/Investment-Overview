@@ -78,6 +78,8 @@ class DollarPosition(ApiModel):
     breakeven: RateValue | None = None
     #: Today: from the previous close (``today.prev``) to the spot (``today.spot``).
     today: RateChange | None = None
+    #: Over the page range: the settled rate on the range's start to the last close.
+    range_change: RateChange | None = None
 
 
 class NextEuroPoint(ApiModel):

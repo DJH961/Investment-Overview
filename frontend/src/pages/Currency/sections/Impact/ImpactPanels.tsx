@@ -25,7 +25,8 @@ import {
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencyEffectDto, EffectBarDto, EffectRecordDto, HoldingEffectDto } from "../../../../lib/queries/currencyEffect";
 import { useTimeZone } from "../../../../lib/timezone";
-import { compactSigned, monthShort, periodLabel } from "./impactFormat";
+import { compactSigned, monthShort, periodLabel, ppFlat, ppSize, RETURNS_TIP } from "./impactFormat";
+import { CurrencyBar, InvestingHeadline } from "./ImpactInvesting";
 
 type Kind = "tailwind" | "headwind" | "neutral";
 const kindOf = (v: number | null): Kind => (v === null || v === 0 ? "neutral" : v > 0 ? "tailwind" : "headwind");
@@ -107,20 +108,12 @@ function ShareBar({ share, market, effect, ccy }: { share: number; market: numbe
   );
 }
 
-/** The returns are time-weighted (the server's `RETURNS_TIP`, word for word). */
-export const RETURNS_TIP =
-  "These returns are time-weighted: each day's growth is chained, so deposits do not distort them, and they can differ from the Overview's lifetime return, which is money-weighted.";
-
 /** "euros" / "dollars" for a currency code (the plain word in a sentence). */
 const ccyWords = (ccy: string) => (ccy === "EUR" ? "euros" : ccy === "USD" ? "dollars" : ccy);
 
 /** The headline leads with the gap in points: the rate did nothing to this side's book. */
 export const isGapLead = (data: CurrencyEffectDto) => data.headline.lead === "gap";
 
-/** A gap in points as a size ("1.9 pp"), the direction left to the words around it. */
-const ppSize = (pp: number) => `${formatNumber(Math.abs(pp) * 100, 1)} pp`;
-/** Rounds to 0.0 pp: say "about the same", never "0.0 pp lower". */
-const ppFlat = (pp: number) => Math.round(Math.abs(pp) * 1000) === 0;
 
 function NoteTip({ note }: { note: string | null | undefined }) {
   return note ? <InfoTip label="Why these point different ways" content={note} /> : null;
@@ -218,12 +211,19 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
   const timeZone = useTimeZone();
   const ccy = data.ccy;
   const h = data.headline;
-  const pts = useMemo(() => data.series ?? [], [data.series]);
-  const intraday = data.granularity === "intraday";
+  const inv = data.investing ?? null;
+  const pts = useMemo(() => (inv ? inv.series : data.series) ?? [], [inv, data.series]);
+  // The investing line is one point per deposit day, never intraday.
+  const intraday = data.granularity === "intraday" && !inv;
 
   const series = useMemo<ChartSeries[]>(
     () => [
-      { id: "value", label: "Actual value", points: pts.map((p) => ({ t: p.t, v: toNum(p.value) })), tone: "primary" },
+      {
+        id: "value",
+        label: inv ? "Dollars received" : "Actual value",
+        points: pts.map((p) => ({ t: p.t, v: toNum(p.value) })),
+        tone: "primary",
+      },
       {
         id: "constant",
         label: "At the start rate",
@@ -231,27 +231,27 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
         tone: "ink",
       },
     ],
-    [pts],
+    [pts, inv],
   );
   const byTime = useMemo(() => new Map(pts.map((p) => [Date.parse(p.t), toNum(p.currency)])), [pts]);
   const long = range === "all" || range === "3y" || range === "1y" || /^\d{4}$/.test(range);
   const timeFormat = (t: number) =>
-    range === "1d"
-      ? formatTime(new Date(t), timeZone)
-      : range === "1w"
-        ? formatShortDay(t, timeZone)
-        : formatAxisDate(t, long ? Infinity : 0);
+    !intraday
+      ? formatAxisDate(t, long ? Infinity : 0)
+      : range === "1d"
+        ? formatTime(new Date(t), timeZone)
+        : formatShortDay(t, timeZone);
   const tooltipTimeFormat = (t: number) =>
-    range === "1d" ? formatTime(new Date(t), timeZone) : range === "1w" ? formatDayTime(t, timeZone) : formatDate(new Date(t), "medium");
+    !intraday ? formatDate(new Date(t), "medium") : range === "1d" ? formatTime(new Date(t), timeZone) : formatDayTime(t, timeZone);
 
   const gapLead = isGapLead(data);
   // The chart only says something when the rate moved this side's book.
-  const showChart = pts.length > 1 && !gapLead;
+  const showChart = pts.length > 1 && !gapLead && (!inv || inv.deposit_count > 0);
 
   return (
     <Card className="impact__hero">
       <div className="impact__top">
-        {gapLead ? <GapHeadline data={data} /> : <EffectHeadline data={data} />}
+        {inv ? <InvestingHeadline data={data} inv={inv} /> : gapLead ? <GapHeadline data={data} /> : <EffectHeadline data={data} />}
         <ReturnBars eur={toNum(h.eur_return)} usd={toNum(h.usd_return)} pp={toNum(h.effect_pp ?? null)} ccy={ccy} />
       </div>
       {showChart ? (
@@ -268,12 +268,14 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
           timeFormat={timeFormat}
           tooltipTimeFormat={tooltipTimeFormat}
           height={240}
-          ariaLabel={`Your value with and without the ${foreignOf(ccy)}'s moves`}
+          ariaLabel={inv ? "Dollars received, and the same euros at the start rate" : `Your value with and without the ${foreignOf(ccy)}'s moves`}
         />
       ) : null}
       {showChart ? (
         <p className="impact__caption">
-          The hatched gap is what the exchange rate did: where the line runs above the dashed one it helped, below it it cost.
+          {inv
+            ? "The hatched gap is what the exchange rate did to your deposits: where the line runs above the dashed one your euros bought more dollars than at the start rate, below it fewer."
+            : "The hatched gap is what the exchange rate did: where the line runs above the dashed one it helped, below it it cost."}
         </p>
       ) : null}
       {figures.length ? (
@@ -600,7 +602,11 @@ export function RollingCard({ data, range }: { data: CurrencyEffectDto; range: s
           Rolling 12-month effect
           <InfoTip
             label="Rolling 12-month effect"
-            content="At each date, what the exchange rate did over the twelve months before it. Above zero it was helping, below zero holding you back. It shows the effect's trend, not the rate's."
+            content={
+              data.investing
+                ? "At each date, what the exchange rate did to the deposits of the twelve months before it, against the rate twelve months earlier. Above zero your euros were buying more dollars."
+                : "At each date, what the exchange rate did over the twelve months before it. Above zero it was helping, below zero holding you back. It shows the effect's trend, not the rate's."
+            }
           />
         </span>
       }
@@ -620,7 +626,7 @@ export function RollingCard({ data, range }: { data: CurrencyEffectDto; range: s
 
 // ---- records ------------------------------------------------------------------------------
 
-export function RecordsCard({ data }: { data: CurrencyEffectDto }) {
+export function RecordsCard({ data, dayLabel = "Day" }: { data: CurrencyEffectDto; dayLabel?: string }) {
   const r = data.records;
   const rows: { id: string; label: string; rec: EffectRecordDto | null | undefined }[] = [
     { id: "best_day", label: "Best day", rec: r?.best_day },
@@ -670,7 +676,7 @@ export function RecordsCard({ data }: { data: CurrencyEffectDto }) {
           {periods.map(({ p, best, worst }) => (
             <tr key={p} className="records__row">
               <th scope="row" className="records__label">
-                {p === "day" ? "Day" : p === "month" ? "Month" : "Year"}
+                {p === "day" ? dayLabel : p === "month" ? "Month" : "Year"}
               </th>
               {cell(best)}
               {cell(worst)}
@@ -695,23 +701,6 @@ export function sortHoldings(rows: HoldingEffectDto[]): HoldingEffectDto[] {
   return [...rows].sort(
     (a, b) =>
       Math.abs(toNum(b.currency) ?? 0) - Math.abs(toNum(a.currency) ?? 0) || Math.abs(toNum(b.total) ?? 0) - Math.abs(toNum(a.total) ?? 0),
-  );
-}
-
-/**
- * A holding's currency effect as a bar from a centre line, on one scale shared by every
- * row: right of the line it helped, left it cost (the side and the sign carry it, not
- * colour alone), in the gold hatch used for the currency effect across the page.
- */
-function CurrencyBar({ v, max }: { v: number | null; max: number }) {
-  const w = v === null || max === 0 ? 0 : (Math.abs(v) / max) * 50;
-  return (
-    <span className="fx-bar" aria-hidden>
-      <span className="fx-bar__zero" />
-      {w > 0 ? (
-        <span className={clsx("fx-bar__seg", v! > 0 ? "fx-bar__seg--up" : "fx-bar__seg--down")} style={{ width: `${Math.max(w, 0.8)}%` }} />
-      ) : null}
-    </span>
   );
 }
 
