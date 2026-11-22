@@ -94,6 +94,18 @@
     font-variant-numeric: tabular-nums;
   }
 
+  // The gap in points as the headline (the dollar view of an all-dollar book).
+  &__headline-value--pos { color: var(--color-pos); }
+  &__headline-value--neg { color: var(--color-neg); }
+
+  // One plain sentence under the headline figure.
+  &__lede {
+    margin: 0;
+    color: var(--color-fg);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-base);
+  }
+
   &__months { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
 
   &__rolling { min-width: 0; }

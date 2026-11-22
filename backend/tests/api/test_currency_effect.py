@@ -68,7 +68,47 @@ def test_unknown_range_is_rejected(api_client: TestClient, seeded: None) -> None
     assert api_client.get("/api/currency/effect/both?range=2y").status_code == 422
 
 
-@pytest.mark.parametrize("rng", ["1d", "1w", "1m", "3m", "ytd", "1y", "3y", "all", "2025"])
+def test_all_range_uses_the_overview_lifetime_returns(api_client: TestClient, seeded: None) -> None:
+    body = _get(api_client, "all")
+    overview = api_client.get("/api/overview/both").json()
+    eur_life = D(overview["EUR"]["kpis"]["total_growth_compounded"])
+    usd_life = D(overview["USD"]["kpis"]["total_growth_compounded"])
+    for ccy in ("EUR", "USD"):
+        head = body[ccy]["headline"]
+        assert head["return_basis"] == "lifetime"
+        assert abs(D(head["eur_return"]) - eur_life) < Decimal("1e-8")
+        assert abs(D(head["usd_return"]) - usd_life) < Decimal("1e-8")
+        assert abs(D(head["effect_pp"]) - (eur_life - usd_life)) < Decimal("2e-8")
+
+
+@pytest.mark.parametrize("rng", ["1y", "all"])
+def test_views_lead_with_what_answers_them(api_client: TestClient, seeded: None, rng: str) -> None:
+    """EUR: the money effect leads, the tag follows it. USD of an all-dollar book: the
+    gap leads, the tag follows the gap, the euros beside it are the EUR side's own."""
+    body = _get(api_client, rng)
+    eur, usd = body["EUR"]["headline"], body["USD"]["headline"]
+    assert eur["lead"] == "effect"
+    effect = D(eur["effect"])
+    assert eur["kind"] == ("tailwind" if effect > 0 else "headwind" if effect < 0 else "neutral")
+    assert usd["lead"] == "gap"
+    assert D(usd["effect"]) == 0
+    gap = D(usd["effect_pp"])
+    assert usd["kind"] == ("tailwind" if gap > 0 else "headwind" if gap < 0 else "neutral")
+    assert usd["other_ccy"] == "EUR"
+    assert usd["other_effect"] == eur["effect"]
+    # Nothing moved in dollars: no month, record or rolling figures of zeros.
+    side = body["USD"]
+    assert side["months"] == []
+    assert side["grid"] == []
+    assert side["rolling"] == []
+    assert side["records"]["best_day"] is None
+    assert side["records"]["lifetime_months_of_contributions"] is None
+    assert {s["key"] for s in side["stats"]} <= {"eur_return", "usd_return", "effect_pp", "effect"}
+
+
+@pytest.mark.parametrize(
+    "rng", ["1d", "1w", "1m", "3m", "ytd", "1y", "3y", "5y", "10y", "all", "2025"]
+)
 def test_every_range_answers_both_sides(api_client: TestClient, seeded: None, rng: str) -> None:
     body = _get(api_client, rng)
     for ccy in ("EUR", "USD"):

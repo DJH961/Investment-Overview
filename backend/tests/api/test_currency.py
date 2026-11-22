@@ -79,7 +79,24 @@ def test_stats_have_values_and_side_specific_tiles(api_client: TestClient, seede
         for tile in body[ccy]["stats"]:
             assert tile["value"] is not None
     keys_usd = {t["key"] for t in body["USD"]["stats"]}
-    assert "effect_today" not in keys_usd
+    # An all-dollar book: the rate never moves its dollar value, so the USD view's
+    # effect tiles lead with the euro-vs-dollar gap, the EUR side's money beside it.
+    gap_tiles = [
+        t
+        for t in body["USD"]["stats"]
+        if t["key"] in {"effect_today", "effect_this_year", "effect_lifetime"}
+    ]
+    assert {t["key"] for t in gap_tiles} >= {"effect_lifetime"}
+    eur_tiles = {t["key"]: t for t in body["EUR"]["stats"]}
+    for t in gap_tiles:
+        assert t["unit"] == "fraction"
+        assert t["kind"] == currency_rm._kind(D(t["value"]))
+        if t["secondary"] is not None:
+            assert t["secondary_currency"] == "EUR"
+            if t["key"] != "effect_today":
+                assert D(t["secondary"]) == D(eur_tiles[t["key"]]["value"])
+    lifetime = next(t for t in gap_tiles if t["key"] == "effect_lifetime")
+    assert lifetime["value"] == body["USD"]["return_split"]["eur_minus_usd_pp"]
     keys_eur = {t["key"] for t in body["EUR"]["stats"]}
     assert "investing_power_today" not in keys_eur
     assert "rate_now" in keys_eur

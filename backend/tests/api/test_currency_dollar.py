@@ -88,6 +88,15 @@ def test_dollar_low_is_below_high_in_both_quotes(api_client: TestClient, seeded:
     assert eur["high_since_start"]["date"] == usd["low_since_start"]["date"]
 
 
+def test_usd_view_says_what_is_held_outside_dollars(api_client: TestClient, seeded: None) -> None:
+    body = _get(api_client, "/api/currency/dollar/both?range=1y")
+    usd, eur = body["USD"]["position"], body["EUR"]["position"]
+    # The seeded book is all dollars: nothing outside them.
+    assert Decimal(usd["other_value"]) == 0
+    assert Decimal(usd["other_share"]) == 0
+    assert eur["other_value"] is None  # the EUR view keeps its dollar position
+
+
 def test_dollar_run_months_and_spark(api_client: TestClient, seeded: None) -> None:
     body = _get(api_client, "/api/currency/dollar/both?range=1y")
     for ccy in ("EUR", "USD"):

@@ -3516,6 +3516,10 @@ export interface components {
             exposure_value?: string | null;
             /** Fx Gain Eur */
             fx_gain_eur?: string | null;
+            /** Other Share */
+            other_share?: string | null;
+            /** Other Value */
+            other_value?: string | null;
             rate_now?: components["schemas"]["RateValue"] | null;
             today?: components["schemas"]["RateChange"] | null;
         };
@@ -3740,13 +3744,25 @@ export interface components {
              * @enum {string}
              */
             kind: "tailwind" | "headwind" | "neutral";
+            /**
+             * Lead
+             * @default effect
+             * @enum {string}
+             */
+            lead: "effect" | "gap";
             /** Market */
             market: string;
+            /** Note */
+            note?: string | null;
+            /** Other Ccy */
+            other_ccy?: ("EUR" | "USD") | null;
+            /** Other Effect */
+            other_effect?: string | null;
             /**
              * Return Basis
              * @enum {string}
              */
-            return_basis: "periods" | "daily_chain" | "day";
+            return_basis: "periods" | "lifetime" | "daily_chain" | "day";
             /** Usd Return */
             usd_return?: string | null;
         };
@@ -4005,6 +4021,11 @@ export interface components {
             id: number;
             /** Note */
             note: string | null;
+            /**
+             * Off Pct
+             * @description all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.
+             */
+            off_pct?: string | null;
             /** Provider */
             provider: ("wise" | "revolut" | "other") | null;
             /**

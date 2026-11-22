@@ -27,17 +27,23 @@ from pydantic import Field
 from investment_dashboard.api.deps import Ccy
 from investment_dashboard.api.schemas.common import ApiModel, DecStr
 
-#: ``1d|1w|1m|3m|ytd|1y|3y|all`` or a calendar year (``2025``).
-EFFECT_RANGE_PATTERN = r"^(1d|1w|1m|3m|ytd|1y|3y|all|\d{4})$"
+#: ``1d|1w|1m|3m|ytd|1y|3y|5y|10y|all`` or a calendar year (``2025``).
+EFFECT_RANGE_PATTERN = r"^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|\d{4})$"
 
 EffectKind = Literal["tailwind", "headwind", "neutral"]
 EffectGranularity = Literal["intraday", "daily", "weekly"]
 #: How the headline returns were computed: ``periods`` = the Periods page rows
-#: (``readmodels/periods.build_for_ccy``: YTD, calendar years, All chained by
-#: year); ``daily_chain`` = daily time-weighted returns chained over the range
-#: in each currency on its own (rolling ranges); ``day`` = the Overview's own
+#: (``readmodels/periods.build_for_ccy``: YTD, calendar years); ``lifetime`` = the
+#: Overview's own lifetime returns (``kpis.total_growth_compounded`` of each side,
+#: the All range); ``daily_chain`` = daily time-weighted returns chained over the
+#: range in each currency on its own (rolling ranges; a day the book does not see
+#: the money of yet is merged with the next days); ``day`` = the Overview's own
 #: day growth of each side (1D).
-ReturnBasis = Literal["periods", "daily_chain", "day"]
+ReturnBasis = Literal["periods", "lifetime", "daily_chain", "day"]
+#: What the headline leads with: ``effect`` = the money effect on this side's book;
+#: ``gap`` = the euro return minus the dollar return (when the rate did nothing to
+#: this side's book, e.g. the USD view of an all-dollar portfolio).
+HeadlineLead = Literal["effect", "gap"]
 
 EffectStatKey = Literal[
     "eur_return",
@@ -76,10 +82,20 @@ class EffectHeadline(ApiModel):
     #: The range's market part in ``ccy`` (price moves, dividends, interest).
     market: DecStr
     #: Share of the period's change the currency explains, 0..1:
-    #: ``|currency| / (|market| + |currency|)``; null when both are zero.
+    #: ``|currency| / (|market| + |currency|)``; null when both are zero or the
+    #: rate did nothing to this side's book.
     currency_share: DecStr | None = None
+    #: Follows the lead figure: the money effect (``lead == "effect"``) or the gap
+    #: (``lead == "gap"``: tailwind = the euro result is the higher one).
     kind: EffectKind
+    lead: HeadlineLead = "effect"
     return_basis: ReturnBasis
+    #: Why the money figure and the gap point different ways, when they do.
+    note: str | None = None
+    #: ``lead == "gap"`` only: the other side's money effect, in ``other_ccy`` (the
+    #: USD view gets the EUR side's own effect: what the gap is in euros).
+    other_effect: DecStr | None = None
+    other_ccy: Ccy | None = None
 
 
 class EffectPoint(ApiModel):

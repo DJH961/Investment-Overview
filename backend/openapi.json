@@ -4904,6 +4904,30 @@
             ],
             "title": "Fx Gain Eur"
           },
+          "other_share": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Share"
+          },
+          "other_value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Value"
+          },
           "rate_now": {
             "anyOf": [
               {
@@ -5584,14 +5608,62 @@
             "title": "Kind",
             "type": "string"
           },
+          "lead": {
+            "default": "effect",
+            "enum": [
+              "effect",
+              "gap"
+            ],
+            "title": "Lead",
+            "type": "string"
+          },
           "market": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Market",
             "type": "string"
           },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "other_ccy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EUR",
+                  "USD"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Ccy"
+          },
+          "other_effect": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Effect"
+          },
           "return_basis": {
             "enum": [
               "periods",
+              "lifetime",
               "daily_chain",
               "day"
             ],
@@ -6377,6 +6449,19 @@
               }
             ],
             "title": "Note"
+          },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.",
+            "title": "Off Pct"
           },
           "provider": {
             "anyOf": [
@@ -20795,7 +20880,7 @@
             "required": false,
             "schema": {
               "default": "ytd",
-              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|all|\\d{4})$",
+              "pattern": "^(1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|\\d{4})$",
               "title": "Range",
               "type": "string"
             }

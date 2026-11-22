@@ -79,6 +79,17 @@ export function PositionCard({ data }: { data: DollarDto }) {
   const exposure = toNum(pos.exposure_usd ?? null);
   const next = data.next_euro;
 
+  if (data.ccy === "USD") {
+    return (
+      <Card className="dollar-position" title="Your currency position">
+        <div className="dollar-position__lenses">
+          <OutsideDollars data={data} />
+          {next ? <NextEuro next={next} data={data} /> : null}
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card className="dollar-position" title="Your dollar position">
       <div className="dollar-position__lenses">
@@ -115,6 +126,61 @@ export function PositionCard({ data }: { data: DollarDto }) {
         {next ? <NextEuro next={next} data={data} /> : null}
       </div>
     </Card>
+  );
+}
+
+/**
+ * The USD view turned around: dollars are home, so the question is what you hold
+ * outside them (usually nothing: said in one line). The rates are EUR/USD; a stronger
+ * euro is what helps anything held in euros.
+ */
+function OutsideDollars({ data }: { data: DollarDto }) {
+  const field = data.quote.field;
+  const pos = data.position ?? {};
+  const q = (v: Parameters<typeof quoteOf>[0]) => toNum(quoteOf(v, field));
+  const other = toNum(pos.other_value ?? null);
+  const today = toNum(pos.today?.rate_pct ?? null);
+  const since = toNum(pos.change?.rate_pct ?? null);
+  const figs = [
+    {
+      key: "bought",
+      label: "Your average rate",
+      tip: "The average rate at which your euros became dollars.",
+      value: rateText(q(pos.avg_rate), field),
+      note: "euros into dollars",
+    },
+    { key: "now", label: "Now", value: rateText(q(pos.rate_now), field), note: `${pct(today, 2)} today` },
+  ];
+  if (other === null || Math.round(other) === 0) {
+    return (
+      <Lens
+        name="Outside dollars"
+        hint="nothing to move"
+        headline="All in dollars"
+        note="All your holdings are in dollars, so the exchange rate does not change their dollar value."
+        visual={null}
+        figs={figs}
+      />
+    );
+  }
+  return (
+    <Lens
+      name="Outside dollars"
+      hint="a stronger euro helps"
+      headline={<Money amount={other} currency="USD" digits={0} />}
+      note={pos.other_share ? `${share(toNum(pos.other_share))} of your holdings` : "held in other currencies"}
+      visual={null}
+      figs={[
+        ...figs,
+        {
+          key: "since",
+          label: "Euro since your average",
+          tip: "The euro's change since your average rate: up helps what you hold outside dollars.",
+          value: pct(since),
+          note: <KindTag kind={leanOf(since)} />,
+        },
+      ]}
+    />
   );
 }
 

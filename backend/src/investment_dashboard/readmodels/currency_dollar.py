@@ -121,6 +121,12 @@ def _exposure(
         total = value_at(book, spot, side)
         out["exposure_value"] = dec(exposure_value)
         out["exposure_share"] = dec(exposure_value / total) if total > 0 else None
+        if side == "USD":
+            # The USD view turned around: what you hold outside dollars (native
+            # euros at the one valuation rate), usually nothing.
+            other = total - book.usd
+            out["other_value"] = dec(other)
+            out["other_share"] = dec(other / total) if total > 0 else None
     return out
 
 

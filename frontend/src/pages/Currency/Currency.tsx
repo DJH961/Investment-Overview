@@ -24,7 +24,7 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
   rate_now: { label: "EUR/USD now", tip: "How many dollars one euro buys at the latest rate." },
   effect_today: {
     label: "Effect today",
-    tip: "What the exchange rate added to or took from your portfolio value since the last close.",
+    tip: "What the exchange rate added to or took from your portfolio since the last close. When all you hold is in dollars, the dollar view shows how much higher or lower today's result is in euros than in dollars, with the euro amount beside it.",
   },
   effect_ytd: {
     label: "Effect this year",
@@ -40,11 +40,11 @@ export const STRIP_LABELS: Record<string, StatMeta> = {
   },
   effect_this_year: {
     label: "Effect this year",
-    tip: "What the exchange rate added to or took from your portfolio this year, in money and percentage points.",
+    tip: "What the exchange rate added to or took from your portfolio this year. When all you hold is in dollars, the dollar view shows how much higher or lower your result is in euros than in dollars, with the euro amount beside it.",
   },
   effect_lifetime: {
     label: "Effect, lifetime",
-    tip: "What the exchange rate added to or took from your portfolio since you started, in money and percentage points.",
+    tip: "What the exchange rate added to or took from your portfolio since you started. When all you hold is in dollars, the dollar view shows how much higher or lower your result is in euros than in dollars, with the euro amount beside it.",
   },
   dollar_trend: {
     label: "Dollar trend",

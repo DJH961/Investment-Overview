@@ -61,6 +61,11 @@ class DollarPosition(ApiModel):
     exposure_value: DecStr | None = None
     #: ``exposure_usd`` as a share of the holdings' value (same instant), fraction.
     exposure_share: DecStr | None = None
+    #: USD view only: holdings not priced in dollars, in dollars at the valuation
+    #: rate (one instant); ``0`` for an all-dollar book.
+    other_value: DecStr | None = None
+    #: USD view only: ``other_value`` as a share of the holdings' value, fraction.
+    other_share: DecStr | None = None
     #: The Overview's ``lifetime.avg_invest_rate``.
     avg_rate: RateValue | None = None
     #: The Overview's ``lifetime.current_rate`` (falls back to today's spot).
