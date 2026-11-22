@@ -280,6 +280,8 @@ export interface ChartProps {
   sessions?: ChartSession[];
   /** Time spans shaded behind the lines (e.g. the US stock market's open hours), UTC instants. */
   shade?: { from: string | number; to: string | number }[];
+  /** Session mode: keep one line across a market break (the divider still marks it). Spot FX over the weekend. */
+  joinSessions?: boolean;
   height?: number;
   loading?: boolean;
   emptyMessage?: string;
@@ -431,6 +433,7 @@ export function Chart({
   onToggleSeries,
   sessions,
   shade,
+  joinSessions = false,
   height = 280,
   loading = false,
   emptyMessage = "No data for this range.",
@@ -919,6 +922,7 @@ export function Chart({
             for (const p of s.pts) {
               const si = layout ? layout.index(p.x) : 0;
               const shut =
+                !joinSessions &&
                 layout &&
                 prevSession !== -1 &&
                 si !== prevSession &&
