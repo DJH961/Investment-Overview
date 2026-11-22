@@ -89,27 +89,26 @@ def test_all_is_the_product_of_the_years(api_client: TestClient, seeded: None) -
 
 @pytest.mark.parametrize("rng", ["1y", "all"])
 def test_views_lead_with_what_answers_them(api_client: TestClient, seeded: None, rng: str) -> None:
-    """EUR: the money effect leads, the tag follows it. USD of an all-dollar book: the
-    gap leads, the tag follows the gap, the euros beside it are the EUR side's own."""
+    """EUR (value): the money effect on the book leads, the tag follows it. USD
+    (investing): what the rate did to the euros sent in leads, with the same cards."""
     body = _get(api_client, rng)
     eur, usd = body["EUR"]["headline"], body["USD"]["headline"]
     assert eur["lead"] == "effect"
     effect = D(eur["effect"])
     assert eur["kind"] == ("tailwind" if effect > 0 else "headwind" if effect < 0 else "neutral")
-    assert usd["lead"] == "gap"
-    assert D(usd["effect"]) == 0
-    gap = D(usd["effect_pp"])
-    assert usd["kind"] == ("tailwind" if gap > 0 else "headwind" if gap < 0 else "neutral")
-    assert usd["other_ccy"] == "EUR"
-    assert usd["other_effect"] == eur["effect"]
-    # Nothing moved in dollars: no month, record or rolling figures of zeros.
-    side = body["USD"]
-    assert side["months"] == []
-    assert side["grid"] == []
-    assert side["rolling"] == []
-    assert side["records"]["best_day"] is None
-    assert side["records"]["lifetime_months_of_contributions"] is None
-    assert {s["key"] for s in side["stats"]} <= {"eur_return", "usd_return", "effect_pp", "effect"}
+    assert usd["lead"] == "deposits"
+    inv = body["USD"]["investing"]
+    assert inv is not None
+    assert body["EUR"]["investing"] is None
+    value = D(inv["effect"])
+    assert usd["kind"] == inv["kind"]
+    assert inv["kind"] == ("tailwind" if value > 0 else "headwind" if value < 0 else "neutral")
+    # Same identities as the EUR bridge: dollars at the start rate + effect = received.
+    assert D(inv["usd_at_start"]) + value == D(inv["usd_received"])
+    assert sum((D(d["effect"]) for d in inv["deposits"]), Decimal(0)) == value
+    months = sum((D(m["currency"]) for m in inv["months"]), Decimal(0))
+    assert abs(months - value) <= Decimal("0.000001") * (1 + len(inv["months"]))
+    assert inv["rate_only"] is not None
 
 
 @pytest.mark.parametrize(

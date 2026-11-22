@@ -3703,6 +3703,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -3768,6 +3769,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -3836,6 +3838,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -3901,6 +3904,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -3969,6 +3973,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4034,6 +4039,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4102,6 +4108,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4167,6 +4174,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4235,6 +4243,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4300,6 +4309,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4368,6 +4378,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4433,6 +4444,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4501,6 +4513,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4566,6 +4579,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4634,6 +4648,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4699,6 +4714,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4767,6 +4783,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4832,6 +4849,7 @@
     "fx_gain_eur": null,
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": null,
     "today": null
    },
@@ -4910,6 +4928,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "1d",
@@ -4971,6 +4990,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "1d",
@@ -5035,6 +5055,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "1m",
@@ -5096,6 +5117,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "1m",
@@ -5160,6 +5182,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "1w",
@@ -5221,6 +5244,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "1w",
@@ -5285,6 +5309,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "1y",
@@ -5346,6 +5371,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "1y",
@@ -5410,6 +5436,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "3m",
@@ -5471,6 +5498,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "3m",
@@ -5535,6 +5563,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "3y",
@@ -5596,6 +5625,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "3y",
@@ -5660,6 +5690,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "all",
@@ -5721,6 +5752,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "all",
@@ -5785,6 +5817,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "ytd",
@@ -5846,6 +5879,7 @@
     "usd_return": null
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [],
    "range": "ytd",

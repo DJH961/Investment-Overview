@@ -2884,6 +2884,7 @@ export interface components {
             headline: components["schemas"]["EffectHeadline"];
             /** Holdings */
             holdings?: components["schemas"]["HoldingEffect"][];
+            investing?: components["schemas"]["InvestingEffect"] | null;
             /**
              * Missing Deposit Days
              * @default 0
@@ -3135,6 +3136,31 @@ export interface components {
             price_move: string;
             /** Price Move Secondary */
             price_move_secondary: string;
+        };
+        /**
+         * DepositEffectRow
+         * @description One USD deposit against the range's start rate (the investing view).
+         */
+        DepositEffectRow: {
+            /** Effect */
+            effect: string;
+            /** Eur */
+            eur: string;
+            /** On */
+            on: string;
+            /** Rate */
+            rate: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "matched" | "partly" | "ecb";
+            /** Start Rate */
+            start_rate: string;
+            /** Transaction Id */
+            transaction_id: number;
+            /** Usd */
+            usd: string;
         };
         /** DepositMatchOut */
         DepositMatchOut: {
@@ -3527,6 +3553,7 @@ export interface components {
             other_share?: string | null;
             /** Other Value */
             other_value?: string | null;
+            range_change?: components["schemas"]["RateChange"] | null;
             rate_now?: components["schemas"]["RateValue"] | null;
             today?: components["schemas"]["RateChange"] | null;
         };
@@ -3756,7 +3783,7 @@ export interface components {
              * @default effect
              * @enum {string}
              */
-            lead: "effect" | "gap";
+            lead: "effect" | "gap" | "deposits";
             /** Market */
             market: string;
             /** Note */
@@ -5439,6 +5466,61 @@ export interface components {
              */
             redownload_suggested: boolean;
         };
+        /**
+         * InvestingEffect
+         * @description The USD view's investing perspective (``readmodels/currency_deposits``).
+         *
+         *     Your euros become dollars: each USD deposit's dollars minus what its euros would
+         *     have bought at ``start_rate`` (the rate on the range's start close; for All the
+         *     rate on your first transaction's day). Money in dollars. ``series`` is the
+         *     cumulative dollars received (``value``) and the same euros at the start rate
+         *     (``constant_currency``), so the gap between them (``currency``) is the effect.
+         *     ``months`` / ``years`` / ``grid`` / ``records`` / ``rolling`` are the same shapes
+         *     as the EUR view's, built on this effect (``records.best_day`` = best deposit).
+         */
+        InvestingEffect: {
+            /** Average Rate */
+            average_rate?: string | null;
+            /** Deposit Count */
+            deposit_count: number;
+            /** Deposits */
+            deposits?: components["schemas"]["DepositEffectRow"][];
+            /** Effect */
+            effect: string;
+            /** End On */
+            end_on: string;
+            /** End Rate */
+            end_rate: string;
+            /** Eur Sent */
+            eur_sent: string;
+            /** Grid */
+            grid?: components["schemas"]["EffectGridRow"][];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Months */
+            months?: components["schemas"]["EffectBar"][];
+            rate_only: components["schemas"]["RateOnly"];
+            records?: components["schemas"]["EffectRecords"];
+            /** Rolling */
+            rolling?: components["schemas"]["EffectRollingPoint"][];
+            /** Series */
+            series?: components["schemas"]["EffectPoint"][];
+            /** Start On */
+            start_on: string;
+            /** Start Rate */
+            start_rate: string;
+            /** Stats */
+            stats?: components["schemas"]["EffectStat"][];
+            /** Usd At Start */
+            usd_at_start: string;
+            /** Usd Received */
+            usd_received: string;
+            /** Years */
+            years?: components["schemas"]["EffectBar"][];
+        };
         /** InvestingPower */
         InvestingPower: {
             /** Amount Eur */
@@ -6707,6 +6789,29 @@ export interface components {
             rate: string;
             /** T */
             t: string;
+        };
+        /**
+         * RateOnly
+         * @description EUR 1,000 at the range start's rate and at its end's (the rate alone).
+         */
+        RateOnly: {
+            /** Amount Eur */
+            amount_eur: string;
+            /** Change */
+            change: string;
+            /** End Rate */
+            end_rate: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tailwind" | "headwind" | "neutral";
+            /** Start Rate */
+            start_rate: string;
+            /** Usd At Start */
+            usd_at_start: string;
+            /** Usd Now */
+            usd_now: string;
         };
         /**
          * RatePercentiles

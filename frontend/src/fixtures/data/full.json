@@ -6830,43 +6830,43 @@
      "value": "0.00000000000000"
     },
     {
-     "currency": null,
+     "currency": "USD",
      "direction": null,
      "key": "effect_today",
-     "kind": "headwind",
+     "kind": "tailwind",
      "normal": null,
-     "secondary": "-2252.758435",
-     "secondary_currency": "EUR",
-     "secondary_unit": "money",
+     "secondary": "-0.001817654261337586139569753225",
+     "secondary_currency": null,
+     "secondary_unit": "fraction",
      "since": null,
-     "unit": "fraction",
-     "value": "-0.001817654261337586139569753225"
+     "unit": "money",
+     "value": "2.100000"
     },
     {
-     "currency": null,
+     "currency": "USD",
      "direction": null,
      "key": "effect_this_year",
      "kind": "tailwind",
      "normal": null,
-     "secondary": "16547.011884",
-     "secondary_currency": "EUR",
-     "secondary_unit": "money",
+     "secondary": "0.010638667995671264947874447",
+     "secondary_currency": null,
+     "secondary_unit": "fraction",
      "since": null,
-     "unit": "fraction",
-     "value": "0.010638667995671264947874447"
+     "unit": "money",
+     "value": "44.518521"
     },
     {
-     "currency": null,
+     "currency": "USD",
      "direction": null,
      "key": "effect_lifetime",
-     "kind": "headwind",
+     "kind": "tailwind",
      "normal": null,
-     "secondary": "-86068.925014",
-     "secondary_currency": "EUR",
-     "secondary_unit": "money",
+     "secondary": "-0.129101597889588284693397539",
+     "secondary_currency": null,
+     "secondary_unit": "fraction",
      "since": null,
-     "unit": "fraction",
-     "value": "-0.129101597889588284693397539"
+     "unit": "money",
+     "value": "6403.779066"
     },
     {
      "currency": null,
@@ -7184,6 +7184,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "-0.0815450643776824034334763948",
+     "rate_pct": "0.088785046728971962616822430",
+     "start_rate": "1.07000000"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -9967,6 +9973,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "-0.0815450643776824034334763948",
+     "rate_pct": "0.088785046728971962616822430",
+     "start_rate": "1.07000000"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -12753,6 +12765,7 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": null,
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -13571,6 +13584,7 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": null,
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -14392,6 +14406,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "0.014936480686695278969957082",
+     "rate_pct": "-0.0147166654967308045240151184",
+     "start_rate": "1.18240100"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -15210,6 +15230,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "0.014936480686695278969957082",
+     "rate_pct": "-0.0147166654967308045240151184",
+     "start_rate": "1.18240100"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -16031,6 +16057,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "0.002045493562231759656652361",
+     "rate_pct": "-0.0020413180592830287917504367",
+     "start_rate": "1.16738300"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -16849,6 +16881,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "0.002045493562231759656652361",
+     "rate_pct": "-0.0020413180592830287917504367",
+     "start_rate": "1.16738300"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -17670,6 +17708,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "-0.0179459227467811158798283262",
+     "rate_pct": "0.018273864100208636885288172",
+     "start_rate": "1.14409300"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -22088,6 +22132,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "-0.0179459227467811158798283262",
+     "rate_pct": "0.018273864100208636885288172",
+     "start_rate": "1.14409300"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -26509,6 +26559,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "0.018527896995708154506437768",
+     "rate_pct": "-0.0181908586405525099339701749",
+     "start_rate": "1.18658500"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -28002,6 +28058,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "0.018527896995708154506437768",
+     "rate_pct": "-0.0181908586405525099339701749",
+     "start_rate": "1.18658500"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -29498,6 +29560,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "-0.0815450643776824034334763948",
+     "rate_pct": "0.088785046728971962616822430",
+     "start_rate": "1.07000000"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -41386,6 +41454,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "-0.0815450643776824034334763948",
+     "rate_pct": "0.088785046728971962616822430",
+     "start_rate": "1.07000000"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -53277,6 +53351,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "-0.0815450643776824034334763948",
+     "rate_pct": "0.088785046728971962616822430",
+     "start_rate": "1.07000000"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -56060,6 +56140,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "-0.0815450643776824034334763948",
+     "rate_pct": "0.088785046728971962616822430",
+     "start_rate": "1.07000000"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -58846,6 +58932,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": null,
     "other_value": null,
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "0.007624892703862660944206009",
+     "rate_pct": "-0.0075671936641045146748014921",
+     "start_rate": "1.17388300"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -61269,6 +61361,12 @@
     "fx_gain_eur": "-102251.551665507580287704656",
     "other_share": "0",
     "other_value": "0.00000000000000",
+    "range_change": {
+     "end_rate": "1.16500000",
+     "inverse_pct": "0.007624892703862660944206009",
+     "rate_pct": "-0.0075671936641045146748014921",
+     "start_rate": "1.17388300"
+    },
     "rate_now": {
      "inverse": "0.859033",
      "rate": "1.164100000000000000000000001"
@@ -63508,6 +63606,7 @@
     "usd_return": "0.00758635"
    },
    "holdings": [],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [
     {
@@ -64140,16 +64239,78 @@
     "effect": "0.000000",
     "effect_pp": "-0.00181765",
     "eur_return": "0.00576869",
-    "kind": "headwind",
-    "lead": "gap",
+    "kind": "neutral",
+    "lead": "deposits",
     "market": "12093.895339",
     "note": null,
-    "other_ccy": "EUR",
-    "other_effect": "-2254.572302",
+    "other_ccy": null,
+    "other_effect": null,
     "return_basis": "day",
     "usd_return": "0.00758635"
    },
    "holdings": [],
+   "investing": {
+    "average_rate": null,
+    "deposit_count": 0,
+    "deposits": [],
+    "effect": "0.000000",
+    "end_on": "2026-06-29",
+    "end_rate": "1.16200000",
+    "eur_sent": "0.000000",
+    "grid": [],
+    "kind": "neutral",
+    "months": [],
+    "rate_only": {
+     "amount_eur": "1000",
+     "change": "-3.110000",
+     "end_rate": "1.16200000",
+     "kind": "headwind",
+     "start_rate": "1.16511000",
+     "usd_at_start": "1165.110000",
+     "usd_now": "1162.000000"
+    },
+    "records": {
+     "average_monthly_contribution": "29112.500000",
+     "best_day": null,
+     "best_month": null,
+     "best_year": null,
+     "lifetime_effect": "6403.779066",
+     "lifetime_months_of_contributions": "0.21996665",
+     "worst_day": null,
+     "worst_month": null,
+     "worst_year": null
+    },
+    "rolling": [
+     {
+      "currency": "312.039916",
+      "t": "2026-06-28"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-29"
+     }
+    ],
+    "series": [
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2026-06-28",
+      "value": "0.000000"
+     },
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2026-06-29",
+      "value": "0.000000"
+     }
+    ],
+    "start_on": "2026-06-28",
+    "start_rate": "1.16511000",
+    "stats": [],
+    "usd_at_start": "0.000000",
+    "usd_received": "0.000000",
+    "years": []
+   },
    "missing_deposit_days": 0,
    "months": [],
    "range": "1d",
@@ -64697,6 +64858,7 @@
      "total": "-0.000001"
     }
    ],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [
     {
@@ -65148,12 +65310,12 @@
     "effect": "0.000000",
     "effect_pp": "0.01791328",
     "eur_return": "0.03885844",
-    "kind": "tailwind",
-    "lead": "gap",
+    "kind": "headwind",
+    "lead": "deposits",
     "market": "38267.615675",
     "note": null,
-    "other_ccy": "EUR",
-    "other_effect": "27383.433808",
+    "other_ccy": null,
+    "other_effect": null,
     "return_basis": "daily_chain",
     "usd_return": "0.02094516"
    },
@@ -65209,6 +65371,174 @@
      "total": "-0.000001"
     }
    ],
+   "investing": {
+    "average_rate": "1.176941364781206600287173693",
+    "deposit_count": 1,
+    "deposits": [
+     {
+      "effect": "-18.555335",
+      "eur": "3398.640000",
+      "on": "2026-06-02",
+      "rate": "1.17694136",
+      "source": "matched",
+      "start_rate": "1.18240100",
+      "transaction_id": 27,
+      "usd": "4000.000000"
+     }
+    ],
+    "effect": "-18.555335",
+    "end_on": "2026-06-29",
+    "end_rate": "1.16200000",
+    "eur_sent": "3398.640000",
+    "grid": [
+     {
+      "kind": "headwind",
+      "months": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       "-18.555335",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "-18.555335",
+      "year": 2026
+     }
+    ],
+    "kind": "headwind",
+    "months": [
+     {
+      "currency": "-18.555335",
+      "kind": "headwind",
+      "label": "2026-06"
+     }
+    ],
+    "rate_only": {
+     "amount_eur": "1000",
+     "change": "-20.401000",
+     "end_rate": "1.16200000",
+     "kind": "headwind",
+     "start_rate": "1.18240100",
+     "usd_at_start": "1182.401000",
+     "usd_now": "1162.000000"
+    },
+    "records": {
+     "average_monthly_contribution": "29112.500000",
+     "best_day": {
+      "currency": "-18.555335",
+      "label": "2026-06-02"
+     },
+     "best_month": {
+      "currency": "-18.555335",
+      "label": "2026-06"
+     },
+     "best_year": {
+      "currency": "-18.555335",
+      "label": "2026"
+     },
+     "lifetime_effect": "6403.779066",
+     "lifetime_months_of_contributions": "0.21996665",
+     "worst_day": {
+      "currency": "-18.555335",
+      "label": "2026-06-02"
+     },
+     "worst_month": {
+      "currency": "-18.555335",
+      "label": "2026-06"
+     },
+     "worst_year": {
+      "currency": "-18.555335",
+      "label": "2026"
+     }
+    },
+    "rolling": [
+     {
+      "currency": "108.244032",
+      "t": "2026-05-31"
+     },
+     {
+      "currency": "246.434534",
+      "t": "2026-06-07"
+     },
+     {
+      "currency": "285.364315",
+      "t": "2026-06-14"
+     },
+     {
+      "currency": "320.902242",
+      "t": "2026-06-21"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-28"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-29"
+     }
+    ],
+    "series": [
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2026-05-30",
+      "value": "0.000000"
+     },
+     {
+      "constant_currency": "4018.555335",
+      "currency": "-18.555335",
+      "t": "2026-06-02",
+      "value": "4000.000000"
+     },
+     {
+      "constant_currency": "4018.555335",
+      "currency": "-18.555335",
+      "t": "2026-06-29",
+      "value": "4000.000000"
+     }
+    ],
+    "start_on": "2026-05-30",
+    "start_rate": "1.18240100",
+    "stats": [
+     {
+      "currency": null,
+      "key": "tailwind_share",
+      "kind": null,
+      "label": null,
+      "secondary": "1",
+      "secondary_currency": null,
+      "secondary_unit": "count",
+      "unit": "fraction",
+      "value": "0.00000000"
+     },
+     {
+      "currency": "USD",
+      "key": "largest_day",
+      "kind": "headwind",
+      "label": "2026-06-02",
+      "secondary": null,
+      "secondary_currency": null,
+      "secondary_unit": null,
+      "unit": "money",
+      "value": "-18.555335"
+     }
+    ],
+    "usd_at_start": "4018.555335",
+    "usd_received": "4000.000000",
+    "years": [
+     {
+      "currency": "-18.555335",
+      "kind": "headwind",
+      "label": "2026"
+     }
+    ]
+   },
    "missing_deposit_days": 0,
    "months": [],
    "range": "1m",
@@ -65532,6 +65862,7 @@
      "total": "-408.849947"
     }
    ],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [
     {
@@ -66182,12 +66513,12 @@
     "effect": "0.000000",
     "effect_pp": "0.00466399",
     "eur_return": "0.01145496",
-    "kind": "tailwind",
-    "lead": "gap",
+    "kind": "neutral",
+    "lead": "deposits",
     "market": "12583.861274",
     "note": null,
-    "other_ccy": "EUR",
-    "other_effect": "7374.368823",
+    "other_ccy": null,
+    "other_effect": null,
     "return_basis": "daily_chain",
     "usd_return": "0.00679097"
    },
@@ -66243,6 +66574,68 @@
      "total": "-767.376000"
     }
    ],
+   "investing": {
+    "average_rate": null,
+    "deposit_count": 0,
+    "deposits": [],
+    "effect": "0.000000",
+    "end_on": "2026-06-29",
+    "end_rate": "1.16200000",
+    "eur_sent": "0.000000",
+    "grid": [],
+    "kind": "neutral",
+    "months": [],
+    "rate_only": {
+     "amount_eur": "1000",
+     "change": "-5.383000",
+     "end_rate": "1.16200000",
+     "kind": "headwind",
+     "start_rate": "1.16738300",
+     "usd_at_start": "1167.383000",
+     "usd_now": "1162.000000"
+    },
+    "records": {
+     "average_monthly_contribution": "29112.500000",
+     "best_day": null,
+     "best_month": null,
+     "best_year": null,
+     "lifetime_effect": "6403.779066",
+     "lifetime_months_of_contributions": "0.21996665",
+     "worst_day": null,
+     "worst_month": null,
+     "worst_year": null
+    },
+    "rolling": [
+     {
+      "currency": "312.039916",
+      "t": "2026-06-28"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-29"
+     }
+    ],
+    "series": [
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2026-06-23",
+      "value": "0.000000"
+     },
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2026-06-29",
+      "value": "0.000000"
+     }
+    ],
+    "start_on": "2026-06-23",
+    "start_rate": "1.16738300",
+    "stats": [],
+    "usd_at_start": "0.000000",
+    "usd_received": "0.000000",
+    "years": []
+   },
    "missing_deposit_days": 0,
    "months": [],
    "range": "1w",
@@ -66844,6 +67237,7 @@
      "total": "-11579.255175"
     }
    ],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [
     {
@@ -69762,12 +70156,12 @@
     "effect": "0.000000",
     "effect_pp": "-0.01841759",
     "eur_return": "0.17423531",
-    "kind": "headwind",
-    "lead": "gap",
+    "kind": "tailwind",
+    "lead": "deposits",
     "market": "301139.809745",
     "note": null,
-    "other_ccy": "EUR",
-    "other_effect": "-19538.343560",
+    "other_ccy": null,
+    "other_effect": null,
     "return_basis": "daily_chain",
     "usd_return": "0.19265289"
    },
@@ -69823,6 +70217,404 @@
      "total": "-11807.125000"
     }
    ],
+   "investing": {
+    "average_rate": "1.179148679477599898717334479",
+    "deposit_count": 3,
+    "deposits": [
+     {
+      "effect": "111.639766",
+      "eur": "3398.640000",
+      "on": "2026-06-02",
+      "rate": "1.17694136",
+      "source": "matched",
+      "start_rate": "1.14409300",
+      "transaction_id": 27,
+      "usd": "4000.000000"
+     },
+     {
+      "effect": "89.255794",
+      "eur": "2544.150000",
+      "on": "2026-04-07",
+      "rate": "1.17917576",
+      "source": "matched",
+      "start_rate": "1.14409300",
+      "transaction_id": 25,
+      "usd": "3000.000000"
+     },
+     {
+      "effect": "81.536130",
+      "eur": "2113.870000",
+      "on": "2026-05-05",
+      "rate": "1.18266497",
+      "source": "matched",
+      "start_rate": "1.14409300",
+      "transaction_id": 26,
+      "usd": "2500.000000"
+     }
+    ],
+    "effect": "282.431691",
+    "end_on": "2026-06-29",
+    "end_rate": "1.16200000",
+    "eur_sent": "8056.660000",
+    "grid": [
+     {
+      "kind": "tailwind",
+      "months": [
+       null,
+       null,
+       null,
+       "89.255794",
+       "81.536130",
+       "111.639766",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "282.431691",
+      "year": 2026
+     }
+    ],
+    "kind": "tailwind",
+    "months": [
+     {
+      "currency": "89.255794",
+      "kind": "tailwind",
+      "label": "2026-04"
+     },
+     {
+      "currency": "81.536130",
+      "kind": "tailwind",
+      "label": "2026-05"
+     },
+     {
+      "currency": "111.639766",
+      "kind": "tailwind",
+      "label": "2026-06"
+     }
+    ],
+    "rate_only": {
+     "amount_eur": "1000",
+     "change": "17.907000",
+     "end_rate": "1.16200000",
+     "kind": "tailwind",
+     "start_rate": "1.14409300",
+     "usd_at_start": "1144.093000",
+     "usd_now": "1162.000000"
+    },
+    "records": {
+     "average_monthly_contribution": "29112.500000",
+     "best_day": {
+      "currency": "111.639766",
+      "label": "2026-06-02"
+     },
+     "best_month": {
+      "currency": "111.639766",
+      "label": "2026-06"
+     },
+     "best_year": {
+      "currency": "282.431691",
+      "label": "2026"
+     },
+     "lifetime_effect": "6403.779066",
+     "lifetime_months_of_contributions": "0.21996665",
+     "worst_day": {
+      "currency": "81.536130",
+      "label": "2026-05-05"
+     },
+     "worst_month": {
+      "currency": "81.536130",
+      "label": "2026-05"
+     },
+     "worst_year": {
+      "currency": "282.431691",
+      "label": "2026"
+     }
+    },
+    "rolling": [
+     {
+      "currency": "-786.218135",
+      "t": "2025-07-06"
+     },
+     {
+      "currency": "-310.590736",
+      "t": "2025-07-13"
+     },
+     {
+      "currency": "383.908301",
+      "t": "2025-07-20"
+     },
+     {
+      "currency": "490.814187",
+      "t": "2025-07-27"
+     },
+     {
+      "currency": "852.270252",
+      "t": "2025-08-03"
+     },
+     {
+      "currency": "334.736783",
+      "t": "2025-08-10"
+     },
+     {
+      "currency": "508.848068",
+      "t": "2025-08-17"
+     },
+     {
+      "currency": "1179.280307",
+      "t": "2025-08-24"
+     },
+     {
+      "currency": "1300.717090",
+      "t": "2025-08-31"
+     },
+     {
+      "currency": "1333.216998",
+      "t": "2025-09-07"
+     },
+     {
+      "currency": "1162.997918",
+      "t": "2025-09-14"
+     },
+     {
+      "currency": "1231.306108",
+      "t": "2025-09-21"
+     },
+     {
+      "currency": "1285.278012",
+      "t": "2025-09-28"
+     },
+     {
+      "currency": "977.793850",
+      "t": "2025-10-05"
+     },
+     {
+      "currency": "942.050438",
+      "t": "2025-10-12"
+     },
+     {
+      "currency": "960.927630",
+      "t": "2025-10-19"
+     },
+     {
+      "currency": "982.788846",
+      "t": "2025-10-26"
+     },
+     {
+      "currency": "1135.622746",
+      "t": "2025-11-02"
+     },
+     {
+      "currency": "655.973401",
+      "t": "2025-11-09"
+     },
+     {
+      "currency": "786.037904",
+      "t": "2025-11-16"
+     },
+     {
+      "currency": "480.370105",
+      "t": "2025-11-23"
+     },
+     {
+      "currency": "907.734167",
+      "t": "2025-11-30"
+     },
+     {
+      "currency": "942.699139",
+      "t": "2025-12-07"
+     },
+     {
+      "currency": "615.559344",
+      "t": "2025-12-14"
+     },
+     {
+      "currency": "119.238390",
+      "t": "2025-12-21"
+     },
+     {
+      "currency": "59.622790",
+      "t": "2025-12-28"
+     },
+     {
+      "currency": "-21.724286",
+      "t": "2026-01-04"
+     },
+     {
+      "currency": "263.963530",
+      "t": "2026-01-11"
+     },
+     {
+      "currency": "-706.233331",
+      "t": "2026-01-18"
+     },
+     {
+      "currency": "-402.771114",
+      "t": "2026-01-25"
+     },
+     {
+      "currency": "-166.319686",
+      "t": "2026-02-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-29"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-04-05"
+     },
+     {
+      "currency": "60.336441",
+      "t": "2026-04-12"
+     },
+     {
+      "currency": "42.107606",
+      "t": "2026-04-19"
+     },
+     {
+      "currency": "36.019455",
+      "t": "2026-04-26"
+     },
+     {
+      "currency": "36.029632",
+      "t": "2026-05-03"
+     },
+     {
+      "currency": "65.930578",
+      "t": "2026-05-10"
+     },
+     {
+      "currency": "91.032648",
+      "t": "2026-05-17"
+     },
+     {
+      "currency": "108.118265",
+      "t": "2026-05-24"
+     },
+     {
+      "currency": "108.244032",
+      "t": "2026-05-31"
+     },
+     {
+      "currency": "246.434534",
+      "t": "2026-06-07"
+     },
+     {
+      "currency": "285.364315",
+      "t": "2026-06-14"
+     },
+     {
+      "currency": "320.902242",
+      "t": "2026-06-21"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-28"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-29"
+     }
+    ],
+    "series": [
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2025-06-30",
+      "value": "0.000000"
+     },
+     {
+      "constant_currency": "2910.744206",
+      "currency": "89.255794",
+      "t": "2026-04-07",
+      "value": "3000.000000"
+     },
+     {
+      "constant_currency": "5329.208076",
+      "currency": "170.791924",
+      "t": "2026-05-05",
+      "value": "5500.000000"
+     },
+     {
+      "constant_currency": "9217.568309",
+      "currency": "282.431691",
+      "t": "2026-06-02",
+      "value": "9500.000000"
+     },
+     {
+      "constant_currency": "9217.568309",
+      "currency": "282.431691",
+      "t": "2026-06-29",
+      "value": "9500.000000"
+     }
+    ],
+    "start_on": "2025-06-30",
+    "start_rate": "1.14409300",
+    "stats": [
+     {
+      "currency": null,
+      "key": "tailwind_share",
+      "kind": null,
+      "label": null,
+      "secondary": "3",
+      "secondary_currency": null,
+      "secondary_unit": "count",
+      "unit": "fraction",
+      "value": "1.00000000"
+     },
+     {
+      "currency": "USD",
+      "key": "largest_day",
+      "kind": "tailwind",
+      "label": "2026-06-02",
+      "secondary": null,
+      "secondary_currency": null,
+      "secondary_unit": null,
+      "unit": "money",
+      "value": "111.639766"
+     }
+    ],
+    "usd_at_start": "9217.568309",
+    "usd_received": "9500.000000",
+    "years": [
+     {
+      "currency": "282.431691",
+      "kind": "tailwind",
+      "label": "2026"
+     }
+    ]
+   },
    "missing_deposit_days": 0,
    "months": [],
    "range": "1y",
@@ -71525,6 +72317,7 @@
      "total": "-990.003243"
     }
    ],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [
     {
@@ -72442,12 +73235,12 @@
     "effect": "0.000000",
     "effect_pp": "0.02177513",
     "eur_return": "0.05236340",
-    "kind": "tailwind",
-    "lead": "gap",
+    "kind": "headwind",
+    "lead": "deposits",
     "market": "55307.008055",
     "note": null,
-    "other_ccy": "EUR",
-    "other_effect": "33013.891070",
+    "other_ccy": null,
+    "other_effect": null,
     "return_basis": "daily_chain",
     "usd_return": "0.03058827"
    },
@@ -72503,6 +73296,248 @@
      "total": "-3152.588500"
     }
    ],
+   "investing": {
+    "average_rate": "1.179148679477599898717334479",
+    "deposit_count": 3,
+    "deposits": [
+     {
+      "effect": "-32.775244",
+      "eur": "3398.640000",
+      "on": "2026-06-02",
+      "rate": "1.17694136",
+      "source": "matched",
+      "start_rate": "1.18658500",
+      "transaction_id": 27,
+      "usd": "4000.000000"
+     },
+     {
+      "effect": "-18.850228",
+      "eur": "2544.150000",
+      "on": "2026-04-07",
+      "rate": "1.17917576",
+      "source": "matched",
+      "start_rate": "1.18658500",
+      "transaction_id": 25,
+      "usd": "3000.000000"
+     },
+     {
+      "effect": "-8.286434",
+      "eur": "2113.870000",
+      "on": "2026-05-05",
+      "rate": "1.18266497",
+      "source": "matched",
+      "start_rate": "1.18658500",
+      "transaction_id": 26,
+      "usd": "2500.000000"
+     }
+    ],
+    "effect": "-59.911906",
+    "end_on": "2026-06-29",
+    "end_rate": "1.16200000",
+    "eur_sent": "8056.660000",
+    "grid": [
+     {
+      "kind": "headwind",
+      "months": [
+       null,
+       null,
+       null,
+       "-18.850228",
+       "-8.286434",
+       "-32.775244",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "-59.911906",
+      "year": 2026
+     }
+    ],
+    "kind": "headwind",
+    "months": [
+     {
+      "currency": "-18.850228",
+      "kind": "headwind",
+      "label": "2026-04"
+     },
+     {
+      "currency": "-8.286434",
+      "kind": "headwind",
+      "label": "2026-05"
+     },
+     {
+      "currency": "-32.775244",
+      "kind": "headwind",
+      "label": "2026-06"
+     }
+    ],
+    "rate_only": {
+     "amount_eur": "1000",
+     "change": "-24.585000",
+     "end_rate": "1.16200000",
+     "kind": "headwind",
+     "start_rate": "1.18658500",
+     "usd_at_start": "1186.585000",
+     "usd_now": "1162.000000"
+    },
+    "records": {
+     "average_monthly_contribution": "29112.500000",
+     "best_day": {
+      "currency": "-8.286434",
+      "label": "2026-05-05"
+     },
+     "best_month": {
+      "currency": "-8.286434",
+      "label": "2026-05"
+     },
+     "best_year": {
+      "currency": "-59.911906",
+      "label": "2026"
+     },
+     "lifetime_effect": "6403.779066",
+     "lifetime_months_of_contributions": "0.21996665",
+     "worst_day": {
+      "currency": "-32.775244",
+      "label": "2026-06-02"
+     },
+     "worst_month": {
+      "currency": "-32.775244",
+      "label": "2026-06"
+     },
+     "worst_year": {
+      "currency": "-59.911906",
+      "label": "2026"
+     }
+    },
+    "rolling": [
+     {
+      "currency": "0.000000",
+      "t": "2026-04-05"
+     },
+     {
+      "currency": "60.336441",
+      "t": "2026-04-12"
+     },
+     {
+      "currency": "42.107606",
+      "t": "2026-04-19"
+     },
+     {
+      "currency": "36.019455",
+      "t": "2026-04-26"
+     },
+     {
+      "currency": "36.029632",
+      "t": "2026-05-03"
+     },
+     {
+      "currency": "65.930578",
+      "t": "2026-05-10"
+     },
+     {
+      "currency": "91.032648",
+      "t": "2026-05-17"
+     },
+     {
+      "currency": "108.118265",
+      "t": "2026-05-24"
+     },
+     {
+      "currency": "108.244032",
+      "t": "2026-05-31"
+     },
+     {
+      "currency": "246.434534",
+      "t": "2026-06-07"
+     },
+     {
+      "currency": "285.364315",
+      "t": "2026-06-14"
+     },
+     {
+      "currency": "320.902242",
+      "t": "2026-06-21"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-28"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-29"
+     }
+    ],
+    "series": [
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2026-03-30",
+      "value": "0.000000"
+     },
+     {
+      "constant_currency": "3018.850228",
+      "currency": "-18.850228",
+      "t": "2026-04-07",
+      "value": "3000.000000"
+     },
+     {
+      "constant_currency": "5527.136662",
+      "currency": "-27.136662",
+      "t": "2026-05-05",
+      "value": "5500.000000"
+     },
+     {
+      "constant_currency": "9559.911906",
+      "currency": "-59.911906",
+      "t": "2026-06-02",
+      "value": "9500.000000"
+     },
+     {
+      "constant_currency": "9559.911906",
+      "currency": "-59.911906",
+      "t": "2026-06-29",
+      "value": "9500.000000"
+     }
+    ],
+    "start_on": "2026-03-30",
+    "start_rate": "1.18658500",
+    "stats": [
+     {
+      "currency": null,
+      "key": "tailwind_share",
+      "kind": null,
+      "label": null,
+      "secondary": "3",
+      "secondary_currency": null,
+      "secondary_unit": "count",
+      "unit": "fraction",
+      "value": "0.00000000"
+     },
+     {
+      "currency": "USD",
+      "key": "largest_day",
+      "kind": "headwind",
+      "label": "2026-06-02",
+      "secondary": null,
+      "secondary_currency": null,
+      "secondary_unit": null,
+      "unit": "money",
+      "value": "-32.775244"
+     }
+    ],
+    "usd_at_start": "9559.911906",
+    "usd_received": "9500.000000",
+    "years": [
+     {
+      "currency": "-59.911906",
+      "kind": "headwind",
+      "label": "2026"
+     }
+    ]
+   },
    "missing_deposit_days": 0,
    "months": [],
    "range": "3m",
@@ -73128,6 +74163,7 @@
      "total": "-27855.646544"
     }
    ],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [
     {
@@ -80730,12 +81766,12 @@
     "effect": "0.000000",
     "effect_pp": "-0.06305423",
     "eur_return": "0.51390617",
-    "kind": "headwind",
-    "lead": "gap",
+    "kind": "tailwind",
+    "lead": "deposits",
     "market": "668336.272921",
     "note": null,
-    "other_ccy": "EUR",
-    "other_effect": "-41072.279644",
+    "other_ccy": null,
+    "other_effect": null,
     "return_basis": "daily_chain",
     "usd_return": "0.57696040"
    },
@@ -80791,6 +81827,729 @@
      "total": "-27357.388000"
     }
    ],
+   "investing": {
+    "average_rate": "1.158697129224417910570674706",
+    "deposit_count": 4,
+    "deposits": [
+     {
+      "effect": "2622.250284",
+      "eur": "64870.076305",
+      "on": "2025-02-03",
+      "rate": "1.15615711",
+      "source": "partly",
+      "start_rate": "1.11573400",
+      "transaction_id": 10,
+      "usd": "75000.000000"
+     },
+     {
+      "effect": "208.021798",
+      "eur": "3398.640000",
+      "on": "2026-06-02",
+      "rate": "1.17694136",
+      "source": "matched",
+      "start_rate": "1.11573400",
+      "transaction_id": 27,
+      "usd": "4000.000000"
+     },
+     {
+      "effect": "161.405344",
+      "eur": "2544.150000",
+      "on": "2026-04-07",
+      "rate": "1.17917576",
+      "source": "matched",
+      "start_rate": "1.11573400",
+      "transaction_id": 25,
+      "usd": "3000.000000"
+     },
+     {
+      "effect": "141.483369",
+      "eur": "2113.870000",
+      "on": "2026-05-05",
+      "rate": "1.18266497",
+      "source": "matched",
+      "start_rate": "1.11573400",
+      "transaction_id": 26,
+      "usd": "2500.000000"
+     }
+    ],
+    "effect": "3133.160796",
+    "end_on": "2026-06-29",
+    "end_rate": "1.16200000",
+    "eur_sent": "72926.736305",
+    "grid": [
+     {
+      "kind": "tailwind",
+      "months": [
+       null,
+       "2622.250284",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "2622.250284",
+      "year": 2025
+     },
+     {
+      "kind": "tailwind",
+      "months": [
+       null,
+       null,
+       null,
+       "161.405344",
+       "141.483369",
+       "208.021798",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "510.910512",
+      "year": 2026
+     }
+    ],
+    "kind": "tailwind",
+    "months": [
+     {
+      "currency": "2622.250284",
+      "kind": "tailwind",
+      "label": "2025-02"
+     },
+     {
+      "currency": "161.405344",
+      "kind": "tailwind",
+      "label": "2026-04"
+     },
+     {
+      "currency": "141.483369",
+      "kind": "tailwind",
+      "label": "2026-05"
+     },
+     {
+      "currency": "208.021798",
+      "kind": "tailwind",
+      "label": "2026-06"
+     }
+    ],
+    "rate_only": {
+     "amount_eur": "1000",
+     "change": "46.266000",
+     "end_rate": "1.16200000",
+     "kind": "tailwind",
+     "start_rate": "1.11573400",
+     "usd_at_start": "1115.734000",
+     "usd_now": "1162.000000"
+    },
+    "records": {
+     "average_monthly_contribution": "29112.500000",
+     "best_day": {
+      "currency": "2622.250284",
+      "label": "2025-02-03"
+     },
+     "best_month": {
+      "currency": "2622.250284",
+      "label": "2025-02"
+     },
+     "best_year": {
+      "currency": "2622.250284",
+      "label": "2025"
+     },
+     "lifetime_effect": "6403.779066",
+     "lifetime_months_of_contributions": "0.21996665",
+     "worst_day": {
+      "currency": "141.483369",
+      "label": "2026-05-05"
+     },
+     "worst_month": {
+      "currency": "141.483369",
+      "label": "2026-05"
+     },
+     "worst_year": {
+      "currency": "510.910512",
+      "label": "2026"
+     }
+    },
+    "rolling": [
+     {
+      "currency": "0.000000",
+      "t": "2024-03-03"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-03-10"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-03-17"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-03-24"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-03-31"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-04-07"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-04-14"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-04-21"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-04-28"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-05-05"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-05-12"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-05-19"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-05-26"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-02"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-09"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-16"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-23"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-30"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-07-07"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-07-14"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-07-21"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-07-28"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-08-04"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-08-11"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-08-18"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-08-25"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-29"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-10-06"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-10-13"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-10-20"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-10-27"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-11-03"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-11-10"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-11-17"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-11-24"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-29"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-01-05"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-01-12"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-01-19"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-01-26"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-02-02"
+     },
+     {
+      "currency": "-871.587155",
+      "t": "2025-02-09"
+     },
+     {
+      "currency": "-1378.222451",
+      "t": "2025-02-16"
+     },
+     {
+      "currency": "-1498.751053",
+      "t": "2025-02-23"
+     },
+     {
+      "currency": "-1515.617273",
+      "t": "2025-03-02"
+     },
+     {
+      "currency": "-1604.100057",
+      "t": "2025-03-09"
+     },
+     {
+      "currency": "-1666.245590",
+      "t": "2025-03-16"
+     },
+     {
+      "currency": "-2134.672411",
+      "t": "2025-03-23"
+     },
+     {
+      "currency": "-2373.264552",
+      "t": "2025-03-30"
+     },
+     {
+      "currency": "-1752.976882",
+      "t": "2025-04-06"
+     },
+     {
+      "currency": "-1481.884833",
+      "t": "2025-04-13"
+     },
+     {
+      "currency": "-1153.317897",
+      "t": "2025-04-20"
+     },
+     {
+      "currency": "-1119.520587",
+      "t": "2025-04-27"
+     },
+     {
+      "currency": "-716.223323",
+      "t": "2025-05-04"
+     },
+     {
+      "currency": "-1105.703261",
+      "t": "2025-05-11"
+     },
+     {
+      "currency": "-1105.249170",
+      "t": "2025-05-18"
+     },
+     {
+      "currency": "-942.944239",
+      "t": "2025-05-25"
+     },
+     {
+      "currency": "-1183.223002",
+      "t": "2025-06-01"
+     },
+     {
+      "currency": "-1230.253807",
+      "t": "2025-06-08"
+     },
+     {
+      "currency": "-1120.882859",
+      "t": "2025-06-15"
+     },
+     {
+      "currency": "-795.105336",
+      "t": "2025-06-22"
+     },
+     {
+      "currency": "-568.579029",
+      "t": "2025-06-29"
+     },
+     {
+      "currency": "-786.218135",
+      "t": "2025-07-06"
+     },
+     {
+      "currency": "-310.590736",
+      "t": "2025-07-13"
+     },
+     {
+      "currency": "383.908301",
+      "t": "2025-07-20"
+     },
+     {
+      "currency": "490.814187",
+      "t": "2025-07-27"
+     },
+     {
+      "currency": "852.270252",
+      "t": "2025-08-03"
+     },
+     {
+      "currency": "334.736783",
+      "t": "2025-08-10"
+     },
+     {
+      "currency": "508.848068",
+      "t": "2025-08-17"
+     },
+     {
+      "currency": "1179.280307",
+      "t": "2025-08-24"
+     },
+     {
+      "currency": "1300.717090",
+      "t": "2025-08-31"
+     },
+     {
+      "currency": "1333.216998",
+      "t": "2025-09-07"
+     },
+     {
+      "currency": "1162.997918",
+      "t": "2025-09-14"
+     },
+     {
+      "currency": "1231.306108",
+      "t": "2025-09-21"
+     },
+     {
+      "currency": "1285.278012",
+      "t": "2025-09-28"
+     },
+     {
+      "currency": "977.793850",
+      "t": "2025-10-05"
+     },
+     {
+      "currency": "942.050438",
+      "t": "2025-10-12"
+     },
+     {
+      "currency": "960.927630",
+      "t": "2025-10-19"
+     },
+     {
+      "currency": "982.788846",
+      "t": "2025-10-26"
+     },
+     {
+      "currency": "1135.622746",
+      "t": "2025-11-02"
+     },
+     {
+      "currency": "655.973401",
+      "t": "2025-11-09"
+     },
+     {
+      "currency": "786.037904",
+      "t": "2025-11-16"
+     },
+     {
+      "currency": "480.370105",
+      "t": "2025-11-23"
+     },
+     {
+      "currency": "907.734167",
+      "t": "2025-11-30"
+     },
+     {
+      "currency": "942.699139",
+      "t": "2025-12-07"
+     },
+     {
+      "currency": "615.559344",
+      "t": "2025-12-14"
+     },
+     {
+      "currency": "119.238390",
+      "t": "2025-12-21"
+     },
+     {
+      "currency": "59.622790",
+      "t": "2025-12-28"
+     },
+     {
+      "currency": "-21.724286",
+      "t": "2026-01-04"
+     },
+     {
+      "currency": "263.963530",
+      "t": "2026-01-11"
+     },
+     {
+      "currency": "-706.233331",
+      "t": "2026-01-18"
+     },
+     {
+      "currency": "-402.771114",
+      "t": "2026-01-25"
+     },
+     {
+      "currency": "-166.319686",
+      "t": "2026-02-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-29"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-04-05"
+     },
+     {
+      "currency": "60.336441",
+      "t": "2026-04-12"
+     },
+     {
+      "currency": "42.107606",
+      "t": "2026-04-19"
+     },
+     {
+      "currency": "36.019455",
+      "t": "2026-04-26"
+     },
+     {
+      "currency": "36.029632",
+      "t": "2026-05-03"
+     },
+     {
+      "currency": "65.930578",
+      "t": "2026-05-10"
+     },
+     {
+      "currency": "91.032648",
+      "t": "2026-05-17"
+     },
+     {
+      "currency": "108.118265",
+      "t": "2026-05-24"
+     },
+     {
+      "currency": "108.244032",
+      "t": "2026-05-31"
+     },
+     {
+      "currency": "246.434534",
+      "t": "2026-06-07"
+     },
+     {
+      "currency": "285.364315",
+      "t": "2026-06-14"
+     },
+     {
+      "currency": "320.902242",
+      "t": "2026-06-21"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-28"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-29"
+     }
+    ],
+    "series": [
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2023-06-30",
+      "value": "0.000000"
+     },
+     {
+      "constant_currency": "72377.749716",
+      "currency": "2622.250284",
+      "t": "2025-02-03",
+      "value": "75000.000000"
+     },
+     {
+      "constant_currency": "75216.344372",
+      "currency": "2783.655628",
+      "t": "2026-04-07",
+      "value": "78000.000000"
+     },
+     {
+      "constant_currency": "77574.861002",
+      "currency": "2925.138998",
+      "t": "2026-05-05",
+      "value": "80500.000000"
+     },
+     {
+      "constant_currency": "81366.839204",
+      "currency": "3133.160796",
+      "t": "2026-06-02",
+      "value": "84500.000000"
+     },
+     {
+      "constant_currency": "81366.839204",
+      "currency": "3133.160796",
+      "t": "2026-06-29",
+      "value": "84500.000000"
+     }
+    ],
+    "start_on": "2023-06-30",
+    "start_rate": "1.11573400",
+    "stats": [
+     {
+      "currency": null,
+      "key": "tailwind_share",
+      "kind": null,
+      "label": null,
+      "secondary": "4",
+      "secondary_currency": null,
+      "secondary_unit": "count",
+      "unit": "fraction",
+      "value": "1.00000000"
+     },
+     {
+      "currency": "USD",
+      "key": "largest_day",
+      "kind": "tailwind",
+      "label": "2025-02-03",
+      "secondary": null,
+      "secondary_currency": null,
+      "secondary_unit": null,
+      "unit": "money",
+      "value": "2622.250284"
+     }
+    ],
+    "usd_at_start": "81366.839204",
+    "usd_received": "84500.000000",
+    "years": [
+     {
+      "currency": "2622.250284",
+      "kind": "tailwind",
+      "label": "2025"
+     },
+     {
+      "currency": "510.910512",
+      "kind": "tailwind",
+      "label": "2026"
+     }
+    ]
+   },
    "missing_deposit_days": 0,
    "months": [],
    "range": "3y",
@@ -85562,6 +87321,7 @@
      "total": "-35399.857466"
     }
    ],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [
     {
@@ -93712,12 +95472,12 @@
     "effect": "0.000000",
     "effect_pp": "-0.12910160",
     "eur_return": "0.51396843",
-    "kind": "headwind",
-    "lead": "gap",
+    "kind": "tailwind",
+    "lead": "deposits",
     "market": "713612.236061",
     "note": null,
-    "other_ccy": "EUR",
-    "other_effect": "-86068.925014",
+    "other_ccy": null,
+    "other_effect": null,
     "return_basis": "daily_chain",
     "usd_return": "0.64307003"
    },
@@ -93773,6 +95533,778 @@
      "total": "-30489.993500"
     }
    ],
+   "investing": {
+    "average_rate": "1.076807543671801865447125485",
+    "deposit_count": 6,
+    "deposits": [
+     {
+      "effect": "5531.543466",
+      "eur": "64870.076305",
+      "on": "2025-02-03",
+      "rate": "1.15615711",
+      "source": "partly",
+      "start_rate": "1.07088600",
+      "transaction_id": 10,
+      "usd": "75000.000000"
+     },
+     {
+      "effect": "360.444005",
+      "eur": "3398.640000",
+      "on": "2026-06-02",
+      "rate": "1.17694136",
+      "source": "matched",
+      "start_rate": "1.07088600",
+      "transaction_id": 27,
+      "usd": "4000.000000"
+     },
+     {
+      "effect": "275.505383",
+      "eur": "2544.150000",
+      "on": "2026-04-07",
+      "rate": "1.17917576",
+      "source": "matched",
+      "start_rate": "1.07088600",
+      "transaction_id": 25,
+      "usd": "3000.000000"
+     },
+     {
+      "effect": "236.286211",
+      "eur": "2113.870000",
+      "on": "2026-05-05",
+      "rate": "1.18266497",
+      "source": "matched",
+      "start_rate": "1.07088600",
+      "transaction_id": 26,
+      "usd": "2500.000000"
+     },
+     {
+      "effect": "0.000000",
+      "eur": "840425.591520",
+      "on": "2023-03-01",
+      "rate": "1.07088600",
+      "source": "ecb",
+      "start_rate": "1.07088600",
+      "transaction_id": 1,
+      "usd": "900000.000000"
+     },
+     {
+      "effect": "0.000000",
+      "eur": "168085.118304",
+      "on": "2023-03-01",
+      "rate": "1.07088600",
+      "source": "ecb",
+      "start_rate": "1.07088600",
+      "transaction_id": 2,
+      "usd": "180000.000000"
+     }
+    ],
+    "effect": "6403.779066",
+    "end_on": "2026-06-29",
+    "end_rate": "1.16200000",
+    "eur_sent": "1081437.446128",
+    "grid": [
+     {
+      "kind": "neutral",
+      "months": [
+       null,
+       null,
+       "0.000000",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "0.000000",
+      "year": 2023
+     },
+     {
+      "kind": "tailwind",
+      "months": [
+       null,
+       "5531.543466",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "5531.543466",
+      "year": 2025
+     },
+     {
+      "kind": "tailwind",
+      "months": [
+       null,
+       null,
+       null,
+       "275.505383",
+       "236.286211",
+       "360.444005",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "872.235599",
+      "year": 2026
+     }
+    ],
+    "kind": "tailwind",
+    "months": [
+     {
+      "currency": "0.000000",
+      "kind": "neutral",
+      "label": "2023-03"
+     },
+     {
+      "currency": "5531.543466",
+      "kind": "tailwind",
+      "label": "2025-02"
+     },
+     {
+      "currency": "275.505383",
+      "kind": "tailwind",
+      "label": "2026-04"
+     },
+     {
+      "currency": "236.286211",
+      "kind": "tailwind",
+      "label": "2026-05"
+     },
+     {
+      "currency": "360.444005",
+      "kind": "tailwind",
+      "label": "2026-06"
+     }
+    ],
+    "rate_only": {
+     "amount_eur": "1000",
+     "change": "91.114000",
+     "end_rate": "1.16200000",
+     "kind": "tailwind",
+     "start_rate": "1.07088600",
+     "usd_at_start": "1070.886000",
+     "usd_now": "1162.000000"
+    },
+    "records": {
+     "average_monthly_contribution": "29112.500000",
+     "best_day": {
+      "currency": "5531.543466",
+      "label": "2025-02-03"
+     },
+     "best_month": {
+      "currency": "5531.543466",
+      "label": "2025-02"
+     },
+     "best_year": {
+      "currency": "5531.543466",
+      "label": "2025"
+     },
+     "lifetime_effect": "6403.779066",
+     "lifetime_months_of_contributions": "0.21996665",
+     "worst_day": {
+      "currency": "0.000000",
+      "label": "2023-03-01"
+     },
+     "worst_month": {
+      "currency": "0.000000",
+      "label": "2023-03"
+     },
+     "worst_year": {
+      "currency": "0.000000",
+      "label": "2023"
+     }
+    },
+    "rolling": [
+     {
+      "currency": "0.000000",
+      "t": "2024-03-03"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-03-10"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-03-17"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-03-24"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-03-31"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-04-07"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-04-14"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-04-21"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-04-28"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-05-05"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-05-12"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-05-19"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-05-26"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-02"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-09"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-16"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-23"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-06-30"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-07-07"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-07-14"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-07-21"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-07-28"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-08-04"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-08-11"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-08-18"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-08-25"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-09-29"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-10-06"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-10-13"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-10-20"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-10-27"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-11-03"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-11-10"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-11-17"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-11-24"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2024-12-29"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-01-05"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-01-12"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-01-19"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-01-26"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2025-02-02"
+     },
+     {
+      "currency": "-871.587155",
+      "t": "2025-02-09"
+     },
+     {
+      "currency": "-1378.222451",
+      "t": "2025-02-16"
+     },
+     {
+      "currency": "-1498.751053",
+      "t": "2025-02-23"
+     },
+     {
+      "currency": "-1515.617273",
+      "t": "2025-03-02"
+     },
+     {
+      "currency": "-1604.100057",
+      "t": "2025-03-09"
+     },
+     {
+      "currency": "-1666.245590",
+      "t": "2025-03-16"
+     },
+     {
+      "currency": "-2134.672411",
+      "t": "2025-03-23"
+     },
+     {
+      "currency": "-2373.264552",
+      "t": "2025-03-30"
+     },
+     {
+      "currency": "-1752.976882",
+      "t": "2025-04-06"
+     },
+     {
+      "currency": "-1481.884833",
+      "t": "2025-04-13"
+     },
+     {
+      "currency": "-1153.317897",
+      "t": "2025-04-20"
+     },
+     {
+      "currency": "-1119.520587",
+      "t": "2025-04-27"
+     },
+     {
+      "currency": "-716.223323",
+      "t": "2025-05-04"
+     },
+     {
+      "currency": "-1105.703261",
+      "t": "2025-05-11"
+     },
+     {
+      "currency": "-1105.249170",
+      "t": "2025-05-18"
+     },
+     {
+      "currency": "-942.944239",
+      "t": "2025-05-25"
+     },
+     {
+      "currency": "-1183.223002",
+      "t": "2025-06-01"
+     },
+     {
+      "currency": "-1230.253807",
+      "t": "2025-06-08"
+     },
+     {
+      "currency": "-1120.882859",
+      "t": "2025-06-15"
+     },
+     {
+      "currency": "-795.105336",
+      "t": "2025-06-22"
+     },
+     {
+      "currency": "-568.579029",
+      "t": "2025-06-29"
+     },
+     {
+      "currency": "-786.218135",
+      "t": "2025-07-06"
+     },
+     {
+      "currency": "-310.590736",
+      "t": "2025-07-13"
+     },
+     {
+      "currency": "383.908301",
+      "t": "2025-07-20"
+     },
+     {
+      "currency": "490.814187",
+      "t": "2025-07-27"
+     },
+     {
+      "currency": "852.270252",
+      "t": "2025-08-03"
+     },
+     {
+      "currency": "334.736783",
+      "t": "2025-08-10"
+     },
+     {
+      "currency": "508.848068",
+      "t": "2025-08-17"
+     },
+     {
+      "currency": "1179.280307",
+      "t": "2025-08-24"
+     },
+     {
+      "currency": "1300.717090",
+      "t": "2025-08-31"
+     },
+     {
+      "currency": "1333.216998",
+      "t": "2025-09-07"
+     },
+     {
+      "currency": "1162.997918",
+      "t": "2025-09-14"
+     },
+     {
+      "currency": "1231.306108",
+      "t": "2025-09-21"
+     },
+     {
+      "currency": "1285.278012",
+      "t": "2025-09-28"
+     },
+     {
+      "currency": "977.793850",
+      "t": "2025-10-05"
+     },
+     {
+      "currency": "942.050438",
+      "t": "2025-10-12"
+     },
+     {
+      "currency": "960.927630",
+      "t": "2025-10-19"
+     },
+     {
+      "currency": "982.788846",
+      "t": "2025-10-26"
+     },
+     {
+      "currency": "1135.622746",
+      "t": "2025-11-02"
+     },
+     {
+      "currency": "655.973401",
+      "t": "2025-11-09"
+     },
+     {
+      "currency": "786.037904",
+      "t": "2025-11-16"
+     },
+     {
+      "currency": "480.370105",
+      "t": "2025-11-23"
+     },
+     {
+      "currency": "907.734167",
+      "t": "2025-11-30"
+     },
+     {
+      "currency": "942.699139",
+      "t": "2025-12-07"
+     },
+     {
+      "currency": "615.559344",
+      "t": "2025-12-14"
+     },
+     {
+      "currency": "119.238390",
+      "t": "2025-12-21"
+     },
+     {
+      "currency": "59.622790",
+      "t": "2025-12-28"
+     },
+     {
+      "currency": "-21.724286",
+      "t": "2026-01-04"
+     },
+     {
+      "currency": "263.963530",
+      "t": "2026-01-11"
+     },
+     {
+      "currency": "-706.233331",
+      "t": "2026-01-18"
+     },
+     {
+      "currency": "-402.771114",
+      "t": "2026-01-25"
+     },
+     {
+      "currency": "-166.319686",
+      "t": "2026-02-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-29"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-04-05"
+     },
+     {
+      "currency": "60.336441",
+      "t": "2026-04-12"
+     },
+     {
+      "currency": "42.107606",
+      "t": "2026-04-19"
+     },
+     {
+      "currency": "36.019455",
+      "t": "2026-04-26"
+     },
+     {
+      "currency": "36.029632",
+      "t": "2026-05-03"
+     },
+     {
+      "currency": "65.930578",
+      "t": "2026-05-10"
+     },
+     {
+      "currency": "91.032648",
+      "t": "2026-05-17"
+     },
+     {
+      "currency": "108.118265",
+      "t": "2026-05-24"
+     },
+     {
+      "currency": "108.244032",
+      "t": "2026-05-31"
+     },
+     {
+      "currency": "246.434534",
+      "t": "2026-06-07"
+     },
+     {
+      "currency": "285.364315",
+      "t": "2026-06-14"
+     },
+     {
+      "currency": "320.902242",
+      "t": "2026-06-21"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-28"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-29"
+     }
+    ],
+    "series": [
+     {
+      "constant_currency": "1080000.000000",
+      "currency": "0.000000",
+      "t": "2023-03-01",
+      "value": "1080000.000000"
+     },
+     {
+      "constant_currency": "1149468.456534",
+      "currency": "5531.543466",
+      "t": "2025-02-03",
+      "value": "1155000.000000"
+     },
+     {
+      "constant_currency": "1152192.951151",
+      "currency": "5807.048849",
+      "t": "2026-04-07",
+      "value": "1158000.000000"
+     },
+     {
+      "constant_currency": "1154456.664939",
+      "currency": "6043.335061",
+      "t": "2026-05-05",
+      "value": "1160500.000000"
+     },
+     {
+      "constant_currency": "1158096.220934",
+      "currency": "6403.779066",
+      "t": "2026-06-02",
+      "value": "1164500.000000"
+     },
+     {
+      "constant_currency": "1158096.220934",
+      "currency": "6403.779066",
+      "t": "2026-06-29",
+      "value": "1164500.000000"
+     }
+    ],
+    "start_on": "2023-03-01",
+    "start_rate": "1.07088600",
+    "stats": [
+     {
+      "currency": null,
+      "key": "tailwind_share",
+      "kind": null,
+      "label": null,
+      "secondary": "5",
+      "secondary_currency": null,
+      "secondary_unit": "count",
+      "unit": "fraction",
+      "value": "0.80000000"
+     },
+     {
+      "currency": "USD",
+      "key": "largest_day",
+      "kind": "tailwind",
+      "label": "2025-02-03",
+      "secondary": null,
+      "secondary_currency": null,
+      "secondary_unit": null,
+      "unit": "money",
+      "value": "5531.543466"
+     }
+    ],
+    "usd_at_start": "1158096.220934",
+    "usd_received": "1164500.000000",
+    "years": [
+     {
+      "currency": "0.000000",
+      "kind": "neutral",
+      "label": "2023"
+     },
+     {
+      "currency": "5531.543466",
+      "kind": "tailwind",
+      "label": "2025"
+     },
+     {
+      "currency": "872.235599",
+      "kind": "tailwind",
+      "label": "2026"
+     }
+    ]
+   },
    "missing_deposit_days": 0,
    "months": [],
    "range": "all",
@@ -98997,6 +101529,7 @@
      "total": "-3580.603043"
     }
    ],
+   "investing": null,
    "missing_deposit_days": 0,
    "months": [
     {
@@ -100555,11 +103088,11 @@
     "effect_pp": "0.01063867",
     "eur_return": "0.07725254",
     "kind": "tailwind",
-    "lead": "gap",
+    "lead": "deposits",
     "market": "116130.405612",
     "note": null,
-    "other_ccy": "EUR",
-    "other_effect": "16547.011884",
+    "other_ccy": null,
+    "other_effect": null,
     "return_basis": "daily_chain",
     "usd_return": "0.06661387"
    },
@@ -100615,6 +103148,300 @@
      "total": "-5137.349500"
     }
    ],
+   "investing": {
+    "average_rate": "1.179148679477599898717334479",
+    "deposit_count": 3,
+    "deposits": [
+     {
+      "effect": "19.113549",
+      "eur": "2113.870000",
+      "on": "2026-05-05",
+      "rate": "1.18266497",
+      "source": "matched",
+      "start_rate": "1.17362300",
+      "transaction_id": 26,
+      "usd": "2500.000000"
+     },
+     {
+      "effect": "14.127045",
+      "eur": "2544.150000",
+      "on": "2026-04-07",
+      "rate": "1.17917576",
+      "source": "matched",
+      "start_rate": "1.17362300",
+      "transaction_id": 25,
+      "usd": "3000.000000"
+     },
+     {
+      "effect": "11.277927",
+      "eur": "3398.640000",
+      "on": "2026-06-02",
+      "rate": "1.17694136",
+      "source": "matched",
+      "start_rate": "1.17362300",
+      "transaction_id": 27,
+      "usd": "4000.000000"
+     }
+    ],
+    "effect": "44.518521",
+    "end_on": "2026-06-29",
+    "end_rate": "1.16200000",
+    "eur_sent": "8056.660000",
+    "grid": [
+     {
+      "kind": "tailwind",
+      "months": [
+       null,
+       null,
+       null,
+       "14.127045",
+       "19.113549",
+       "11.277927",
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "total": "44.518521",
+      "year": 2026
+     }
+    ],
+    "kind": "tailwind",
+    "months": [
+     {
+      "currency": "14.127045",
+      "kind": "tailwind",
+      "label": "2026-04"
+     },
+     {
+      "currency": "19.113549",
+      "kind": "tailwind",
+      "label": "2026-05"
+     },
+     {
+      "currency": "11.277927",
+      "kind": "tailwind",
+      "label": "2026-06"
+     }
+    ],
+    "rate_only": {
+     "amount_eur": "1000",
+     "change": "-11.623000",
+     "end_rate": "1.16200000",
+     "kind": "headwind",
+     "start_rate": "1.17362300",
+     "usd_at_start": "1173.623000",
+     "usd_now": "1162.000000"
+    },
+    "records": {
+     "average_monthly_contribution": "29112.500000",
+     "best_day": {
+      "currency": "19.113549",
+      "label": "2026-05-05"
+     },
+     "best_month": {
+      "currency": "19.113549",
+      "label": "2026-05"
+     },
+     "best_year": {
+      "currency": "44.518521",
+      "label": "2026"
+     },
+     "lifetime_effect": "6403.779066",
+     "lifetime_months_of_contributions": "0.21996665",
+     "worst_day": {
+      "currency": "11.277927",
+      "label": "2026-06-02"
+     },
+     "worst_month": {
+      "currency": "11.277927",
+      "label": "2026-06"
+     },
+     "worst_year": {
+      "currency": "44.518521",
+      "label": "2026"
+     }
+    },
+    "rolling": [
+     {
+      "currency": "-21.724286",
+      "t": "2026-01-04"
+     },
+     {
+      "currency": "263.963530",
+      "t": "2026-01-11"
+     },
+     {
+      "currency": "-706.233331",
+      "t": "2026-01-18"
+     },
+     {
+      "currency": "-402.771114",
+      "t": "2026-01-25"
+     },
+     {
+      "currency": "-166.319686",
+      "t": "2026-02-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-02-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-01"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-08"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-15"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-22"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-03-29"
+     },
+     {
+      "currency": "0.000000",
+      "t": "2026-04-05"
+     },
+     {
+      "currency": "60.336441",
+      "t": "2026-04-12"
+     },
+     {
+      "currency": "42.107606",
+      "t": "2026-04-19"
+     },
+     {
+      "currency": "36.019455",
+      "t": "2026-04-26"
+     },
+     {
+      "currency": "36.029632",
+      "t": "2026-05-03"
+     },
+     {
+      "currency": "65.930578",
+      "t": "2026-05-10"
+     },
+     {
+      "currency": "91.032648",
+      "t": "2026-05-17"
+     },
+     {
+      "currency": "108.118265",
+      "t": "2026-05-24"
+     },
+     {
+      "currency": "108.244032",
+      "t": "2026-05-31"
+     },
+     {
+      "currency": "246.434534",
+      "t": "2026-06-07"
+     },
+     {
+      "currency": "285.364315",
+      "t": "2026-06-14"
+     },
+     {
+      "currency": "320.902242",
+      "t": "2026-06-21"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-28"
+     },
+     {
+      "currency": "312.039916",
+      "t": "2026-06-29"
+     }
+    ],
+    "series": [
+     {
+      "constant_currency": "0.000000",
+      "currency": "0.000000",
+      "t": "2025-12-31",
+      "value": "0.000000"
+     },
+     {
+      "constant_currency": "2985.872955",
+      "currency": "14.127045",
+      "t": "2026-04-07",
+      "value": "3000.000000"
+     },
+     {
+      "constant_currency": "5466.759406",
+      "currency": "33.240594",
+      "t": "2026-05-05",
+      "value": "5500.000000"
+     },
+     {
+      "constant_currency": "9455.481479",
+      "currency": "44.518521",
+      "t": "2026-06-02",
+      "value": "9500.000000"
+     },
+     {
+      "constant_currency": "9455.481479",
+      "currency": "44.518521",
+      "t": "2026-06-29",
+      "value": "9500.000000"
+     }
+    ],
+    "start_on": "2025-12-31",
+    "start_rate": "1.17362300",
+    "stats": [
+     {
+      "currency": null,
+      "key": "tailwind_share",
+      "kind": null,
+      "label": null,
+      "secondary": "3",
+      "secondary_currency": null,
+      "secondary_unit": "count",
+      "unit": "fraction",
+      "value": "1.00000000"
+     },
+     {
+      "currency": "USD",
+      "key": "largest_day",
+      "kind": "tailwind",
+      "label": "2026-05-05",
+      "secondary": null,
+      "secondary_currency": null,
+      "secondary_unit": null,
+      "unit": "money",
+      "value": "19.113549"
+     }
+    ],
+    "usd_at_start": "9455.481479",
+    "usd_received": "9500.000000",
+    "years": [
+     {
+      "currency": "44.518521",
+      "kind": "tailwind",
+      "label": "2026"
+     }
+    ]
+   },
    "missing_deposit_days": 0,
    "months": [],
    "range": "ytd",

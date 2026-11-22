@@ -22,6 +22,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import (
     intraday_snapshots_service,
@@ -234,6 +235,52 @@ def _gap_tiles(
     ]
 
 
+def _investing_tiles(
+    session: Session, payload: dict[str, Any], eur_payload: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """The USD view's tiles on the investing perspective (Impact's USD view):
+
+    * today: how many more or fewer dollars EUR 1,000 buys than at the last close;
+    * this year / lifetime: what the rate did to the euros you sent into your
+      dollar accounts (``readmodels/currency_deposits``), the return gap beside.
+
+    Empty without any USD deposit (the gap tiles then stand in).
+    """
+    from investment_dashboard.readmodels import currency_deposits, currency_effect  # noqa: PLC0415
+
+    if not currency_deposits.usd_deposits(session=session):
+        return []
+    today = exchange_today()
+    first = currency_effect.first_ledger_date(session)
+    figures = currency_effect.strip_figures(session, "USD", today=today)
+    out: list[dict[str, Any]] = []
+    cur = payload["currency"]["today"]
+    spot, prev = _d(cur.get("spot")), _d(cur.get("prev"))
+    if spot is not None and prev is not None and prev > 0:
+        change = (currency_deposits.AMOUNT_EUR * (spot - prev)).quantize(Q6)
+        eur_day, usd_day = (
+            _d(eur_payload["kpis"].get("daily_growth_pct")),
+            _d(payload["kpis"].get("daily_growth_pct")),
+        )
+        extra: dict[str, Any] = {"currency": "USD", "kind": _kind(change)}
+        if eur_day is not None and usd_day is not None:
+            extra |= {"secondary": dec(eur_day - usd_day), "secondary_unit": "fraction"}
+        out.append(_stat("effect_today", change, "money", **extra))
+    for key, rng, gap in (
+        ("effect_this_year", "ytd", figures.effect_year_pp),
+        ("effect_lifetime", "all", figures.effect_lifetime_pp),
+    ):
+        after, through = currency_effect.range_window(rng, today)
+        value = currency_deposits.window_effect(session, after, through, first)
+        if value is None:
+            continue
+        extra = {"currency": "USD", "kind": _kind(value.quantize(Q6))}
+        if gap is not None:
+            extra |= {"secondary": dec(gap), "secondary_unit": "fraction"}
+        out.append(_stat(key, value.quantize(Q6), "money", **extra))
+    return out
+
+
 def _effect_tiles(
     session: Session,
     ccy: str,
@@ -251,6 +298,9 @@ def _effect_tiles(
 
     out: list[dict[str, Any]] = []
     if ccy == "USD" and eur_payload is not None:
+        investing = _investing_tiles(session, payload, eur_payload)
+        if investing:
+            return investing + _trend_tile(session)
         figures = currency_effect.strip_figures(session, ccy)
         if not figures.effect_lifetime:
             out.extend(_gap_tiles(session, payload, eur_payload))

@@ -4,9 +4,25 @@ import { describe, expect, it, vi } from "vitest";
 import full from "../../../../fixtures/data/full.json";
 import { HideAmountsProvider } from "../../../../lib/hideAmounts";
 import { effectRangeFor, type CurrencyEffectDto } from "../../../../lib/queries/currencyEffect";
-import { BridgeCard, HoldingsCard, ImpactHero, RecordsCard } from "./ImpactPanels";
+import { Impact } from "./Impact";
+import { ImpactHero } from "./ImpactPanels";
 
 vi.mock("../../../../lib/timezone", () => ({ useTimeZone: () => "UTC" }));
+vi.mock("../../../../components/Chart", () => ({
+  Chart: (p: { className?: string }) => <div className={p.className} data-testid="chart" />,
+}));
+const effect = vi.hoisted(() => ({ data: null as unknown }));
+vi.mock("../../../../lib/queries/currencyEffect", async (orig) => ({
+  ...(await orig<typeof import("../../../../lib/queries/currencyEffect")>()),
+  useCurrencyEffect: (_r: string, c: "EUR" | "USD") => ({
+    data: (effect.data as Record<string, unknown>)[c],
+    isError: false,
+    isFetching: false,
+    isPending: false,
+    isPlaceholderData: false,
+    refetch: () => undefined,
+  }),
+}));
 
 // The fixture ledger is all dollars, like the owner's.
 const fx = full as unknown as Record<string, { EUR: CurrencyEffectDto; USD: CurrencyEffectDto }>;
@@ -35,38 +51,51 @@ describe("Impact, EUR view", () => {
   });
 });
 
-describe("Impact, USD view of an all-dollar book", () => {
+describe("Impact, USD view: the investing perspective", () => {
   const usd = all.USD;
 
-  it("leads with the euro-vs-dollar gap, never with +US$0 or the euro", () => {
-    expect(usd.headline.lead).toBe("gap");
-    const { container } = mount(<ImpactHero data={usd} range="all" />);
-    expect(screen.getByText("Euros against dollars")).toBeInTheDocument();
-    const pp = Number(usd.headline.effect_pp);
-    expect(screen.getByText(new RegExp(`Your result in euros was [\\d.]+ pp ${pp < 0 ? "lower" : "higher"} than in dollars`))).toBeInTheDocument();
-    expect(screen.queryByText(/What the euro did/)).not.toBeInTheDocument();
-    expect(screen.getByText(/What the dollar did to you in euros/)).toBeInTheDocument();
-    expect(screen.getByText(pp < 0 ? "Headwind" : "Tailwind")).toBeInTheDocument();
-    // No chart of two identical lines.
-    expect(container.querySelector(".impact__chart")).toBeNull();
+  it("leads with what the euro did to your deposits, in dollars, the tag from that figure", () => {
+    const inv = usd.investing!;
+    expect(usd.headline.lead).toBe("deposits");
+    expect(usd.headline.kind).toBe(inv.kind);
+    mount(<ImpactHero data={usd} range="all" />);
+    expect(screen.getByText(/What the euro did to your deposits/)).toBeInTheDocument();
+    const value = Number(inv.effect);
+    expect(screen.getByText(value < 0 ? "Headwind" : "Tailwind")).toBeInTheDocument();
+    expect(screen.queryByText(/Euros against dollars/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Euro return [\d.]+ pp (lower|higher) than the dollar return/)).toBeInTheDocument();
   });
 
-  it("drops the zero currency step from the bridge", () => {
-    const { container } = mount(<BridgeCard data={usd} />);
-    expect(container.querySelector('[data-part="currency"]')).toBeNull();
-    expect(container.querySelector('[data-part="market"]')).not.toBeNull();
+  it("says so in one line when there were no deposits, with the rate alone", () => {
+    const inv = usd.investing!;
+    const none = { ...usd, investing: { ...inv, deposit_count: 0, deposits: [], series: [] } };
+    mount(<ImpactHero data={none} range="1m" />);
+    expect(screen.getByText(/No deposits in this range/)).toBeInTheDocument();
   });
+});
 
-  it("says in one line that no holding had a currency effect", () => {
-    const { container } = mount(<HoldingsCard data={usd} range="all" />);
-    expect(screen.getByText(/All your holdings are in dollars/)).toBeInTheDocument();
-    expect(container.querySelector(".holding-split__row")).toBeNull();
-  });
+describe("Impact, both views have the same cards", () => {
+  const cards = [".impact__hero", ".impact__bridge", ".impact__records", ".impact__months", ".impact__rolling", ".impact__holdings"];
 
-  it("shows no records of zeros", () => {
-    const { container } = mount(<RecordsCard data={usd} />);
-    expect(container.firstChild).toBeNull();
-  });
+  for (const rng of ["all", "1y"]) {
+    it(`${rng}: every card is there in EUR and in USD, none empty`, () => {
+      effect.data = fx[`GET /api/currency/effect/both?range=${rng}`];
+      const seen: Record<string, boolean[]> = {};
+      for (const ccy of ["EUR", "USD"] as const) {
+        const { container, unmount } = mount(<Impact id="impact" label="Impact" currency={ccy} range={rng as "1y"} />);
+        seen[ccy] = cards.map((c) => container.querySelector(c) !== null);
+        if (ccy === "USD") {
+          expect(screen.getByText("Per deposit")).toBeInTheDocument();
+          expect(screen.getByText("From euros to dollars")).toBeInTheDocument();
+          expect(container.querySelector('[data-part="currency"]')).not.toBeNull();
+          expect(screen.queryByText(/All your holdings are in dollars/)).not.toBeInTheDocument();
+        }
+        unmount();
+      }
+      expect(seen.USD).toEqual(seen.EUR);
+      expect(seen.USD.filter(Boolean).length).toBeGreaterThanOrEqual(5);
+    });
+  }
 });
 
 describe("effectRangeFor", () => {

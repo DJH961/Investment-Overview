@@ -56,6 +56,7 @@ from investment_dashboard.domain import fx_attribution as fa
 from investment_dashboard.domain import fx_effect_split, fx_trend
 from investment_dashboard.domain.market_hours import exchange_today, is_trading_day
 from investment_dashboard.domain.session_fx import fx_buying_power_split
+from investment_dashboard.readmodels import currency_deposits as deposits_rm
 from investment_dashboard.readmodels import fx_attribution_rows as rows_rm
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import instruments_repo, transactions_repo
@@ -1039,6 +1040,14 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "other_effect": None,
         "other_ccy": None,
     }
+    # The USD view reads the currency the way you invest: your euros becoming dollars.
+    investing = (
+        deposits_rm.build_investing(session, after, through, first=first_ledger_date(session))
+        if ccy == "USD"
+        else None
+    )
+    if investing is not None:
+        headline |= {"lead": "deposits", "kind": investing["kind"], "note": None}
 
     if range_key in INTRADAY_RANGES:
         series = intraday_series(
@@ -1189,6 +1198,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "book_note": BOOK_NOTE.format(days=missing, s="" if missing == 1 else "s")
         if missing
         else None,
+        "investing": investing,
     }
 
 

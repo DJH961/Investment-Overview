@@ -81,9 +81,9 @@ export function PositionCard({ data }: { data: DollarDto }) {
 
   if (data.ccy === "USD") {
     return (
-      <Card className="dollar-position" title="Your currency position">
+      <Card className="dollar-position" title="Your buying power">
         <div className="dollar-position__lenses">
-          <OutsideDollars data={data} />
+          <BuyingPower data={data} />
           {next ? <NextEuro next={next} data={data} /> : null}
         </div>
       </Card>
@@ -130,56 +130,66 @@ export function PositionCard({ data }: { data: DollarDto }) {
 }
 
 /**
- * The USD view turned around: dollars are home, so the question is what you hold
- * outside them (usually nothing: said in one line). The rates are EUR/USD; a stronger
- * euro is what helps anything held in euros.
+ * The USD view mirrored on investing: "Your buying power". You convert euros into
+ * dollars, so a stronger euro helps: your average conversion rate against now (are your
+ * euros buying more or fewer dollars than on average?), the rate since you started with
+ * your average marked, and the change over the page range. Every figure is the server's.
  */
-function OutsideDollars({ data }: { data: DollarDto }) {
+function BuyingPower({ data }: { data: DollarDto }) {
   const field = data.quote.field;
   const pos = data.position ?? {};
   const q = (v: Parameters<typeof quoteOf>[0]) => toNum(quoteOf(v, field));
-  const other = toNum(pos.other_value ?? null);
+  const vsAverage = toNum(pos.change?.rate_pct ?? null);
   const today = toNum(pos.today?.rate_pct ?? null);
-  const since = toNum(pos.change?.rate_pct ?? null);
-  const figs = [
+  const overRange = toNum(pos.range_change?.rate_pct ?? null);
+  const lean = leanOf(vsAverage);
+  const other = toNum(pos.other_value ?? null);
+  const figs: { key: string; label: string; tip?: string; value: ReactNode; note?: ReactNode }[] = [
     {
       key: "bought",
-      label: "Your average rate",
+      label: "Your average",
       tip: "The average rate at which your euros became dollars.",
       value: rateText(q(pos.avg_rate), field),
       note: "euros into dollars",
     },
     { key: "now", label: "Now", value: rateText(q(pos.rate_now), field), note: `${pct(today, 2)} today` },
+    {
+      key: "range",
+      label: "Over this range",
+      tip: "The euro's change against the dollar from the start of the chosen range to the last close: up means each euro buys more dollars.",
+      value: pct(overRange),
+      note: <KindTag kind={leanOf(overRange)} />,
+    },
   ];
-  if (other === null || Math.round(other) === 0) {
-    return (
-      <Lens
-        name="Outside dollars"
-        hint="nothing to move"
-        headline="All in dollars"
-        note="All your holdings are in dollars, so the exchange rate does not change their dollar value."
-        visual={null}
-        figs={figs}
-      />
-    );
+  if (other !== null && Math.round(other) !== 0) {
+    figs.push({
+      key: "outside",
+      label: "Held outside dollars",
+      tip: "Holdings not priced in dollars, valued in dollars at today's rate.",
+      value: <Money amount={other} currency="USD" digits={0} />,
+      note: pos.other_share ? `${share(toNum(pos.other_share))} of your holdings` : "",
+    });
   }
   return (
     <Lens
-      name="Outside dollars"
+      name="Your buying power"
       hint="a stronger euro helps"
-      headline={<Money amount={other} currency="USD" digits={0} />}
-      note={pos.other_share ? `${share(toNum(pos.other_share))} of your holdings` : "held in other currencies"}
-      visual={null}
-      figs={[
-        ...figs,
-        {
-          key: "since",
-          label: "Euro since your average",
-          tip: "The euro's change since your average rate: up helps what you hold outside dollars.",
-          value: pct(since),
-          note: <KindTag kind={leanOf(since)} />,
-        },
-      ]}
+      headline={
+        vsAverage === null ? (
+          rateText(q(pos.rate_now), field)
+        ) : (
+          <>
+            {pct(vsAverage)} <KindTag kind={lean} />
+          </>
+        )
+      }
+      note={
+        vsAverage === null
+          ? "per euro at today's rate"
+          : `Each euro buys ${vsAverage < 0 ? "fewer" : "more"} dollars now than at your average rate.`
+      }
+      visual={<SinceStarted data={data} lean={lean} />}
+      figs={figs}
     />
   );
 }

@@ -2964,6 +2964,16 @@
             "title": "Holdings",
             "type": "array"
           },
+          "investing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestingEffect"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "missing_deposit_days": {
             "default": 0,
             "title": "Missing Deposit Days",
@@ -3840,6 +3850,65 @@
           "overnight"
         ],
         "title": "DaySplit",
+        "type": "object"
+      },
+      "DepositEffectRow": {
+        "description": "One USD deposit against the range's start rate (the investing view).",
+        "properties": {
+          "effect": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Effect",
+            "type": "string"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "on": {
+            "title": "On",
+            "type": "string"
+          },
+          "rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "matched",
+              "partly",
+              "ecb"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "start_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Rate",
+            "type": "string"
+          },
+          "transaction_id": {
+            "title": "Transaction Id",
+            "type": "integer"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transaction_id",
+          "on",
+          "usd",
+          "eur",
+          "rate",
+          "start_rate",
+          "effect",
+          "source"
+        ],
+        "title": "DepositEffectRow",
         "type": "object"
       },
       "DepositMatchOut": {
@@ -4944,6 +5013,16 @@
             ],
             "title": "Other Value"
           },
+          "range_change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "rate_now": {
             "anyOf": [
               {
@@ -5628,7 +5707,8 @@
             "default": "effect",
             "enum": [
               "effect",
-              "gap"
+              "gap",
+              "deposits"
             ],
             "title": "Lead",
             "type": "string"
@@ -10369,6 +10449,144 @@
         "title": "InstrumentUpdateResult",
         "type": "object"
       },
+      "InvestingEffect": {
+        "description": "The USD view's investing perspective (``readmodels/currency_deposits``).\n\nYour euros become dollars: each USD deposit's dollars minus what its euros would\nhave bought at ``start_rate`` (the rate on the range's start close; for All the\nrate on your first transaction's day). Money in dollars. ``series`` is the\ncumulative dollars received (``value``) and the same euros at the start rate\n(``constant_currency``), so the gap between them (``currency``) is the effect.\n``months`` / ``years`` / ``grid`` / ``records`` / ``rolling`` are the same shapes\nas the EUR view's, built on this effect (``records.best_day`` = best deposit).",
+        "properties": {
+          "average_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rate"
+          },
+          "deposit_count": {
+            "title": "Deposit Count",
+            "type": "integer"
+          },
+          "deposits": {
+            "items": {
+              "$ref": "#/components/schemas/DepositEffectRow"
+            },
+            "title": "Deposits",
+            "type": "array"
+          },
+          "effect": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Effect",
+            "type": "string"
+          },
+          "end_on": {
+            "title": "End On",
+            "type": "string"
+          },
+          "end_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "End Rate",
+            "type": "string"
+          },
+          "eur_sent": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Sent",
+            "type": "string"
+          },
+          "grid": {
+            "items": {
+              "$ref": "#/components/schemas/EffectGridRow"
+            },
+            "title": "Grid",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/EffectBar"
+            },
+            "title": "Months",
+            "type": "array"
+          },
+          "rate_only": {
+            "$ref": "#/components/schemas/RateOnly"
+          },
+          "records": {
+            "$ref": "#/components/schemas/EffectRecords"
+          },
+          "rolling": {
+            "items": {
+              "$ref": "#/components/schemas/EffectRollingPoint"
+            },
+            "title": "Rolling",
+            "type": "array"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/EffectPoint"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "start_on": {
+            "title": "Start On",
+            "type": "string"
+          },
+          "start_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Rate",
+            "type": "string"
+          },
+          "stats": {
+            "items": {
+              "$ref": "#/components/schemas/EffectStat"
+            },
+            "title": "Stats",
+            "type": "array"
+          },
+          "usd_at_start": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd At Start",
+            "type": "string"
+          },
+          "usd_received": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Received",
+            "type": "string"
+          },
+          "years": {
+            "items": {
+              "$ref": "#/components/schemas/EffectBar"
+            },
+            "title": "Years",
+            "type": "array"
+          }
+        },
+        "required": [
+          "start_on",
+          "end_on",
+          "start_rate",
+          "end_rate",
+          "effect",
+          "kind",
+          "deposit_count",
+          "eur_sent",
+          "usd_received",
+          "usd_at_start",
+          "rate_only"
+        ],
+        "title": "InvestingEffect",
+        "type": "object"
+      },
       "InvestingPower": {
         "properties": {
           "amount_eur": {
@@ -14369,6 +14587,61 @@
           "inverse"
         ],
         "title": "RateHistoryPoint",
+        "type": "object"
+      },
+      "RateOnly": {
+        "description": "EUR 1,000 at the range start's rate and at its end's (the rate alone).",
+        "properties": {
+          "amount_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Amount Eur",
+            "type": "string"
+          },
+          "change": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Change",
+            "type": "string"
+          },
+          "end_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "End Rate",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "tailwind",
+              "headwind",
+              "neutral"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "start_rate": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Start Rate",
+            "type": "string"
+          },
+          "usd_at_start": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd At Start",
+            "type": "string"
+          },
+          "usd_now": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount_eur",
+          "start_rate",
+          "end_rate",
+          "usd_at_start",
+          "usd_now",
+          "change",
+          "kind"
+        ],
+        "title": "RateOnly",
         "type": "object"
       },
       "RatePercentiles": {
