@@ -6,9 +6,16 @@ import { applyOptimistic, rollback, type OptimisticContext } from "./optimistic"
 
 type S = components["schemas"];
 export type FxConversion = S["FxConversionOut"];
+export type FxProvider = NonNullable<FxConversion["provider"]>;
+export type ConversionUse = S["UsedByOut"];
 export type FxConversionInput = S["FxConversionIn"];
-export type FxPool = S["PoolOut"];
 export type DepositMatch = S["DepositMatchOut"];
+export type DepositStatus = DepositMatch["status"];
+export type DepositSlice = S["DepositSliceOut"];
+export type RejectedPin = S["RejectedPinOut"];
+export type FxPool = S["PoolOut"];
+export type FxReference = S["ReferenceOut"];
+export type PinInput = S["PinIn"];
 export type SettingsData = S["SettingsDto"];
 export type SettingsPatch = S["SettingsUpdate"];
 export type DiagnosticsData = S["DiagnosticsOut"];
@@ -33,6 +40,33 @@ export function useFxPool() {
   return useQuery({
     queryKey: ["fx-conversions", "pool"],
     queryFn: ({ signal }) => api<FxPool>("/api/fx-conversions/pool", { signal }),
+  });
+}
+
+/** The settled ECB fixing on exactly `date` (no network call); idle until a full date is typed. */
+export function useFxReference(date: string) {
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(date);
+  return useQuery({
+    queryKey: ["fx-conversions", "reference", date],
+    queryFn: ({ signal }) => api<FxReference>(`/api/fx-conversions/reference?date=${date}`, { signal }),
+    enabled: valid,
+  });
+}
+
+export function useSetPins() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ depositId, pins }: { depositId: number; pins: PinInput[] }) =>
+      api<DepositMatch>(`/api/fx-conversions/pins/${depositId}`, { method: "PUT", body: { pins } }),
+    onSuccess: () => invalidateFor(qc, "fxConversionWrite"),
+  });
+}
+
+export function useUnpin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (depositId: number) => api<void>(`/api/fx-conversions/pins/${depositId}`, { method: "DELETE" }),
+    onSuccess: () => invalidateFor(qc, "fxConversionWrite"),
   });
 }
 

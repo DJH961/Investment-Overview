@@ -3866,6 +3866,17 @@
             ],
             "title": "Fallback Rate"
           },
+          "fallback_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Rate Date"
+          },
           "fallback_to_ecb": {
             "title": "Fallback To Ecb",
             "type": "boolean"
@@ -3882,9 +3893,29 @@
             "title": "Matched",
             "type": "array"
           },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
           "rate_missing": {
             "title": "Rate Missing",
             "type": "boolean"
+          },
+          "slices": {
+            "items": {
+              "$ref": "#/components/schemas/DepositSliceOut"
+            },
+            "title": "Slices",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "matched",
+              "partial",
+              "ecb_only"
+            ],
+            "title": "Status",
+            "type": "string"
           },
           "transaction_id": {
             "title": "Transaction Id",
@@ -3907,7 +3938,11 @@
           "fallback_to_ecb",
           "rate_missing",
           "eur_actual",
-          "effective_rate"
+          "effective_rate",
+          "status",
+          "slices",
+          "fallback_rate_date",
+          "pinned"
         ],
         "title": "DepositMatchOut",
         "type": "object"
@@ -4020,6 +4055,48 @@
           "description"
         ],
         "title": "DepositRowOut",
+        "type": "object"
+      },
+      "DepositSliceOut": {
+        "properties": {
+          "conversion_date": {
+            "title": "Conversion Date",
+            "type": "string"
+          },
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "rate": {
+            "description": "The conversion's all-in USD per EUR.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "conversion_date",
+          "usd",
+          "eur",
+          "rate",
+          "pinned"
+        ],
+        "title": "DepositSliceOut",
         "type": "object"
       },
       "DepositSummaryOut": {
@@ -6170,6 +6247,13 @@
             ],
             "title": "Fees Eur"
           },
+          "from_ccy": {
+            "default": "EUR",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "From Ccy",
+            "type": "string"
+          },
           "note": {
             "anyOf": [
               {
@@ -6181,6 +6265,29 @@
               }
             ],
             "title": "Note"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "to_ccy": {
+            "default": "USD",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "To Ccy",
+            "type": "string"
           },
           "usd_received": {
             "anyOf": [
@@ -6206,9 +6313,28 @@
       },
       "FxConversionOut": {
         "properties": {
+          "all_in_rate": {
+            "description": "usd_received / (eur_sent + fees).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "All In Rate",
+            "type": "string"
+          },
           "date": {
             "title": "Date",
             "type": "string"
+          },
+          "ecb_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Settled fixing dated exactly that day; null when not published.",
+            "title": "Ecb Rate"
           },
           "effective_rate": {
             "description": "USD received per EUR sent (derived).",
@@ -6233,6 +6359,10 @@
             ],
             "title": "Fees Eur"
           },
+          "from_ccy": {
+            "title": "From Ccy",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -6248,10 +6378,48 @@
             ],
             "title": "Note"
           },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "rate": {
+            "description": "usd_received / eur_sent (same as effective_rate).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Rate",
+            "type": "string"
+          },
+          "remaining_usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Remaining Usd",
+            "type": "string"
+          },
+          "to_ccy": {
+            "title": "To Ccy",
+            "type": "string"
+          },
           "usd_received": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Usd Received",
             "type": "string"
+          },
+          "used_by": {
+            "items": {
+              "$ref": "#/components/schemas/UsedByOut"
+            },
+            "title": "Used By",
+            "type": "array"
           }
         },
         "required": [
@@ -6261,7 +6429,15 @@
           "usd_received",
           "fees_eur",
           "note",
-          "effective_rate"
+          "effective_rate",
+          "from_ccy",
+          "to_ccy",
+          "provider",
+          "rate",
+          "all_in_rate",
+          "ecb_rate",
+          "used_by",
+          "remaining_usd"
         ],
         "title": "FxConversionOut",
         "type": "object"
@@ -12454,6 +12630,49 @@
         "title": "PeriodsOut",
         "type": "object"
       },
+      "PinIn": {
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "usd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Usd"
+          }
+        },
+        "required": [
+          "conversion_id",
+          "usd"
+        ],
+        "title": "PinIn",
+        "type": "object"
+      },
+      "PinsIn": {
+        "properties": {
+          "pins": {
+            "items": {
+              "$ref": "#/components/schemas/PinIn"
+            },
+            "title": "Pins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "title": "PinsIn",
+        "type": "object"
+      },
       "PlanCategoryOut": {
         "properties": {
           "add_value": {
@@ -12906,6 +13125,13 @@
             "title": "Fallbacks",
             "type": "array"
           },
+          "rejected_pins": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedPinOut"
+            },
+            "title": "Rejected Pins",
+            "type": "array"
+          },
           "remaining": {
             "items": {
               "$ref": "#/components/schemas/RemainingBatchOut"
@@ -12919,7 +13145,8 @@
           "balance_eur",
           "remaining",
           "deposits",
-          "fallbacks"
+          "fallbacks",
+          "rejected_pins"
         ],
         "title": "PoolOut",
         "type": "object"
@@ -14441,6 +14668,37 @@
         "title": "ReconcileResult",
         "type": "object"
       },
+      "ReferenceOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "ecb_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate"
+          },
+          "published": {
+            "title": "Published",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "date",
+          "ecb_rate",
+          "published"
+        ],
+        "title": "ReferenceOut",
+        "type": "object"
+      },
       "RefreshOut": {
         "properties": {
           "active": {
@@ -14570,6 +14828,35 @@
           "seq"
         ],
         "title": "RefreshStatus",
+        "type": "object"
+      },
+      "RejectedPinOut": {
+        "properties": {
+          "conversion_id": {
+            "title": "Conversion Id",
+            "type": "integer"
+          },
+          "deposit_id": {
+            "title": "Deposit Id",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deposit_id",
+          "conversion_id",
+          "usd",
+          "reason"
+        ],
+        "title": "RejectedPinOut",
         "type": "object"
       },
       "RemainingBatchOut": {
@@ -19226,6 +19513,41 @@
         "title": "UnknownActionsOut",
         "type": "object"
       },
+      "UsedByOut": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "deposit_id": {
+            "title": "Deposit Id",
+            "type": "integer"
+          },
+          "eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur",
+            "type": "string"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deposit_id",
+          "date",
+          "usd",
+          "eur",
+          "pinned"
+        ],
+        "title": "UsedByOut",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -20951,6 +21273,91 @@
         ]
       }
     },
+    "/api/fx-conversions/pins/{deposit_txn_id}": {
+      "delete": {
+        "operationId": "delete_pins_api_fx_conversions_pins__deposit_txn_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deposit_txn_id",
+            "required": true,
+            "schema": {
+              "title": "Deposit Txn Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Pins",
+        "tags": [
+          "fx-conversions"
+        ]
+      },
+      "put": {
+        "operationId": "put_pins_api_fx_conversions_pins__deposit_txn_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deposit_txn_id",
+            "required": true,
+            "schema": {
+              "title": "Deposit Txn Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositMatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Pins",
+        "tags": [
+          "fx-conversions"
+        ]
+      }
+    },
     "/api/fx-conversions/pool": {
       "get": {
         "operationId": "pool_api_fx_conversions_pool_get",
@@ -20967,6 +21374,49 @@
           }
         },
         "summary": "Pool",
+        "tags": [
+          "fx-conversions"
+        ]
+      }
+    },
+    "/api/fx-conversions/reference": {
+      "get": {
+        "operationId": "reference_api_fx_conversions_reference_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reference",
         "tags": [
           "fx-conversions"
         ]

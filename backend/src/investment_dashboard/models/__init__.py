@@ -21,6 +21,7 @@ from investment_dashboard.models.base import (
     ConfigBase,
     LedgerBase,
 )
+from investment_dashboard.models.fx_conversion import FxConversion, FxConversionPin
 from investment_dashboard.models.fx_history import FxHistory
 from investment_dashboard.models.fx_session_rate import FxSessionRate
 from investment_dashboard.models.holding_daily_value import HoldingDailyValue
@@ -47,6 +48,8 @@ __all__ = [
     "Base",
     "CacheBase",
     "ConfigBase",
+    "FxConversion",
+    "FxConversionPin",
     "FxHistory",
     "FxSessionRate",
     "HoldingDailyValue",

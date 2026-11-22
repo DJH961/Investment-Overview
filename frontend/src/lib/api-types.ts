@@ -647,6 +647,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fx-conversions/pins/{deposit_txn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Pins */
+        put: operations["put_pins_api_fx_conversions_pins__deposit_txn_id__put"];
+        post?: never;
+        /** Delete Pins */
+        delete: operations["delete_pins_api_fx_conversions_pins__deposit_txn_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fx-conversions/pool": {
         parameters: {
             query?: never;
@@ -656,6 +674,23 @@ export interface paths {
         };
         /** Pool */
         get: operations["pool_api_fx_conversions_pool_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fx-conversions/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reference */
+        get: operations["reference_api_fx_conversions_reference_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3106,14 +3141,25 @@ export interface components {
             fallback_eur: string;
             /** Fallback Rate */
             fallback_rate: string | null;
+            /** Fallback Rate Date */
+            fallback_rate_date: string | null;
             /** Fallback To Ecb */
             fallback_to_ecb: boolean;
             /** Fallback Usd */
             fallback_usd: string;
             /** Matched */
             matched: components["schemas"]["SliceOut"][];
+            /** Pinned */
+            pinned: boolean;
             /** Rate Missing */
             rate_missing: boolean;
+            /** Slices */
+            slices: components["schemas"]["DepositSliceOut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "matched" | "partial" | "ecb_only";
             /** Transaction Id */
             transaction_id: number;
             /** Usd */
@@ -3157,6 +3203,24 @@ export interface components {
              * @description "conversions", "ecb" (pool did not cover it), "mixed"; null without conversions
              */
             rate_source?: string | null;
+        };
+        /** DepositSliceOut */
+        DepositSliceOut: {
+            /** Conversion Date */
+            conversion_date: string;
+            /** Conversion Id */
+            conversion_id: number;
+            /** Eur */
+            eur: string;
+            /** Pinned */
+            pinned: boolean;
+            /**
+             * Rate
+             * @description The conversion's all-in USD per EUR.
+             */
+            rate: string;
+            /** Usd */
+            usd: string;
         };
         /** DepositSummaryOut */
         DepositSummaryOut: {
@@ -3895,15 +3959,37 @@ export interface components {
             eur_sent: number | string;
             /** Fees Eur */
             fees_eur?: number | string | null;
+            /**
+             * From Ccy
+             * @default EUR
+             */
+            from_ccy: string;
             /** Note */
             note?: string | null;
+            /** Provider */
+            provider?: ("wise" | "revolut" | "other") | null;
+            /**
+             * To Ccy
+             * @default USD
+             */
+            to_ccy: string;
             /** Usd Received */
             usd_received: number | string;
         };
         /** FxConversionOut */
         FxConversionOut: {
+            /**
+             * All In Rate
+             * @description usd_received / (eur_sent + fees).
+             */
+            all_in_rate: string;
             /** Date */
             date: string;
+            /**
+             * Ecb Rate
+             * @description Settled fixing dated exactly that day; null when not published.
+             */
+            ecb_rate: string | null;
             /**
              * Effective Rate
              * @description USD received per EUR sent (derived).
@@ -3913,12 +3999,27 @@ export interface components {
             eur_sent: string;
             /** Fees Eur */
             fees_eur: string | null;
+            /** From Ccy */
+            from_ccy: string;
             /** Id */
             id: number;
             /** Note */
             note: string | null;
+            /** Provider */
+            provider: ("wise" | "revolut" | "other") | null;
+            /**
+             * Rate
+             * @description usd_received / eur_sent (same as effective_rate).
+             */
+            rate: string;
+            /** Remaining Usd */
+            remaining_usd: string;
+            /** To Ccy */
+            to_ccy: string;
             /** Usd Received */
             usd_received: string;
+            /** Used By */
+            used_by: components["schemas"]["UsedByOut"][];
         };
         /** FxLegs */
         FxLegs: {
@@ -6098,6 +6199,18 @@ export interface components {
             /** Rows */
             rows: components["schemas"]["PeriodRowOut"][];
         };
+        /** PinIn */
+        PinIn: {
+            /** Conversion Id */
+            conversion_id: number;
+            /** Usd */
+            usd: number | string;
+        };
+        /** PinsIn */
+        PinsIn: {
+            /** Pins */
+            pins: components["schemas"]["PinIn"][];
+        };
         /** PlanCategoryOut */
         PlanCategoryOut: {
             /** Add Value */
@@ -6255,6 +6368,8 @@ export interface components {
             deposits: components["schemas"]["DepositMatchOut"][];
             /** Fallbacks */
             fallbacks: components["schemas"]["DepositMatchOut"][];
+            /** Rejected Pins */
+            rejected_pins: components["schemas"]["RejectedPinOut"][];
             /** Remaining */
             remaining: components["schemas"]["RemainingBatchOut"][];
         };
@@ -6689,6 +6804,15 @@ export interface components {
             /** Total */
             total?: string | null;
         };
+        /** ReferenceOut */
+        ReferenceOut: {
+            /** Date */
+            date: string;
+            /** Ecb Rate */
+            ecb_rate: string | null;
+            /** Published */
+            published: boolean;
+        };
         /** RefreshOut */
         RefreshOut: {
             /** Active */
@@ -6733,6 +6857,17 @@ export interface components {
             seq: number;
             /** Source */
             source?: string | null;
+        };
+        /** RejectedPinOut */
+        RejectedPinOut: {
+            /** Conversion Id */
+            conversion_id: number;
+            /** Deposit Id */
+            deposit_id: number;
+            /** Reason */
+            reason: string;
+            /** Usd */
+            usd: string;
         };
         /** RemainingBatchOut */
         RemainingBatchOut: {
@@ -8378,6 +8513,19 @@ export interface components {
             /** Targets */
             targets: string[];
         };
+        /** UsedByOut */
+        UsedByOut: {
+            /** Date */
+            date: string;
+            /** Deposit Id */
+            deposit_id: number;
+            /** Eur */
+            eur: string;
+            /** Pinned */
+            pinned: boolean;
+            /** Usd */
+            usd: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -9604,6 +9752,70 @@ export interface operations {
             };
         };
     };
+    put_pins_api_fx_conversions_pins__deposit_txn_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deposit_txn_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositMatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_pins_api_fx_conversions_pins__deposit_txn_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deposit_txn_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pool_api_fx_conversions_pool_get: {
         parameters: {
             query?: never;
@@ -9620,6 +9832,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PoolOut"];
+                };
+            };
+        };
+    };
+    reference_api_fx_conversions_reference_get: {
+        parameters: {
+            query: {
+                date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

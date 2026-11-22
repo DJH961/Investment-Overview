@@ -107,3 +107,125 @@ def test_properties(batches: list[Batch], deposits: list[UsdDeposit]) -> None:
     # input order must not matter
     rev = match_deposits(list(reversed(batches)), list(reversed(deposits)), _ecb)
     assert rev == res
+
+
+# ---------------------------------------------------------------- 7.3 pins
+
+from investment_dashboard.domain.fx_pool import Pin  # noqa: E402
+
+_C = D("0.01")
+
+
+def _golden() -> tuple[list[Batch], list[UsdDeposit]]:
+    return (
+        [
+            Batch(1, date(2026, 1, 5), D("1000"), D("1100"), D("2")),
+            Batch(2, date(2026, 2, 2), D("900"), D("1000")),
+            Batch(3, date(2026, 3, 9), D("1850"), D("2000"), D("3")),
+        ],
+        [
+            UsdDeposit(1, date(2026, 1, 10), D("800")),
+            UsdDeposit(2, date(2026, 3, 6), D("1500")),
+            UsdDeposit(3, date(2026, 3, 12), D("1000")),
+        ],
+    )
+
+
+def test_golden_pin_ledger() -> None:
+    batches, deposits = _golden()
+    res = match_deposits(batches, deposits, _ecb, pins=[Pin(2, 3, D("500"))])
+    assert res.rejected_pins == ()
+    d1, d2, d3 = res.deposits
+    assert [(s.conversion_id, s.usd, s.eur.quantize(_C), s.pinned) for s in d1.matched] == [
+        (1, D("800"), D("728.73"), False)
+    ]
+    assert [(s.conversion_id, s.usd, s.eur.quantize(_C), s.pinned) for s in d2.matched] == [
+        (3, D("500"), D("463.25"), True),
+        (1, D("300"), D("273.27"), False),
+        (2, D("700"), D("630.00"), False),
+    ]
+    assert d2.eur_total.quantize(_C) == D("1366.52")
+    assert (D("1500") / d2.eur_total).quantize(D("0.0001")) == D("1.0977")
+    assert [(s.conversion_id, s.usd, s.eur.quantize(_C)) for s in d3.matched] == [
+        (2, D("300"), D("270.00")),
+        (3, D("700"), D("648.55")),
+    ]
+    assert d3.eur_total.quantize(_C) == D("918.55")
+    left = {r.conversion_id: r for r in res.remaining}
+    assert left[3].usd == D("800") and left[3].eur.quantize(_C) == D("741.20")
+    assert left[1].usd == 0 and left[2].usd == 0
+    total_eur = sum((m.eur_total for m in res.deposits), D(0)) + res.remaining_eur
+    assert total_eur.quantize(_C) == D("3755.00")
+    assert abs(total_eur - D("3755")) < D("1e-20")
+    c3 = next(u for u in res.by_conversion if u.conversion_id == 3)
+    assert [(s.deposit_id, s.usd, s.pinned) for s in c3.slices] == [
+        (2, D("500"), True),
+        (3, D("700"), False),
+    ]
+    assert c3.remaining_usd == D("800")
+
+
+def test_pin_rejections() -> None:
+    batches, deposits = _golden()
+    pins = [
+        Pin(1, 3, D("10")),  # 2026-03-09 vs D1 2026-01-10: outside 7 days
+        Pin(2, 2, D("1600")),  # over the deposit
+        Pin(3, 1, D("5000")),  # over the deposit
+        Pin(9, 1, D("1")),
+        Pin(2, 9, D("1")),
+    ]
+    res = match_deposits(batches, deposits, _ecb, pins=pins)
+    assert len(res.rejected_pins) == 5
+    assert all(not s.pinned for m in res.deposits for s in m.matched)
+
+
+def test_conversion_over_pinned_rejected() -> None:
+    batches, deposits = _golden()
+    pins = [Pin(2, 3, D("1500")), Pin(3, 3, D("1000"))]
+    res = match_deposits(batches, deposits, _ecb, pins=pins)
+    assert [p for p, _ in res.rejected_pins] == [Pin(3, 3, D("1000"))]
+
+
+_pins_st = st.lists(st.tuples(st.integers(1, 8), st.integers(1, 6), _amount), max_size=6).map(
+    lambda xs: [Pin(d, c, u) for d, c, u in xs]
+)
+
+
+@settings(max_examples=150, deadline=None)
+@given(_batches, _deposits, _pins_st)
+def test_pin_properties(batches: list[Batch], deposits: list[UsdDeposit], pins: list[Pin]) -> None:
+    res = match_deposits(batches, deposits, _ecb, pins=pins)
+    by_batch = {b.id: b for b in batches}
+    dep_by_id = {d.id: d for d in deposits}
+    # deposit = matched + fallback
+    for m in res.deposits:
+        assert m.matched_usd + m.fallback_usd == dep_by_id[m.deposit_id].usd
+    # conversions = used + remaining; EUR conserved per conversion
+    for use in res.by_conversion:
+        b = by_batch[use.conversion_id]
+        used = sum((s.usd for s in use.slices), D(0))
+        assert used + use.remaining_usd == b.usd_received
+        rem = next(r for r in res.remaining if r.conversion_id == b.id)
+        assert abs(sum((s.eur for s in use.slices), D(0)) + rem.eur - b.eur_cost) < D("1e-20")
+        assert rem.usd == use.remaining_usd
+    # a valid pin appears as a pinned slice of the stated USD
+    rejected = {p for p, _ in res.rejected_pins}
+    for p in pins:
+        if p not in rejected:
+            m = next(x for x in res.deposits if x.deposit_id == p.deposit_id)
+            assert any(s.pinned and s.conversion_id == p.conversion_id for s in m.matched)
+    pinned_total = sum((s.usd for m in res.deposits for s in m.matched if s.pinned), D(0))
+    assert pinned_total == sum((p.usd for p in pins if p not in rejected), D(0))
+    # order independence
+    rev = match_deposits(
+        list(reversed(batches)), list(reversed(deposits)), _ecb, pins=list(reversed(pins))
+    )
+    assert rev == res
+
+
+@settings(max_examples=100, deadline=None)
+@given(_batches, _deposits)
+def test_no_pins_equals_fifo(batches: list[Batch], deposits: list[UsdDeposit]) -> None:
+    res = match_deposits(batches, deposits, _ecb, pins=())
+    assert res.rejected_pins == ()
+    assert all(not s.pinned for m in res.deposits for s in m.matched)

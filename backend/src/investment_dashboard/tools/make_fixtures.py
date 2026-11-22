@@ -645,8 +645,18 @@ def seed_full(session: Any) -> None:
         created_at=_dt.datetime(2026, 6, 29, 21, 30),
     )
     add(retirement, seen, "interest", "5.42", created_at=_dt.datetime(2026, 6, 29, 21, 32))
+    # 7.3 conversions: recent monthly top-ups, so the matching shows every status.
+    top_ups = {
+        "apr": _dt.date(2026, 4, 7),
+        "may": _dt.date(2026, 5, 5),
+        "jun": _dt.date(2026, 6, 2),
+    }
+    add(brokerage, top_ups["apr"], "deposit", "3000.00")
+    add(brokerage, top_ups["may"], "deposit", "2500.00")
+    add(brokerage, top_ups["jun"], "deposit", "4000.00")
     session.add_all(rows)
     session.flush()
+    _seed_conversions(session, rows, rate_on, top_ups)
     # The owner last had the app open on Thursday just after the close (three sessions
     # ago): the Brief's window is the absence since, and the rate then is the intraday
     # sample stored 5 minutes before that last visible read. The sample carries the
@@ -668,6 +678,66 @@ def seed_full(session: Any) -> None:
         market_value_usd=usd_then,
     )
     _seed_open_session(session, inst, today)
+
+
+def _seed_conversions(
+    session: Any,
+    rows: list[Any],
+    rate_on: Callable[[_dt.date], Decimal],
+    top_ups: dict[str, _dt.date],
+) -> None:
+    """EUR->USD conversions covering every matching status (7.3).
+
+    * 2025-02-03 $75,000 deposit: one large conversion covers $73,000, the rest
+      falls back to the ECB rate (partly matched).
+    * April: one conversion, fully matched.
+    * May: the conversion was booked three days *after* the deposit, so only a
+      pin can reach it (pinned).
+    * June: two conversions, two slices.
+    * 2026-06-26: converted, not yet deposited ($1,000 left in the pool).
+    * The 2023 deposits have no conversion at all (ECB only).
+    """
+    from investment_dashboard.models import FxConversion, FxConversionPin
+
+    def conv(day: _dt.date, usd: str, provider: str, fees: str | None, note: str | None = None) -> Any:
+        # About 0.4 % fewer dollars than the reference rate, like a retail spread.
+        eur = (D(usd) / (rate_on(day) * D("0.996"))).quantize(D("0.01"))
+        row = FxConversion(
+            date=day,
+            eur_sent=eur,
+            usd_received=D(usd),
+            fees_eur=None if fees is None else D(fees),
+            note=note,
+            provider=provider,
+            created_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+            updated_at=_dt.datetime.combine(day, _dt.time(9, 0)),
+        )
+        session.add(row)
+        return row
+
+    conv(_dt.date(2025, 1, 28), "73000.00", "wise", "41.80")
+    conv(_dt.date(2026, 4, 1), "3000.00", "revolut", None)
+    may = conv(
+        _dt.date(2026, 5, 8),
+        "2500.00",
+        "wise",
+        "3.20",
+        "Booked late at the broker; pinned to the 5 May deposit",
+    )
+    conv(_dt.date(2026, 5, 29), "2000.00", "wise", "2.10")
+    conv(_dt.date(2026, 5, 30), "2000.00", "revolut", None)
+    conv(_dt.date(2026, 6, 26), "1000.00", "wise", "1.40")
+    session.flush()
+    may_deposit = next(r for r in rows if r.kind == "deposit" and r.date == top_ups["may"])
+    session.add(
+        FxConversionPin(
+            deposit_txn_id=may_deposit.id,
+            conversion_id=may.id,
+            usd=D("2500.00"),
+            created_at=_dt.datetime(2026, 5, 8, 9, 5),
+        )
+    )
+    session.flush()
 
 
 def _bridge(rng: random.Random, steps: int) -> list[float]:
