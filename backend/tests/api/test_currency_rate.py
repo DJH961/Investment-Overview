@@ -313,6 +313,41 @@ def test_forex_bars_are_cached(monkeypatch: pytest.MonkeyPatch) -> None:
     fx_service.clear_forex_bars_cache()
 
 
+def test_forex_bars_reuse_follows_the_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings > Data refresh "Currency chart 1D/1W: reuse rate bars for" sets the window."""
+    monkeypatch.undo()
+    fx_service.clear_forex_bars_cache()
+    ages = {"ttl": 600.0}
+    monkeypatch.setattr(fx_service, "forex_bars_ttl_seconds", lambda: ages["ttl"])
+    calls: list[int] = []
+
+    def fetch(_s: date, _e: date) -> dict[datetime, Decimal]:
+        calls.append(1)
+        return {datetime(2026, 11, 18, 1, 0): Decimal("1.16")}
+
+    day = date(2026, 11, 18)
+    fx_service.eur_usd_forex_bars(day, day, fetcher=fetch)
+    fx_service.eur_usd_forex_bars(day, day, fetcher=fetch)
+    assert len(calls) == 1
+    ages["ttl"] = 0.0  # set to (effectively) nothing: the next read fetches again
+    fx_service.eur_usd_forex_bars(day, day, fetcher=fetch)
+    assert len(calls) == 2
+    fx_service.clear_forex_bars_cache()
+
+
+def test_forex_bars_ttl_reads_the_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    from investment_dashboard.services import settings_service
+
+    monkeypatch.setattr(
+        settings_service,
+        "get_or",
+        lambda key, fallback, session=None: (
+            120 if key == "fx.chart_bars_max_age_seconds" else fallback
+        ),
+    )
+    assert fx_service.forex_bars_ttl_seconds() == 120.0
+
+
 def test_all_range_starts_at_first_ledger_day_and_empty_ledger_falls_back(
     api_client: TestClient, seeded: None
 ) -> None:

@@ -560,11 +560,24 @@ def intraday_fx_bars_via_tiingo(
 #: ``{(start_day, end_day): (monotonic_stamp, bars)}``: the EUR/USD forex bars the
 #: Currency page's 1D / 1W rate chart reads, so page loads do not hammer Yahoo.
 _FOREX_BARS_CACHE: dict[tuple[date, date], tuple[float, dict[datetime, Decimal]]] = {}
+#: Default for setting ``fx.chart_bars_max_age_seconds`` (Settings > Data refresh).
 FOREX_BARS_TTL_SECONDS = 600.0
 
 
 def clear_forex_bars_cache() -> None:
     _FOREX_BARS_CACHE.clear()
+
+
+def forex_bars_ttl_seconds() -> float:
+    """How long fetched forex bars are reused (setting ``fx.chart_bars_max_age_seconds``)."""
+    from investment_dashboard.services import settings_service  # noqa: PLC0415
+
+    try:
+        return float(
+            settings_service.get_or("fx.chart_bars_max_age_seconds", FOREX_BARS_TTL_SECONDS)
+        )
+    except Exception:  # pragma: no cover - settings unreadable: keep the default
+        return FOREX_BARS_TTL_SECONDS
 
 
 def eur_usd_forex_bars(
@@ -579,7 +592,7 @@ def eur_usd_forex_bars(
     """15-minute EUR/USD bars ``{bar_time_naive_utc: rate}`` over ``[start_day, end_day]``.
 
     Yahoo ``EURUSD=X`` first, Tiingo only when a token is configured and Yahoo came
-    back empty. Cached in-process for :data:`FOREX_BARS_TTL_SECONDS` (a failed or
+    back empty. Cached in-process for :func:`forex_bars_ttl_seconds` (a failed or
     empty result is cached too, so an outage is not retried on every page load).
     Fails soft: any error yields ``{}``. Every real provider call is logged (this
     module is in the ``market_data`` activity subject).
@@ -589,7 +602,7 @@ def eur_usd_forex_bars(
     key = (start_day, end_day)
     hit = _FOREX_BARS_CACHE.get(key)
     now_mono = time.monotonic()
-    if hit is not None and now_mono - hit[0] < FOREX_BARS_TTL_SECONDS:
+    if hit is not None and now_mono - hit[0] < forex_bars_ttl_seconds():
         return dict(hit[1])
 
     if fetcher is None:
