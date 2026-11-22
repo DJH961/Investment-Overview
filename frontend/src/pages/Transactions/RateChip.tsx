@@ -57,7 +57,7 @@ export function RateSheet({
                     <Link to={`/conversions#conversion-${s.conversion_id}`} className="transactions-page__rate-link">
                       {[formatDate(s.conversion_date), providerLabel(c?.provider)].filter(Boolean).join(" · ")}
                     </Link>
-                    {s.pinned && <Pin className="transactions-page__rate-pin" aria-label="Pinned" role="img" />}
+                    {s.pinned && <><Pin className="transactions-page__rate-pin" aria-hidden /><span className="u-sr-only">Pinned</span></>}
                     <Money amount={Number(s.usd)} currency="USD" className="transactions-page__rate-usd" />
                   </span>
                   <span className="transactions-page__rate-slice-detail">{detail.join(" · ")}</span>

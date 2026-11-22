@@ -256,7 +256,7 @@ function MatchRow({
                   .filter(Boolean)
                   .join(" · ")}
               </Link>
-              {s.pinned && <Pin className="conversions__pin" aria-label="Pinned" role="img" />}
+              {s.pinned && <><Pin className="conversions__pin" aria-hidden /><span className="u-sr-only">Pinned</span></>}
               <span className="conversions__slice-amounts">
                 <Money amount={Number(s.usd)} currency="USD" /> for <Money amount={Number(s.eur)} currency="EUR" />
               </span>
