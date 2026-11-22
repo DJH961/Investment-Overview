@@ -5,146 +5,342 @@
   flex-direction: column;
   gap: var(--page-gap);
 
-  &__kpis {
-    display: grid;
-    // Two tiles today: fill the row instead of leaving half of it blank.
-    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-    gap: var(--page-gap);
-    @include m.phone-tile-grid;
-
-    // One subject: the first figure leads on its own stage surface.
-    @include m.tablet-up {
-      grid-template-columns: minmax(0, 1.6fr) repeat(auto-fit, minmax(14rem, 1fr));
-
-      > :first-child {
-        background: var(--stage-bg);
-        border-color: var(--stage-border);
-        border-radius: var(--radius-xl);
-      }
-    }
-  }
-
   &__muted {
     color: var(--color-muted);
     font-size: var(--font-size-sm);
   }
 
-  &__matches,
-  &__slices {
+  &__list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
     list-style: none;
     margin: 0;
     padding: 0;
   }
 
-  &__match {
-    padding-bottom: var(--space-2);
-    border-bottom: var(--border-width) solid var(--color-border);
+  // A link from elsewhere on the page just scrolled here: show where.
+  &__target {
+    background: var(--color-accent-soft);
+    outline: var(--border-width) solid var(--color-accent);
+    outline-offset: calc(-1 * var(--border-width));
+  }
+}
+
+// One conversion. Phone and tablet: id and menu, the dollars, the rate facts, the deposits it
+// paid for, the note. Wide screens: one line.
+.conv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "id menu"
+    "hero hero"
+    "facts facts"
+    "paid paid"
+    "note note";
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4) var(--card-pad-x);
+  border-top: var(--border-width) solid var(--color-border);
+
+  &:first-child {
+    border-top: 0;
   }
 
-  &__match-head {
+  &__id {
+    grid-area: id;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  &__date {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__menu {
+    grid-area: menu;
+    // 44 px target on phones, aligned with the title line.
+    margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0 0;
+  }
+
+  &__hero {
+    grid-area: hero;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    min-width: 0;
+  }
+
+  &__usd {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-figure);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  &__sent {
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__facts {
+    grid-area: facts;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin: 0;
+    padding: var(--space-2) 0;
+    border-block: var(--border-width) dashed var(--color-border);
+  }
+
+  &__fact {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+
+    dt {
+      @include m.eyebrow(var(--font-size-xs));
+    }
+
+    dd {
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      font-size: var(--font-size-md);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__sub {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__paid {
+    grid-area: paid;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1) var(--space-3);
-    font-size: var(--font-size-sm);
+    min-width: 0;
+
+    @include m.wide {
+      flex-direction: column;
+      align-items: flex-start;
+    }
   }
 
-  &__match-status {
-    flex: none;
-    margin-left: auto;
+  &__label {
+    @include m.eyebrow(var(--font-size-xs));
   }
 
-  &__match-rate {
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+  }
+
+  &__chip-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
+    border-radius: var(--radius-full);
+    text-decoration: none;
+
+    &:hover {
+      filter: brightness(0.96);
+    }
+  }
+
+  &__note {
+    grid-area: note;
     margin: 0;
     color: var(--color-muted);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
-  &__slice-amounts {
-    display: inline;
-    margin-left: var(--space-1);
+  @include m.wide {
+    grid-template-columns: minmax(8rem, 0.9fr) minmax(10rem, 1.1fr) minmax(15rem, 1.7fr) minmax(8rem, 1fr) auto;
+    grid-template-areas:
+      "id hero facts paid menu"
+      "note note note note note";
+
+    &__facts {
+      padding: 0;
+      border-block: 0;
+    }
+
+    &__chip-link {
+      min-height: 0;
+    }
+
+    &__menu {
+      margin: 0;
+    }
+  }
+}
+
+// One USD deposit and the conversions that paid for it.
+.deposit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: var(--border-width) solid var(--color-border);
+
+  &:first-child {
+    border-top: 0;
+    padding-top: 0;
   }
 
-  &__pin {
-    display: inline-block;
-    width: 1em;
-    height: 1em;
-    margin-left: var(--space-1);
-    vertical-align: -0.125em;
+  &:last-child {
+    padding-bottom: 0;
   }
 
-  &__slices {
-    margin-top: var(--space-1);
-    padding-left: var(--space-4);
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
+  &__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  &__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  &__date {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__usd {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-figure);
+    font-variant-numeric: tabular-nums;
   }
 
   &__rate {
+    grid-column: 1 / -1;
     color: var(--color-muted);
+    font-size: var(--font-size-sm);
   }
 
-  &__match-actions {
+  &__slices {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  &__slice {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  &__slice-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+  }
+
+  &__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-accent);
+    font-weight: var(--font-weight-medium);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &__ecb {
+    color: var(--color-muted);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__amounts {
+    color: var(--color-fg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__pinned {
+    display: inline-flex;
+  }
+
+  &__sr {
+    @include m.visually-hidden;
+  }
+
+  &__pin {
+    width: 1em;
+    height: 1em;
+    flex: none;
+  }
+
+  // The deposit as a track; each slice fills its share. Accent = your conversions,
+  // hatched muted = the ECB rate (a pattern as well as a colour).
+  &__bar {
+    display: block;
+    height: var(--space-2);
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+  }
+
+  &__fill {
+    display: block;
+    height: 100%;
+    border-radius: var(--radius-full);
+    background: var(--color-accent);
+
+    &--ecb {
+      background: repeating-linear-gradient(
+        135deg,
+        var(--color-fg) 0 var(--space-1),
+        transparent var(--space-1) var(--space-2)
+      );
+    }
+  }
+
+  &__actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
-    margin-top: var(--space-1);
 
     @include m.tablet-up {
       justify-content: flex-end;
     }
-  }
 
-  // A link from elsewhere on the page just scrolled here: show where.
-  &__target {
-    background: var(--color-surface-2);
-    border-radius: var(--radius-sm);
-    outline: var(--border-width) solid var(--color-accent);
-    outline-offset: var(--space-1);
+    @include m.phone {
+      .button {
+        flex: 1 1 auto;
+        min-height: var(--tap-min);
+      }
+    }
   }
-
-  &__date,
-  &__ecb,
-  &__stack {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  &__stack {
-    align-items: flex-end;
-  }
-
-  &__ecb {
-    align-items: flex-end;
-  }
-
-  // The muted second line of a cell (a note, the fees, the fixing's own day).
-  &__note {
-    max-width: 14ch;
-    overflow: hidden;
-    color: var(--color-muted);
-    font-size: var(--font-size-xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__paid {
-    font-size: var(--font-size-sm);
-  }
-
-  &__muted-inline {
-    color: var(--color-muted);
-  }
-
-  &__link {
-    color: var(--color-accent);
-    text-decoration: underline;
-  }
-
 }
 
 .pin-form {
@@ -161,22 +357,28 @@
     padding: 0;
   }
 
+  // Each candidate is a small card: name and facts on the left, the dollars to pin on the right.
   &__row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-1);
+    grid-template-columns: minmax(0, 1fr) 6rem;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
-
-    @include m.tablet-up {
-      grid-template-columns: minmax(0, 1fr) 9rem;
-      align-items: center;
-    }
   }
 
   &__name {
     display: flex;
     flex-direction: column;
+    gap: 2px;
+    min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  &__title {
+    font-weight: var(--font-weight-semibold);
   }
 
   &__free {
