@@ -1,4 +1,4 @@
-import { Landmark, Pin, Wallet } from "lucide-react";
+import { Banknote, Landmark, Pin, Wallet } from "lucide-react";
 import { Link } from "react-router";
 import { Chip } from "../../components/Chip";
 import { Money } from "../../components/Money";
@@ -17,7 +17,7 @@ export function RateChip({ match, onOpen }: { match: DepositMatch; onOpen: (m: D
       aria-label={`${label}: how this deposit was converted`}
       onClick={() => onOpen(match)}
     >
-      <Chip size="sm" outline tone="neutral" icon={label === "ECB" ? <Landmark aria-hidden /> : <Wallet aria-hidden />}>
+      <Chip size="sm" outline tone="neutral" icon={label === "ECB" ? <Landmark aria-hidden /> : label === "USD" ? <Banknote aria-hidden /> : <Wallet aria-hidden />}>
         {label}
       </Chip>
     </button>

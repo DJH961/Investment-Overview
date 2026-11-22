@@ -29,6 +29,7 @@ import { ColumnMapping } from "./ColumnMapping";
 import { ImportHistory } from "./ImportHistory";
 import { isFlagged, isOpen, RowCheck } from "./RowCheck";
 import { UnknownActions } from "./UnknownActions";
+import { WiseStatement } from "./WiseStatement";
 import "./Import.scss";
 
 type PreviewRow = ImportPreview["rows"][number];
@@ -454,6 +455,8 @@ export function Import() {
           </div>
         </Card>
       )}
+
+      {step === 1 && <WiseStatement />}
 
       <ImportHistory highlight={result?.import_batch_id ?? null} />
     </div>

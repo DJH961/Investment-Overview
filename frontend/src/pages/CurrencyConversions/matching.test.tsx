@@ -30,6 +30,7 @@ const conv = (id: number, date: string, usd = "1000"): FxConversion =>
     usd_received: usd,
     rate: "1.1111",
     all_in_rate: "1.1111",
+    kept_usd: "0",
     fees_eur: null,
     note: null,
     provider: null,

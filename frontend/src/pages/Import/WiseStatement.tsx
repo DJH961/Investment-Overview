@@ -273,8 +273,8 @@ export function WiseStatement() {
         phone: "inline",
         cell: (r) =>
           isImportable(r) ? (
-            r.warnings.length > 0 ? (
-              <Chip size="sm" tone="warn" icon={<TriangleAlert aria-hidden />} title={r.warnings.join(" ")}>
+            (r.warnings ?? []).length > 0 ? (
+              <Chip size="sm" tone="warn" icon={<TriangleAlert aria-hidden />} title={(r.warnings ?? []).join(" ")}>
                 Check
               </Chip>
             ) : (

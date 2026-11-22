@@ -70,6 +70,18 @@ export function useUnpin() {
   });
 }
 
+/** Mark / unmark a USD deposit as "received in USD (no conversion)". */
+export function useSetReceivedInUsd() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ depositId, received }: { depositId: number; received: boolean }) =>
+      received
+        ? api<unknown>(`/api/fx-conversions/received-in-usd/${depositId}`, { method: "PUT" })
+        : api<unknown>(`/api/fx-conversions/received-in-usd/${depositId}`, { method: "DELETE" }),
+    onSuccess: () => invalidateFor(qc, "fxConversionWrite"),
+  });
+}
+
 export function useSaveConversion() {
   const qc = useQueryClient();
   return useMutation({
