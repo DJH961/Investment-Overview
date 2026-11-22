@@ -822,6 +822,11 @@
     transform: translateX(-50%);
   }
 
+  // The worst week sits among taller neighbours: its label rides a little higher.
+  &__point--worst &__point-label {
+    bottom: calc(100% + var(--space-3));
+  }
+
   &__point--start &__point-label {
     left: 0;
     transform: none;

@@ -165,7 +165,7 @@ function WeekColumns({ pts, extremes }: { pts: { t: number; v: number }[]; extre
         {placed.map((e) => (
           <span
             key={e.kind}
-            className={clsx("next-cols__point", `next-cols__point--${anchor(e)}`)}
+            className={clsx("next-cols__point", `next-cols__point--${anchor(e)}`, `next-cols__point--${e.kind}`)}
             style={{ left: `${e.x}%`, bottom: `${e.y}%` }}
           >
             <span className="next-cols__point-label">
