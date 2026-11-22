@@ -5442,6 +5442,16 @@ export interface components {
              */
             redownload_suggested: boolean;
         };
+        /**
+         * InvestAmounts
+         * @description The euros the invest view prices (the USD Scenarios).
+         */
+        InvestAmounts: {
+            /** Monthly Eur */
+            monthly_eur: string;
+            /** Unit Eur */
+            unit_eur: string;
+        };
         /** InvestingPower */
         InvestingPower: {
             /** Amount Eur */
@@ -7021,8 +7031,16 @@ export interface components {
         ScenarioRow: {
             /** Gain */
             gain?: string | null;
+            /** Monthly Change */
+            monthly_change?: string | null;
+            /** Monthly Vs Avg */
+            monthly_vs_avg?: string | null;
             /** Other Value */
             other_value?: string | null;
+            /** Per Monthly */
+            per_monthly?: string | null;
+            /** Per Unit */
+            per_unit?: string | null;
             /** Rate */
             rate: string;
             /** Rate Display */
@@ -7031,6 +7049,10 @@ export interface components {
             to_breakeven?: string | null;
             /** To Breakeven Pct */
             to_breakeven_pct?: string | null;
+            /** Unit Change */
+            unit_change?: string | null;
+            /** Unit Vs Avg */
+            unit_vs_avg?: string | null;
             /** Value */
             value: string;
         };
@@ -7080,13 +7102,9 @@ export interface components {
              */
             ccy: "EUR" | "USD";
             cushion?: components["schemas"]["Cushion"] | null;
-            /**
-             * Exposed
-             * @default true
-             */
-            exposed: boolean;
             /** Generated At */
             generated_at: string;
+            invest?: components["schemas"]["InvestAmounts"] | null;
             /** Marks */
             marks?: components["schemas"]["ScenarioMark"][];
             /** Max Rate */
@@ -7099,6 +7117,12 @@ export interface components {
              * @enum {string}
              */
             other_ccy: "EUR" | "USD";
+            /**
+             * Perspective
+             * @default value
+             * @enum {string}
+             */
+            perspective: "value" | "invest";
             quote: components["schemas"]["DollarQuote"];
             /**
              * Range
@@ -7598,16 +7622,24 @@ export interface components {
         StressRow: {
             /** Change */
             change: string;
+            /** Monthly Change */
+            monthly_change?: string | null;
             /** Other Change */
             other_change?: string | null;
             /** Other Value */
             other_value?: string | null;
+            /** Per Monthly */
+            per_monthly?: string | null;
+            /** Per Unit */
+            per_unit?: string | null;
             /** Rate */
             rate: string;
             /** Rate Display */
             rate_display: string;
             /** Shift Pct */
             shift_pct: string;
+            /** Unit Change */
+            unit_change?: string | null;
             /** Value */
             value: string;
         };
