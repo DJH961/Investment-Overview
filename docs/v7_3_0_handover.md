@@ -3,9 +3,9 @@
 Read first: `docs/v7_plan.md` §5.1 "7.3 as settled", `docs/v7_3_contract.md`,
 `docs/v7_3_handover.md` (session 1, shipped in 7.2.1).
 
-**Branch:** `feat/v7.3.0` (worktree `.claude/worktrees/v7-3-planning-dev-144c07`), stacked on
-the unmerged 7.2.1 PR (#429, `release/7.2.1`, merged in up to 588d4b8e). One release, 7.3.0,
-after 7.2.1 merges (owner choice). No version bump yet; lanes write CHANGELOG under
+**Branch:** `feat/v7.3.0` (worktree `.claude/worktrees/v7-3-planning-dev-144c07`). 7.2.1
+(#429) is merged to main (2c6cb361) and main is merged into feat/v7.3.0. One release, 7.3.0
+(owner choice); PR against main. No version bump yet; lanes write CHANGELOG under
 `[Unreleased]`, folded into `## [7.3.0]` at release. Nothing pushed.
 
 ## Owner decisions (2026-11-22)
