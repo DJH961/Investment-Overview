@@ -24,16 +24,17 @@ export type EffectBuysDto = S["EffectBuys"];
 export type EffectStatDto = S["EffectStat"];
 export type EffectBridgeDto = S["EffectBridge"];
 
-/** `1d|1w|1m|3m|ytd|1y|3y|all` or a calendar year. */
+/** `1d|1w|1m|3m|ytd|1y|3y|5y|10y|all` or a calendar year. */
 export type EffectRange = string;
 
 /**
- * The page range (the rate chart's picker) in the effect endpoint's terms. The effect
- * has no 5Y / 10Y / Max: those show your whole time (`all`), and the section says so
- * with the dates the server sends.
+ * The page range (the rate chart's picker) in the effect endpoint's terms: the same
+ * window, except that Max and All (since your first transaction) are your whole time
+ * (`all`, the Overview's lifetime returns). A window longer than your history starts at
+ * your first transaction; the section says so with the dates the server sends.
  */
-export function effectRangeFor(range: RateRange): EffectRange {
-  return range === "5y" || range === "10y" || range === "max" ? "all" : range;
+export function effectRangeFor(range: RateRange | "all"): EffectRange {
+  return range === "max" || range === "all" ? "all" : range;
 }
 
 export const currencyEffectQuery = (range: EffectRange) =>

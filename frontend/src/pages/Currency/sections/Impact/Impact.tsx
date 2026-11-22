@@ -10,7 +10,7 @@ import { effectRangeFor, useCurrencyEffect, type CurrencyEffectDto, type EffectS
 import { toNum } from "../../../../lib/queries/portfolio";
 import type { CurrencyRange } from "../../range";
 import type { CurrencySectionComponentProps } from "../../sections";
-import { BridgeCard, foreignOf, HoldingsCard, ImpactHero, MonthsCard, RecordsCard, RollingCard, SessionCard } from "./ImpactPanels";
+import { BridgeCard, foreignOf, HoldingsCard, ImpactHero, isGapLead, MonthsCard, RecordsCard, RollingCard, SessionCard } from "./ImpactPanels";
 import "./Impact.scss";
 
 /** The section's secondary figures' words (the hero carries the returns and the effect). */
@@ -88,7 +88,7 @@ function rangeMeta(range: CurrencyRange, data: CurrencyEffectDto | undefined): s
   const all = effectRangeFor(range) === "all";
   // 5Y / 10Y / Max are not split further than your own time: say which window this is.
   return all
-    ? `${range === "max" ? "Max" : label}: all your time, since ${formatDate(data.start_on)}`
+    ? `${label}: all your time, since ${formatDate(data.start_on)}`
     : `${label} · ${formatDate(data.start_on)} – ${formatDate(data.end_on)}`;
 }
 
@@ -107,7 +107,11 @@ export function Impact({ id, label, currency, range }: CurrencySectionComponentP
     <CurrencySection
       id={id}
       title={label}
-      explainer={`What the ${foreignOf(currency)}'s moves added to or took from your portfolio, in ${currency === "EUR" ? "euros" : "dollars"}.`}
+      explainer={
+        data && isGapLead(data)
+          ? "How your result in euros compares with your result in dollars: the part the exchange rate decides."
+          : `What the ${foreignOf(currency)}'s moves added to or took from your portfolio, in ${currency === "EUR" ? "euros" : "dollars"}.`
+      }
       meta={
         data ? (
           <span className="impact__meta">

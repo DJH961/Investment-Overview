@@ -11,9 +11,15 @@ Everything is built per reporting currency from :mod:`domain.fx_attribution`:
   rows are live, never stored, and today is the 1D range (the Overview's own
   figures).
 * **Headline returns** are computed in each currency on its own and subtracted,
-  never converted: the Periods rows (``periods.build_for_ccy``) for YTD, calendar
-  years and All (years chained); a daily time-weighted chain over each currency's
-  own parts for the rolling ranges; the Overview's own day growth for 1D.
+  never converted: the Periods rows (``periods.build_for_ccy``) for YTD and
+  calendar years; the Overview's own lifetime returns for All; a hardened daily
+  time-weighted chain over each currency's own parts for the rolling ranges
+  (:func:`chained_return`); the Overview's own day growth for 1D.
+* **The headline** (``headline.lead``): the money effect when the rate moved the
+  side's book at all, else the gap between the euro and the dollar return (the
+  USD view of an all-dollar book, where the effect in dollars is zero by
+  definition); ``kind`` always follows the lead figure. A side with no currency
+  effect in the range sends no month, day or rolling figures (they would all be 0).
 * **1D / 1W chart**: the Overview's intraday value line in the side's currency,
   each point with the rate stored beside its sample; the currency effect between
   two points is the session's book revalued from one point's rate to the next.
@@ -61,8 +67,16 @@ ONE = Decimal(1)
 Q_MONEY = Decimal("0.000001")
 Q_FRAC = Decimal("0.00000001")
 INTRADAY_RANGES = frozenset({"1d", "1w"})
-FIXED_RANGES: tuple[str, ...] = ("1d", "1w", "1m", "3m", "ytd", "1y", "3y", "all")
-_MONTHS = {"1m": 1, "3m": 3, "1y": 12, "3y": 36}
+FIXED_RANGES: tuple[str, ...] = ("1d", "1w", "1m", "3m", "ytd", "1y", "3y", "5y", "10y", "all")
+_MONTHS = {"1m": 1, "3m": 3, "1y": 12, "3y": 36, "5y": 60, "10y": 120}
+#: A span's return beyond ``MAX_STEP`` either way is taken as money the book does
+#: not see yet (cash waiting in the broker account before a buy, sale proceeds
+#: before they are withdrawn), not a market move: the span stays open (see
+#: :func:`chained_return`). Merging a genuine big day is harmless: a span without
+#: flows telescopes to the same ``end / start - 1``.
+MAX_STEP = Decimal("0.1")
+#: A span's Dietz denominator below this share of its size is too thin to divide by.
+MIN_DENOM_SHARE = Decimal("0.1")
 #: About 12 months of business days (``fa.ROLLING_WINDOWS[-1]``).
 ROLLING_WINDOW = 252
 #: Above this many daily points a series is thinned to the last close of each week.
@@ -72,11 +86,39 @@ BUYS_AMOUNT_EUR = Decimal(1000)
 _CURRENCY_NAMES = {"USD": "dollar", "EUR": "euro", "GBP": "pound", "CHF": "franc"}
 
 ALL_EXPLAINER = (
-    "Lifetime here is summed day by day: each day, the {foreign} you held then were "
-    "revalued from the previous day's rate to that day's. The Overview card instead "
-    "compares today's {foreign} with what they cost at your average buy rate, so the "
-    "two differ whenever the rate moved while your holdings grew or shrank."
+    "The two returns are the Overview's lifetime returns, each worked out in its own "
+    "currency. The money figure is summed day by day: each day, the {foreign} you held "
+    "then were revalued from the previous day's rate to that day's. The Overview card "
+    "instead compares today's {foreign} with what they cost at your average buy rate, so "
+    "the two differ whenever the rate moved while your holdings grew or shrank."
 )
+ALL_GAP_EXPLAINER = (
+    "The two returns are the Overview's lifetime returns, each worked out in its own "
+    "currency from your deposits at their own day's rate. The euro amount is what the "
+    "dollar's moves did to your result in euros, summed day by day."
+)
+#: When the money effect and the gap in points point different ways (lead ``effect``).
+MISMATCH_NOTE = (
+    "The money figure and the gap in points point different ways here. The money figure "
+    "adds up what each day's rate move did to what you held that day. The returns weigh "
+    "each stretch of time by how much you had invested then, so large deposits or "
+    "withdrawals while the rate moved can tip the gap the other way."
+)
+
+
+def mismatch_note(effect: Decimal, effect_pp: Decimal | None) -> str | None:
+    """:data:`MISMATCH_NOTE` when the shown money effect and the shown gap differ in sign.
+
+    Compared as displayed (whole money units, points to one decimal), so a figure
+    that prints as zero never triggers it.
+    """
+    if effect_pp is None:
+        return None
+    money = effect.quantize(ONE)
+    pp = (effect_pp * 100).quantize(Decimal("0.1"))
+    if money == 0 or pp == 0 or (money > 0) == (pp > 0):
+        return None
+    return MISMATCH_NOTE
 
 
 # -- small helpers ---------------------------------------------------------------------
@@ -222,23 +264,63 @@ def _yearly_growth(session: Session, ccy: str) -> dict[str, Decimal | None]:
 # -- returns ------------------------------------------------------------------------------
 
 
-def chained_return(parts: Sequence[fa.DayParts]) -> Decimal | None:
-    """Daily Modified-Dietz returns chained over ``parts`` (one currency's own parts).
+def span_return(span: Sequence[fa.DayParts]) -> Decimal | None:
+    """Modified Dietz over consecutive day parts, or ``None`` when it cannot be trusted.
 
-    ``(end - start - flow) / (start + flow / 2)`` per day, linked geometrically;
-    days with an empty book are skipped; ``None`` on a non-positive denominator or
-    when no day counts.
+    ``(end - start - sum F) / (start + sum w_j F_j)`` with ``w_j = (n - j - 1/2) / n``
+    for the flow booked on the ``j``-th of ``n`` days (mid-day, as the one-day
+    ``start + F / 2``). ``None`` when the denominator is under
+    :data:`MIN_DENOM_SHARE` of the span's size, or the return is beyond
+    :data:`MAX_STEP` either way: the book has not seen that money yet.
+    """
+    n = len(span)
+    if n == 0:
+        return None
+    nd = Decimal(n)
+    start, end = span[0].start, span[-1].end
+    flows = sum((p.flow for p in span), ZERO)
+    weighted = sum(
+        (p.flow * (nd - Decimal(j) - Decimal("0.5")) / nd for j, p in enumerate(span)), ZERO
+    )
+    size = max(abs(start), abs(end), sum((abs(p.flow) for p in span), ZERO))
+    if size == 0:
+        return ZERO
+    denom = start + weighted
+    if denom <= size * MIN_DENOM_SHARE:
+        return None
+    r = (end - start - flows) / denom
+    if abs(r) > MAX_STEP:
+        return None
+    return r
+
+
+def chained_return(parts: Sequence[fa.DayParts]) -> Decimal | None:
+    """Time-weighted return over ``parts`` (one currency's own parts), hardened.
+
+    Days are linked geometrically, each a one-day Modified Dietz return. The book
+    is the holdings plus cash/savings accounts, not idle broker cash, so a deposit
+    shows up as a flow days before the buy that brings it into the book, and a sale
+    drops the book with no flow until the proceeds are withdrawn or reinvested. Taken
+    day by day those read as -100 % / +100 % days (or divide by zero) and wreck the
+    product. So a day whose return is implausible (:func:`span_return` is ``None``)
+    stays open and is merged with the next days into one multi-day Dietz span until
+    the money shows up and the span's return is plausible again. Empty days (no book,
+    no flow) are skipped. A span still open at the end of the range (money the book
+    has not seen by then) is left out. ``None`` when no span closes.
     """
     growth = ONE
     counted = False
+    span: list[fa.DayParts] = []
     for p in parts:
-        denom = p.start + p.flow / 2
-        if denom <= 0:
-            if p.start == 0 and p.end == 0 and p.flow == 0:
-                continue
-            return None
-        growth *= ONE + (p.end - p.start - p.flow) / denom
+        if not span and p.start == 0 and p.end == 0 and p.flow == 0:
+            continue
+        span.append(p)
+        r = span_return(span)
+        if r is None:
+            continue
+        growth *= ONE + r
         counted = True
+        span = []
     return growth - ONE if counted else None
 
 
@@ -248,13 +330,21 @@ def _periods_return(session: Session, ccy: str, range_key: str, today: date) -> 
         return growth.get(str(today.year))
     if range_key.isdigit():
         return growth.get(range_key)
-    # all: every year chained
-    if not growth or any(v is None for v in growth.values()):
-        return None
-    total = ONE
-    for value in growth.values():
-        total *= ONE + (value or ZERO)
-    return total - ONE
+    return None
+
+
+def lifetime_returns(
+    overview: Mapping[str, Mapping[str, Any]],
+) -> tuple[Decimal | None, Decimal | None]:
+    """The Overview's own lifetime returns (``kpis.total_growth_compounded``) per side.
+
+    Each is computed in its own currency from its own cashflow stream (XIRR
+    compounded over the years held); never one converted from the other.
+    """
+    return (
+        _d(overview["EUR"]["kpis"].get("total_growth_compounded")),
+        _d(overview["USD"]["kpis"].get("total_growth_compounded")),
+    )
 
 
 def headline_returns(
@@ -271,7 +361,11 @@ def headline_returns(
             _d(overview["USD"]["kpis"].get("daily_growth_pct")),
             "day",
         )
-    if range_key == "ytd" or range_key.isdigit() or range_key == "all":
+    if range_key == "all":
+        eur, usd = lifetime_returns(overview)
+        if eur is not None and usd is not None:
+            return eur, usd, "lifetime"
+    if range_key == "ytd" or range_key.isdigit():
         eur = _periods_return(session, "EUR", range_key, today)
         usd = _periods_return(session, "USD", range_key, today)
         if eur is not None and usd is not None:
@@ -652,7 +746,11 @@ def effect_stats(
     months: Sequence[fa.Bridge],
     lifetime_months: Decimal | None,
     lifetime_effect: Decimal | None,
+    *,
+    moved: bool = True,
 ) -> list[dict[str, Any]]:
+    """The section's figures. ``moved=False`` (the rate did nothing to this side's
+    book in the range): only the returns and the gap, no month or day figures."""
     out: list[dict[str, Any]] = []
     for key in ("eur_return", "usd_return", "effect_pp"):
         value = _d(headline.get(key))
@@ -660,6 +758,8 @@ def effect_stats(
             out.append(_stat(key, value, "fraction"))
     effect = _d(headline["effect"]) or ZERO
     out.append(_stat("effect", effect, "money", currency=ccy, kind=kind_of(effect)))
+    if not moved:
+        return out
     share = _d(headline.get("currency_share"))
     if share is not None:
         out.append(_stat("currency_share", share, "fraction"))
@@ -734,7 +834,7 @@ def effect_stats(
                 kind=kind_of(largest.currency),
             )
         )
-    if lifetime_months is not None and lifetime_effect is not None:
+    if lifetime_months is not None and lifetime_effect is not None and lifetime_effect != 0:
         out.append(
             _stat(
                 "months_of_contributions",
@@ -823,7 +923,9 @@ def _records(
         contributions = rows_rm.monthly_contributions(life.rows)
         if contributions:
             average = sum(contributions, ZERO) / Decimal(len(contributions))
-        months = fa.months_of_contributions(lifetime_effect, contributions)
+        # "0.0 months of deposits" says nothing: only for an effect there is.
+        if lifetime_effect:
+            months = fa.months_of_contributions(lifetime_effect, contributions)
     out = {
         "best_day": one(rec.best_day),
         "worst_day": one(rec.worst_day),
@@ -882,15 +984,24 @@ def _one_side(  # noqa: PLR0912, PLR0915
         day = _day_split_effect(payload)
         if day is not None:
             effect, market = day
+    # Did the rate move this side's book at all? (The USD view of an all-dollar book:
+    # never.) Then the money figures are all zero and the gap leads instead.
+    moved = _q(effect) != 0 or any(p.currency != 0 for p in parts)
+    lead = "effect" if moved or effect_pp is None else "gap"
     headline = {
         "eur_return": _f(eur_ret),
         "usd_return": _f(usd_ret),
         "effect_pp": _f(effect_pp),
         "effect": _m(effect),
         "market": _m(market),
-        "currency_share": _f(currency_share(market, effect)),
-        "kind": kind_of(effect),
+        "currency_share": _f(currency_share(market, effect)) if moved else None,
+        "kind": kind_of(effect) if lead == "effect" else kind_of(effect_pp or ZERO),
+        "lead": lead,
         "return_basis": basis,
+        "note": mismatch_note(effect, effect_pp) if lead == "effect" else None,
+        # Filled by :func:`build_effect_both` from the other side (lead ``gap`` only).
+        "other_effect": None,
+        "other_ccy": None,
     }
 
     if range_key in INTRADAY_RANGES:
@@ -906,11 +1017,11 @@ def _one_side(  # noqa: PLR0912, PLR0915
     else:
         series, granularity = daily_series(parts)
 
-    months = fa.month_totals(parts)
+    months = fa.month_totals(parts) if moved else []
     lifetime_months_list = fa.month_totals(life.parts) if life is not None else []
     rolling: list[dict[str, Any]] = []
     run = None
-    if life is not None and life.parts:
+    if life is not None and life.parts and moved:
         roll = fa.rolling_currency(life.parts, ROLLING_WINDOW)
         lo = parts[0].prev_on if parts else through
         roll = [r for r in roll if lo <= r.on <= through]
@@ -933,6 +1044,10 @@ def _one_side(  # noqa: PLR0912, PLR0915
                 ),
             }
     records, lifetime_effect, lifetime_months = _records(parts, life)
+    if not moved:  # best and worst of nothing: every day, month and year is 0
+        for key in ("best_day", "worst_day", "best_month", "worst_month"):
+            records[key] = None
+        records["best_year"] = records["worst_year"] = None
 
     split: dict[str, Any] | None
     if range_key == "1d":
@@ -958,7 +1073,9 @@ def _one_side(  # noqa: PLR0912, PLR0915
     if ledger_first is not None and range_key != "1d":
         holdings = holdings_split(session, ccy, after, through, first=ledger_first)
 
-    stats = effect_stats(ccy, headline, parts, months, lifetime_months, lifetime_effect)
+    stats = effect_stats(
+        ccy, headline, parts, months, lifetime_months, lifetime_effect, moved=moved
+    )
     buys = None
     if range_key in INTRADAY_RANGES:
         if split is not None:
@@ -1002,7 +1119,9 @@ def _one_side(  # noqa: PLR0912, PLR0915
             )
 
     explainer = None
-    if range_key == "all" and life is not None:
+    if range_key == "all" and lead == "gap":
+        explainer = ALL_GAP_EXPLAINER if ccy == "USD" else None
+    elif range_key == "all" and life is not None:
         explainer = ALL_EXPLAINER.format(
             foreign=_plural(foreign_name(life.foreign or ["USD" if ccy == "EUR" else "EUR"]))
         )
@@ -1018,7 +1137,7 @@ def _one_side(  # noqa: PLR0912, PLR0915
         "series": series,
         "bridge": _bridge(parts),
         "months": bars(months),
-        "years": bars(fa.year_totals(parts)),
+        "years": bars(fa.year_totals(parts)) if moved else [],
         "grid": month_grid(months),
         "rolling": rolling,
         "rolling_window_days": ROLLING_WINDOW,
@@ -1063,7 +1182,7 @@ def build_effect_both(
     returns = headline_returns(session, range_key, today, parts_by_ccy, overview)
     recorded = fx_session_rates_service.session_rates(session)
     first = min(recorded) if recorded else None
-    return {
+    out = {
         ccy: _one_side(
             session,
             ccy,
@@ -1078,6 +1197,25 @@ def build_effect_both(
         )
         for ccy in ("EUR", "USD")
     }
+    link_sides(out)
+    return out
+
+
+def link_sides(sides: Mapping[str, dict[str, Any]]) -> None:
+    """A side led by the gap gets the other side's money effect (in that currency).
+
+    The USD view of an all-dollar book: "your result in euros was X pp lower,
+    that is EUR Y" with Y the EUR side's own day-by-day effect (never USD / rate).
+    """
+    for ccy, side in sides.items():
+        other_ccy = "USD" if ccy == "EUR" else "EUR"
+        other = sides.get(other_ccy)
+        head = side["headline"]
+        if head["lead"] != "gap" or other is None or other["headline"]["lead"] != "effect":
+            continue
+        head["other_effect"] = other["headline"]["effect"]
+        head["other_ccy"] = other_ccy
+        head["note"] = mismatch_note(Decimal(head["other_effect"]), _d(head["effect_pp"]))
 
 
 # -- the strip (``/currency/both``) ----------------------------------------------------------------
@@ -1130,6 +1268,9 @@ __all__ = [
     "build_lifetime",
     "chained_return",
     "dollar_trend",
+    "link_sides",
+    "mismatch_note",
     "range_window",
+    "span_return",
     "strip_figures",
 ]

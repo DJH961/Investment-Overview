@@ -1,6 +1,6 @@
 """Currency page, Impact section (v7.2).
 
-* ``GET /currency/effect/both?range=1d|1w|1m|3m|ytd|1y|3y|all|<year>`` - what the
+* ``GET /currency/effect/both?range=1d|1w|1m|3m|ytd|1y|3y|5y|10y|all|<year>`` - what the
   exchange rate did to the portfolio over the range, per reporting currency:
   headline returns and effect, the constant-currency series, the bridge, month and
   year bars with a month x year grid, the rolling 12-month effect, records, the

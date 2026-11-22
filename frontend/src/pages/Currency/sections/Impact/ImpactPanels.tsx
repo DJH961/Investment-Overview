@@ -107,6 +107,104 @@ function ShareBar({ share, market, effect, ccy }: { share: number; market: numbe
   );
 }
 
+/** "euros" / "dollars" for a currency code (the plain word in a sentence). */
+const ccyWords = (ccy: string) => (ccy === "EUR" ? "euros" : ccy === "USD" ? "dollars" : ccy);
+
+/** The headline leads with the gap in points: the rate did nothing to this side's book. */
+export const isGapLead = (data: CurrencyEffectDto) => data.headline.lead === "gap";
+
+/** A gap in points as a size ("1.9 pp"), the direction left to the words around it. */
+const ppSize = (pp: number) => `${formatNumber(Math.abs(pp) * 100, 1)} pp`;
+/** Rounds to 0.0 pp: say "about the same", never "0.0 pp lower". */
+const ppFlat = (pp: number) => Math.round(Math.abs(pp) * 1000) === 0;
+
+function NoteTip({ note }: { note: string | null | undefined }) {
+  return note ? <InfoTip label="Why these point different ways" content={note} /> : null;
+}
+
+/**
+ * The money effect leads (the EUR view, and any view whose book the rate moved): what
+ * the foreign currency did to you in this side's money, the tag from that figure, and
+ * the gap between the two returns in words beside it.
+ */
+function EffectHeadline({ data }: { data: CurrencyEffectDto }) {
+  const ccy = data.ccy;
+  const h = data.headline;
+  const effect = toNum(h.effect);
+  const share = toNum(h.currency_share ?? null);
+  const market = toNum(h.market);
+  const pp = toNum(h.effect_pp ?? null);
+  const foreign = foreignOf(ccy);
+  return (
+    <div className="impact__headline">
+      <p className="impact__fig-label">
+        What the {foreign} did to you, in {ccyWords(ccy)}
+        <InfoTip
+          label="What the exchange rate did"
+          content={`Each day, what you held in ${foreign}s was revalued from the day before's rate to that day's, and the results are added up over this range. The bars show your return worked out in euros and in dollars, each on its own; the gap between them is the same effect in points.`}
+        />
+      </p>
+      <p className="impact__headline-value">
+        <Money amount={effect} currency={ccy} signed colored digits={0} />
+      </p>
+      <p className="impact__fig-line">
+        <KindTag kind={h.kind} />
+        {pp !== null ? (
+          <span>
+            {ppFlat(pp)
+              ? "Euro and dollar returns about the same"
+              : `Euro return ${ppSize(pp)} ${pp < 0 ? "lower" : "higher"} than the dollar return`}
+          </span>
+        ) : null}
+        <NoteTip note={h.note} />
+      </p>
+      {share !== null && market !== null ? <ShareBar share={share} market={market} effect={effect} ccy={ccy} /> : null}
+    </div>
+  );
+}
+
+/**
+ * The gap leads (the USD view of an all-dollar book: the rate never changes its dollar
+ * value, so "+US$0" says nothing): how much lower or higher your result was in euros
+ * than in dollars, and what the dollar did to you in euros (the EUR side's own figure).
+ */
+function GapHeadline({ data }: { data: CurrencyEffectDto }) {
+  const h = data.headline;
+  const pp = toNum(h.effect_pp ?? null);
+  const other = toNum(h.other_effect ?? null);
+  const otherCcy = h.other_ccy ?? null;
+  const tone = signOf(pp, 3);
+  return (
+    <div className="impact__headline">
+      <p className="impact__fig-label">
+        Euros against dollars
+        <InfoTip
+          label="Euros against dollars"
+          content={`Your return worked out in euros minus the same return worked out in dollars, each from your own deposits at their own day's rate. Your holdings are all in ${ccyWords(data.ccy)}, so the exchange rate did not change their value in ${ccyWords(data.ccy)}; it changes what they are worth in the other currency.`}
+        />
+      </p>
+      <p className={clsx("impact__headline-value", tone !== "flat" && `impact__headline-value--${tone}`)}>
+        {pp === null || ppFlat(pp) ? "0.0 pp" : formatPp(pp, 1)}
+      </p>
+      <p className="impact__lede">
+        {pp === null || ppFlat(pp)
+          ? "Your result was about the same in euros and in dollars."
+          : `Your result in euros was ${ppSize(pp)} ${pp < 0 ? "lower" : "higher"} than in dollars.`}
+      </p>
+      <p className="impact__fig-line">
+        <KindTag kind={h.kind} />
+        {other !== null && otherCcy && Math.round(other) !== 0 ? (
+          <span>
+            What the {foreignOf(otherCcy)} did to you in {ccyWords(otherCcy)}:{" "}
+            <Money amount={other} currency={otherCcy} signed colored digits={0} />
+          </span>
+        ) : null}
+        <NoteTip note={h.note} />
+      </p>
+    </div>
+  );
+}
+
 /**
  * What the currency did over the range, then the picture of it: the actual value and
  * the value with the rate frozen at the range start; the hatched gap between them is the
@@ -116,8 +214,6 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
   const timeZone = useTimeZone();
   const ccy = data.ccy;
   const h = data.headline;
-  const effect = toNum(h.effect);
-  const share = toNum(h.currency_share);
   const pts = useMemo(() => data.series ?? [], [data.series]);
   const intraday = data.granularity === "intraday";
 
@@ -144,31 +240,17 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
   const tooltipTimeFormat = (t: number) =>
     range === "1d" ? formatTime(new Date(t), timeZone) : range === "1w" ? formatDayTime(t, timeZone) : formatDate(new Date(t), "medium");
 
+  const gapLead = isGapLead(data);
+  // The chart only says something when the rate moved this side's book.
+  const showChart = pts.length > 1 && !gapLead;
+
   return (
     <Card className="impact__hero">
       <div className="impact__top">
-        <div className="impact__headline">
-          <p className="impact__fig-label">
-            What the {foreignOf(ccy)} did
-            <InfoTip
-              label="What the exchange rate did"
-              content="Your return in your currency minus the same portfolio's return in the other currency, each computed on its own, and the effect in money: what the exchange rate added or took over this range."
-            />
-          </p>
-          <p className="impact__headline-value">
-            <Money amount={effect} currency={ccy} signed colored digits={0} />
-          </p>
-          <p className="impact__fig-line">
-            {h.effect_pp !== null && h.effect_pp !== undefined ? <span>{formatPp(toNum(h.effect_pp), 1)} on your return</span> : null}
-            <KindTag kind={h.kind} />
-          </p>
-          {share !== null && toNum(h.market) !== null ? (
-            <ShareBar share={share} market={toNum(h.market)!} effect={effect} ccy={ccy} />
-          ) : null}
-        </div>
+        {gapLead ? <GapHeadline data={data} /> : <EffectHeadline data={data} />}
         <ReturnBars eur={toNum(h.eur_return)} usd={toNum(h.usd_return)} pp={toNum(h.effect_pp ?? null)} ccy={ccy} />
       </div>
-      {pts.length > 1 ? (
+      {showChart ? (
         <Chart
           className="impact__chart"
           series={series}
@@ -185,7 +267,7 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
           ariaLabel={`Your value with and without the ${foreignOf(ccy)}'s moves`}
         />
       ) : null}
-      {pts.length > 1 ? (
+      {showChart ? (
         <p className="impact__caption">
           The hatched gap is what the exchange rate did: where the line runs above the dashed one it helped, below it it cost.
         </p>
@@ -235,7 +317,9 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
   const base = minL - span * 1.5 > 0 ? minL - span * 1.5 : Math.min(minL, 0);
   const pos = (v: number) => (hi === base ? 0 : ((v - base) / (hi - base)) * 100);
   const truncated = base > 0;
-  const rows: { id: string; label: string; from: number; to: number; amount: ReactNode; part: string; signed?: boolean }[] = [
+  // A currency step of zero (the dollar view of an all-dollar book) is left out.
+  const showCurrency = Math.round(cur) !== 0;
+  const allRows: { id: string; label: string; from: number; to: number; amount: ReactNode; part: string; signed?: boolean }[] = [
     {
       id: "start",
       label: `Start ${formatDate(b.start_on)}`,
@@ -280,6 +364,7 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
       part: "level",
     },
   ];
+  const rows = showCurrency ? allRows : allRows.filter((r) => r.id !== "currency");
   return (
     <Card
       className="impact__bridge"
@@ -288,12 +373,16 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
           From start to end
           <InfoTip
             label="From start to end"
-            content="Start value, plus what you paid in, plus what the markets did, plus what the exchange rate did, equals the end value. Each part is valued at its own day's rate."
+            content={
+              showCurrency
+                ? "Start value, plus what you paid in, plus what the markets did, plus what the exchange rate did, equals the end value. Each part is valued at its own day's rate."
+                : `Start value, plus what you paid in, plus what the markets did, equals the end value. Your holdings are all in ${ccyWords(ccy)}, so the exchange rate adds nothing here.`
+            }
           />
         </span>
       }
     >
-      <ul className="bridge" aria-label="Start, deposits, market, currency, end">
+      <ul className="bridge" aria-label={showCurrency ? "Start, deposits, market, currency, end" : "Start, deposits, market, end"}>
         {rows.map((r) => {
           const a = pos(Math.min(r.from, r.to));
           const w = Math.max(0.6, Math.abs(pos(r.to) - pos(r.from)));
@@ -585,7 +674,7 @@ export function RecordsCard({ data }: { data: CurrencyEffectDto }) {
           ))}
         </tbody>
       </table>
-      {life !== null && months !== null && avg !== null ? (
+      {life !== null && months !== null && avg !== null && Math.abs(months) >= 0.5 ? (
         <p className="records__life">
           Since you started: <Money amount={life} currency={data.ccy} signed colored digits={0} />, about{" "}
           <strong>{formatNumber(Math.abs(months), 1)}</strong> {Math.abs(months) === 1 ? "month" : "months"} of deposits (
@@ -685,9 +774,29 @@ export function HoldingsTable({ rows, ccy }: { rows: HoldingEffectDto[]; ccy: st
 
 export const TOP_HOLDINGS = 5;
 
+/** The holdings the exchange rate moved in this view (a zero or "none" row says nothing). */
+export function withCurrencyEffect(rows: HoldingEffectDto[], ccy: string): HoldingEffectDto[] {
+  return rows.filter((h) => h.native_ccy !== ccy && Math.round(toNum(h.currency) ?? 0) !== 0);
+}
+
+/** One line for a list the filter emptied. */
+export function noEffectLine(rows: HoldingEffectDto[], ccy: string): string {
+  return rows.every((h) => h.native_ccy === ccy)
+    ? `All your holdings are in ${ccyWords(ccy)}, so the exchange rate did not change their value in ${ccyWords(ccy)}.`
+    : "No holding had a currency effect in this range.";
+}
+
 export function HoldingsCard({ data, range }: { data: CurrencyEffectDto; range: string }) {
-  const rows = sortHoldings(data.holdings ?? []);
-  if (!rows.length) return null;
+  const all = data.holdings ?? [];
+  if (!all.length) return null;
+  const rows = sortHoldings(withCurrencyEffect(all, data.ccy));
+  if (!rows.length) {
+    return (
+      <Card className="impact__holdings" title="Per holding">
+        <p className="impact__note">{noEffectLine(all, data.ccy)}</p>
+      </Card>
+    );
+  }
   const more = rows.length > TOP_HOLDINGS;
   return (
     <Card
