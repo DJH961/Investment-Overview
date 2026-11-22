@@ -162,6 +162,49 @@ describe("Import", () => {
     expect(screen.getByText(/Saved as import #10/)).toBeInTheDocument();
   });
 
+  it("shows a near-match as an update with old and new figures and lets the user skip or import it as new", async () => {
+    const updateRow = {
+      index: 1,
+      date: "2026-01-03",
+      kind: "buy",
+      symbol: "VT",
+      currency: "USD",
+      is_duplicate: false,
+      quantity: "0.1",
+      price_native: "199.9",
+      net_native: "-19.99",
+      status: "update",
+      existing: { transaction_id: 7, date: "2026-01-02", quantity: "0.1", price_native: "200", net_native: "-20.00" },
+      fixes: ["skip", "import_new"],
+      resolution: null,
+    };
+    const withUpdate = {
+      ...preview,
+      counts: { ...preview.counts, new: 0, updates: 1, duplicates: 0, rows: 1 },
+      rows: [updateRow],
+    };
+    const asNew = {
+      ...withUpdate,
+      import_id: "imp2",
+      counts: { ...withUpdate.counts, new: 1, updates: 0 },
+      rows: [{ ...updateRow, status: "new", resolution: "import_new" }],
+    };
+    stubUpload(withUpdate);
+    const fetchMock = stubFetch((url) =>
+      url.includes("/api/imports/imp1/resolve") ? new Response(JSON.stringify(asNew), { status: 200 }) : undefined,
+    );
+    renderPage();
+    await uploadFile();
+    expect(await screen.findByText(/Update .*20.00 → .*19.99/)).toBeInTheDocument();
+    expect(screen.getByText(/Net .*20.00 → .*19.99/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Update 1 existing/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Skip row" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Import as new" }));
+    const call = fetchMock.mock.calls.find(([u]) => String(u).includes("/resolve"));
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ rows: [{ index: 1, action: "import_new" }] });
+    expect(await screen.findByRole("button", { name: "Update instead" })).toBeInTheDocument();
+  });
+
   it("says rows don't add up, shows the warning in the row and resolves it there", async () => {
     const message = "amount -1300.00 does not reconcile with quantity*price (5*220.00=1100.00)";
     const flagged = {

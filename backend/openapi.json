@@ -9233,6 +9233,11 @@
             "title": "Unresolved Symbols",
             "type": "array"
           },
+          "updated": {
+            "default": 0,
+            "title": "Updated",
+            "type": "integer"
+          },
           "warnings": {
             "items": {
               "$ref": "#/components/schemas/ImportIssue"
@@ -9287,6 +9292,11 @@
             "title": "Unresolved",
             "type": "integer"
           },
+          "updates": {
+            "default": 0,
+            "title": "Updates",
+            "type": "integer"
+          },
           "warnings": {
             "title": "Warnings",
             "type": "integer"
@@ -9322,6 +9332,66 @@
           "errors"
         ],
         "title": "ImportErrorDto",
+        "type": "object"
+      },
+      "ImportExistingFigures": {
+        "description": "The existing transaction an ``update`` row would overwrite (its old figures).",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "estimated": {
+            "default": false,
+            "title": "Estimated",
+            "type": "boolean"
+          },
+          "net_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Native"
+          },
+          "price_native": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Native"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "transaction_id": {
+            "title": "Transaction Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "transaction_id",
+          "date"
+        ],
+        "title": "ImportExistingFigures",
         "type": "object"
       },
       "ImportField": {
@@ -9692,6 +9762,16 @@
             ],
             "title": "Description"
           },
+          "existing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImportExistingFigures"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "fees_native": {
             "anyOf": [
               {
@@ -9709,7 +9789,8 @@
               "enum": [
                 "keep",
                 "fix_price",
-                "skip"
+                "skip",
+                "import_new"
               ],
               "type": "string"
             },
@@ -9782,7 +9863,8 @@
                 "enum": [
                   "keep",
                   "fix_price",
-                  "skip"
+                  "skip",
+                  "import_new"
                 ],
                 "type": "string"
               },
@@ -9807,6 +9889,17 @@
             "default": false,
             "title": "Skipped",
             "type": "boolean"
+          },
+          "status": {
+            "default": "new",
+            "enum": [
+              "new",
+              "duplicate",
+              "update",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
           },
           "symbol": {
             "anyOf": [
@@ -9892,7 +9985,8 @@
                 "enum": [
                   "keep",
                   "fix_price",
-                  "skip"
+                  "skip",
+                  "import_new"
                 ],
                 "type": "string"
               },

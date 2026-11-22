@@ -181,6 +181,13 @@ def _after_write(
     )
 
 
+def after_write(
+    session: Session, affected: set[date], instrument_ids: Iterable[int | None] = ()
+) -> None:
+    """Public hook: drop cached valuations after ledger rows changed on ``affected`` dates."""
+    _after_write(session, affected, instrument_ids)
+
+
 def create(session: Session, data: TransactionInput) -> TransactionEditResult:
     """Insert a manual transaction (and optionally its money-market leg)."""
     prep = _prepare(session, data)

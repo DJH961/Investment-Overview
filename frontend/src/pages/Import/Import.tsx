@@ -33,9 +33,19 @@ import "./Import.scss";
 
 type PreviewRow = ImportPreview["rows"][number];
 
+const STATUS_LABELS: Record<string, string> = { new: "New", duplicate: "Duplicate", update: "Update", skipped: "Skipped" };
+
 const AUTO = "auto";
 const NEW_ACCOUNT = "__new__";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+/** "Import 3 transactions", "Update 1 transaction" or both. */
+const importLabel = (added: number, updated: number) =>
+  [
+    added > 0 || updated === 0 ? `Import ${plural(added, "transaction", "transactions")}` : null,
+    updated > 0 ? `${added > 0 ? "update" : "Update"} ${plural(updated, "existing", "existing")}` : null,
+  ]
+    .filter(Boolean)
+    .join(" and ");
 const dash = (v: string | null | undefined) => (v === null || v === undefined || v === "" ? "—" : v);
 
 function previewColumns(busy: boolean, onResolve: (row: PreviewRow, fix: RowFix | null) => void): Column<PreviewRow>[] {
@@ -62,14 +72,12 @@ function previewColumns(busy: boolean, onResolve: (row: PreviewRow, fix: RowFix 
     key: "status",
     header: "Status",
     cell: (r) => {
-      const status = r.skipped ? "skipped" : r.is_duplicate ? "duplicate" : "new";
+      const status = r.skipped ? "skipped" : (r.status ?? (r.is_duplicate ? "duplicate" : "new"));
       return (
-        <span className={`import-page__status import-page__status--${status}`}>
-          {r.skipped ? "Skipped" : r.is_duplicate ? "Duplicate" : "New"}
-        </span>
+        <span className={`import-page__status import-page__status--${status}`}>{STATUS_LABELS[status]}</span>
       );
     },
-    sortValue: (r) => (isOpen(r) ? 0 : r.skipped ? 3 : r.is_duplicate ? 2 : 1),
+    sortValue: (r) => (isOpen(r) ? 0 : r.skipped ? 4 : r.is_duplicate ? 3 : r.status === "update" ? 2 : 1),
   },
   {
     key: "check",
@@ -286,6 +294,7 @@ export function Import() {
         <Card className="import-page__lead" title={`Preview: ${preview.filename}`} subtitle={`Broker: ${preview.broker}. Nothing is written until you confirm.`}>
           <div className="import-page__chips">
             <span className="import-page__chip">New {preview.counts.new}</span>
+            {(preview.counts.updates ?? 0) > 0 && <span className="import-page__chip">Update {preview.counts.updates}</span>}
             <span className="import-page__chip">Duplicate {preview.counts.duplicates}</span>
             <span className="import-page__chip">Sweeps dropped {preview.counts.sweeps_dropped}</span>
             <span className={`import-page__chip${preview.counts.warnings > 0 ? " import-page__chip--warn" : ""}`}>
@@ -403,10 +412,10 @@ export function Import() {
             <Button
               variant="primary"
               loading={confirm.isPending}
-              disabled={preview.counts.new === 0 || !preview.can_confirm}
+              disabled={preview.counts.new + (preview.counts.updates ?? 0) === 0 || !preview.can_confirm}
               onClick={confirmImport}
             >
-              {`Import ${plural(preview.counts.new, "transaction", "transactions")}`}
+              {importLabel(preview.counts.new, preview.counts.updates ?? 0)}
             </Button>
           </div>
         </Card>
@@ -415,7 +424,8 @@ export function Import() {
       {step === 3 && result && (
         <Card title="Import complete">
           <p className="import-page__done">
-            <CheckCircle2 aria-hidden /> Imported {plural(result.inserted, "transaction", "transactions")} ({result.duplicates} duplicates skipped).
+            <CheckCircle2 aria-hidden /> Imported {plural(result.inserted, "transaction", "transactions")}
+            {(result.updated ?? 0) > 0 && `, updated ${plural(result.updated ?? 0, "existing transaction", "existing transactions")}`} ({result.duplicates} duplicates skipped).
           </p>
           {result.import_batch_id != null && (
             <p className="import-page__note">

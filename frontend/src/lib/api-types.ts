@@ -5069,6 +5069,11 @@ export interface components {
             unknown_actions: string[];
             /** Unresolved Symbols */
             unresolved_symbols: string[];
+            /**
+             * Updated
+             * @default 0
+             */
+            updated: number;
             /** Warnings */
             warnings: components["schemas"]["ImportIssue"][];
         };
@@ -5094,6 +5099,11 @@ export interface components {
              * @default 0
              */
             unresolved: number;
+            /**
+             * Updates
+             * @default 0
+             */
+            updates: number;
             /** Warnings */
             warnings: number;
         };
@@ -5105,6 +5115,27 @@ export interface components {
             errors: {
                 [key: string]: string;
             };
+        };
+        /**
+         * ImportExistingFigures
+         * @description The existing transaction an ``update`` row would overwrite (its old figures).
+         */
+        ImportExistingFigures: {
+            /** Date */
+            date: string;
+            /**
+             * Estimated
+             * @default false
+             */
+            estimated: boolean;
+            /** Net Native */
+            net_native?: string | null;
+            /** Price Native */
+            price_native?: string | null;
+            /** Quantity */
+            quantity?: string | null;
+            /** Transaction Id */
+            transaction_id: number;
         };
         /**
          * ImportField
@@ -5247,10 +5278,11 @@ export interface components {
             date: string;
             /** Description */
             description?: string | null;
+            existing?: components["schemas"]["ImportExistingFigures"] | null;
             /** Fees Native */
             fees_native?: string | null;
             /** Fixes */
-            fixes?: ("keep" | "fix_price" | "skip")[];
+            fixes?: ("keep" | "fix_price" | "skip" | "import_new")[];
             /** Gross Native */
             gross_native?: string | null;
             /** Index */
@@ -5266,7 +5298,7 @@ export interface components {
             /** Quantity */
             quantity?: string | null;
             /** Resolution */
-            resolution?: ("keep" | "fix_price" | "skip") | null;
+            resolution?: ("keep" | "fix_price" | "skip" | "import_new") | null;
             /** Settlement Date */
             settlement_date?: string | null;
             /**
@@ -5274,6 +5306,12 @@ export interface components {
              * @default false
              */
             skipped: boolean;
+            /**
+             * Status
+             * @default new
+             * @enum {string}
+             */
+            status: "new" | "duplicate" | "update" | "skipped";
             /** Symbol */
             symbol?: string | null;
             /** Warnings */
@@ -5310,7 +5348,7 @@ export interface components {
         /** ImportResolveRow */
         ImportResolveRow: {
             /** Action */
-            action?: ("keep" | "fix_price" | "skip") | null;
+            action?: ("keep" | "fix_price" | "skip" | "import_new") | null;
             /** Index */
             index: number;
         };

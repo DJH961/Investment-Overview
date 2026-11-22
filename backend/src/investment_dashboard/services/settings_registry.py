@@ -439,6 +439,99 @@ DEFS: tuple[SettingDef, ...] = (
         level="advanced",
     ),
     SettingDef(
+        "import.match_updates_enabled",
+        SettingType.BOOL,
+        True,
+        "imports",
+        "Match near-identical rows as updates",
+        help=(
+            "An imported row that is almost identical to a transaction you already have "
+            "(same account, instrument and type, a nearby date, almost the same amount and "
+            "shares) is shown as an update instead of a new row; confirming overwrites the "
+            "existing transaction with the import's figures. Exact duplicates are always "
+            "skipped. Switch off to import such rows as new."
+        ),
+    ),
+    SettingDef(
+        "import.match_relative_tolerance",
+        SettingType.PERCENT,
+        _D("0.005"),
+        "imports",
+        "Update match: relative tolerance",
+        help=(
+            "Amount and shares may differ by this fraction (0.005 = 0.5 %) and still count "
+            "as the same transaction. The larger of this and the absolute tolerances applies."
+        ),
+        min=_D(0),
+        max=_D("0.05"),
+    ),
+    SettingDef(
+        "import.match_absolute_amount",
+        SettingType.DECIMAL,
+        _D("0.05"),
+        "imports",
+        "Update match: amount tolerance",
+        help="Amounts may differ by this much in the account's currency (a few cents).",
+        min=_D(0),
+        max=_D(10),
+    ),
+    SettingDef(
+        "import.match_absolute_quantity",
+        SettingType.DECIMAL,
+        _D("0.0001"),
+        "imports",
+        "Update match: shares tolerance",
+        help="Share quantities may differ by this many shares.",
+        min=_D(0),
+        max=_D(1),
+        unit="shares",
+    ),
+    SettingDef(
+        "import.match_business_days",
+        SettingType.INT,
+        1,
+        "imports",
+        "Update match: date distance",
+        help="Dates may differ by this many NYSE trading days (weekends and holidays do not count).",
+        min=_D(0),
+        max=_D(5),
+        unit="days",
+    ),
+    SettingDef(
+        "import.match_estimated_relative_tolerance",
+        SettingType.PERCENT,
+        _D("0.02"),
+        "imports",
+        "Estimate match: relative tolerance",
+        help=(
+            "Estimated transactions (from your recurring plans) are matched more loosely: "
+            "the amount may differ by this fraction. Shares are ignored for buys and sells."
+        ),
+        min=_D(0),
+        max=_D("0.2"),
+    ),
+    SettingDef(
+        "import.match_estimated_absolute_amount",
+        SettingType.DECIMAL,
+        _D("0.50"),
+        "imports",
+        "Estimate match: amount tolerance",
+        help="Estimated transactions: the amount may differ by this much in the account's currency.",
+        min=_D(0),
+        max=_D(50),
+    ),
+    SettingDef(
+        "import.match_estimated_business_days",
+        SettingType.INT,
+        3,
+        "imports",
+        "Estimate match: date distance",
+        help="Estimated transactions: the broker may book them this many trading days off.",
+        min=_D(0),
+        max=_D(10),
+        unit="days",
+    ),
+    SettingDef(
         "import.column_profiles",
         SettingType.JSON_MAP,
         {},

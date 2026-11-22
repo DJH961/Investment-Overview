@@ -25,6 +25,7 @@ from investment_dashboard.api.schemas.imports import (
     ImportConfirmResult,
     ImportCounts,
     ImportErrorDto,
+    ImportExistingFigures,
     ImportField,
     ImportIssue,
     ImportLayout,
@@ -103,7 +104,7 @@ def _layout(layout: Layout | None) -> ImportLayout | None:
     )
 
 
-_FIXES: frozenset[Any] = frozenset({"keep", "fix_price", "skip"})
+_FIXES: frozenset[Any] = frozenset({"keep", "fix_price", "skip", "import_new"})
 
 
 def _preview(staged: import_staging.StagedImport) -> ImportPreview:
@@ -127,6 +128,19 @@ def _preview(staged: import_staging.StagedImport) -> ImportPreview:
                 description=r.description,
                 is_duplicate=pr.is_duplicate,
                 skipped=pr.skipped,
+                status=pr.status,
+                existing=(
+                    ImportExistingFigures(
+                        transaction_id=pr.existing.id,
+                        date=pr.existing.date.isoformat(),
+                        quantity=dec(pr.existing.quantity),
+                        price_native=dec(pr.existing.price_native),
+                        net_native=dec(pr.existing.net_native),
+                        estimated=pr.existing.estimated,
+                    )
+                    if pr.existing is not None
+                    else None
+                ),
                 warnings=list(pr.warnings),
                 fixes=[f for f in pr.fixes if f in _FIXES],
                 resolution=pr.resolution if pr.resolution in _FIXES else None,
@@ -141,6 +155,7 @@ def _preview(staged: import_staging.StagedImport) -> ImportPreview:
         counts=ImportCounts(
             rows=len(staged.rows),
             new=staged.new_count,
+            updates=staged.update_count,
             duplicates=staged.duplicate_count,
             sweeps_dropped=report.sweeps_dropped,
             errors=len(report.errors),
@@ -211,6 +226,7 @@ def confirm_import(import_id: str, session: SessionDep, actor: ActorDep) -> Impo
     return ImportConfirmResult(
         import_id=import_id,
         inserted=result.inserted,
+        updated=result.updated,
         duplicates=result.duplicates,
         sweeps_dropped=result.sweeps_dropped,
         unknown_actions=list(result.unknown_actions),
