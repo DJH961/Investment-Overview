@@ -26,6 +26,13 @@ const niceExtent = (raw: number) => Math.max(0.005, Math.ceil(raw * 200) / 200);
 
 const cap = (s: string) => s.replace(/^./, (c) => c.toUpperCase());
 
+/** The direction words for either currency's trend (the euro's in the USD view). */
+const DIRECTION_WORD = {
+  ...TREND_WORD,
+  euro_up: { word: "strengthening", Icon: TrendingUp },
+  euro_down: { word: "weakening", Icon: TrendingDown },
+} as const;
+
 /**
  * "Is this move normal?": the dollar's move over the window against every move of the
  * same length since 1999. The shaded band is the normal range (80 % of all moves); the
@@ -135,18 +142,21 @@ function Bar({ at: v, label, mid, fill }: { at: number; label: string; mid?: boo
 }
 
 /**
- * The dollar's trend, described and never predicted. A one-line verdict of chips first,
+ * The dollar's trend (EUR view) or the euro's (USD view: you convert euros into dollars,
+ * so the euro's strength is what matters), described and never predicted. A one-line verdict of chips first,
  * then three short groups: where it is heading, whether this month's and year's moves are
  * ordinary, and where it stands in its own history. Every row is a label, a picture and at
  * most one line; the longer explanations live in the tips. All figures are the server's;
- * the percentages are the dollar's own change in every view, the rates are printed in the
- * view's quote.
+ * the percentages are that currency's own change (the server computes each on its own
+ * price), the rates are printed in the view's quote.
  */
 export function TrendPanel({ data }: { data: DollarDto }) {
   const field = data.quote.field;
-  const t = data.trend ?? {};
+  const t: Partial<NonNullable<DollarDto["trend"]>> = data.trend ?? {};
+  const euro = t.asset === "euro";
+  const name = euro ? "euro" : "dollar";
   const regime = t.regime;
-  const dir = regime ? TREND_WORD[regime.direction] : null;
+  const dir = regime ? DIRECTION_WORD[regime.direction] : null;
   const p = t.percentiles ?? {};
   const w = t.week52;
   // The dollar's 52-week low is EUR/USD's high (and the other way round).
@@ -165,7 +175,7 @@ export function TrendPanel({ data }: { data: DollarDto }) {
   const ma = t.ma200;
   const maDistance = ma ? toNum(ma.distance_pct) : null;
   const longRun = t.long_run;
-  const longDistance = longRun ? toNum(longRun.distance_inverse_pct) : null;
+  const longDistance = longRun ? toNum((euro ? longRun.distance_pct : longRun.distance_inverse_pct) ?? null) : null;
   const aboveEntry = toNum(t.above_entry_share ?? null);
   const month = t.normal_month;
   const year = t.normal_year;
@@ -181,19 +191,19 @@ export function TrendPanel({ data }: { data: DollarDto }) {
   const runRow = run ? (
     <Row
       label="Recent run"
-      tip="The dollar's move over each of the last months (calendar month ends). Filled months went the way of the run."
+      tip={`The ${name}'s move over each of the last months (calendar month ends). Filled months went the way of the run.`}
     >
-      <ol className="dollar-run" aria-label={`The dollar ${run.direction} in ${run.count} of the last ${run.of} months`}>
+      <ol className="dollar-run" aria-label={`The ${name} ${run.direction} in ${run.count} of the last ${run.of} months`}>
         {(run.months ?? []).map((m) => {
           const Icon = m.move === "rose" ? TrendingUp : m.move === "fell" ? TrendingDown : Minus;
           const [y, mo] = m.month.split("-").map(Number);
-          const name = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
+          const monthName = new Date(Date.UTC(y, mo - 1, 1)).toLocaleString("en-GB", { month: "short", timeZone: "UTC" });
           return (
             <li key={m.month} className={clsx("dollar-run__item", m.move === run.direction && "dollar-run__item--on")}>
-              <span className="dollar-run__cell" title={`${name} ${y}: the dollar ${m.move}`}>
+              <span className="dollar-run__cell" title={`${monthName} ${y}: the ${name} ${m.move}`}>
                 <Icon aria-hidden className="dollar-run__icon" />
               </span>
-              <span className="dollar-run__month">{name}</span>
+              <span className="dollar-run__month">{monthName}</span>
             </li>
           );
         })}
@@ -205,12 +215,12 @@ export function TrendPanel({ data }: { data: DollarDto }) {
   ) : null;
 
   return (
-    <Card className="dollar-trend" title="Dollar trend">
+    <Card className="dollar-trend" title={euro ? "Euro trend" : "Dollar trend"}>
       <div className="dollar-trend__tiles">
         {hasDirection ? (
           <Tile
             title="Direction"
-            tip="The direction only changes once the dollar has clearly crossed its 200-day average, so the label does not flicker."
+            tip={`The direction only changes once the ${name} has clearly crossed its 200-day average, so the label does not flicker.`}
             headline={
               regime && dir ? (
                 <>
@@ -226,10 +236,10 @@ export function TrendPanel({ data }: { data: DollarDto }) {
             {ma && maDistance !== null ? (
               <Row
                 label="200-day average"
-                tip={`The dollar's average rate over the last 200 days (${rateText(toNum(quoteOf(ma.ma200, field)), field)}), and whether that average is rising or falling (now ${ma.slope}).`}
+                tip={`The ${name}'s average rate over the last 200 days (${rateText(toNum(quoteOf(ma.ma200, field)), field)}), and whether that average is rising or falling (now ${ma.slope}).`}
               >
                 <div className="dollar-range">
-                  <Bar at={at(maDistance, 0.06) / 100} mid label={`The dollar is ${mag(maDistance)} ${ma.side} its 200-day average`} />
+                  <Bar at={at(maDistance, 0.06) / 100} mid label={`The ${name} is ${mag(maDistance)} ${ma.side} its 200-day average`} />
                   <p className="dollar-range__ends" aria-hidden>
                     <span>−6%</span>
                     <span>average</span>
@@ -237,8 +247,8 @@ export function TrendPanel({ data }: { data: DollarDto }) {
                   </p>
                 </div>
                 <p className="dollar-trend__line">
-                  {(regime?.direction === "dollar_down" && ma.side === "above") ||
-                  (regime?.direction === "dollar_up" && ma.side === "below")
+                  {(regime?.direction.endsWith("_down") && ma.side === "above") ||
+                  (regime?.direction.endsWith("_up") && ma.side === "below")
                     ? "Still "
                     : ""}
                   {mag(maDistance)} {ma.side}, average {ma.slope}
@@ -251,7 +261,7 @@ export function TrendPanel({ data }: { data: DollarDto }) {
         {hasNormal ? (
           <Tile
             title="Is this normal?"
-            tip="The dollar's move against every move of the same length since 1999. The shaded band holds the 80% that were normal."
+            tip={`The ${name}'s move against every move of the same length since 1999. The shaded band holds the 80% that were normal.`}
             headline={monthWord ?? "Normal?"}
             sub={month ? `a typical month moves about ±${mag(toNum(month.typical_move_pct) ?? 0)}` : undefined}
             flag={month ? month.label !== "normal" : false}
@@ -275,13 +285,13 @@ export function TrendPanel({ data }: { data: DollarDto }) {
         {hasStands ? (
           <Tile
             title="Where it stands"
-            tip="The share of days on which the dollar was cheaper than today. A high share means the dollar is dear against its own history."
+            tip={`The share of days on which the ${name} was cheaper than today. A high share means the ${name} is dear against its own history.`}
             headline={headline && headline.v !== null ? `Higher than on ${share(headline.v)} of days` : "Where it stands"}
             sub={headline ? headline.label : undefined}
           >
             {percentiles.length > 1 ? (
-              <Row label="Against history" tip="The share of days on which the dollar was cheaper than today, in each window.">
-                <ul className="dollar-pct" aria-label="Share of days the dollar was cheaper than today">
+              <Row label="Against history" tip={`The share of days on which the ${name} was cheaper than today, in each window.`}>
+                <ul className="dollar-pct" aria-label={`Share of days the ${name} was cheaper than today`}>
                   {percentiles.map((x) => (
                     <li key={x.key} className="dollar-pct__row">
                       <span className="dollar-pct__label">{x.label}</span>
@@ -306,14 +316,15 @@ export function TrendPanel({ data }: { data: DollarDto }) {
                   </p>
                 </div>
                 <p className="dollar-trend__line">
-                  {mag(toNum(w.from_high_inverse_pct) ?? 0)} above the low, {mag(toNum(w.from_low_inverse_pct) ?? 0)} below the high
+                  {mag(toNum(euro ? w.from_low_rate_pct : w.from_high_inverse_pct) ?? 0)} above the low,{" "}
+                  {mag(toNum(euro ? w.from_high_rate_pct : w.from_low_inverse_pct) ?? 0)} below the high
                 </p>
               </Row>
             ) : null}
             {longRun && longDistance !== null ? (
               <Row
                 label="Long run"
-                tip="The dollar against its average since 1999. Exchange rates tend to drift back towards it over years, not months."
+                tip={`The ${name} against its average since 1999. Exchange rates tend to drift back towards it over years, not months.`}
               >
                 <div className="dollar-range">
                   <Bar
@@ -334,9 +345,16 @@ export function TrendPanel({ data }: { data: DollarDto }) {
               </Row>
             ) : null}
             {aboveEntry !== null ? (
-              <Row label="You" tip="The share of days since your first transaction on which the dollar was above your average rate.">
+              <Row
+                label="You"
+                tip={
+                  euro
+                    ? "The share of days since your first transaction on which the euro bought more dollars than at your average conversion rate."
+                    : "The share of days since your first transaction on which the dollar was above your average rate."
+                }
+              >
                 <div className="dollar-range">
-                  <Bar at={aboveEntry} fill label={`The dollar was above your average rate on ${share(aboveEntry)} of days`} />
+                  <Bar at={aboveEntry} fill label={`The ${name} was above your average rate on ${share(aboveEntry)} of days`} />
                   <p className="dollar-range__ends" aria-hidden>
                     <span>no days</span>
                     <span>every day</span>

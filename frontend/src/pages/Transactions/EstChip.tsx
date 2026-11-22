@@ -1,12 +1,13 @@
 import { PencilLine } from "lucide-react";
 import { useState } from "react";
 import { Chip } from "../../components/Chip";
+import "./EstChip.scss";
 import { useEstimates, type EstimateRow } from "../../lib/queries/recurring";
 
 /** "est." tag on an estimated row (icon plus text, never colour alone); one tap opens quick-settle. */
 export function EstChip({ onOpen }: { onOpen: () => void }) {
   return (
-    <button type="button" className="transactions-page__rate-chip" aria-label="Estimated row: settle it" onClick={onOpen}>
+    <button type="button" className="est-chip" aria-label="Estimated row: settle it" onClick={onOpen}>
       <Chip size="sm" tone="estimate" icon={<PencilLine aria-hidden />}>
         est.
       </Chip>

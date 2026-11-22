@@ -640,6 +640,8 @@ def seed_full(session: Any) -> None:
     add(brokerage, top_ups["may"], "deposit", "2500.00")
     add(brokerage, top_ups["jun"], "deposit", "4000.00")
     _seed_recurring(session, rows, add, brokerage, inst["FAKEL"], px, rate_on)
+    for day, usd in _history_plan()[0]:
+        add(brokerage, day, "deposit", usd)
     session.add_all(rows)
     session.flush()
     _seed_conversions(session, rows, rate_on, top_ups)
@@ -791,6 +793,52 @@ def _seed_recurring(
         )
 
 
+def _history_plan() -> tuple[
+    list[tuple[_dt.date, str]], list[tuple[_dt.date, str, str, str | None]]
+]:
+    """A deterministic three-year top-up history: ``(deposits, conversions)``.
+
+    One monthly USD top-up from April 2023 to March 2026, paid for the way a retail
+    saver does it: usually one Wise or Revolut conversion a couple of days before (matched),
+    sometimes one that is a fifth short (partly matched), sometimes two halves (two slices),
+    sometimes none (ECB only), plus a few conversions made ahead of time that wait in the pool.
+    About fifty conversions, so the Conversions page shows what hundreds look like.
+    """
+    rng = random.Random(SEED + 11)
+    deposits: list[tuple[_dt.date, str]] = []
+    conversions: list[tuple[_dt.date, str, str, str | None]] = []
+    providers = ("wise", "revolut")
+    for n in range(36):
+        month = 3 + n  # April 2023 is the 4th month of 2023
+        year, m0 = 2023 + month // 12, month % 12
+        day = _dt.date(year, m0 + 1, rng.choice((3, 4, 5, 6)))
+        usd = rng.choice((1000, 1500, 2000, 2500, 3000))
+        deposits.append((day, f"{usd}.00"))
+        lead = _dt.timedelta(days=rng.choice((1, 2, 3)))
+        provider = providers[rng.randrange(2)]
+        fees = rng.choice((None, "1.20", "2.40", "3.10")) if provider == "wise" else None
+        if n % 9 == 8:
+            continue  # no conversion: the deposit uses the ECB rate
+        if n % 11 == 5:
+            half = usd // 2
+            conversions.append((day - lead, f"{half}.00", provider, fees))
+            other = providers[1 - providers.index(provider)]
+            earlier = day - lead - _dt.timedelta(days=1)
+            conversions.append((earlier, f"{usd - half}.00", other, None))
+        elif n % 7 == 3:
+            conversions.append((day - lead, f"{usd * 4 // 5}.00", provider, fees))
+        else:
+            conversions.append((day - lead, f"{usd}.00", provider, fees))
+    for day, usd, provider in (
+        (_dt.date(2023, 8, 21), "1800.00", "revolut"),
+        (_dt.date(2024, 3, 11), "2200.00", "wise"),
+        (_dt.date(2024, 11, 18), "1200.00", "wise"),
+        (_dt.date(2025, 9, 15), "2600.00", "revolut"),
+    ):
+        conversions.append((day, usd, provider, None))
+    return deposits, conversions
+
+
 def _seed_conversions(
     session: Any,
     rows: list[Any],
@@ -840,6 +888,8 @@ def _seed_conversions(
     conv(_dt.date(2026, 5, 29), "2000.00", "wise", "2.10")
     conv(_dt.date(2026, 5, 30), "2000.00", "revolut", None)
     conv(_dt.date(2026, 6, 26), "1000.00", "wise", "1.40")
+    for day, usd, provider, fees in _history_plan()[1]:
+        conv(day, usd, provider, fees)
     session.flush()
     may_deposit = next(r for r in rows if r.kind == "deposit" and r.date == top_ups["may"])
     session.add(
