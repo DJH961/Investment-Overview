@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from investment_dashboard.adapters import yfinance_client as yfc
 from investment_dashboard.db import ledger_session_scope
-from investment_dashboard.repositories import instruments_repo
+from investment_dashboard.repositories import accounts_repo, fx_repo, instruments_repo
 from investment_dashboard.services import lookup_service
 
 
@@ -61,21 +61,76 @@ def fake_yf(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(yfc.yf, "Ticker", _FakeTicker)
 
 
-def test_search_maps_hits_and_flags_held(api_client: TestClient, fake_yf: None) -> None:
+def _trade(api_client: TestClient, account_id: int, symbol: str, kind: str, day: str) -> None:
+    resp = api_client.post(
+        "/api/transactions",
+        json={
+            "account_id": account_id,
+            "date": day,
+            "kind": kind,
+            "symbol": symbol,
+            "quantity": "2",
+            "price": "100",
+            "fees": "0",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.fixture
+def usd_account(api_db: object) -> int:
     with ledger_session_scope() as s:
-        held = instruments_repo.get_or_create(s, symbol="VTI", asset_class="etf").id
+        acct = accounts_repo.create_account(
+            s,
+            broker="fidelity",
+            account_label="Fidelity",
+            native_currency="USD",
+            account_type="brokerage",
+        )
+        fx_repo.upsert_rates(
+            s, {date(2024, 1, 5): Decimal("1.10"), date(2024, 3, 4): Decimal("1.10")}
+        )
+        return acct.id
+
+
+def test_search_maps_hits_and_flags_held(
+    api_client: TestClient, fake_yf: None, usd_account: int
+) -> None:
+    _trade(api_client, usd_account, "VTI", "buy", "2024-01-05")
+    with ledger_session_scope() as s:
+        held = instruments_repo.get_by_symbol(s, "VTI")
+        assert held is not None
+        held_id = held.id
     body = api_client.get("/api/lookup/search", params={"q": "vanguard"}).json()
     rows = body["results"]
     assert [r["symbol"] for r in rows] == ["VTI", "ZZZ"]
-    assert rows[0]["held_instrument_id"] == held
+    assert rows[0]["held_instrument_id"] == held_id
+    assert rows[0]["sold_instrument_id"] is None
     assert rows[0]["name"] == "Vanguard Total Stock Market ETF"
     assert rows[0]["exchange"] == "NYSEArca"
     assert rows[0]["type"] == "ETF"
     assert rows[1]["held_instrument_id"] is None
+    assert rows[1]["sold_instrument_id"] is None
     assert rows[1]["name"] == "Zed Corp"
     # Searching never creates a row.
     with ledger_session_scope() as s:
         assert {i.symbol for i in instruments_repo.list_instruments(s)} == {"VTI"}
+
+
+def test_sold_instrument_is_not_held_and_reports_when(
+    api_client: TestClient, fake_yf: None, usd_account: int
+) -> None:
+    _trade(api_client, usd_account, "VTI", "buy", "2024-01-05")
+    _trade(api_client, usd_account, "VTI", "sell", "2024-03-04")
+    rows = api_client.get("/api/lookup/search", params={"q": "vanguard"}).json()["results"]
+    assert rows[0]["symbol"] == "VTI"
+    # No open position: /holdings/<id> would be "can't find", so it is not "held".
+    assert rows[0]["held_instrument_id"] is None
+    assert rows[0]["sold_instrument_id"] is not None
+    assert rows[0]["last_held_on"] == "2024-03-04"
+    # The Lookup page's quote carries the same date for a sold symbol, none otherwise.
+    assert api_client.get("/api/lookup/VTI/quote").json()["last_held_on"] == "2024-03-04"
+    assert api_client.get("/api/lookup/ZZZ/quote").json()["last_held_on"] is None
 
 
 def test_search_needs_a_query(api_client: TestClient, fake_yf: None) -> None:

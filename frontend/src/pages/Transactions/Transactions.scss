@@ -173,6 +173,32 @@
     overflow-wrap: anywhere;
   }
 
+  &__rate-slice {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__rate-slice-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  &__rate-usd {
+    margin-left: auto;
+  }
+
+  &__rate-pin {
+    width: 1em;
+    height: 1em;
+    align-self: center;
+  }
+
+  &__rate-slice-detail {
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
   &__rate-link {
     color: var(--color-accent);
     text-decoration: underline;

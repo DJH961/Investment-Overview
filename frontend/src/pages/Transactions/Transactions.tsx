@@ -1,6 +1,6 @@
 import { ArrowDownUp, Pencil, Plus, Search, SlidersHorizontal, Tag, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { DataTable, type Column } from "../../components/DataTable";
@@ -157,6 +157,15 @@ export function Transactions() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [editing, setEditing] = useState<TransactionOut | "new" | null>(null);
   const [deleting, setDeleting] = useState<TransactionOut | null>(null);
+
+  // /transactions?symbol=X (from a sold holding's lookup page) opens the list filtered to it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const symbolParam = searchParams.get("symbol");
+  useEffect(() => {
+    if (!symbolParam) return;
+    setF({ ...DEFAULT_FILTERS, symbol: symbolParam.toUpperCase() });
+    setSearchParams({}, { replace: true });
+  }, [symbolParam, setF, setSearchParams]);
 
   const patch = (next: Partial<FilterState>) => {
     setF((prev) => ({ ...prev, ...next }));

@@ -1,11 +1,11 @@
-import { Landmark, Wallet } from "lucide-react";
+import { Landmark, Pin, Wallet } from "lucide-react";
 import { Link } from "react-router";
 import { Chip } from "../../components/Chip";
 import { Money } from "../../components/Money";
 import { Sheet } from "../../components/Sheet";
 import { formatDate, formatMoney, formatNumber } from "../../lib/format";
 import type { DepositMatch, FxConversion } from "../../lib/queries/manage";
-import { rateChipLabel, sliceName } from "../CurrencyConversions/matching";
+import { providerLabel, rateChipLabel } from "../CurrencyConversions/matching";
 
 /** Tap target on a USD deposit row: which rate paid for it. Icon plus word, never colour alone. */
 export function RateChip({ match, onOpen }: { match: DepositMatch; onOpen: (m: DepositMatch) => void }) {
@@ -46,16 +46,21 @@ export function RateSheet({
           <ul className="transactions-page__rate-list">
             {match.slices.map((s) => {
               const c = byId.get(s.conversion_id);
+              const detail = [
+                `${formatMoney(Number(s.eur), "EUR")} at ${formatNumber(Number(s.rate), 4)}`,
+                c?.fees_eur && Number(c.fees_eur) > 0 ? `fees ${formatMoney(Number(c.fees_eur), "EUR")}` : null,
+                c?.ecb_rate ? `ECB ${formatNumber(Number(c.ecb_rate), 4)}` : null,
+              ].filter(Boolean);
               return (
-                <li key={`${s.conversion_id}-${s.pinned}-${s.usd}`}>
-                  <Link to="/conversions" className="transactions-page__rate-link">
-                    {sliceName(s.conversion_date, s.rate)}
-                  </Link>
-                  {": "}
-                  {formatMoney(Number(s.eur), "EUR")} → {formatMoney(Number(s.usd), "USD")} at {formatNumber(Number(s.rate), 4)}
-                  {c?.fees_eur && Number(c.fees_eur) > 0 ? `, fees ${formatMoney(Number(c.fees_eur), "EUR")}` : ""}
-                  {c?.ecb_rate ? ` · ECB that day ${formatNumber(Number(c.ecb_rate), 4)}` : ""}
-                  {s.pinned ? " · pinned" : ""}
+                <li key={`${s.conversion_id}-${s.pinned}-${s.usd}`} className="transactions-page__rate-slice">
+                  <span className="transactions-page__rate-slice-head">
+                    <Link to={`/conversions#conversion-${s.conversion_id}`} className="transactions-page__rate-link">
+                      {[formatDate(s.conversion_date), providerLabel(c?.provider)].filter(Boolean).join(" · ")}
+                    </Link>
+                    {s.pinned && <Pin className="transactions-page__rate-pin" aria-label="Pinned" role="img" />}
+                    <Money amount={Number(s.usd)} currency="USD" className="transactions-page__rate-usd" />
+                  </span>
+                  <span className="transactions-page__rate-slice-detail">{detail.join(" · ")}</span>
                 </li>
               );
             })}

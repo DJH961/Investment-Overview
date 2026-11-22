@@ -24,11 +24,11 @@ from sqlalchemy.orm import Session
 
 from investment_dashboard.adapters import yfinance_client as yf_client
 from investment_dashboard.adapters.yfinance_client import SearchHit
-from investment_dashboard.domain import market_hours
+from investment_dashboard.domain import kinds, market_hours
 from investment_dashboard.domain.currency import lookup_rate_with_forward_fill
 from investment_dashboard.errors import DomainError, NotFoundError, UpstreamError, ValidationError
-from investment_dashboard.repositories import instruments_repo
-from investment_dashboard.services import fx_service
+from investment_dashboard.repositories import instruments_repo, transactions_repo
+from investment_dashboard.services import fx_service, positions_service
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,10 @@ class SearchResult:
     type: str | None
     currency: str | None
     held_instrument_id: int | None
+    #: In the ledger once but no open position now (fully sold).
+    sold_instrument_id: int | None = None
+    #: Date of the last share-moving transaction of a sold instrument.
+    last_held_on: date | None = None
 
 
 @dataclass(frozen=True)
@@ -162,7 +166,25 @@ def search(session: Session, query: str, limit: int = 10) -> list[SearchResult]:
         hits: list[SearchHit] = yf_client.search_instruments(q, limit)
     except yf_client.YFinanceError as exc:
         raise _upstream("search", exc) from exc
-    held = {row.symbol.upper(): row.id for row in instruments_repo.list_instruments(session)}
+    # Only an open position can open /holdings/<id>; a fully sold instrument is
+    # reported separately so the UI sends it to the Lookup page instead.
+    open_ids = {
+        p.instrument.id for p in positions_service.compute_positions(session) if p.shares > 0
+    }
+    held: dict[str, int] = {}
+    sold: dict[str, int] = {}
+    for row in instruments_repo.list_instruments(session):
+        (held if row.id in open_ids else sold)[row.symbol.upper()] = row.id
+    last_held: dict[int, date] = {}
+    for hit in hits:
+        iid = sold.get(hit.symbol.upper())
+        if iid is None or iid in last_held:
+            continue
+        moves = transactions_repo.list_transactions(
+            session, instrument_id=iid, kinds=sorted(kinds.SHARE_MOVING_KINDS)
+        )
+        if moves:
+            last_held[iid] = max(t.date for t in moves)
     return [
         SearchResult(
             symbol=h.symbol,
@@ -171,9 +193,27 @@ def search(session: Session, query: str, limit: int = 10) -> list[SearchResult]:
             type=h.type,
             currency=h.currency,
             held_instrument_id=held.get(h.symbol.upper()),
+            sold_instrument_id=(
+                sold.get(h.symbol.upper()) if sold.get(h.symbol.upper()) in last_held else None
+            ),
+            last_held_on=last_held.get(sold.get(h.symbol.upper(), -1)),
         )
         for h in hits
     ]
+
+
+def last_held_on(session: Session, symbol: str) -> date | None:
+    """Date of the last share move of a fully sold instrument, else ``None``."""
+    row = instruments_repo.get_by_symbol(session, symbol)
+    if row is None:
+        return None
+    open_now = positions_service.compute_positions(session)
+    if any(p.instrument.id == row.id and p.shares > 0 for p in open_now):
+        return None
+    moves = transactions_repo.list_transactions(
+        session, instrument_id=row.id, kinds=sorted(kinds.SHARE_MOVING_KINDS)
+    )
+    return max((t.date for t in moves), default=None)
 
 
 # -- quote ---------------------------------------------------------------------------

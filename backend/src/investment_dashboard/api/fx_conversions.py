@@ -44,7 +44,8 @@ def _out(
 ) -> FxConversionOut:
     use = next((u for u in result.by_conversion if u.conversion_id == row.id), None)
     fees = row.fees_eur if row.fees_eur is not None else Decimal(0)
-    ecb = service.ecb_rate_on(session, row.date)
+    fixing = service.ecb_fixing_for(session, row.date)
+    ecb = None if fixing is None else fixing[0]
     used = sorted(
         use.slices, key=lambda sl: (dates.get(sl.deposit_id), sl.deposit_id), reverse=True
     )
@@ -62,6 +63,7 @@ def _out(
         rate=_s(row.usd_received / row.eur_sent),
         all_in_rate=_s(row.usd_received / (row.eur_sent + fees)),
         ecb_rate=None if ecb is None else _s(ecb),
+        ecb_rate_date=None if fixing is None else fixing[1].isoformat(),
         off_pct=None if not ecb else _s(row.usd_received / (row.eur_sent + fees) / ecb - 1),
         used_by=[
             UsedByOut(
@@ -186,11 +188,12 @@ def pool(session: SessionDep) -> PoolOut:
 
 @router.get("/fx-conversions/reference", response_model=ReferenceOut)
 def reference(date: date_type, session: SessionDep) -> ReferenceOut:
-    rate = service.ecb_rate_on(session, date)
+    fixing = service.ecb_fixing_for(session, date)
     return ReferenceOut(
         date=date.isoformat(),
-        ecb_rate=None if rate is None else _s(rate),
-        published=rate is not None,
+        ecb_rate=None if fixing is None else _s(fixing[0]),
+        ecb_rate_date=None if fixing is None else fixing[1].isoformat(),
+        published=fixing is not None and fixing[1] == date,
     )
 
 

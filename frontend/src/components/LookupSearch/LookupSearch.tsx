@@ -29,6 +29,7 @@ function backFromLocation(pathname: string, state: unknown): BackTarget {
 
 export const lookupTarget = (r: LookupResultDto): string =>
   r.held_instrument_id != null ? `/holdings/${r.held_instrument_id}` : `/lookup/${encodeURIComponent(r.symbol)}`;
+// Only an open position has a holding page; a sold one opens the lookup page (it says "you sold this").
 
 /**
  * Look up any instrument by symbol or name (7.1, P20). Owned ones open their holding
@@ -115,6 +116,9 @@ export function LookupSearch({ className, placeholder = "Look up a symbol" }: { 
                     <span className="lookup-search__symbol">
                       {r.symbol}
                       {r.held_instrument_id != null && <span className="lookup-search__owned">you own this</span>}
+                      {r.held_instrument_id == null && r.sold_instrument_id != null && (
+                        <span className="lookup-search__owned">you sold this</span>
+                      )}
                     </span>
                     <span className="lookup-search__meta">{[r.exchange, r.type].filter(Boolean).join(" · ")}</span>
                     <span className="lookup-search__name">{r.name}</span>

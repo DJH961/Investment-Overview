@@ -173,6 +173,33 @@ def ecb_rate_on(session: Session, on: date) -> Decimal | None:
     return fx_service.get_settled_rate_on(session, on, base="EUR", quote="USD")
 
 
+#: How far back a weekend or holiday conversion looks for the last settled fixing.
+FIXING_LOOKBACK_DAYS = 7
+
+
+def ecb_fixing_for(session: Session, on: date) -> tuple[Decimal, date] | None:
+    """The fixing a conversion on ``on`` is compared with, and the date it is from.
+
+    The fixing dated exactly ``on``; when there is none (weekend, holiday, today before
+    the publication) the last settled fixing before it, at most a week back. Wise and
+    Revolut convert on weekends, so "last settled before" is the fair benchmark.
+    ``None`` when nothing settled is that close.
+    """
+    exact = fx_service.get_settled_rate_on(session, on, base="EUR", quote="USD")
+    if exact is not None:
+        return exact, on
+    earliest = on - timedelta(days=FIXING_LOOKBACK_DAYS)
+    earlier = {
+        d: r
+        for d, r in fx_service.get_settled_rates(session, base="EUR", quote="USD").items()
+        if earliest <= d < on and r > 0
+    }
+    if not earlier:
+        return None
+    last = max(earlier)
+    return earlier[last], last
+
+
 def compute_pool(session: Session) -> PoolReport:
     rows = tuple(repo.list_all(session))
     deposits = repo.list_usd_contribution_deposits(session)
