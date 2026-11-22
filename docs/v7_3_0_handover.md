@@ -43,7 +43,7 @@ Read first: `docs/v7_plan.md` §5.1 "7.3 as settled", `docs/v7_3_contract.md`,
 
 | Lane | Branch | State |
 |---|---|---|
-| A costs + Currency section + markers + timing | `lane/v7.3-costs` (f0705805+) | first pass done; reworking onto the redesigned Conversions page with light stats |
+| A costs + Currency section + markers + timing | `lane/v7.3-costs` 335be900 | **merged** (007dc850). Light stats on the page live in `CostBits.tsx`. Open: one clean `npm run test:overflow` run on a quiet machine; marker tap on phones is weak (SVG title) |
 | B P15 import matching | `lane/v7.3-import-match` 34f54b9a | **merged** into feat/v7.3.0. Undo of updated rows NOT done (needs schema, below) |
 | C P14 recurring plans | `lane/v7.3-recurring` | running; owns migration 0027 (down `a7c3e9d1b5f2`) |
 | D Wise import + kept_usd + Received in USD | `lane/v7.3-wise` | running; migration `0027a` (down `a7c3e9d1b5f2`) → re-parent after 0027 at merge |
