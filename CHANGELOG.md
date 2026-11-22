@@ -17,6 +17,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [7.2.1] — 2026-11-22
+
+### Added
+- **Conversions, the finished part of 7.3:** pin a deposit to the conversion that paid for it
+  (pins first, then oldest first, then the ECB rate for the rest), a status per deposit
+  (matched, partly matched, ECB only, pinned), the provider (Wise, Revolut, other),
+  Duplicate, a "vs ECB" column and a compact "Paid for" cell on the Conversions page, and a
+  "Your rate / ECB" chip with a per-conversion sheet on Transactions. A weekend conversion is
+  compared with the last ECB fixing before it, labelled with that day.
+- **Currency page, one range for every section, always in reach:** the range picker sits in
+  the sticky section bar (a menu on phones), and a new **All** range covers your investing
+  time since the first transaction; it is the default. Impact, Exposure and Scenarios all
+  follow it (5Y and 10Y are real windows now).
+- **Currency in the dollar view is the investing side.** The euro view shows what the rate did
+  to the euro value of your dollars (cashing out); the dollar view now shows, with the same
+  cards, what the rate did to the euros you send in: the effect on each deposit against the
+  range's start rate, a chart of dollars received against the same euros at the start rate,
+  a euros-to-dollars bridge, months and years, records, a rolling line and a per-deposit list.
+  Exposure becomes "Your buying power"; Scenarios shows what €1,000 and your regular amount
+  buy at other rates. Both views keep the euro-versus-dollar return gap as a second line.
+- **1D and 1W rate chart round the clock:** 15-minute EUR/USD bars from Yahoo cover the
+  nights, the weekend is squeezed out with a single divider where the market shut, and the US
+  stock market's open hours are shaded. How long the server reuses fetched bars is a setting
+  (Settings > Data refresh, "Currency chart 1D/1W: reuse rate bars for", default 10 minutes).
+
+### Fixed
+- **Impact's all-time returns were wrong (as low as −200 %).** Idle broker cash between a
+  deposit and the buy was not part of the valued book, so each deposit read as a loss. Impact
+  now counts each broker account's idle cash, uses one time-weighted daily chain for every
+  range (All equals the calendar years chained), and flags days where the broker cash would go
+  below zero (a deposit may be missing) instead of turning them into returns. The
+  tailwind/headwind tag always follows the figure beside it.
+- **A sold holding could not be looked up:** search said "you own this" and opened a holding
+  page that no longer exists. Sold instruments now open the lookup page with "You held this
+  until …" and a link to their transactions.
+- **Scenarios ignored the range:** the slider's low, high and start marks, the worth-at-low
+  and -high figures and the "does the dollar cushion your swings?" window now follow it.
+- Conversions review pass: no overflow at 1280, trimmed decimals in the edit form, clearer
+  KPI names, phone rows, the matching list and the pin dialog.
+
 ## [7.2.0] — 2026-11-22
 
 ### Added

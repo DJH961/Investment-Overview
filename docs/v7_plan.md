@@ -15,11 +15,12 @@
 > The technical companion, with build notes per push, is
 > [`v7_implementation_notes.md`](v7_implementation_notes.md).
 >
-> **Status (2026-11-21): 7.1.1 is current on `main`.** The 7.1.2 hotfix is open as
-> [PR #427](https://github.com/DJH961/Investment-Overview/pull/427) with current CI green.
-> Version 7.2.0 is prepared on `codex/v7.2.0`, stacked on the hotfix branch for review;
-> 7.2.1 follows it in the owner-approved release train. Nothing in this train has been
-> merged into `main` yet.
+> **Status (2026-11-22): 7.2.0 is current on `main`; 7.2.1 is open for the owner's review**
+> on `release/7.2.1`: the finished part of 7.3 (pins, statuses, provider, the rate chip, the
+> reworked Conversions page), the Currency page fixes (All range in the sticky bar, Impact's
+> time-weighted chain with idle broker cash, the USD view as the investing side, round-the-clock
+> 1D/1W rate chart with shaded US market hours, Scenarios following the range) and the sold
+> holding lookup. Sessions 2 and 3 of 7.3 stay for 7.3.0.
 >
 > **Release train to 7.2.1 (owner, 2026-11-21), one session, merged in this order:**
 >

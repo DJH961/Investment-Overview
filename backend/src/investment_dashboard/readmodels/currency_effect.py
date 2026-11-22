@@ -437,6 +437,9 @@ def _thin_weekly(points: list[fa.CumulativePoint]) -> list[fa.CumulativePoint]:
 
 def daily_series(parts: Sequence[fa.DayParts]) -> tuple[list[dict[str, Any]], str]:
     points = fa.cumulative_series(parts)
+    # The empty days before the first money arrived would draw a cliff up from zero.
+    lead = next((i for i, p in enumerate(points) if p.value != 0 or p.constant_currency != 0), 0)
+    points = points[lead:]
     granularity = "daily"
     if len(points) > MAX_DAILY_POINTS:
         points = _thin_weekly(points)

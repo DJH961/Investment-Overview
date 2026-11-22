@@ -199,7 +199,8 @@ function CurrencySubPageView({
   range: CurrencyRangeState;
 }) {
   const { currency } = usePrefs();
-  useShellStatus("closed", page.label);
+  const title = currency === "USD" && page.usdLabel ? page.usdLabel : page.label;
+  useShellStatus("closed", title);
   const back = `/currency?range=${range.range}#${section.id}`;
   return (
     <div className="currency-page currency-page--sub">
@@ -208,7 +209,7 @@ function CurrencySubPageView({
         Currency · {section.label}
       </Link>
       <PageHeader
-        title={page.label}
+        title={title}
         titleOnPhone
         actions={
           page.ranged ? (

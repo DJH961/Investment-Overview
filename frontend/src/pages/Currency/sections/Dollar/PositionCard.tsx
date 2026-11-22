@@ -81,7 +81,7 @@ export function PositionCard({ data }: { data: DollarDto }) {
 
   if (data.ccy === "USD") {
     return (
-      <Card className="dollar-position" title="Your buying power">
+      <Card className="dollar-position" title="Your euro position">
         <div className="dollar-position__lenses">
           <BuyingPower data={data} />
           {next ? <NextEuro next={next} data={data} /> : null}

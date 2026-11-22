@@ -36,6 +36,8 @@ export interface CurrencySubPage {
   id: string;
   /** Page title ("Currency effect per holding"). */
   label: string;
+  /** Title in the USD view (the investing side), when it lists something else. */
+  usdLabel?: string;
   Component: ComponentType<CurrencySubPageProps>;
   /** Shows the range picker at the top of the sub-page. */
   ranged?: boolean;
@@ -55,7 +57,15 @@ export const CURRENCY_SECTIONS: CurrencySectionDef[] = [
     id: "impact",
     label: "Impact",
     Component: Impact,
-    subPages: [{ id: "holdings", label: "Currency effect per holding", Component: ImpactHoldings, ranged: true }],
+    subPages: [
+      {
+        id: "holdings",
+        label: "Currency effect per holding",
+        usdLabel: "Currency effect per deposit",
+        Component: ImpactHoldings,
+        ranged: true,
+      },
+    ],
   },
   // Your dollars as a position: what you hold, the rate you paid, the trend.
   { id: "exposure", label: "Exposure", Component: Dollar },

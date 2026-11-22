@@ -645,8 +645,15 @@ export function RecordsCard({ data, dayLabel = "Day" }: { data: CurrencyEffectDt
   const periods = (["day", "month", "year"] as const)
     .map((p) => ({ p, best: rows.find((x) => x.id === `best_${p}`)!, worst: rows.find((x) => x.id === `worst_${p}`)! }))
     .filter(({ best, worst }) => best.rec || worst.rec);
+  // A "worst" that cost nothing (or a "best" that gained nothing) is not a record: with All,
+  // the first deposit sits exactly at the start rate, so its $0 would fill the cell.
+  const counts = (x: (typeof rows)[number]) => {
+    const v = toNum(x.rec?.currency ?? null);
+    if (v === null) return false;
+    return x.id.startsWith("worst_") ? v < -0.5 : v > 0.5;
+  };
   const cell = (x: (typeof rows)[number]) =>
-    x.rec ? (
+    x.rec && counts(x) ? (
       <td className="records__cell" data-record={x.id} aria-label={x.label}>
         <span className="records__amount">
           <Money amount={toNum(x.rec.currency)} currency={data.ccy} signed colored digits={0} />
@@ -654,7 +661,7 @@ export function RecordsCard({ data, dayLabel = "Day" }: { data: CurrencyEffectDt
         <span className="records__when">{periodLabel(x.rec.label)}</span>
       </td>
     ) : (
-      <td className="records__cell records__cell--none">–</td>
+      <td className="records__cell records__cell--none" title="None in this range">none</td>
     );
   return (
     <Card className="impact__records" title="Records">
