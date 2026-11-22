@@ -16,7 +16,10 @@ import "./Impact.scss";
 /** The section's secondary figures' words (the hero carries the returns and the effect). */
 const STAT_LABELS: Record<string, StatMeta> = {
   tailwind_share: { label: "Months it helped", tip: "In how many of this range's months the exchange rate added value." },
-  typical_day: { label: "Typical day", tip: "The middle size of a day's currency effect in this range, either way: half the days moved less." },
+  typical_day: {
+    label: "Typical day",
+    tip: "The middle size of a day's currency effect in this range, either way: half the days moved less.",
+  },
   largest_day: { label: "Largest day", tip: "The day with the biggest currency effect in this range, either way." },
   rate_range_today: { label: "Today's range", tip: "The lowest and highest rate today." },
   typical_month: { label: "Typical month", tip: "The middle size of a month's currency effect, either way." },
@@ -58,7 +61,14 @@ export function stripItems(stats: EffectStatDto[], ccy: string): StatItem[] {
           key: s.key,
           label: meta.label,
           tip: meta.tip,
-          value: v === null ? "–" : <>±<Money amount={Math.abs(v)} currency={s.currency ?? ccy} digits={0} /></>,
+          value:
+            v === null ? (
+              "–"
+            ) : (
+              <>
+                ±<Money amount={Math.abs(v)} currency={s.currency ?? ccy} digits={0} />
+              </>
+            ),
         };
       }
       // Left after the special cases: money and rate figures (no counts reach here).
@@ -77,7 +87,9 @@ function rangeMeta(range: CurrencyRange, data: CurrencyEffectDto | undefined): s
   if (!data?.start_on || !data.end_on) return label;
   const all = effectRangeFor(range) === "all";
   // 5Y / 10Y / Max are not split further than your own time: say which window this is.
-  return all ? `${range === "max" ? "Max" : label}: all your time, since ${formatDate(data.start_on)}` : `${label} · ${formatDate(data.start_on)} – ${formatDate(data.end_on)}`;
+  return all
+    ? `${range === "max" ? "Max" : label}: all your time, since ${formatDate(data.start_on)}`
+    : `${label} · ${formatDate(data.start_on)} – ${formatDate(data.end_on)}`;
 }
 
 /** Impact: what the exchange rate did to you over the page range. */

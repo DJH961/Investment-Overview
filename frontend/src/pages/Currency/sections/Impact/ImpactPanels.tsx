@@ -23,12 +23,7 @@ import {
   signOf,
 } from "../../../../lib/format";
 import { toNum } from "../../../../lib/queries/portfolio";
-import type {
-  CurrencyEffectDto,
-  EffectBarDto,
-  EffectRecordDto,
-  HoldingEffectDto,
-} from "../../../../lib/queries/currencyEffect";
+import type { CurrencyEffectDto, EffectBarDto, EffectRecordDto, HoldingEffectDto } from "../../../../lib/queries/currencyEffect";
 import { useTimeZone } from "../../../../lib/timezone";
 import { compactSigned, monthShort, periodLabel } from "./impactFormat";
 
@@ -47,7 +42,16 @@ export const foreignOf = (ccy: string) => (ccy === "EUR" ? "dollar" : "euro");
  */
 function ReturnBars({ eur, usd, pp, ccy }: { eur: number | null; usd: number | null; pp: number | null; ccy: string }) {
   if (eur === null || usd === null) return null;
-  const rows = ccy === "EUR" ? ([["EUR", eur], ["USD", usd]] as const) : ([["USD", usd], ["EUR", eur]] as const);
+  const rows =
+    ccy === "EUR"
+      ? ([
+          ["EUR", eur],
+          ["USD", usd],
+        ] as const)
+      : ([
+          ["USD", usd],
+          ["EUR", eur],
+        ] as const);
   const lo = Math.min(0, eur, usd);
   const hi = Math.max(0, eur, usd);
   const span = hi - lo || 1;
@@ -57,7 +61,10 @@ function ReturnBars({ eur, usd, pp, ccy }: { eur: number | null; usd: number | n
   const gapFrom = Math.min(at(mine), at(other));
   const gapTo = Math.max(at(mine), at(other));
   return (
-    <figure className="return-bars" aria-label={`Return in EUR ${formatPercent(eur, { signed: true, digits: 1 })}, in USD ${formatPercent(usd, { signed: true, digits: 1 })}`}>
+    <figure
+      className="return-bars"
+      aria-label={`Return in EUR ${formatPercent(eur, { signed: true, digits: 1 })}, in USD ${formatPercent(usd, { signed: true, digits: 1 })}`}
+    >
       {rows.map(([c, v], i) => (
         <div key={c} className={clsx("return-bars__row", i === 0 ? "return-bars__row--mine" : "return-bars__row--other")}>
           <span className="return-bars__label">{c} return</span>
@@ -129,7 +136,11 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
   const byTime = useMemo(() => new Map(pts.map((p) => [Date.parse(p.t), toNum(p.currency)])), [pts]);
   const long = range === "all" || range === "3y" || range === "1y" || /^\d{4}$/.test(range);
   const timeFormat = (t: number) =>
-    range === "1d" ? formatTime(new Date(t), timeZone) : range === "1w" ? formatShortDay(t, timeZone) : formatAxisDate(t, long ? Infinity : 0);
+    range === "1d"
+      ? formatTime(new Date(t), timeZone)
+      : range === "1w"
+        ? formatShortDay(t, timeZone)
+        : formatAxisDate(t, long ? Infinity : 0);
   const tooltipTimeFormat = (t: number) =>
     range === "1d" ? formatTime(new Date(t), timeZone) : range === "1w" ? formatDayTime(t, timeZone) : formatDate(new Date(t), "medium");
 
@@ -151,7 +162,9 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
             {h.effect_pp !== null && h.effect_pp !== undefined ? <span>{formatPp(toNum(h.effect_pp), 1)} on your return</span> : null}
             <KindTag kind={h.kind} />
           </p>
-          {share !== null && toNum(h.market) !== null ? <ShareBar share={share} market={toNum(h.market)!} effect={effect} ccy={ccy} /> : null}
+          {share !== null && toNum(h.market) !== null ? (
+            <ShareBar share={share} market={toNum(h.market)!} effect={effect} ccy={ccy} />
+          ) : null}
         </div>
         <ReturnBars eur={toNum(h.eur_return)} usd={toNum(h.usd_return)} pp={toNum(h.effect_pp ?? null)} ccy={ccy} />
       </div>
@@ -178,15 +191,17 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
         </p>
       ) : null}
       {figures.length ? (
-        <dl className="impact__minor" aria-label="More about this range">
+        <dl className="impact-facts" aria-label="More about this range">
           {figures.map((f) => (
-            <div key={f.key} className="impact__minor-fig">
-              <dt className="impact__fig-label">
+            <div key={f.key} className="impact-facts__item">
+              <dt className="impact-facts__label">
                 {f.label}
                 {f.tip ? <InfoTip label={f.label} content={f.tip} /> : null}
               </dt>
-              <dd className="impact__minor-value">{f.value}</dd>
-              {f.note ? <dd className="impact__fig-note">{f.note}</dd> : null}
+              <dd className="impact-facts__value">
+                {f.value}
+                {f.note ? <span className="impact-facts__note">{f.note}</span> : null}
+              </dd>
             </div>
           ))}
         </dl>
@@ -221,11 +236,49 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
   const pos = (v: number) => (hi === base ? 0 : ((v - base) / (hi - base)) * 100);
   const truncated = base > 0;
   const rows: { id: string; label: string; from: number; to: number; amount: ReactNode; part: string; signed?: boolean }[] = [
-    { id: "start", label: `Start ${formatDate(b.start_on)}`, from: base, to: start, amount: <Money amount={start} currency={ccy} digits={0} />, part: "level" },
-    { id: "deposits", label: dep < 0 ? "Net withdrawals" : "Net deposits", from: start, to: start + dep, amount: <Money amount={dep} currency={ccy} signed digits={0} />, part: "deposits", signed: true },
-    { id: "market", label: "Market", from: start + dep, to: start + dep + mkt, amount: <Money amount={mkt} currency={ccy} signed colored digits={0} />, part: "market", signed: true },
-    { id: "currency", label: "Currency", from: start + dep + mkt, to: end, amount: <Money amount={cur} currency={ccy} signed colored digits={0} />, part: "currency", signed: true },
-    { id: "end", label: `End ${formatDate(b.end_on)}`, from: base, to: end, amount: <Money amount={end} currency={ccy} digits={0} />, part: "level" },
+    {
+      id: "start",
+      label: `Start ${formatDate(b.start_on)}`,
+      from: base,
+      to: start,
+      amount: <Money amount={start} currency={ccy} digits={0} />,
+      part: "level",
+    },
+    {
+      id: "deposits",
+      label: dep < 0 ? "Net withdrawals" : "Net deposits",
+      from: start,
+      to: start + dep,
+      amount: <Money amount={dep} currency={ccy} signed digits={0} />,
+      part: "deposits",
+      signed: true,
+    },
+    {
+      id: "market",
+      label: "Market",
+      from: start + dep,
+      to: start + dep + mkt,
+      amount: <Money amount={mkt} currency={ccy} signed colored digits={0} />,
+      part: "market",
+      signed: true,
+    },
+    {
+      id: "currency",
+      label: "Currency",
+      from: start + dep + mkt,
+      to: end,
+      amount: <Money amount={cur} currency={ccy} signed colored digits={0} />,
+      part: "currency",
+      signed: true,
+    },
+    {
+      id: "end",
+      label: `End ${formatDate(b.end_on)}`,
+      from: base,
+      to: end,
+      amount: <Money amount={end} currency={ccy} digits={0} />,
+      part: "level",
+    },
   ];
   return (
     <Card
@@ -260,7 +313,11 @@ export function BridgeCard({ data }: { data: CurrencyEffectDto }) {
           );
         })}
       </ul>
-      {truncated ? <p className="impact__caption">The bars start at {formatMoney(base, ccy, { compact: true, narrow: true })}, not zero, so the steps stay visible.</p> : null}
+      {truncated ? (
+        <p className="impact__caption">
+          The bars start at {formatMoney(base, ccy, { compact: true, narrow: true })}, not zero, so the steps stay visible.
+        </p>
+      ) : null}
     </Card>
   );
 }
@@ -311,8 +368,20 @@ function Bars({ bars, ccy, kind }: { bars: EffectBarDto[]; ccy: string; kind: "m
               ) : null}
             </span>
             <span className={clsx("effect-bars__label", tone === "flat" && "effect-bars__label--flat")} aria-hidden>
-              {kind === "month" ? monthShort(b.label).slice(0, bars.length > 16 ? 1 : 3) : b.label}
-              {kind === "month" && newYear ? <span className="effect-bars__year">{yearOf(b.label)}</span> : null}
+              {kind === "month" ? (
+                <>
+                  <span className="effect-bars__name">{monthShort(b.label).slice(0, bars.length > 16 ? 1 : 3)}</span>
+                  <span className="effect-bars__initial">{monthShort(b.label).slice(0, 1)}</span>
+                </>
+              ) : (
+                b.label
+              )}
+              {kind === "month" && newYear ? (
+                <span className="effect-bars__year">
+                  <span className="effect-bars__name">{yearOf(b.label)}</span>
+                  <span className="effect-bars__initial">’{yearOf(b.label).slice(2)}</span>
+                </span>
+              ) : null}
             </span>
           </li>
         );
@@ -326,47 +395,66 @@ function YearGrid({ data }: { data: CurrencyEffectDto }) {
   if (!grid.length) return null;
   const ccy = data.ccy;
   const months = Array.from({ length: 12 }, (_, i) => monthShort(`2000-${String(i + 1).padStart(2, "0")}`).slice(0, 3));
+  const years = [...grid].reverse();
   return (
-    <div className="year-grid" data-scrollable>
-      <table className="year-grid__table">
-        <caption className="year-grid__caption">Currency effect per month and year, {ccy}</caption>
-        <thead>
-          <tr>
-            <th scope="col" className="year-grid__head year-grid__head--year">
-              Year
-            </th>
-            {months.map((m) => (
-              <th key={m} scope="col" className="year-grid__head">
-                {m}
+    <>
+      <ul className="year-totals" aria-label={`Currency effect per year, ${ccy}`}>
+        {years.map((row) => {
+          const total = toNum(row.total);
+          const known = row.months.filter((c) => c !== null && c !== undefined);
+          const helped = known.filter((c) => (toNum(c ?? null) ?? 0) > 0).length;
+          return (
+            <li key={row.year} className="year-totals__row">
+              <span className="year-totals__year">{row.year}</span>
+              <span className="year-totals__helped">
+                helped {helped} of {known.length} months
+              </span>
+              <span className={clsx("year-totals__total", `year-totals__total--${signOf(total, 0)}`)}>{compactSigned(total, ccy)}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="year-grid" data-scrollable>
+        <table className="year-grid__table">
+          <caption className="year-grid__caption">Currency effect per month and year, {ccy}</caption>
+          <thead>
+            <tr>
+              <th scope="col" className="year-grid__head year-grid__head--year">
+                Year
               </th>
-            ))}
-            <th scope="col" className="year-grid__head year-grid__head--total">
-              Total
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {[...grid].reverse().map((row) => (
-            <tr key={row.year}>
-              <th scope="row" className="year-grid__year">
-                {row.year}
+              {months.map((m) => (
+                <th key={m} scope="col" className="year-grid__head">
+                  {m}
+                </th>
+              ))}
+              <th scope="col" className="year-grid__head year-grid__head--total">
+                Total
               </th>
-              {row.months.map((cell, i) => {
-                const v = toNum(cell ?? null);
-                return (
-                  <td key={i} className={clsx("year-grid__cell", v !== null && `year-grid__cell--${signOf(v, 0)}`)}>
-                    {v === null ? <span className="year-grid__none">·</span> : compactSigned(v, ccy)}
-                  </td>
-                );
-              })}
-              <td className={clsx("year-grid__cell year-grid__cell--total", `year-grid__cell--${signOf(toNum(row.total), 0)}`)}>
-                {compactSigned(toNum(row.total), ccy)}
-              </td>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {years.map((row) => (
+              <tr key={row.year}>
+                <th scope="row" className="year-grid__year">
+                  {row.year}
+                </th>
+                {row.months.map((cell, i) => {
+                  const v = toNum(cell ?? null);
+                  return (
+                    <td key={i} className={clsx("year-grid__cell", v !== null && `year-grid__cell--${signOf(v, 0)}`)}>
+                      {v === null ? <span className="year-grid__none">·</span> : compactSigned(v, ccy)}
+                    </td>
+                  );
+                })}
+                <td className={clsx("year-grid__cell year-grid__cell--total", `year-grid__cell--${signOf(toNum(row.total), 0)}`)}>
+                  {compactSigned(toNum(row.total), ccy)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -379,24 +467,22 @@ export function MonthsCard({ data }: { data: CurrencyEffectDto }) {
   if (!showMonths && !showYears && !(data.grid ?? []).length) return null;
   const run = data.run;
   return (
-    <Card className="impact__months" title={showMonths ? "Effect by month" : "Effect by year"}>
-      {run ? (
-        <p className="impact__run">
-          <KindTag kind={run.kind} />
-          <span className="impact__run-text">
-            {run.statement.replace(/\.$/, "")}:{" "}
-            <Money amount={toNum(run.currency)} currency={data.ccy} signed colored digits={0} /> in those months.
+    <Card
+      className="impact__months"
+      title={showMonths ? "Effect by month" : "Effect by year"}
+      subtitle={
+        run ? (
+          <span className="impact__run">
+            <KindTag kind={run.kind} />
+            <span className="impact__run-text">
+              {run.statement.replace(/\.$/, "")}: <Money amount={toNum(run.currency)} currency={data.ccy} signed colored digits={0} /> in
+              those months.
+            </span>
           </span>
-        </p>
-      ) : null}
-      {showMonths ? (
-        <div className="effect-bars-scroll" role="region" tabIndex={0} aria-label="Currency effect by month">
-          <p className="effect-bars-scroll__hint">Swipe sideways to see all months</p>
-          <div className="effect-bars-scroll__viewport" data-scrollable>
-            <Bars bars={months} ccy={data.ccy} kind="month" />
-          </div>
-        </div>
-      ) : null}
+        ) : undefined
+      }
+    >
+      {showMonths ? <Bars bars={months} ccy={data.ccy} kind="month" /> : null}
       {showYears ? <Bars bars={years} ccy={data.ccy} kind="year" /> : null}
       <YearGrid data={data} />
     </Card>
@@ -511,65 +597,86 @@ export function RecordsCard({ data }: { data: CurrencyEffectDto }) {
 // ---- per holding --------------------------------------------------------------------------
 
 export function sortHoldings(rows: HoldingEffectDto[]): HoldingEffectDto[] {
-  return [...rows].sort((a, b) => Math.abs(toNum(b.currency) ?? 0) - Math.abs(toNum(a.currency) ?? 0) || Math.abs(toNum(b.total) ?? 0) - Math.abs(toNum(a.total) ?? 0));
+  return [...rows].sort(
+    (a, b) =>
+      Math.abs(toNum(b.currency) ?? 0) - Math.abs(toNum(a.currency) ?? 0) || Math.abs(toNum(b.total) ?? 0) - Math.abs(toNum(a.total) ?? 0),
+  );
 }
 
-/** Price gain · dividends · currency = change, per holding. Phones: one row per holding, figures under the name. */
-export function HoldingsTable({ rows, ccy }: { rows: HoldingEffectDto[]; ccy: string }) {
+/**
+ * A holding's currency effect as a bar from a centre line, on one scale shared by every
+ * row: right of the line it helped, left it cost (the side and the sign carry it, not
+ * colour alone), in the gold hatch used for the currency effect across the page.
+ */
+function CurrencyBar({ v, max }: { v: number | null; max: number }) {
+  const w = v === null || max === 0 ? 0 : (Math.abs(v) / max) * 50;
   return (
-    <div className="holding-split-scroll" role="region" tabIndex={0} aria-label="Per-holding currency effect table">
-            <div className="holding-split-scroll__viewport" data-scrollable>
-      <table className="holding-split">
-      <thead className="holding-split__thead">
-        <tr>
-          <th scope="col" className="holding-split__head holding-split__head--name">
-            Holding
-          </th>
-          <th scope="col" className="holding-split__head">
-            Price
-          </th>
-          <th scope="col" className="holding-split__head">
-            Dividends
-          </th>
-          <th scope="col" className="holding-split__head holding-split__head--fx">
-            Currency
-          </th>
-          <th scope="col" className="holding-split__head">
-            Change
-          </th>
-        </tr>
-      </thead>
-      <tbody className="holding-split__tbody">
-        {rows.map((h) => (
-          <tr key={h.instrument_id} className="holding-split__row">
-            <th scope="row" className="holding-split__name">
-              <span className="holding-split__symbol">{h.symbol}</span>
-              {h.name ? <span className="holding-split__long">{h.name}</span> : null}
-            </th>
-            <td className="holding-split__cell holding-split__cell--price" data-label="Price">
-              <Money amount={toNum(h.price)} currency={ccy} signed colored digits={0} />
-            </td>
-            <td className="holding-split__cell holding-split__cell--div" data-label="Dividends">
-              <Money amount={toNum(h.dividends)} currency={ccy} signed colored digits={0} />
-            </td>
-            <td className="holding-split__cell holding-split__cell--fx" data-label="Currency">
-              {h.native_ccy === ccy ? (
-                <span className="holding-split__none" title={`Held in ${ccy}: no currency effect`}>
-                  <span aria-hidden>–</span>
-                  <span className="u-sr-only">none, held in {ccy}</span>
-                </span>
-              ) : (
-                <Money amount={toNum(h.currency)} currency={ccy} signed colored digits={0} />
-              )}
-            </td>
-            <td className="holding-split__cell holding-split__cell--total" data-label="Change">
-              <Money amount={toNum(h.total)} currency={ccy} signed colored digits={0} />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-      </table>
+    <span className="fx-bar" aria-hidden>
+      <span className="fx-bar__zero" />
+      {w > 0 ? (
+        <span className={clsx("fx-bar__seg", v! > 0 ? "fx-bar__seg--up" : "fx-bar__seg--down")} style={{ width: `${Math.max(w, 0.8)}%` }} />
+      ) : null}
+    </span>
+  );
+}
+
+/** Price · dividends · currency = change, per holding; the currency effect drawn as a bar. */
+export function HoldingsTable({ rows, ccy }: { rows: HoldingEffectDto[]; ccy: string }) {
+  const fx = (h: HoldingEffectDto) => (h.native_ccy === ccy ? null : toNum(h.currency));
+  const max = Math.max(0, ...rows.map((h) => Math.abs(fx(h) ?? 0)));
+  const money = (v: number | null) => <Money amount={v} currency={ccy} signed colored digits={0} />;
+  return (
+    <div className="holding-split">
+      <div className="holding-split__row holding-split__row--head" aria-hidden>
+        <span className="holding-split__name">Holding</span>
+        <span className="holding-split__bar holding-split__bar--head">
+          <span>cost</span>
+          <span>helped</span>
+        </span>
+        <span className="holding-split__fig holding-split__fig--fx">Currency</span>
+        <span className="holding-split__fig holding-split__fig--price">Price</span>
+        <span className="holding-split__fig holding-split__fig--div">Dividends</span>
+        <span className="holding-split__fig holding-split__fig--total">Change</span>
       </div>
+      <ul className="holding-split__list" aria-label="Change per holding: currency, price and dividends">
+        {rows.map((h) => {
+          const v = fx(h);
+          return (
+            <li key={h.instrument_id} className="holding-split__row">
+              <span className="holding-split__name">
+                <span className="holding-split__symbol">{h.symbol}</span>
+                {h.name ? <span className="holding-split__long">{h.name}</span> : null}
+              </span>
+              <span className="holding-split__bar">
+                <CurrencyBar v={v} max={max} />
+              </span>
+              <span className="holding-split__fig holding-split__fig--fx">
+                <span className="holding-split__label">Currency</span>
+                {v === null ? (
+                  <span className="holding-split__none" title={`Held in ${ccy}: no currency effect`}>
+                    <span aria-hidden>none</span>
+                    <span className="u-sr-only">, held in {ccy}</span>
+                  </span>
+                ) : (
+                  money(v)
+                )}
+              </span>
+              <span className="holding-split__fig holding-split__fig--price">
+                <span className="holding-split__label">Price</span>
+                {money(toNum(h.price))}
+              </span>
+              <span className="holding-split__fig holding-split__fig--div">
+                <span className="holding-split__label">Dividends</span>
+                {money(toNum(h.dividends))}
+              </span>
+              <span className="holding-split__fig holding-split__fig--total">
+                <span className="holding-split__label">Change</span>
+                {money(toNum(h.total))}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -631,7 +738,12 @@ export function SessionCard({ data }: { data: CurrencyEffectDto }) {
         <DivergingBar
           ariaLabel="Currency effect inside and outside US market hours"
           rows={[
-            { id: "inside", label: "Market hours", value: inside, display: <Money amount={inside} currency={ccy} signed colored digits={0} /> },
+            {
+              id: "inside",
+              label: "Market hours",
+              value: inside,
+              display: <Money amount={inside} currency={ccy} signed colored digits={0} />,
+            },
             {
               id: "outside",
               label: "Outside market hours",
@@ -666,7 +778,10 @@ function BuysLine({ buys }: { buys: NonNullable<CurrencyEffectDto["buys"]> }) {
   const change = toNum(buys.change_usd);
   return (
     <p className="impact__buys">
-      <Money amount={amount} currency="EUR" digits={0} /> buys <strong><Money amount={now} currency="USD" /></strong>
+      <Money amount={amount} currency="EUR" digits={0} /> buys{" "}
+      <strong>
+        <Money amount={now} currency="USD" />
+      </strong>
       {prev !== null ? (
         <>
           {" "}

@@ -94,36 +94,7 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // The range's smaller figures, under the chart, on the hero's own grid.
-  &__minor {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-4) var(--space-5);
-    margin: var(--space-4) 0 0;
-    padding-top: var(--space-4);
-    border-top: var(--border-width) solid var(--color-border);
-
-    @include m.tablet-up {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-  }
-
-  &__minor-fig { min-width: 0; }
-
-  &__minor-value {
-    margin: var(--space-1) 0 0;
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-semibold);
-    font-variant-numeric: tabular-nums;
-  }
-
-  &__title {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-  }
-
-  &__months { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); min-width: 0; }
+  &__months { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
 
   &__rolling { min-width: 0; }
 
@@ -255,41 +226,49 @@
   &__label { display: grid; overflow: hidden; padding-top: var(--space-2); color: var(--color-muted); font-size: var(--font-size-2xs); text-align: center; text-overflow: ellipsis; white-space: nowrap; }
   &__label--flat { color: var(--color-fg); font-weight: var(--font-weight-semibold); }
   &__year { color: var(--color-fg); font-weight: var(--font-weight-medium); }
+  &__initial { display: none; }
   &__col--year { border-left: var(--border-width) dashed var(--color-border); }
   &--dense { grid-template-columns: repeat(auto-fit, minmax(1.3rem, 1fr)); }
-}
-
-.effect-bars-scroll {
-  min-width: 0;
-
-  &__viewport {
-    max-width: 100%;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scrollbar-color: var(--color-border-strong) var(--color-surface-2);
-    scrollbar-width: thin;
-  }
-
-  &__hint {
-    display: none;
-    margin: 0 0 var(--space-2);
-    color: var(--color-muted);
-    font-size: var(--font-size-2xs);
-  }
 
   @include m.phone {
-    &__hint { display: block; }
+    --effect-plot: 6.5rem;
 
-    .effect-bars--month {
-      grid-template-columns: none;
-      grid-auto-flow: column;
-      grid-auto-columns: 2.6rem;
-      min-width: max-content;
-    }
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    gap: 2px;
+
+    &__bar { width: min(80%, 1.25rem); }
+    &__name { display: none; }
+    &__initial { display: inline; }
   }
+}
+
+.year-totals {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  &__row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  &__year { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+  &__helped { color: var(--color-muted); font-size: var(--font-size-xs); }
+  &__total { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }
+  &__total--pos { color: var(--color-pos); }
+  &__total--neg { color: var(--color-neg); }
+
+  @include m.phone { display: block; }
 }
 
 .year-grid {
+  @include m.phone { display: none; }
+
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
@@ -320,76 +299,113 @@
   &__life { margin: var(--space-2) 0 0; padding-top: var(--space-3); border-top: var(--border-width) solid var(--color-border); color: var(--color-muted); font-size: var(--font-size-xs); line-height: var(--line-height-base); }
 }
 
-.holding-split {
-  width: 100%;
-  min-width: 40rem;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
+.fx-bar {
+  position: relative;
+  display: block;
+  height: var(--space-3);
+  border-radius: 2px;
+  background: var(--color-surface-2);
 
-  &__head { padding: var(--space-2); color: var(--color-muted); font-size: var(--font-size-2xs); font-weight: var(--font-weight-medium); text-align: right; }
-  &__head--name { text-align: left; }
-  &__row { border-top: var(--border-width) solid var(--color-border); }
-  &__name { padding: var(--space-3) var(--space-2); text-align: left; }
-  &__symbol { display: block; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
-  &__long { display: block; max-width: 18ch; overflow: hidden; color: var(--color-muted); font-size: var(--font-size-2xs); text-overflow: ellipsis; white-space: nowrap; }
-  &__cell { padding: var(--space-3) var(--space-2); font-size: var(--font-size-xs); text-align: right; white-space: nowrap; }
-  // The currency column is the section's subject: a faint tint marks it.
-  &__head--fx, &__cell--fx { background: var(--color-surface-2); }
-  &__cell--total { font-weight: var(--font-weight-semibold); }
-  &__none { color: var(--color-muted); }
-
-  // Phones: one compact block per holding. The name and its currency effect lead; price,
-  // dividends and the total change follow as a labelled line, so nothing hides off-screen.
-  @include m.phone {
-    display: block;
-    min-width: 0;
-
-    &__thead { display: none; }
-    &__tbody { display: block; }
-
-    &__row {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      grid-template-areas: "name name fx" "price div total";
-      gap: var(--space-1) var(--space-3);
-      padding: var(--space-3) 0;
-    }
-
-    &__name { grid-area: name; padding: 0; }
-    &__long { max-width: none; }
-
-    &__cell { display: flex; flex-direction: column; align-items: flex-end; padding: 0; font-size: var(--font-size-2xs); }
-    &__cell::before { content: attr(data-label); color: var(--color-muted); font-size: var(--font-size-2xs); }
-
-    &__cell--price { grid-area: price; align-items: flex-start; }
-    &__cell--div { grid-area: div; align-items: center; }
-    &__cell--total { grid-area: total; }
-    &__cell--fx { grid-area: fx; align-self: center; background: none; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
-    &__cell--fx::before { content: "Currency"; }
+  &__zero {
+    position: absolute;
+    top: calc(var(--space-1) * -1);
+    bottom: calc(var(--space-1) * -1);
+    left: 50%;
+    width: var(--border-width);
+    background: var(--color-border-strong);
   }
+
+  &__seg {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(45deg, var(--chart-3) 0 1.5px, transparent 1.5px 4px);
+    box-shadow: inset 0 0 0 var(--border-width) var(--chart-3);
+  }
+
+  &__seg--up { left: 50%; }
+  &__seg--down { right: 50%; }
 }
 
-.holding-split-scroll {
-  min-width: 0;
+.holding-split {
+  font-variant-numeric: tabular-nums;
 
-  &__hint {
-    display: none;
-    margin: 0 0 var(--space-2);
+  &__list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  // Desktop: name | currency bar | currency | price | dividends | change.
+  &__row {
+    display: grid;
+    grid-template-columns: minmax(10rem, 1.3fr) minmax(8rem, 1.5fr) repeat(4, minmax(5.5rem, 0.6fr));
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) 0;
+    border-top: var(--border-width) solid var(--color-border);
+  }
+
+  &__row--head {
+    padding-top: 0;
+    border-top: 0;
     color: var(--color-muted);
     font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-medium);
   }
 
-  &__viewport {
-    max-width: 100%;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scrollbar-color: var(--color-border-strong) var(--color-surface-2);
-    scrollbar-width: thin;
+  // The head row stays quiet, whatever its columns' own figure styles.
+  &__row--head &__fig { font-size: inherit; font-weight: inherit; }
+
+  &__bar--head {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 var(--space-1);
   }
 
+  &__name { display: grid; min-width: 0; }
+  &__symbol { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+  &__long { overflow: hidden; color: var(--color-muted); font-size: var(--font-size-2xs); text-overflow: ellipsis; white-space: nowrap; }
+  &__bar { min-width: 0; }
+
+  &__fig {
+    display: grid;
+    justify-items: end;
+    gap: 2px;
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+
+  // Each figure's own label shows only on phones (desktop has the head row).
+  &__label { display: none; color: var(--color-muted); font-size: var(--font-size-2xs); font-weight: var(--font-weight-regular); }
+  &__fig--fx { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+  &__fig--total { font-weight: var(--font-weight-semibold); }
+  &__none { color: var(--color-muted); font-weight: var(--font-weight-regular); }
+
+  // Phones: name and its currency effect on top, the bar under them, then price,
+  // dividends and change as one quiet line of three.
   @include m.phone {
-    &__hint { display: block; }
-    &__viewport { border-bottom: var(--border-width) solid var(--color-border); }
+    &__row--head { display: none; }
+
+    &__row {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-areas:
+        "name name fx"
+        "bar bar bar"
+        "price div total";
+      gap: var(--space-2) var(--space-3);
+    }
+
+    &__list > &__row:first-child { border-top: 0; }
+    &__label { display: block; }
+    &__name { grid-area: name; }
+    &__bar { grid-area: bar; }
+    &__fig--fx { grid-area: fx; align-self: start; }
+    &__fig--fx &__label { display: none; }
+    &__fig--price { grid-area: price; justify-items: start; }
+    &__fig--div { grid-area: div; justify-items: center; }
+    &__fig--total { grid-area: total; }
   }
 }
 
@@ -446,4 +462,68 @@
   &__key::before { content: ""; width: var(--space-3); height: var(--space-2); border-radius: var(--radius-sm); }
   &__key--market::before { background: var(--color-border-strong); }
   &__key--currency::before { background: repeating-linear-gradient(45deg, var(--chart-3) 0 1.5px, transparent 1.5px 4px); box-shadow: inset 0 0 0 var(--border-width) var(--chart-3); }
+}
+
+// The range's smaller facts under the chart: one line, label and value side by side,
+// split by hairlines; on phones a short list, label left and value right.
+.impact-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) 0;
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--color-border);
+
+  // Three facts spread over the full width, each centred in its third.
+  &__item {
+    display: flex;
+    flex: 1 1 0;
+    align-items: baseline;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-4);
+    border-left: var(--border-width) solid var(--color-border);
+  }
+
+  &__item:first-child {
+    border-left: 0;
+  }
+
+  &__label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  &__value {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__note {
+    margin-left: var(--space-2);
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-weight: var(--font-weight-regular);
+  }
+
+  @include m.phone {
+    display: grid;
+    gap: 0;
+
+    &__item {
+      justify-content: space-between;
+      padding: var(--space-2) 0;
+      border-top: var(--border-width) solid var(--color-border);
+      border-left: 0;
+    }
+
+    &__item:first-child {
+      border-top: 0;
+    }
+  }
 }
