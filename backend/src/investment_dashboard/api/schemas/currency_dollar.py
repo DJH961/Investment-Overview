@@ -295,6 +295,14 @@ class ScenarioRow(ApiModel):
     value: DecStr
     #: The book in the other currency at `rate` (what still moves for an all-native book).
     other_value: DecStr | None = None
+    #: Invest view: dollars the euro unit / the regular amount buy at ``rate``, the change
+    #: from today's rate, and from your average conversion rate (null without one).
+    per_unit: DecStr | None = None
+    per_monthly: DecStr | None = None
+    unit_change: DecStr | None = None
+    monthly_change: DecStr | None = None
+    unit_vs_avg: DecStr | None = None
+    monthly_vs_avg: DecStr | None = None
     #: The currency gain in ``ccy`` at ``rate`` against your average rate: the
     #: holdings whose native currency is not ``ccy`` valued at ``rate`` minus at
     #: ``avg_invest_rate``. Null without an average rate.
@@ -328,6 +336,21 @@ class StressRow(ApiModel):
     #: The same two figures for the book in the other currency.
     other_value: DecStr | None = None
     other_change: DecStr | None = None
+    #: Invest view: dollars the euro unit / the regular amount buy after the move, and
+    #: the change from today's.
+    per_unit: DecStr | None = None
+    per_monthly: DecStr | None = None
+    unit_change: DecStr | None = None
+    monthly_change: DecStr | None = None
+
+
+class InvestAmounts(ApiModel):
+    """The euros the invest view prices (the USD Scenarios)."""
+
+    #: A round unit: "what does EUR 1,000 buy".
+    unit_eur: DecStr
+    #: The owner's regular amount (``investing_power.amount_eur``).
+    monthly_eur: DecStr
 
 
 class Sensitivity(ApiModel):
@@ -374,11 +397,13 @@ class ScenariosOut(ApiModel):
     #: The page range the marks, low/high stats and cushion describe, and its first day.
     range: RateRange = "max"
     range_start: str | None = None
-    #: False when none of the holdings are in the other currency, so the side's own
-    #: value does not move with the rate (an all-dollar book in the dollar view).
-    exposed: bool = True
+    #: ``value`` (EUR view: today's holdings at other rates, a strong dollar is good) or
+    #: ``invest`` (USD view: what the euros you send in buy, a strong euro is good).
+    perspective: Literal["value", "invest"] = "value"
+    #: ``invest`` only: the euro unit ("what does EUR 1,000 buy") and the regular amount.
+    invest: InvestAmounts | None = None
     other_ccy: Ccy = "USD"
-    #: The book in ``other_ccy`` at today's rate (what still moves when not ``exposed``).
+    #: The book in ``other_ccy`` at today's rate (the secondary line of the invest view).
     value_now_other: DecStr | None = None
     #: Slider step, and the first / last row, in the side's ``quote`` (rows ascend in it).
     step: DecStr
@@ -410,6 +435,7 @@ __all__ = [
     "DollarStat",
     "DollarStatKey",
     "DollarTrend",
+    "InvestAmounts",
     "LongRun",
     "NextEuro",
     "NormalRange",

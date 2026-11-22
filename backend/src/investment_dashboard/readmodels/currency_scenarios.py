@@ -17,6 +17,8 @@ holdings' falls **in dollars**, compared with the settled ECB rate move that day
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -32,7 +34,7 @@ from investment_dashboard.readmodels import currency_rate
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.readmodels.currency_dollar import QUOTES
 from investment_dashboard.repositories import transactions_repo
-from investment_dashboard.services import fx_service, metrics_service
+from investment_dashboard.services import fx_service, investing_power_service, metrics_service
 
 MIN_RATE = fx_scenarios.SLIDER_MIN
 MAX_RATE = fx_scenarios.SLIDER_MAX
@@ -63,6 +65,39 @@ def _display(rate: Decimal, ccy: str) -> Decimal:
     return (ONE / rate).quantize(SIX_DP) if QUOTES[ccy]["field"] == "inverse" else rate
 
 
+#: The unit the USD (investing) view prices: "what does €1,000 buy".
+INVEST_UNIT_EUR = Decimal(1000)
+
+
+@dataclass(frozen=True)
+class Invest:
+    """The euros sent in: a round unit and the regular amount (``investing_power``)."""
+
+    unit: Decimal
+    monthly: Decimal
+
+
+def _invest_fields(
+    invest: Invest | None, rate: Decimal, spot: Decimal | None, avg: Decimal | None
+) -> dict[str, Any]:
+    """Dollars the euros sent in buy at ``rate``, against today and your average rate.
+
+    💱 Native amounts valued at one assumed rate: ``euros × rate`` is a single-instant
+    conversion, never a converted return.
+    """
+    if invest is None:
+        return {}
+    unit, monthly = invest.unit * rate, invest.monthly * rate
+    out: dict[str, Any] = {"per_unit": dec(unit), "per_monthly": dec(monthly)}
+    if spot is not None and spot > 0:
+        out["unit_change"] = dec(unit - invest.unit * spot)
+        out["monthly_change"] = dec(monthly - invest.monthly * spot)
+    if avg is not None and avg > 0:
+        out["unit_vs_avg"] = dec(unit - invest.unit * avg)
+        out["monthly_vs_avg"] = dec(monthly - invest.monthly * avg)
+    return out
+
+
 def _row(
     book: Book,
     shown: Decimal,
@@ -71,11 +106,13 @@ def _row(
     avg: Decimal | None,
     be: Decimal | None,
     other: str,
+    invest: Invest | None = None,
+    spot: Decimal | None = None,
 ) -> Any:
     """One slider row: ``shown`` is the quote's value, ``rate`` the EUR/USD rate behind it."""
     side = "EUR" if ccy == "EUR" else "USD"
     be_shown = _display(be, ccy) if be is not None and be > 0 else None
-    return {
+    return _invest_fields(invest, rate, spot, avg) | {
         "rate": dec(rate),
         "rate_display": dec(shown),
         "value": dec(fx_scenarios.value_at(book, rate, side)),
@@ -175,7 +212,9 @@ def _cushion(session: Session, today: date, start: date) -> dict[str, Any] | Non
     }
 
 
-def _stress(book: Book, spot: Decimal, ccy: str, *, inverse: bool) -> list[dict[str, Any]]:
+def _stress(
+    book: Book, spot: Decimal, ccy: str, *, inverse: bool, invest: Invest | None = None
+) -> list[dict[str, Any]]:
     """Today's book with the quote shown moved by each shift, in both currencies."""
     side = "EUR" if ccy == "EUR" else "USD"
     other = "USD" if ccy == "EUR" else "EUR"
@@ -192,7 +231,8 @@ def _stress(book: Book, spot: Decimal, ccy: str, *, inverse: bool) -> list[dict[
             fx_scenarios.value_at(book, r, other),
         )
         rows.append(
-            {
+            _invest_fields(invest, r, spot, None)
+            | {
                 "shift_pct": dec(s),
                 "rate": dec(r),
                 "rate_display": dec(_display(r, ccy)),
@@ -217,7 +257,6 @@ def _stats(
     be: Decimal | None,
     lows_highs: dict[str, tuple[date, Decimal, Decimal]],
     cushion: dict[str, Any] | None,
-    value_ccy: str,
 ) -> list[dict[str, Any]]:
     # The cushion card shows volatility, deepest fall and the down days once; the strip
     # keeps only the four what-if figures.
@@ -251,7 +290,7 @@ def _stats(
                     name,
                     value,
                     "money",
-                    currency=value_ccy,
+                    currency=ccy,
                     secondary=dec(rate),
                     secondary_unit="rate",
                     secondary_display=dec(_display(rate, ccy)),
@@ -270,6 +309,30 @@ def _grid(spot: Decimal | None, ccy: str, *, inverse: bool) -> list[tuple[Decima
         at = fx_scenarios.nearest_index([q for q, _r in grid], _display(spot, ccy))
         grid[at] = (_display(spot, ccy), spot)
     return grid
+
+
+def _add_mark(
+    marks: list[dict[str, Any]],
+    lows_highs: dict[str, tuple[date, Decimal, Decimal]],
+    candidate: tuple[str, Decimal | None, date | None],
+    ccy: str,
+    shown_grid: list[Decimal],
+    worth_at: Callable[[Decimal], Decimal],
+) -> None:
+    key, rate, on_day = candidate
+    if rate is None or rate <= 0:
+        return
+    marks.append(
+        {
+            "key": key,
+            "rate": dec(rate),
+            "rate_display": dec(_display(rate, ccy)),
+            "date": on_day.isoformat() if on_day else None,
+            "row_index": fx_scenarios.nearest_index(shown_grid, _display(rate, ccy)),
+        }
+    )
+    if on_day is not None and key != "range_start":
+        lows_highs[key] = (on_day, rate, worth_at(rate))
 
 
 def build_scenarios_both(
@@ -301,6 +364,7 @@ def build_scenarios_both(
     start_rate = in_range[0][1] if in_range else None
     start_on = in_range[0][0] if in_range else None
     cushion = _cushion(session, today, start)
+    monthly = investing_power_service.get_amount_eur(session)
 
     out: dict[str, dict[str, Any]] = {}
     for ccy in ("EUR", "USD"):
@@ -311,8 +375,9 @@ def build_scenarios_both(
         be = _d(life.get("breakeven_rate"))
         side = "EUR" if ccy == "EUR" else "USD"
         other = "USD" if ccy == "EUR" else "EUR"
-        # Holdings in the other currency are the only ones whose value moves with the rate.
-        exposed = (book.usd if ccy == "EUR" else book.eur) > 0
+        # EUR view = value (cashing out the dollars held); USD view = investing (what the
+        # euros you send in buy). Equivalent, inverted: strong dollar good / strong euro good.
+        invest = Invest(INVEST_UNIT_EUR, monthly) if ccy == "USD" else None
         inverse = QUOTES[ccy]["field"] == "inverse"
         grid = _grid(spot, ccy, inverse=inverse)
         shown_grid = [q for q, _r in grid]
@@ -327,15 +392,25 @@ def build_scenarios_both(
             "rate_now": _rv(spot),
             "avg_rate": _rv(avg),
             "breakeven": _rv(be),
-            "rows": [_row(book, q, r, ccy, avg, be, other) for q, r in grid],
+            "rows": [_row(book, q, r, ccy, avg, be, other, invest, spot) for q, r in grid],
             "cushion": cushion,
             "range": range_key,
             "range_start": start.isoformat(),
-            "exposed": exposed,
+            "perspective": "invest" if invest else "value",
+            "invest": (
+                {"unit_eur": dec(invest.unit), "monthly_eur": dec(invest.monthly)}
+                if invest
+                else None
+            ),
             "other_ccy": other,
         }
         marks: list[dict[str, Any]] = []
         lows_highs: dict[str, tuple[date, Decimal, Decimal]] = {}
+
+        def worth_at(rate: Decimal, invest: Invest | None = invest, side: str = side) -> Decimal:
+            # Value view: the book at that rate. Investing view: what the euro unit buys.
+            return invest.unit * rate if invest else fx_scenarios.value_at(book, rate, side)
+
         # "Low" and "high" describe the quote shown: the lowest USD/EUR is the highest
         # EUR/USD, so the inverse side swaps the two ends.
         low_end, high_end = ("high", "low") if inverse else ("low", "high")
@@ -355,22 +430,7 @@ def build_scenarios_both(
                 getattr(extremes, f"{high_end}_at") if extremes else None,
             ),
         ):
-            if rate is None or rate <= 0:
-                continue
-            marks.append(
-                {
-                    "key": key,
-                    "rate": dec(rate),
-                    "rate_display": dec(_display(rate, ccy)),
-                    "date": on_day.isoformat() if on_day else None,
-                    "row_index": fx_scenarios.nearest_index(shown_grid, _display(rate, ccy)),
-                }
-            )
-            if on_day is not None and key != "range_start":
-                # Not exposed: the side's own value never moves, so the figure that
-                # still matters is the book in the other currency at that rate.
-                shown_side = side if exposed else other
-                lows_highs[key] = (on_day, rate, fx_scenarios.value_at(book, rate, shown_side))
+            _add_mark(marks, lows_highs, (key, rate, on_day), ccy, shown_grid, worth_at)
         payload["marks"] = marks
         sensitivity: dict[str, Any] | None = None
         if spot is not None and spot > 0:
@@ -381,15 +441,18 @@ def build_scenarios_both(
             )
             payload["value_now"] = dec(value_now)
             payload["value_now_other"] = dec(fx_scenarios.value_at(book, spot, other))
-            payload["stress"] = _stress(book, spot, ccy, inverse=inverse)
-            # Not exposed: a cent changes nothing, so no sensitivity tile is shown.
-            if exposed:
-                sensitivity = {
-                    "rate": dec(spot),
-                    "value_at_rate": dec(value_now),
-                    "value_at_rate_plus": dec(plus),
-                    "change": dec(plus - value_now),
-                }
+            payload["stress"] = _stress(book, spot, ccy, inverse=inverse, invest=invest)
+            if invest:
+                # One cent of EUR/USD on the regular euros sent in.
+                now_buy = invest.monthly * spot
+                plus_buy = invest.monthly * fx_scenarios.one_cent_rate(spot, inverse=False)
+                value_now, plus = now_buy, plus_buy
+            sensitivity = {
+                "rate": dec(spot),
+                "value_at_rate": dec(value_now),
+                "value_at_rate_plus": dec(plus),
+                "change": dec(plus - value_now),
+            }
         payload["sensitivity"] = sensitivity
         payload["stats"] = _stats(
             ccy,
@@ -398,7 +461,6 @@ def build_scenarios_both(
             be=be,
             lows_highs=lows_highs,
             cushion=cushion,
-            value_ccy=ccy if exposed else other,
         )
         out[ccy] = payload
     return out

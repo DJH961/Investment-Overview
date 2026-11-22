@@ -66,21 +66,40 @@ def test_all_range_starts_at_first_transaction(api_client: TestClient, seeded: N
     assert cushion["since"] >= body["USD"]["range_start"]
 
 
-def test_all_dollar_book_is_not_exposed_in_the_dollar_view(
+def test_usd_view_is_the_investing_perspective(
     api_client: TestClient,
     seeded: None,  # noqa: F811
 ) -> None:
     body = _get(api_client, "/api/currency/scenarios/both?range=1y")
     usd, eur = body["USD"], body["EUR"]
-    assert usd["exposed"] is False
-    assert eur["exposed"] is True
-    assert usd["other_ccy"] == "EUR"
-    # Dollars never move with the rate; the euro value does.
-    assert len({r["value"] for r in usd["rows"]}) == 1
-    assert len({r["other_value"] for r in usd["rows"]}) > 1
-    assert usd["sensitivity"] is None
-    assert {s["key"] for s in usd["stats"]} <= {"breakeven", "value_at_low", "value_at_high"}
+    assert eur["perspective"] == "value"
+    assert eur["invest"] is None
+    assert usd["perspective"] == "invest"
+    unit = Decimal(usd["invest"]["unit_eur"])
+    monthly = Decimal(usd["invest"]["monthly_eur"])
+    assert unit == 1000
+    spot = Decimal(usd["rate_now"]["rate"])
+    for row in usd["rows"][::25]:
+        rate = Decimal(row["rate"])
+        assert Decimal(row["per_unit"]) == unit * rate
+        assert Decimal(row["per_monthly"]) == monthly * rate
+        assert Decimal(row["unit_change"]) == unit * (rate - spot)
+        assert Decimal(row["monthly_change"]) == monthly * (rate - spot)
+    today = next(m for m in usd["marks"] if m["key"] == "today")
+    assert Decimal(usd["rows"][today["row_index"]]["unit_change"]) == 0
+    # A stronger euro buys more: the stress rows rise with the shift.
+    stress = usd["stress"]
+    assert [Decimal(s["unit_change"]) for s in stress] == sorted(
+        Decimal(s["unit_change"]) for s in stress
+    )
+    assert Decimal(stress[0]["unit_change"]) == unit * spot * Decimal("-0.15")
+    # Same richness as the EUR view: one cent tile, break-even, worth at low / high.
+    assert {s["key"] for s in usd["stats"]} == {s["key"] for s in eur["stats"]}
     for s in usd["stats"]:
-        if s["key"].startswith("value_at"):
-            assert s["currency"] == "EUR"
-    assert all(s["currency"] == "EUR" for s in eur["stats"] if s["key"].startswith("value_at"))
+        assert s["currency"] in (None, "USD")
+    # The euro value of the holdings stays as the secondary line.
+    assert usd["other_ccy"] == "EUR"
+    assert usd["value_now_other"] is not None
+    assert len({r["other_value"] for r in usd["rows"]}) > 1
+    # EUR view rows carry no invest fields.
+    assert eur["rows"][0]["per_unit"] is None

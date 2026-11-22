@@ -10371,6 +10371,27 @@
         "title": "InstrumentUpdateResult",
         "type": "object"
       },
+      "InvestAmounts": {
+        "description": "The euros the invest view prices (the USD Scenarios).",
+        "properties": {
+          "monthly_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Monthly Eur",
+            "type": "string"
+          },
+          "unit_eur": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Unit Eur",
+            "type": "string"
+          }
+        },
+        "required": [
+          "unit_eur",
+          "monthly_eur"
+        ],
+        "title": "InvestAmounts",
+        "type": "object"
+      },
       "InvestingPower": {
         "properties": {
           "amount_eur": {
@@ -15304,6 +15325,30 @@
             ],
             "title": "Gain"
           },
+          "monthly_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Change"
+          },
+          "monthly_vs_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Vs Avg"
+          },
           "other_value": {
             "anyOf": [
               {
@@ -15315,6 +15360,30 @@
               }
             ],
             "title": "Other Value"
+          },
+          "per_monthly": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Monthly"
+          },
+          "per_unit": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Unit"
           },
           "rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -15349,6 +15418,30 @@
               }
             ],
             "title": "To Breakeven Pct"
+          },
+          "unit_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Change"
+          },
+          "unit_vs_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Vs Avg"
           },
           "value": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -15551,14 +15644,19 @@
               }
             ]
           },
-          "exposed": {
-            "default": true,
-            "title": "Exposed",
-            "type": "boolean"
-          },
           "generated_at": {
             "title": "Generated At",
             "type": "string"
+          },
+          "invest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestAmounts"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "marks": {
             "items": {
@@ -15584,6 +15682,15 @@
               "USD"
             ],
             "title": "Other Ccy",
+            "type": "string"
+          },
+          "perspective": {
+            "default": "value",
+            "enum": [
+              "value",
+              "invest"
+            ],
+            "title": "Perspective",
             "type": "string"
           },
           "quote": {
@@ -17161,6 +17268,18 @@
             "title": "Change",
             "type": "string"
           },
+          "monthly_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Change"
+          },
           "other_change": {
             "anyOf": [
               {
@@ -17185,6 +17304,30 @@
             ],
             "title": "Other Value"
           },
+          "per_monthly": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Monthly"
+          },
+          "per_unit": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Unit"
+          },
           "rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Rate",
@@ -17199,6 +17342,18 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Shift Pct",
             "type": "string"
+          },
+          "unit_change": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Change"
           },
           "value": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
