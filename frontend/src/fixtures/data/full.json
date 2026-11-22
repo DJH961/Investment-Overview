@@ -155715,55 +155715,67 @@
   "markers": [
    {
     "amount_from": "63104.070000",
+    "amount_to": "73000.000000",
     "conversion_id": 1,
     "date": "2025-01-28",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0046592568",
     "rate": "1.1568192036",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2544.150000",
+    "amount_to": "3000.000000",
     "conversion_id": 2,
     "date": "2026-04-01",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0039996620",
     "rate": "1.1791757561",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2110.670000",
+    "amount_to": "2500.000000",
     "conversion_id": 3,
     "date": "2026-05-08",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0055078603",
     "rate": "1.1844580157",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 4,
     "date": "2026-05-29",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0052320756",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 5,
     "date": "2026-05-30",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0040019928",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -157178,19 +157190,23 @@
   "markers": [
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 5,
     "date": "2026-05-30",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0040019928",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -157356,10 +157372,12 @@
   "markers": [
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -161118,46 +161136,56 @@
   "markers": [
    {
     "amount_from": "2544.150000",
+    "amount_to": "3000.000000",
     "conversion_id": 2,
     "date": "2026-04-01",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0039996620",
     "rate": "1.1791757561",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2110.670000",
+    "amount_to": "2500.000000",
     "conversion_id": 3,
     "date": "2026-05-08",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0055078603",
     "rate": "1.1844580157",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 4,
     "date": "2026-05-29",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0052320756",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 5,
     "date": "2026-05-30",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0040019928",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -162523,46 +162551,56 @@
   "markers": [
    {
     "amount_from": "2544.150000",
+    "amount_to": "3000.000000",
     "conversion_id": 2,
     "date": "2026-04-01",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0039996620",
     "rate": "1.1791757561",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2110.670000",
+    "amount_to": "2500.000000",
     "conversion_id": 3,
     "date": "2026-05-08",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0055078603",
     "rate": "1.1844580157",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 4,
     "date": "2026-05-29",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0052320756",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 5,
     "date": "2026-05-30",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0040019928",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -166319,55 +166357,67 @@
   "markers": [
    {
     "amount_from": "63104.070000",
+    "amount_to": "73000.000000",
     "conversion_id": 1,
     "date": "2025-01-28",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0046592568",
     "rate": "1.1568192036",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2544.150000",
+    "amount_to": "3000.000000",
     "conversion_id": 2,
     "date": "2026-04-01",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0039996620",
     "rate": "1.1791757561",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2110.670000",
+    "amount_to": "2500.000000",
     "conversion_id": 3,
     "date": "2026-05-08",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0055078603",
     "rate": "1.1844580157",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 4,
     "date": "2026-05-29",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0052320756",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 5,
     "date": "2026-05-30",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0040019928",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -171464,55 +171514,67 @@
   "markers": [
    {
     "amount_from": "63104.070000",
+    "amount_to": "73000.000000",
     "conversion_id": 1,
     "date": "2025-01-28",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0046592568",
     "rate": "1.1568192036",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2544.150000",
+    "amount_to": "3000.000000",
     "conversion_id": 2,
     "date": "2026-04-01",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0039996620",
     "rate": "1.1791757561",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2110.670000",
+    "amount_to": "2500.000000",
     "conversion_id": 3,
     "date": "2026-05-08",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0055078603",
     "rate": "1.1844580157",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 4,
     "date": "2026-05-29",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0052320756",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 5,
     "date": "2026-05-30",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0040019928",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -173124,55 +173186,67 @@
   "markers": [
    {
     "amount_from": "63104.070000",
+    "amount_to": "73000.000000",
     "conversion_id": 1,
     "date": "2025-01-28",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0046592568",
     "rate": "1.1568192036",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2544.150000",
+    "amount_to": "3000.000000",
     "conversion_id": 2,
     "date": "2026-04-01",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0039996620",
     "rate": "1.1791757561",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2110.670000",
+    "amount_to": "2500.000000",
     "conversion_id": 3,
     "date": "2026-05-08",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0055078603",
     "rate": "1.1844580157",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 4,
     "date": "2026-05-29",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0052320756",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 5,
     "date": "2026-05-30",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0040019928",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -174103,46 +174177,56 @@
   "markers": [
    {
     "amount_from": "2544.150000",
+    "amount_to": "3000.000000",
     "conversion_id": 2,
     "date": "2026-04-01",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0039996620",
     "rate": "1.1791757561",
     "to_ccy": "USD"
    },
    {
     "amount_from": "2110.670000",
+    "amount_to": "2500.000000",
     "conversion_id": 3,
     "date": "2026-05-08",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0055078603",
     "rate": "1.1844580157",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 4,
     "date": "2026-05-29",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0052320756",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "1698.270000",
+    "amount_to": "2000.000000",
     "conversion_id": 5,
     "date": "2026-05-30",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0040019928",
     "rate": "1.1776690397",
     "to_ccy": "USD"
    },
    {
     "amount_from": "861.730000",
+    "amount_to": "1000.000000",
     "conversion_id": 6,
     "date": "2026-06-26",
     "from_ccy": "EUR",
-    "kind": null,
+    "kind": "below_reference",
+    "off_pct": "-0.0056097475",
     "rate": "1.1604562914",
     "to_ccy": "USD"
    }
@@ -220845,12 +220929,15 @@
  "GET /api/fx-conversions": [
   {
    "all_in_rate": "1.1585740271",
+   "cost_eur": "4.8419413618",
+   "cost_usd": "5.6413943000",
    "date": "2026-06-26",
    "ecb_rate": "1.16511000",
    "ecb_rate_date": "2026-06-26",
    "effective_rate": "1.1604562914",
    "eur_sent": "861.730000",
    "fees_eur": "1.400000",
+   "fees_usd": "1.6311540000",
    "from_ccy": "EUR",
    "id": 6,
    "note": null,
@@ -220858,18 +220945,22 @@
    "provider": "wise",
    "rate": "1.1604562914",
    "remaining_usd": "1000.000000",
+   "spread_eur": "3.4419413618",
    "to_ccy": "USD",
    "usd_received": "1000.000000",
    "used_by": []
   },
   {
    "all_in_rate": "1.1776690397",
+   "cost_eur": "6.7964643721",
+   "cost_usd": "8.0361462700",
    "date": "2026-05-30",
    "ecb_rate": "1.18240100",
    "ecb_rate_date": "2026-05-29",
    "effective_rate": "1.1776690397",
    "eur_sent": "1698.270000",
    "fees_eur": null,
+   "fees_usd": "0.00000000",
    "from_ccy": "EUR",
    "id": 5,
    "note": null,
@@ -220877,6 +220968,7 @@
    "provider": "revolut",
    "rate": "1.1776690397",
    "remaining_usd": "0.000000",
+   "spread_eur": "6.7964643721",
    "to_ccy": "USD",
    "usd_received": "2000.000000",
    "used_by": [
@@ -220891,12 +220983,15 @@
   },
   {
    "all_in_rate": "1.1762145886",
+   "cost_eur": "8.8964643721",
+   "cost_usd": "10.5191883700",
    "date": "2026-05-29",
    "ecb_rate": "1.18240100",
    "ecb_rate_date": "2026-05-29",
    "effective_rate": "1.1776690397",
    "eur_sent": "1698.270000",
    "fees_eur": "2.100000",
+   "fees_usd": "2.4830421000",
    "from_ccy": "EUR",
    "id": 4,
    "note": null,
@@ -220904,6 +220999,7 @@
    "provider": "wise",
    "rate": "1.1776690397",
    "remaining_usd": "0.000000",
+   "spread_eur": "6.7964643721",
    "to_ccy": "USD",
    "usd_received": "2000.000000",
    "used_by": [
@@ -220918,12 +221014,15 @@
   },
   {
    "all_in_rate": "1.1826649699",
+   "cost_eur": "11.6429006109",
+   "cost_usd": "13.8459120500",
    "date": "2026-05-08",
    "ecb_rate": "1.18921500",
    "ecb_rate_date": "2026-05-08",
    "effective_rate": "1.1844580157",
    "eur_sent": "2110.670000",
    "fees_eur": "3.200000",
+   "fees_usd": "3.8054880000",
    "from_ccy": "EUR",
    "id": 3,
    "note": "Booked late at the broker; pinned to the 5 May deposit",
@@ -220931,6 +221030,7 @@
    "provider": "wise",
    "rate": "1.1844580157",
    "remaining_usd": "0.000000",
+   "spread_eur": "8.4429006109",
    "to_ccy": "USD",
    "usd_received": "2500.000000",
    "used_by": [
@@ -220945,12 +221045,15 @@
   },
   {
    "all_in_rate": "1.1791757561",
+   "cost_eur": "10.1757401105",
+   "cost_usd": "12.0471706500",
    "date": "2026-04-01",
    "ecb_rate": "1.18391100",
    "ecb_rate_date": "2026-04-01",
    "effective_rate": "1.1791757561",
    "eur_sent": "2544.150000",
    "fees_eur": null,
+   "fees_usd": "0.00000000",
    "from_ccy": "EUR",
    "id": 2,
    "note": null,
@@ -220958,6 +221061,7 @@
    "provider": "revolut",
    "rate": "1.1791757561",
    "remaining_usd": "0.000000",
+   "spread_eur": "10.1757401105",
    "to_ccy": "USD",
    "usd_received": "3000.000000",
    "used_by": [
@@ -220972,12 +221076,15 @@
   },
   {
    "all_in_rate": "1.1560534363",
+   "cost_eur": "294.2128256555",
+   "cost_usd": "341.7178995500",
    "date": "2025-01-28",
    "ecb_rate": "1.16146500",
    "ecb_rate_date": "2025-01-28",
    "effective_rate": "1.1568192036",
    "eur_sent": "63104.070000",
    "fees_eur": "41.800000",
+   "fees_usd": "48.5492370000",
    "from_ccy": "EUR",
    "id": 1,
    "note": null,
@@ -220985,6 +221092,7 @@
    "provider": "wise",
    "rate": "1.1568192036",
    "remaining_usd": "0.000000",
+   "spread_eur": "252.4128256555",
    "to_ccy": "USD",
    "usd_received": "73000.000000",
    "used_by": [
@@ -220998,6 +221106,3528 @@
    ]
   }
  ],
+ "GET /api/fx-conversions/costs?range=10y": {
+  "EUR": {
+   "best": {
+    "cost": "10.1757401105",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "10.1757401105",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0047121230",
+     "converted": "67774.740000",
+     "cost": "319.5941320003",
+     "cost_pct": "0.0047155346",
+     "count": 4,
+     "fees": "48.500000",
+     "provider": "wise",
+     "spread": "271.0941320003"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "4242.420000",
+     "cost": "16.9722044826",
+     "cost_pct": "0.0040005951",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "16.9722044826"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "8913.090000",
+     "cost": "42.3535108273",
+     "cost_pct": "0.0047518325",
+     "count": 5,
+     "fees": "6.700000",
+     "spread": "35.6535108273",
+     "year": 2026
+    },
+    {
+     "avg_off_pct": "-0.0046592568",
+     "converted": "63104.070000",
+     "cost": "294.2128256555",
+     "cost_pct": "0.0046623431",
+     "count": 1,
+     "fees": "41.800000",
+     "spread": "252.4128256555",
+     "year": 2025
+    }
+   ],
+   "cheaper_gap_pct": "0.0007149396",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "294.2128256555",
+     "date": "2025-01-28"
+    },
+    {
+     "cost": "304.3885657661",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "316.0314663770",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "324.9279307490",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "331.7243951211",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "336.5663364829",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "10y",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "8.8964643721",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.100000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "11.6429006109",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.200000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "8.4429006109",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "10.1757401105",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    },
+    {
+     "cost": "294.2128256555",
+     "date": "2025-01-28",
+     "ecb_rate": "1.16146500",
+     "ecb_rate_date": "2025-01-28",
+     "eur_sent": "63104.070000",
+     "fees": "41.800000",
+     "id": 1,
+     "month_avg": "1.1594248261",
+     "month_so_far": false,
+     "off_pct": "-0.0046592568",
+     "provider": "wise",
+     "spread": "252.4128256555",
+     "timing_pct": "-0.0022473406",
+     "usd_received": "73000.000000"
+    }
+   ],
+   "start": "2016-06-30",
+   "summary": {
+    "avg_off_pct": "-0.0046702080",
+    "converted": "72017.160000",
+    "cost": "336.5663364829",
+    "cost_pct": "0.0046734186",
+    "count": 6,
+    "fees": "48.500000",
+    "spread": "288.0663364829"
+   },
+   "timing": {
+    "avg_pct": "-0.0026812381",
+    "better": 0,
+    "count": 6,
+    "so_far": 1,
+    "worse": 6
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "12.0471706500",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0.00000000",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "12.0471706500",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0047121230",
+     "converted": "78500.000000",
+     "cost": "371.7243942700",
+     "cost_pct": "0.0047353426",
+     "count": 4,
+     "fees": "56.4689211000",
+     "provider": "wise",
+     "spread": "315.2554731700"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "5000.000000",
+     "cost": "20.0833169200",
+     "cost_pct": "0.004016663384",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "20.0833169200"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "10500.000000",
+     "cost": "50.0898116400",
+     "cost_pct": "0.0047704583",
+     "count": 5,
+     "fees": "7.9196841000",
+     "spread": "42.1701275400",
+     "year": 2026
+    },
+    {
+     "avg_off_pct": "-0.0046592568",
+     "converted": "73000.000000",
+     "cost": "341.7178995500",
+     "cost_pct": "0.0046810671",
+     "count": 1,
+     "fees": "48.5492370000",
+     "spread": "293.1686625500",
+     "year": 2025
+    }
+   ],
+   "cheaper_gap_pct": "0.0007186792",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "341.7178995500",
+     "date": "2025-01-28"
+    },
+    {
+     "cost": "353.7650702000",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "367.6109822500",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "378.1301706200",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "386.1663168900",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "391.8077111900",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "10y",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0.00000000",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "10.5191883700",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.4830421000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "13.8459120500",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.8054880000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "10.0404240500",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0.00000000",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "12.0471706500",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    },
+    {
+     "cost": "341.7178995500",
+     "date": "2025-01-28",
+     "ecb_rate": "1.16146500",
+     "ecb_rate_date": "2025-01-28",
+     "eur_sent": "63104.070000",
+     "fees": "48.5492370000",
+     "id": 1,
+     "month_avg": "1.1594248261",
+     "month_so_far": false,
+     "off_pct": "-0.0046592568",
+     "provider": "wise",
+     "spread": "293.1686625500",
+     "timing_pct": "-0.0022473406",
+     "usd_received": "73000.000000"
+    }
+   ],
+   "start": "2016-06-30",
+   "summary": {
+    "avg_off_pct": "-0.0046702080",
+    "converted": "83500.000000",
+    "cost": "391.8077111900",
+    "cost_pct": "0.0046923079",
+    "count": 6,
+    "fees": "56.4689211000",
+    "spread": "335.3387900900"
+   },
+   "timing": {
+    "avg_pct": "-0.0026812381",
+    "better": 0,
+    "count": 6,
+    "so_far": 1,
+    "worse": 6
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1d": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1d",
+   "rows": [],
+   "start": "2026-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1d",
+   "rows": [],
+   "start": "2026-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1m": {
+  "EUR": {
+   "best": {
+    "cost": "6.7964643721",
+    "date": "2026-05-30",
+    "ecb_rate": "1.18240100",
+    "ecb_rate_date": "2026-05-29",
+    "eur_sent": "1698.270000",
+    "fees": "0",
+    "id": 5,
+    "month_avg": "1.1847938095",
+    "month_so_far": false,
+    "off_pct": "-0.0040019928",
+    "provider": "revolut",
+    "spread": "6.7964643721",
+    "timing_pct": "-0.0060135104",
+    "usd_received": "2000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0056097475",
+     "converted": "861.730000",
+     "cost": "4.8419413618",
+     "cost_pct": "0.0056188613",
+     "count": 1,
+     "fees": "1.400000",
+     "provider": "wise",
+     "spread": "3.4419413618"
+    },
+    {
+     "avg_off_pct": "-0.0040019928",
+     "converted": "1698.270000",
+     "cost": "6.7964643721",
+     "cost_pct": "0.0040019928",
+     "count": 1,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "6.7964643721"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0045431844",
+     "converted": "2560.000000",
+     "cost": "11.6384057338",
+     "cost_pct": "0.0045462522",
+     "count": 2,
+     "fees": "1.400000",
+     "spread": "10.2384057338",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": "0.0016168685",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "11.6384057338",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "1m",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    }
+   ],
+   "start": "2026-05-30",
+   "summary": {
+    "avg_off_pct": "-0.0045431844",
+    "converted": "2560.000000",
+    "cost": "11.6384057338",
+    "cost_pct": "0.0045462522",
+    "count": 2,
+    "fees": "1.400000",
+    "spread": "10.2384057338"
+   },
+   "timing": {
+    "avg_pct": "-0.0074977803",
+    "better": 0,
+    "count": 2,
+    "so_far": 1,
+    "worse": 2
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "8.0361462700",
+    "date": "2026-05-30",
+    "ecb_rate": "1.18240100",
+    "ecb_rate_date": "2026-05-29",
+    "eur_sent": "1698.270000",
+    "fees": "0.00000000",
+    "id": 5,
+    "month_avg": "1.1847938095",
+    "month_so_far": false,
+    "off_pct": "-0.0040019928",
+    "provider": "revolut",
+    "spread": "8.0361462700",
+    "timing_pct": "-0.0060135104",
+    "usd_received": "2000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0056097475",
+     "converted": "1000.000000",
+     "cost": "5.6413943000",
+     "cost_pct": "0.0056413943",
+     "count": 1,
+     "fees": "1.6311540000",
+     "provider": "wise",
+     "spread": "4.0102403000"
+    },
+    {
+     "avg_off_pct": "-0.0040019928",
+     "converted": "2000.000000",
+     "cost": "8.0361462700",
+     "cost_pct": "0.004018073135",
+     "count": 1,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "8.0361462700"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0045431844",
+     "converted": "3000.000000",
+     "cost": "13.6775405700",
+     "cost_pct": "0.00455918019",
+     "count": 2,
+     "fees": "1.6311540000",
+     "spread": "12.0463865700",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": "0.001623321165",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "13.6775405700",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "1m",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0.00000000",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    }
+   ],
+   "start": "2026-05-30",
+   "summary": {
+    "avg_off_pct": "-0.0045431844",
+    "converted": "3000.000000",
+    "cost": "13.6775405700",
+    "cost_pct": "0.00455918019",
+    "count": 2,
+    "fees": "1.6311540000",
+    "spread": "12.0463865700"
+   },
+   "timing": {
+    "avg_pct": "-0.0074977803",
+    "better": 0,
+    "count": 2,
+    "so_far": 1,
+    "worse": 2
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1w": {
+  "EUR": {
+   "best": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0056097475",
+     "converted": "861.730000",
+     "cost": "4.8419413618",
+     "cost_pct": "0.0056188613",
+     "count": 1,
+     "fees": "1.400000",
+     "provider": "wise",
+     "spread": "3.4419413618"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0056097475",
+     "converted": "861.730000",
+     "cost": "4.8419413618",
+     "cost_pct": "0.0056188613",
+     "count": 1,
+     "fees": "1.400000",
+     "spread": "3.4419413618",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "1w",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    }
+   ],
+   "start": "2026-06-23",
+   "summary": {
+    "avg_off_pct": "-0.0056097475",
+    "converted": "861.730000",
+    "cost": "4.8419413618",
+    "cost_pct": "0.0056188613",
+    "count": 1,
+    "fees": "1.400000",
+    "spread": "3.4419413618"
+   },
+   "timing": {
+    "avg_pct": "-0.0104229321",
+    "better": 0,
+    "count": 1,
+    "so_far": 1,
+    "worse": 1
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0056097475",
+     "converted": "1000.000000",
+     "cost": "5.6413943000",
+     "cost_pct": "0.0056413943",
+     "count": 1,
+     "fees": "1.6311540000",
+     "provider": "wise",
+     "spread": "4.0102403000"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0056097475",
+     "converted": "1000.000000",
+     "cost": "5.6413943000",
+     "cost_pct": "0.0056413943",
+     "count": 1,
+     "fees": "1.6311540000",
+     "spread": "4.0102403000",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "1w",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    }
+   ],
+   "start": "2026-06-23",
+   "summary": {
+    "avg_off_pct": "-0.0056097475",
+    "converted": "1000.000000",
+    "cost": "5.6413943000",
+    "cost_pct": "0.0056413943",
+    "count": 1,
+    "fees": "1.6311540000",
+    "spread": "4.0102403000"
+   },
+   "timing": {
+    "avg_pct": "-0.0104229321",
+    "better": 0,
+    "count": 1,
+    "so_far": 1,
+    "worse": 1
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1y": {
+  "EUR": {
+   "best": {
+    "cost": "10.1757401105",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "10.1757401105",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0054263821",
+     "converted": "4670.670000",
+     "cost": "25.3813063447",
+     "cost_pct": "0.0054341896",
+     "count": 3,
+     "fees": "6.700000",
+     "provider": "wise",
+     "spread": "18.6813063447"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "4242.420000",
+     "cost": "16.9722044826",
+     "cost_pct": "0.0040005951",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "16.9722044826"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "8913.090000",
+     "cost": "42.3535108273",
+     "cost_pct": "0.0047518325",
+     "count": 5,
+     "fees": "6.700000",
+     "spread": "35.6535108273",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": "0.0014335945",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "21.8186407214",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "30.7151050935",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "37.5115694656",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "42.3535108273",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "1y",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "8.8964643721",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.100000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "11.6429006109",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.200000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "8.4429006109",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "10.1757401105",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    }
+   ],
+   "start": "2025-06-30",
+   "summary": {
+    "avg_off_pct": "-0.0047477412",
+    "converted": "8913.090000",
+    "cost": "42.3535108273",
+    "cost_pct": "0.0047518325",
+    "count": 5,
+    "fees": "6.700000",
+    "spread": "35.6535108273"
+   },
+   "timing": {
+    "avg_pct": "-0.0057532024",
+    "better": 0,
+    "count": 5,
+    "so_far": 1,
+    "worse": 5
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "12.0471706500",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0.00000000",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "12.0471706500",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0054263821",
+     "converted": "5500.000000",
+     "cost": "30.0064947200",
+     "cost_pct": "0.0054557263",
+     "count": 3,
+     "fees": "7.9196841000",
+     "provider": "wise",
+     "spread": "22.0868106200"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "5000.000000",
+     "cost": "20.0833169200",
+     "cost_pct": "0.004016663384",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "20.0833169200"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "10500.000000",
+     "cost": "50.0898116400",
+     "cost_pct": "0.0047704583",
+     "count": 5,
+     "fees": "7.9196841000",
+     "spread": "42.1701275400",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": "0.0014390629",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "25.8930827000",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "36.4122710700",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "44.4484173400",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "50.0898116400",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "1y",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0.00000000",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "10.5191883700",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.4830421000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "13.8459120500",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.8054880000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "10.0404240500",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0.00000000",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "12.0471706500",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    }
+   ],
+   "start": "2025-06-30",
+   "summary": {
+    "avg_off_pct": "-0.0047477412",
+    "converted": "10500.000000",
+    "cost": "50.0898116400",
+    "cost_pct": "0.0047704583",
+    "count": 5,
+    "fees": "7.9196841000",
+    "spread": "42.1701275400"
+   },
+   "timing": {
+    "avg_pct": "-0.0057532024",
+    "better": 0,
+    "count": 5,
+    "so_far": 1,
+    "worse": 5
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=3m": {
+  "EUR": {
+   "best": {
+    "cost": "10.1757401105",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "10.1757401105",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0054263821",
+     "converted": "4670.670000",
+     "cost": "25.3813063447",
+     "cost_pct": "0.0054341896",
+     "count": 3,
+     "fees": "6.700000",
+     "provider": "wise",
+     "spread": "18.6813063447"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "4242.420000",
+     "cost": "16.9722044826",
+     "cost_pct": "0.0040005951",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "16.9722044826"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "8913.090000",
+     "cost": "42.3535108273",
+     "cost_pct": "0.0047518325",
+     "count": 5,
+     "fees": "6.700000",
+     "spread": "35.6535108273",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": "0.0014335945",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "21.8186407214",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "30.7151050935",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "37.5115694656",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "42.3535108273",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "3m",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "8.8964643721",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.100000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "11.6429006109",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.200000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "8.4429006109",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "10.1757401105",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    }
+   ],
+   "start": "2026-03-30",
+   "summary": {
+    "avg_off_pct": "-0.0047477412",
+    "converted": "8913.090000",
+    "cost": "42.3535108273",
+    "cost_pct": "0.0047518325",
+    "count": 5,
+    "fees": "6.700000",
+    "spread": "35.6535108273"
+   },
+   "timing": {
+    "avg_pct": "-0.0057532024",
+    "better": 0,
+    "count": 5,
+    "so_far": 1,
+    "worse": 5
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "12.0471706500",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0.00000000",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "12.0471706500",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0054263821",
+     "converted": "5500.000000",
+     "cost": "30.0064947200",
+     "cost_pct": "0.0054557263",
+     "count": 3,
+     "fees": "7.9196841000",
+     "provider": "wise",
+     "spread": "22.0868106200"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "5000.000000",
+     "cost": "20.0833169200",
+     "cost_pct": "0.004016663384",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "20.0833169200"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "10500.000000",
+     "cost": "50.0898116400",
+     "cost_pct": "0.0047704583",
+     "count": 5,
+     "fees": "7.9196841000",
+     "spread": "42.1701275400",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": "0.0014390629",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "25.8930827000",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "36.4122710700",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "44.4484173400",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "50.0898116400",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "3m",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0.00000000",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "10.5191883700",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.4830421000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "13.8459120500",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.8054880000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "10.0404240500",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0.00000000",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "12.0471706500",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    }
+   ],
+   "start": "2026-03-30",
+   "summary": {
+    "avg_off_pct": "-0.0047477412",
+    "converted": "10500.000000",
+    "cost": "50.0898116400",
+    "cost_pct": "0.0047704583",
+    "count": 5,
+    "fees": "7.9196841000",
+    "spread": "42.1701275400"
+   },
+   "timing": {
+    "avg_pct": "-0.0057532024",
+    "better": 0,
+    "count": 5,
+    "so_far": 1,
+    "worse": 5
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=5y": {
+  "EUR": {
+   "best": {
+    "cost": "10.1757401105",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "10.1757401105",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0047121230",
+     "converted": "67774.740000",
+     "cost": "319.5941320003",
+     "cost_pct": "0.0047155346",
+     "count": 4,
+     "fees": "48.500000",
+     "provider": "wise",
+     "spread": "271.0941320003"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "4242.420000",
+     "cost": "16.9722044826",
+     "cost_pct": "0.0040005951",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "16.9722044826"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "8913.090000",
+     "cost": "42.3535108273",
+     "cost_pct": "0.0047518325",
+     "count": 5,
+     "fees": "6.700000",
+     "spread": "35.6535108273",
+     "year": 2026
+    },
+    {
+     "avg_off_pct": "-0.0046592568",
+     "converted": "63104.070000",
+     "cost": "294.2128256555",
+     "cost_pct": "0.0046623431",
+     "count": 1,
+     "fees": "41.800000",
+     "spread": "252.4128256555",
+     "year": 2025
+    }
+   ],
+   "cheaper_gap_pct": "0.0007149396",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "294.2128256555",
+     "date": "2025-01-28"
+    },
+    {
+     "cost": "304.3885657661",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "316.0314663770",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "324.9279307490",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "331.7243951211",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "336.5663364829",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "5y",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "8.8964643721",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.100000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "11.6429006109",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.200000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "8.4429006109",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "10.1757401105",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    },
+    {
+     "cost": "294.2128256555",
+     "date": "2025-01-28",
+     "ecb_rate": "1.16146500",
+     "ecb_rate_date": "2025-01-28",
+     "eur_sent": "63104.070000",
+     "fees": "41.800000",
+     "id": 1,
+     "month_avg": "1.1594248261",
+     "month_so_far": false,
+     "off_pct": "-0.0046592568",
+     "provider": "wise",
+     "spread": "252.4128256555",
+     "timing_pct": "-0.0022473406",
+     "usd_received": "73000.000000"
+    }
+   ],
+   "start": "2021-06-30",
+   "summary": {
+    "avg_off_pct": "-0.0046702080",
+    "converted": "72017.160000",
+    "cost": "336.5663364829",
+    "cost_pct": "0.0046734186",
+    "count": 6,
+    "fees": "48.500000",
+    "spread": "288.0663364829"
+   },
+   "timing": {
+    "avg_pct": "-0.0026812381",
+    "better": 0,
+    "count": 6,
+    "so_far": 1,
+    "worse": 6
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "12.0471706500",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0.00000000",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "12.0471706500",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0047121230",
+     "converted": "78500.000000",
+     "cost": "371.7243942700",
+     "cost_pct": "0.0047353426",
+     "count": 4,
+     "fees": "56.4689211000",
+     "provider": "wise",
+     "spread": "315.2554731700"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "5000.000000",
+     "cost": "20.0833169200",
+     "cost_pct": "0.004016663384",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "20.0833169200"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "10500.000000",
+     "cost": "50.0898116400",
+     "cost_pct": "0.0047704583",
+     "count": 5,
+     "fees": "7.9196841000",
+     "spread": "42.1701275400",
+     "year": 2026
+    },
+    {
+     "avg_off_pct": "-0.0046592568",
+     "converted": "73000.000000",
+     "cost": "341.7178995500",
+     "cost_pct": "0.0046810671",
+     "count": 1,
+     "fees": "48.5492370000",
+     "spread": "293.1686625500",
+     "year": 2025
+    }
+   ],
+   "cheaper_gap_pct": "0.0007186792",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "341.7178995500",
+     "date": "2025-01-28"
+    },
+    {
+     "cost": "353.7650702000",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "367.6109822500",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "378.1301706200",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "386.1663168900",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "391.8077111900",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "5y",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0.00000000",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "10.5191883700",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.4830421000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "13.8459120500",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.8054880000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "10.0404240500",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0.00000000",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "12.0471706500",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    },
+    {
+     "cost": "341.7178995500",
+     "date": "2025-01-28",
+     "ecb_rate": "1.16146500",
+     "ecb_rate_date": "2025-01-28",
+     "eur_sent": "63104.070000",
+     "fees": "48.5492370000",
+     "id": 1,
+     "month_avg": "1.1594248261",
+     "month_so_far": false,
+     "off_pct": "-0.0046592568",
+     "provider": "wise",
+     "spread": "293.1686625500",
+     "timing_pct": "-0.0022473406",
+     "usd_received": "73000.000000"
+    }
+   ],
+   "start": "2021-06-30",
+   "summary": {
+    "avg_off_pct": "-0.0046702080",
+    "converted": "83500.000000",
+    "cost": "391.8077111900",
+    "cost_pct": "0.0046923079",
+    "count": 6,
+    "fees": "56.4689211000",
+    "spread": "335.3387900900"
+   },
+   "timing": {
+    "avg_pct": "-0.0026812381",
+    "better": 0,
+    "count": 6,
+    "so_far": 1,
+    "worse": 6
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=all": {
+  "EUR": {
+   "best": {
+    "cost": "10.1757401105",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "10.1757401105",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0047121230",
+     "converted": "67774.740000",
+     "cost": "319.5941320003",
+     "cost_pct": "0.0047155346",
+     "count": 4,
+     "fees": "48.500000",
+     "provider": "wise",
+     "spread": "271.0941320003"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "4242.420000",
+     "cost": "16.9722044826",
+     "cost_pct": "0.0040005951",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "16.9722044826"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "8913.090000",
+     "cost": "42.3535108273",
+     "cost_pct": "0.0047518325",
+     "count": 5,
+     "fees": "6.700000",
+     "spread": "35.6535108273",
+     "year": 2026
+    },
+    {
+     "avg_off_pct": "-0.0046592568",
+     "converted": "63104.070000",
+     "cost": "294.2128256555",
+     "cost_pct": "0.0046623431",
+     "count": 1,
+     "fees": "41.800000",
+     "spread": "252.4128256555",
+     "year": 2025
+    }
+   ],
+   "cheaper_gap_pct": "0.0007149396",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "294.2128256555",
+     "date": "2025-01-28"
+    },
+    {
+     "cost": "304.3885657661",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "316.0314663770",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "324.9279307490",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "331.7243951211",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "336.5663364829",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "all",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "8.8964643721",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.100000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "11.6429006109",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.200000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "8.4429006109",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "10.1757401105",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    },
+    {
+     "cost": "294.2128256555",
+     "date": "2025-01-28",
+     "ecb_rate": "1.16146500",
+     "ecb_rate_date": "2025-01-28",
+     "eur_sent": "63104.070000",
+     "fees": "41.800000",
+     "id": 1,
+     "month_avg": "1.1594248261",
+     "month_so_far": false,
+     "off_pct": "-0.0046592568",
+     "provider": "wise",
+     "spread": "252.4128256555",
+     "timing_pct": "-0.0022473406",
+     "usd_received": "73000.000000"
+    }
+   ],
+   "start": "2025-01-28",
+   "summary": {
+    "avg_off_pct": "-0.0046702080",
+    "converted": "72017.160000",
+    "cost": "336.5663364829",
+    "cost_pct": "0.0046734186",
+    "count": 6,
+    "fees": "48.500000",
+    "spread": "288.0663364829"
+   },
+   "timing": {
+    "avg_pct": "-0.0026812381",
+    "better": 0,
+    "count": 6,
+    "so_far": 1,
+    "worse": 6
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "12.0471706500",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0.00000000",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "12.0471706500",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0047121230",
+     "converted": "78500.000000",
+     "cost": "371.7243942700",
+     "cost_pct": "0.0047353426",
+     "count": 4,
+     "fees": "56.4689211000",
+     "provider": "wise",
+     "spread": "315.2554731700"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "5000.000000",
+     "cost": "20.0833169200",
+     "cost_pct": "0.004016663384",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "20.0833169200"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "10500.000000",
+     "cost": "50.0898116400",
+     "cost_pct": "0.0047704583",
+     "count": 5,
+     "fees": "7.9196841000",
+     "spread": "42.1701275400",
+     "year": 2026
+    },
+    {
+     "avg_off_pct": "-0.0046592568",
+     "converted": "73000.000000",
+     "cost": "341.7178995500",
+     "cost_pct": "0.0046810671",
+     "count": 1,
+     "fees": "48.5492370000",
+     "spread": "293.1686625500",
+     "year": 2025
+    }
+   ],
+   "cheaper_gap_pct": "0.0007186792",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "341.7178995500",
+     "date": "2025-01-28"
+    },
+    {
+     "cost": "353.7650702000",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "367.6109822500",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "378.1301706200",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "386.1663168900",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "391.8077111900",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "all",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0.00000000",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "10.5191883700",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.4830421000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "13.8459120500",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.8054880000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "10.0404240500",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0.00000000",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "12.0471706500",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    },
+    {
+     "cost": "341.7178995500",
+     "date": "2025-01-28",
+     "ecb_rate": "1.16146500",
+     "ecb_rate_date": "2025-01-28",
+     "eur_sent": "63104.070000",
+     "fees": "48.5492370000",
+     "id": 1,
+     "month_avg": "1.1594248261",
+     "month_so_far": false,
+     "off_pct": "-0.0046592568",
+     "provider": "wise",
+     "spread": "293.1686625500",
+     "timing_pct": "-0.0022473406",
+     "usd_received": "73000.000000"
+    }
+   ],
+   "start": "2025-01-28",
+   "summary": {
+    "avg_off_pct": "-0.0046702080",
+    "converted": "83500.000000",
+    "cost": "391.8077111900",
+    "cost_pct": "0.0046923079",
+    "count": 6,
+    "fees": "56.4689211000",
+    "spread": "335.3387900900"
+   },
+   "timing": {
+    "avg_pct": "-0.0026812381",
+    "better": 0,
+    "count": 6,
+    "so_far": 1,
+    "worse": 6
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=max": {
+  "EUR": {
+   "best": {
+    "cost": "10.1757401105",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "10.1757401105",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0047121230",
+     "converted": "67774.740000",
+     "cost": "319.5941320003",
+     "cost_pct": "0.0047155346",
+     "count": 4,
+     "fees": "48.500000",
+     "provider": "wise",
+     "spread": "271.0941320003"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "4242.420000",
+     "cost": "16.9722044826",
+     "cost_pct": "0.0040005951",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "16.9722044826"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "8913.090000",
+     "cost": "42.3535108273",
+     "cost_pct": "0.0047518325",
+     "count": 5,
+     "fees": "6.700000",
+     "spread": "35.6535108273",
+     "year": 2026
+    },
+    {
+     "avg_off_pct": "-0.0046592568",
+     "converted": "63104.070000",
+     "cost": "294.2128256555",
+     "cost_pct": "0.0046623431",
+     "count": 1,
+     "fees": "41.800000",
+     "spread": "252.4128256555",
+     "year": 2025
+    }
+   ],
+   "cheaper_gap_pct": "0.0007149396",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "294.2128256555",
+     "date": "2025-01-28"
+    },
+    {
+     "cost": "304.3885657661",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "316.0314663770",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "324.9279307490",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "331.7243951211",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "336.5663364829",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "max",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "8.8964643721",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.100000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "11.6429006109",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.200000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "8.4429006109",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "10.1757401105",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    },
+    {
+     "cost": "294.2128256555",
+     "date": "2025-01-28",
+     "ecb_rate": "1.16146500",
+     "ecb_rate_date": "2025-01-28",
+     "eur_sent": "63104.070000",
+     "fees": "41.800000",
+     "id": 1,
+     "month_avg": "1.1594248261",
+     "month_so_far": false,
+     "off_pct": "-0.0046592568",
+     "provider": "wise",
+     "spread": "252.4128256555",
+     "timing_pct": "-0.0022473406",
+     "usd_received": "73000.000000"
+    }
+   ],
+   "start": "1999-01-04",
+   "summary": {
+    "avg_off_pct": "-0.0046702080",
+    "converted": "72017.160000",
+    "cost": "336.5663364829",
+    "cost_pct": "0.0046734186",
+    "count": 6,
+    "fees": "48.500000",
+    "spread": "288.0663364829"
+   },
+   "timing": {
+    "avg_pct": "-0.0026812381",
+    "better": 0,
+    "count": 6,
+    "so_far": 1,
+    "worse": 6
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "12.0471706500",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0.00000000",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "12.0471706500",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0047121230",
+     "converted": "78500.000000",
+     "cost": "371.7243942700",
+     "cost_pct": "0.0047353426",
+     "count": 4,
+     "fees": "56.4689211000",
+     "provider": "wise",
+     "spread": "315.2554731700"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "5000.000000",
+     "cost": "20.0833169200",
+     "cost_pct": "0.004016663384",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "20.0833169200"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "10500.000000",
+     "cost": "50.0898116400",
+     "cost_pct": "0.0047704583",
+     "count": 5,
+     "fees": "7.9196841000",
+     "spread": "42.1701275400",
+     "year": 2026
+    },
+    {
+     "avg_off_pct": "-0.0046592568",
+     "converted": "73000.000000",
+     "cost": "341.7178995500",
+     "cost_pct": "0.0046810671",
+     "count": 1,
+     "fees": "48.5492370000",
+     "spread": "293.1686625500",
+     "year": 2025
+    }
+   ],
+   "cheaper_gap_pct": "0.0007186792",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "341.7178995500",
+     "date": "2025-01-28"
+    },
+    {
+     "cost": "353.7650702000",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "367.6109822500",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "378.1301706200",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "386.1663168900",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "391.8077111900",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "max",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0.00000000",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "10.5191883700",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.4830421000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "13.8459120500",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.8054880000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "10.0404240500",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0.00000000",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "12.0471706500",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    },
+    {
+     "cost": "341.7178995500",
+     "date": "2025-01-28",
+     "ecb_rate": "1.16146500",
+     "ecb_rate_date": "2025-01-28",
+     "eur_sent": "63104.070000",
+     "fees": "48.5492370000",
+     "id": 1,
+     "month_avg": "1.1594248261",
+     "month_so_far": false,
+     "off_pct": "-0.0046592568",
+     "provider": "wise",
+     "spread": "293.1686625500",
+     "timing_pct": "-0.0022473406",
+     "usd_received": "73000.000000"
+    }
+   ],
+   "start": "1999-01-04",
+   "summary": {
+    "avg_off_pct": "-0.0046702080",
+    "converted": "83500.000000",
+    "cost": "391.8077111900",
+    "cost_pct": "0.0046923079",
+    "count": 6,
+    "fees": "56.4689211000",
+    "spread": "335.3387900900"
+   },
+   "timing": {
+    "avg_pct": "-0.0026812381",
+    "better": 0,
+    "count": 6,
+    "so_far": 1,
+    "worse": 6
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=ytd": {
+  "EUR": {
+   "best": {
+    "cost": "10.1757401105",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "10.1757401105",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0054263821",
+     "converted": "4670.670000",
+     "cost": "25.3813063447",
+     "cost_pct": "0.0054341896",
+     "count": 3,
+     "fees": "6.700000",
+     "provider": "wise",
+     "spread": "18.6813063447"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "4242.420000",
+     "cost": "16.9722044826",
+     "cost_pct": "0.0040005951",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "16.9722044826"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "8913.090000",
+     "cost": "42.3535108273",
+     "cost_pct": "0.0047518325",
+     "count": 5,
+     "fees": "6.700000",
+     "spread": "35.6535108273",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": "0.0014335945",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "21.8186407214",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "30.7151050935",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "37.5115694656",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "42.3535108273",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "EUR",
+   "range": "ytd",
+   "rows": [
+    {
+     "cost": "4.8419413618",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.400000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "3.4419413618",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "6.7964643721",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "8.8964643721",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.100000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "6.7964643721",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "11.6429006109",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.200000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "8.4429006109",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "10.1757401105",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "10.1757401105",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    }
+   ],
+   "start": "2026-01-01",
+   "summary": {
+    "avg_off_pct": "-0.0047477412",
+    "converted": "8913.090000",
+    "cost": "42.3535108273",
+    "cost_pct": "0.0047518325",
+    "count": 5,
+    "fees": "6.700000",
+    "spread": "35.6535108273"
+   },
+   "timing": {
+    "avg_pct": "-0.0057532024",
+    "better": 0,
+    "count": 5,
+    "so_far": 1,
+    "worse": 5
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "4.8419413618",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.400000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "3.4419413618",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "USD": {
+   "best": {
+    "cost": "12.0471706500",
+    "date": "2026-04-01",
+    "ecb_rate": "1.18391100",
+    "ecb_rate_date": "2026-04-01",
+    "eur_sent": "2544.150000",
+    "fees": "0.00000000",
+    "id": 2,
+    "month_avg": "1.1891189545",
+    "month_so_far": false,
+    "off_pct": "-0.0039996620",
+    "provider": "revolut",
+    "spread": "12.0471706500",
+    "timing_pct": "-0.0083618198",
+    "usd_received": "3000.000000"
+   },
+   "by_provider": [
+    {
+     "avg_off_pct": "-0.0054263821",
+     "converted": "5500.000000",
+     "cost": "30.0064947200",
+     "cost_pct": "0.0054557263",
+     "count": 3,
+     "fees": "7.9196841000",
+     "provider": "wise",
+     "spread": "22.0868106200"
+    },
+    {
+     "avg_off_pct": "-0.0040005951",
+     "converted": "5000.000000",
+     "cost": "20.0833169200",
+     "cost_pct": "0.004016663384",
+     "count": 2,
+     "fees": "0",
+     "provider": "revolut",
+     "spread": "20.0833169200"
+    }
+   ],
+   "by_year": [
+    {
+     "avg_off_pct": "-0.0047477412",
+     "converted": "10500.000000",
+     "cost": "50.0898116400",
+     "cost_pct": "0.0047704583",
+     "count": 5,
+     "fees": "7.9196841000",
+     "spread": "42.1701275400",
+     "year": 2026
+    }
+   ],
+   "cheaper_gap_pct": "0.0014390629",
+   "cheaper_provider": "revolut",
+   "cumulative": [
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01"
+    },
+    {
+     "cost": "25.8930827000",
+     "date": "2026-05-08"
+    },
+    {
+     "cost": "36.4122710700",
+     "date": "2026-05-29"
+    },
+    {
+     "cost": "44.4484173400",
+     "date": "2026-05-30"
+    },
+    {
+     "cost": "50.0898116400",
+     "date": "2026-06-26"
+    }
+   ],
+   "currency": "USD",
+   "range": "ytd",
+   "rows": [
+    {
+     "cost": "5.6413943000",
+     "date": "2026-06-26",
+     "ecb_rate": "1.16511000",
+     "ecb_rate_date": "2026-06-26",
+     "eur_sent": "861.730000",
+     "fees": "1.6311540000",
+     "id": 6,
+     "month_avg": "1.1726790455",
+     "month_so_far": true,
+     "off_pct": "-0.0056097475",
+     "provider": "wise",
+     "spread": "4.0102403000",
+     "timing_pct": "-0.0104229321",
+     "usd_received": "1000.000000"
+    },
+    {
+     "cost": "8.0361462700",
+     "date": "2026-05-30",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "0.00000000",
+     "id": 5,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0040019928",
+     "provider": "revolut",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "10.5191883700",
+     "date": "2026-05-29",
+     "ecb_rate": "1.18240100",
+     "ecb_rate_date": "2026-05-29",
+     "eur_sent": "1698.270000",
+     "fees": "2.4830421000",
+     "id": 4,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0052320756",
+     "provider": "wise",
+     "spread": "8.0361462700",
+     "timing_pct": "-0.0060135104",
+     "usd_received": "2000.000000"
+    },
+    {
+     "cost": "13.8459120500",
+     "date": "2026-05-08",
+     "ecb_rate": "1.18921500",
+     "ecb_rate_date": "2026-05-08",
+     "eur_sent": "2110.670000",
+     "fees": "3.8054880000",
+     "id": 3,
+     "month_avg": "1.1847938095",
+     "month_so_far": false,
+     "off_pct": "-0.0055078603",
+     "provider": "wise",
+     "spread": "10.0404240500",
+     "timing_pct": "-0.0002834196",
+     "usd_received": "2500.000000"
+    },
+    {
+     "cost": "12.0471706500",
+     "date": "2026-04-01",
+     "ecb_rate": "1.18391100",
+     "ecb_rate_date": "2026-04-01",
+     "eur_sent": "2544.150000",
+     "fees": "0.00000000",
+     "id": 2,
+     "month_avg": "1.1891189545",
+     "month_so_far": false,
+     "off_pct": "-0.0039996620",
+     "provider": "revolut",
+     "spread": "12.0471706500",
+     "timing_pct": "-0.0083618198",
+     "usd_received": "3000.000000"
+    }
+   ],
+   "start": "2026-01-01",
+   "summary": {
+    "avg_off_pct": "-0.0047477412",
+    "converted": "10500.000000",
+    "cost": "50.0898116400",
+    "cost_pct": "0.0047704583",
+    "count": 5,
+    "fees": "7.9196841000",
+    "spread": "42.1701275400"
+   },
+   "timing": {
+    "avg_pct": "-0.0057532024",
+    "better": 0,
+    "count": 5,
+    "so_far": 1,
+    "worse": 5
+   },
+   "unpriced": 0,
+   "worst": {
+    "cost": "5.6413943000",
+    "date": "2026-06-26",
+    "ecb_rate": "1.16511000",
+    "ecb_rate_date": "2026-06-26",
+    "eur_sent": "861.730000",
+    "fees": "1.6311540000",
+    "id": 6,
+    "month_avg": "1.1726790455",
+    "month_so_far": true,
+    "off_pct": "-0.0056097475",
+    "provider": "wise",
+    "spread": "4.0102403000",
+    "timing_pct": "-0.0104229321",
+    "usd_received": "1000.000000"
+   }
+  },
+  "detail": null
+ },
  "GET /api/fx-conversions/pool": {
   "balance_eur": "863.130000",
   "balance_usd": "1000.000000",

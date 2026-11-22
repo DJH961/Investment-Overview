@@ -50342,6 +50342,636 @@
   "severity": "ok"
  },
  "GET /api/fx-conversions": [],
+ "GET /api/fx-conversions/costs?range=10y": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "10y",
+   "rows": [],
+   "start": "2016-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "10y",
+   "rows": [],
+   "start": "2016-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1d": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1d",
+   "rows": [],
+   "start": "2026-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1d",
+   "rows": [],
+   "start": "2026-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1m": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1m",
+   "rows": [],
+   "start": "2026-05-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1m",
+   "rows": [],
+   "start": "2026-05-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1w": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1w",
+   "rows": [],
+   "start": "2026-06-23",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1w",
+   "rows": [],
+   "start": "2026-06-23",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=1y": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "1y",
+   "rows": [],
+   "start": "2025-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "1y",
+   "rows": [],
+   "start": "2025-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=3m": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "3m",
+   "rows": [],
+   "start": "2026-03-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "3m",
+   "rows": [],
+   "start": "2026-03-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=5y": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "5y",
+   "rows": [],
+   "start": "2021-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "5y",
+   "rows": [],
+   "start": "2021-06-30",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=all": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "all",
+   "rows": [],
+   "start": "1999-01-04",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "all",
+   "rows": [],
+   "start": "1999-01-04",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=max": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "max",
+   "rows": [],
+   "start": "1999-01-04",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "max",
+   "rows": [],
+   "start": "1999-01-04",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
+ "GET /api/fx-conversions/costs?range=ytd": {
+  "EUR": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "EUR",
+   "range": "ytd",
+   "rows": [],
+   "start": "2026-01-01",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "USD": {
+   "best": null,
+   "by_provider": [],
+   "by_year": [],
+   "cheaper_gap_pct": null,
+   "cheaper_provider": null,
+   "cumulative": [],
+   "currency": "USD",
+   "range": "ytd",
+   "rows": [],
+   "start": "2026-01-01",
+   "summary": {
+    "avg_off_pct": null,
+    "converted": "0",
+    "cost": "0",
+    "cost_pct": null,
+    "count": 0,
+    "fees": "0",
+    "spread": "0"
+   },
+   "timing": {
+    "avg_pct": null,
+    "better": 0,
+    "count": 0,
+    "so_far": 0,
+    "worse": 0
+   },
+   "unpriced": 0,
+   "worst": null
+  },
+  "detail": null
+ },
  "GET /api/fx-conversions/pool": {
   "balance_eur": "0",
   "balance_usd": "0",

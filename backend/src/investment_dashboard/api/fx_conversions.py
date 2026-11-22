@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from datetime import date as date_type
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Literal, cast
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from investment_dashboard.api.deps import SessionDep
+from investment_dashboard.api.schemas.common import ByCurrency
+from investment_dashboard.api.schemas.currency_rate import RateRange
 from investment_dashboard.api.schemas.fx_conversions import (
+    CostsOut,
     DepositMatchOut,
     DepositSliceOut,
     FxConversionIn,
@@ -23,7 +26,10 @@ from investment_dashboard.api.schemas.fx_conversions import (
     SliceOut,
     UsedByOut,
 )
+from investment_dashboard.domain import fx_spread
 from investment_dashboard.domain.fx_pool import DepositMatch, PoolResult
+from investment_dashboard.readmodels import fx_costs
+from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.services import fx_conversion_service as service
 
 if TYPE_CHECKING:
@@ -46,6 +52,18 @@ def _out(
     fees = row.fees_eur if row.fees_eur is not None else Decimal(0)
     fixing = service.ecb_fixing_for(session, row.date)
     ecb = None if fixing is None else fixing[0]
+    cost = fx_spread.conversion_cost(
+        fx_spread.Conversion(
+            id=row.id,
+            date=row.date,
+            eur_sent=row.eur_sent,
+            usd_received=row.usd_received,
+            fees_eur=fees,
+            provider=row.provider,
+            ecb_rate=ecb,
+            ecb_rate_date=None if fixing is None else fixing[1],
+        )
+    )
     used = sorted(
         use.slices, key=lambda sl: (dates.get(sl.deposit_id), sl.deposit_id), reverse=True
     )
@@ -65,6 +83,10 @@ def _out(
         ecb_rate=None if ecb is None else _s(ecb),
         ecb_rate_date=None if fixing is None else fixing[1].isoformat(),
         off_pct=None if not ecb else _s(row.usd_received / (row.eur_sent + fees) / ecb - 1),
+        spread_eur=dec(cost.spread_eur),
+        cost_eur=dec(cost.cost_eur),
+        fees_usd=dec(cost.fees_usd),
+        cost_usd=dec(cost.cost_usd),
         used_by=[
             UsedByOut(
                 deposit_id=sl.deposit_id,
@@ -183,6 +205,18 @@ def pool(session: SessionDep) -> PoolOut:
             )
             for p, why in report.result.rejected_pins
         ],
+    )
+
+
+@router.get("/fx-conversions/costs", response_model=ByCurrency[CostsOut])
+def costs(
+    session: SessionDep,
+    range_key: Annotated[RateRange, Query(alias="range")] = "all",
+) -> ByCurrency[CostsOut]:
+    """What converting costs you, per reporting currency (a plain read, not logged)."""
+    sides = fx_costs.build_costs_both(session, range_key, date_type.today())
+    return ByCurrency[CostsOut].model_validate(
+        {c: CostsOut.model_validate(p) for c, p in sides.items()}
     )
 
 

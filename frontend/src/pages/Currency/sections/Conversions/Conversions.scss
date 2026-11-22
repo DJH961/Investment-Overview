@@ -1,0 +1,67 @@
+@use "../../../../styles/mixins" as m;
+
+// Conversions section: the strip, the timing line, the cost over time, then the year and
+// provider tables (side by side from desktop), the link to the full list last.
+.conv-section {
+  &__pair {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--page-gap);
+
+    @include m.desktop {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+    }
+  }
+
+  &__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  &__timing-line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-medium);
+  }
+
+  &__timing-icon {
+    flex: none;
+    width: var(--font-size-lg);
+    height: var(--font-size-lg);
+  }
+
+  &__timing-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__muted {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  &__more {
+    margin: 0;
+  }
+
+  &__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--tap-min);
+    color: var(--color-accent);
+    font-size: var(--font-size-sm);
+    text-decoration: underline;
+  }
+
+  &__link-icon {
+    width: var(--font-size-sm);
+    height: var(--font-size-sm);
+  }
+}

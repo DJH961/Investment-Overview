@@ -57,12 +57,43 @@
     gap: var(--space-1) var(--space-4);
   }
 
-  // Same as the plot's conversion tick on the date axis (Chart `__rug`).
-  &__mark-swatch {
-    width: 2px;
-    height: 10px;
+  // The on/off chip for the conversion marks; a 44px target on phones.
+  &__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--tap-min);
+    padding: 0 var(--space-3);
+    border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-full);
-    background: var(--color-muted);
+    background: transparent;
+    color: var(--color-muted);
+    font: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+
+    @include m.tablet-up {
+      min-height: var(--control-height-sm);
+    }
+
+    &--on {
+      border-color: var(--color-fg);
+      color: var(--color-fg);
+    }
+
+    &:focus-visible {
+      @include m.focus-ring;
+    }
+  }
+
+  &__toggle-icon {
+    width: var(--font-size-sm);
+    height: var(--font-size-sm);
+  }
+
+  &__toggle-count {
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
   }
 
   // Same as the plot's shaded US market hours (Chart `__shade`).

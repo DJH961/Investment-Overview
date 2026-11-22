@@ -31,12 +31,12 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import fx_trend, market_hours
+from investment_dashboard.domain import fx_spread, fx_trend, market_hours
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import transactions_repo
 from investment_dashboard.services import (
-    fx_conversion_service,
+    fx_cost_service,
     fx_service,
     intraday_snapshots_service,
 )
@@ -156,17 +156,25 @@ def _trend(daily: Sequence[tuple[date, Decimal]]) -> dict[str, Any] | None:
 
 def _markers(session: Session, start: date, end: date) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for row in fx_conversion_service.list_conversions(session):
+    # TODO(7.3 lane C): skip estimated conversions (``is_estimate``) once that flag exists.
+    for row in fx_cost_service.conversions_with_fixings(session):
         if not start <= row.date <= end or row.eur_sent <= 0:
             continue
+        cost = fx_spread.conversion_cost(row)
+        kind = None
+        if cost.off_pct is not None:
+            # Against the fixing: more dollars per euro than the reference is a saving.
+            kind = "above_reference" if cost.off_pct > 0 else "below_reference"
         out.append(
             {
                 "date": row.date.isoformat(),
                 "rate": dec(row.usd_received / row.eur_sent),
                 "amount_from": dec(row.eur_sent),
+                "amount_to": dec(row.usd_received),
                 "from_ccy": "EUR",
                 "to_ccy": "USD",
-                "kind": None,
+                "kind": kind,
+                "off_pct": dec(cost.off_pct),
                 "conversion_id": row.id,
             }
         )

@@ -647,6 +647,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fx-conversions/costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Costs
+         * @description What converting costs you, per reporting currency (a plain read, not logged).
+         */
+        get: operations["costs_api_fx_conversions_costs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fx-conversions/pins/{deposit_txn_id}": {
         parameters: {
             query?: never;
@@ -2486,6 +2506,13 @@ export interface components {
             /** Detail */
             detail?: string | null;
         };
+        /** ByCurrency[CostsOut] */
+        ByCurrency_CostsOut_: {
+            EUR: components["schemas"]["CostsOut"];
+            USD: components["schemas"]["CostsOut"];
+            /** Detail */
+            detail?: string | null;
+        };
         /** ByCurrency[CurrencyEffectOut] */
         ByCurrency_CurrencyEffectOut_: {
             EUR: components["schemas"]["CurrencyEffectOut"];
@@ -2814,6 +2841,8 @@ export interface components {
         ConversionMarker: {
             /** Amount From */
             amount_from: string;
+            /** Amount To */
+            amount_to?: string | null;
             /** Conversion Id */
             conversion_id: number;
             /** Date */
@@ -2822,10 +2851,208 @@ export interface components {
             from_ccy: string;
             /** Kind */
             kind?: ("above_reference" | "below_reference") | null;
+            /** Off Pct */
+            off_pct?: string | null;
             /** Rate */
             rate: string;
             /** To Ccy */
             to_ccy: string;
+        };
+        /** CostPointOut */
+        CostPointOut: {
+            /**
+             * Cost
+             * @description Cumulative cost up to and including this date.
+             */
+            cost: string;
+            /** Date */
+            date: string;
+        };
+        /** CostProviderOut */
+        CostProviderOut: {
+            /**
+             * Avg Off Pct
+             * @description all-in distance from the ECB, weighted by EUR converted.
+             */
+            avg_off_pct: string | null;
+            /**
+             * Converted
+             * @description EUR sent (EUR view) or USD received (USD view).
+             */
+            converted: string;
+            /**
+             * Cost
+             * @description fees + spread; negative is intraday noise, not a win.
+             */
+            cost: string;
+            /**
+             * Cost Pct
+             * @description cost / converted; null when nothing converted.
+             */
+            cost_pct: string | null;
+            /** Count */
+            count: number;
+            /** Fees */
+            fees: string;
+            /** Provider */
+            provider: ("wise" | "revolut" | "other") | null;
+            /** Spread */
+            spread: string;
+        };
+        /** CostRowOut */
+        CostRowOut: {
+            /** Cost */
+            cost: string | null;
+            /** Date */
+            date: string;
+            /** Ecb Rate */
+            ecb_rate: string | null;
+            /** Ecb Rate Date */
+            ecb_rate_date: string | null;
+            /** Eur Sent */
+            eur_sent: string;
+            /** Fees */
+            fees: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Month Avg
+             * @description Mean of that calendar month's settled ECB fixings (so far, if running).
+             */
+            month_avg: string | null;
+            /** Month So Far */
+            month_so_far: boolean;
+            /** Off Pct */
+            off_pct: string | null;
+            /** Provider */
+            provider: ("wise" | "revolut" | "other") | null;
+            /** Spread */
+            spread: string | null;
+            /**
+             * Timing Pct
+             * @description rate / month_avg - 1: positive = better than the month's average.
+             */
+            timing_pct: string | null;
+            /** Usd Received */
+            usd_received: string;
+        };
+        /**
+         * CostSummaryOut
+         * @description Totals in the view's currency (EUR amounts, or USD amounts not received).
+         */
+        CostSummaryOut: {
+            /**
+             * Avg Off Pct
+             * @description all-in distance from the ECB, weighted by EUR converted.
+             */
+            avg_off_pct: string | null;
+            /**
+             * Converted
+             * @description EUR sent (EUR view) or USD received (USD view).
+             */
+            converted: string;
+            /**
+             * Cost
+             * @description fees + spread; negative is intraday noise, not a win.
+             */
+            cost: string;
+            /**
+             * Cost Pct
+             * @description cost / converted; null when nothing converted.
+             */
+            cost_pct: string | null;
+            /** Count */
+            count: number;
+            /** Fees */
+            fees: string;
+            /** Spread */
+            spread: string;
+        };
+        /** CostTimingOut */
+        CostTimingOut: {
+            /**
+             * Avg Pct
+             * @description Weighted by EUR converted.
+             */
+            avg_pct: string | null;
+            /** Better */
+            better: number;
+            /** Count */
+            count: number;
+            /**
+             * So Far
+             * @description Conversions whose month is still running.
+             */
+            so_far: number;
+            /** Worse */
+            worse: number;
+        };
+        /** CostYearOut */
+        CostYearOut: {
+            /**
+             * Avg Off Pct
+             * @description all-in distance from the ECB, weighted by EUR converted.
+             */
+            avg_off_pct: string | null;
+            /**
+             * Converted
+             * @description EUR sent (EUR view) or USD received (USD view).
+             */
+            converted: string;
+            /**
+             * Cost
+             * @description fees + spread; negative is intraday noise, not a win.
+             */
+            cost: string;
+            /**
+             * Cost Pct
+             * @description cost / converted; null when nothing converted.
+             */
+            cost_pct: string | null;
+            /** Count */
+            count: number;
+            /** Fees */
+            fees: string;
+            /** Spread */
+            spread: string;
+            /** Year */
+            year: number;
+        };
+        /** CostsOut */
+        CostsOut: {
+            best: components["schemas"]["CostRowOut"] | null;
+            /** By Provider */
+            by_provider: components["schemas"]["CostProviderOut"][];
+            /** By Year */
+            by_year: components["schemas"]["CostYearOut"][];
+            /** Cheaper Gap Pct */
+            cheaper_gap_pct: string | null;
+            /**
+             * Cheaper Provider
+             * @description Lowest cost % among providers with conversions (needs two to compare).
+             */
+            cheaper_provider: ("wise" | "revolut" | "other") | null;
+            /** Cumulative */
+            cumulative: components["schemas"]["CostPointOut"][];
+            /**
+             * Currency
+             * @enum {string}
+             */
+            currency: "EUR" | "USD";
+            /** Range */
+            range: string;
+            /** Rows */
+            rows: components["schemas"]["CostRowOut"][];
+            /** Start */
+            start: string | null;
+            summary: components["schemas"]["CostSummaryOut"];
+            timing: components["schemas"]["CostTimingOut"];
+            /**
+             * Unpriced
+             * @description Conversions with no fixing close enough; not counted.
+             */
+            unpriced: number;
+            worst: components["schemas"]["CostRowOut"] | null;
         };
         /** CurrencyBlock */
         CurrencyBlock: {
@@ -4038,6 +4265,16 @@ export interface components {
              * @description usd_received / (eur_sent + fees).
              */
             all_in_rate: string;
+            /**
+             * Cost Eur
+             * @description spread_eur + fees_eur; positive = paid more than the ECB.
+             */
+            cost_eur?: string | null;
+            /**
+             * Cost Usd
+             * @description Dollars not received: eur_sent * ecb_rate - usd_received + fees_usd.
+             */
+            cost_usd?: string | null;
             /** Date */
             date: string;
             /**
@@ -4059,6 +4296,11 @@ export interface components {
             eur_sent: string;
             /** Fees Eur */
             fees_eur: string | null;
+            /**
+             * Fees Usd
+             * @description fees_eur at that conversion's own fixing.
+             */
+            fees_usd?: string | null;
             /** From Ccy */
             from_ccy: string;
             /** Id */
@@ -4079,6 +4321,11 @@ export interface components {
             rate: string;
             /** Remaining Usd */
             remaining_usd: string;
+            /**
+             * Spread Eur
+             * @description eur_sent - usd_received / ecb_rate; null when there is no fixing.
+             */
+            spread_eur?: string | null;
             /** To Ccy */
             to_ccy: string;
             /** Usd Received */
@@ -9974,6 +10221,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FxConversionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    costs_api_fx_conversions_costs_get: {
+        parameters: {
+            query?: {
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ByCurrency_CostsOut_"];
                 };
             };
             /** @description Validation Error */

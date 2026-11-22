@@ -1788,6 +1788,33 @@
         "title": "ByCurrency[CalculatorInputsOut]",
         "type": "object"
       },
+      "ByCurrency_CostsOut_": {
+        "properties": {
+          "EUR": {
+            "$ref": "#/components/schemas/CostsOut"
+          },
+          "USD": {
+            "$ref": "#/components/schemas/CostsOut"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "EUR",
+          "USD"
+        ],
+        "title": "ByCurrency[CostsOut]",
+        "type": "object"
+      },
       "ByCurrency_CurrencyEffectOut_": {
         "properties": {
           "EUR": {
@@ -2730,6 +2757,18 @@
             "title": "Amount From",
             "type": "string"
           },
+          "amount_to": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount To"
+          },
           "conversion_id": {
             "title": "Conversion Id",
             "type": "integer"
@@ -2757,6 +2796,18 @@
             ],
             "title": "Kind"
           },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Off Pct"
+          },
           "rate": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Rate",
@@ -2776,6 +2827,583 @@
           "conversion_id"
         ],
         "title": "ConversionMarker",
+        "type": "object"
+      },
+      "CostPointOut": {
+        "properties": {
+          "cost": {
+            "description": "Cumulative cost up to and including this date.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "cost"
+        ],
+        "title": "CostPointOut",
+        "type": "object"
+      },
+      "CostProviderOut": {
+        "properties": {
+          "avg_off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all-in distance from the ECB, weighted by EUR converted.",
+            "title": "Avg Off Pct"
+          },
+          "converted": {
+            "description": "EUR sent (EUR view) or USD received (USD view).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Converted",
+            "type": "string"
+          },
+          "cost": {
+            "description": "fees + spread; negative is intraday noise, not a win.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cost / converted; null when nothing converted.",
+            "title": "Cost Pct"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fees": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "spread": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spread",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "converted",
+          "fees",
+          "spread",
+          "cost",
+          "cost_pct",
+          "avg_off_pct",
+          "provider"
+        ],
+        "title": "CostProviderOut",
+        "type": "object"
+      },
+      "CostRowOut": {
+        "properties": {
+          "cost": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "ecb_rate": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate"
+          },
+          "ecb_rate_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ecb Rate Date"
+          },
+          "eur_sent": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Eur Sent",
+            "type": "string"
+          },
+          "fees": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fees"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "month_avg": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean of that calendar month's settled ECB fixings (so far, if running).",
+            "title": "Month Avg"
+          },
+          "month_so_far": {
+            "title": "Month So Far",
+            "type": "boolean"
+          },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Off Pct"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "spread": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spread"
+          },
+          "timing_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rate / month_avg - 1: positive = better than the month's average.",
+            "title": "Timing Pct"
+          },
+          "usd_received": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd Received",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "provider",
+          "eur_sent",
+          "usd_received",
+          "ecb_rate",
+          "ecb_rate_date",
+          "off_pct",
+          "fees",
+          "spread",
+          "cost",
+          "month_avg",
+          "month_so_far",
+          "timing_pct"
+        ],
+        "title": "CostRowOut",
+        "type": "object"
+      },
+      "CostSummaryOut": {
+        "description": "Totals in the view's currency (EUR amounts, or USD amounts not received).",
+        "properties": {
+          "avg_off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all-in distance from the ECB, weighted by EUR converted.",
+            "title": "Avg Off Pct"
+          },
+          "converted": {
+            "description": "EUR sent (EUR view) or USD received (USD view).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Converted",
+            "type": "string"
+          },
+          "cost": {
+            "description": "fees + spread; negative is intraday noise, not a win.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cost / converted; null when nothing converted.",
+            "title": "Cost Pct"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fees": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "spread": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spread",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "converted",
+          "fees",
+          "spread",
+          "cost",
+          "cost_pct",
+          "avg_off_pct"
+        ],
+        "title": "CostSummaryOut",
+        "type": "object"
+      },
+      "CostTimingOut": {
+        "properties": {
+          "avg_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Weighted by EUR converted.",
+            "title": "Avg Pct"
+          },
+          "better": {
+            "title": "Better",
+            "type": "integer"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "so_far": {
+            "description": "Conversions whose month is still running.",
+            "title": "So Far",
+            "type": "integer"
+          },
+          "worse": {
+            "title": "Worse",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "avg_pct",
+          "better",
+          "worse",
+          "so_far"
+        ],
+        "title": "CostTimingOut",
+        "type": "object"
+      },
+      "CostYearOut": {
+        "properties": {
+          "avg_off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all-in distance from the ECB, weighted by EUR converted.",
+            "title": "Avg Off Pct"
+          },
+          "converted": {
+            "description": "EUR sent (EUR view) or USD received (USD view).",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Converted",
+            "type": "string"
+          },
+          "cost": {
+            "description": "fees + spread; negative is intraday noise, not a win.",
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "cost_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cost / converted; null when nothing converted.",
+            "title": "Cost Pct"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fees": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "spread": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Spread",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "converted",
+          "fees",
+          "spread",
+          "cost",
+          "cost_pct",
+          "avg_off_pct",
+          "year"
+        ],
+        "title": "CostYearOut",
+        "type": "object"
+      },
+      "CostsOut": {
+        "properties": {
+          "best": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "by_provider": {
+            "items": {
+              "$ref": "#/components/schemas/CostProviderOut"
+            },
+            "title": "By Provider",
+            "type": "array"
+          },
+          "by_year": {
+            "items": {
+              "$ref": "#/components/schemas/CostYearOut"
+            },
+            "title": "By Year",
+            "type": "array"
+          },
+          "cheaper_gap_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheaper Gap Pct"
+          },
+          "cheaper_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "wise",
+                  "revolut",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lowest cost % among providers with conversions (needs two to compare).",
+            "title": "Cheaper Provider"
+          },
+          "cumulative": {
+            "items": {
+              "$ref": "#/components/schemas/CostPointOut"
+            },
+            "title": "Cumulative",
+            "type": "array"
+          },
+          "currency": {
+            "enum": [
+              "EUR",
+              "USD"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "range": {
+            "title": "Range",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CostRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/CostSummaryOut"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/CostTimingOut"
+          },
+          "unpriced": {
+            "description": "Conversions with no fixing close enough; not counted.",
+            "title": "Unpriced",
+            "type": "integer"
+          },
+          "worst": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostRowOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "currency",
+          "range",
+          "start",
+          "unpriced",
+          "summary",
+          "best",
+          "worst",
+          "cumulative",
+          "timing",
+          "by_year",
+          "by_provider",
+          "cheaper_provider",
+          "cheaper_gap_pct",
+          "rows"
+        ],
+        "title": "CostsOut",
         "type": "object"
       },
       "CurrencyBlock": {
@@ -6491,6 +7119,32 @@
             "title": "All In Rate",
             "type": "string"
           },
+          "cost_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "spread_eur + fees_eur; positive = paid more than the ECB.",
+            "title": "Cost Eur"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dollars not received: eur_sent * ecb_rate - usd_received + fees_usd.",
+            "title": "Cost Usd"
+          },
           "date": {
             "title": "Date",
             "type": "string"
@@ -6542,6 +7196,19 @@
               }
             ],
             "title": "Fees Eur"
+          },
+          "fees_usd": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fees_eur at that conversion's own fixing.",
+            "title": "Fees Usd"
           },
           "from_ccy": {
             "title": "From Ccy",
@@ -6601,6 +7268,19 @@
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Remaining Usd",
             "type": "string"
+          },
+          "spread_eur": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "eur_sent - usd_received / ecb_rate; null when there is no fixing.",
+            "title": "Spread Eur"
           },
           "to_ccy": {
             "title": "To Ccy",
@@ -22020,6 +22700,62 @@
           }
         },
         "summary": "Create Conversion",
+        "tags": [
+          "fx-conversions"
+        ]
+      }
+    },
+    "/api/fx-conversions/costs": {
+      "get": {
+        "description": "What converting costs you, per reporting currency (a plain read, not logged).",
+        "operationId": "costs_api_fx_conversions_costs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "1d",
+                "1w",
+                "1m",
+                "3m",
+                "ytd",
+                "1y",
+                "all",
+                "5y",
+                "10y",
+                "max"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ByCurrency_CostsOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Costs",
         "tags": [
           "fx-conversions"
         ]

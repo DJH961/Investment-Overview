@@ -376,9 +376,9 @@ export function CurrencyConversions() {
   const dateCell = (r: FxConversion) => (
     <span className="conversions__date" id={`conversion-${r.id}`}>
       <span>{formatDate(r.date)}</span>
-      {r.note && (
-        <span className="conversions__note" title={r.note}>
-          {r.note}
+      {(r.provider || r.note) && (
+        <span className="conversions__note" title={[providerLabel(r.provider), r.note].filter(Boolean).join(" · ")}>
+          {[providerLabel(r.provider), r.note].filter(Boolean).join(" · ")}
         </span>
       )}
     </span>
@@ -392,6 +392,15 @@ export function CurrencyConversions() {
       </span>
     );
   };
+
+  // Fees plus spread against the ECB daily reference: signed text, no gain/loss colour
+  // (a positive cost is the bad direction here, and a small negative one is intraday noise).
+  const costText = (r: FxConversion) =>
+    r.cost_eur === null || r.cost_eur === undefined ? (
+      "–"
+    ) : (
+      <Money amount={Number(r.cost_eur)} currency="EUR" signed />
+    );
 
   // Phone: separate lines per conversion, not eleven columns.
   const phoneColumns: Column<FxConversion>[] = [
@@ -417,6 +426,9 @@ export function CurrencyConversions() {
         [
           `${formatMoney(Number(r.eur_sent), "EUR")} at ${formatNumber(Number(r.rate), 4)}`,
           offPctWords(r.off_pct),
+          r.cost_eur !== null && r.cost_eur !== undefined
+            ? `cost ${formatMoney(Number(r.cost_eur), "EUR", { signed: true })}`
+            : null,
         ]
           .filter(Boolean)
           .join(" · "),
@@ -432,14 +444,7 @@ export function CurrencyConversions() {
       header: "Sent",
       align: "right",
       cell: (r) => (
-        <span className="conversions__stack">
-          <Money amount={Number(r.eur_sent)} currency="EUR" />
-          {r.fees_eur && Number(r.fees_eur) > 0 && (
-            <span className="conversions__note">
-              + <Money amount={Number(r.fees_eur)} currency="EUR" /> fees
-            </span>
-          )}
-        </span>
+        <Money amount={Number(r.eur_sent)} currency="EUR" />
       ),
       sortValue: (r) => Number(r.eur_sent),
     },
@@ -473,8 +478,22 @@ export function CurrencyConversions() {
       cell: (r) => offPctText(r.off_pct),
       sortValue: (r) => (r.off_pct === null ? Number.NEGATIVE_INFINITY : Number(r.off_pct)),
     },
+    {
+      key: "fees",
+      header: "Fees",
+      align: "right",
+      cell: (r) => (r.fees_eur ? <Money amount={Number(r.fees_eur)} currency="EUR" /> : "–"),
+      sortValue: (r) => Number(r.fees_eur ?? 0),
+    },
+    {
+      key: "cost",
+      header: "Cost",
+      align: "right",
+      emphasis: true,
+      cell: costText,
+      sortValue: (r) => (r.cost_eur === null || r.cost_eur === undefined ? Number.NEGATIVE_INFINITY : Number(r.cost_eur)),
+    },
     paidColumn,
-    { key: "provider", header: "Provider", cell: (r) => providerLabel(r.provider) },
     actionsColumn,
   ];
 
