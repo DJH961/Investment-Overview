@@ -723,6 +723,39 @@ def _seed_conversions(
     session.flush()
 
 
+def _synthetic_forex_bars(
+    start_day: _dt.date, end_day: _dt.date, **_kw: Any
+) -> dict[_dt.datetime, Decimal]:
+    """Stand-in for Yahoo's 15-minute ``EURUSD=X`` bars (the generator has no network).
+
+    Round the clock on weekdays, none from Friday 22:00 UTC to Sunday 22:00 UTC (the
+    spot-FX weekend), ending at :data:`FX_LIVE_NOW` at the frozen moment, so the 1D/1W
+    rate chart shows the shape the server draws from the real feed.
+    """
+    rng = random.Random(SEED + 7)
+    now = FROZEN_NOW.replace(tzinfo=None)
+    t = _dt.datetime.combine(start_day, _dt.time()) - _dt.timedelta(hours=2)
+    end = min(_dt.datetime.combine(end_day, _dt.time()) + _dt.timedelta(days=1), now)
+    times: list[_dt.datetime] = []
+    while t <= end:
+        wd = t.weekday()
+        weekend = (wd == 4 and t.hour >= 22) or wd == 5 or (wd == 6 and t.hour < 22)
+        if not weekend:
+            times.append(t)
+        t += _dt.timedelta(minutes=15)
+    if len(times) < 2:
+        return {}
+    path = _bridge(rng, len(times) - 1)
+    live = float(FX_LIVE_NOW)
+    first = live * 0.9965
+    out: dict[_dt.datetime, Decimal] = {}
+    for i, at in enumerate(times):
+        frac = i / (len(times) - 1)
+        rate = (first + (live - first) * frac) * (1 + 0.004 * path[i])
+        out[at] = Decimal(f"{rate:.5f}")
+    return out
+
+
 def _bridge(rng: random.Random, steps: int) -> list[float]:
     """A Brownian bridge of ``steps + 1`` points (unit-ish scale), zero at both ends."""
     raw = [0.0]
@@ -940,11 +973,16 @@ def _build_inner(dataset: str, workdir: Path) -> dict[str, Any]:
     app.dependency_overrides[require_session] = _actor
     _import_backend_modules()
     _reset_process_state()
+    from investment_dashboard.services import fx_service
+
+    real_bars = fx_service.eur_usd_forex_bars
+    fx_service.eur_usd_forex_bars = _synthetic_forex_bars  # type: ignore[assignment]
     restore_clock = _freeze_clock()
     try:
         return _collect(app, dataset, ledger_session_scope, TestClient)
     finally:
         restore_clock()
+        fx_service.eur_usd_forex_bars = real_bars  # type: ignore[assignment]
         dispose_engines()
         get_settings.cache_clear()
 

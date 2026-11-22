@@ -14381,6 +14381,13 @@
                 "type": "null"
               }
             ]
+          },
+          "us_market_hours": {
+            "items": {
+              "$ref": "#/components/schemas/RateSession"
+            },
+            "title": "Us Market Hours",
+            "type": "array"
           }
         },
         "required": [

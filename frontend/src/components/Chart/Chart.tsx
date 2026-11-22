@@ -278,6 +278,8 @@ export interface ChartProps {
   onToggleSeries?: (id: string) => void;
   /** Exchange sessions for `xMode="session"` (falls back to `date` when empty). */
   sessions?: ChartSession[];
+  /** Time spans shaded behind the lines (e.g. the US stock market's open hours), UTC instants. */
+  shade?: { from: string | number; to: string | number }[];
   height?: number;
   loading?: boolean;
   emptyMessage?: string;
@@ -428,6 +430,7 @@ export function Chart({
   rightAxis,
   onToggleSeries,
   sessions,
+  shade,
   height = 280,
   loading = false,
   emptyMessage = "No data for this range.",
@@ -839,9 +842,28 @@ export function Chart({
               {timeFormat(t)}
             </text>
           ))}
-          {layout?.bands.map((b, i) => (
+          {shade?.map((s) => {
+            const lo = PAD.left;
+            const hi = width - PAD.right;
+            const x0 = Math.min(hi, Math.max(lo, scales.x(toTime(s.from))));
+            const x1 = Math.min(hi, Math.max(lo, scales.x(toTime(s.to))));
+            return x1 - x0 < 0.5 ? null : (
+              <rect
+                key={`${s.from}`}
+                className="chart__shade"
+                data-shade
+                x={x0}
+                y={PAD.top}
+                width={x1 - x0}
+                height={innerH}
+              />
+            );
+          })}
+          {layout?.bands.map((b, i, all) => (
             <g key={b.date} data-session={b.date}>
-              {i > 0 && (
+              {/* A divider only where the market really shut: back-to-back sessions (spot FX
+                  trades Sunday evening to Friday evening without a break) run on unbroken. */}
+              {i > 0 && b.open > all[i - 1].close && (
                 <line className="chart__session-sep" x1={b.x0} x2={b.x0} y1={PAD.top} y2={PAD.top + innerH} />
               )}
               <text
@@ -850,7 +872,8 @@ export function Chart({
                 y={height - 6}
                 textAnchor="middle"
               >
-                {fitLabel(timeFormat(b.open), b.x1 - b.x0 - 6)}
+                {/* Named by its middle: a forex day opens the evening before (Monday's on Sunday). */}
+                {fitLabel(timeFormat((b.open + b.close) / 2), b.x1 - b.x0 - 6)}
               </text>
             </g>
           ))}
@@ -889,12 +912,18 @@ export function Chart({
             </g>
           )}
           {prepared.map((s) => {
-            // In session mode the line breaks between sessions (no overnight bridge).
+            // In session mode the line breaks where the market shut (no overnight or weekend
+            // bridge); back-to-back sessions (spot FX on weekdays) keep one unbroken line.
             const mapped: { x: number; y: number | null }[] = [];
             let prevSession = -1;
             for (const p of s.pts) {
               const si = layout ? layout.index(p.x) : 0;
-              if (layout && prevSession !== -1 && si !== prevSession) mapped.push({ x: NaN, y: null });
+              const shut =
+                layout &&
+                prevSession !== -1 &&
+                si !== prevSession &&
+                (si !== prevSession + 1 || layout.bands[si].open > layout.bands[prevSession].close);
+              if (shut) mapped.push({ x: NaN, y: null });
               prevSession = si;
               mapped.push({ x: scales.x(p.x), y: p.y === null ? null : scales.y(p.y) });
             }

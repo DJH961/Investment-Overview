@@ -214,7 +214,12 @@ export function RateChart({
   const rangeLabel = shown === "max" ? "since 1999" : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
   const long = shown === "1y" || shown === "all" || shown === "5y" || shown === "10y" || shown === "max";
   const sessions = useMemo(
-    () => (shown === "1w" ? (data?.sessions ?? []).map((s) => ({ date: s.open.slice(0, 10), open: s.open, close: s.close })) : []),
+    () => (shown === "1w" ? (data?.sessions ?? []).map((s) => ({ date: s.close.slice(0, 10), open: s.open, close: s.close })) : []),
+    [data, shown],
+  );
+  // 1D / 1W: shade the hours the US stock market was open (the rate trades round the clock).
+  const shade = useMemo(
+    () => (shown === "1d" || shown === "1w" ? (data?.us_market_hours ?? []).map((h) => ({ from: h.open, to: h.close })) : []),
     [data, shown],
   );
 
@@ -257,8 +262,14 @@ export function RateChart({
         referenceLine={avg !== null ? { value: avg, softBounds: true } : undefined}
         markers={marks.length ? marks : undefined}
         legendExtra={
-          avg !== null || marks.length ? (
+          avg !== null || marks.length || shade.length ? (
             <span className="rate-chart__keys">
+              {shade.length ? (
+                <span className="rate-chart__avg">
+                  <span className="rate-chart__shade-swatch" aria-hidden />
+                  US market open
+                </span>
+              ) : null}
               {avg !== null ? (
                 <span className="rate-chart__avg">
                   <span className="rate-chart__avg-swatch" aria-hidden />
@@ -283,6 +294,7 @@ export function RateChart({
         valueFormat={axis}
         xMode={shown === "1d" ? "time" : shown === "1w" && sessions.length ? "session" : "date"}
         sessions={sessions.length ? sessions : undefined}
+        shade={shade.length ? shade : undefined}
         timeFormat={timeFormat}
         tooltipTimeFormat={tooltipTimeFormat}
         height={260}

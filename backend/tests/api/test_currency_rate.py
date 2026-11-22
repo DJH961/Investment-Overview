@@ -357,3 +357,18 @@ def test_all_range_starts_at_first_ledger_day_and_empty_ledger_falls_back(
     assert body["ma200"]
     assert rate_rm.range_start("all", date(2026, 11, 22), None) == fx_service.HISTORY_START
     assert rate_rm.range_start("all", date(2026, 11, 22), date(2025, 1, 2)) == date(2025, 1, 2)
+
+
+def test_us_market_hours_shades_regular_sessions_only() -> None:
+    """Thu 26/11/2026 is Thanksgiving (closed), Fri 27/11 a half day (13:00 close)."""
+    from investment_dashboard.readmodels.currency_rate import us_market_hours
+
+    start = datetime(2026, 11, 24, 0, 0, tzinfo=UTC)
+    end = datetime(2026, 11, 30, 18, 0, tzinfo=UTC)
+    hours = us_market_hours(start, end)
+    opens = [h["open"][:10] for h in hours]
+    assert opens == ["2026-11-24", "2026-11-25", "2026-11-27", "2026-11-30"]
+    assert hours[0]["open"].startswith("2026-11-24T14:30")  # 09:30 New York (EST)
+    assert hours[0]["close"].startswith("2026-11-24T21:00")
+    assert hours[2]["close"].startswith("2026-11-27T18:00")  # half day: 13:00 New York
+    assert hours[3]["close"].startswith("2026-11-30T18:00")  # clipped to the window end

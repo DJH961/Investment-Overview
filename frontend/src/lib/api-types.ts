@@ -6709,6 +6709,8 @@ export interface components {
              */
             source: "ECB reference rate" | "live samples";
             trend?: components["schemas"]["RateTrend"] | null;
+            /** Us Market Hours */
+            us_market_hours?: components["schemas"]["RateSession"][];
         };
         /** RateHistoryPoint */
         RateHistoryPoint: {

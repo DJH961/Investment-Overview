@@ -65,6 +65,15 @@
     background: var(--color-muted);
   }
 
+  // Same as the plot's shaded US market hours (Chart `__shade`).
+  &__shade-swatch {
+    width: 12px;
+    height: 10px;
+    border-radius: var(--radius-sm);
+    background: var(--color-border);
+    opacity: 0.9;
+  }
+
   &__figs {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

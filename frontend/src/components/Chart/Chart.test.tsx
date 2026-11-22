@@ -388,6 +388,54 @@ describe("Chart", () => {
       const labels = [...container.querySelectorAll(".chart__axis-label--x")].map((n) => n.textContent);
       expect(labels).toEqual(["D26", "D27", "D28"]);
     });
+
+    it("shades the given hours behind the line, inside the plot", () => {
+      const pts = sessions.flatMap((s) => [
+        { t: s.open, v: 100 },
+        { t: s.open + 3 * H, v: 101 },
+      ]);
+      const { container } = render(
+        <Chart
+          {...props}
+          series={[{ id: "a", label: "EUR", points: pts }]}
+          xMode="session"
+          sessions={sessions}
+          shade={[{ from: sessions[1].open + H, to: sessions[1].open + 2 * H }]}
+        />,
+      );
+      const rects = container.querySelectorAll("[data-shade]");
+      expect(rects).toHaveLength(1);
+      expect(Number(rects[0].getAttribute("width"))).toBeGreaterThan(0);
+    });
+
+    it("runs back-to-back sessions (spot FX) as one line, with a divider only at the weekend", () => {
+      // Forex days: Thu, Fri, then Mon (opens Sunday 22:00 UTC). Each runs into the next
+      // except across the weekend.
+      const fx = [
+        { date: "2026-11-12", open: Date.UTC(2026, 10, 11, 22), close: Date.UTC(2026, 10, 12, 22) },
+        { date: "2026-11-13", open: Date.UTC(2026, 10, 12, 22), close: Date.UTC(2026, 10, 13, 22) },
+        { date: "2026-11-16", open: Date.UTC(2026, 10, 15, 22), close: Date.UTC(2026, 10, 16, 22) },
+      ];
+      const pts = fx.flatMap((s, i) => [
+        { t: s.open + H, v: 1.16 + i / 100 },
+        { t: s.close - H, v: 1.161 + i / 100 },
+      ]);
+      const { container } = render(
+        <Chart
+          {...props}
+          series={[{ id: "fx", label: "EUR/USD", points: pts }]}
+          xMode="session"
+          sessions={fx}
+          timeFormat={(t) => `D${new Date(t).getUTCDate()}`}
+        />,
+      );
+      // Thu + Fri unbroken, Monday after the weekend gap: two runs, one divider.
+      expect(container.querySelectorAll('[data-series="fx"] .chart__line')).toHaveLength(2);
+      expect(container.querySelectorAll(".chart__session-sep")).toHaveLength(1);
+      // Named by the trading day, not the evening it opened.
+      const labels = [...container.querySelectorAll(".chart__axis-label--x")].map((n) => n.textContent);
+      expect(labels).toEqual(["D12", "D13", "D16"]);
+    });
   });
 });
 

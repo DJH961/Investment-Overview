@@ -23,8 +23,9 @@ reporting currencies (it is a market rate, not a portfolio figure).
 
 from __future__ import annotations
 
+import bisect
 from collections.abc import Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -41,6 +42,8 @@ from investment_dashboard.services import (
 )
 
 RANGES: tuple[str, ...] = ("1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max")
+#: A stored sample joins the forex bars only this far (seconds) from the nearest bar.
+SAMPLE_FILL_GAP_S = 20 * 60
 INTRADAY_RANGES = frozenset({"1d", "1w"})
 WEEKLY_RANGES = frozenset({"10y", "max"})
 MA_RANGES = frozenset({"1y", "5y", "10y", "max"})
@@ -84,6 +87,28 @@ def range_start(range_key: str, today: date, first_ledger: date | None = None) -
 
 def _iso_utc(at: datetime) -> str:
     return (at if at.tzinfo is not None else at.replace(tzinfo=UTC)).isoformat()
+
+
+def us_market_hours(start_at: datetime, end_at: datetime) -> list[dict[str, str]]:
+    """The US regular sessions overlapping ``[start_at, end_at]`` (naive or aware UTC).
+
+    09:30 to the day's close (16:00, 13:00 on half days) New York time, holidays and
+    weekends left out, clipped to the window. The rate chart shades these hours so
+    the moves while you could trade stand apart from the overnight ones.
+    """
+    lo = start_at if start_at.tzinfo else start_at.replace(tzinfo=UTC)
+    hi = end_at if end_at.tzinfo else end_at.replace(tzinfo=UTC)
+    out: list[dict[str, str]] = []
+    day = lo.astimezone(UTC).date() - timedelta(days=1)
+    while day <= hi.astimezone(UTC).date():
+        if market_hours.is_trading_day(day):
+            o = market_hours.regular_session_open(day).astimezone(UTC)
+            c = market_hours.regular_session_close(day).astimezone(UTC)
+            o, c = max(o, lo), min(c, hi)
+            if o < c:
+                out.append({"open": _iso_utc(o), "close": _iso_utc(c)})
+        day += timedelta(days=1)
+    return out
 
 
 def _point(t: str, rate: Decimal, inverse: Decimal | None = None) -> dict[str, Any]:
@@ -168,8 +193,15 @@ def _intraday(
     except Exception:  # pragma: no cover - the service already fails soft
         bars = {}
     merged.update({t: r for t, r in bars.items() if start_at <= t <= end_at})
+    # The stored samples only fill where the bars leave a hole (a feed outage, or the
+    # minutes after the newest bar). Interleaved with the bars they would zigzag: a
+    # 5-minute sample and the 15-minute bar beside it are struck at different instants.
+    bar_times = sorted(merged)
     for at, r in intraday_snapshots_service.fx_samples_between(session, start_at, end_at):
-        merged.setdefault(at, r)
+        i = bisect.bisect_left(bar_times, at)
+        near = [bar_times[j] for j in (i - 1, i) if 0 <= j < len(bar_times)]
+        if all(abs((at - b).total_seconds()) > SAMPLE_FILL_GAP_S for b in near):
+            merged.setdefault(at, r)
     return [(_iso_utc(at), r) for at, r in sorted(merged.items())], sessions, start_at, end_at
 
 
@@ -199,10 +231,12 @@ def build_rate_history(
     raw: list[tuple[str, Decimal]] = []
     ma_points: list[dict[str, Any]] = []
     sessions: list[dict[str, str]] = []
+    stock_hours: list[dict[str, str]] = []
     first_ledger = transactions_repo.earliest_transaction_date(session)
     if range_key in INTRADAY_RANGES:
         granularity, source = "intraday", SOURCE_LIVE
         raw, sessions, start_at, end_at = _intraday(session, range_key, now)
+        stock_hours = us_market_hours(start_at, end_at)
         as_of = raw[-1][0] if raw else None
         marker_start, marker_end = start_at.date(), end_at.date()
     else:
@@ -254,6 +288,7 @@ def build_rate_history(
         "as_of": as_of,
         "source": source,
         "sessions": sessions,
+        "us_market_hours": stock_hours,
         "points": points,
         "ma200": ma_points,
         "avg_rate": (

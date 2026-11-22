@@ -64,10 +64,12 @@
   }
 
   &__slice-amounts {
+    display: inline;
     margin-left: var(--space-1);
   }
 
   &__pin {
+    display: inline-block;
     width: 1em;
     height: 1em;
     margin-left: var(--space-1);
