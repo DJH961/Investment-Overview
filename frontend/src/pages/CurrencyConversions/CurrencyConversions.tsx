@@ -31,6 +31,7 @@ import {
   type FxProvider,
 } from "../../lib/queries/manage";
 import { offEcbText, trimDecimal, weekdayDate } from "./matching";
+import { costStatItems, PeriodRate, useCostsAll } from "./CostBits";
 import { ConversionHead, ConversionRow } from "./ConversionRow";
 import { DepositRow } from "./DepositRow";
 import { activeCount, FilterBar, NO_FILTERS, PROVIDER_FILTER_OPTIONS, ToggleChip, type ConversionFilters } from "./Filters";
@@ -309,6 +310,7 @@ const sumOf = (rows: readonly FxConversion[], pick: (c: FxConversion) => string)
 export function CurrencyConversions() {
   const list = useFxConversions();
   const pool = useFxPool();
+  const costs = useCostsAll();
   const del = useDeleteConversion();
   const { toast } = useToast();
   const location = useLocation();
@@ -478,6 +480,7 @@ export function CurrencyConversions() {
                 value: pool.data ? deposits.filter((d) => d.status !== "matched").length : "–",
                 note: pool.data ? `of ${deposits.length} deposits` : undefined,
               },
+              ...costStatItems(costs),
             ]}
           />
           <Card title="Conversions" flush>
@@ -509,6 +512,7 @@ export function CurrencyConversions() {
                       {plural(rows.length, "conversion", "conversions")} ·{" "}
                       <Money amount={sumOf(rows, (c) => c.eur_sent)} currency="EUR" digits={0} /> →{" "}
                       <Money amount={sumOf(rows, (c) => c.usd_received)} currency="USD" digits={0} />
+                      <PeriodRate rows={rows} costs={costs} filtered={conversionsFiltered} />
                     </>
                   )}
                 >

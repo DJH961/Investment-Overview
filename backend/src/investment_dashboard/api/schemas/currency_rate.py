@@ -70,10 +70,14 @@ class ConversionMarker(ApiModel):
     #: The conversion's own rate: ``usd_received / eur_sent`` (USD per 1 EUR).
     rate: DecStr
     amount_from: DecStr
+    #: What the conversion paid out (USD received).
+    amount_to: DecStr | None = None
     from_ccy: str
     to_ccy: str
-    #: 7.3 fills it against the settled fixing of the conversion's date.
+    #: Against the settled ECB fixing of the conversion's date (all-in, fees included).
     kind: Literal["above_reference", "below_reference"] | None = None
+    #: ``all_in_rate / ecb_rate - 1``; negative = fewer dollars per euro than the ECB.
+    off_pct: DecStr | None = None
     conversion_id: int
 
 

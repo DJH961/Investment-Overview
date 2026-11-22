@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Chip } from "../../components/Chip";
 import { Money } from "../../components/Money";
-import { formatDate, formatNumber } from "../../lib/format";
+import { formatDate, formatMoney, formatNumber } from "../../lib/format";
 import type { FxConversion } from "../../lib/queries/manage";
 import { ecbCell, offPctText, offPctWords, providerLabel } from "./matching";
 
@@ -53,6 +53,7 @@ export function ConversionRow({ c, menu }: { c: FxConversion; menu: ReactNode })
   const e = ecbCell(c);
   const fees = c.fees_eur && Number(c.fees_eur) > 0 ? Number(c.fees_eur) : 0;
   const allIn = Number(c.all_in_rate) !== Number(c.rate);
+  const cost = c.cost_eur === null || c.cost_eur === undefined ? null : Number(c.cost_eur);
   return (
     <li className="conv" id={`conversion-${c.id}`}>
       <div className="conv__id">
@@ -92,6 +93,7 @@ export function ConversionRow({ c, menu }: { c: FxConversion; menu: ReactNode })
       </div>
       <div className="conv__cell conv__cell--off" title={offPctWords(c.off_pct) ?? undefined}>
         {offPctText(c.off_pct)}
+        {cost !== null && <span className="conv__sub">cost <Money amount={cost} currency="EUR" signed /></span>}
       </div>
 
       <div className="conv__paid">
@@ -107,6 +109,7 @@ export function ConversionRow({ c, menu }: { c: FxConversion; menu: ReactNode })
             {" · "}
             {formatNumber(Number(c.rate), 4)}
             {c.off_pct !== null && ` · ${offPctText(c.off_pct)}`}
+            {cost !== null && ` · cost ${formatMoney(cost, "EUR", { signed: true })}`}
           </span>
           {open ? <ChevronDown aria-hidden className="conv__chevron" /> : <ChevronRight aria-hidden className="conv__chevron" />}
         </button>
@@ -133,6 +136,7 @@ export function ConversionRow({ c, menu }: { c: FxConversion; menu: ReactNode })
           </Fact>
           <Fact label="vs ECB" title={offPctWords(c.off_pct) ?? undefined}>
             {offPctText(c.off_pct)}
+            {cost !== null && <span className="conv__sub">cost <Money amount={cost} currency="EUR" signed /></span>}
           </Fact>
           {c.note && <p className="conv__note conv__note--detail">{c.note}</p>}
         </dl>

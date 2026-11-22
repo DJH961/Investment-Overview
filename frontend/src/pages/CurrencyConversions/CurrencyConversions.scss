@@ -717,3 +717,13 @@
     font-size: var(--font-size-sm);
   }
 }
+
+// "Cost over time →" under the total-cost tile: a quiet link to the Currency page section.
+.cost-link {
+  color: var(--color-accent);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}

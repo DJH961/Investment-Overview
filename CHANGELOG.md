@@ -27,6 +27,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Exact duplicates are skipped as before. Estimated rows (recurring plans) use a looser
   profile (3 trading days, 2 % or 0.50). Every tolerance is under Settings > Import rules.
   The confirm result and the activity log count the updated rows.
+- **What converting costs you (7.3, second half):** a new **Conversions** section on the
+  Currency page. It shows fees, spread, total cost, the average distance from the ECB daily
+  reference (weighted by the euros converted), the best and worst conversion, the cumulative
+  cost over time, a per-year table and a per-provider comparison that says which was cheaper.
+  Each conversion is measured against its own day's ECB fixing (a weekend conversion against
+  the last fixing before it); the USD view is the dollars you did not get, worked out per
+  conversion at its own fixing. New `GET /api/fx-conversions/costs?range=`, pure maths in
+  `domain/fx_spread.py`, no new columns. The Conversions page gains **Fees** and **Cost**
+  columns, and on phones the cost joins the sub line.
+- **Timing:** your rate against the mean ECB fixing of the month you converted in, per
+  conversion and weighted overall ("You converted 0.6 % better than the month average");
+  a running month is averaged so far.
+- **Your conversions on the EUR/USD chart:** one mark per conversion at its date and its own
+  rate, sized by the euros converted; ▲ blue is better than the ECB daily reference, ▼ orange
+  is worse. A "Conversions" chip on the chart turns them on and off (remembered per device).
 
 ## [7.2.1] — 2026-11-22
 
