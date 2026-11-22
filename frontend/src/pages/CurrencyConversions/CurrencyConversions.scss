@@ -501,6 +501,9 @@
 
   &__usd {
     grid-area: usd;
+    justify-self: start;
+    // Sized by its own text, never by the column (glyph widths differ by platform).
+    width: max-content;
     white-space: nowrap;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-figure);
