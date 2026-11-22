@@ -155,6 +155,11 @@ def _next_euro(
         ),
     }
     year_ago = today - timedelta(days=365)
+    # "Dollars per €1,000" over the last year, weekly: the sparkline beside the headline.
+    out["spark"] = [
+        {"t": d.isoformat(), "usd": dec(NEXT_EURO_AMOUNT * r)}
+        for d, r in _thin_weekly([(d, r) for d, r in daily if d >= year_ago])
+    ]
     row = _on_or_before(daily, year_ago)
     if row is not None and daily and daily[0][0] <= year_ago:
         usd_then = NEXT_EURO_AMOUNT * row[1]
@@ -255,7 +260,16 @@ def _trend(
         "percentiles": percentiles,
         "week52": _week52(daily, today),
         "run": (
-            {"direction": run.direction, "count": run.count, "of": run.of, "unit": "month"}
+            {
+                "direction": run.direction,
+                "count": run.count,
+                "of": run.of,
+                "unit": "month",
+                "months": [
+                    {"month": d.strftime("%Y-%m"), "move": m}
+                    for d, m in zip(run.month_ends, run.months, strict=True)
+                ],
+            }
             if run is not None
             else None
         ),
@@ -377,8 +391,12 @@ def _stats(
         held = [(d, r) for d, r in daily if d >= first]
         ext = fx_trend.range_extremes(held)
         if ext is not None:
-            out.append(_rate_stat("low_since_start", ext.low, ccy, on=ext.low_at))
-            out.append(_rate_stat("high_since_start", ext.high, ccy, on=ext.high_at))
+            # The dollar's low is EUR/USD's high: in the inverted quote the extremes swap.
+            lo, lo_at, hi, hi_at = ext.low, ext.low_at, ext.high, ext.high_at
+            if QUOTES[ccy]["field"] == "inverse":
+                lo, lo_at, hi, hi_at = hi, hi_at, lo, lo_at
+            out.append(_rate_stat("low_since_start", lo, ccy, on=lo_at))
+            out.append(_rate_stat("high_since_start", hi, ccy, on=hi_at))
         mean = fx_trend.series_mean(daily, first)
         if mean is not None:
             out.append(_rate_stat("avg_rate_holding", mean.rate, ccy, on=mean.since))

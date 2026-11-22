@@ -3498,6 +3498,8 @@ export interface components {
              * @enum {string}
              */
             direction: "rose" | "fell";
+            /** Months */
+            months?: components["schemas"]["RunMonth"][];
             /** Of */
             of: number;
             /**
@@ -5723,12 +5725,24 @@ export interface components {
             better_than_share?: string | null;
             /** Change Pct */
             change_pct?: string | null;
+            /** Spark */
+            spark?: components["schemas"]["NextEuroPoint"][];
             /** Usd Now */
             usd_now: string;
             /** Usd Year Ago */
             usd_year_ago?: string | null;
             /** Year Ago Date */
             year_ago_date?: string | null;
+        };
+        /**
+         * NextEuroPoint
+         * @description One weekly point of the sparkline: dollars that ``amount_eur`` bought on ``t``.
+         */
+        NextEuroPoint: {
+            /** T */
+            t: string;
+            /** Usd */
+            usd: string;
         };
         /**
          * NormalRange
@@ -6785,6 +6799,19 @@ export interface components {
             /** Window Days */
             window_days: number;
         };
+        /**
+         * RunMonth
+         * @description One month of the run: ``YYYY-MM`` and the dollar's move over it.
+         */
+        RunMonth: {
+            /** Month */
+            month: string;
+            /**
+             * Move
+             * @enum {string}
+             */
+            move: "rose" | "fell" | "flat";
+        };
         /** ScenarioMark */
         ScenarioMark: {
             /** Date */
@@ -6956,7 +6983,7 @@ export interface components {
         };
         /**
          * Sensitivity
-         * @description "1 ct = €X": the book at ``rate`` and at ``rate + 0.01`` (one instant).
+         * @description "1 ct = €X": the book at today's ``rate`` and after one cent of the quote shown.
          */
         Sensitivity: {
             /** Change */
@@ -7357,7 +7384,7 @@ export interface components {
         };
         /**
          * StressRow
-         * @description The book at EUR/USD moved by ``shift_pct`` from today's rate.
+         * @description The book with the side's ``quote`` moved by ``shift_pct`` from today's value.
          */
         StressRow: {
             /** Change */

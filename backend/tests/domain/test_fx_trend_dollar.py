@@ -141,6 +141,9 @@ def test_monthly_run_tie_takes_latest_and_needs_history() -> None:
     # Ends 1.0, 1.1, 1.0: rate up (dollar fell) then down (dollar rose) -> tie -> latest.
     run = fx_trend.monthly_run(_month_ends(["1.0", "1.1", "1.0"]), months=2)
     assert run == fx_trend.MonthRun(direction="rose", count=1, of=2)
+    assert run is not None
+    assert run.months == ("fell", "rose")
+    assert len(run.month_ends) == 2
     assert fx_trend.monthly_run(_month_ends(["1.0", "1.1"]), months=2) is None
     assert fx_trend.monthly_run(_month_ends(["1.0", "1.0", "1.0"]), months=2) is None
 

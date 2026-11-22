@@ -4923,6 +4923,13 @@
             "title": "Direction",
             "type": "string"
           },
+          "months": {
+            "items": {
+              "$ref": "#/components/schemas/RunMonth"
+            },
+            "title": "Months",
+            "type": "array"
+          },
           "of": {
             "title": "Of",
             "type": "integer"
@@ -11361,6 +11368,13 @@
             ],
             "title": "Change Pct"
           },
+          "spark": {
+            "items": {
+              "$ref": "#/components/schemas/NextEuroPoint"
+            },
+            "title": "Spark",
+            "type": "array"
+          },
           "usd_now": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
             "title": "Usd Now",
@@ -11395,6 +11409,26 @@
           "usd_now"
         ],
         "title": "NextEuro",
+        "type": "object"
+      },
+      "NextEuroPoint": {
+        "description": "One weekly point of the sparkline: dollars that ``amount_eur`` bought on ``t``.",
+        "properties": {
+          "t": {
+            "title": "T",
+            "type": "string"
+          },
+          "usd": {
+            "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+            "title": "Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t",
+          "usd"
+        ],
+        "title": "NextEuroPoint",
         "type": "object"
       },
       "NormalRange": {
@@ -14714,6 +14748,30 @@
         "title": "RollingSeries",
         "type": "object"
       },
+      "RunMonth": {
+        "description": "One month of the run: ``YYYY-MM`` and the dollar's move over it.",
+        "properties": {
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "move": {
+            "enum": [
+              "rose",
+              "fell",
+              "flat"
+            ],
+            "title": "Move",
+            "type": "string"
+          }
+        },
+        "required": [
+          "month",
+          "move"
+        ],
+        "title": "RunMonth",
+        "type": "object"
+      },
       "ScenarioMark": {
         "properties": {
           "date": {
@@ -15356,7 +15414,7 @@
         "type": "object"
       },
       "Sensitivity": {
-        "description": "\"1 ct = \u20acX\": the book at ``rate`` and at ``rate + 0.01`` (one instant).",
+        "description": "\"1 ct = \u20acX\": the book at today's ``rate`` and after one cent of the quote shown.",
         "properties": {
           "change": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
@@ -16561,7 +16619,7 @@
         "type": "object"
       },
       "StressRow": {
-        "description": "The book at EUR/USD moved by ``shift_pct`` from today's rate.",
+        "description": "The book with the side's ``quote`` moved by ``shift_pct`` from today's value.",
         "properties": {
           "change": {
             "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",

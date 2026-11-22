@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import itertools
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Literal
@@ -419,6 +419,10 @@ class MonthRun:
     direction: RunDirection
     count: int
     of: int
+    #: The dollar's move in each of the ``of`` months, oldest to newest, and the month
+    #: (the date of its last row) each one ends on. Detail only: not part of equality.
+    months: tuple[str, ...] = field(default=(), compare=False)
+    month_ends: tuple[date, ...] = field(default=(), compare=False)
 
 
 def monthly_run(series: Sequence[tuple[date, Decimal]], months: int = 6) -> MonthRun | None:
@@ -454,7 +458,13 @@ def monthly_run(series: Sequence[tuple[date, Decimal]], months: int = 6) -> Mont
         direction: RunDirection = "rose" if latest > 0 else "fell"
     else:
         direction = "rose" if rose > fell else "fell"
-    return MonthRun(direction=direction, count=rose if direction == "rose" else fell, of=months)
+    return MonthRun(
+        direction=direction,
+        count=rose if direction == "rose" else fell,
+        of=months,
+        months=tuple("rose" if c > 0 else "fell" if c < 0 else "flat" for c in changes),
+        month_ends=tuple(d for d, _r in ends[len(ends) - months :]),
+    )
 
 
 def daily_returns(values: Sequence[Decimal]) -> list[Decimal]:

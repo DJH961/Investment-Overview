@@ -1,21 +1,11 @@
 @use "../../../../styles/mixins" as m;
 
-// The dollar section: position (both lenses) beside the trend panel on wide screens,
-// the rolling changes under both, the permanent caption last.
+// The dollar section: the position card (two lenses side by side on wide screens), the
+// trend panel (two columns on wide screens), the rolling changes, the quiet caption last.
 .dollar-section {
-  &__grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--page-gap);
-    align-items: start;
-
-    @include m.desktop {
-      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    }
-  }
-
   &__caption {
     display: flex;
+    padding-top: var(--space-1);
     align-items: flex-start;
     gap: var(--space-2);
     margin: 0;
@@ -37,15 +27,35 @@
 .dollar-position {
   container: dollar-position / inline-size;
 
+  // Holdings | next euro: stacked on a narrow card, side by side from 44rem.
+  &__lenses {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+
+    @container dollar-position (min-width: 44rem) {
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+      gap: var(--space-6);
+    }
+  }
+
   &__lens {
     display: grid;
-    gap: var(--space-3);
+    // Beside the taller next-euro panel, the holdings side spreads its three blocks evenly.
+    align-content: space-evenly;
+    gap: var(--space-5);
     min-width: 0;
 
     &--next {
-      margin-top: var(--space-5);
       padding-top: var(--space-5);
       border-top: var(--border-width) solid var(--color-border);
+
+      @container dollar-position (min-width: 44rem) {
+        padding-top: 0;
+        padding-left: var(--space-6);
+        border-top: 0;
+        border-left: var(--border-width) solid var(--color-border);
+      }
     }
   }
 
@@ -85,15 +95,15 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // Five figures: rows on a narrow card, three across from 26rem.
+  // Four figures: two by two on a narrow card, four across from 32rem.
   &__figs {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-4) var(--space-4);
+    gap: var(--space-4);
     margin: var(--space-1) 0 0;
 
-    @container dollar-position (min-width: 26rem) {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+    @container dollar-position (min-width: 32rem) {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 
@@ -156,8 +166,75 @@
 .dollar-trend {
   container: dollar-trend / inline-size;
 
+  // Two columns of rows on a wide card (each its own list), one on a narrow card.
+  &__cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3) var(--space-6);
+
+    @container dollar-trend (min-width: 48rem) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+    }
+  }
+
+  &__col {
+    display: grid;
+    align-content: start;
+    gap: var(--space-5);
+    min-width: 0;
+  }
+
+  // The verdict in one line.
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-5);
+    padding: 0;
+    list-style: none;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-3);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+
+    &--flag {
+      border-color: transparent;
+      background: var(--color-warn-soft);
+    }
+  }
+
+  &__chip-icon {
+    width: var(--font-size-md);
+    height: var(--font-size-md);
+  }
+
+  &__group {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  &__group-title {
+    @include m.eyebrow(var(--font-size-sm));
+    margin: 0;
+    padding-bottom: var(--space-2);
+    border-bottom: var(--border-width) solid var(--color-border-strong);
+    color: var(--color-fg);
+  }
+
   &__rows {
     display: grid;
+    align-content: start;
+    min-width: 0;
     margin: 0;
   }
 
@@ -169,7 +246,6 @@
     border-top: var(--border-width) solid var(--color-border);
 
     &:first-child {
-      padding-top: 0;
       border-top: 0;
     }
 
@@ -177,7 +253,7 @@
       padding-bottom: 0;
     }
 
-    @container dollar-trend (min-width: 30rem) {
+    @container dollar-trend (min-width: 24rem) {
       grid-template-columns: 6.5rem minmax(0, 1fr);
       gap: var(--space-4);
     }
@@ -236,11 +312,6 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-4);
-
-    @container dollar-trend (min-width: 40rem) {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--space-5);
-    }
   }
 }
 
@@ -252,12 +323,22 @@
 
   &__text {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-1) var(--space-2);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
     margin: 0;
     font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
+  }
+
+  &__when {
+    white-space: nowrap;
+  }
+
+  &__sub {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
   }
 
   &__move {
@@ -267,6 +348,7 @@
   &__label {
     padding: 0 var(--space-2);
     border: var(--border-width) solid var(--color-border);
+    white-space: nowrap;
     border-radius: var(--radius-full);
     color: var(--color-muted);
     font-size: var(--font-size-2xs);
@@ -282,15 +364,17 @@
   &__track {
     position: relative;
     height: var(--space-4);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
   }
 
   &__band {
     position: absolute;
     top: 0;
     bottom: 0;
-    border: var(--border-width) dashed var(--color-border-strong);
     border-radius: var(--radius-sm);
-    background: var(--color-surface-2);
+    background: var(--color-accent-soft);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border-strong);
   }
 
   &__zero {
@@ -299,13 +383,6 @@
     bottom: 0;
     left: 50%;
     border-left: var(--border-width) solid var(--color-border-strong);
-  }
-
-  &__tick {
-    position: absolute;
-    top: 25%;
-    bottom: 25%;
-    border-left: var(--border-width) solid var(--color-muted);
   }
 
   &__dot {
@@ -326,6 +403,7 @@
   &__scale {
     display: flex;
     justify-content: space-between;
+    gap: var(--space-2);
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-2xs);
@@ -355,6 +433,14 @@
     left: 0;
     border-radius: var(--radius-full);
     background: var(--color-accent-soft);
+  }
+
+  &__mid {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: 50%;
+    border-left: var(--border-width) solid var(--color-border-strong);
   }
 
   &__dot {
@@ -454,9 +540,13 @@
   }
 
   &__band {
-    fill: var(--color-surface-2);
-    stroke: var(--color-border-strong);
-    stroke-dasharray: 3 3;
+    fill: var(--color-accent-soft);
+  }
+
+  &__edge {
+    stroke: var(--color-accent);
+    stroke-dasharray: 2 3;
+    opacity: 0.55;
     vector-effect: non-scaling-stroke;
   }
 
@@ -479,9 +569,9 @@
 
   &__dot {
     position: absolute;
-    width: var(--space-2);
-    height: var(--space-2);
-    border: var(--border-width) solid var(--color-surface);
+    width: var(--space-3);
+    height: var(--space-3);
+    border: calc(var(--border-width) * 2) solid var(--color-surface);
     border-radius: var(--radius-full);
     background: var(--chart-1);
     transform: translate(-50%, -50%);
@@ -491,11 +581,339 @@
     }
   }
 
+  &__normal {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__swatch {
+    flex-shrink: 0;
+    width: var(--space-4);
+    height: var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-soft);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border-strong);
+  }
+
   &__foot {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
     gap: var(--space-1) var(--space-2);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// ---- Visual helpers ------------------------------------------------------------------
+
+// Percentile rows: label, a bar filled to the share, the share.
+.dollar-pct {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  &__row {
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr) 2.5rem;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--font-size-xs);
+  }
+
+  &__label {
+    color: var(--color-muted);
+  }
+
+  &__track {
+    position: relative;
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
+  }
+
+  &__fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: var(--radius-full);
+    background: var(--color-accent-soft);
+  }
+
+  &__dot {
+    position: absolute;
+    top: 50%;
+    width: var(--space-3);
+    height: var(--space-3);
+    border: calc(var(--border-width) * 2) solid var(--color-surface);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+    transform: translate(-50%, -50%);
+  }
+
+  &__value {
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    text-align: right;
+  }
+}
+
+// The last N months as cells: filled and arrowed for the months the dollar moved that way.
+.dollar-run {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  &__item {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  &__cell {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: var(--space-6);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
+    color: var(--color-muted);
+  }
+
+  // The months that went the way of the run are filled; the others stay outlined.
+  &__item--on &__cell {
+    background: var(--color-accent-soft);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border-strong);
+    color: var(--color-fg);
+  }
+
+  &__icon {
+    width: var(--font-size-md);
+    height: var(--font-size-md);
+  }
+
+  &__month {
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+  }
+}
+
+// Bought-at vs now on one scale; the stretch between them is the rate's effect on you.
+.dollar-scale {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0;
+
+  &__track {
+    position: relative;
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border);
+  }
+
+  &__gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--color-muted);
+
+    &--tailwind {
+      background: var(--color-pos);
+    }
+
+    &--headwind {
+      background: var(--color-neg);
+    }
+  }
+
+  &__mark {
+    position: absolute;
+    top: 50%;
+    width: var(--space-3);
+    height: var(--space-3);
+    border: calc(var(--border-width) * 2) solid var(--color-fg);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    transform: translate(-50%, -50%);
+
+    &--now {
+      background: var(--color-fg);
+      border-color: var(--color-surface);
+    }
+  }
+
+  &__ends {
+    position: relative;
+    height: var(--font-size-sm);
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-2xs);
+  }
+
+  &__end {
+    position: absolute;
+    transform: translateX(-50%);
+
+    &--now {
+      color: var(--color-fg);
+      font-weight: var(--font-weight-semibold);
+    }
+  }
+}
+
+// ---- Since you started: the range bar -------------------------------------------------
+
+.dollar-since {
+  &__plot {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  &__above,
+  &__below {
+    position: relative;
+    height: var(--font-size-md);
+  }
+
+  &__tag {
+    position: absolute;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    transform: translateX(-50%);
+
+    &--now {
+      color: var(--color-fg);
+    }
+  }
+
+  &__figure {
+    color: var(--color-fg);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  &__track {
+    position: relative;
+    height: var(--space-3);
+    border-radius: var(--radius-full);
+    background: var(--color-accent-soft);
+    box-shadow: inset 0 0 0 var(--border-width) var(--color-border-strong);
+  }
+
+  &__avg {
+    position: absolute;
+    top: calc(var(--space-1) * -1);
+    bottom: calc(var(--space-1) * -1);
+    border-left: calc(var(--border-width) * 2) solid var(--color-fg);
+    transform: translateX(-50%);
+  }
+
+  &__now {
+    position: absolute;
+    top: 50%;
+    width: var(--space-4);
+    height: var(--space-4);
+    border: calc(var(--border-width) * 2) solid var(--color-surface);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+    transform: translate(-50%, -50%);
+  }
+
+  &__ends {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin: var(--space-3) 0 0;
+  }
+
+  &__end {
+    display: grid;
+    gap: var(--space-1);
+
+    &--high {
+      text-align: right;
+    }
+  }
+
+  &__label {
+    @include m.eyebrow;
+  }
+
+  &__value {
+    @include m.figure(var(--font-size-lg));
+    margin: 0;
+  }
+
+  &__date {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// ---- Next euro: a year of "dollars per €1,000" --------------------------------------
+
+.dollar-spark {
+  display: grid;
+  gap: var(--space-1);
+
+  &__plot {
+    position: relative;
+    margin: var(--space-2) var(--space-2) 0;
+  }
+
+  &__svg {
+    display: block;
+    width: 100%;
+    height: calc(var(--space-9) + var(--space-3));
+    overflow: visible;
+  }
+
+  &__line {
+    fill: none;
+    stroke: var(--chart-1);
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+
+  &__dot {
+    position: absolute;
+    width: var(--space-3);
+    height: var(--space-3);
+    border: calc(var(--border-width) * 2) solid var(--color-surface);
+    border-radius: var(--radius-full);
+    background: var(--chart-1);
+    transform: translate(-50%, -50%);
+
+    &--then {
+      background: var(--color-surface);
+      border-color: var(--chart-1);
+    }
+  }
+
+  &__ends {
+    display: flex;
+    justify-content: space-between;
     margin: 0;
     color: var(--color-muted);
     font-size: var(--font-size-2xs);

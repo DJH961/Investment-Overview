@@ -75,6 +75,13 @@ class DollarPosition(ApiModel):
     today: RateChange | None = None
 
 
+class NextEuroPoint(ApiModel):
+    """One weekly point of the sparkline: dollars that ``amount_eur`` bought on ``t``."""
+
+    t: str
+    usd: DecStr
+
+
 class NextEuro(ApiModel):
     """ "€1,000 buys $X now; $Y a year ago" (a euro notional at one rate each)."""
 
@@ -88,6 +95,8 @@ class NextEuro(ApiModel):
     #: Share of days since your first transaction on which €1 bought fewer dollars
     #: than now (0..1). "Better than on 64 % of days since you started."
     better_than_share: DecStr | None = None
+    #: The last year of ``usd_now``-style values, weekly, oldest first.
+    spark: list[NextEuroPoint] = Field(default_factory=list)
 
 
 class DollarRegime(ApiModel):
@@ -145,6 +154,13 @@ class Week52(ApiModel):
     from_high_inverse_pct: DecStr
 
 
+class RunMonth(ApiModel):
+    """One month of the run: ``YYYY-MM`` and the dollar's move over it."""
+
+    month: str
+    move: Literal["rose", "fell", "flat"]
+
+
 class DollarRun(ApiModel):
     """ "The dollar fell in 5 of the last 6 months" (calendar months, last ECB day each)."""
 
@@ -152,6 +168,8 @@ class DollarRun(ApiModel):
     count: int
     of: int
     unit: Literal["month"] = "month"
+    #: The ``of`` months, oldest to newest.
+    months: list[RunMonth] = Field(default_factory=list)
 
 
 class LongRun(ApiModel):
@@ -274,9 +292,10 @@ class ScenarioRow(ApiModel):
     #: holdings whose native currency is not ``ccy`` valued at ``rate`` minus at
     #: ``avg_invest_rate``. Null without an average rate.
     gain: DecStr | None = None
-    #: ``breakeven_rate - rate`` in USD per 1 EUR (> 0: the rate can rise this far).
+    #: Break-even minus this row, both in the side's ``quote`` (> 0: the quote must rise
+    #: this far to reach break-even).
     to_breakeven: DecStr | None = None
-    #: ``breakeven_rate / rate - 1``.
+    #: The same move as a fraction of this row's ``rate_display``.
     to_breakeven_pct: DecStr | None = None
 
 
@@ -290,8 +309,9 @@ class ScenarioMark(ApiModel):
 
 
 class StressRow(ApiModel):
-    """The book at EUR/USD moved by ``shift_pct`` from today's rate."""
+    """The book with the side's ``quote`` moved by ``shift_pct`` from today's value."""
 
+    #: Fraction (-0.10 = the quote falls 10 %), applied to the quote shown.
     shift_pct: DecStr
     rate: DecStr
     rate_display: DecStr
@@ -301,7 +321,7 @@ class StressRow(ApiModel):
 
 
 class Sensitivity(ApiModel):
-    """ "1 ct = €X": the book at ``rate`` and at ``rate + 0.01`` (one instant)."""
+    """ "1 ct = €X": the book at today's ``rate`` and after one cent of the quote shown."""
 
     rate: DecStr
     value_at_rate: DecStr
@@ -338,7 +358,7 @@ class ScenariosOut(ApiModel):
     generated_at: str
     quote: DollarQuote
     caption: str = CAPTION
-    #: Slider step in USD per 1 EUR; rows run from ``min_rate`` to ``max_rate``.
+    #: Slider step, and the first / last row, in the side's ``quote`` (rows ascend in it).
     step: DecStr
     min_rate: DecStr
     max_rate: DecStr

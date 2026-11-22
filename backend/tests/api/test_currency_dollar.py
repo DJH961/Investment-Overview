@@ -75,12 +75,41 @@ def test_dollar_shape_and_quote(api_client: TestClient, seeded: None) -> None:
         assert "does not predict" in body[ccy]["caption"]
 
 
+def test_dollar_low_is_below_high_in_both_quotes(api_client: TestClient, seeded: None) -> None:
+    body = _get(api_client, "/api/currency/dollar/both?range=1y")
+    for ccy in ("EUR", "USD"):
+        stats = {s["key"]: s for s in body[ccy]["stats"]}
+        low, high = stats["low_since_start"], stats["high_since_start"]
+        assert Decimal(low["value_display"]) <= Decimal(high["value_display"])
+    # The same two days, mirrored: the dollar's low day is EUR/USD's high day.
+    eur = {s["key"]: s for s in body["EUR"]["stats"]}
+    usd = {s["key"]: s for s in body["USD"]["stats"]}
+    assert eur["low_since_start"]["date"] == usd["high_since_start"]["date"]
+    assert eur["high_since_start"]["date"] == usd["low_since_start"]["date"]
+
+
+def test_dollar_run_months_and_spark(api_client: TestClient, seeded: None) -> None:
+    body = _get(api_client, "/api/currency/dollar/both?range=1y")
+    for ccy in ("EUR", "USD"):
+        run = body[ccy]["trend"]["run"]
+        if run is not None:
+            assert len(run["months"]) == run["of"]
+            assert sum(m["move"] == run["direction"] for m in run["months"]) == run["count"]
+        spark = (body[ccy]["next_euro"] or {}).get("spark", [])
+        assert [p["t"] for p in spark] == sorted(p["t"] for p in spark)
+
+
 def test_scenarios_shape(api_client: TestClient, seeded: None) -> None:
     body = _get(api_client, "/api/currency/scenarios/both")
-    for ccy in ("EUR", "USD"):
-        side = body[ccy]
-        assert Decimal(side["min_rate"]) == Decimal("0.90")
-        assert Decimal(side["max_rate"]) == Decimal("1.60")
+    # The slider spans the same 0.90..1.60 EUR/USD, in the quote each side shows.
+    assert (Decimal(body["USD"]["min_rate"]), Decimal(body["USD"]["max_rate"])) == (
+        Decimal("0.90"),
+        Decimal("1.60"),
+    )
+    assert (Decimal(body["EUR"]["min_rate"]), Decimal(body["EUR"]["max_rate"])) == (
+        Decimal("0.62"),
+        Decimal("1.12"),
+    )
 
 
 def test_etag_round_trip(api_client: TestClient, seeded: None) -> None:
@@ -90,3 +119,51 @@ def test_etag_round_trip(api_client: TestClient, seeded: None) -> None:
         assert etag
         again = api_client.get(path, headers={"If-None-Match": etag})
         assert again.status_code == 304
+
+
+def test_scenarios_follow_the_quote_shown(api_client: TestClient, seeded: None) -> None:
+    body = _get(api_client, "/api/currency/scenarios/both")
+    eur, usd = body["EUR"], body["USD"]
+    # EUR view: USD/EUR grid, ascending in the quote, rate_display matches the grid.
+    assert eur["quote"]["pair"] == "USD/EUR"
+    assert Decimal(eur["min_rate"]) == Decimal("0.62")
+    shown = [Decimal(r["rate_display"]) for r in eur["rows"]]
+    assert shown == sorted(shown)
+    for row in eur["rows"][::20]:
+        assert abs(Decimal(row["rate"]) * Decimal(row["rate_display"]) - 1) < Decimal("1e-9")
+    # The dollar's low is the euro's high: the marks swap with the quote.
+    marks_eur = {m["key"]: m for m in eur["marks"]}
+    marks_usd = {m["key"]: m for m in usd["marks"]}
+    assert marks_eur["historic_low"]["date"] == marks_usd["historic_high"]["date"]
+    assert Decimal(marks_eur["historic_low"]["rate_display"]) <= Decimal(
+        marks_eur["historic_high"]["rate_display"]
+    )
+    assert Decimal(marks_usd["historic_low"]["rate_display"]) <= Decimal(
+        marks_usd["historic_high"]["rate_display"]
+    )
+    for side in (eur, usd):
+        # Stress rows: the quote shown moved by the shift; seven-figure sums are not needed,
+        # only the order and the zero-sum around today's value.
+        assert [Decimal(s["shift_pct"]) for s in side["stress"]] == [
+            Decimal(x) for x in ("-0.15", "-0.10", "-0.05", "0.05", "0.10", "0.15")
+        ]
+        for s in side["stress"]:
+            assert abs(Decimal(s["value"]) - Decimal(side["value_now"]) - Decimal(s["change"])) < 1
+        keys = {s["key"] for s in side["stats"]}
+        assert keys <= {"one_cent", "breakeven", "value_at_low", "value_at_high"}
+        # The break-even distance reads in the quote shown (shown + move == break-even).
+        row = side["rows"][len(side["rows"]) // 2]
+        if row["to_breakeven"] is not None and side["breakeven"] is not None:
+            be_shown = Decimal(side["breakeven"]["inverse" if side is eur else "rate"])
+            assert abs(
+                Decimal(row["rate_display"]) + Decimal(row["to_breakeven"]) - be_shown
+            ) < Decimal("1e-6")
+
+
+def test_scenarios_today_row_is_exactly_today(api_client: TestClient, seeded: None) -> None:
+    body = _get(api_client, "/api/currency/scenarios/both")
+    for ccy in ("EUR", "USD"):
+        side = body[ccy]
+        today = next(m for m in side["marks"] if m["key"] == "today")
+        row = side["rows"][today["row_index"]]
+        assert Decimal(row["value"]) == Decimal(side["value_now"])

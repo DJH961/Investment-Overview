@@ -1,12 +1,16 @@
 import clsx from "clsx";
 import { Card } from "../../../../components/Card";
 import { InfoTip } from "../../../../components/InfoTip";
-import { formatAxisDate } from "../../../../lib/format";
+import { formatDate } from "../../../../lib/format";
 import type { DollarDto, RollingSeriesDto } from "../../../../lib/queries/currencyDollar";
 import { toNum } from "../../../../lib/queries/portfolio";
 import { pct } from "./quote";
 
-const WINDOW_LABEL = { "1m": "1 month", "3m": "3 months", "1y": "1 year" } as const;
+const WINDOW_LABEL = {
+  "1m": "1 month",
+  "3m": "3 months",
+  "1y": "1 year",
+} as const;
 const W = 300;
 const H = 88;
 
@@ -15,15 +19,18 @@ const H = 88;
  * shaded band is ±the 80th percentile of every move of that length since 1999, the
  * dashed line zero. Plain presentation of the server's series (the view's quote).
  */
-function RollingMini({ s, field }: { s: RollingSeriesDto; field: DollarDto["quote"]["field"] }) {
+function RollingMini({ s, word }: { s: RollingSeriesDto; word: string | null }) {
   const pts = (s.points ?? [])
-    .map((p) => ({ t: Date.parse(p.t), v: toNum(field === "inverse" ? p.inverse_pct : p.rate_pct) }))
+    .map((p) => ({
+      t: Date.parse(p.t),
+      v: toNum(p.inverse_pct),
+    }))
     .filter((p): p is { t: number; v: number } => p.v !== null && Number.isFinite(p.t));
   const limit = Math.abs(toNum(s.normal_limit_pct ?? null) ?? 0);
   const label = WINDOW_LABEL[s.window];
   if (pts.length < 2) return null;
   const vals = pts.map((p) => p.v);
-  const extent = Math.max(limit * 1.25, ...vals.map(Math.abs)) || 0.01;
+  const extent = Math.max(limit * 1.8, ...vals.map(Math.abs).map((v) => v * 1.1)) || 0.01;
   const t0 = pts[0].t;
   const t1 = pts[pts.length - 1].t;
   const x = (t: number) => ((t - t0) / (t1 - t0 || 1)) * W;
@@ -39,7 +46,7 @@ function RollingMini({ s, field }: { s: RollingSeriesDto; field: DollarDto["quot
         <span className="dollar-rolling__now">
           <strong className="dollar-rolling__value">{pct(last)}</strong>
           <span className={clsx("dollar-rolling__word", outside && "dollar-rolling__word--outside")}>
-            {outside ? "outside normal" : "normal"}
+            {outside ? (word ?? "larger than usual") : "normal"}
           </span>
         </span>
       </figcaption>
@@ -51,22 +58,33 @@ function RollingMini({ s, field }: { s: RollingSeriesDto; field: DollarDto["quot
           role="img"
           aria-label={`${label} change, now ${pct(last)}; normal range ±${pct(limit).replace(/^[+−-]/, "")}`}
         >
-          {limit > 0 ? <rect className="dollar-rolling__band" x={0} width={W} y={y(limit)} height={y(-limit) - y(limit)} /> : null}
+          {limit > 0 ? (
+            <>
+              <rect className="dollar-rolling__band" x={0} width={W} y={y(limit)} height={y(-limit) - y(limit)} />
+              <line className="dollar-rolling__edge" x1={0} x2={W} y1={y(limit)} y2={y(limit)} />
+              <line className="dollar-rolling__edge" x1={0} x2={W} y1={y(-limit)} y2={y(-limit)} />
+            </>
+          ) : null}
           <line className="dollar-rolling__zero" x1={0} x2={W} y1={y(0)} y2={y(0)} />
           <path className="dollar-rolling__line" d={d} />
         </svg>
         {/* The end dot in HTML: the stretched SVG would draw it as an ellipse. */}
         <span
           className={clsx("dollar-rolling__dot", outside && "dollar-rolling__dot--outside")}
-          style={{ left: `${(x(t1) / W) * 100}%`, top: `${(y(last) / H) * 100}%` }}
+          style={{
+            left: `${(x(t1) / W) * 100}%`,
+            top: `${(y(last) / H) * 100}%`,
+          }}
         />
       </div>
       <p className="dollar-rolling__foot">
-        <span>{formatAxisDate(t0, 0)}</span>
-        <span>
-          normal ±{pct(limit).replace(/^[+−-]/, "")}
-          {insideShare !== null ? ` · inside ${Math.round(insideShare * 100)} % of the time` : ""}
-        </span>
+        <span>{formatDate(new Date(t0).toISOString().slice(0, 10))}</span>
+        <span>{formatDate(new Date(t1).toISOString().slice(0, 10))}</span>
+      </p>
+      <p className="dollar-rolling__normal">
+        <span className="dollar-rolling__swatch" aria-hidden />
+        Normal ±{pct(limit).replace(/^[+−-]/, "")}
+        {insideShare !== null ? ` · ${Math.round(insideShare * 100)}% of days inside` : ""}
       </p>
     </figure>
   );
@@ -74,7 +92,13 @@ function RollingMini({ s, field }: { s: RollingSeriesDto; field: DollarDto["quot
 
 /** Rolling 1M / 3M / 1Y changes, each next to its normal band (over the page range). */
 export function RollingPanel({ data }: { data: DollarDto }) {
-  const field = data.quote.field;
+  const t = data.trend;
+  // One wording everywhere: the server's label for the windows it rates, else "larger than usual".
+  const NAMES = { normal: "normal", large: "larger than usual", unusual: "unusual" } as const;
+  const wordFor = (w: string) => {
+    const r = w === "1m" ? t?.normal_month : w === "1y" ? t?.normal_year : null;
+    return r ? NAMES[r.label] : null;
+  };
   const series = (data.rolling ?? []).filter((s) => (s.points ?? []).length > 1);
   if (series.length === 0) return null;
   return (
@@ -85,15 +109,15 @@ export function RollingPanel({ data }: { data: DollarDto }) {
           Rolling changes
           <InfoTip
             label="Rolling changes"
-            content={`How much ${field === "inverse" ? "one dollar in euros" : "EUR/USD"} moved over the trailing month, quarter and year at each day of the range. The shaded band is a normal move of that length (80 % of all since 1999).`}
+            content={`How much the dollar moved over the trailing month, quarter and year at each day of the range. The shaded band is a normal move of that length (80% of all since 1999).`}
           />
         </span>
       }
-      meta={data.quote.pair}
+      meta="the dollar's change"
     >
       <div className="dollar-rolling__grid">
         {series.map((s) => (
-          <RollingMini key={s.window} s={s} field={field} />
+          <RollingMini key={s.window} s={s} word={wordFor(s.window)} />
         ))}
       </div>
     </Card>
