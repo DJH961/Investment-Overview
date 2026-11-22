@@ -57,9 +57,10 @@ export const CURRENCY_SECTIONS: CurrencySectionDef[] = [
     Component: Impact,
     subPages: [{ id: "holdings", label: "Currency effect per holding", Component: ImpactHoldings, ranged: true }],
   },
-  // lane v7.2-sections replaces these two entries.
-  { id: "dollar", label: "The dollar", Component: Dollar },
-  { id: "whatif", label: "What if", Component: WhatIf },
+  // Your dollars as a position: what you hold, the rate you paid, the trend.
+  { id: "exposure", label: "Exposure", Component: Dollar },
+  // Today's holdings valued at other rates: slider, stress table, cushion.
+  { id: "scenarios", label: "Scenarios", Component: WhatIf },
   // 7.3 adds { id: "conversions", label: "Conversions", ... } here.
 ];
 

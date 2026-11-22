@@ -109,7 +109,7 @@ function CurrencyMain({ range }: { range: CurrencyRangeState }) {
     const i = CURRENCY_SECTIONS.findIndex((s) => s.id === id);
     setForcedUpTo((cur) => Math.max(cur, i));
   }, []);
-  // A link to /currency#dollar lands on its section (mounted with every one above it).
+  // A link to /currency#exposure lands on its section (mounted with every one above it).
   const hash = location.hash.replace(/^#/, "");
   const hashIndex = CURRENCY_SECTIONS.findIndex((s) => s.id === hash);
   const forcedIndex = Math.max(forcedUpTo, hashIndex);

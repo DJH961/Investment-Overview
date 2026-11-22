@@ -15,8 +15,8 @@ vi.mock("../../lib/queries/currency", () => ({
 }));
 
 describe("section registry", () => {
-  it("lists Impact, The dollar and What if, in that order, with unique ids", () => {
-    expect(CURRENCY_SECTIONS.slice(0, 3).map((s) => s.label)).toEqual(["Impact", "The dollar", "What if"]);
+  it("lists Impact, Exposure and Scenarios, in that order, with unique ids", () => {
+    expect(CURRENCY_SECTIONS.slice(0, 3).map((s) => s.label)).toEqual(["Impact", "Exposure", "Scenarios"]);
     const ids = CURRENCY_SECTIONS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
