@@ -889,6 +889,8 @@ def prices_repo_close(session: Any, instrument_id: int, day: _dt.date) -> Decima
 VERSION_SENTINEL = "fixtures-version"
 _WORKDIR = ""
 _DT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$")
+#: A decimal string with more than 12 places (float maths), rounded to 10 for a stable file.
+_LONG_DECIMAL_RE = re.compile(r"^-?\d+\.\d{13,}$")
 
 
 def _normalise(value: Any, key: str = "") -> Any:
@@ -906,6 +908,10 @@ def _normalise(value: Any, key: str = "") -> Any:
             return VERSION_SENTINEL  # the mock layer swaps in the build's own version
         if key in {"boot_id", "head", "current"}:
             return "fixture"
+        if _LONG_DECIMAL_RE.match(value):
+            # Float maths (XIRR) differs in the last digit between Windows and Linux;
+            # 10 places keep every shown figure and make the file the same everywhere.
+            return str(Decimal(value).quantize(Decimal("1e-10")))
         if _WORKDIR and _WORKDIR in value:
             return "/fixtures" + value.split(_WORKDIR, 1)[1].replace("\\", "/")
         if _DT_RE.match(value):
