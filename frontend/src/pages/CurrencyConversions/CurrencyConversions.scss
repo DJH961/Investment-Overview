@@ -461,7 +461,7 @@
 
   &__head {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(max-content, 1fr) auto;
     grid-template-areas:
       "date usd chevron"
       "bar bar status";
@@ -486,7 +486,8 @@
     }
 
     @include m.wide {
-      grid-template-columns: 8rem 9rem minmax(6rem, 1fr) 9rem 1.5rem;
+      // The dollar column is as wide as its amount: font metrics differ by platform.
+      grid-template-columns: 8rem minmax(9rem, max-content) minmax(6rem, 1fr) 9rem 1.5rem;
       grid-template-areas: "date usd bar status chevron";
     }
   }
@@ -500,6 +501,10 @@
 
   &__usd {
     grid-area: usd;
+    justify-self: start;
+    // Sized by its own text, never by the column (glyph widths differ by platform).
+    width: max-content;
+    white-space: nowrap;
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-figure);
     font-variant-numeric: tabular-nums;

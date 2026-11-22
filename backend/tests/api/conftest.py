@@ -24,6 +24,25 @@ from investment_dashboard.db import dispose_engines, get_ledger_engine
 from investment_dashboard.models import ALL_METADATAS
 
 
+@pytest.fixture(autouse=True)
+def _steady_etag_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the clock part of the ``/both`` ETags while a test runs.
+
+    The ETag carries a 60-second TTL bucket; a slow first request on a CI runner can
+    straddle a bucket boundary, so the follow-up ``If-None-Match`` misses and the
+    304 tests flake. Calls with an explicit time (the time-component test) still use
+    the real function, and tests that patch it themselves override this.
+    """
+    from investment_dashboard.services import read_cache
+
+    real = read_cache.time_component
+
+    def steady(now: float | None = None) -> str:
+        return real(now) if now is not None else "test-clock"
+
+    monkeypatch.setattr(read_cache, "time_component", steady)
+
+
 @pytest.fixture
 def api_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     db = tmp_path / "app.sqlite"
