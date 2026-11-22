@@ -781,9 +781,7 @@ def _seed_conversions(
     # The retirement account's opening deposit was dollars received directly.
     opening = next(r for r in rows if r.kind == "deposit" and r.net_native == D("180000.00"))
     session.add(
-        UsdReceivedDeposit(
-            deposit_txn_id=opening.id, created_at=_dt.datetime(2026, 6, 1, 9, 0)
-        )
+        UsdReceivedDeposit(deposit_txn_id=opening.id, created_at=_dt.datetime(2026, 6, 1, 9, 0))
     )
     may_deposit = next(r for r in rows if r.kind == "deposit" and r.date == top_ups["may"])
     session.add(

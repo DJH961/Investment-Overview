@@ -17,6 +17,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Wise statement import (conversions):** a "Wise statement" card on the Import page reads
+  a Wise CSV/TSV and previews EUR to USD conversions, not transactions. Both statement shapes
+  work: a conversion whose fee is hidden (the fee is worked out from the total, the dollars and
+  the quoted rate) and a send-with-conversion with the fee stated. Deposits, card payments and
+  plain transfers are skipped with a reason; the same conversion in the EUR and the USD
+  statement is read once. Every row can be unticked, columns can be mapped by hand, and an
+  exact re-import is all duplicates (the Wise ID is stored). New setting "Import: ignore
+  conversions not into USD" (on by default).
+- **Dollars kept outside investing:** a conversion can say how many dollars stayed in your USD
+  account. Matching, pins and "In the pool" use only the rest; the Conversions page shows
+  "Kept in your USD account" as its own segment.
+- **Received in USD:** mark a deposit as received in dollars (no conversion). It keeps the ECB
+  valuation, shows as "Received in USD", and the Data Health note "deposits valued at the ECB
+  rate with no conversion" (info only) leaves it out. Migration 0027a.
+
 ## [7.2.1] — 2026-11-22
 
 ### Added
