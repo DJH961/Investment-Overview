@@ -148,6 +148,9 @@
     cursor: pointer;
     font: inherit;
     min-height: 2rem;
+    // The whole word stays readable: the Kind column grows to fit it rather than cut it.
+    flex-shrink: 0;
+    min-width: max-content;
   }
 
   &__rate-sheet {
