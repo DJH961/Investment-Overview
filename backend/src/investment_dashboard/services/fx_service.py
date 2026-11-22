@@ -781,6 +781,10 @@ def backfill_long_history(
         rates = {r.date: r.rate for r in records if r.rate > 0}
         if rates:
             written += fx_repo.upsert_rates(session, rates, base=base, quote=quote)
+            # Commit each year at once: the tiers often share one file, and holding the
+            # write lock across the next network fetch would block every other writer
+            # (logins, the scheduler) for the whole backfill.
+            session.commit()
     if fetched_years or failed_years:
         log.info(
             "FX history backfill %s/%s since %s: %d year(s) fetched, %d row(s) written%s",

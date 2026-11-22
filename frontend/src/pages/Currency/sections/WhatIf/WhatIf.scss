@@ -206,22 +206,21 @@
 
 // A small right-aligned figures table (stress rows, euro/dollar risk).
 .rate-table {
-  display: grid;
-  grid-template-columns: minmax(3.25rem, 0.8fr) minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1.35fr);
+  width: 100%;
   margin-top: var(--space-4);
+  border-collapse: collapse;
   font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
 
-  &__head,
-  &__row { display: contents; }
   &__head > *,
   &__row > * { padding: var(--space-2); border-bottom: var(--border-width) solid var(--color-border); }
-  &__head > * { color: var(--color-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); }
-  &__row > :first-child { color: var(--color-muted); }
+  &__head > * { color: var(--color-muted); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); text-align: left; }
+  &__row > :first-child { color: var(--color-muted); font-weight: var(--font-weight-regular); text-align: left; }
   &__head > :not(:first-child),
   &__row > :not(:first-child) { text-align: right; }
   &__row--today > * { background: var(--color-surface-2); font-weight: var(--font-weight-semibold); }
-  &__delta { display: grid; gap: var(--space-1); }
+  &__delta { width: 35%; }
+  &__delta .delta-bar { margin-top: var(--space-1); }
   &__row--today > :first-child { color: var(--color-fg); }
 }
 

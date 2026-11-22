@@ -39,11 +39,8 @@ export function SinceStarted({ data, lean }: { data: DollarDto; lean: Lean }) {
           </span>
         ) : null}
       </div>
-      <div
-        className="dollar-since__track"
-        role="img"
-        aria-label={`Since you started the rate ranged from ${rateText(lo, field)} to ${rateText(hi, field)}; today ${rateText(now, field)}, your average ${rateText(avg, field)}`}
-      >
+      <span className="u-sr-only">{`Since you started the rate ranged from ${rateText(lo, field)} to ${rateText(hi, field)}; today ${rateText(now, field)}, your average ${rateText(avg, field)}`}</span>
+      <div className="dollar-since__track" aria-hidden="true">
         {avgAt !== null && nowAt !== null ? (
           <span
             className={clsx("dollar-since__gap", `dollar-since__gap--${lean}`)}

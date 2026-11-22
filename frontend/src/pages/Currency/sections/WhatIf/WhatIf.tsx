@@ -39,10 +39,7 @@ function DeltaBar({ value, scale }: { value: number; scale: number }) {
   const half = scale > 0 ? Math.min(50, (Math.abs(value) / scale) * 50) : 0;
   return (
     <span className="delta-bar" aria-hidden>
-      <span
-        className={`delta-bar__fill delta-bar__fill--${value < 0 ? "neg" : "pos"}`}
-        style={{ "--w": half } as CSSProperties}
-      />
+      <span className={`delta-bar__fill delta-bar__fill--${value < 0 ? "neg" : "pos"}`} style={{ "--w": half } as CSSProperties} />
     </span>
   );
 }
@@ -97,12 +94,14 @@ const LANE_REM = 1.375;
 
 function ScenarioSlider({ data }: { data: ScenariosDto }) {
   const rows = data.rows ?? [];
-  const marks = data.marks ?? [];
+  const marks = useMemo(() => data.marks ?? [], [data.marks]);
   const words = QUOTE_WORDS[data.quote.pair];
   const today = marks.find((m) => m.key === "today");
   const todayRow = Math.min(rows.length - 1, Math.max(0, today?.row_index ?? 0));
-  const [index, setIndex] = useState(todayRow);
-  useEffect(() => setIndex(todayRow), [todayRow]);
+  // The picked row, or today's when nothing is picked (or the rows changed under it).
+  const [picked, setPicked] = useState<{ row: number; base: number } | null>(null);
+  const index = picked && picked.base === todayRow ? picked.row : todayRow;
+  const setIndex = (row: number) => setPicked({ row, base: todayRow });
   const trackRef = useRef<HTMLDivElement>(null);
   const width = useWidth(trackRef);
   const max = Math.max(rows.length - 1, 1);
@@ -143,7 +142,9 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
               </button>
             ) : null}
           </div>
-          <p className="scenario-slider__rate" aria-live="polite">{rateText(row.rate_display, data.ccy)}</p>
+          <p className="scenario-slider__rate" aria-live="polite">
+            {rateText(row.rate_display, data.ccy)}
+          </p>
           <p className="scenario-slider__ends" aria-hidden>
             <span>{rateText(data.min_rate, data.ccy)}</span>
             <span>{rateText(data.max_rate, data.ccy)}</span>
@@ -161,7 +162,11 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
               aria-valuetext={`${pair} ${rateText(row.rate_display, data.ccy)}`}
             />
             {groups.length ? (
-              <ul className="scenario-slider__marks" aria-label="Reference rates" style={{ "--lane-h": `${LANE_REM}rem`, "--lanes": lanes } as CSSProperties}>
+              <ul
+                className="scenario-slider__marks"
+                aria-label="Reference rates"
+                style={{ "--lane-h": `${LANE_REM}rem`, "--lanes": lanes } as CSSProperties}
+              >
                 {groups.map((g, i) => {
                   const place = placed[i]!;
                   return (
@@ -181,7 +186,9 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
         <dl className="scenario-result">
           <div className="scenario-result__item scenario-result__item--lead">
             <dt className="scenario-result__label">Holdings worth</dt>
-            <dd className="scenario-result__value"><Money amount={toNum(row.value)} currency={data.ccy} digits={0} /></dd>
+            <dd className="scenario-result__value">
+              <Money amount={toNum(row.value)} currency={data.ccy} digits={0} />
+            </dd>
           </div>
           {diff !== null ? (
             <div className="scenario-result__item scenario-result__item--lead">
@@ -189,12 +196,16 @@ function ScenarioSlider({ data }: { data: ScenariosDto }) {
               <dd className="scenario-result__value scenario-result__value--sub">
                 {Math.abs(diff) < 0.5 ? "No change" : <Money amount={diff} currency={data.ccy} signed colored digits={0} />}
               </dd>
-              <dd className="scenario-result__bar"><DeltaBar value={diff} scale={Math.max(diffScale, Math.abs(diff))} /></dd>
+              <dd className="scenario-result__bar">
+                <DeltaBar value={diff} scale={Math.max(diffScale, Math.abs(diff))} />
+              </dd>
             </div>
           ) : null}
           <div className="scenario-result__item">
             <dt className="scenario-result__label">Currency gain/loss</dt>
-            <dd className="scenario-result__value"><Money amount={toNum(row.gain)} currency={data.ccy} signed colored digits={0} /></dd>
+            <dd className="scenario-result__value">
+              <Money amount={toNum(row.gain)} currency={data.ccy} signed colored digits={0} />
+            </dd>
           </div>
           <div className="scenario-result__item">
             <dt className="scenario-result__label">Move to break even</dt>
@@ -221,38 +232,46 @@ function StressCard({ data }: { data: ScenariosDto }) {
   const falls = stress.filter((s) => toNum(s.shift_pct)! < 0);
   const rises = stress.filter((s) => toNum(s.shift_pct)! > 0);
   const cell = (s: (typeof stress)[number]) => (
-    <div key={s.shift_pct} className="rate-table__row" role="row">
-      <span role="rowheader">{formatPercent(toNum(s.shift_pct), { signed: true, digits: 0 })}</span>
-      <span role="cell">{formatNumber(toNum(s.rate_display), 4)}</span>
-      <span role="cell"><Money amount={toNum(s.value)} currency={data.ccy} digits={0} /></span>
-      <span role="cell" className="rate-table__delta">
+    <tr key={s.shift_pct} className="rate-table__row">
+      <th scope="row">{formatPercent(toNum(s.shift_pct), { signed: true, digits: 0 })}</th>
+      <td>{formatNumber(toNum(s.rate_display), 4)}</td>
+      <td>
+        <Money amount={toNum(s.value)} currency={data.ccy} digits={0} />
+      </td>
+      <td className="rate-table__delta">
         <Money amount={toNum(s.change)} currency={data.ccy} signed colored digits={0} />
         <DeltaBar value={toNum(s.change) ?? 0} scale={scale} />
-      </span>
-    </div>
+      </td>
+    </tr>
   );
   return (
     <Card className="what-if__stress" title={`If the ${words.mover.toLowerCase()} moves`}>
       <p className="what-if__intro">Today's holdings if {data.quote.pair} were 5, 10 or 15% different from today.</p>
-      <div className="rate-table" role="table" aria-label={`Holdings value if ${data.quote.pair} moves`}>
-        <div className="rate-table__head" role="row">
-          <span role="columnheader">{words.mover}</span>
-          <span role="columnheader">{data.quote.pair}</span>
-          <span role="columnheader">Worth</span>
-          <span role="columnheader">Change</span>
-        </div>
-        {falls.map(cell)}
-        <div className="rate-table__row rate-table__row--today" role="row">
-          <span role="rowheader">Today</span>
-          <span role="cell">{formatNumber(toNum(data.rate_now ? data.rate_now[data.quote.field] : null), 4)}</span>
-          <span role="cell"><Money amount={toNum(data.value_now)} currency={data.ccy} digits={0} /></span>
-          <span role="cell" className="rate-table__delta">
-            —
-            <span className="delta-bar delta-bar--empty" aria-hidden />
-          </span>
-        </div>
-        {rises.map(cell)}
-      </div>
+      <table className="rate-table" aria-label={`Holdings value if ${data.quote.pair} moves`}>
+        <thead>
+          <tr className="rate-table__head">
+            <th scope="col">{words.mover}</th>
+            <th scope="col">{data.quote.pair}</th>
+            <th scope="col">Worth</th>
+            <th scope="col">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {falls.map(cell)}
+          <tr className="rate-table__row rate-table__row--today">
+            <th scope="row">Today</th>
+            <td>{formatNumber(toNum(data.rate_now ? data.rate_now[data.quote.field] : null), 4)}</td>
+            <td>
+              <Money amount={toNum(data.value_now)} currency={data.ccy} digits={0} />
+            </td>
+            <td className="rate-table__delta">
+              —
+              <span className="delta-bar delta-bar--empty" aria-hidden />
+            </td>
+          </tr>
+          {rises.map(cell)}
+        </tbody>
+      </table>
     </Card>
   );
 }
@@ -274,7 +293,9 @@ function PairBars({ title, hint, eur, usd }: { title: string; hint: string; eur:
   );
   return (
     <div className="pair-bars">
-      <p className="pair-bars__title">{title} <span className="pair-bars__hint">· {hint}</span></p>
+      <p className="pair-bars__title">
+        {title} <span className="pair-bars__hint">· {hint}</span>
+      </p>
       {line("In euros", eur, "eur")}
       {line("In dollars", usd, "usd")}
     </div>
@@ -286,24 +307,46 @@ function RiskCard({ data }: { data: ScenariosDto }) {
   if (!cushion) return null;
   const rose = toNum(cushion.dollar_rose_share);
   return (
-    <Card className="what-if__risk" title={<span className="what-if__title">Does the dollar cushion your swings?<InfoTip label="Does the dollar cushion your swings?" content="A comparison of the portfolio's historical volatility and deepest fall in euros and dollars. It describes what happened; it is not a promise that it will happen again." /></span>}>
+    <Card
+      className="what-if__risk"
+      title={
+        <span className="what-if__title">
+          Does the dollar cushion your swings?
+          <InfoTip
+            label="Does the dollar cushion your swings?"
+            content="A comparison of the portfolio's historical volatility and deepest fall in euros and dollars. It describes what happened; it is not a promise that it will happen again."
+          />
+        </span>
+      }
+    >
       <div className="what-if__groups">
-      <p className="what-if__intro">Your own history, since {formatDate(cushion.since)}.</p>
-      <PairBars title="Volatility" hint="how much it swings" eur={toNum(cushion.volatility_eur)} usd={toNum(cushion.volatility_usd)} />
-      <PairBars title="Deepest fall" hint="worst drop from a peak" eur={toNum(cushion.max_drawdown_eur)} usd={toNum(cushion.max_drawdown_usd)} />
-      {rose !== null ? (
-        <div className="pair-bars">
-          <p className="pair-bars__title">Days your holdings fell <span className="pair-bars__hint">· did the dollar rise?</span></p>
-          <div className="pair-bars__line pair-bars__line--share">
-            <span className="pair-bars__name">Dollar rose</span>
-            <span className="pair-bars__track" aria-hidden>
-              <span className="pair-bars__fill pair-bars__fill--eur" style={{ "--w": rose * 100 } as CSSProperties} />
-            </span>
-            <span className="pair-bars__value">{formatPercent(rose, { digits: 0 })}</span>
+        <p className="what-if__intro">Your own history, since {formatDate(cushion.since)}.</p>
+        <PairBars title="Volatility" hint="how much it swings" eur={toNum(cushion.volatility_eur)} usd={toNum(cushion.volatility_usd)} />
+        <PairBars
+          title="Deepest fall"
+          hint="worst drop from a peak"
+          eur={toNum(cushion.max_drawdown_eur)}
+          usd={toNum(cushion.max_drawdown_usd)}
+        />
+        {rose !== null ? (
+          <div className="pair-bars">
+            <p className="pair-bars__title">
+              Days your holdings fell <span className="pair-bars__hint">· did the dollar rise?</span>
+            </p>
+            <div className="pair-bars__line pair-bars__line--share">
+              <span className="pair-bars__name">Dollar rose</span>
+              <span className="pair-bars__track" aria-hidden>
+                <span className="pair-bars__fill pair-bars__fill--eur" style={{ "--w": rose * 100 } as CSSProperties} />
+              </span>
+              <span className="pair-bars__value">{formatPercent(rose, { digits: 0 })}</span>
+            </div>
+            <p className="what-if__note">
+              On {cushion.down_days_dollar_rose} of the {cushion.down_days} days your holdings fell.
+            </p>
           </div>
-          <p className="what-if__note">On {cushion.down_days_dollar_rose} of the {cushion.down_days} days your holdings fell.</p>
-        </div>
-      ) : <p className="what-if__note">There are not enough down days to compare yet.</p>}
+        ) : (
+          <p className="what-if__note">There are not enough down days to compare yet.</p>
+        )}
       </div>
     </Card>
   );
@@ -320,7 +363,11 @@ function tiles(data: ScenariosDto): StatItem[] {
       key: "one_cent",
       label: `One cent of ${pair}`,
       tip: `How much your holdings' value moves if ${pair} moves by one cent from today's rate. It is a size, not a loss: it can go either way.`,
-      value: <>±<Money amount={Math.abs(toNum(cent.value) ?? 0)} currency={data.ccy} digits={0} /></>,
+      value: (
+        <>
+          ±<Money amount={Math.abs(toNum(cent.value) ?? 0)} currency={data.ccy} digits={0} />
+        </>
+      ),
       note: "each way, per cent",
     });
   }

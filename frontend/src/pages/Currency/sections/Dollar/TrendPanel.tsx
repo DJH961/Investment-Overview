@@ -42,11 +42,8 @@ export function NormalGauge({ range }: { range: NormalRangeDto }) {
   const digits = (extent * 100) % 1 === 0 ? 0 : 1;
   return (
     <div className="dollar-gauge">
-      <div
-        className="dollar-gauge__track"
-        role="img"
-        aria-label={`This ${word} ${pct(move)}. The normal range is ±${mag(limit)}: ${NORMAL_WORD[range.label]}.`}
-      >
+      <span className="u-sr-only">{`This ${word} ${pct(move)}. The normal range is ±${mag(limit)}: ${NORMAL_WORD[range.label]}.`}</span>
+      <div className="dollar-gauge__track" aria-hidden="true">
         <span className="dollar-gauge__band" style={{ left: `${at(-limit, extent)}%`, right: `${100 - at(limit, extent)}%` }} />
         <span className="dollar-gauge__zero" />
         <span className={clsx("dollar-gauge__dot", outside && "dollar-gauge__dot--outside")} style={{ left: `${at(move, extent)}%` }} />
@@ -126,11 +123,14 @@ function Tile({
 function Bar({ at: v, label, mid, fill }: { at: number; label: string; mid?: boolean; fill?: boolean }) {
   const pos = Math.max(2, Math.min(98, v * 100));
   return (
-    <div className="dollar-range__track" role="img" aria-label={label}>
-      {fill ? <span className="dollar-range__fill" style={{ width: `${Math.max(0, Math.min(100, v * 100))}%` }} /> : null}
-      {mid ? <span className="dollar-range__mid" /> : null}
-      <span className="dollar-range__dot" style={{ left: `${pos}%` }} />
-    </div>
+    <>
+      <span className="u-sr-only">{label}</span>
+      <div className="dollar-range__track" aria-hidden="true">
+        {fill ? <span className="dollar-range__fill" style={{ width: `${Math.max(0, Math.min(100, v * 100))}%` }} /> : null}
+        {mid ? <span className="dollar-range__mid" /> : null}
+        <span className="dollar-range__dot" style={{ left: `${pos}%` }} />
+      </div>
+    </>
   );
 }
 
@@ -285,7 +285,8 @@ export function TrendPanel({ data }: { data: DollarDto }) {
                   {percentiles.map((x) => (
                     <li key={x.key} className="dollar-pct__row">
                       <span className="dollar-pct__label">{x.label}</span>
-                      <span className="dollar-pct__track" role="img" aria-label={`Cheaper than today on ${share(x.v)} of days ${x.label}`}>
+                      <span className="u-sr-only">{`Cheaper than today on ${share(x.v)} of days ${x.label}`}</span>
+                      <span className="dollar-pct__track" aria-hidden="true">
                         <span className="dollar-pct__fill" style={{ width: `${(x.v ?? 0) * 100}%` }} />
                         <span className="dollar-pct__dot" style={{ left: `${Math.max(2, Math.min(98, (x.v ?? 0) * 100))}%` }} />
                       </span>

@@ -54,7 +54,11 @@ export function RateBand({ band, endLabel }: { band: Band; endLabel?: string }) 
   const todayExpected = toNum(rows[todayIndex]?.expected ?? null);
   // Hide mode: each figure as a share of the expected result at today's rate.
   const fig = (v: number | null) =>
-    hide ? formatPercent(todayExpected && v !== null ? v / todayExpected : null, { digits: 0 }) : <Money amount={v} currency="EUR" digits={0} />;
+    hide ? (
+      formatPercent(todayExpected && v !== null ? v / todayExpected : null, { digits: 0 })
+    ) : (
+      <Money amount={v} currency="EUR" digits={0} />
+    );
   const vsToday = exp !== null && todayExpected !== null ? exp - todayExpected : null;
 
   const a = pos(pess);
@@ -86,22 +90,27 @@ export function RateBand({ band, endLabel }: { band: Band; endLabel?: string }) 
               {isToday ? (
                 "at today's rate"
               ) : vsToday !== null ? (
-                <>
-                  {hide ? null : <Money amount={vsToday} currency="EUR" signed colored digits={0} />} compared with today&apos;s rate
-                </>
+                <>{hide ? null : <Money amount={vsToday} currency="EUR" signed colored digits={0} />} compared with today&apos;s rate</>
               ) : null}
             </p>
           </div>
           <div className="rate-band__rate-block">
             <p className="rate-band__eyebrow">EUR/USD on the horizon</p>
             <p className="rate-band__rate">{formatNumber(rate, 4)}</p>
-            <p className="rate-band__sub">{isToday ? "today's rate" : `${formatPercent(shift, { signed: true, digits: 0 })} from today's ${formatNumber(toNum(band.usd_per_eur_now), 4)}`}</p>
+            <p className="rate-band__sub">
+              {isToday
+                ? "today's rate"
+                : `${formatPercent(shift, { signed: true, digits: 0 })} from today's ${formatNumber(toNum(band.usd_per_eur_now), 4)}`}
+            </p>
           </div>
         </div>
 
-        <div className="rate-band__band" role="img" aria-label={`Pessimistic ${hide ? "" : pess}, expected ${hide ? "" : exp}, optimistic ${hide ? "" : opt}`}>
+        <span className="u-sr-only">{`Pessimistic ${hide ? "" : pess}, expected ${hide ? "" : exp}, optimistic ${hide ? "" : opt}`}</span>
+        <div className="rate-band__band" aria-hidden="true">
           <span className="rate-band__track" aria-hidden>
-            {a !== null && b !== null ? <span className="rate-band__range" style={{ left: `${a}%`, width: `${Math.max(b - a, 0.5)}%` }} /> : null}
+            {a !== null && b !== null ? (
+              <span className="rate-band__range" style={{ left: `${a}%`, width: `${Math.max(b - a, 0.5)}%` }} />
+            ) : null}
             {e !== null ? <span className="rate-band__dot" style={{ left: `${e}%` }} /> : null}
           </span>
           <dl className="rate-band__legend">
@@ -137,15 +146,11 @@ export function RateBand({ band, endLabel }: { band: Band; endLabel?: string }) 
             aria-valuetext={`EUR/USD ${formatNumber(rate, 4)}, ${isToday ? "today's rate" : formatPercent(shift, { signed: true, digits: 0 })}`}
           />
           <div className="rate-band__ticks" aria-hidden>
-            <span>
-              {formatPercent(first, { signed: true, digits: 0 })} · euro weaker
-            </span>
+            <span>{formatPercent(first, { signed: true, digits: 0 })} · euro weaker</span>
             <span className="rate-band__tick-today" style={{ left: `${(todayIndex / Math.max(rows.length - 1, 1)) * 100}%` }}>
               today
             </span>
-            <span>
-              euro stronger · {formatPercent(last, { signed: true, digits: 0 })}
-            </span>
+            <span>euro stronger · {formatPercent(last, { signed: true, digits: 0 })}</span>
           </div>
         </div>
         <p className="rate-band__note">

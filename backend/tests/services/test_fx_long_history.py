@@ -5,14 +5,22 @@ Mocked HTTP (respx) and a synthetic in-memory database only.
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
 import respx
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
-from investment_dashboard.adapters.frankfurter_client import BASE_URL, FrankfurterError
+from investment_dashboard.adapters.frankfurter_client import (
+    BASE_URL,
+    FrankfurterError,
+    FxRateRecord,
+)
+from investment_dashboard.models.base import ALL_METADATAS
 from investment_dashboard.repositories import fx_repo
 from investment_dashboard.services import fx_service
 
@@ -98,3 +106,43 @@ def test_settled_rates_ignore_the_live_overlay(session: Session) -> None:
         assert fx_service.get_settled_rates(session) == {date(2024, 1, 2): Decimal("1.09")}
     finally:
         fx_service.clear_live_spot()
+
+
+def test_backfill_releases_the_write_lock_between_years(tmp_path: Path) -> None:
+    """Regression (7.2 CI image job): each year is committed before the next fetch.
+
+    The tiers often share one database file; a backfill that held its write lock across
+    the network fetches blocked every other writer (login, set-password, the scheduler)
+    until it ended. While the second year is being fetched, a separate connection with a
+    short busy timeout must be able to write at once.
+    """
+    db = tmp_path / "shared.sqlite"
+    engine = create_engine(f"sqlite:///{db}", future=True)
+    for md in ALL_METADATAS:
+        md.create_all(engine)
+    other_writes: list[bool] = []
+
+    def fetch(first: date, last: date, *, base: str, quote: str) -> list[FxRateRecord]:
+        if first.year == 2002:
+            other = sqlite3.connect(db, timeout=0.2)
+            try:
+                other.execute("CREATE TABLE IF NOT EXISTS probe (x INTEGER)")
+                other.execute("INSERT INTO probe VALUES (1)")
+                other.commit()
+                other_writes.append(True)
+            except sqlite3.OperationalError:
+                other_writes.append(False)
+            finally:
+                other.close()
+        return [FxRateRecord(date=first, base=base, quote=quote, rate=Decimal("1.1"))]
+
+    session = sessionmaker(bind=engine, future=True)()
+    try:
+        fx_service.backfill_long_history(
+            session, start=date(2001, 1, 1), today=date(2002, 12, 31), fetch=fetch
+        )
+        session.commit()
+    finally:
+        session.close()
+        engine.dispose()
+    assert other_writes == [True]

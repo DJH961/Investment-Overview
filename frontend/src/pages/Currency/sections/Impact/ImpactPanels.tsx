@@ -118,7 +118,7 @@ export function ImpactHero({ data, range, figures = [] }: { data: CurrencyEffect
   const h = data.headline;
   const effect = toNum(h.effect);
   const share = toNum(h.currency_share);
-  const pts = data.series ?? [];
+  const pts = useMemo(() => data.series ?? [], [data.series]);
   const intraday = data.granularity === "intraday";
 
   const series = useMemo<ChartSeries[]>(
@@ -492,7 +492,7 @@ export function MonthsCard({ data }: { data: CurrencyEffectDto }) {
 // ---- rolling 12 months -------------------------------------------------------------------
 
 export function RollingCard({ data, range }: { data: CurrencyEffectDto; range: string }) {
-  const pts = data.rolling ?? [];
+  const pts = useMemo(() => data.rolling ?? [], [data.rolling]);
   const series = useMemo<ChartSeries[]>(
     () => [{ id: "rolling", label: "Rolling 12 months", points: pts.map((p) => ({ t: p.t, v: toNum(p.currency) })), tone: "primary" }],
     [pts],
@@ -562,7 +562,9 @@ export function RecordsCard({ data }: { data: CurrencyEffectDto }) {
       <table className="records">
         <thead>
           <tr>
-            <td />
+            <td>
+              <span className="u-sr-only">Period</span>
+            </td>
             <th scope="col" className="records__head">
               Best
             </th>

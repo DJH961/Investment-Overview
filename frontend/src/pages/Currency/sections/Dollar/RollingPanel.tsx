@@ -51,13 +51,8 @@ function RollingMini({ s, word }: { s: RollingSeriesDto; word: string | null }) 
         </span>
       </figcaption>
       <div className="dollar-rolling__plot">
-        <svg
-          className="dollar-rolling__svg"
-          viewBox={`0 0 ${W} ${H}`}
-          preserveAspectRatio="none"
-          role="img"
-          aria-label={`${label} change, now ${pct(last)}; normal range ±${pct(limit).replace(/^[+−-]/, "")}`}
-        >
+        <span className="u-sr-only">{`${label} change, now ${pct(last)}; normal range ±${pct(limit).replace(/^[+−-]/, "")}`}</span>
+        <svg className="dollar-rolling__svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
           {limit > 0 ? (
             <>
               <rect className="dollar-rolling__band" x={0} width={W} y={y(limit)} height={y(-limit) - y(limit)} />
