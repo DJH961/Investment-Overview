@@ -178,12 +178,15 @@ export function RateChart({
   className,
   range: rangeProp,
   onRangeChange,
+  showRangePicker = true,
 }: {
   currency: ReportingCurrency;
   className?: string;
   /** The page's range (the Currency page owns it); without it the chart keeps its own. */
   range?: RateRange;
   onRangeChange?: (range: RateRange) => void;
+  /** Render the chart's own range buttons (false when the page shows the picker elsewhere). */
+  showRangePicker?: boolean;
 }) {
   const timeZone = useTimeZone();
   const [ownRange, setOwnRange] = usePersistentState<RateRange>(rangeProp ? null : "currency.rate.range", "1y", isRange);
@@ -208,8 +211,12 @@ export function RateChart({
   const pts = data?.points ?? [];
   const last = pts.length ? pick(pts[pts.length - 1], lens) : null;
   const change = toNum(lens === "rate" ? data?.change?.rate_pct : data?.change?.inverse_pct);
-  const rangeLabel = shown === "max" ? "since 1999" : RATE_RANGE_LABELS[shown];
-  const long = shown === "1y" || shown === "5y" || shown === "10y" || shown === "max";
+  const rangeLabel = shown === "max" ? "since 1999" : shown === "all" ? "since you started" : RATE_RANGE_LABELS[shown];
+  const long = shown === "1y" || shown === "all" || shown === "5y" || shown === "10y" || shown === "max";
+  const sessions = useMemo(
+    () => (shown === "1w" ? (data?.sessions ?? []).map((s) => ({ date: s.open.slice(0, 10), open: s.open, close: s.close })) : []),
+    [data, shown],
+  );
 
   const timeFormat = (t: number) =>
     shown === "1d" ? formatTime(new Date(t), timeZone) : shown === "1w" ? formatShortDay(t, timeZone) : formatAxisDate(t, long ? Infinity : 0);
@@ -239,7 +246,7 @@ export function RateChart({
         </span>
         {change !== null ? (
           <span className="rate-chart__change">
-            {pct(change)} {shown === "max" ? rangeLabel : `in ${rangeLabel}`}
+            {pct(change)} {shown === "max" || shown === "all" ? rangeLabel : `in ${rangeLabel}`}
           </span>
         ) : null}
       </p>
@@ -268,13 +275,14 @@ export function RateChart({
           ) : undefined
         }
         range={shown}
-        ranges={[...RATE_RANGES]}
+        ranges={showRangePicker ? [...RATE_RANGES] : undefined}
         rangeLabel={(r) => RATE_RANGE_LABELS[r as RateRange] ?? r}
         onRangeChange={(r) => setRange(r as RateRange)}
         loading={q.isPending}
         busy={q.isFetching && !q.isPending}
         valueFormat={axis}
-        xMode={shown === "1d" ? "time" : "date"}
+        xMode={shown === "1d" ? "time" : shown === "1w" && sessions.length ? "session" : "date"}
+        sessions={sessions.length ? sessions : undefined}
         timeFormat={timeFormat}
         tooltipTimeFormat={tooltipTimeFormat}
         height={260}

@@ -108,7 +108,7 @@ GET_ENDPOINTS: tuple[str, ...] = (
     "/api/deposits/dividends/both",
     "/api/currency/both",
     # v7.2 Currency page sections
-    *(f"/api/currency/rate-history?range={r}" for r in RATE_RANGES),
+    *(f"/api/currency/rate-history?range={r}" for r in (*RATE_RANGES, "all")),
     *(f"/api/currency/effect/both?range={r}" for r in EFFECT_RANGES),
     *(f"/api/currency/dollar/both?range={r}" for r in RATE_RANGES),
     "/api/currency/scenarios/both",
@@ -678,7 +678,9 @@ def _seed_conversions(
     """
     from investment_dashboard.models import FxConversion, FxConversionPin
 
-    def conv(day: _dt.date, usd: str, provider: str, fees: str | None, note: str | None = None) -> Any:
+    def conv(
+        day: _dt.date, usd: str, provider: str, fees: str | None, note: str | None = None
+    ) -> Any:
         # About 0.4 % fewer dollars than the reference rate, like a retail spread.
         eur = (D(usd) / (rate_on(day) * D("0.996"))).quantize(D("0.01"))
         row = FxConversion(

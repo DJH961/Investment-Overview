@@ -4789,6 +4789,7 @@
               "3m",
               "ytd",
               "1y",
+              "all",
               "5y",
               "10y",
               "max"
@@ -6377,6 +6378,19 @@
               }
             ],
             "title": "Note"
+          },
+          "off_pct": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?([eE][-+]?\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.",
+            "title": "Off Pct"
           },
           "provider": {
             "anyOf": [
@@ -14213,12 +14227,20 @@
               "3m",
               "ytd",
               "1y",
+              "all",
               "5y",
               "10y",
               "max"
             ],
             "title": "Range",
             "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/RateSession"
+            },
+            "title": "Sessions",
+            "type": "array"
           },
           "source": {
             "enum": [
@@ -14350,6 +14372,25 @@
           "source"
         ],
         "title": "RatePoint",
+        "type": "object"
+      },
+      "RateSession": {
+        "description": "One continuous forex trading day (UTC instants), for the chart's session axis.",
+        "properties": {
+          "close": {
+            "title": "Close",
+            "type": "string"
+          },
+          "open": {
+            "title": "Open",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open",
+          "close"
+        ],
+        "title": "RateSession",
         "type": "object"
       },
       "RateTrend": {
@@ -20748,6 +20789,7 @@
                 "3m",
                 "ytd",
                 "1y",
+                "all",
                 "5y",
                 "10y",
                 "max"
@@ -20846,6 +20888,7 @@
                 "3m",
                 "ytd",
                 "1y",
+                "all",
                 "5y",
                 "10y",
                 "max"

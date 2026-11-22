@@ -5768,6 +5768,7 @@
   },
   "points": [],
   "range": "10y",
+  "sessions": [],
   "source": "ECB reference rate",
   "trend": null
  },
@@ -5788,6 +5789,7 @@
   },
   "points": [],
   "range": "1d",
+  "sessions": [],
   "source": "live samples",
   "trend": null
  },
@@ -5808,6 +5810,7 @@
   },
   "points": [],
   "range": "1m",
+  "sessions": [],
   "source": "ECB reference rate",
   "trend": null
  },
@@ -5828,6 +5831,28 @@
   },
   "points": [],
   "range": "1w",
+  "sessions": [
+   {
+    "close": "2026-06-24T21:00:00+00:00",
+    "open": "2026-06-23T21:00:00+00:00"
+   },
+   {
+    "close": "2026-06-25T21:00:00+00:00",
+    "open": "2026-06-24T21:00:00+00:00"
+   },
+   {
+    "close": "2026-06-26T21:00:00+00:00",
+    "open": "2026-06-25T21:00:00+00:00"
+   },
+   {
+    "close": "2026-06-29T21:00:00+00:00",
+    "open": "2026-06-28T21:00:00+00:00"
+   },
+   {
+    "close": "2026-06-30T21:00:00+00:00",
+    "open": "2026-06-29T21:00:00+00:00"
+   }
+  ],
   "source": "live samples",
   "trend": null
  },
@@ -5848,6 +5873,7 @@
   },
   "points": [],
   "range": "1y",
+  "sessions": [],
   "source": "ECB reference rate",
   "trend": null
  },
@@ -5868,6 +5894,7 @@
   },
   "points": [],
   "range": "3m",
+  "sessions": [],
   "source": "ECB reference rate",
   "trend": null
  },
@@ -5888,6 +5915,28 @@
   },
   "points": [],
   "range": "5y",
+  "sessions": [],
+  "source": "ECB reference rate",
+  "trend": null
+ },
+ "GET /api/currency/rate-history?range=all": {
+  "as_of": null,
+  "avg_rate": null,
+  "change": null,
+  "granularity": "weekly",
+  "high": null,
+  "low": null,
+  "ma200": [],
+  "markers": [],
+  "percentiles": {
+   "since_1999": null,
+   "since_start": null,
+   "y10": null,
+   "y5": null
+  },
+  "points": [],
+  "range": "all",
+  "sessions": [],
   "source": "ECB reference rate",
   "trend": null
  },
@@ -5908,6 +5957,7 @@
   },
   "points": [],
   "range": "max",
+  "sessions": [],
   "source": "ECB reference rate",
   "trend": null
  },
@@ -5928,6 +5978,7 @@
   },
   "points": [],
   "range": "ytd",
+  "sessions": [],
   "source": "ECB reference rate",
   "trend": null
  },

@@ -4,8 +4,14 @@ Rates are USD per 1 EUR (``rate``); ``inverse`` = 1 / rate (EUR per 1 USD, the
 dollar's terms), computed here to 6 dp. The payload is the same for both
 reporting currencies (it is a market rate, not a portfolio figure).
 
-* ``1d`` / ``1w``: the stored intraday samples (``IntradayValue.fx_eur_usd``),
-  ``granularity = "intraday"``, ``source = "live samples"``.
+* ``1d`` / ``1w``: 15-minute forex bars (Yahoo ``EURUSD=X``, cached ~10 min, see
+  ``fx_service.eur_usd_forex_bars``) merged with the stored intraday samples
+  (``IntradayValue.fx_eur_usd``), ``granularity = "intraday"``,
+  ``source = "live samples"``. ``1d`` is the current forex day (17:00 ET to 17:00 ET;
+  over the weekend Friday's); ``1w`` the last 5 forex days and ``sessions`` lists
+  them (UTC) so the chart squeezes the weekend out. Bars failing -> stored samples.
+* ``all``: from the first ledger transaction to today (``max`` when the ledger is
+  empty); weekly when longer than 3 years, MA200 when at least a year.
 * ``1m`` .. ``5y``: the **settled** daily ECB rows (``fx_history``), never the live
   overlay on a past day; the last point may be today's live spot (``as_of`` then
   carries its instant). ``10y`` / ``max``: the last ECB day of each ISO week.
@@ -24,7 +30,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from investment_dashboard.domain import fx_trend
+from investment_dashboard.domain import fx_trend, market_hours
 from investment_dashboard.domain.market_hours import exchange_today
 from investment_dashboard.readmodels._serialize import dec
 from investment_dashboard.repositories import transactions_repo
@@ -34,7 +40,7 @@ from investment_dashboard.services import (
     intraday_snapshots_service,
 )
 
-RANGES: tuple[str, ...] = ("1d", "1w", "1m", "3m", "ytd", "1y", "5y", "10y", "max")
+RANGES: tuple[str, ...] = ("1d", "1w", "1m", "3m", "ytd", "1y", "all", "5y", "10y", "max")
 INTRADAY_RANGES = frozenset({"1d", "1w"})
 WEEKLY_RANGES = frozenset({"10y", "max"})
 MA_RANGES = frozenset({"1y", "5y", "10y", "max"})
@@ -61,8 +67,14 @@ def _minus_months(day: date, months: int) -> date:
     return date(year, month, 28)  # pragma: no cover - unreachable
 
 
-def range_start(range_key: str, today: date) -> date:
-    """First calendar day of a daily/weekly range."""
+def range_start(range_key: str, today: date, first_ledger: date | None = None) -> date:
+    """First calendar day of a daily/weekly range (``all``: the first ledger day)."""
+    if range_key == "all":
+        return (
+            first_ledger
+            if first_ledger is not None and first_ledger <= today
+            else (fx_service.HISTORY_START)
+        )
     if range_key == "ytd":
         return date(today.year, 1, 1)
     if range_key == "max":
@@ -137,6 +149,30 @@ def _markers(session: Session, start: date, end: date) -> list[dict[str, Any]]:
     return out
 
 
+def _intraday(
+    session: Session, range_key: str, now: datetime
+) -> tuple[list[tuple[str, Decimal]], list[dict[str, str]], datetime, datetime]:
+    """``(points, sessions, start, end)`` of the 1d / 1w forex-day window (naive UTC)."""
+    forex_days = market_hours.forex_sessions(now, 1 if range_key == "1d" else 5)
+    now_naive = now.astimezone(UTC).replace(tzinfo=None)
+    start_at = forex_days[0][0].replace(tzinfo=None)
+    end_at = min(now_naive, forex_days[-1][1].replace(tzinfo=None))
+    sessions = (
+        [{"open": _iso_utc(o), "close": _iso_utc(c)} for o, c in forex_days]
+        if range_key == "1w"
+        else []
+    )
+    merged: dict[datetime, Decimal] = {}
+    try:
+        bars = fx_service.eur_usd_forex_bars(start_at.date(), end_at.date())
+    except Exception:  # pragma: no cover - the service already fails soft
+        bars = {}
+    merged.update({t: r for t, r in bars.items() if start_at <= t <= end_at})
+    for at, r in intraday_snapshots_service.fx_samples_between(session, start_at, end_at):
+        merged.setdefault(at, r)
+    return [(_iso_utc(at), r) for at, r in sorted(merged.items())], sessions, start_at, end_at
+
+
 def build_rate_history(
     session: Session,
     range_key: str,
@@ -162,21 +198,19 @@ def build_rate_history(
     points: list[dict[str, Any]] = []
     raw: list[tuple[str, Decimal]] = []
     ma_points: list[dict[str, Any]] = []
+    sessions: list[dict[str, str]] = []
+    first_ledger = transactions_repo.earliest_transaction_date(session)
     if range_key in INTRADAY_RANGES:
         granularity, source = "intraday", SOURCE_LIVE
-        if range_key == "1d":
-            start_at, end_at = intraday_snapshots_service.session_window_utc(now)
-        else:
-            start_at = intraday_snapshots_service.week_window_start_utc(now)
-            end_at = now.astimezone(UTC).replace(tzinfo=None)
-        samples = intraday_snapshots_service.fx_samples_between(session, start_at, end_at)
-        raw = [(_iso_utc(at), r) for at, r in samples]
+        raw, sessions, start_at, end_at = _intraday(session, range_key, now)
         as_of = raw[-1][0] if raw else None
         marker_start, marker_end = start_at.date(), end_at.date()
     else:
-        granularity = "weekly" if range_key in WEEKLY_RANGES else "daily"
+        start = range_start(range_key, today, first_ledger)
+        span_days = (today - start).days
+        weekly = range_key in WEEKLY_RANGES or (range_key == "all" and span_days > 3 * 365)
+        granularity = "weekly" if weekly else "daily"
         source = SOURCE_ECB
-        start = range_start(range_key, today)
         in_range = [(d, r) for d, r in daily if d >= start]
         as_of = in_range[-1][0].isoformat() if in_range else None
         if live is not None and live.observed_on == today and start <= today:
@@ -186,9 +220,9 @@ def build_rate_history(
                 in_range = in_range[:-1]
             in_range.append((live.observed_on, live.rate))
             as_of = _iso_utc(live.observed_at) if live.observed_at else live.observed_on.isoformat()
-        shown = _weekly(in_range) if granularity == "weekly" else in_range
+        shown = _weekly(in_range) if weekly else in_range
         raw = [(d.isoformat(), r) for d, r in shown]
-        if range_key in MA_RANGES:
+        if range_key in MA_RANGES or (range_key == "all" and span_days >= 365):
             ma_rate = dict(fx_trend.moving_average(daily))
             ma_inv = dict(fx_trend.moving_average(fx_trend.inverse_series(daily)))
             ma_points = [
@@ -200,7 +234,6 @@ def build_rate_history(
 
     points = [_point(t, r) for t, r in raw]
     extremes = fx_trend.range_extremes(raw)
-    first_ledger = transactions_repo.earliest_transaction_date(session)
     percentiles = (
         fx_trend.rate_percentiles(
             daily,
@@ -220,6 +253,7 @@ def build_rate_history(
         "granularity": granularity,
         "as_of": as_of,
         "source": source,
+        "sessions": sessions,
         "points": points,
         "ma200": ma_points,
         "avg_rate": (

@@ -592,3 +592,33 @@ def last_session_close(now: datetime) -> datetime:
                 return closes
         day -= timedelta(days=1)
     raise RuntimeError("no trading day within 15 days")  # pragma: no cover
+
+
+def forex_sessions(now: datetime | None = None, count: int = 5) -> list[tuple[datetime, datetime]]:
+    """The last ``count`` spot-FX trading days as ``(open_utc, close_utc)`` pairs.
+
+    A forex trading day runs 17:00 ET to 17:00 ET: Monday's day opens Sunday 17:00
+    ET, Friday's closes Friday 17:00 ET, so the days of a week are contiguous and
+    the weekend is the only gap between weeks. The newest pair is the latest day
+    that has opened at ``now`` (over the weekend: Friday's), oldest first. Instants
+    are timezone-aware UTC.
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    local = now.astimezone(_MARKET_TZ) if now.tzinfo is not None else now.replace(tzinfo=_MARKET_TZ)
+    day = local.date() + timedelta(
+        days=1
+    )  # tomorrow's day may already have opened (Sunday evening)
+    out: list[tuple[datetime, datetime]] = []
+    for _ in range(400):  # bounded walk back over weekends
+        if len(out) >= count:
+            break
+        if day.weekday() < _SATURDAY:
+            prev = day - timedelta(days=1)  # Monday opens Sunday evening
+            opened = datetime.combine(prev, _FOREX_REOPEN, tzinfo=_MARKET_TZ)
+            closed = datetime.combine(day, _FOREX_REOPEN, tzinfo=_MARKET_TZ)
+            if opened <= local:
+                out.append((opened.astimezone(UTC), closed.astimezone(UTC)))
+        day -= timedelta(days=1)
+    out.reverse()
+    return out

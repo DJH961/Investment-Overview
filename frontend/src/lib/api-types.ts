@@ -3493,7 +3493,7 @@ export interface components {
              * Range
              * @enum {string}
              */
-            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             /** Rolling */
             rolling?: components["schemas"]["RollingSeries"][];
             /** Stats */
@@ -4005,6 +4005,11 @@ export interface components {
             id: number;
             /** Note */
             note: string | null;
+            /**
+             * Off Pct
+             * @description all_in_rate / ecb_rate - 1: negative means fewer dollars per euro than the ECB daily reference. Null when the fixing is not published.
+             */
+            off_pct?: string | null;
             /** Provider */
             provider: ("wise" | "revolut" | "other") | null;
             /**
@@ -6663,7 +6668,9 @@ export interface components {
              * Range
              * @enum {string}
              */
-            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+            range: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
+            /** Sessions */
+            sessions?: components["schemas"]["RateSession"][];
             /**
              * Source
              * @enum {string}
@@ -6705,6 +6712,16 @@ export interface components {
             rate: string;
             /** Source */
             source: string;
+        };
+        /**
+         * RateSession
+         * @description One continuous forex trading day (UTC instants), for the chart's session axis.
+         */
+        RateSession: {
+            /** Close */
+            close: string;
+            /** Open */
+            open: string;
         };
         /**
          * RateTrend
@@ -9370,7 +9387,7 @@ export interface operations {
     get_dollar_both_api_currency_dollar_both_get: {
         parameters: {
             query?: {
-                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             };
             header?: never;
             path?: never;
@@ -9432,7 +9449,7 @@ export interface operations {
     get_rate_history_api_currency_rate_history_get: {
         parameters: {
             query?: {
-                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "5y" | "10y" | "max";
+                range?: "1d" | "1w" | "1m" | "3m" | "ytd" | "1y" | "all" | "5y" | "10y" | "max";
             };
             header?: never;
             path?: never;

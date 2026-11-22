@@ -61,6 +61,8 @@ function startFor(range: string, lastDay: string): string {
       return back(5 * 366);
     case "10y":
       return back(10 * 366);
+    case "all":
+      return PORTFOLIO_START;
     case "max":
       return "1999-01-01";
     default:
@@ -85,6 +87,34 @@ function intraday(range: string, last: number): Pt[] {
     }
   }
   return out;
+}
+
+/**
+ * The 1W forex week: the last 5 forex days (17:00 ET to 17:00 ET, approximated as
+ * 22:00Z to 22:00Z), points every 30 minutes round the clock, none over the weekend.
+ */
+function forexWeek(last: number): { points: Pt[]; sessions: { open: string; close: string }[] } {
+  const rnd = mulberry32(13);
+  const now = Date.now();
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 19) + "+00:00";
+  const sessions: { open: string; close: string }[] = [];
+  let day = Math.floor(now / DAY) * DAY + DAY;
+  while (sessions.length < 5) {
+    const wd = new Date(day).getUTCDay();
+    const open = day - DAY + 22 * 3_600_000;
+    if (wd >= 1 && wd <= 5 && open <= now) sessions.unshift({ open: iso(open), close: iso(open + DAY) });
+    day -= DAY;
+  }
+  const points: Pt[] = [];
+  let r = last * (1 + (rnd() - 0.5) * 0.008);
+  for (const s of sessions) {
+    const open = Date.parse(s.open);
+    for (let t = open; t < open + DAY && t <= now; t += 30 * 60_000) {
+      r *= 1 + (rnd() - 0.5) * 0.0007;
+      points.push(pt(iso(t), r));
+    }
+  }
+  return { points, sessions };
 }
 
 /** The fixture portfolio starts here (an invented first deposit, not ledger data). */
@@ -132,7 +162,8 @@ export function rateHistoryFixture(range: string, anchor: { now: number; avg: nu
   const inRange = all.filter((p) => p.day >= from);
   const weekly = (rows: typeof all) => rows.filter((p, i) => i === rows.length - 1 || new Date(`${p.day}T00:00:00Z`).getUTCDay() === 5);
   const daily = granularity === "weekly" ? weekly(inRange) : inRange;
-  const points = granularity === "intraday" ? intraday(range, last.rate) : daily.map((p) => pt(p.day, p.rate));
+  const week = range === "1w" ? forexWeek(last.rate) : null;
+  const points = week ? week.points : granularity === "intraday" ? intraday(range, last.rate) : daily.map((p) => pt(p.day, p.rate));
   // 200-day average over the full history, so the line starts at the range start.
   let ma200: Pt[] = [];
   if (granularity !== "intraday" && !["1m", "3m", "ytd"].includes(range)) {
@@ -155,6 +186,7 @@ export function rateHistoryFixture(range: string, anchor: { now: number; avg: nu
     granularity,
     as_of: new Date().toISOString().slice(0, 19),
     source: granularity === "intraday" ? "live samples" : "ECB reference rate",
+    sessions: week ? week.sessions : [],
     points,
     ma200,
     avg_rate: { rate: avgRate.toFixed(4), inverse: (1 / avgRate).toFixed(6) },
